@@ -13,11 +13,11 @@ import "stdlib/bass/sub/sub_deep.vibe";
 let kick = voice("kick").synth("kick_808").gain(db(-6));
 let bass = voice("bass").synth("sub_deep").gain(db(-12));
 
-pattern("groove").on(kick).step("x...x...x..x....").len(4.0).start();
-melody("line").on(bass).notes("C2 C2 G1 G1").len(4.0).start();
+pattern("groove").on(kick).step("x... x... x..x ....").start();
+melody("line").on(bass).notes("C3 - - - | C3 - G2 -").start();
 ```
 
-That's a whole beat. Run it with `--watch` and edit while it plays.
+That's a whole beat. Just run it and edit while it plays—watching is on by default.
 
 ## Quick Start
 
@@ -34,8 +34,8 @@ git clone https://github.com/yourusername/vibelang.git
 cd vibelang
 cargo build --release
 
-# Run your first beat
-./target/release/vibelang examples/project/main.vibe --watch
+# Run your first beat (watching is on by default)
+./target/release/vibe examples/minimal_techno/main.vibe
 ```
 
 ### First Song
@@ -47,18 +47,17 @@ set_tempo(110);
 
 import "stdlib/drums/kicks/kick_808.vibe";
 
-let kick = voice("kick").synth("kick_808");
+let kick = voice("kick").synth("kick_808").gain(db(-6));
 
 pattern("four_on_floor")
     .on(kick)
     .step("x...x...x...x...")
-    .len(4.0)
     .start();
 ```
 
 Run it:
 ```bash
-vibelang hello.vibe --watch
+vibe hello.vibe
 ```
 
 Edit the pattern. Save. Hear it change. That's the vibe.
@@ -84,10 +83,10 @@ Voices are your instruments. Assign a synth, set gain, control polyphony:
 
 ```rhai
 let lead = voice("lead")
-    .synth("lead_bright")          // Use a synthdef
-    .gain(db(-6))                  // Output level
-    .poly(4)                       // 4-voice polyphony
-    .set_param("cutoff", 2000.0);  // Synth parameters
+    .synth("lead_bright")           // Use a synthdef
+    .gain(db(-6))                   // Output level in dB
+    .poly(4)                        // 4-voice polyphony
+    .set_param("cutoff", 2000.0);   // Synth parameters
 ```
 
 ### Patterns (Rhythm)
@@ -95,22 +94,20 @@ let lead = voice("lead")
 Step sequencer for drums and rhythmic parts:
 
 ```rhai
+// x = hit, . = rest
 pattern("hihat")
     .on(hat_voice)
-    .step("x.x.x.x.x.x.x.x.")       // x = hit, . = rest
-    .len(2.0)                       // Length in beats
-    .swing(0.1)                     // Shuffle
+    .step("x.x.x.x.x.x.x.x.")
     .start();
 
 // Velocity levels: 0-9 (9 = loudest)
 pattern("ghost_snare")
     .on(snare)
     .step("..3.x.3...3.x...")
-    .len(4.0)
     .start();
 
 // Euclidean rhythms
-pattern("afro").on(perc).euclid(5, 8).len(2.0).start();
+pattern("afro").on(perc).euclid(5, 8).start();
 ```
 
 ### Melodies (Pitch)
@@ -121,7 +118,6 @@ Note sequences with sustain and rests:
 melody("bassline")
     .on(bass_voice)
     .notes("C2 - - . | E2 - G2 . | A2 - - - | G2 . E2 .")
-    .len(8.0)
     .gate(0.8)                      // Note length (0-1)
     .start();
 
@@ -137,8 +133,8 @@ melody("bassline")
 Clip-based timeline for song structure:
 
 ```rhai
-let verse = melody("verse").on(lead).notes("...").len(16.0);
-let chorus = melody("chorus").on(lead).notes("...").len(16.0);
+let verse = melody("verse").on(lead).notes("E3 - - . | G3 - - . | A3 - - . | G3 - - .");
+let chorus = melody("chorus").on(lead).notes("C4 - - . | E4 - - . | G4 - - . | E4 - - .");
 
 sequence("song")
     .loop_bars(64)
@@ -155,12 +151,19 @@ Parameter changes over time:
 
 ```rhai
 fade("filter_sweep")
-    .on(bass_voice)
+    .on_voice("bass")              // Target a voice by name
     .param("cutoff")
     .from(200.0)
     .to(5000.0)
-    .over_bars(8)
-    .start();
+    .over_bars(8);
+
+// Fades can also target groups or effects:
+fade("group_swell")
+    .on_group("Synth")
+    .param("amp")
+    .from(db(-20.0))
+    .to(db(0.0))
+    .over_bars(4);
 ```
 
 ### Groups (Mixing)
@@ -168,27 +171,38 @@ fade("filter_sweep")
 Organize voices with shared effects:
 
 ```rhai
-let drums = define_group("Drums", ||{
-    let kick = voice("kick").synth("kick_808");
-    let snare = voice("snare").synth("snare_808");
+let drums = define_group("Drums", || {
+    let kick = voice("kick").synth("kick_808").gain(db(-6));
+    let snare = voice("snare").synth("snare_808").gain(db(-8));
 
-    pattern("kick").on(kick).step("x...x...").len(2.0).start();
-    pattern("snare").on(snare).step("....x...").len(2.0).start();
+    pattern("kick").on(kick).step("x...x...x...x...").start();
+    pattern("snare").on(snare).step("....x.......x...").start();
+
+    // Add effects to the group
+    fx("drum_verb")
+        .synth("reverb")
+        .param("room", 0.3)
+        .param("mix", 0.15)
+        .apply();
 });
-
-drums.gain(db(-3));
-drums.add_effect("comp", "compressor", #{threshold: 0.5});
 ```
 
 ### Effects
 
-Add processing to groups:
+Add processing inside groups:
 
 ```rhai
 fx("room")
     .synth("reverb")
     .param("room", 0.6)
     .param("mix", 0.3)
+    .apply();
+
+fx("tape_delay")
+    .synth("delay")
+    .param("delay_time", 0.375)
+    .param("feedback", 0.4)
+    .param("mix", 0.25)
     .apply();
 ```
 
@@ -200,24 +214,27 @@ Create custom synths using SuperCollider UGens:
 define_synthdef("my_bass")
     .param("freq", 110.0)
     .param("amp", 0.5)
-    .body(|freq, amp| {
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
         let osc = saw_ar(freq) + saw_ar(freq * 1.01);
         let filt = rlpf_ar(osc, 800.0, 0.3);
-        let env = env_perc_ar(0.01, 0.3, amp, -4.0);
-        filt * env
+
+        let env = env_adsr(0.01, 0.1, 0.5, 0.2);
+        let env = NewEnvGenBuilder(env, gate).with_done_action(2.0).build();
+
+        filt * env * amp
     });
 ```
 
-### SFZ Instruments
+### Samples
 
-Load sampled instruments:
+Load audio samples:
 
 ```rhai
-let piano = load_sfz("piano", "samples/piano.sfz");
+let hit = sample("hit", "samples/hit.wav");
+let hit_voice = voice("hit").on(hit).gain(db(-6));
 
-let piano_voice = voice("piano").on(piano).poly(16);
-
-melody("keys").on(piano_voice).notes("C4 E4 G4 C5").len(4.0).start();
+pattern("hit_pattern").on(hit_voice).step("x...x...").start();
 ```
 
 ---
@@ -246,10 +263,10 @@ All sounds are plain `.vibe` files—read them, tweak them, learn from them.
 
 ## Watch Mode (Live Coding)
 
-The magic is in `--watch`:
+Watching is on by default—just run your file:
 
 ```bash
-vibelang my_song.vibe --watch
+vibe my_song.vibe
 ```
 
 Edit your file. Save. Changes apply instantly. No restart needed. Script errors don't kill the audio—you'll see the error and keep jamming.
@@ -286,34 +303,44 @@ set_tempo(122);
 import "stdlib/drums/kicks/kick_808.vibe";
 import "stdlib/drums/snares/snare_808.vibe";
 import "stdlib/bass/sub/sub_deep.vibe";
-import "stdlib/leads/synth/lead_bright.vibe";
 import "stdlib/effects/reverb.vibe";
 
-let drums = define_group("Drums", ||{
+// Define a custom lead synth
+define_synthdef("lead_bright")
+    .param("freq", 440.0)
+    .param("amp", 0.3)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = env_adsr(0.01, 0.2, 0.5, 0.3);
+        let env = NewEnvGenBuilder(env, gate).with_done_action(2.0).build();
+        let osc = saw_ar(freq) + pulse_ar(freq * 2.0, 0.3) * 0.5;
+        let filt = rlpf_ar(osc, 2000.0, 0.4);
+        filt * env * amp
+    });
+
+let drums = define_group("Drums", || {
     let kick = voice("kick").synth("kick_808").gain(db(-6));
     let snare = voice("snare").synth("snare_808").gain(db(-8));
 
-    pattern("kick").on(kick).step("x...x...x..x....").len(4.0).start();
-    pattern("snare").on(snare).step("....x.......x...").len(4.0).start();
+    pattern("kick").on(kick).step("x...x...x..x....").start();
+    pattern("snare").on(snare).step("....x.......x...").start();
 });
 
-let bass = define_group("Bass", ||{
+let bass = define_group("Bass", || {
     let sub = voice("sub").synth("sub_deep").gain(db(-10)).poly(1);
 
     melody("bassline")
         .on(sub)
         .notes("D2 - - . | D2 - . . | F2 - - . | D2 . A1 .")
-        .len(16.0)
         .start();
 });
 
-let lead = define_group("Lead", ||{
+let lead = define_group("Lead", || {
     let synth = voice("lead").synth("lead_bright").gain(db(-12)).poly(4);
 
     melody("melody")
         .on(synth)
         .notes("D4 - - . | . . F4 - | . . D4 - | . . . .")
-        .len(4.0)
         .start();
 
     fx("space").synth("reverb").param("room", 0.5).param("mix", 0.3).apply();

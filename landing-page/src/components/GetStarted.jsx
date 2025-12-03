@@ -4,7 +4,7 @@ import './GetStarted.css';
 function GetStarted() {
   const [copied, setCopied] = useState(false);
 
-  const installCommand = 'cargo install vibelang';
+  const installCommand = 'cargo install vibelang-cli';
 
   const handleCopy = async () => {
     try {
@@ -61,9 +61,9 @@ function GetStarted() {
           <div className="get-started__step">
             <div className="get-started__step-number">3</div>
             <h3>Create Your First Beat</h3>
-            <p>Create a .vibe file and run it in watch mode.</p>
+            <p>Create a .vibe file and run it. Watching is on by default!</p>
             <div className="get-started__commands">
-              <code>$ vibelang run --watch beat.vibe</code>
+              <code>$ vibe beat.vibe</code>
             </div>
           </div>
         </div>
@@ -73,14 +73,16 @@ function GetStarted() {
             <span>Your first beat: beat.vibe</span>
           </div>
           <pre className="get-started__example-code"><code>{`// Your first VibeLang beat
-import "stdlib/drums/kicks" as kicks;
-import "stdlib/drums/hihats" as hihats;
+set_tempo(120);
 
-let kick = voice("kick", kicks.kick_808);
-let hat = voice("hat", hihats.hihat_closed);
+import "stdlib/drums/kicks/kick_808.vibe";
+import "stdlib/drums/hihats/hihat_808_closed.vibe";
 
-kick.pattern("X...X...X...X...", 120);
-hat.pattern ("..X...X...X...X.", 120);
+let kick = voice("kick").synth("kick_808").gain(db(-6));
+let hat = voice("hat").synth("hihat_808_closed").gain(db(-12));
+
+pattern("kick").on(kick).step("x...x...x...x...").start();
+pattern("hat").on(hat).step(".x.x.x.x.x.x.x.x").start();
 
 // Save the file and hear it play!
 // Try changing the pattern and saving again.`}</code></pre>

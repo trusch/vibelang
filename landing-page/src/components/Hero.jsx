@@ -36,7 +36,7 @@ function Hero() {
 
           <div className="hero__cta fade-in stagger-3">
             <a href="#start" className="btn btn-primary">
-              <span>$</span> cargo install vibelang
+              <span>$</span> cargo install vibelang-cli
             </a>
             <a href="#demo" className="btn btn-secondary">
               See it in action
@@ -71,12 +71,12 @@ function Hero() {
               <span className="hero__terminal-dot"></span>
               <span className="hero__terminal-title">beat.vibe</span>
             </div>
-            <pre className="hero__terminal-code"><code>{`// Create a beat in 4 lines
-let kick = voice("kick", drums.kick_808);
-let hat = voice("hat", drums.hihat_closed);
+            <pre className="hero__terminal-code"><code>{`// Create a beat in 5 lines
+import "stdlib/drums/kicks/kick_808.vibe";
 
-kick.pattern("X...X...X...X...", 120);
-hat.pattern("..X...X...X...X.", 120);`}</code></pre>
+let kick = voice("kick").synth("kick_808");
+
+pattern("beat").on(kick).step("x...x...x...x...").start();`}</code></pre>
           </div>
         </div>
       </div>

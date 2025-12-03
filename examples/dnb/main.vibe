@@ -1,0 +1,175 @@
+// Drum and Bass - Fast, energetic, rolling
+// Liquid/rolling style with heavy bass
+
+set_tempo(174);
+
+// Core sounds
+import "stdlib/drums/kicks/kick_acoustic.vibe";
+import "stdlib/drums/snares/snare_acoustic.vibe";
+import "stdlib/drums/hihats/hihat_808_closed.vibe";
+import "stdlib/drums/cymbals/crash_bright.vibe";
+import "stdlib/bass/reese/reese_classic.vibe";
+import "stdlib/bass/sub/sub_deep.vibe";
+import "stdlib/pads/ambient/pad_space.vibe";
+import "stdlib/effects/reverb.vibe";
+import "stdlib/effects/distortion.vibe";
+
+// === DRUMS ===
+let drums = define_group("Drums", ||{
+    let kick = voice("kick").synth("kick_acoustic").gain(db(-6));
+    let snare = voice("snare").synth("snare_acoustic").gain(db(-8));
+    let hat = voice("hat").synth("hihat_808_closed").gain(db(-14));
+    let crash = voice("crash").synth("crash_bright").gain(db(-16));
+
+    // Classic two-step kick pattern (1 bar)
+    let kick_main = pattern("kick_main")
+        .on(kick)
+        .step("x.....x.........");
+
+    // Variation with extra hits (1 bar)
+    let kick_var = pattern("kick_var")
+        .on(kick)
+        .step("x.....x.....x...");
+
+    // Snare on 2 and 4 - the backbone (1 bar)
+    let snare_main = pattern("snare_main")
+        .on(snare)
+        .step("....x.......x...");
+
+    // Snare with ghost notes - rolling feel (1 bar)
+    let snare_roll = pattern("snare_roll")
+        .on(snare)
+        .step("..3.x.3.2.3.x.3.");
+
+    // Fast 16th hats (half bar)
+    let hat_16 = pattern("hat_16")
+        .on(hat)
+        .step("x.x.x.x.x.x.x.x.");
+
+    // Breakbeat-style hat pattern (half bar)
+    let hat_break = pattern("hat_break")
+        .on(hat)
+        .step("x.x.x.x.x.x.x.x");
+
+    // Crash on the 1 of new sections (1 bar)
+    let crash_hit = pattern("crash")
+        .on(crash)
+        .step("x...............");
+
+    sequence("drums_seq")
+        .loop_bars(16)
+        // Intro - building
+        .clip(0..bars(4), kick_main)
+        .clip(0..bars(4), hat_16)
+        // Main groove
+        .clip(bars(4)..bars(12), kick_main)
+        .clip(bars(4)..bars(8), snare_main)
+        // .clip(bars(8)..bars(12), snare_roll)
+        .clip(bars(4)..bars(8), hat_16)
+        .clip(bars(8)..bars(12), hat_break)
+        // Drop variation
+        .clip(bars(12)..bars(16), kick_var)
+        // .clip(bars(12)..bars(16), snare_roll)
+        .clip(bars(12)..bars(16), hat_break)
+        // Crashes
+        .clip(bars(4)..bars(5), crash_hit)
+        .clip(bars(12)..bars(13), crash_hit)
+        .start();
+});
+
+// === BASS ===
+let bass = define_group("Bass", ||{
+    let reese = voice("reese").synth("reese_classic").gain(db(-10)).poly(1);
+    let sub = voice("sub").synth("sub_deep").gain(db(-12)).poly(1);
+
+    // Reese bass - growling mid
+    let reese_main = melody("reese_main")
+        .on(reese)
+        .notes("E2 - - - | E2 - G2 - | E2 - - - | D2 - E2 -");
+
+    // Sub bass - low end foundation
+    let sub_main = melody("sub_main")
+        .on(sub)
+        .notes("E1 - - - | E1 - - - | E1 - - - | D1 - E1 -");
+
+    // Variation with movement
+    let reese_var = melody("reese_var")
+        .on(reese)
+        .notes("E2 - E2 - | G2 - E2 - | D2 - E2 - | G2 - A2 -");
+
+    sequence("bass_seq")
+        .loop_bars(16)
+        .clip(bars(4)..bars(12), reese_main)
+        .clip(bars(4)..bars(16), sub_main)
+        .clip(bars(12)..bars(16), reese_var)
+        .start();
+
+    fx("bass_dist")
+        .synth("distortion")
+        .param("drive", 0.3)
+        .param("mix", 0.3)
+        .apply();
+});
+
+// === ATMOSPHERE ===
+let atmos = define_group("Atmos", ||{
+    let pad = voice("pad").synth("pad_space").gain(db(-18)).poly(4);
+
+    // Ethereal pad for contrast
+    let pad_main = melody("pad_main")
+        .on(pad)
+        .gate(0.95)
+        .notes("E4 - - - | - - - - | G4 - - - | - - - - | B4 - - - | - - - - | A4 - - - | - - - -");
+
+    sequence("atmos_seq")
+        .loop_bars(16)
+        .clip(0..bars(16), pad_main)
+        .start();
+
+    fx("pad_verb")
+        .synth("reverb")
+        .param("room", 0.8)
+        .param("mix", 0.5)
+        .apply();
+});
+
+// === LEAD/STAB ===
+let lead = define_group("Lead", ||{
+    // Bright pluck for energy
+    define_synthdef("dnb_stab")
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            // Gate-controlled envelope with fast attack and very short decay
+            let env = env_adsr(0.005, 0.1, 0.1, 0.05);
+            let env = NewEnvGenBuilder(env, gate).with_done_action(2.0).build();
+
+            let osc = saw_ar(freq) + pulse_ar(freq * 2.0, 0.3) * 0.5;
+            let filt = rlpf_ar(osc, 3000.0, 0.4);
+            filt * env * amp
+        });
+
+    let stab = voice("stab").synth("dnb_stab").gain(db(-10)).poly(4);
+
+    // Energetic stab pattern
+    let stab_main = melody("stab_main")
+        .on(stab)
+        .notes("E4 - - - | . . E4 - | G4 - - - | . . . .");
+
+    let stab_var = melody("stab_var")
+        .on(stab)
+        .notes("E4 - E4 - | . . G4 - | A4 - G4 - | E4 - - -");
+
+    sequence("lead_seq")
+        .loop_bars(16)
+        .clip(bars(8)..bars(12), stab_main)
+        .clip(bars(12)..bars(16), stab_var)
+        .start();
+
+    fx("stab_verb")
+        .synth("reverb")
+        .param("room", 0.3)
+        .param("mix", 0.15)
+        .apply();
+});

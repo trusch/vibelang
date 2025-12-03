@@ -13,7 +13,7 @@
 mod tui;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,82 +27,35 @@ use vibelang_core::RuntimeHandle;
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "A musical programming language for SuperCollider", long_about = None)]
 struct Args {
-    #[command(subcommand)]
-    command: Commands,
-}
+    /// Path to the .vibe file to execute
+    #[arg(value_name = "FILE")]
+    file: Option<PathBuf>,
 
-#[derive(Subcommand, Debug)]
-enum Commands {
-    /// Run a .vibe file
-    Run {
-        /// Path to the .vibe file to execute
-        #[arg(value_name = "FILE")]
-        file: PathBuf,
+    /// Disable watch mode (watching is enabled by default)
+    #[arg(long)]
+    no_watch: bool,
 
-        /// Enable watch mode for live reloading
-        #[arg(short, long)]
-        watch: bool,
+    /// Enable TUI mode (Terminal User Interface)
+    #[arg(long)]
+    tui: bool,
 
-        /// Enable TUI mode (Terminal User Interface)
-        #[arg(long)]
-        tui: bool,
-
-        /// Additional import directories
-        #[arg(short = 'I', long = "import-path", value_name = "PATH")]
-        import_paths: Vec<PathBuf>,
-    },
-
-    /// Show version information
-    Version,
+    /// Additional import directories
+    #[arg(short = 'I', long = "import-path", value_name = "PATH")]
+    import_paths: Vec<PathBuf>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    match args.command {
-        Commands::Run {
-            file,
-            watch,
-            tui: tui_mode,
-            import_paths,
-        } => run_vibe_file(file, watch, tui_mode, import_paths),
-        Commands::Version => {
-            println!("vibe {}", env!("CARGO_PKG_VERSION"));
-            println!();
-            println!("Part of the VibeLang project");
-            println!("A musical programming language for SuperCollider");
-            println!();
-            println!("Modular Architecture:");
-            println!("  - vibelang-core: State management and scheduling");
-            println!("  - vibelang-dsp:  SynthDef/UGen generation");
-            println!(
-                "  - vibelang-std:  Standard library ({} files)",
-                count_stdlib_files()
-            );
-            Ok(())
-        }
-    }
-}
+    // Require a file argument
+    let file = args.file.ok_or_else(|| {
+        anyhow::anyhow!("Missing required argument: FILE\n\nUsage: vibe <FILE> [OPTIONS]\n\nFor more information, try '--help'")
+    })?;
 
-/// Count the number of .vibe files in the stdlib.
-fn count_stdlib_files() -> usize {
-    let stdlib_path = vibelang_std::stdlib_path();
-    walkdir(stdlib_path)
-}
+    // Watch mode is ON by default, disabled with --no-watch
+    let watch = !args.no_watch;
 
-fn walkdir(path: &str) -> usize {
-    let mut count = 0;
-    if let Ok(entries) = std::fs::read_dir(path) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                count += walkdir(path.to_str().unwrap_or(""));
-            } else if path.extension().and_then(|s| s.to_str()) == Some("vibe") {
-                count += 1;
-            }
-        }
-    }
-    count
+    run_vibe_file(file, watch, args.tui, args.import_paths)
 }
 
 fn run_vibe_file(
