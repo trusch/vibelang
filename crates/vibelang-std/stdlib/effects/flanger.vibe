@@ -1,0 +1,45 @@
+// Flanger Effect
+//
+// Creates a sweeping, jet-like sound using short modulated delays with feedback.
+//
+// Usage:
+//   group.add_effect("flanger", "flanger", #{
+//     rate: 0.3,
+//     depth: 0.005,
+//     feedback: 0.5,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   rate: LFO rate in Hz (0.05 to 5.0)
+//   depth: Modulation depth in seconds (0.001 to 0.01)
+//   feedback: Feedback amount (0.0 to 0.95)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("flanger", |builder| {
+    builder
+        .param("rate", 0.3)
+        .param("depth", 0.005)
+        .param("feedback", 0.5)
+        .param("mix", 0.5)
+        .body(|input, rate, depth, feedback, mix| {
+            // LFO for modulation
+            let lfo = sin_osc_ar(rate, 0.0);
+
+            // Modulated delay time (shorter than chorus for flanger effect)
+            let delay_time = 0.003 + (depth * lfo);
+
+            // Create delayed signals with feedback
+            let delayed_left = delay_c_ar(input[0] + (feedback * delay_c_ar(input[0], 0.02, delay_time)), 0.02, delay_time);
+            let delayed_right = delay_c_ar(input[1] + (feedback * delay_c_ar(input[1], 0.02, delay_time)), 0.02, delay_time);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * delayed_left,
+                (1.0 - mix) * input[1] + mix * delayed_right
+            ];
+
+            output
+        })
+});
+

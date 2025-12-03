@@ -1,0 +1,29 @@
+[package]
+name = "vibelang-dsp"
+version = "0.1.0"
+edition = "2021"
+description = "SynthDef generation and UGen DSL for VibeLang"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/trusch/vibelang"
+keywords = ["music", "audio", "supercollider", "synthesizer"]
+categories = ["multimedia::audio"]
+
+[dependencies]
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Binary encoding for SynthDef format
+byteorder = "1.5"
+
+# Scripting (for Rhai integration)
+rhai = { version = "1.17", features = ["sync", "internals"] }
+
+# Logging
+log = "0.4"
+
+[build-dependencies]
+serde_json = "1.0"
+
+[dev-dependencies]
+env_logger = "0.11"

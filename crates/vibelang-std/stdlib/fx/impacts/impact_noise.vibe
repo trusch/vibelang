@@ -1,0 +1,24 @@
+// Genre: All | Character: Noise-based impact, versatile
+define_synthdef("impact_noise", |builder| {
+    builder
+        .param("amp", 0.8)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Quick decay
+            let envelope = env_perc(0.002, 0.6);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Layered noise for fullness
+            let low_noise = lpf_ar(pink_noise_ar(), 800.0) * 0.5;
+            let mid_noise = rlpf_ar(white_noise_ar(), 2500.0, 0.5) * 0.3;
+            let high_noise = hpf_ar(white_noise_ar(), 4000.0) * 0.2;
+
+            let mix = low_noise + mid_noise + high_noise;
+
+            mix * env * amp
+        })
+});
+

@@ -1,0 +1,31 @@
+// Genre: House, Techno | Character: Classic 909, tight and punchy
+define_synthdef("kick_909", |builder| {
+    builder
+        .param("freq", 65.0)
+        .param("amp", 1.0)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Tight amplitude envelope
+            let amp_envelope = env_perc(0.001, 0.25);
+            let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Shorter pitch sweep than 808
+            let pitch_envelope = env_perc(0.001, 0.04);
+            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let freq_mod = pitch_env * freq * 2.5;
+
+            // Main tone
+            let sig = sin_osc_ar(freq + freq_mod) * amp_env;
+
+            // More pronounced click for 909 character
+            let click_envelope = env_perc(0.0001, 0.008);
+            let click_env = NewEnvGenBuilder(click_envelope, gate).build();
+            let click = white_noise_ar() * click_env * 0.15;
+
+            (sig + click) * amp
+        })
+});
+

@@ -1,0 +1,27 @@
+// Genre: Pop, R&B | Character: Finger snap, quick and sharp
+define_synthdef("snap")
+    .param("amp", 1.0)
+    .body(|amp| {
+        let gate = dc_ar(1.0);
+
+        // Very short envelope
+        let envelope = env_perc(0.0003, 0.035);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Bright noise component
+        let noise = white_noise_ar();
+        let filtered_noise = hpf_ar(noise, 3000.0) * 0.6;
+
+        // Tonal component for body
+        let tone = sin_osc_ar(1200.0) * 0.4;
+
+        // Very sharp attack click
+        let click_envelope = env_perc(0.0001, 0.003);
+        let click_env = NewEnvGenBuilder(click_envelope, gate).build();
+        let click = white_noise_ar() * click_env * 0.3;
+
+        (filtered_noise + tone + click) * env * amp
+    });
+

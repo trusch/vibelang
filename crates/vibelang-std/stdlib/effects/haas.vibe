@@ -1,0 +1,39 @@
+// Haas Effect (Stereo Widener)
+//
+// Creates stereo width using the Haas effect (precedence effect) with a short delay.
+//
+// Usage:
+//   group.add_effect("haas", "haas", #{
+//     delay_time: 0.015,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   delay_time: Delay time in seconds (0.005 to 0.04)
+//   mix: Effect intensity (0.0 = no effect, 1.0 = maximum)
+
+define_fx("haas", |builder| {
+    builder
+        .param("delay_time", 0.015)
+        .param("mix", 0.5)
+        .body(|input, delay_time, mix| {
+            // Mix to mono
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Delay one channel
+            let delayed = delay_n_ar(mono, 0.1, delay_time);
+
+            // Create stereo image
+            let haas_left = mono;
+            let haas_right = delayed;
+
+            // Mix with original
+            let output = [
+                (1.0 - mix) * input[0] + mix * haas_left,
+                (1.0 - mix) * input[1] + mix * haas_right
+            ];
+
+            output
+        })
+});
+

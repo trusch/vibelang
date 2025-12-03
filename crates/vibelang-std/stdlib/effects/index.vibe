@@ -1,0 +1,59 @@
+// Effects Library Index
+//
+// Import this file to load all standard effects into your project.
+// Usage: import "stdlib/effects/index.vibe"
+
+// Filters
+import "stdlib/effects/lowpass.vibe";
+import "stdlib/effects/highpass.vibe";
+import "stdlib/effects/bandpass.vibe";
+import "stdlib/effects/moog_filter.vibe";
+import "stdlib/effects/comb_filter.vibe";
+import "stdlib/effects/formant_filter.vibe";
+
+// Modulation Effects
+import "stdlib/effects/chorus.vibe";
+import "stdlib/effects/flanger.vibe";
+import "stdlib/effects/phaser.vibe";
+import "stdlib/effects/tremolo.vibe";
+import "stdlib/effects/vibrato.vibe";
+import "stdlib/effects/auto_pan.vibe";
+import "stdlib/effects/rotary.vibe";
+import "stdlib/effects/ring_mod.vibe";
+
+// Delay Effects
+import "stdlib/effects/delay.vibe";
+import "stdlib/effects/ping_pong_delay.vibe";
+import "stdlib/effects/tape_delay.vibe";
+
+// Reverb Effects
+import "stdlib/effects/reverb.vibe";
+import "stdlib/effects/reverb_minimal.vibe";
+import "stdlib/effects/gverb.vibe";
+import "stdlib/effects/plate_reverb.vibe";
+
+// Dynamics
+import "stdlib/effects/compressor.vibe";
+import "stdlib/effects/limiter.vibe";
+import "stdlib/effects/gate.vibe";
+import "stdlib/effects/ducking.vibe";
+import "stdlib/effects/amp_follower.vibe";
+
+// Distortion/Saturation
+import "stdlib/effects/distortion.vibe";
+import "stdlib/effects/overdrive.vibe";
+import "stdlib/effects/bitcrush.vibe";
+
+// Spatial Effects
+import "stdlib/effects/stereo_width.vibe";
+import "stdlib/effects/haas.vibe";
+
+// Character/Texture
+import "stdlib/effects/lo_fi.vibe";
+import "stdlib/effects/vinyl.vibe";
+
+// Utility
+import "stdlib/effects/eq_three_band.vibe";
+import "stdlib/effects/dc_blocker.vibe";
+import "stdlib/effects/pitch_shift.vibe";
+

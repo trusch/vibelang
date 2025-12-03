@@ -1,0 +1,31 @@
+// Genre: Neurofunk, Techno | Character: Aggressive FM bass with high modulation
+define_synthdef("fm_bass_aggressive", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("fm_amount", 5.0)
+        .param("amp", 0.65)
+        .param("gate", 1.0)
+        .body(|freq, fm_amount, amp, gate| {
+
+            // Punchy envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Aggressive FM envelope
+            let fm_envelope = env_asr(0.005, 1.0, 0.1);
+            let fm_env = NewEnvGenBuilder(fm_envelope, gate).build();
+
+            // High FM amount for aggression
+            let modulator = sin_osc_ar(freq * 2.0) * fm_env * freq * fm_amount;
+            let carrier = sin_osc_ar(freq + modulator);
+
+            // Clip for extra aggression
+            let driven = clip(carrier, -0.9, 0.9);
+
+            driven * env * amp
+        })
+});
+

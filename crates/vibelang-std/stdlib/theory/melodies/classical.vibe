@@ -1,0 +1,127 @@
+// ============================================================================
+// Classical Music Melodies
+// ============================================================================
+// Famous classical music themes and melodies (all public domain)
+// Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
+
+// Beethoven - Ode to Joy (Symphony No. 9) - 4/4 time
+fn ode_to_joy() {
+    return "E4 - E4 - F4 - G4 - | G4 - F4 - E4 - D4 - | C4 - C4 - D4 - E4 - | E4 - - . D4 - D4 - - - |";
+}
+
+// Beethoven - Für Elise - 3/8 time
+fn fur_elise() {
+    return "E5 Eb5 | E5 Eb5 E5 B4 | D5 C5 A4 - - | . C4 E4 A4 | B4 - - | . E4 Ab4 B4 | C5 - - |";
+}
+fn fur_elise_2() {
+    // First loop
+    let phrase1 = "E5 Eb5 | E5 Eb5 E5 B4 | D5 C5 A4 - - | . C4 E4 A4 | B4 - - | . E4 Ab4 B4 | C5 - - |";
+    // Alternate second ending (descending A4 G#4 E4 instead of ending on C5)
+    let phrase2 = "E5 Eb5 | E5 Eb5 E5 B4 | D5 C5 A4 - - | . C4 E4 A4 | B4 - - | . E4 Ab4 B4 | C4 - - |";
+    return phrase1 + " " + phrase2;
+}
+
+// Tchaikovsky - Swan Lake Theme - 4/4 time
+fn swan_lake() {
+    return "D4 - - - F4 - A4 - | C5 - - - A4 - F4 - | D4 - - - F4 - A4 - | E4 - - - G4 - Bb4 - | D5 - - - Bb4 - G4 - | E4 - - - G4 - F4 - |";
+}
+
+// Mozart - Eine Kleine Nachtmusik - 4/4 time
+fn eine_kleine_nachtmusik() {
+    return "G4 . D5 . | G4 . D5 . | G4 D5 G5 D5 | B4 G4 D4 - |";
+}
+
+// Bizet - Carmen (Habanera) - 2/4 time, slow and sultry
+fn carmen_habanera() {
+    return "D4 - D4 D4 | Eb4 - - - | F4 - F4 F4 | Gb4 - - - | Ab4 - Ab4 Ab4 | A4 - - - | Bb4 - - - | . . . . |";
+}
+
+// Rossini - William Tell Overture (Finale) - Fast 2/4
+fn william_tell_overture() {
+    return "G4 G4 G4 G4 G4 G4 C5 . | E4 E4 E4 E4 E4 E4 G4 . | C5 C5 C5 C5 C5 C5 E5 . | G5 - - - . . . . |";
+}
+
+// Strauss - The Blue Danube - 3/4 waltz time
+fn blue_danube() {
+    return "C5 - - | E5 - - | G5 - - | C6 - - | E5 - - | G5 - - | C6 - - | E5 - - |";
+}
+
+// Wagner - Ride of the Valkyries - 9/8 time
+fn ride_of_valkyries() {
+    return "B4 D5 F5 | B5 - - | B4 D5 F5 | B5 - - | B4 D5 F5 D5 B4 | A4 - G4 - A4 - |";
+}
+
+// Vivaldi - Spring (Four Seasons) - 4/4 time
+fn spring_vivaldi() {
+    return "E5 E5 E5 E5 E5 E5 E5 G5 | C5 - D5 - E5 - - - |";
+}
+
+// Pachelbel - Canon in D - 4/4 time, whole notes in bass
+fn canon_in_d() {
+    return "F#4 - - - | E4 - - - | D4 - - - | C#4 - - - | B3 - - - | A3 - - - | B3 - - - | C#4 - - - |";
+}
+
+// Beethoven - Moonlight Sonata - 4/4 time, triplet feel
+fn moonlight_sonata() {
+    return "G#3 C#4 E4 | G#3 C#4 E4 | G#3 C#4 E4 | G#3 C#4 E4 |";
+}
+
+// Mozart - Turkish March (Rondo Alla Turca) - 2/4 time
+fn turkish_march() {
+    return "B4 A4 Ab4 A4 | C5 - D5 C5 | B4 C5 E5 - |";
+}
+
+// Bach - Minuet in G - 3/4 time
+fn minuet_in_g() {
+    return "D5 - - | G4 A4 B4 | C5 - - | D5 - - | G4 - - | G4 - - |";
+}
+
+// Bach - Toccata and Fugue in D Minor - Free time, dramatic
+fn toccata_fugue() {
+    return "A4 - G4 - A4 - - - | . . G4 - F4 - E4 - | D4 - C#4 - D4 - - - |";
+}
+
+// Grieg - Hall of the Mountain King - Starts slow, builds
+fn hall_mountain_king() {
+    return "C#4 - D4 - E4 - F#4 - | G4 - F#4 - E4 - D4 - | B3 - C#4 - D4 - E4 - | F#4 - E4 - D4 - C#4 - |";
+}
+
+// Brahms - Hungarian Dance No. 5 - Fast 2/4 time
+fn hungarian_dance_5() {
+    return "D4 - F#4 A4 | D5 - C#5 D5 | E5 - D5 - | C#5 - B4 - | A4 - G4 - | F#4 - E4 - |";
+}
+
+// Debussy - Clair de Lune - Slow, flowing 9/8
+fn clair_de_lune() {
+    return "E4 - - F#4 - - G#4 - - | . . . B4 - - . . . | A4 - - . . . G#4 - - | . . . F#4 - - . . . | E4 - - . . . |";
+}
+
+// Satie - Gymnopédie No. 1 - Very slow 3/4
+fn gymnopedie_1() {
+    return "G4 - - | B4 - - | A4 - - | G4 - - | E4 - - | D4 - - | . . . |";
+}
+
+// Tchaikovsky - Dance of the Sugar Plum Fairy - 2/4 time
+fn sugar_plum_fairy() {
+    return "E5 G#5 F#5 D#5 | E5 - . . | B4 D#5 C#5 A#4 | B4 - . . |";
+}
+
+// Vivaldi - Winter (Four Seasons) - Fast 4/4
+fn winter_vivaldi() {
+    return "F5 Eb5 D5 C5 | D5 F5 Eb5 D5 | C5 Bb4 Ab4 G4 | Ab4 Bb4 C5 - |";
+}
+
+// Handel - Hallelujah Chorus - Majestic 4/4
+fn hallelujah_chorus() {
+    return "A4 - A4 - A4 - E5 - | D5 - C#5 - D5 - - - | A4 - A4 - A4 - E5 - | D5 - C#5 - D5 - - - |";
+}
+
+// Mozart - Symphony No. 40 - Fast 4/4
+fn mozart_symphony_40() {
+    return "Bb4 A4 Bb4 A4 Bb4 C5 A4 - | G4 F4 G4 F4 G4 A4 F4 - |";
+}
+
+// Chopin - Nocturne Op. 9 No. 2 - Slow, expressive 12/8
+fn nocturne_op9_no2() {
+    return "Bb4 - - C5 - - D5 - - Eb5 - - | F5 - - . . . G5 - - Ab5 - - | G5 - - F5 - - Eb5 - - D5 - - | C5 - - Bb4 - - - - - - - - |";
+}

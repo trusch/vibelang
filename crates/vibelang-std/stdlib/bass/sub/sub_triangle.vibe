@@ -1,0 +1,26 @@
+// Genre: House, Techno | Character: Triangle wave sub with odd harmonics
+define_synthdef("sub_triangle", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.8)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Smooth envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Approximate triangle with sine and harmonics
+            let fundamental = sin_osc_ar(freq);
+            let harmonic3 = sin_osc_ar(freq * 3.0) * 0.111;
+            let harmonic5 = sin_osc_ar(freq * 5.0) * 0.04;
+
+            let sig = fundamental + harmonic3 + harmonic5;
+
+            sig * env * amp * 0.8
+        })
+});
+

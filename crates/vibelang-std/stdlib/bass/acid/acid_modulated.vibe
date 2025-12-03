@@ -1,0 +1,35 @@
+// Genre: Techno, Experimental | Character: Frequency modulated acid
+define_synthdef("acid_modulated", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filter_envelope = env_asr(0.01, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+
+            // Pitch modulation envelope
+            let pitch_envelope = env_asr(0.005, 1.0, 0.1);
+            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let pitch_mod = pitch_env * freq * 0.5;
+
+            // Modulated sawtooth
+            let osc = saw_ar(freq + pitch_mod);
+
+            // Filter sweep
+            let mod_cutoff = 700.0 + (filter_env * 2200.0);
+            let filtered = rlpf_ar(osc, mod_cutoff, 0.3);
+
+            filtered * env * amp
+        })
+});
+

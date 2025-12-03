@@ -1,0 +1,28 @@
+// Genre: IDM, Experimental | Character: Metallic, inharmonic FM bass
+define_synthdef("fm_bass_metallic", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("fm_amount", 4.0)
+        .param("amp", 0.65)
+        .param("gate", 1.0)
+        .body(|freq, fm_amount, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.008, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // FM envelope
+            let fm_envelope = env_asr(0.008, 1.0, 0.1);
+            let fm_env = NewEnvGenBuilder(fm_envelope, gate).build();
+
+            // Inharmonic ratio for metallic character
+            let modulator = sin_osc_ar(freq * 2.3) * fm_env * freq * fm_amount;
+            let carrier = sin_osc_ar(freq + modulator);
+
+            carrier * env * amp
+        })
+});
+

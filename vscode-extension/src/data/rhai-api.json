@@ -1,0 +1,995 @@
+[
+  {
+    "name": "set_tempo",
+    "description": "Set the global tempo in BPM (beats per minute).",
+    "signature": "set_tempo(bpm: float)",
+    "example": "set_tempo(128);\nset_tempo(128.0);"
+  },
+  {
+    "name": "set_quantization",
+    "description": "Set the global quantization grid for clip launches. Valid values: \"bar\", \"beat\", \"1/2\", \"1/4\", \"1/8\", \"1/16\", etc.",
+    "signature": "set_quantization(grid: string)",
+    "example": "set_quantization(\"bar\");\nset_quantization(\"beat\");"
+  },
+  {
+    "name": "set_time_signature",
+    "description": "Set the time signature (numerator and denominator).",
+    "signature": "set_time_signature(numerator: int, denominator: int)",
+    "example": "set_time_signature(4, 4);\nset_time_signature(3, 4);"
+  },
+  {
+    "name": "get_tempo",
+    "description": "Get the current tempo in BPM.",
+    "signature": "get_tempo() -> float",
+    "example": "let bpm = get_tempo();"
+  },
+  {
+    "name": "get_current_beat",
+    "description": "Get the current beat position in the transport.",
+    "signature": "get_current_beat() -> float",
+    "example": "let beat = get_current_beat();"
+  },
+  {
+    "name": "get_current_bar",
+    "description": "Get the current bar number (based on time signature).",
+    "signature": "get_current_bar() -> int",
+    "example": "let bar = get_current_bar();"
+  },
+  {
+    "name": "define_synthdef",
+    "description": "Define a new synthesizer definition with parameters and a DSP body. Use the builder pattern to add params and the audio processing body.",
+    "signature": "define_synthdef(name: string)",
+    "example": "define_synthdef(\"kick\")\n    .param(\"freq\", 60.0)\n    .param(\"amp\", 0.5)\n    .body(|freq, amp| {\n        let env = env_perc(0.01, 0.3);\n        sin_ar(freq) * env * amp\n    });"
+  },
+  {
+    "name": "define_fx",
+    "description": "Define a new effect processor with parameters and DSP body. Effects process incoming audio (available as 'input').",
+    "signature": "define_fx(name: string)",
+    "example": "define_fx(\"my_reverb\")\n    .param(\"mix\", 0.3)\n    .param(\"room\", 0.5)\n    .body(|input, mix, room| {\n        let wet = free_verb_ar(input, mix, room, 0.5);\n        input * (1.0 - mix) + wet * mix\n    });"
+  },
+  {
+    "name": "define_group",
+    "description": "Define a mixer group with a name and body closure. Groups create hierarchical audio routing. All voices, patterns, melodies, and FX defined within are routed through the group's audio bus. Returns a GroupHandle.",
+    "signature": "define_group(name: string, body: fn) -> GroupHandle",
+    "example": "let drums = define_group(\"Drums\", || {\n    let kick = voice(\"kick\").synth(\"kick_909\").gain(db(-6));\n    pattern(\"kick_pat\").on(kick).step(\"x...x...\").start();\n    fx(\"comp\").synth(\"compressor\").param(\"ratio\", 4.0).apply();\n});"
+  },
+  {
+    "name": "group",
+    "description": "Get a handle to an existing group by name. Allows controlling groups defined elsewhere.",
+    "signature": "group(name: string) -> GroupHandle",
+    "example": "let drums = group(\"Drums\");\ndrums.gain(db(-3));\ndrums.mute().now();"
+  },
+  {
+    "name": "voice",
+    "description": "Create a voice builder for a synth or sample voice. Voices are used with patterns and melodies to generate sound. Returns a Voice that can be configured with builder methods.",
+    "signature": "voice(name: string) -> Voice",
+    "example": "let kick = voice(\"kick\")\n    .on(\"kick_909\")     // Use synthdef, sample, or SFZ\n    .poly(1)             // Polyphony\n    .gain(db(-6));       // Volume"
+  },
+  {
+    "name": "pattern",
+    "description": "Create a rhythmic pattern builder. Patterns trigger voices at specified beat positions using step notation. Supports bar separators (|), velocity tokens (x, X, 0-9), and hold tokens (-).",
+    "signature": "pattern(name: string) -> Pattern",
+    "example": "// Basic 4-on-floor kick\npattern(\"kick\").on(kick).step(\"x...x...x...x...\").start();\n\n// With bar separators and velocity\npattern(\"hat\").on(hat).step(\"x.x.x.x. | X.x.X.x.\").start();\n\n// Euclidean rhythm\npattern(\"perc\").on(perc).euclid(5, 8).start();"
+  },
+  {
+    "name": "melody",
+    "description": "Create a melodic sequence builder. Melodies play notes at specified pitches with optional durations. Supports note names (C4, F#3), bar separators (|), rests (.), and hold tokens (-) for sustain.",
+    "signature": "melody(name: string) -> Melody",
+    "example": "// Simple bass line with bar separators\nmelody(\"bass\").on(bass)\n    .notes(\"E1 - - - | G1 - - - | E1 - - - | D1 - E1 -\")\n    .start();\n\n// With scale and transposition\nmelody(\"lead\").on(lead)\n    .scale(\"minor\")\n    .root(\"E\")\n    .notes([\"C4\", \"E4\", \"G4\", \"B4\"])\n    .gate(0.5)\n    .transpose(12)\n    .start();"
+  },
+  {
+    "name": "sequence",
+    "description": "Create a sequence builder for arranging patterns, melodies, and fades over time. Sequences allow complex arrangements by clipping sources into time ranges.",
+    "signature": "sequence(name: string) -> Sequence",
+    "example": "// Create a 16-bar sequence\nsequence(\"intro\")\n    .loop_bars(16)\n    .clip(0..bars(8), kick_pattern)\n    .clip(bars(4)..bars(16), bass_melody)\n    .clip(bars(8)..bars(16), lead_melody)\n    .start();\n\n// One-shot clip\nsequence(\"fill\")\n    .loop_bars(1)\n    .clip_once(0..bars(1), fill_pattern)\n    .start();"
+  },
+  {
+    "name": "sample",
+    "description": "Load an audio sample from a file. Returns a SampleHandle that can be used with voice().on(). Supports WAV, AIFF, and other common formats.",
+    "signature": "sample(name: string, path: string) -> SampleHandle",
+    "example": "let kick = sample(\"kick\", \"samples/kick.wav\");\nvoice(\"kick_voice\").on(kick);\n\n// With time-stretching\nlet loop = sample(\"loop\", \"samples/break.wav\")\n    .warp_to_bpm(128.0);"
+  },
+  {
+    "name": "load_sfz",
+    "description": "Load an SFZ instrument from a file. SFZ instruments support multi-sample mapping with velocity layers and key ranges. Returns an SfzInstrumentHandle.",
+    "signature": "load_sfz(name: string, path: string) -> SfzInstrumentHandle",
+    "example": "let piano = load_sfz(\"piano\", \"instruments/piano.sfz\");\nvoice(\"piano_voice\").on(piano).poly(8);\n\n// Use with melody\nmelody(\"chords\").on(voice(\"piano_voice\"))\n    .notes(\"C3 E3 G3 | C3 E3 G3\")\n    .start();"
+  },
+  {
+    "name": "load_vst_instrument",
+    "description": "Load a VST instrument plugin. Returns a VstInstrumentHandle that can receive MIDI from voices.",
+    "signature": "load_vst_instrument(name: string, plugin_key: string) -> VstInstrumentHandle",
+    "example": "let synth = load_vst_instrument(\"my-synth\", \"Vital\");\nvoice(\"vst_voice\").on(synth);"
+  },
+  {
+    "name": "load_vst_effect",
+    "description": "Load a VST effect plugin for use in a group's FX chain.",
+    "signature": "load_vst_effect(name: string, plugin_key: string) -> VstEffectHandle",
+    "example": "let reverb = load_vst_effect(\"valhalla\", \"ValhallaRoom\");"
+  },
+  {
+    "name": "fx",
+    "description": "Create an effect in the current group's FX chain. Effects process audio from the group using defined synthdefs.",
+    "signature": "fx(name: string) -> Fx",
+    "example": "fx(\"reverb\")\n    .synth(\"reverb\")\n    .param(\"room\", 0.6)\n    .param(\"mix\", 0.3)\n    .apply();\n\n// Bypass effect\nfx(\"filter\").synth(\"lpf\").bypass(true).apply();"
+  },
+  {
+    "name": "fade",
+    "description": "Create a parameter fade builder for smooth transitions. Can target groups, voices, patterns, melodies, or effects.",
+    "signature": "fade(name: string) -> FadeBuilder",
+    "example": "// Fade group volume\nfade(\"intro_fade\")\n    .on_group(\"Drums\")\n    .param(\"amp\")\n    .from(db(-20))\n    .to(db(0))\n    .over_bars(8)\n    .start();\n\n// Fade effect parameter\nfade(\"filter_sweep\")\n    .on_effect(\"moog\")\n    .param(\"cutoff\")\n    .from(200.0)\n    .to(8000.0)\n    .over(\"4bar\")\n    .start();"
+  },
+  {
+    "name": "automation",
+    "description": "Create automation for a parameter with curve points.",
+    "signature": "automation(name: string) -> Automation",
+    "example": "automation(\"filter_lfo\")\n    .to_param(\"cutoff\")\n    .curve([(0.0, 500.0), (0.5, 2000.0), (1.0, 500.0)])\n    .loop(true)\n    .start();"
+  },
+  {
+    "name": "scene",
+    "description": "Create a scene definition with saved parameter states.",
+    "signature": "scene(name: string) -> Scene",
+    "example": "scene(\"drop\").save();"
+  },
+  {
+    "name": "scene_morph",
+    "description": "Create a morphing transition between scenes.",
+    "signature": "scene_morph(from: string, to: string) -> SceneMorph",
+    "example": "scene_morph(\"intro\", \"drop\")\n    .over(\"8bar\")\n    .quantize(\"bar\")\n    .start();"
+  },
+  {
+    "name": "midi_device",
+    "description": "Create a MIDI device connection for input/output.",
+    "signature": "midi_device(name: string) -> MidiDevice",
+    "example": "let controller = midi_device(\"launchpad\")\n    .input(\"Launchpad Mini\")\n    .output(\"Launchpad Mini\");"
+  },
+  {
+    "name": "midi_map",
+    "description": "Create a MIDI mapping from a controller to a parameter.",
+    "signature": "midi_map(source: MidiSource) -> MidiMap",
+    "example": "midi_map(controller.cc(1))\n    .to_param(\"filter_cutoff\")\n    .range(200.0, 8000.0)\n    .curve(\"exponential\")\n    .glide_ms(50.0);"
+  },
+  {
+    "name": "define_macro",
+    "description": "Define a macro that can be triggered later to execute a closure.",
+    "signature": "define_macro(name: string, body: fn)",
+    "example": "define_macro(\"drop\", || {\n    group(\"Drums\").unmute().now();\n    group(\"Bass\").unmute().now();\n});"
+  },
+  {
+    "name": "trigger_macro",
+    "description": "Trigger a previously defined macro by name.",
+    "signature": "trigger_macro(name: string)",
+    "example": "trigger_macro(\"drop\");"
+  },
+  {
+    "name": "define_send",
+    "description": "Define an auxiliary send/return bus for parallel effects processing.",
+    "signature": "define_send(name: string, fx_name: string)",
+    "example": "define_send(\"reverb_bus\", \"hall_reverb\");\n// Use with group.send(\"reverb_bus\", 0.3)"
+  },
+  {
+    "name": "record",
+    "description": "Start recording audio output to a file.",
+    "signature": "record(path: string)",
+    "example": "record(\"output/my_track.wav\");"
+  },
+  {
+    "name": "stop_recording",
+    "description": "Stop the current recording.",
+    "signature": "stop_recording()",
+    "example": "stop_recording();"
+  },
+  {
+    "name": "db",
+    "description": "Convert decibels to linear amplitude. Negative dB values are converted to amplitude (e.g., -6dB = 0.5). Use for all gain/volume parameters.",
+    "signature": "db(value: float) -> float",
+    "example": "voice(\"kick\").gain(db(-6));  // Half volume\nfx(\"comp\").param(\"threshold\", db(-12));"
+  },
+  {
+    "name": "note",
+    "description": "Calculate note duration in beats as a fraction. Useful for precise timing calculations.",
+    "signature": "note(numerator: int, denominator: int) -> float",
+    "example": "note(1, 4)   // 0.25 beats (quarter note)\nnote(1, 16)  // 0.0625 beats (sixteenth note)\nnote(3, 8)   // 0.375 beats (dotted eighth)"
+  },
+  {
+    "name": "bars",
+    "description": "Convert bars to beats (assuming 4/4 time signature). Essential for sequence clip ranges.",
+    "signature": "bars(count: float) -> int",
+    "example": "sequence(\"intro\").loop_bars(16)\n    .clip(0..bars(8), intro_pattern)\n    .clip(bars(8)..bars(16), build_pattern)\n    .start();"
+  },
+  {
+    "name": "sleep",
+    "description": "Pause execution for a specified duration. Accepts humantime strings like \"1s\", \"500ms\", \"2m\".",
+    "signature": "sleep(duration: string)",
+    "example": "sleep(\"1s\");      // 1 second\nsleep(\"500ms\");   // 500 milliseconds\nsleep(\"2m\");      // 2 minutes"
+  },
+  {
+    "name": "sleep_secs",
+    "description": "Pause execution for a specified number of seconds (float).",
+    "signature": "sleep_secs(seconds: float)",
+    "example": "sleep_secs(1.5);  // 1.5 seconds"
+  },
+  {
+    "name": "exit",
+    "description": "Exit the program cleanly with code 0.",
+    "signature": "exit()",
+    "example": "beep_voice.trigger();\nsleep(\"1s\");\nexit();"
+  },
+  {
+    "name": "exit_with_code",
+    "description": "Exit the program with a specific exit code.",
+    "signature": "exit_with_code(code: int)",
+    "example": "exit_with_code(1);  // Exit with error"
+  },
+  {
+    "name": "all_group_names",
+    "description": "Get a list of all defined group names.",
+    "signature": "all_group_names() -> Array",
+    "example": "let groups = all_group_names();\nfor name in groups { print(name); }"
+  },
+  {
+    "name": "all_voice_names",
+    "description": "Get a list of all defined voice names.",
+    "signature": "all_voice_names() -> Array",
+    "example": "let voices = all_voice_names();"
+  },
+  {
+    "name": "get_voice",
+    "description": "Get a voice by name.",
+    "signature": "get_voice(name: string) -> Voice",
+    "example": "let kick = get_voice(\"kick\");"
+  },
+  {
+    "name": "all_pattern_names",
+    "description": "Get a list of all defined pattern names.",
+    "signature": "all_pattern_names() -> Array",
+    "example": "let patterns = all_pattern_names();"
+  },
+  {
+    "name": "get_pattern",
+    "description": "Get a pattern by name.",
+    "signature": "get_pattern(name: string) -> Pattern",
+    "example": "let kick_pat = get_pattern(\"kick_main\");"
+  },
+  {
+    "name": "all_melody_names",
+    "description": "Get a list of all defined melody names.",
+    "signature": "all_melody_names() -> Array",
+    "example": "let melodies = all_melody_names();"
+  },
+  {
+    "name": "get_melody",
+    "description": "Get a melody by name.",
+    "signature": "get_melody(name: string) -> Melody",
+    "example": "let bass = get_melody(\"bass_line\");"
+  },
+  {
+    "name": "all_effect_names",
+    "description": "Get a list of all defined effect names.",
+    "signature": "all_effect_names() -> Array",
+    "example": "let effects = all_effect_names();"
+  },
+  {
+    "name": "get_effect",
+    "description": "Get an effect by name.",
+    "signature": "get_effect(name: string) -> Effect",
+    "example": "let verb = get_effect(\"reverb\");\nverb.set(\"room\", 0.8);"
+  },
+  {
+    "name": "active_synth_count",
+    "description": "Get the number of currently active synths.",
+    "signature": "active_synth_count() -> int",
+    "example": "let count = active_synth_count();"
+  },
+  {
+    "name": "melody_gen",
+    "description": "Create a generative melody builder with algorithmic composition features.",
+    "signature": "melody_gen(steps: int) -> MelodyGen",
+    "example": "let gen = melody_gen(16)\n    .tonality(\"E\", \"minor\")\n    .range(\"E2\", \"E4\")\n    .density(0.6)\n    .seed(42)\n    .render();"
+  },
+  {
+    "name": "detect_bpm",
+    "description": "Detect BPM from a group's audio (experimental).",
+    "signature": "detect_bpm(group: string) -> float",
+    "example": "let bpm = detect_bpm(\"Drums\");"
+  },
+  {
+    "name": "set_group_gain",
+    "description": "Set the gain of a group directly by path.",
+    "signature": "set_group_gain(path: string, gain: float)",
+    "example": "set_group_gain(\"Drums\", db(-6));"
+  },
+  {
+    "name": "nudge_transport",
+    "description": "Move the transport by a number of beats (positive or negative).",
+    "signature": "nudge_transport(beats: float)",
+    "example": "nudge_transport(4.0);   // Forward 4 beats\nnudge_transport(-8.0);  // Back 8 beats"
+  },
+  {
+    "name": "fade_group_gain",
+    "description": "Fade a group's gain over time (shorthand for fade().on_group().param(\"amp\")).",
+    "signature": "fade_group_gain(group: string, target: float, duration: float)",
+    "example": "fade_group_gain(\"Drums\", db(-20), 8.0);"
+  },
+  {
+    "name": "fade_param",
+    "description": "Create a parameter fade (shorthand).",
+    "signature": "fade_param(target: string, param: string, value: float, duration: float)",
+    "example": "fade_param(\"Bass\", \"amp\", db(0), 4.0);"
+  },
+
+  {
+    "name": "on",
+    "description": "[Voice/Pattern/Melody] Set the voice/synthdef/sample/SFZ to use. Accepts Voice objects, SampleHandle, SfzInstrumentHandle, VstInstrumentHandle, or string names.",
+    "signature": ".on(source) -> Self",
+    "example": "pattern(\"kick\").on(kick_voice).step(\"x...\").start();\nmelody(\"bass\").on(bass_voice).notes(\"C2 E2\").start();\nvoice(\"piano\").on(piano_sfz);"
+  },
+  {
+    "name": "synth",
+    "description": "[Voice/Fx] Set the synthdef to use by name. For Voice, prefer .on() which is more flexible.",
+    "signature": ".synth(name: string) -> Self",
+    "example": "voice(\"kick\").synth(\"kick_909\").gain(db(-6));\nfx(\"reverb\").synth(\"reverb\").param(\"room\", 0.5).apply();"
+  },
+  {
+    "name": "poly",
+    "description": "[Voice] Set the polyphony (number of simultaneous voices). Default is 1 (monophonic).",
+    "signature": ".poly(count: int) -> Voice",
+    "example": "voice(\"piano\").on(piano).poly(8);  // 8-voice polyphony\nvoice(\"bass\").on(bass).poly(1);    // Monophonic"
+  },
+  {
+    "name": "gain",
+    "description": "[Voice/GroupHandle] Set the volume/gain. Use db() for decibel values.",
+    "signature": ".gain(value: float) -> Self",
+    "example": "voice(\"kick\").synth(\"kick\").gain(db(-6));\ngroup(\"Drums\").gain(db(-3));"
+  },
+  {
+    "name": "set_param",
+    "description": "[Voice/Pattern/Melody] Set a parameter value on the voice or all events in pattern/melody.",
+    "signature": ".set_param(name: string, value: float) -> Self",
+    "example": "voice(\"synth\").set_param(\"cutoff\", 2000.0);\npattern(\"hats\").set_param(\"decay\", 0.1);"
+  },
+  {
+    "name": "mute",
+    "description": "[Voice/GroupHandle] Mute the voice or group. For GroupHandle, returns MuteBuilder for scheduling.",
+    "signature": ".mute() -> Self | MuteBuilder",
+    "example": "voice(\"kick\").mute(true);\ngroup(\"Drums\").mute().now();\ngroup(\"Bass\").mute().after(\"4bar\");"
+  },
+  {
+    "name": "unmute",
+    "description": "[GroupHandle] Unmute the group. Returns UnmuteBuilder for scheduling.",
+    "signature": ".unmute() -> UnmuteBuilder",
+    "example": "group(\"Drums\").unmute().now();\ngroup(\"Bass\").unmute().after(\"8bar\");"
+  },
+  {
+    "name": "solo",
+    "description": "[Voice/GroupHandle] Solo the voice or group (mutes all others).",
+    "signature": ".solo(enabled: bool) -> Self",
+    "example": "voice(\"lead\").solo(true);\ngroup(\"Drums\").solo(true);"
+  },
+  {
+    "name": "trigger",
+    "description": "[Voice] Trigger the voice immediately with optional parameters.",
+    "signature": ".trigger(params?: Map) -> Voice",
+    "example": "kick_voice.trigger();\nsnare_voice.trigger(#{\"amp\": 0.8, \"decay\": 0.2});"
+  },
+  {
+    "name": "note_on",
+    "description": "[Voice] Send a MIDI-style note-on message. For SFZ/VST instruments.",
+    "signature": ".note_on(note: int, velocity?: float) -> Voice",
+    "example": "piano.note_on(60, 100);  // Middle C, full velocity\npiano.note_on(64, 80);   // E4, medium velocity"
+  },
+  {
+    "name": "note_off",
+    "description": "[Voice] Send a MIDI-style note-off message. Releases the note with envelope.",
+    "signature": ".note_off(note: int) -> Voice",
+    "example": "piano.note_off(60);  // Release middle C"
+  },
+  {
+    "name": "control_change",
+    "description": "[Voice] Send a MIDI control change message. CC 64 is sustain pedal.",
+    "signature": ".control_change(cc: int, value: int) -> Voice",
+    "example": "piano.control_change(64, 127);  // Sustain on\npiano.control_change(64, 0);    // Sustain off"
+  },
+  {
+    "name": "stop",
+    "description": "[Voice/Pattern/Melody/Sequence] Stop playback.",
+    "signature": ".stop() -> Self",
+    "example": "pattern(\"kick\").stop();\nmelody(\"bass\").stop();\nsequence(\"intro\").stop();"
+  },
+  {
+    "name": "stop_all",
+    "description": "[Voice] Stop all currently playing synths for this voice.",
+    "signature": ".stop_all() -> Voice",
+    "example": "piano.stop_all();"
+  },
+  {
+    "name": "fade_param",
+    "description": "[Voice/Pattern/Melody/GroupHandle] Start a parameter fade. Returns ParamFadeBuilder.",
+    "signature": ".fade_param(param: string) -> ParamFadeBuilder",
+    "example": "voice(\"synth\").fade_param(\"cutoff\").to(8000.0).over(\"4bar\").apply();\ngroup(\"Drums\").fade_param(\"amp\").to(db(0)).over_bars(8).apply();"
+  },
+
+  {
+    "name": "step",
+    "description": "[Pattern/Melody] Set the step pattern string. Supports bar separators (|), velocity (x/X/0-9), holds (-), and rests (.).",
+    "signature": ".step(pattern: string) -> Self",
+    "example": "pattern(\"kick\").on(kick).step(\"x...x...x...x...\");\npattern(\"hat\").on(hat).step(\"x.x.x.x. | X.x.X.x.\");"
+  },
+  {
+    "name": "euclid",
+    "description": "[Pattern] Generate a Euclidean rhythm with specified hits distributed over steps.",
+    "signature": ".euclid(hits: int, steps: int) -> Pattern",
+    "example": "pattern(\"perc\").on(perc).euclid(5, 8).start();  // 5 hits in 8 steps\npattern(\"rim\").on(rim).euclid(3, 16).start();   // 3 hits in 16 steps"
+  },
+  {
+    "name": "len",
+    "description": "[Pattern/Melody] Set the loop length in beats. If not specified, inferred from pattern.",
+    "signature": ".len(beats: float) -> Self",
+    "example": "pattern(\"kick\").on(kick).step(\"x...\").len(4.0).start();\nmelody(\"bass\").on(bass).notes(\"C2 E2 G2\").len(8.0).start();"
+  },
+  {
+    "name": "swing",
+    "description": "[Pattern/Melody] Add swing timing. Value 0.0-1.0 delays every other step.",
+    "signature": ".swing(amount: float) -> Self",
+    "example": "pattern(\"hat\").on(hat).step(\"x.x.x.x.\").swing(0.3).start();"
+  },
+  {
+    "name": "quantize",
+    "description": "[Pattern/Melody/Sequence/SceneMorph] Set quantization grid for timing.",
+    "signature": ".quantize(grid: string) -> Self",
+    "example": "pattern(\"kick\").on(kick).step(\"x...\").quantize(\"1/16\").start();\nsequence(\"drop\").loop_bars(8).quantize(\"bar\").start();"
+  },
+  {
+    "name": "lane",
+    "description": "[Pattern/Melody] Create a parameter lane for per-step values. Returns LaneBuilder.",
+    "signature": ".lane(param: string) -> LaneBuilder",
+    "example": "pattern(\"hat\").on(hat).step(\"x.x.x.x.\")\n    .lane(\"amp\").values([1.0, 0.5, 0.8, 0.5, 1.0, 0.5, 0.8, 0.5])\n    .start();"
+  },
+  {
+    "name": "apply",
+    "description": "[Pattern/Melody/Sequence/Fx/FadeBuilder] Register without starting playback. Required before use in sequences.",
+    "signature": ".apply() -> Self",
+    "example": "let kick_pat = pattern(\"kick\").on(kick).step(\"x...\").apply();\nsequence(\"main\").clip(0..bars(4), kick_pat).start();\nfx(\"reverb\").synth(\"reverb\").param(\"room\", 0.5).apply();"
+  },
+  {
+    "name": "start",
+    "description": "[Pattern/Melody/Sequence/Automation/FadeBuilder] Start playback immediately.",
+    "signature": ".start() -> Self",
+    "example": "pattern(\"kick\").on(kick).step(\"x...\").start();\nsequence(\"intro\").loop_bars(16).clip(...).start();"
+  },
+  {
+    "name": "launch",
+    "description": "[Pattern/Melody] Ensure the pattern/melody is playing. Idempotent - safe to call multiple times.",
+    "signature": ".launch()",
+    "example": "kick_pattern.launch();"
+  },
+  {
+    "name": "is_playing",
+    "description": "[Pattern/Melody/Sequence] Check if currently playing.",
+    "signature": ".is_playing() -> bool",
+    "example": "if kick_pattern.is_playing() { print(\"Kick is active\"); }"
+  },
+
+  {
+    "name": "notes",
+    "description": "[Melody] Set the notes to play. Accepts string with bar separators or array of note names.",
+    "signature": ".notes(notes: string | Array) -> Melody",
+    "example": "melody(\"bass\").on(bass).notes(\"E1 - - - | G1 - - - | E1 - - -\").start();\nmelody(\"arp\").on(synth).notes([\"C4\", \"E4\", \"G4\", \"B4\"]).start();"
+  },
+  {
+    "name": "scale",
+    "description": "[Melody] Set the scale for note quantization. Common: \"major\", \"minor\", \"pentatonic\", \"blues\".",
+    "signature": ".scale(name: string) -> Melody",
+    "example": "melody(\"solo\").on(synth).scale(\"minor\").notes(...).start();"
+  },
+  {
+    "name": "root",
+    "description": "[Melody] Set the root note for the scale.",
+    "signature": ".root(note: string) -> Melody",
+    "example": "melody(\"solo\").on(synth).scale(\"minor\").root(\"E\").notes(...).start();"
+  },
+  {
+    "name": "gate",
+    "description": "[Melody] Set the gate duration for all notes (0.0-1.0 of note length).",
+    "signature": ".gate(duration: float) -> Melody",
+    "example": "melody(\"staccato\").on(synth).notes(\"C4 E4 G4\").gate(0.3).start();\nmelody(\"legato\").on(synth).notes(\"C4 E4 G4\").gate(0.95).start();"
+  },
+  {
+    "name": "transpose",
+    "description": "[Melody] Transpose all notes by semitones.",
+    "signature": ".transpose(semitones: int) -> Melody",
+    "example": "melody(\"bass\").on(bass).notes(\"C2 E2 G2\").transpose(12).start();  // Up one octave\nmelody(\"low\").on(sub).notes(\"C3\").transpose(-12).start();  // Down one octave"
+  },
+
+  {
+    "name": "loop_bars",
+    "description": "[Sequence] Set the loop length in bars (4 beats per bar in 4/4).",
+    "signature": ".loop_bars(bars: float) -> Sequence",
+    "example": "sequence(\"verse\").loop_bars(16).clip(...).start();"
+  },
+  {
+    "name": "loop_beats",
+    "description": "[Sequence] Set the loop length in beats.",
+    "signature": ".loop_beats(beats: float) -> Sequence",
+    "example": "sequence(\"fill\").loop_beats(4).clip(...).start();"
+  },
+  {
+    "name": "clip",
+    "description": "[Sequence] Add a clip that loops within the time range. Use with bars() for ranges.",
+    "signature": ".clip(range: Range, source: Pattern|Melody|Fade|Sequence) -> Sequence",
+    "example": "sequence(\"main\").loop_bars(16)\n    .clip(0..bars(8), kick_pattern)\n    .clip(bars(4)..bars(16), bass_melody)\n    .start();"
+  },
+  {
+    "name": "clip_once",
+    "description": "[Sequence] Add a clip that plays once (no loop) within the time range.",
+    "signature": ".clip_once(range: Range, source) -> Sequence",
+    "example": "sequence(\"intro\").loop_bars(8)\n    .clip_once(bars(6)..bars(8), fill_pattern)\n    .start();"
+  },
+  {
+    "name": "clip_loops",
+    "description": "[Sequence] Add a clip that loops a specific number of times.",
+    "signature": ".clip_loops(range: Range, source, count: int) -> Sequence",
+    "example": "sequence(\"build\").loop_bars(8)\n    .clip_loops(0..bars(8), riser, 2)\n    .start();"
+  },
+  {
+    "name": "pause",
+    "description": "[Sequence] Pause the sequence at current position.",
+    "signature": ".pause() -> Sequence",
+    "example": "main_sequence.pause();"
+  },
+  {
+    "name": "resume",
+    "description": "[Sequence] Resume a paused sequence from current position.",
+    "signature": ".resume() -> Sequence",
+    "example": "main_sequence.resume();"
+  },
+
+  {
+    "name": "on_group",
+    "description": "[FadeBuilder] Target a group for the fade.",
+    "signature": ".on_group(name: string) -> FadeBuilder",
+    "example": "fade(\"intro\").on_group(\"Drums\").param(\"amp\").from(db(-20)).to(db(0)).over_bars(8).start();"
+  },
+  {
+    "name": "on_voice",
+    "description": "[FadeBuilder] Target a voice for the fade.",
+    "signature": ".on_voice(name: string) -> FadeBuilder",
+    "example": "fade(\"swell\").on_voice(\"pad\").param(\"amp\").from(0).to(1).over_bars(4).start();"
+  },
+  {
+    "name": "on_effect",
+    "description": "[FadeBuilder] Target an effect for the fade.",
+    "signature": ".on_effect(name: string) -> FadeBuilder",
+    "example": "fade(\"sweep\").on_effect(\"moog\").param(\"cutoff\").from(200).to(8000).over_bars(4).start();"
+  },
+  {
+    "name": "on_pattern",
+    "description": "[FadeBuilder] Target a pattern for the fade.",
+    "signature": ".on_pattern(name: string) -> FadeBuilder",
+    "example": "fade(\"decay\").on_pattern(\"hat\").param(\"decay\").from(0.5).to(0.1).over_bars(2).start();"
+  },
+  {
+    "name": "on_melody",
+    "description": "[FadeBuilder] Target a melody for the fade.",
+    "signature": ".on_melody(name: string) -> FadeBuilder",
+    "example": "fade(\"bright\").on_melody(\"lead\").param(\"cutoff\").from(1000).to(4000).over_bars(4).start();"
+  },
+  {
+    "name": "param",
+    "description": "[FadeBuilder/Fx/SynthdefBuilder] Set which parameter to fade or configure.",
+    "signature": ".param(name: string, value?: float) -> Self",
+    "example": "fade(\"intro\").on_group(\"Drums\").param(\"amp\").from(0).to(1).start();\nfx(\"reverb\").synth(\"reverb\").param(\"room\", 0.6).param(\"mix\", 0.3).apply();"
+  },
+  {
+    "name": "from",
+    "description": "[FadeBuilder] Set the starting value for the fade.",
+    "signature": ".from(value: float) -> FadeBuilder",
+    "example": "fade(\"intro\").on_group(\"Drums\").param(\"amp\").from(db(-20)).to(db(0)).over_bars(8).start();"
+  },
+  {
+    "name": "to",
+    "description": "[FadeBuilder/FadeHandle/ParamFadeBuilder] Set the target value for the fade.",
+    "signature": ".to(value: float) -> Self",
+    "example": "fade(\"outro\").on_group(\"All\").param(\"amp\").from(db(0)).to(db(-40)).over_bars(8).start();\ngroup(\"Drums\").fade_param(\"amp\").to(db(0)).over(\"4bar\").apply();"
+  },
+  {
+    "name": "over",
+    "description": "[FadeBuilder/FadeHandle/ParamFadeBuilder/SceneMorph] Set the duration of the fade. Accepts beats or time strings.",
+    "signature": ".over(duration: float | string) -> Self",
+    "example": "fade(\"slow\").on_group(\"Pad\").param(\"amp\").to(1).over(16.0).start();\nfade(\"fast\").on_effect(\"filter\").param(\"cutoff\").to(8000).over(\"2bar\").start();"
+  },
+  {
+    "name": "over_bars",
+    "description": "[FadeBuilder] Set the duration in bars.",
+    "signature": ".over_bars(bars: float) -> FadeBuilder",
+    "example": "fade(\"intro\").on_group(\"Drums\").param(\"amp\").from(db(-20)).to(db(0)).over_bars(8).start();"
+  },
+  {
+    "name": "register",
+    "description": "[FadeBuilder] Register the fade for use in sequences without starting it.",
+    "signature": ".register() -> FadeBuilder",
+    "example": "let intro_fade = fade(\"intro\").on_group(\"Drums\").param(\"amp\").from(0).to(1).over_bars(8).register();\nsequence(\"main\").clip(0..bars(8), intro_fade).start();"
+  },
+
+  {
+    "name": "name",
+    "description": "[GroupHandle/Voice/Pattern] Get the name of the object.",
+    "signature": ".name() -> string",
+    "example": "let name = group(\"Drums\").name();"
+  },
+  {
+    "name": "parent",
+    "description": "[GroupHandle] Get the parent group path.",
+    "signature": ".parent() -> string",
+    "example": "let parent = group(\"Drums.Kick\").parent();  // Returns \"Drums\""
+  },
+  {
+    "name": "route_to",
+    "description": "[GroupHandle] Route this group's audio to another group.",
+    "signature": ".route_to(group: string) -> GroupHandle",
+    "example": "group(\"Drums\").route_to(\"MainBus\");"
+  },
+  {
+    "name": "send",
+    "description": "[GroupHandle] Send audio to an aux bus with specified amount.",
+    "signature": ".send(bus_name: string, amount: float) -> GroupHandle",
+    "example": "group(\"Drums\").send(\"reverb_bus\", 0.3);"
+  },
+  {
+    "name": "add_effect",
+    "description": "[GroupHandle] Add an effect to the group's FX chain.",
+    "signature": ".add_effect(id: string, synthdef: string, params: Map) -> GroupHandle",
+    "example": "group(\"Drums\").add_effect(\"comp\", \"compressor\", #{\"ratio\": 4.0, \"threshold\": db(-12)});"
+  },
+  {
+    "name": "get_effect",
+    "description": "[GroupHandle] Get an effect from the group's FX chain.",
+    "signature": ".get_effect(id: string) -> Effect",
+    "example": "let comp = group(\"Drums\").get_effect(\"comp\");\ncomp.set(\"ratio\", 8.0);"
+  },
+  {
+    "name": "remove_effect",
+    "description": "[GroupHandle] Remove an effect from the group's FX chain.",
+    "signature": ".remove_effect(id: string) -> GroupHandle",
+    "example": "group(\"Drums\").remove_effect(\"comp\");"
+  },
+  {
+    "name": "get_effects",
+    "description": "[GroupHandle] Get all effects in the group's FX chain.",
+    "signature": ".get_effects() -> Array",
+    "example": "let effects = group(\"Drums\").get_effects();"
+  },
+  {
+    "name": "clear_effects",
+    "description": "[GroupHandle] Remove all effects from the group's FX chain.",
+    "signature": ".clear_effects() -> GroupHandle",
+    "example": "group(\"Drums\").clear_effects();"
+  },
+  {
+    "name": "effect_count",
+    "description": "[GroupHandle] Get the number of effects in the group's FX chain.",
+    "signature": ".effect_count() -> int",
+    "example": "let count = group(\"Drums\").effect_count();"
+  },
+  {
+    "name": "is_active",
+    "description": "[GroupHandle] Check if the group is currently active.",
+    "signature": ".is_active() -> bool",
+    "example": "if group(\"Drums\").is_active() { print(\"Drums active\"); }"
+  },
+  {
+    "name": "fade_gain_to",
+    "description": "[GroupHandle] Fade the group's gain to a target value over duration.",
+    "signature": ".fade_gain_to(target: float, duration: float) -> GroupHandle",
+    "example": "group(\"Drums\").fade_gain_to(db(-20), 8.0);"
+  },
+  {
+    "name": "stutter",
+    "description": "[GroupHandle] Apply a stutter effect to the group.",
+    "signature": ".stutter(length: float, count: int) -> GroupHandle",
+    "example": "group(\"Drums\").stutter(0.25, 4);  // Quarter beat stutters, 4 times"
+  },
+  {
+    "name": "filter_sweep",
+    "description": "[GroupHandle] Apply a filter sweep effect.",
+    "signature": ".filter_sweep(type: string, min: float, max: float, duration: float) -> GroupHandle",
+    "example": "group(\"Synth\").filter_sweep(\"lowpass\", 200.0, 8000.0, 4.0);"
+  },
+
+  {
+    "name": "now",
+    "description": "[MuteBuilder/UnmuteBuilder/ScheduledParamSetter] Execute the action immediately.",
+    "signature": ".now()",
+    "example": "group(\"Drums\").mute().now();\ngroup(\"Bass\").unmute().now();"
+  },
+  {
+    "name": "after",
+    "description": "[MuteBuilder/UnmuteBuilder/ParamFadeBuilder/ScheduledParamSetter] Execute after a delay.",
+    "signature": ".after(time: string)",
+    "example": "group(\"Drums\").mute().after(\"4bar\");\ngroup(\"Bass\").unmute().after(\"8bar\");"
+  },
+  {
+    "name": "at",
+    "description": "[MuteBuilder/UnmuteBuilder/ParamFadeBuilder] Execute at a specific time or quantization point.",
+    "signature": ".at(time: SequenceTime | string)",
+    "example": "group(\"Drums\").mute().at(\"bar\");"
+  },
+
+  {
+    "name": "bypass",
+    "description": "[Fx/Effect] Bypass the effect (pass audio through unchanged).",
+    "signature": ".bypass(enabled: bool) -> Self",
+    "example": "fx(\"reverb\").synth(\"reverb\").bypass(true).apply();\nget_effect(\"comp\").bypass(false);"
+  },
+  {
+    "name": "set",
+    "description": "[Effect] Set a parameter value on an effect.",
+    "signature": ".set(param: string, value: float) -> Effect",
+    "example": "get_effect(\"reverb\").set(\"room\", 0.8);\nget_effect(\"filter\").set(\"cutoff\", 2000.0);"
+  },
+  {
+    "name": "remove",
+    "description": "[Effect] Remove this effect from its group's FX chain.",
+    "signature": ".remove()",
+    "example": "get_effect(\"old_reverb\").remove();"
+  },
+
+  {
+    "name": "warp_to_bpm",
+    "description": "[SampleHandle] Time-stretch the sample to match a target BPM.",
+    "signature": ".warp_to_bpm(bpm: float) -> SampleHandle",
+    "example": "let loop = sample(\"break\", \"samples/amen.wav\").warp_to_bpm(128.0);"
+  },
+  {
+    "name": "analyze_bpm",
+    "description": "[SampleHandle] Enable BPM detection for the sample.",
+    "signature": ".analyze_bpm(enabled: bool) -> SampleHandle",
+    "example": "let loop = sample(\"break\", \"samples/loop.wav\").analyze_bpm(true);"
+  },
+  {
+    "name": "slice",
+    "description": "[SampleHandle] Create slices at specified positions (0.0-1.0).",
+    "signature": ".slice(positions: Array) -> SampleHandle",
+    "example": "let breaks = sample(\"amen\", \"amen.wav\").slice([0.0, 0.25, 0.5, 0.75]);"
+  },
+  {
+    "name": "trigger_slice",
+    "description": "[SampleHandle] Trigger a specific slice by index.",
+    "signature": ".trigger_slice(index: int)",
+    "example": "breaks.trigger_slice(2);  // Play third slice"
+  },
+  {
+    "name": "buffer_id",
+    "description": "[SampleHandle] Get the SuperCollider buffer ID for the sample.",
+    "signature": ".buffer_id() -> int",
+    "example": "let buf = my_sample.buffer_id();"
+  },
+  {
+    "name": "synthdef_name",
+    "description": "[SampleHandle] Get the synthdef name for playing this sample.",
+    "signature": ".synthdef_name() -> string",
+    "example": "let synthdef = my_sample.synthdef_name();"
+  },
+
+  {
+    "name": "num_regions",
+    "description": "[SfzInstrumentHandle] Get the number of sample regions in the SFZ instrument.",
+    "signature": ".num_regions() -> int",
+    "example": "let regions = piano.num_regions();"
+  },
+  {
+    "name": "info",
+    "description": "[SfzInstrumentHandle] Get detailed information about the SFZ instrument.",
+    "signature": ".info() -> string",
+    "example": "print(piano.info());"
+  },
+  {
+    "name": "id",
+    "description": "[SfzInstrumentHandle/VstInstrumentHandle/Voice/Effect] Get the ID/name of the object.",
+    "signature": ".id() -> string",
+    "example": "let name = piano.id();"
+  },
+  {
+    "name": "path",
+    "description": "[SfzInstrumentHandle] Get the file path of the SFZ instrument.",
+    "signature": ".path() -> string",
+    "example": "let file = piano.path();"
+  },
+
+  {
+    "name": "values",
+    "description": "[PatternLaneBuilder/MelodyLaneBuilder] Set the values for the parameter lane.",
+    "signature": ".values(values: Array) -> Pattern | Melody",
+    "example": "pattern(\"hat\").on(hat).step(\"x.x.x.x.\")\n    .lane(\"amp\").values([1.0, 0.5, 0.8, 0.5, 1.0, 0.5, 0.8, 0.5])\n    .start();"
+  },
+
+  {
+    "name": "to_param",
+    "description": "[Automation/MidiMap] Set the target parameter for automation or MIDI mapping.",
+    "signature": ".to_param(param: string) -> Self",
+    "example": "automation(\"lfo\").to_param(\"cutoff\").curve(...).start();\nmidi_map(cc1).to_param(\"filter\").range(0, 1).apply();"
+  },
+  {
+    "name": "curve",
+    "description": "[Automation/MidiMap] Set the curve shape or automation points.",
+    "signature": ".curve(points: Array | string) -> Self",
+    "example": "automation(\"env\").to_param(\"amp\").curve([(0.0, 0.0), (0.5, 1.0), (1.0, 0.0)]).start();\nmidi_map(cc1).to_param(\"filter\").curve(\"exponential\").apply();"
+  },
+  {
+    "name": "loop",
+    "description": "[Automation] Enable looping of the automation.",
+    "signature": ".loop(enabled: bool) -> Automation",
+    "example": "automation(\"lfo\").to_param(\"cutoff\").curve(...).loop(true).start();"
+  },
+  {
+    "name": "range",
+    "description": "[MidiMap/MidiFeedbackBuilder] Set the value range for MIDI mapping.",
+    "signature": ".range(min: float, max: float) -> Self",
+    "example": "midi_map(cc1).to_param(\"cutoff\").range(200.0, 8000.0).apply();"
+  },
+  {
+    "name": "glide_ms",
+    "description": "[MidiMap] Set the glide/smoothing time in milliseconds.",
+    "signature": ".glide_ms(ms: float) -> MidiMap",
+    "example": "midi_map(cc1).to_param(\"cutoff\").glide_ms(50.0).apply();"
+  },
+
+  {
+    "name": "input",
+    "description": "[MidiDevice] Set the MIDI input port name.",
+    "signature": ".input(port: string) -> MidiDevice",
+    "example": "midi_device(\"controller\").input(\"Launchpad Mini\");"
+  },
+  {
+    "name": "output",
+    "description": "[MidiDevice] Set the MIDI output port name.",
+    "signature": ".output(port: string) -> MidiDevice",
+    "example": "midi_device(\"controller\").output(\"Launchpad Mini\");"
+  },
+  {
+    "name": "in_out",
+    "description": "[MidiDevice] Set both MIDI input and output to the same port.",
+    "signature": ".in_out(port: string) -> MidiDevice",
+    "example": "midi_device(\"controller\").in_out(\"Launchpad Mini\");"
+  },
+  {
+    "name": "channel",
+    "description": "[MidiDevice/MidiMap] Set the MIDI channel (1-16).",
+    "signature": ".channel(ch: int) -> Self",
+    "example": "midi_device(\"synth\").output(\"MIDI Out\").channel(1);"
+  },
+  {
+    "name": "cc",
+    "description": "[MidiDevice] Get a MIDI CC source for mapping.",
+    "signature": ".cc(number: int) -> MidiSource",
+    "example": "let mod_wheel = controller.cc(1);\nmidi_map(mod_wheel).to_param(\"vibrato\").apply();"
+  },
+  {
+    "name": "pad",
+    "description": "[MidiDevice] Get a MIDI pad/note source for mapping.",
+    "signature": ".pad(note: int) -> MidiSource",
+    "example": "let kick_pad = controller.pad(36);\nmidi_map(kick_pad).to_voice(\"kick\").apply();"
+  },
+  {
+    "name": "led",
+    "description": "[MidiDevice] Control an LED on the MIDI controller.",
+    "signature": ".led(note: int, color: int)",
+    "example": "controller.led(36, 3);  // Set pad 36 to color 3"
+  },
+
+  {
+    "name": "body",
+    "description": "[SynthdefBuilder/FxBuilder] Set the DSP processing body. Closure receives params as arguments.",
+    "signature": ".body(closure: fn) -> ()",
+    "example": "define_synthdef(\"sine\")\n    .param(\"freq\", 440.0)\n    .param(\"amp\", 0.5)\n    .body(|freq, amp| {\n        sin_ar(freq) * amp\n    });"
+  },
+
+  {
+    "name": "tonality",
+    "description": "[MelodyGen] Set the key and scale for generative melodies.",
+    "signature": ".tonality(root: string, scale: string) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"E\", \"minor\").density(0.6).render();"
+  },
+  {
+    "name": "density",
+    "description": "[MelodyGen] Set the note density (0.0-1.0).",
+    "signature": ".density(value: float) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"C\", \"major\").density(0.7).render();"
+  },
+  {
+    "name": "seed",
+    "description": "[MelodyGen] Set the random seed for reproducible generation.",
+    "signature": ".seed(value: int) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"E\", \"minor\").seed(42).render();"
+  },
+  {
+    "name": "render",
+    "description": "[MelodyGen] Render the generated melody to a note array.",
+    "signature": ".render() -> Array",
+    "example": "let notes = melody_gen(16).tonality(\"E\", \"minor\").render();\nmelody(\"gen\").on(synth).notes(notes).start();"
+  },
+  {
+    "name": "render_step",
+    "description": "[MelodyGen] Render the generated melody as a step string.",
+    "signature": ".render_step() -> string",
+    "example": "let step = melody_gen(16).tonality(\"E\", \"minor\").render_step();\nmelody(\"gen\").on(synth).step(step).start();"
+  },
+  {
+    "name": "motif",
+    "description": "[MelodyGen] Set a melodic motif to use as basis for generation.",
+    "signature": ".motif(notes: Array) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"C\", \"major\").motif([\"C4\", \"E4\", \"G4\"]).render();"
+  },
+  {
+    "name": "contour",
+    "description": "[MelodyGen] Set the melodic contour shape: \"ascending\", \"descending\", \"arch\", \"wave\".",
+    "signature": ".contour(shape: string) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"E\", \"minor\").contour(\"arch\").render();"
+  },
+  {
+    "name": "random_walk",
+    "description": "[MelodyGen] Enable random walk movement between notes.",
+    "signature": ".random_walk(max_step: int) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"C\", \"major\").random_walk(3).render();"
+  },
+  {
+    "name": "reverse",
+    "description": "[MelodyGen] Reverse the generated melody.",
+    "signature": ".reverse() -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"E\", \"minor\").reverse().render();"
+  },
+  {
+    "name": "rotate",
+    "description": "[MelodyGen] Rotate the melody by a number of steps.",
+    "signature": ".rotate(steps: int) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"E\", \"minor\").rotate(4).render();"
+  },
+  {
+    "name": "palindrome",
+    "description": "[MelodyGen] Create a palindrome (forward then backward).",
+    "signature": ".palindrome() -> MelodyGen",
+    "example": "melody_gen(8).tonality(\"C\", \"major\").palindrome().render();"
+  },
+  {
+    "name": "degrade",
+    "description": "[MelodyGen] Randomly remove notes with given probability.",
+    "signature": ".degrade(probability: float) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"E\", \"minor\").degrade(0.3).render();"
+  },
+  {
+    "name": "humanize",
+    "description": "[MelodyGen] Add timing and velocity humanization.",
+    "signature": ".humanize(amount: float) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"C\", \"major\").humanize(0.1).render();"
+  },
+  {
+    "name": "striate",
+    "description": "[MelodyGen] Split melody across multiple octaves.",
+    "signature": ".striate(octaves: int) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"E\", \"minor\").striate(2).render();"
+  },
+  {
+    "name": "polyrhythm",
+    "description": "[MelodyGen] Apply polyrhythmic transformation.",
+    "signature": ".polyrhythm(ratio: Array) -> MelodyGen",
+    "example": "melody_gen(16).polyrhythm([3, 4]).render();"
+  },
+  {
+    "name": "degrees",
+    "description": "[MelodyGen] Use scale degrees instead of absolute notes.",
+    "signature": ".degrees(degrees: Array) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"C\", \"major\").degrees([1, 3, 5, 7]).render();"
+  },
+  {
+    "name": "base_gate",
+    "description": "[MelodyGen] Set the base gate duration for generated notes.",
+    "signature": ".base_gate(duration: float) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"E\", \"minor\").base_gate(0.5).render();"
+  },
+  {
+    "name": "base_amp",
+    "description": "[MelodyGen] Set the base amplitude for generated notes.",
+    "signature": ".base_amp(amp: float) -> MelodyGen",
+    "example": "melody_gen(16).tonality(\"E\", \"minor\").base_amp(0.8).render();"
+  }
+]

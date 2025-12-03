@@ -1,0 +1,29 @@
+// Genre: Ambient, Dark Ambient | Character: Dark, brooding pad
+define_synthdef("pad_dark", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Slow attack, long release
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.3, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Low, dark oscillators
+            let osc1 = saw_ar(freq * 0.995);
+            let osc2 = saw_ar(freq);
+            let osc3 = saw_ar(freq * 1.005);
+
+            let mix = (osc1 + osc2 + osc3) * 0.33;
+
+            // Dark filtering
+            let filtered = lpf_ar(mix, 800.0);
+
+            filtered * env * amp
+        })
+});
+

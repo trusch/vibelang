@@ -1,0 +1,30 @@
+// Genre: Ambient, Field Recording | Character: Wind-like texture
+define_synthdef("texture_wind", |builder| {
+    builder
+        .param("amp", 0.4)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Long, sustained envelope
+            let envelope = env_perc(1.0, 8.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pink noise for natural wind
+            let noise = pink_noise_ar();
+
+            // Slow filter modulation for movement
+            let filter_envelope = env_perc(2.0, 7.0);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 800.0 + (filter_env * 2000.0);
+
+            let filtered = lpf_ar(noise, mod_cutoff);
+
+            // High-pass to remove rumble
+            let clean = hpf_ar(filtered, 150.0);
+
+            clean * env * amp
+        })
+});
+

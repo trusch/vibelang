@@ -1,0 +1,70 @@
+[
+  {
+    "name": "FreeVerb",
+    "description": "Stereo reverb based on the Freeverb algorithm. Simple and efficient reverb effect.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Mono input signal"},
+      {"name": "mix", "type": "float", "default": 0.33, "description": "Dry/wet mix (0=dry, 1=wet)"},
+      {"name": "room", "type": "float", "default": 0.5, "description": "Room size (0 to 1)"},
+      {"name": "damp", "type": "float", "default": 0.5, "description": "Damping of high frequencies (0 to 1)"}
+    ],
+    "outputs": 1,
+    "category": "Reverb"
+  },
+  {
+    "name": "GVerb",
+    "description": "Stereo reverb with early reflections. More complex than FreeVerb with more control.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Mono input signal"},
+      {"name": "roomsize", "type": "float", "default": 10.0, "description": "Room size in meters (1 to maxroomsize)"},
+      {"name": "revtime", "type": "float", "default": 3.0, "description": "Reverberation time in seconds"},
+      {"name": "damping", "type": "float", "default": 0.5, "description": "High frequency damping (0 to 1)"},
+      {"name": "inputbw", "type": "float", "default": 0.5, "description": "Input bandwidth (0 to 1). Lower values = darker"},
+      {"name": "spread", "type": "float", "default": 15.0, "description": "Stereo spread (0 to 43)"},
+      {"name": "drylevel", "type": "float", "default": 1.0, "description": "Dry signal level"},
+      {"name": "earlyreflevel", "type": "float", "default": 0.7, "description": "Early reflections level"},
+      {"name": "taillevel", "type": "float", "default": 0.5, "description": "Reverb tail level"},
+      {"name": "maxroomsize", "type": "float", "default": 300.0, "description": "Maximum room size. Sets buffer size"}
+    ],
+    "outputs": 2,
+    "category": "Reverb"
+  },
+  {
+    "name": "FreeVerb2",
+    "description": "Stereo-in, stereo-out version of FreeVerb. Processes stereo signals.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0.0, "description": "Left channel input"},
+      {"name": "in2", "type": "signal", "default": 0.0, "description": "Right channel input"},
+      {"name": "mix", "type": "float", "default": 0.33, "description": "Dry/wet mix (0=dry, 1=wet)"},
+      {"name": "room", "type": "float", "default": 0.5, "description": "Room size (0 to 1)"},
+      {"name": "damp", "type": "float", "default": 0.5, "description": "Damping of high frequencies (0 to 1)"}
+    ],
+    "outputs": 2,
+    "category": "Reverb"
+  },
+  {
+    "name": "JPverb",
+    "description": "Algorithmic reverb from SC3-plugins. High quality reverb with extensive control.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0.0, "description": "Left channel input"},
+      {"name": "in2", "type": "signal", "default": 0.0, "description": "Right channel input"},
+      {"name": "t60", "type": "float", "default": 1.0, "description": "Approximate reverberation time in seconds"},
+      {"name": "damp", "type": "float", "default": 0.0, "description": "High frequency damping (0 to 1)"},
+      {"name": "size", "type": "float", "default": 1.0, "description": "Room size scale (0.5 to 5)"},
+      {"name": "earlyDiff", "type": "float", "default": 0.707, "description": "Early reflections diffusion (0 to 1)"},
+      {"name": "modDepth", "type": "float", "default": 0.1, "description": "Modulation depth (0 to 1)"},
+      {"name": "modFreq", "type": "float", "default": 2.0, "description": "Modulation frequency in Hz"},
+      {"name": "low", "type": "float", "default": 1.0, "description": "Low frequency multiplier"},
+      {"name": "mid", "type": "float", "default": 1.0, "description": "Mid frequency multiplier"},
+      {"name": "high", "type": "float", "default": 1.0, "description": "High frequency multiplier"},
+      {"name": "lowcut", "type": "float", "default": 500.0, "description": "Low/mid crossover frequency"},
+      {"name": "highcut", "type": "float", "default": 2000.0, "description": "Mid/high crossover frequency"}
+    ],
+    "outputs": 2,
+    "category": "Reverb"
+  }
+]

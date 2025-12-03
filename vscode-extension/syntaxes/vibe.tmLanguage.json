@@ -1,0 +1,104 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Vibelang",
+  "patterns": [
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#support"
+    }
+  ],
+  "repository": {
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.vibe",
+          "match": "\\b(if|else|loop|while|return|break|continue)\\b"
+        },
+        {
+          "name": "storage.type.vibe",
+          "match": "\\b(let|const|fn)\\b"
+        },
+        {
+          "name": "keyword.operator.new.vibe",
+          "match": "\\b(new)\\b"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.vibe",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.vibe",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.vibe",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.vibe",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.vibe",
+          "match": "\\b\\d+\\.\\d+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.vibe",
+          "match": "\\b\\d+\\b"
+        },
+        {
+          "name": "constant.language.boolean.vibe",
+          "match": "\\b(true|false)\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.vibe",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*\\()"
+        }
+      ]
+    },
+    "support": {
+      "patterns": [
+        {
+          "name": "support.function.vibe",
+          "match": "\\b(define_synthdef|define_group|pattern|melody|voice|sample|sin_ar|saw_ar|pulse_ar|lpf_ar|hpf_ar|env_perc|db|note|bars)\\b"
+        },
+        {
+          "name": "support.type.vibe",
+          "match": "\\b(float|int|string|bool)\\b"
+        }
+      ]
+    }
+  },
+  "scopeName": "source.vibe"
+}
+

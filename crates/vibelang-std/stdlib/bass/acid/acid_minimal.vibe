@@ -1,0 +1,30 @@
+// Genre: Minimal Techno | Character: Subtle, minimal filter movement
+define_synthdef("acid_minimal", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Clean envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.008, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Gentle filter envelope
+            let filter_envelope = env_asr(0.02, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+
+            // Sawtooth
+            let osc = saw_ar(freq);
+
+            // Subtle filter movement
+            let mod_cutoff = 800.0 + (filter_env * 1200.0);
+            let filtered = rlpf_ar(osc, mod_cutoff, 0.5);
+
+            filtered * env * amp
+        })
+});
+

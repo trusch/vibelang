@@ -1,0 +1,80 @@
+// ============================================================================
+// Pop/Rock Hooks and Riffs
+// ============================================================================
+// Iconic pop and rock melodic fragments with proper rhythm
+// Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
+
+// Traditional - House of the Rising Sun - 6/8 time
+fn house_rising_sun() {
+    return "A4 - - C5 - - | D5 - - F5 - - | A5 - - C6 - - | A5 - - E5 - - | C5 - - A4 - - |";
+}
+
+// Louie Louie - Main Riff - 4/4 garage rock
+fn louie_louie() {
+    return "A3 - C4 - D4 - - . | D4 - C4 - A3 - - . | A3 - C4 - D4 - - . |";
+}
+
+// La Bamba - Traditional Mexican Folk Song - 4/4 time
+fn la_bamba() {
+    return "C4 - F4 - G4 - - . | C4 - F4 - G4 - - . | C4 - F4 - G4 - C5 - |";
+}
+
+// Smoke on the Water - Main Riff - 4/4 rock
+fn smoke_on_water() {
+    return "G3 - Bb3 - C4 - - . | G3 - Bb3 - Db4 - C4 - | . G3 - Bb3 - C4 - Bb3 - | G3 - - - . . . . |";
+}
+
+// Seven Nation Army - Main Riff - 4/4 bass line
+fn seven_nation_army() {
+    return "E3 - E3 - G3 - E3 - | D3 - C3 - B2 - - - | . . . . . . . . |";
+}
+
+// Sweet Child O' Mine - Opening Riff - 4/4 guitar
+fn sweet_child_opening() {
+    return "D4 D5 A4 G4 G5 A4 F#5 A4 | D4 D5 A4 G4 G5 A4 F#5 A4 |";
+}
+
+// Iron Man - Main Riff - 4/4 heavy
+fn iron_man_riff() {
+    return "B3 - D4 - Eb4 - D4 - | . B3 - D4 - Eb4 - D4 - | . C#4 - C4 - B3 - - - |";
+}
+
+// Satisfaction - Main Riff - 4/4 rock
+fn satisfaction_riff() {
+    return "E4 - A4 - B4 - E4 - | D4 - E4 - . . . . | E4 - A4 - B4 - E4 - | D4 - A3 - . . . . |";
+}
+
+// Sunshine of Your Love - Main Riff - 4/4 blues rock
+fn sunshine_love_riff() {
+    return "D3 - . D3 | . F3 - G3 | . . D3 - | . D3 . C3 | Bb2 - A2 - |";
+}
+
+// Superstition - Main Riff - 4/4 funk
+fn superstition_riff() {
+    return "Eb4 - . Bb3 - C4 - | Db4 - C4 - Bb3 - Ab3 - | Eb4 - . Bb3 - C4 - | Db4 - C4 - Bb3 - Ab3 - |";
+}
+
+// Another One Bites the Dust - Bass Line - 4/4 funk
+fn another_one_bites_dust() {
+    return "E3 - E3 - . E3 - G3 - | E3 - . D3 - E3 - . C3 - | D3 - E3 - - - . . |";
+}
+
+// Billie Jean - Bass Line - 4/4 pop
+fn billie_jean_bass() {
+    return "F#3 - . G#3 - . | F#3 - E3 - . . | F#3 - . G#3 - . | F#3 - E3 - . . |";
+}
+
+// Come Together - Opening Riff - 4/4 blues rock
+fn come_together_riff() {
+    return "D3 - . D3 - F3 - G3 - | . D3 - . D3 - F3 - G3 - |";
+}
+
+// Day Tripper - Main Riff - 4/4 rock
+fn day_tripper_riff() {
+    return "E4 - . F#4 - G#4 - A4 - | . G#4 - E4 - . B3 - D4 - | E4 - - - . . . . |";
+}
+
+// Pretty Woman - Main Riff - 4/4 rock
+fn pretty_woman_riff() {
+    return "E4 - G4 - A4 - C5 - | A4 - E4 - . . . . | D4 - F#4 - A4 - C5 - | A4 - D4 - . . . . |";
+}

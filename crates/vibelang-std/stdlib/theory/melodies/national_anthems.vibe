@@ -1,0 +1,55 @@
+// ============================================================================
+// National Anthems
+// ============================================================================
+// Traditional national anthems with proper rhythm
+// Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
+
+// United States - The Star-Spangled Banner - 3/4 time
+fn star_spangled_banner() {
+    return "G3 - - | . E4 - | C4 - E4 | G4 - - | . C5 - | E5 - D5 | C5 - E4 | F#4 - G4 |";
+}
+
+// United Kingdom - God Save the Queen - 3/4 time
+fn god_save_queen() {
+    return "G4 - G4 | A4 - G4 | B4 - - | C5 - B4 | A4 - G4 | A4 - B4 | G4 - - |";
+}
+
+// France - La Marseillaise - 4/4 time, march
+fn la_marseillaise() {
+    return "G4 - G4 - G4 - C5 - | C5 - - - D5 - D5 - | E5 - E5 - D5 - C5 - | B4 - - - - - - - |";
+}
+
+// Canada - O Canada - 4/4 time
+fn o_canada() {
+    return "G4 - C5 - C5 - D5 - | E5 - F5 - E5 - D5 - | C5 - D5 - E5 - - - | F5 - - - - - - - |";
+}
+
+// Australia - Advance Australia Fair - 4/4 time
+fn advance_australia_fair() {
+    return "C4 - E4 - G4 - C5 - | B4 - A4 - G4 - - - | E4 - F4 - G4 - A4 - | G4 - F4 - E4 - - - |";
+}
+
+// Germany - Deutschlandlied - 4/4 time
+fn deutschlandlied() {
+    return "G4 - - - | C5 - B4 - | A4 - B4 - | C5 - - - | D5 - C5 - | B4 - A4 - | G4 - - - |";
+}
+
+// Japan - Kimigayo - Very slow 4/4
+fn kimigayo() {
+    return "E4 - - F#4 | A4 - - B4 | A4 - - E4 | . . . . | F#4 - - A4 | B4 - - C5 | B4 - - A4 |";
+}
+
+// Belgium - La Brabançonne - 3/4 time
+fn la_brabanconne() {
+    return "G4 - G4 | A4 - B4 | C5 - D5 | C5 - B4 | A4 - G4 | F#4 - G4 | A4 - - |";
+}
+
+// Italy - Il Canto degli Italiani (Fratelli d'Italia) - 4/4 time
+fn fratelli_italia() {
+    return "G4 - A4 - B4 - C5 - | D5 - - - D5 - C5 - | B4 - A4 - G4 - - - |";
+}
+
+// Mexico - Mexican National Anthem - 2/4 time march
+fn mexican_anthem() {
+    return "C4 - E4 - | G4 - C5 - | E5 - D5 - | C5 - B4 - | A4 - G4 - | F4 - E4 - | D4 - C4 - |";
+}

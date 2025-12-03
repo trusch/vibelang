@@ -1,0 +1,34 @@
+// Genre: Ambient, Classical | Character: Harp-like pluck
+define_synthdef("pluck_harp", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Harp envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Rich harmonic series
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.25;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.125;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.08;
+
+            let mix = h1 + h2 + h3 + h4 + h5;
+
+            // Pluck attack
+            let attack_envelope = env_asr(0.002, 1.0, 0.1);
+            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack = pink_noise_ar() * attack_env * 0.12;
+            let filtered_attack = lpf_ar(attack, 3000.0);
+
+            (mix + filtered_attack) * env * amp * 0.7
+        })
+});
+

@@ -1,0 +1,45 @@
+// Bitcrusher Effect
+//
+// Reduces bit depth and sample rate for lo-fi digital distortion.
+//
+// Usage:
+//   group.add_effect("crush", "bitcrush", #{
+//     bits: 8.0,
+//     sample_rate: 8000.0,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   bits: Bit depth (1.0 to 16.0)
+//   sample_rate: Sample rate reduction in Hz (100 to 44100)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("bitcrush", |builder| {
+    builder
+        .param("bits", 8.0)
+        .param("sample_rate", 8000.0)
+        .param("mix", 0.5)
+        .body(|input, bits, sample_rate, mix| {
+            // Map bits (1..16) to a gentle drive factor.
+            // We avoid using a true power function here to keep the graph stable.
+            // 1.0 ≈ barely crushed, 4.0 ≈ heavy crush.
+            let drive = 1.0 + (bits / 8.0);
+
+            // Sample rate reduction using Latch
+            let rate_reduced_left = latch_ar(input[0], impulse_ar(sample_rate, 0.0));
+            let rate_reduced_right = latch_ar(input[1], impulse_ar(sample_rate, 0.0));
+
+            // Bit depth reduction (approximate) by increasing drive and soft-clipping.
+            let crushed_left = (rate_reduced_left * drive).tanh();
+            let crushed_right = (rate_reduced_right * drive).tanh();
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * crushed_left,
+                (1.0 - mix) * input[1] + mix * crushed_right
+            ];
+
+            output
+        })
+});
+

@@ -1,0 +1,32 @@
+// Genre: Industrial, Experimental | Character: Metallic, resonant impact
+define_synthdef("impact_metallic", |builder| {
+    builder
+        .param("amp", 0.8)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Sharp attack, long resonance
+            let envelope = env_perc(0.001, 1.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Inharmonic metallic frequencies
+            let metal1 = sin_osc_ar(280.0) * 0.3;
+            let metal2 = sin_osc_ar(470.0) * 0.25;
+            let metal3 = sin_osc_ar(710.0) * 0.2;
+            let metal4 = sin_osc_ar(980.0) * 0.15;
+            let metal5 = sin_osc_ar(1350.0) * 0.1;
+
+            let mix = metal1 + metal2 + metal3 + metal4 + metal5;
+
+            // Add noise burst
+            let noise_envelope = env_perc(0.001, 0.08);
+            let noise_env = NewEnvGenBuilder(noise_envelope, gate).build();
+            let noise = white_noise_ar() * noise_env * 0.3;
+            let filtered_noise = hpf_ar(noise, 3000.0);
+
+            (mix + filtered_noise) * env * amp
+        })
+});
+

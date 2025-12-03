@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "crates/vibelang-core",
+    "crates/vibelang-dsp",
+    "crates/vibelang-sfz",
+    "crates/vibelang-std",
+    "crates/vibelang-cli",
+]
+default-members = ["crates/vibelang-cli"]
+resolver = "2"

@@ -1,0 +1,33 @@
+// Genre: Trance, EDM | Character: Heavily detuned, wide and lush
+define_synthdef("pad_detuned", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.35)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Slow attack for pad character
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.25, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Many detuned oscillators for width
+            let osc1 = saw_ar(freq * 0.980);
+            let osc2 = saw_ar(freq * 0.990);
+            let osc3 = saw_ar(freq * 0.998);
+            let osc4 = saw_ar(freq);
+            let osc5 = saw_ar(freq * 1.002);
+            let osc6 = saw_ar(freq * 1.010);
+            let osc7 = saw_ar(freq * 1.020);
+
+            let mix = (osc1 + osc2 + osc3 + osc4 + osc5 + osc6 + osc7) * 0.14;
+
+            // Lush filtering
+            let filtered = lpf_ar(mix, 2500.0);
+
+            filtered * env * amp
+        })
+});
+

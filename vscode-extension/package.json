@@ -1,0 +1,87 @@
+{
+  "name": "vibelang-vscode",
+  "displayName": "Vibelang",
+  "description": "VS Code support for Vibelang music programming language",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "vibe",
+        "aliases": [
+          "Vibelang",
+          "vibe"
+        ],
+        "extensions": [
+          ".vibe"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "vibe",
+        "scopeName": "source.vibe",
+        "path": "./syntaxes/vibe.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "vibelang.openSliders",
+        "title": "Vibelang: Open Parameter Sliders"
+      },
+      {
+        "command": "vibelang.formatDocument",
+        "title": "Vibelang: Format Document"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "vibelang.openSliders",
+          "when": "resourceLangId == vibe",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "vibelang.formatDocument",
+          "when": "resourceLangId == vibe",
+          "group": "1_modification"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Vibelang",
+      "properties": {
+        "vibelang.format.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable the Vibelang formatter"
+        },
+        "vibelang.format.indentSize": {
+          "type": "number",
+          "default": 4,
+          "description": "Number of spaces for indentation"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^18.0.0",
+    "typescript": "^5.3.0"
+  }
+}

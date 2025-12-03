@@ -1,0 +1,80 @@
+// ============================================================================
+// TV Themes
+// ============================================================================
+// Iconic television theme melodies with proper rhythm
+// Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
+
+// The Simpsons - Main Theme - Fast 6/8 time
+fn simpsons_theme() {
+    return "C5 - E5 - F#5 - A5 - | G5 - E5 - C5 - - - | Bb4 - D5 - E5 - G5 - | F5 - D5 - Bb4 - - - |";
+}
+
+// Star Trek - Original Series - 3/4 time, heroic
+fn star_trek_theme() {
+    return "E4 - - | G4 - - | C5 - - | . B4 - | A4 - - | . G4 - | E4 - - |";
+}
+
+// Doctor Who - Main Theme - 4/4 time, mysterious
+fn doctor_who_theme() {
+    return "E4 - D4 - E4 - . . | G4 - - . E4 - - . | D4 - E4 - D4 - C4 - |";
+}
+
+// The Flintstones - Main Theme - 4/4 time, upbeat
+fn flintstones_theme() {
+    return "C4 - E4 - G4 - C5 - | G4 - E4 - C4 - - - | D4 - F4 - A4 - D5 - | A4 - F4 - D4 - - - |";
+}
+
+// Pink Panther - Main Theme - 4/4 swing
+fn pink_panther_theme() {
+    return "C#4 - D4 - . E4 - - | . F4 - - . . . . | F#4 - - . G4 - - . | . . . . C#4 - - . |";
+}
+
+// Mission: Impossible - Main Theme - 5/4 time!
+fn mission_impossible_theme() {
+    return "G4 - . Bb4 - . C5 - G4 F4 | G4 - . Bb4 - . C5 - G4 F4 |";
+}
+
+// The X-Files - Main Theme - 4/4 time, eerie
+fn x_files_theme() {
+    return "E4 - Bb4 - G4 - Ab4 - | E4 - - - . . . . | E4 - Bb4 - G4 - Bb4 - | E5 - - - . . . . |";
+}
+
+// The Addams Family - Main Theme - 4/4 time with snaps
+fn addams_family_theme() {
+    return "C4 - . . | D4 - . . | E4 - B3 - | C4 - - - |";
+}
+
+// Sesame Street - Can You Tell Me How to Get - 4/4 time
+fn sesame_street_theme() {
+    return "C4 - D4 - E4 - F4 - | G4 - - . E4 - - . | D4 - E4 - F4 - - - |";
+}
+
+// The Twilight Zone - Main Theme - 4/4 time, unsettling
+fn twilight_zone_theme() {
+    return "E4 - B4 - G4 - E4 - | Bb4 - G4 - E4 - - - | E5 - - . Eb5 - - . | D5 - - - . . . . |";
+}
+
+// I Love Lucy - Main Theme - 4/4 time, jazzy
+fn i_love_lucy_theme() {
+    return "C4 - E4 - G4 - C5 - | E5 - D5 - C5 - B4 - | A4 - G4 - F4 - E4 - | D4 - C4 - - - . . |";
+}
+
+// Cheers - Theme Song (Where Everybody Knows Your Name) - 4/4 time
+fn cheers_theme() {
+    return "C4 - D4 - E4 - G4 - | . E4 - D4 - C4 - - | D4 - E4 - D4 - C4 - |";
+}
+
+// The Brady Bunch - Main Theme - 4/4 time
+fn brady_bunch_theme() {
+    return "C4 - C4 - D4 - E4 - | F4 - E4 - D4 - C4 - | G3 - A3 - B3 - C4 - |";
+}
+
+// Scooby-Doo - Main Theme - 4/4 time
+fn scooby_doo_theme() {
+    return "C4 - D4 - E4 - F4 - | G4 - - - . . . . | A4 - G4 - F4 - E4 - | D4 - C4 - - - . . |";
+}
+
+// Inspector Gadget - Main Theme - 4/4 time
+fn inspector_gadget_theme() {
+    return "C4 - D4 - E4 - C4 - | G4 - - . F4 - E4 - | D4 - C4 - - - . . |";
+}

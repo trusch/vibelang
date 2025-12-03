@@ -1,0 +1,31 @@
+// Genre: Electro, Synthwave | Character: Square wave lead, hollow and vintage
+define_synthdef("lead_square", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.015, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Square waves (pulse with 0.5 width)
+            let square1 = saw_ar(freq * 0.999);
+            let square2 = saw_ar(freq * 1.001);
+            let mix = (square1 + square2) * 0.5;
+
+            // Filter
+            let filter_envelope = env_asr(0.08, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 1500.0 + (filter_env * 2500.0);
+
+            let filtered = lpf_ar(mix, mod_cutoff);
+
+            filtered * env * amp
+        })
+});
+

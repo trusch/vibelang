@@ -1,0 +1,38 @@
+// Lead Library Index
+//
+// Import this file to load all lead synthdefs at once.
+// Usage: import "stdlib/leads/index.vibe"
+
+// Pluck
+import "stdlib/leads/pluck/pluck_bell.vibe";
+import "stdlib/leads/pluck/pluck_bright.vibe";
+import "stdlib/leads/pluck/pluck_harp.vibe";
+import "stdlib/leads/pluck/pluck_kalimba.vibe";
+import "stdlib/leads/pluck/pluck_long.vibe";
+import "stdlib/leads/pluck/pluck_marimba.vibe";
+import "stdlib/leads/pluck/pluck_muted.vibe";
+import "stdlib/leads/pluck/pluck_piano.vibe";
+import "stdlib/leads/pluck/pluck_resonant.vibe";
+import "stdlib/leads/pluck/pluck_short.vibe";
+
+// Stabs
+import "stdlib/leads/stabs/stab_brass.vibe";
+import "stdlib/leads/stabs/stab_bright.vibe";
+import "stdlib/leads/stabs/stab_dark.vibe";
+import "stdlib/leads/stabs/stab_distorted.vibe";
+import "stdlib/leads/stabs/stab_orchestral.vibe";
+import "stdlib/leads/stabs/stab_piano.vibe";
+import "stdlib/leads/stabs/stab_short.vibe";
+import "stdlib/leads/stabs/stab_super.vibe";
+
+// Synth
+import "stdlib/leads/synth/lead_aggressive.vibe";
+import "stdlib/leads/synth/lead_bright.vibe";
+import "stdlib/leads/synth/lead_dark.vibe";
+import "stdlib/leads/synth/lead_detuned.vibe";
+import "stdlib/leads/synth/lead_filtered.vibe";
+import "stdlib/leads/synth/lead_pwm.vibe";
+import "stdlib/leads/synth/lead_saw.vibe";
+import "stdlib/leads/synth/lead_smooth.vibe";
+import "stdlib/leads/synth/lead_square.vibe";
+import "stdlib/leads/synth/lead_supersaw.vibe";

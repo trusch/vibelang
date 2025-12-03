@@ -1,0 +1,33 @@
+// Genre: Ambient, Choral | Character: Voice-like pad with formants
+define_synthdef("pad_voice", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Choir-like envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.35, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Detuned oscillators
+            let osc1 = saw_ar(freq * 0.994);
+            let osc2 = saw_ar(freq);
+            let osc3 = saw_ar(freq * 1.006);
+
+            let mix = (osc1 + osc2 + osc3) * 0.33;
+
+            // Voice-like formant filtering (simplified)
+            let formant1 = rlpf_ar(mix, 800.0, 0.5) * 0.4;
+            let formant2 = rlpf_ar(mix, 1200.0, 0.6) * 0.35;
+            let formant3 = rlpf_ar(mix, 2400.0, 0.7) * 0.25;
+
+            let voiced = formant1 + formant2 + formant3;
+
+            voiced * env * amp * 0.8
+        })
+});
+

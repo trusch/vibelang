@@ -1,0 +1,29 @@
+// Genre: Minimal, House | Character: Narrow, focused lush pad
+define_synthdef("pad_narrow", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.45)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Pad envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.3, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Subtle detuning
+            let osc1 = saw_ar(freq * 0.998);
+            let osc2 = saw_ar(freq);
+            let osc3 = saw_ar(freq * 1.002);
+
+            let mix = (osc1 + osc2 + osc3) * 0.33;
+
+            // Filtering
+            let filtered = lpf_ar(mix, 2200.0);
+
+            filtered * env * amp
+        })
+});
+

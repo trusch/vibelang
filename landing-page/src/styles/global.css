@@ -1,0 +1,395 @@
+/* ============================================
+   VibeLang Landing Page - Global Styles
+   Retro-minimalist design with light/dark mode
+   ============================================ */
+
+/* CSS Custom Properties */
+:root {
+  /* Colors - Light Mode */
+  --color-bg: #f5f5f0;
+  --color-bg-alt: #eaeae5;
+  --color-bg-code: #e5e5e0;
+  --color-text: #1a1a1a;
+  --color-text-muted: #666666;
+  --color-accent: #ff6b35;
+  --color-accent-hover: #ff8555;
+  --color-accent-secondary: #7c3aed;
+  --color-border: #d0d0c8;
+  --color-success: #10b981;
+  --color-terminal-bg: #1e1e1e;
+  --color-terminal-text: #d4d4d4;
+
+  /* Typography */
+  --font-display: 'VT323', ui-monospace, monospace;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 2rem;
+  --space-xl: 4rem;
+  --space-2xl: 8rem;
+
+  /* Layout */
+  --max-width: 1200px;
+  --border-radius: 4px;
+
+  /* Animations */
+  --transition-fast: 150ms ease;
+  --transition-normal: 300ms ease;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+  --shadow-retro: 4px 4px 0 var(--color-border);
+}
+
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0f0f0f;
+    --color-bg-alt: #1a1a1a;
+    --color-bg-code: #252525;
+    --color-text: #f0f0f0;
+    --color-text-muted: #a0a0a0;
+    --color-accent: #ff8555;
+    --color-accent-hover: #ff9f75;
+    --color-border: #333333;
+    --color-terminal-bg: #0a0a0a;
+    --color-terminal-text: #e0e0e0;
+    --shadow-retro: 4px 4px 0 #222222;
+  }
+}
+
+/* Manual theme toggle support */
+[data-theme="light"] {
+  --color-bg: #f5f5f0;
+  --color-bg-alt: #eaeae5;
+  --color-bg-code: #e5e5e0;
+  --color-text: #1a1a1a;
+  --color-text-muted: #666666;
+  --color-accent: #ff6b35;
+  --color-accent-hover: #ff8555;
+  --color-border: #d0d0c8;
+  --color-terminal-bg: #1e1e1e;
+  --color-terminal-text: #d4d4d4;
+  --shadow-retro: 4px 4px 0 var(--color-border);
+}
+
+[data-theme="dark"] {
+  --color-bg: #0f0f0f;
+  --color-bg-alt: #1a1a1a;
+  --color-bg-code: #252525;
+  --color-text: #f0f0f0;
+  --color-text-muted: #a0a0a0;
+  --color-accent: #ff8555;
+  --color-accent-hover: #ff9f75;
+  --color-border: #333333;
+  --color-terminal-bg: #0a0a0a;
+  --color-terminal-text: #e0e0e0;
+  --shadow-retro: 4px 4px 0 #222222;
+}
+
+/* Reset & Base */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Selection */
+::selection {
+  background-color: var(--color-accent);
+  color: white;
+}
+
+/* Typography */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+}
+
+h1 {
+  font-size: clamp(3rem, 8vw, 6rem);
+}
+
+h2 {
+  font-size: clamp(2rem, 5vw, 3.5rem);
+}
+
+h3 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+p {
+  max-width: 65ch;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+}
+
+code, pre {
+  font-family: var(--font-mono);
+}
+
+/* Utility Classes */
+.container {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0 var(--space-lg);
+}
+
+.text-muted {
+  color: var(--color-text-muted);
+}
+
+.text-accent {
+  color: var(--color-accent);
+}
+
+.text-center {
+  text-align: center;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 2px solid transparent;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-primary {
+  background-color: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-retro);
+}
+
+.btn-primary:hover {
+  background-color: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--color-border);
+  text-decoration: none;
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+/* Code Blocks */
+.code-block {
+  background-color: var(--color-terminal-bg);
+  color: var(--color-terminal-text);
+  padding: var(--space-lg);
+  border-radius: var(--border-radius);
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  box-shadow: var(--shadow-retro);
+}
+
+.code-block code {
+  display: block;
+  white-space: pre;
+}
+
+/* Syntax Highlighting */
+.code-block .comment { color: #6a9955; }
+.code-block .keyword { color: #c586c0; }
+.code-block .string { color: #ce9178; }
+.code-block .number { color: #b5cea8; }
+.code-block .function { color: #dcdcaa; }
+.code-block .variable { color: #9cdcfe; }
+.code-block .operator { color: #d4d4d4; }
+
+/* Cards */
+.card {
+  background-color: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  padding: var(--space-lg);
+  transition: all var(--transition-normal);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Grid */
+.grid {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.grid-2 {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.grid-3 {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.grid-4 {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+/* Section Styling */
+section {
+  padding: var(--space-2xl) 0;
+}
+
+section:nth-child(even) {
+  background-color: var(--color-bg-alt);
+}
+
+/* Scanline Effect (Optional Retro) */
+.scanlines::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+}
+
+/* Blinking Cursor */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: blink 1s infinite;
+}
+
+/* Fade In Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.6s ease-out forwards;
+}
+
+/* Staggered Animations */
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+.stagger-5 { animation-delay: 0.5s; }
+
+/* Tag/Badge */
+.tag {
+  display: inline-block;
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background-color: var(--color-bg-code);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  section {
+    padding: var(--space-xl) 0;
+  }
+
+  .container {
+    padding: 0 var(--space-md);
+  }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-alt);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Focus States */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Print Styles */
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+}

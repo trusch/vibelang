@@ -1,0 +1,27 @@
+// Genre: Lo-fi, Experimental | Character: Filtered, darker hihat
+define_synthdef("hihat_filtered", |builder| {
+    builder
+        .param("amp", 1.0)
+        .param("cutoff", 5000.0)
+        .body(|amp, cutoff| {
+            let gate = dc_ar(1.0);
+
+            // Medium envelope
+            let envelope = env_perc(0.001, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // White noise
+            let noise = white_noise_ar();
+
+            // Variable filter cutoff for darker/brighter character
+            let filtered = hpf_ar(noise, cutoff);
+
+            // Additional resonant filter
+            let resonant = rlpf_ar(filtered, cutoff * 1.5, 0.4);
+
+            resonant * env * amp
+        })
+});
+

@@ -1,0 +1,55 @@
+// ============================================================================
+// Nursery Rhymes and Children's Songs
+// ============================================================================
+// Traditional children's melodies with proper rhythm
+// Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
+
+// Traditional - Twinkle Twinkle Little Star - 4/4 time
+fn twinkle_twinkle() {
+    return "C4 - C4 - G4 - G4 - | A4 - A4 - G4 - - - | F4 - F4 - E4 - E4 - | D4 - D4 - C4 - - - |";
+}
+
+// American Children's Song - Mary Had a Little Lamb - 4/4 time
+fn mary_had_little_lamb() {
+    return "E4 - D4 - C4 - D4 - | E4 - E4 - E4 - - - | D4 - D4 - D4 - - - | E4 - G4 - G4 - - - |";
+}
+
+// Traditional - Baa Baa Black Sheep - 4/4 time (same as Twinkle Twinkle)
+fn baa_baa_black_sheep() {
+    return "C4 - C4 - G4 - G4 - | A4 - A4 - G4 - - - | F4 - F4 - E4 - E4 - | D4 - D4 - C4 - - - |";
+}
+
+// Traditional - Row Row Row Your Boat - 6/8 time
+fn row_row_row_boat() {
+    return "C4 - - C4 - - | C4 - D4 E4 - - | E4 - D4 E4 - F4 | G4 - - - - - |";
+}
+
+// Traditional - London Bridge is Falling Down - 2/4 time
+fn london_bridge() {
+    return "G4 A4 G4 F4 | E4 F4 G4 - | D4 E4 F4 - | E4 F4 G4 - |";
+}
+
+// Traditional - Pop Goes the Weasel - 6/8 time
+fn pop_goes_weasel() {
+    return "C4 - D4 E4 - G4 | C4 - D4 E4 - - | C4 - D4 E4 - F4 | G4 - - C5 - - |";
+}
+
+// Traditional - Humpty Dumpty - 6/8 time
+fn humpty_dumpty() {
+    return "G4 - G4 A4 - G4 | E4 - G4 D4 - - | G4 - G4 A4 - G4 | F#4 - G4 . . . |";
+}
+
+// Traditional - Jack and Jill - 6/8 time
+fn jack_and_jill() {
+    return "G4 - G4 A4 - B4 | C5 - C5 B4 - A4 | G4 - G4 E4 - G4 | D4 - - - - - |";
+}
+
+// Traditional - Old MacDonald Had a Farm - 4/4 time
+fn old_macdonald() {
+    return "G4 - G4 - G4 - D4 - | E4 - E4 - D4 - - - | B4 - B4 - A4 - A4 - | G4 - - - - - - - |";
+}
+
+// Children's Song - The Wheels on the Bus - 4/4 time
+fn wheels_on_bus() {
+    return "C4 - C4 - C4 - D4 - | E4 - - - E4 - D4 - | E4 - F4 - G4 - - - |";
+}

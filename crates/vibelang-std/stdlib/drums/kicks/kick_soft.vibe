@@ -1,0 +1,35 @@
+// Genre: Ambient, Chillout | Character: Soft, gentle, minimal attack
+define_synthdef("kick_soft", |builder| {
+    builder
+        .param("freq", 75.0)
+        .param("amp", 1.0)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Gentle attack and decay
+            let amp_envelope = env_perc(0.01, 0.45);
+            let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Subtle pitch movement
+            let pitch_envelope = env_perc(0.005, 0.06);
+            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let freq_mod = pitch_env * freq * 1.2;
+
+            // Warm sine tone
+            let sig = sin_osc_ar(freq + freq_mod);
+
+            // Add subtle warmth with low harmonic
+            let harmonic = sin_osc_ar((freq + freq_mod) * 1.5) * 0.1;
+
+            // Very soft click - barely noticeable
+            let click_envelope = env_perc(0.002, 0.008);
+            let click_env = NewEnvGenBuilder(click_envelope, gate).build();
+            let click = pink_noise_ar() * click_env * 0.03;
+            let filtered_click = lpf_ar(click, 4000.0);
+
+            (sig + harmonic + filtered_click) * amp_env * amp
+        })
+});
+

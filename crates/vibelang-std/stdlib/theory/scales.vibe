@@ -1,0 +1,465 @@
+// ============================================================================
+// Music Theory Scales Module
+// ============================================================================
+// Generate scales in any key with various modes and types
+// All functions return note arrays compatible with vibelang's .step()
+
+import "stdlib/theory/core.vibe" as core;
+
+// ============================================================================
+// Scale Definitions (intervals in semitones from root)
+// ============================================================================
+
+// Major scale and modes
+fn _major_intervals() { return [0, 2, 4, 5, 7, 9, 11]; }
+fn _dorian_intervals() { return [0, 2, 3, 5, 7, 9, 10]; }
+fn _phrygian_intervals() { return [0, 1, 3, 5, 7, 8, 10]; }
+fn _lydian_intervals() { return [0, 2, 4, 6, 7, 9, 11]; }
+fn _mixolydian_intervals() { return [0, 2, 4, 5, 7, 9, 10]; }
+fn _aeolian_intervals() { return [0, 2, 3, 5, 7, 8, 10]; }  // Natural minor
+fn _locrian_intervals() { return [0, 1, 3, 5, 6, 8, 10]; }
+
+// Minor scales
+fn _harmonic_minor_intervals() { return [0, 2, 3, 5, 7, 8, 11]; }
+fn _melodic_minor_intervals() { return [0, 2, 3, 5, 7, 9, 11]; }
+
+// Pentatonic scales
+fn _major_pentatonic_intervals() { return [0, 2, 4, 7, 9]; }
+fn _minor_pentatonic_intervals() { return [0, 3, 5, 7, 10]; }
+
+// Blues scales
+fn _blues_major_intervals() { return [0, 2, 3, 4, 7, 9]; }
+fn _blues_minor_intervals() { return [0, 3, 5, 6, 7, 10]; }
+
+// Other scales
+fn _whole_tone_intervals() { return [0, 2, 4, 6, 8, 10]; }
+fn _diminished_intervals() { return [0, 2, 3, 5, 6, 8, 9, 11]; }  // Half-whole
+fn _diminished_whole_half_intervals() { return [0, 1, 3, 4, 6, 7, 9, 10]; }
+fn _chromatic_intervals() { return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; }
+
+// Exotic scales
+fn _harmonic_major_intervals() { return [0, 2, 4, 5, 7, 8, 11]; }
+fn _double_harmonic_intervals() { return [0, 1, 4, 5, 7, 8, 11]; }  // Byzantine
+fn _phrygian_dominant_intervals() { return [0, 1, 4, 5, 7, 8, 10]; }
+fn _hungarian_minor_intervals() { return [0, 2, 3, 6, 7, 8, 11]; }
+fn _neapolitan_major_intervals() { return [0, 1, 3, 5, 7, 9, 11]; }
+fn _neapolitan_minor_intervals() { return [0, 1, 3, 5, 7, 8, 11]; }
+
+// World scales
+fn _japanese_intervals() { return [0, 1, 5, 7, 8]; }  // In scale
+fn _hirajoshi_intervals() { return [0, 2, 3, 7, 8]; }
+fn _pelog_intervals() { return [0, 1, 3, 7, 8]; }
+fn _arabic_intervals() { return [0, 2, 4, 5, 6, 8, 10]; }
+
+// ============================================================================
+// Core Scale Generation Function
+// ============================================================================
+
+// Generate scale from root note, intervals, and number of octaves
+fn _generate_scale(root, intervals) {
+    _generate_scale_ex(root, intervals, 8, 4)
+}
+
+fn _generate_scale_ex(root, intervals, num_notes, start_octave) {
+    let notes = [];
+    let current_note = core::set_octave(root, start_octave);
+    let octave_offset = 0;
+    let interval_idx = 0;
+    
+    for i in 0..num_notes {
+        // Add current note
+        notes.push(core::shift_octave(current_note, octave_offset));
+        
+        // Move to next scale degree
+        interval_idx += 1;
+        if interval_idx >= intervals.len() {
+            interval_idx = 0;
+            octave_offset += 1;
+        }
+        
+        // Calculate next note
+        if i < num_notes - 1 {
+            let curr_interval = intervals[interval_idx % intervals.len()];
+            let prev_interval = intervals[(interval_idx - 1 + intervals.len()) % intervals.len()];
+            let step = if interval_idx == 0 && i > 0 {
+                12 - prev_interval  // Wrap to next octave
+            } else if interval_idx > 0 {
+                curr_interval - intervals[interval_idx - 1]
+            } else {
+                curr_interval
+            };
+            current_note = core::transpose_note(current_note, step);
+        }
+    }
+    
+    return notes;
+}
+
+// ============================================================================
+// Major Scale and Modes
+// ============================================================================
+
+fn major_scale(root) {
+    major_scale_ex(root, 4, 8)
+}
+
+fn major_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _major_intervals(), num_notes, octave);
+}
+
+fn ionian_scale(root) {
+    ionian_scale_ex(root, 4, 8)
+}
+
+fn ionian_scale_ex(root, octave, num_notes) {
+    return major_scale_ex(root, octave, num_notes);  // Same as major
+}
+
+fn dorian_scale(root) {
+    dorian_scale_ex(root, 4, 8)
+}
+
+fn dorian_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _dorian_intervals(), num_notes, octave);
+}
+
+fn phrygian_scale(root) {
+    phrygian_scale_ex(root, 4, 8)
+}
+
+fn phrygian_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _phrygian_intervals(), num_notes, octave);
+}
+
+fn lydian_scale(root) {
+    lydian_scale_ex(root, 4, 8)
+}
+
+fn lydian_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _lydian_intervals(), num_notes, octave);
+}
+
+fn mixolydian_scale(root) {
+    mixolydian_scale_ex(root, 4, 8)
+}
+
+fn mixolydian_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _mixolydian_intervals(), num_notes, octave);
+}
+
+fn aeolian_scale(root) {
+    aeolian_scale_ex(root, 4, 8)
+}
+
+fn aeolian_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _aeolian_intervals(), num_notes, octave);
+}
+
+fn natural_minor_scale(root) {
+    natural_minor_scale_ex(root, 4, 8)
+}
+
+fn natural_minor_scale_ex(root, octave, num_notes) {
+    return aeolian_scale_ex(root, octave, num_notes);  // Same as aeolian
+}
+
+fn locrian_scale(root) {
+    locrian_scale_ex(root, 4, 8)
+}
+
+fn locrian_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _locrian_intervals(), num_notes, octave);
+}
+
+// ============================================================================
+// Minor Scales
+// ============================================================================
+
+fn minor_scale(root) {
+    minor_scale_ex(root, 4, 8)
+}
+
+fn minor_scale_ex(root, octave, num_notes) {
+    return natural_minor_scale_ex(root, octave, num_notes);
+}
+
+fn harmonic_minor_scale(root) {
+    harmonic_minor_scale_ex(root, 4, 8)
+}
+
+fn harmonic_minor_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _harmonic_minor_intervals(), num_notes, octave);
+}
+
+fn melodic_minor_scale(root) {
+    melodic_minor_scale_ex(root, 4, 8)
+}
+
+fn melodic_minor_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _melodic_minor_intervals(), num_notes, octave);
+}
+
+// ============================================================================
+// Pentatonic Scales
+// ============================================================================
+
+fn major_pentatonic_scale(root) {
+    major_pentatonic_scale_ex(root, 4, 8)
+}
+
+fn major_pentatonic_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _major_pentatonic_intervals(), num_notes, octave);
+}
+
+fn minor_pentatonic_scale(root) {
+    minor_pentatonic_scale_ex(root, 4, 8)
+}
+
+fn minor_pentatonic_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _minor_pentatonic_intervals(), num_notes, octave);
+}
+
+// ============================================================================
+// Blues Scales
+// ============================================================================
+
+fn blues_major_scale(root) {
+    blues_major_scale_ex(root, 4, 8)
+}
+
+fn blues_major_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _blues_major_intervals(), num_notes, octave);
+}
+
+fn blues_minor_scale(root) {
+    blues_minor_scale_ex(root, 4, 8)
+}
+
+fn blues_minor_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _blues_minor_intervals(), num_notes, octave);
+}
+
+fn blues_scale(root) {
+    blues_scale_ex(root, 4, 8)
+}
+
+fn blues_scale_ex(root, octave, num_notes) {
+    return blues_minor_scale_ex(root, octave, num_notes);  // Default to minor blues
+}
+
+// ============================================================================
+// Other Common Scales
+// ============================================================================
+
+fn whole_tone_scale(root) {
+    whole_tone_scale_ex(root, 4, 8)
+}
+
+fn whole_tone_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _whole_tone_intervals(), num_notes, octave);
+}
+
+fn diminished_scale(root) {
+    diminished_scale_ex(root, 4, 8)
+}
+
+fn diminished_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _diminished_intervals(), num_notes, octave);
+}
+
+fn diminished_whole_half_scale(root) {
+    diminished_whole_half_scale_ex(root, 4, 8)
+}
+
+fn diminished_whole_half_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _diminished_whole_half_intervals(), num_notes, octave);
+}
+
+fn chromatic_scale(root) {
+    chromatic_scale_ex(root, 4, 12)
+}
+
+fn chromatic_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _chromatic_intervals(), num_notes, octave);
+}
+
+// ============================================================================
+// Exotic Scales
+// ============================================================================
+
+fn harmonic_major_scale(root) {
+    harmonic_major_scale_ex(root, 4, 8)
+}
+
+fn harmonic_major_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _harmonic_major_intervals(), num_notes, octave);
+}
+
+fn double_harmonic_scale(root) {
+    double_harmonic_scale_ex(root, 4, 8)
+}
+
+fn double_harmonic_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _double_harmonic_intervals(), num_notes, octave);
+}
+
+fn byzantine_scale(root) {
+    byzantine_scale_ex(root, 4, 8)
+}
+
+fn byzantine_scale_ex(root, octave, num_notes) {
+    return double_harmonic_scale_ex(root, octave, num_notes);  // Same as double harmonic
+}
+
+fn phrygian_dominant_scale(root) {
+    phrygian_dominant_scale_ex(root, 4, 8)
+}
+
+fn phrygian_dominant_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _phrygian_dominant_intervals(), num_notes, octave);
+}
+
+fn hungarian_minor_scale(root) {
+    hungarian_minor_scale_ex(root, 4, 8)
+}
+
+fn hungarian_minor_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _hungarian_minor_intervals(), num_notes, octave);
+}
+
+fn neapolitan_major_scale(root) {
+    neapolitan_major_scale_ex(root, 4, 8)
+}
+
+fn neapolitan_major_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _neapolitan_major_intervals(), num_notes, octave);
+}
+
+fn neapolitan_minor_scale(root) {
+    neapolitan_minor_scale_ex(root, 4, 8)
+}
+
+fn neapolitan_minor_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _neapolitan_minor_intervals(), num_notes, octave);
+}
+
+// ============================================================================
+// World/Ethnic Scales
+// ============================================================================
+
+fn japanese_scale(root) {
+    japanese_scale_ex(root, 4, 8)
+}
+
+fn japanese_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _japanese_intervals(), num_notes, octave);
+}
+
+fn hirajoshi_scale(root) {
+    hirajoshi_scale_ex(root, 4, 8)
+}
+
+fn hirajoshi_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _hirajoshi_intervals(), num_notes, octave);
+}
+
+fn pelog_scale(root) {
+    pelog_scale_ex(root, 4, 8)
+}
+
+fn pelog_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _pelog_intervals(), num_notes, octave);
+}
+
+fn arabic_scale(root) {
+    arabic_scale_ex(root, 4, 8)
+}
+
+fn arabic_scale_ex(root, octave, num_notes) {
+    return _generate_scale_ex(root, _arabic_intervals(), num_notes, octave);
+}
+
+// ============================================================================
+// Scale by Name (Convenience Function)
+// ============================================================================
+
+fn scale(root, scale_name) {
+    scale_ex(root, scale_name, 4, 8)
+}
+
+fn scale_ex(root, scale_name, octave, num_notes) {
+    let name_lower = scale_name.to_lower();
+    
+    return switch name_lower {
+        "major" => major_scale(root, octave, num_notes),
+        "ionian" => ionian_scale(root, octave, num_notes),
+        "minor" => minor_scale(root, octave, num_notes),
+        "natural_minor" => natural_minor_scale(root, octave, num_notes),
+        "harmonic_minor" => harmonic_minor_scale(root, octave, num_notes),
+        "melodic_minor" => melodic_minor_scale(root, octave, num_notes),
+        "dorian" => dorian_scale(root, octave, num_notes),
+        "phrygian" => phrygian_scale(root, octave, num_notes),
+        "lydian" => lydian_scale(root, octave, num_notes),
+        "mixolydian" => mixolydian_scale(root, octave, num_notes),
+        "aeolian" => aeolian_scale(root, octave, num_notes),
+        "locrian" => locrian_scale(root, octave, num_notes),
+        "major_pentatonic" => major_pentatonic_scale(root, octave, num_notes),
+        "minor_pentatonic" => minor_pentatonic_scale(root, octave, num_notes),
+        "blues" => blues_scale(root, octave, num_notes),
+        "blues_major" => blues_major_scale(root, octave, num_notes),
+        "blues_minor" => blues_minor_scale(root, octave, num_notes),
+        "whole_tone" => whole_tone_scale(root, octave, num_notes),
+        "diminished" => diminished_scale(root, octave, num_notes),
+        "chromatic" => chromatic_scale(root, octave, num_notes),
+        "harmonic_major" => harmonic_major_scale(root, octave, num_notes),
+        "double_harmonic" => double_harmonic_scale(root, octave, num_notes),
+        "byzantine" => byzantine_scale(root, octave, num_notes),
+        "phrygian_dominant" => phrygian_dominant_scale(root, octave, num_notes),
+        "hungarian_minor" => hungarian_minor_scale(root, octave, num_notes),
+        "neapolitan_major" => neapolitan_major_scale(root, octave, num_notes),
+        "neapolitan_minor" => neapolitan_minor_scale(root, octave, num_notes),
+        "japanese" => japanese_scale(root, octave, num_notes),
+        "hirajoshi" => hirajoshi_scale(root, octave, num_notes),
+        "pelog" => pelog_scale(root, octave, num_notes),
+        "arabic" => arabic_scale(root, octave, num_notes),
+        _ => throw `Unknown scale: ${scale_name}`
+    };
+}
+
+// ============================================================================
+// Utility: Get Scale Degrees
+// ============================================================================
+
+// Get specific degrees of a scale (e.g., [1, 3, 5] for triad)
+fn scale_degrees(root, scale_name, degrees) {
+    scale_degrees_ex(root, scale_name, degrees, 4)
+}
+
+fn scale_degrees_ex(root, scale_name, degrees, octave) {
+    let intervals = switch scale_name.to_lower() {
+        "major" => _major_intervals(),
+        "minor" => _aeolian_intervals(),
+        "harmonic_minor" => _harmonic_minor_intervals(),
+        "melodic_minor" => _melodic_minor_intervals(),
+        "dorian" => _dorian_intervals(),
+        "phrygian" => _phrygian_intervals(),
+        "lydian" => _lydian_intervals(),
+        "mixolydian" => _mixolydian_intervals(),
+        "aeolian" => _aeolian_intervals(),
+        "locrian" => _locrian_intervals(),
+        _ => throw `Unknown scale for degrees: ${scale_name}`
+    };
+    
+    let notes = [];
+    let root_note = core::set_octave(root, octave);
+    
+    for degree in degrees {
+        let idx = (degree - 1) % intervals.len();
+        let octave_shift = (degree - 1) / intervals.len();
+        let semitones = intervals[idx] + (octave_shift * 12);
+        notes.push(core::transpose_note(root_note, semitones));
+    }
+    
+    return notes;
+}
+

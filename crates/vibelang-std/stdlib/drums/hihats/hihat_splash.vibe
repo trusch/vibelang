@@ -1,0 +1,28 @@
+// Genre: Rock, Jazz | Character: Splash cymbal, bright and long
+define_synthdef("hihat_splash", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Long, complex envelope
+            let envelope = env_perc(0.005, 0.8);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Mix multiple noise colors for complex texture
+            let white = white_noise_ar() * 0.5;
+            let pink = pink_noise_ar() * 0.3;
+            let noise = white + pink;
+
+            // Multiple filter bands for complex spectrum
+            let high = hpf_ar(noise, 8000.0) * 0.7;
+            let mid = rlpf_ar(noise, 6000.0, 0.6) * 0.3;
+
+            let mix = high + mid;
+
+            mix * env * amp
+        })
+});
+

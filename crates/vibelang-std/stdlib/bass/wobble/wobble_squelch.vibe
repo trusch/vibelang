@@ -1,0 +1,30 @@
+// Genre: Dubstep, Riddim | Character: Squelchy, talking wobble
+define_synthdef("wobble_squelch", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("wobble_rate", 8.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, wobble_rate, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pulse wave for different timbre
+            let osc = saw_ar(freq);
+
+            // Fast wobble with extreme modulation
+            let wobble_lfo = sin_osc_ar(wobble_rate) * 0.5 + 0.5;
+            let mod_cutoff = 100.0 + (wobble_lfo * 4000.0);
+
+            // Very high resonance for squelch
+            let filtered = rlpf_ar(osc, mod_cutoff, 0.05);
+
+            filtered * env * amp
+        })
+});
+

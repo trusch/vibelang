@@ -1,0 +1,37 @@
+// Genre: House, Garage | Character: Piano-like chord stab
+define_synthdef("stab_piano", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Piano-like envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.003, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Chord with harmonics
+            let r1 = sin_osc_ar(freq);
+            let r2 = sin_osc_ar(freq * 2.0) * 0.4;
+            let r3 = sin_osc_ar(freq * 3.0) * 0.2;
+            let root = r1 + r2 + r3;
+
+            let f1 = sin_osc_ar(freq * 1.5);
+            let f2 = sin_osc_ar(freq * 3.0) * 0.3;
+            let fifth = f1 + f2;
+
+            let chord = (root + fifth * 0.7) * 0.45;
+
+            // Attack transient
+            let attack_envelope = env_asr(0.001, 1.0, 0.1);
+            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack = white_noise_ar() * attack_env * 0.12;
+            let filtered_attack = lpf_ar(attack, 4000.0);
+
+            (chord + filtered_attack) * env * amp
+        })
+});
+

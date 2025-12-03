@@ -1,0 +1,507 @@
+// ============================================================================
+// Music Theory Rhythm Module
+// ============================================================================
+// Generate rhythmic patterns and transformations
+// Returns patterns compatible with vibelang's .step() notation
+
+// ============================================================================
+// Basic Rhythm Patterns
+// ============================================================================
+
+// Generate a pattern of "x" and "." based on steps
+fn rhythm_pattern(hits, total_steps) {
+    let result = "";
+    
+    for i in 0..total_steps {
+        if hits.contains(i) {
+            result += "x";
+        } else {
+            result += ".";
+        }
+    }
+    
+    return result;
+}
+
+// Four on the floor (kick on every beat)
+fn four_on_floor() {
+    four_on_floor_ex(1)
+}
+
+fn four_on_floor_ex(bars) {
+    let beats = bars * 16;  // 16 steps per bar (4/4 at 16th note resolution)
+    let result = "";
+    
+    for i in 0..beats {
+        if i % 4 == 0 {
+            result += "x";
+        } else {
+            result += ".";
+        }
+    }
+    
+    return result;
+}
+
+// Backbeat (hits on beats 2 and 4)
+fn backbeat() {
+    backbeat_ex(1)
+}
+
+fn backbeat_ex(bars) {
+    let beats = bars * 16;
+    let result = "";
+    
+    for i in 0..beats {
+        if i % 16 == 4 || i % 16 == 12 {
+            result += "x";
+        } else {
+            result += ".";
+        }
+    }
+    
+    return result;
+}
+
+// Offbeat (8th note offbeats)
+fn offbeat() {
+    offbeat_ex(1)
+}
+
+fn offbeat_ex(bars) {
+    let beats = bars * 16;
+    let result = "";
+    
+    for i in 0..beats {
+        if i % 4 == 2 {  // Offbeat 8ths
+            result += "x";
+        } else {
+            result += ".";
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Euclidean Rhythms
+// ============================================================================
+
+// Generate Euclidean rhythm pattern
+// Distributes hits as evenly as possible across steps
+fn euclidean_rhythm(hits, steps) {
+    if hits == 0 || steps == 0 {
+        return "";
+    }
+    
+    if hits >= steps {
+        let result = "";
+        for i in 0..steps {
+            result += "x";
+        }
+        return result;
+    }
+    
+    // Bresenham's line algorithm for even distribution
+    let result = "";
+    let bucket = 0;
+    
+    for i in 0..steps {
+        bucket += hits;
+        if bucket >= steps {
+            result += "x";
+            bucket -= steps;
+        } else {
+            result += ".";
+        }
+    }
+    
+    return result;
+}
+
+// Common Euclidean patterns by name
+fn euclidean_pattern(name) {
+    return switch name.to_lower() {
+        "tresillo" => euclidean_rhythm(3, 8),     // 3:8 - Afro-Cuban tresillo
+        "cinquillo" => euclidean_rhythm(5, 8),    // 5:8 - Cuban cinquillo
+        "bossa" => euclidean_rhythm(5, 16),       // 5:16 - Bossa nova
+        "samba" => euclidean_rhythm(7, 16),       // 7:16 - Samba
+        "gahu" => euclidean_rhythm(5, 12),        // 5:12 - West African Gahu
+        "soukous" => euclidean_rhythm(7, 12),     // 7:12 - Soukous
+        _ => euclidean_rhythm(4, 16)
+    };
+}
+
+// ============================================================================
+// Clave Patterns
+// ============================================================================
+
+// Son clave (3-2)
+fn son_clave_3_2() {
+    return "x..x...x....x..x........";  // 2 bars
+}
+
+// Son clave (2-3) - reversed
+fn son_clave_2_3() {
+    return "....x..x........x..x...x";  // 2 bars
+}
+
+// Rumba clave (3-2)
+fn rumba_clave_3_2() {
+    return "x..x...x.....x..x.......";  // 2 bars
+}
+
+// Rumba clave (2-3)
+fn rumba_clave_2_3() {
+    return "....x..x.......x..x...x.";  // 2 bars
+}
+
+// Bossa nova clave
+fn bossa_nova_clave() {
+    return "x..x...x.....x.x........";  // 2 bars
+}
+
+// ============================================================================
+// Genre-Specific Patterns
+// ============================================================================
+
+// House/4-4 kick pattern
+fn house_kick() {
+    return "x...x...x...x...";
+}
+
+// Techno kick (with syncopation)
+fn techno_kick() {
+    return "x...x..xx...x...";
+}
+
+// Trap hi-hat pattern
+fn trap_hihat() {
+    return "x.xxx.xxx.xxx.xx";
+}
+
+// Drum and bass break
+fn dnb_break() {
+    return "x.x.x.x.x.xxx.x.";
+}
+
+// Reggae one-drop (accent on 3)
+fn reggae_one_drop() {
+    return "........x.......";
+}
+
+// Funk ghost notes
+fn funk_ghost_notes() {
+    return "x.x.x.x.x.x.x.x.";
+}
+
+// ============================================================================
+// Swing/Shuffle
+// ============================================================================
+
+// Generate swing pattern (straight 8ths -> swing 8ths)
+// Returns timing pattern indicating swing notes
+fn swing_8th() {
+    return "x.x.x.x.x.x.x.x.";  // Would need timing adjustment in playback
+}
+
+// Shuffle pattern (triplet feel)
+fn shuffle_pattern() {
+    return "x..x..x..x..";  // 12/8 feel
+}
+
+// Half-time shuffle
+fn half_time_shuffle() {
+    return "x.......x..x....";
+}
+
+// ============================================================================
+// Syncopation Patterns
+// ============================================================================
+
+// Add syncopation (shift some beats earlier)
+fn add_syncopation(pattern) {
+    let result = "";
+    let pattern_len = pattern.len();
+    
+    for i in 0..pattern_len {
+        let char = pattern[i];
+        
+        // Every 4th hit, shift it one step earlier
+        if i % 4 == 0 && char == "x" && i > 0 {
+            // Place syncopation before the beat
+            result = result.sub_string(0, result.len() - 1) + "x.";
+        } else {
+            result += char;
+        }
+    }
+    
+    return result;
+}
+
+// Generate anticipation (hit slightly before the beat)
+fn anticipate(pattern, beats_to_anticipate) {
+    let result = pattern;
+    
+    for beat in beats_to_anticipate {
+        if beat > 0 && beat < result.len() {
+            // Move hit one step earlier
+            let before = result.sub_string(0, beat - 1);
+            let after = if beat < result.len() - 1 {
+                result.sub_string(beat + 1)
+            } else {
+                ""
+            };
+            result = before + "x." + after;
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Polyrhythm Utilities
+// ============================================================================
+
+// Generate polyrhythm (two patterns of different lengths)
+fn polyrhythm(pattern1, pattern2) {
+    let len1 = pattern1.len();
+    let len2 = pattern2.len();
+    let lcm = _lcm(len1, len2);
+    
+    let result = "";
+    
+    for i in 0..lcm {
+        let char1 = pattern1[i % len1];
+        let char2 = pattern2[i % len2];
+        
+        // Combine: x if either pattern has x
+        if char1 == "x" || char2 == "x" {
+            result += "x";
+        } else {
+            result += ".";
+        }
+    }
+    
+    return result;
+}
+
+// Helper: Least common multiple
+fn _lcm(a, b) {
+    return (a * b) / _gcd(a, b);
+}
+
+// Helper: Greatest common divisor
+fn _gcd(a, b) {
+    while b != 0 {
+        let temp = b;
+        b = a % b;
+        a = temp;
+    }
+    return a;
+}
+
+// ============================================================================
+// Rest Insertion
+// ============================================================================
+
+// Insert rests at specific positions
+fn insert_rests(pattern, rest_positions) {
+    let result = "";
+    
+    for i in 0..pattern.len() {
+        if rest_positions.contains(i) {
+            result += ".";
+        } else {
+            result += pattern[i];
+        }
+    }
+    
+    return result;
+}
+
+// Remove consecutive hits (ensure rests between hits)
+fn add_space(pattern) {
+    let result = "";
+    let last_was_hit = false;
+    
+    for i in 0..pattern.len() {
+        let char = pattern[i];
+        
+        if char == "x" {
+            if last_was_hit {
+                result += ".";  // Force rest between consecutive hits
+            } else {
+                result += "x";
+                last_was_hit = true;
+            }
+        } else {
+            result += ".";
+            last_was_hit = false;
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Velocity/Accent Patterns
+// ============================================================================
+
+// Add accents (convert x to X for accented hits)
+fn add_accents(pattern, accent_positions) {
+    let result = "";
+    
+    for i in 0..pattern.len() {
+        let char = pattern[i];
+        
+        if char == "x" && accent_positions.contains(i) {
+            result += "X";  // Accented hit
+        } else {
+            result += char;
+        }
+    }
+    
+    return result;
+}
+
+// Accent every Nth hit
+fn accent_every_n(pattern, n) {
+    let result = "";
+    let hit_count = 0;
+    
+    for char in pattern {
+        if char == "x" || char == "X" {
+            if hit_count % n == 0 {
+                result += "X";
+            } else {
+                result += "x";
+            }
+            hit_count += 1;
+        } else {
+            result += char;
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Pattern Transformation
+// ============================================================================
+
+// Reverse pattern
+fn reverse_pattern(pattern) {
+    let result = "";
+    
+    for i in 0..pattern.len() {
+        result += pattern[pattern.len() - 1 - i];
+    }
+    
+    return result;
+}
+
+// Rotate pattern (circular shift)
+fn rotate_pattern(pattern, steps) {
+    let len = pattern.len();
+    let shift = steps % len;
+    
+    if shift == 0 {
+        return pattern;
+    }
+    
+    let result = pattern.sub_string(shift) + pattern.sub_string(0, shift);
+    return result;
+}
+
+// Invert pattern (x becomes ., . becomes x)
+fn invert_pattern(pattern) {
+    let result = "";
+    
+    for char in pattern {
+        if char == "x" || char == "X" {
+            result += ".";
+        } else {
+            result += "x";
+        }
+    }
+    
+    return result;
+}
+
+// Double time (repeat each step twice)
+fn double_time(pattern) {
+    let result = "";
+    
+    for char in pattern {
+        result += char;
+        result += char;
+    }
+    
+    return result;
+}
+
+// Half time (take every other step)
+fn half_time(pattern) {
+    let result = "";
+    
+    for i in 0..pattern.len() {
+        if i % 2 == 0 {
+            result += pattern[i];
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Apply Rhythm to Melody
+// ============================================================================
+
+// Apply rhythm pattern to note array (insert rests where pattern has .)
+fn apply_rhythm(notes, rhythm) {
+    let result = [];
+    let note_idx = 0;
+    
+    for char in rhythm {
+        if char == "x" || char == "X" {
+            if note_idx < notes.len() {
+                result.push(notes[note_idx]);
+                note_idx += 1;
+            } else {
+                result.push(".");
+            }
+        } else {
+            result.push(".");
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Random/Generative Patterns
+// ============================================================================
+
+// Generate random rhythm with given density (0.0-1.0)
+fn random_rhythm(steps) {
+    random_rhythm_ex(steps, 0.5)
+}
+
+fn random_rhythm_ex(steps, density) {
+    let result = "";
+    let hits = steps * density;
+    
+    // Simple pseudo-random based on step position
+    for i in 0..steps {
+        let pseudo_rand = (i * 7 + 13) % 100;
+        if pseudo_rand < (density * 100.0) {
+            result += "x";
+        } else {
+            result += ".";
+        }
+    }
+    
+    return result;
+}
+

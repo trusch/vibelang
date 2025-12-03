@@ -1,0 +1,40 @@
+// Auto Pan Effect
+//
+// Automatically pans the signal between left and right channels.
+//
+// Usage:
+//   group.add_effect("pan", "auto_pan", #{
+//     rate: 0.25,
+//     depth: 0.8,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   rate: Pan rate in Hz (0.05 to 10.0)
+//   depth: Pan depth (0.0 to 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("auto_pan", |builder| {
+    builder
+        .param("rate", 0.25)
+        .param("depth", 0.8)
+        .param("mix", 1.0)
+        .body(|input, rate, depth, mix| {
+            // LFO for pan position
+            let lfo = sin_osc_ar(rate, 0.0);
+            let pan_pos = lfo * depth;
+
+            // Mix to mono first, then pan
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Pan the signal and split into stereo channels
+            let stereo = channels(pan2_ar(mono, pan_pos, 1.0), 2);
+
+            // Mix dry and wet signals
+            [
+                (1.0 - mix) * input[0] + mix * stereo[0],
+                (1.0 - mix) * input[1] + mix * stereo[1]
+            ]
+        })
+});
+

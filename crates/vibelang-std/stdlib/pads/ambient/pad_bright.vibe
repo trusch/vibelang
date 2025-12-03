@@ -1,0 +1,32 @@
+// Genre: Ambient, Chillout | Character: Bright, airy pad
+define_synthdef("pad_bright", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Slow attack, long release
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.4, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Bright oscillators with wide detuning
+            let osc1 = saw_ar(freq * 0.990);
+            let osc2 = saw_ar(freq);
+            let osc3 = saw_ar(freq * 1.010);
+
+            let mix = (osc1 + osc2 + osc3) * 0.33;
+
+            // Bright filtering
+            let filtered = lpf_ar(mix, 3000.0);
+
+            // High-pass to remove mud
+            let clean = hpf_ar(filtered, 150.0);
+
+            clean * env * amp
+        })
+});
+

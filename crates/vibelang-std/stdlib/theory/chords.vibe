@@ -1,0 +1,591 @@
+// ============================================================================
+// Music Theory Chords Module
+// ============================================================================
+// Generate chords with various qualities, extensions, and voicings
+// All functions return note arrays compatible with vibelang's .step()
+
+import "stdlib/theory/core.vibe" as core;
+
+// ============================================================================
+// Chord Interval Definitions
+// ============================================================================
+
+// Triads
+fn _major_triad_intervals() { return [0, 4, 7]; }
+fn _minor_triad_intervals() { return [0, 3, 7]; }
+fn _diminished_triad_intervals() { return [0, 3, 6]; }
+fn _augmented_triad_intervals() { return [0, 4, 8]; }
+
+// Suspended chords
+fn _sus2_intervals() { return [0, 2, 7]; }
+fn _sus4_intervals() { return [0, 5, 7]; }
+
+// 7th chords
+fn _major7_intervals() { return [0, 4, 7, 11]; }
+fn _minor7_intervals() { return [0, 3, 7, 10]; }
+fn _dominant7_intervals() { return [0, 4, 7, 10]; }
+fn _half_diminished7_intervals() { return [0, 3, 6, 10]; }  // m7b5
+fn _diminished7_intervals() { return [0, 3, 6, 9]; }
+fn _minor_major7_intervals() { return [0, 3, 7, 11]; }  // mM7
+fn _augmented_major7_intervals() { return [0, 4, 8, 11]; }
+
+// Extended chords (9th)
+fn _major9_intervals() { return [0, 4, 7, 11, 14]; }
+fn _minor9_intervals() { return [0, 3, 7, 10, 14]; }
+fn _dominant9_intervals() { return [0, 4, 7, 10, 14]; }
+
+// Extended chords (11th)
+fn _major11_intervals() { return [0, 4, 7, 11, 14, 17]; }
+fn _minor11_intervals() { return [0, 3, 7, 10, 14, 17]; }
+fn _dominant11_intervals() { return [0, 4, 7, 10, 14, 17]; }
+
+// Extended chords (13th)
+fn _major13_intervals() { return [0, 4, 7, 11, 14, 21]; }
+fn _minor13_intervals() { return [0, 3, 7, 10, 14, 21]; }
+fn _dominant13_intervals() { return [0, 4, 7, 10, 14, 21]; }
+
+// Altered dominant chords
+fn _dom7b9_intervals() { return [0, 4, 7, 10, 13]; }
+fn _dom7sharp9_intervals() { return [0, 4, 7, 10, 15]; }
+fn _dom7b5_intervals() { return [0, 4, 6, 10]; }
+fn _dom7sharp5_intervals() { return [0, 4, 8, 10]; }  // Also called aug7
+
+// Power chord
+fn _power_chord_intervals() { return [0, 7]; }
+fn _power_chord_octave_intervals() { return [0, 7, 12]; }
+
+// ============================================================================
+// Core Chord Generation
+// ============================================================================
+
+fn _generate_chord(root, intervals) {
+    _generate_chord_ex(root, intervals, 4)
+}
+
+fn _generate_chord_ex(root, intervals, octave) {
+    
+    let notes = [];
+    let root_note = core::set_octave(root, octave);
+    
+    for interval in intervals {
+        notes.push(core::transpose_note(root_note, interval));
+    }
+    
+    return notes;
+}
+
+// ============================================================================
+// Triad Functions
+// ============================================================================
+
+fn major_triad(root) {
+    major_triad_ex(root, 4)
+}
+
+fn major_triad_ex(root, octave) {
+    return _generate_chord_ex(root, _major_triad_intervals(), octave);
+}
+
+fn minor_triad(root) {
+    minor_triad_ex(root, 4)
+}
+
+fn minor_triad_ex(root, octave) {
+    return _generate_chord_ex(root, _minor_triad_intervals(), octave);
+}
+
+fn diminished_triad(root) {
+    diminished_triad_ex(root, 4)
+}
+
+fn diminished_triad_ex(root, octave) {
+    return _generate_chord_ex(root, _diminished_triad_intervals(), octave);
+}
+
+fn augmented_triad(root) {
+    augmented_triad_ex(root, 4)
+}
+
+fn augmented_triad_ex(root, octave) {
+    return _generate_chord_ex(root, _augmented_triad_intervals(), octave);
+}
+
+fn sus2_chord(root) {
+    sus2_chord_ex(root, 4)
+}
+
+fn sus2_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _sus2_intervals(), octave);
+}
+
+fn sus4_chord(root) {
+    sus4_chord_ex(root, 4)
+}
+
+fn sus4_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _sus4_intervals(), octave);
+}
+
+fn power_chord(root) {
+    power_chord_ex(root, 4)
+}
+
+fn power_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _power_chord_intervals(), octave);
+}
+
+fn power_chord_octave(root) {
+    power_chord_octave_ex(root, 4)
+}
+
+fn power_chord_octave_ex(root, octave) {
+    return _generate_chord_ex(root, _power_chord_octave_intervals(), octave);
+}
+
+// ============================================================================
+// 7th Chord Functions
+// ============================================================================
+
+fn major7_chord(root) {
+    major7_chord_ex(root, 4)
+}
+
+fn major7_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _major7_intervals(), octave);
+}
+
+fn minor7_chord(root) {
+    minor7_chord_ex(root, 4)
+}
+
+fn minor7_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _minor7_intervals(), octave);
+}
+
+fn dominant7_chord(root) {
+    dominant7_chord_ex(root, 4)
+}
+
+fn dominant7_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _dominant7_intervals(), octave);
+}
+
+fn half_diminished7_chord(root) {
+    half_diminished7_chord_ex(root, 4)
+}
+
+fn half_diminished7_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _half_diminished7_intervals(), octave);
+}
+
+fn diminished7_chord(root) {
+    diminished7_chord_ex(root, 4)
+}
+
+fn diminished7_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _diminished7_intervals(), octave);
+}
+
+fn minor_major7_chord(root) {
+    minor_major7_chord_ex(root, 4)
+}
+
+fn minor_major7_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _minor_major7_intervals(), octave);
+}
+
+fn augmented_major7_chord(root) {
+    augmented_major7_chord_ex(root, 4)
+}
+
+fn augmented_major7_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _augmented_major7_intervals(), octave);
+}
+
+// ============================================================================
+// Extended Chord Functions
+// ============================================================================
+
+fn major9_chord(root) {
+    major9_chord_ex(root, 4)
+}
+
+fn major9_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _major9_intervals(), octave);
+}
+
+fn minor9_chord(root) {
+    minor9_chord_ex(root, 4)
+}
+
+fn minor9_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _minor9_intervals(), octave);
+}
+
+fn dominant9_chord(root) {
+    dominant9_chord_ex(root, 4)
+}
+
+fn dominant9_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _dominant9_intervals(), octave);
+}
+
+fn major11_chord(root) {
+    major11_chord_ex(root, 4)
+}
+
+fn major11_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _major11_intervals(), octave);
+}
+
+fn minor11_chord(root) {
+    minor11_chord_ex(root, 4)
+}
+
+fn minor11_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _minor11_intervals(), octave);
+}
+
+fn dominant11_chord(root) {
+    dominant11_chord_ex(root, 4)
+}
+
+fn dominant11_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _dominant11_intervals(), octave);
+}
+
+fn major13_chord(root) {
+    major13_chord_ex(root, 4)
+}
+
+fn major13_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _major13_intervals(), octave);
+}
+
+fn minor13_chord(root) {
+    minor13_chord_ex(root, 4)
+}
+
+fn minor13_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _minor13_intervals(), octave);
+}
+
+fn dominant13_chord(root) {
+    dominant13_chord_ex(root, 4)
+}
+
+fn dominant13_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _dominant13_intervals(), octave);
+}
+
+// ============================================================================
+// Altered Dominant Chords
+// ============================================================================
+
+fn dom7b9_chord(root) {
+    dom7b9_chord_ex(root, 4)
+}
+
+fn dom7b9_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _dom7b9_intervals(), octave);
+}
+
+fn dom7sharp9_chord(root) {
+    dom7sharp9_chord_ex(root, 4)
+}
+
+fn dom7sharp9_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _dom7sharp9_intervals(), octave);
+}
+
+fn dom7b5_chord(root) {
+    dom7b5_chord_ex(root, 4)
+}
+
+fn dom7b5_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _dom7b5_intervals(), octave);
+}
+
+fn dom7sharp5_chord(root) {
+    dom7sharp5_chord_ex(root, 4)
+}
+
+fn dom7sharp5_chord_ex(root, octave) {
+    return _generate_chord_ex(root, _dom7sharp5_intervals(), octave);
+}
+
+// ============================================================================
+// Chord by Name (Convenience Function)
+// ============================================================================
+
+fn chord(root, quality) {
+    chord_ex(root, quality, 4)
+}
+
+fn chord_ex(root, quality, octave) {
+    let q = quality.to_lower();
+    
+    return switch q {
+        // Triads
+        "major" => major_triad_ex(root, octave),
+        "maj" => major_triad_ex(root, octave),
+        "M" => major_triad_ex(root, octave),
+        "minor" => minor_triad_ex(root, octave),
+        "min" => minor_triad_ex(root, octave),
+        "m" => minor_triad_ex(root, octave),
+        "diminished" => diminished_triad_ex(root, octave),
+        "dim" => diminished_triad_ex(root, octave),
+        "augmented" => augmented_triad_ex(root, octave),
+        "aug" => augmented_triad_ex(root, octave),
+        "sus2" => sus2_chord_ex(root, octave),
+        "sus4" => sus4_chord_ex(root, octave),
+        "power" => power_chord_ex(root, octave),
+        "5" => power_chord_ex(root, octave),
+        
+        // 7th chords
+        "major7" => major7_chord_ex(root, octave),
+        "maj7" => major7_chord_ex(root, octave),
+        "M7" => major7_chord_ex(root, octave),
+        "minor7" => minor7_chord_ex(root, octave),
+        "min7" => minor7_chord_ex(root, octave),
+        "m7" => minor7_chord_ex(root, octave),
+        "dominant7" => dominant7_chord_ex(root, octave),
+        "dom7" => dominant7_chord_ex(root, octave),
+        "7" => dominant7_chord_ex(root, octave),
+        "half_diminished7" => half_diminished7_chord_ex(root, octave),
+        "m7b5" => half_diminished7_chord_ex(root, octave),
+        "diminished7" => diminished7_chord_ex(root, octave),
+        "dim7" => diminished7_chord_ex(root, octave),
+        "minor_major7" => minor_major7_chord_ex(root, octave),
+        "mM7" => minor_major7_chord_ex(root, octave),
+        "augmented_major7" => augmented_major7_chord_ex(root, octave),
+        "augM7" => augmented_major7_chord_ex(root, octave),
+        
+        // Extended chords
+        "major9" => major9_chord_ex(root, octave),
+        "maj9" => major9_chord_ex(root, octave),
+        "M9" => major9_chord_ex(root, octave),
+        "minor9" => minor9_chord_ex(root, octave),
+        "min9" => minor9_chord_ex(root, octave),
+        "m9" => minor9_chord_ex(root, octave),
+        "dominant9" => dominant9_chord_ex(root, octave),
+        "dom9" => dominant9_chord_ex(root, octave),
+        "9" => dominant9_chord_ex(root, octave),
+        "major11" => major11_chord_ex(root, octave),
+        "maj11" => major11_chord_ex(root, octave),
+        "M11" => major11_chord_ex(root, octave),
+        "minor11" => minor11_chord_ex(root, octave),
+        "min11" => minor11_chord_ex(root, octave),
+        "m11" => minor11_chord_ex(root, octave),
+        "dominant11" => dominant11_chord_ex(root, octave),
+        "dom11" => dominant11_chord_ex(root, octave),
+        "11" => dominant11_chord_ex(root, octave),
+        "major13" => major13_chord_ex(root, octave),
+        "maj13" => major13_chord_ex(root, octave),
+        "M13" => major13_chord_ex(root, octave),
+        "minor13" => minor13_chord_ex(root, octave),
+        "min13" => minor13_chord_ex(root, octave),
+        "m13" => minor13_chord_ex(root, octave),
+        "dominant13" => dominant13_chord_ex(root, octave),
+        "dom13" => dominant13_chord_ex(root, octave),
+        "13" => dominant13_chord_ex(root, octave),
+        
+        // Altered dominants
+        "7b9" => dom7b9_chord_ex(root, octave),
+        "7#9" => dom7sharp9_chord_ex(root, octave),
+        "7b5" => dom7b5_chord_ex(root, octave),
+        "7#5" => dom7sharp5_chord_ex(root, octave),
+        
+        _ => throw `Unknown chord quality: ${quality}`
+    };
+}
+
+// ============================================================================
+// Chord Inversions
+// ============================================================================
+
+fn invert_chord(notes) {
+    invert_chord_ex(notes, 1)
+}
+
+fn invert_chord_ex(notes, inversion) {
+    
+    if inversion == 0 || notes.len() < 2 {
+        return notes;  // Root position
+    }
+    
+    let result = notes;
+    for i in 0..inversion {
+        let first = result[0];
+        let shifted = core::shift_octave(first, 1);
+        result = result[1..result.len()];
+        result.push(shifted);
+    }
+    
+    return result;
+}
+
+// Get specific inversion
+fn chord_inversion(root, quality) {
+    chord_inversion_ex(root, quality, 0, 4)
+}
+
+fn chord_inversion_ex(root, quality, inversion, octave) {
+    let base_chord = chord(root, quality, octave);
+    return invert_chord(base_chord, inversion);
+}
+
+// ============================================================================
+// Chord Voicings
+// ============================================================================
+
+// Close voicing (all notes within an octave when possible)
+fn close_voicing(notes) {
+    return notes;  // Default generation is already close
+}
+
+// Open voicing (spread notes across multiple octaves)
+fn open_voicing(notes) {
+    
+    if notes.len() < 3 {
+        return notes;
+    }
+    
+    let result = [notes[0]];  // Keep root
+    
+    for i in 1..notes.len() {
+        if i % 2 == 1 {
+            // Odd indices: raise by an octave
+            result.push(core::shift_octave(notes[i], 1));
+        } else {
+            result.push(notes[i]);
+        }
+    }
+    
+    return result;
+}
+
+// Drop-2 voicing (drop second-highest note by an octave)
+fn drop2_voicing(notes) {
+    
+    if notes.len() < 3 {
+        return notes;
+    }
+    
+    let result = [];
+    let drop_idx = notes.len() - 2;
+    
+    for i in 0..notes.len() {
+        if i == drop_idx {
+            result.push(core::shift_octave(notes[i], -1));
+        } else {
+            result.push(notes[i]);
+        }
+    }
+    
+    // Re-sort by pitch
+    return _sort_notes_by_pitch(result);
+}
+
+// Drop-3 voicing (drop third-highest note by an octave)
+fn drop3_voicing(notes) {
+    
+    if notes.len() < 4 {
+        return notes;
+    }
+    
+    let result = [];
+    let drop_idx = notes.len() - 3;
+    
+    for i in 0..notes.len() {
+        if i == drop_idx {
+            result.push(core::shift_octave(notes[i], -1));
+        } else {
+            result.push(notes[i]);
+        }
+    }
+    
+    return _sort_notes_by_pitch(result);
+}
+
+// Helper: Sort notes by pitch (ascending)
+fn _sort_notes_by_pitch(notes) {
+    
+    // Simple bubble sort by MIDI number
+    let result = notes;
+    let n = result.len();
+    
+    for i in 0..n {
+        for j in 0..(n - i - 1) {
+            let midi1 = core::note_to_midi(result[j]);
+            let midi2 = core::note_to_midi(result[j + 1]);
+            if midi1 > midi2 {
+                let temp = result[j];
+                result[j] = result[j + 1];
+                result[j + 1] = temp;
+            }
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Chord Tones and Analysis
+// ============================================================================
+
+// Get root note of a chord
+fn chord_root(notes) {
+    if notes.len() == 0 {
+        throw "Cannot find root of empty chord";
+    }
+    return notes[0];
+}
+
+// Get chord tones (remove duplicates at different octaves)
+fn chord_tones(notes) {
+    
+    let seen_pitch_classes = [];
+    let result = [];
+    
+    for note in notes {
+        let midi = core::note_to_midi(note);
+        let pitch_class = midi % 12;
+        
+        if !seen_pitch_classes.contains(pitch_class) {
+            seen_pitch_classes.push(pitch_class);
+            result.push(note);
+        }
+    }
+    
+    return result;
+}
+
+// Add extension to chord (like adding 9th, 11th, 13th)
+fn add_extension(notes, semitones_from_root) {
+    
+    let result = notes;
+    let root = notes[0];
+    let extension = core::transpose_note(root, semitones_from_root);
+    result.push(extension);
+    
+    return _sort_notes_by_pitch(result);
+}
+
+// Remove note from chord (by degree or specific semitones)
+fn omit_note(notes, semitones_from_root) {
+    
+    let root_midi = core::note_to_midi(notes[0]);
+    let target_pitch_class = (root_midi + semitones_from_root) % 12;
+    
+    let result = [];
+    for note in notes {
+        let midi = core::note_to_midi(note);
+        if midi % 12 != target_pitch_class {
+            result.push(note);
+        }
+    }
+    
+    return result;
+}
+

@@ -1,0 +1,42 @@
+// Three Band Equalizer
+//
+// Simple three-band EQ with low, mid, and high frequency control.
+//
+// Usage:
+//   group.add_effect("eq", "eq_three_band", #{
+//     low_gain: 0.0,
+//     mid_gain: 0.0,
+//     high_gain: 0.0,
+//     low_freq: 250.0,
+//     high_freq: 4000.0
+//   });
+//
+// Parameters:
+//   low_gain: Low frequency gain in dB (-12 to 12)
+//   mid_gain: Mid frequency gain in dB (-12 to 12)
+//   high_gain: High frequency gain in dB (-12 to 12)
+//   low_freq: Low/mid crossover frequency in Hz
+//   high_freq: Mid/high crossover frequency in Hz
+
+define_fx("eq_three_band", |builder| {
+    builder
+        .param("low_gain", 0.0)
+        .param("mid_gain", 0.0)
+        .param("high_gain", 0.0)
+        .param("low_freq", 250.0)
+        .param("high_freq", 4000.0)
+        .body(|input, low_gain, mid_gain, high_gain, low_freq, high_freq| {
+            // Process left channel
+            let low_left = b_low_shelf_ar(input[0], low_freq, 1.0, low_gain);
+            let mid_left = b_peak_eq_ar(low_left, (low_freq + high_freq) * 0.5, 1.0, mid_gain);
+            let eq_left = b_hi_shelf_ar(mid_left, high_freq, 1.0, high_gain);
+
+            // Process right channel
+            let low_right = b_low_shelf_ar(input[1], low_freq, 1.0, low_gain);
+            let mid_right = b_peak_eq_ar(low_right, (low_freq + high_freq) * 0.5, 1.0, mid_gain);
+            let eq_right = b_hi_shelf_ar(mid_right, high_freq, 1.0, high_gain);
+
+            [eq_left, eq_right]
+        })
+});
+

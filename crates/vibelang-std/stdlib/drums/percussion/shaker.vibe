@@ -1,0 +1,24 @@
+// Genre: Pop, Latin | Character: Shaker, bright and rattling
+define_synthdef("shaker", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Very short, crisp envelope
+            let envelope = env_perc(0.001, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Bright filtered noise
+            let noise = white_noise_ar();
+            let filtered = hpf_ar(noise, 7000.0);
+
+            // Add resonance for rattle
+            let resonant = rlpf_ar(filtered, 10000.0, 0.4);
+
+            resonant * env * amp
+        })
+});
+

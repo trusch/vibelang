@@ -1,0 +1,33 @@
+// Genre: Jazz, Acoustic | Character: Natural-sounding, warm
+define_synthdef("kick_acoustic", |builder| {
+    builder
+        .param("freq", 80.0)
+        .param("amp", 1.0)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Natural decay curve
+            let amp_envelope = env_perc(0.002, 0.4);
+            let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Subtle pitch bend
+            let pitch_envelope = env_perc(0.001, 0.05);
+            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let freq_mod = pitch_env * freq * 1.5;
+
+            // Mix of sine and triangle for warmth
+            let sig = sin_osc_ar(freq + freq_mod) * 0.7;
+            let harmonic = sin_osc_ar((freq + freq_mod) * 2.0) * 0.15;
+
+            // Noise component for beater attack
+            let noise_envelope = env_perc(0.001, 0.025);
+            let noise_env = NewEnvGenBuilder(noise_envelope, gate).build();
+            let noise = white_noise_ar() * noise_env * 0.12;
+            let filtered_noise = lpf_ar(noise, 3000.0);
+
+            (sig + harmonic + filtered_noise) * amp_env * amp
+        })
+});
+

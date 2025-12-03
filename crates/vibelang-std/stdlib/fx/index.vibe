@@ -1,0 +1,32 @@
+// FX Library Index
+//
+// Import this file to load all sound FX synthdefs at once.
+// Usage: import "stdlib/fx/index.vibe"
+
+// Impacts
+import "stdlib/fx/impacts/impact_hard.vibe";
+import "stdlib/fx/impacts/impact_metallic.vibe";
+import "stdlib/fx/impacts/impact_noise.vibe";
+import "stdlib/fx/impacts/impact_soft.vibe";
+import "stdlib/fx/impacts/impact_sub.vibe";
+
+// Risers
+import "stdlib/fx/risers/riser_filtered.vibe";
+import "stdlib/fx/risers/riser_pink_noise.vibe";
+import "stdlib/fx/risers/riser_pitch.vibe";
+import "stdlib/fx/risers/riser_reverse.vibe";
+import "stdlib/fx/risers/riser_white_noise.vibe";
+
+// Subdrops
+import "stdlib/fx/subdrops/subdrop_classic.vibe";
+import "stdlib/fx/subdrops/subdrop_click.vibe";
+import "stdlib/fx/subdrops/subdrop_deep.vibe";
+import "stdlib/fx/subdrops/subdrop_distorted.vibe";
+import "stdlib/fx/subdrops/subdrop_long.vibe";
+
+// Sweeps
+import "stdlib/fx/sweeps/sweep_filter_down.vibe";
+import "stdlib/fx/sweeps/sweep_filter_up.vibe";
+import "stdlib/fx/sweeps/sweep_pitch.vibe";
+import "stdlib/fx/sweeps/sweep_reverse.vibe";
+import "stdlib/fx/sweeps/sweep_whoosh.vibe";

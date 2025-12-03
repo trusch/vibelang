@@ -1,0 +1,13 @@
+// Vibelang Standard Library Index
+//
+// Import this file to load the entire standard instrument and effects
+// collection at once.
+// Usage: import "stdlib/index.vibe"
+
+import "stdlib/bass/index.vibe";
+import "stdlib/drums/index.vibe";
+import "stdlib/fx/index.vibe";
+import "stdlib/leads/index.vibe";
+import "stdlib/pads/index.vibe";
+import "stdlib/textures/index.vibe";
+import "stdlib/effects/index.vibe";

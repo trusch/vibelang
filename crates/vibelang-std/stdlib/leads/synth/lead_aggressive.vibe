@@ -1,0 +1,34 @@
+// Genre: Hard Techno, Industrial | Character: Aggressive, distorted lead
+define_synthdef("lead_aggressive", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Aggressive envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.008, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Overdriven saws
+            let saw1 = saw_ar(freq * 0.995) * 1.8;
+            let saw2 = saw_ar(freq * 1.005) * 1.8;
+            let mix = (saw1 + saw2) * 0.5;
+
+            // Clip for distortion
+            let distorted = clip(mix, -0.8, 0.8);
+
+            // Filter
+            let filter_envelope = env_asr(0.02, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 1500.0 + (filter_env * 3500.0);
+
+            let filtered = lpf_ar(distorted, mod_cutoff);
+
+            filtered * env * amp
+        })
+});
+

@@ -1,0 +1,30 @@
+// Genre: Acid House, Techno | Character: Classic 303 with resonant filter sweep
+define_synthdef("acid_303_classic", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .param("cutoff", 1200.0)
+        .param("res", 0.7)
+        .body(|freq, amp, gate, cutoff, res| {
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope for sweep (triggered on note-on)
+            let filter_envelope = env_perc(0.01, 0.4);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+
+            // Sawtooth oscillator
+            let osc = saw_ar(freq);
+
+            // Resonant filter with envelope modulation
+            let mod_cutoff = cutoff + (filter_env * cutoff * 4.0);
+            let filtered = rlpf_ar(osc, mod_cutoff, res);
+
+            filtered * env * amp
+        })
+});
+

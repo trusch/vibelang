@@ -1,0 +1,40 @@
+// Comb Filter Effect
+//
+// Creates resonances at harmonics of a fundamental frequency.
+// Useful for metallic and robotic sounds.
+//
+// Usage:
+//   group.add_effect("comb", "comb_filter", #{
+//     freq: 220.0,
+//     decay: 2.0,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   freq: Fundamental frequency in Hz (20 to 2000)
+//   decay: Decay time in seconds (0.1 to 10.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("comb_filter", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("decay", 2.0)
+        .param("mix", 0.5)
+        .body(|input, freq, decay, mix| {
+            // Calculate delay time from frequency
+            let delay_time = 1.0 / freq;
+
+            // Apply comb filter
+            let combed_left = comb_l_ar(input[0], 0.1, delay_time, decay);
+            let combed_right = comb_l_ar(input[1], 0.1, delay_time, decay);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * combed_left,
+                (1.0 - mix) * input[1] + mix * combed_right
+            ];
+
+            output
+        })
+});
+

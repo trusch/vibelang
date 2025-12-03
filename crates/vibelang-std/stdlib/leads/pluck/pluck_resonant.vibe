@@ -1,0 +1,29 @@
+// Genre: Techno, House | Character: Resonant pluck with filter character
+define_synthdef("pluck_resonant", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Medium envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.002, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Sawtooth for resonant filtering
+            let osc = saw_ar(freq);
+
+            // Resonant filter sweep
+            let filter_envelope = env_asr(0.003, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 800.0 + (filter_env * 3500.0);
+
+            let filtered = rlpf_ar(osc, mod_cutoff, 0.25);
+
+            filtered * env * amp
+        })
+});
+

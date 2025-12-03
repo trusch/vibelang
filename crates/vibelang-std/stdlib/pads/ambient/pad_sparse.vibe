@@ -1,0 +1,28 @@
+// Genre: Ambient, Minimal | Character: Sparse, minimal pad
+define_synthdef("pad_sparse", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.45)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Very slow attack
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.6, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Just two oscillators, subtle detuning
+            let osc1 = sin_osc_ar(freq * 0.998);
+            let osc2 = sin_osc_ar(freq * 1.002);
+
+            let mix = (osc1 + osc2) * 0.5;
+
+            // Minimal filtering
+            let filtered = lpf_ar(mix, 2000.0);
+
+            filtered * env * amp
+        })
+});
+

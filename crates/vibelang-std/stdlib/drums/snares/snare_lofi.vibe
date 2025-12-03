@@ -1,0 +1,32 @@
+// Genre: Lo-fi Hip-hop, Chillhop | Character: Dusty, lo-fi character with crackle
+define_synthdef("snare_lofi", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Main snare - filtered and soft
+            let snare_envelope = env_perc(0.003, 0.16);
+            let snare_env = NewEnvGenBuilder(snare_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Use pink noise for warmer character
+            let noise = pink_noise_ar();
+            let filtered_noise = rlpf_ar(noise, 2200.0, 0.6);
+            let snare_noise = filtered_noise * snare_env;
+
+            // Muted tone
+            let tone_envelope = env_perc(0.002, 0.11);
+            let tone_env = NewEnvGenBuilder(tone_envelope, gate).build();
+            let tone = sin_osc_ar(175.0) * tone_env * 0.2;
+
+            // Vinyl crackle layer
+            let crackle_envelope = env_perc(0.001, 0.08);
+            let crackle_env = NewEnvGenBuilder(crackle_envelope, gate).build();
+            let crackle = hpf_ar(white_noise_ar(), 6000.0) * crackle_env * 0.08;
+
+            (snare_noise * 0.7 + tone + crackle) * amp
+        })
+});
+

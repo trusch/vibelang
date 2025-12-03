@@ -1,0 +1,38 @@
+// Genre: Industrial, Hardcore | Character: Heavy distortion, aggressive
+define_synthdef("kick_distorted", |builder| {
+    builder
+        .param("freq", 58.0)
+        .param("amp", 1.0)
+        .param("drive", 2.5)
+        .body(|freq, amp, drive| {
+            let gate = dc_ar(1.0);
+
+            // Punchy envelope
+            let amp_envelope = env_perc(0.001, 0.28);
+            let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Aggressive pitch sweep
+            let pitch_envelope = env_perc(0.001, 0.04);
+            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let freq_mod = pitch_env * freq * 3.5;
+
+            // Main tone with overdrive
+            let sig = sin_osc_ar(freq + freq_mod) * drive;
+
+            // Hard clipping for distortion
+            let distorted = clip(sig, -0.6, 0.6);
+
+            // Add harmonics through filtering
+            let filtered = lpf_ar(distorted, 2000.0);
+
+            // Heavy click/noise
+            let click_envelope = env_perc(0.0001, 0.015);
+            let click_env = NewEnvGenBuilder(click_envelope, gate).build();
+            let click = white_noise_ar() * click_env * 0.3;
+
+            (filtered + click) * amp_env * amp * 0.6
+        })
+});
+

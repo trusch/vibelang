@@ -1,0 +1,8 @@
+// All Effects Loader
+//
+// Import this file to load all standard effects into your project.
+// Usage: import "stdlib/effects/all_effects.vibe"
+//
+// This file now proxies to the canonical effects index so existing
+// imports continue to work without any changes.
+import "stdlib/effects/index.vibe";

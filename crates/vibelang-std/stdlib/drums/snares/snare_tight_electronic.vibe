@@ -1,0 +1,31 @@
+// Genre: Electro, Techno | Character: Tight, electronic, punchy
+define_synthdef("snare_tight_electronic", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Short, controlled envelope
+            let noise_envelope = env_perc(0.001, 0.11);
+            let noise_env = NewEnvGenBuilder(noise_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filtered noise with resonance
+            let noise = white_noise_ar();
+            let filtered_noise = rlpf_ar(noise, 2800.0, 0.3);
+
+            // Punchy tone
+            let tone_envelope = env_perc(0.0005, 0.07);
+            let tone_env = NewEnvGenBuilder(tone_envelope, gate).build();
+            let tone = sin_osc_ar(220.0) * tone_env * 0.4;
+
+            // Attack transient
+            let attack_envelope = env_perc(0.0001, 0.003);
+            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack = white_noise_ar() * attack_env * 0.4;
+
+            (filtered_noise * noise_env + tone + attack) * amp
+        })
+});
+

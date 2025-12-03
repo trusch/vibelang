@@ -1,0 +1,34 @@
+// Genre: House, Funk | Character: Brass-like stab
+define_synthdef("stab_brass", |builder| {
+    builder
+        .param("freq", 330.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Brass-like envelope with bite
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Chord with harmonics
+            let root = saw_ar(freq);
+            let third = saw_ar(freq * 1.25);
+            let fifth = saw_ar(freq * 1.5);
+            let seventh = saw_ar(freq * 1.75);
+
+            let chord = (root + third * 0.7 + fifth * 0.6 + seventh * 0.4) * 0.35;
+
+            // Brass-like filter
+            let filter_envelope = env_asr(0.01, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 1200.0 + (filter_env * 2500.0);
+
+            let filtered = lpf_ar(chord, mod_cutoff);
+
+            filtered * env * amp
+        })
+});
+

@@ -1,0 +1,489 @@
+// ============================================================================
+// Music Theory Harmony Module
+// ============================================================================
+// Tools for harmonic analysis and chord identification
+// Provides functions to analyze and understand harmonic structures
+
+import "stdlib/theory/core.vibe" as core;
+import "stdlib/theory/scales.vibe" as scales;
+
+// ============================================================================
+// Chord Identification
+// ============================================================================
+
+// Identify chord quality from notes
+fn identify_chord(notes) {
+    
+    if notes.len() < 2 {
+        return "unknown";
+    }
+    
+    // Get intervals from root
+    let root = notes[0];
+    let intervals = [];
+    
+    for note in notes {
+        intervals.push(core::interval_semitones(root, note) % 12);
+    }
+    
+    // Sort intervals
+    intervals = _sort_intervals(intervals);
+    
+    // Match against known chord types
+    let intervals_str = _intervals_to_string(intervals);
+    
+    return switch intervals_str {
+        "0,4,7" => "major",
+        "0,3,7" => "minor",
+        "0,3,6" => "diminished",
+        "0,4,8" => "augmented",
+        "0,2,7" => "sus2",
+        "0,5,7" => "sus4",
+        "0,4,7,11" => "major7",
+        "0,3,7,10" => "minor7",
+        "0,4,7,10" => "dominant7",
+        "0,3,6,10" => "half-diminished7",
+        "0,3,6,9" => "diminished7",
+        "0,3,7,11" => "minor-major7",
+        "0,4,8,11" => "augmented-major7",
+        "0,4,7,10,14" => "dominant9",
+        "0,3,7,10,14" => "minor9",
+        "0,4,7,11,14" => "major9",
+        _ => "unknown"
+    };
+}
+
+// Helper: Sort intervals
+fn _sort_intervals(intervals) {
+    let result = intervals;
+    let n = result.len();
+    
+    for i in 0..n {
+        for j in 0..(n - i - 1) {
+            if result[j] > result[j + 1] {
+                let temp = result[j];
+                result[j] = result[j + 1];
+                result[j + 1] = temp;
+            }
+        }
+    }
+    
+    return result;
+}
+
+// Helper: Convert intervals array to string
+fn _intervals_to_string(intervals) {
+    let result = "";
+    
+    for i in 0..intervals.len() {
+        if i > 0 {
+            result += ",";
+        }
+        result += intervals[i].to_string();
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Chord Degree Analysis
+// ============================================================================
+
+// Find the degree of a chord in a key
+fn chord_degree_in_key(chord_root, key_root) {
+    chord_degree_in_key_ex(chord_root, key_root, "major")
+}
+
+fn chord_degree_in_key_ex(chord_root, key_root, mode) {
+    
+    let scale = scales::scale(key_root, mode, 4, 7);
+    let chord_root_pc = core::note_to_midi(chord_root) % 12;
+    
+    for i in 0..scale.len() {
+        let scale_note_pc = core::note_to_midi(scale[i]) % 12;
+        if scale_note_pc == chord_root_pc {
+            return i + 1;  // Return scale degree (1-7)
+        }
+    }
+    
+    return 0;  // Not in scale
+}
+
+// Get Roman numeral for chord in key
+fn roman_numeral(chord_root, chord_quality, key_root) {
+    roman_numeral_ex(chord_root, chord_quality, key_root, "major")
+}
+
+fn roman_numeral_ex(chord_root, chord_quality, key_root, mode) {
+    let degree = chord_degree_in_key(chord_root, key_root, mode);
+    
+    if degree == 0 {
+        return "?";
+    }
+    
+    let numerals = ["I", "II", "III", "IV", "V", "VI", "VII"];
+    let numeral = numerals[degree - 1];
+    
+    // Adjust case for minor chords
+    if chord_quality.to_lower().contains("minor") || chord_quality.to_lower().contains("dim") {
+        numeral = numeral.to_lower();
+    }
+    
+    // Add chord quality symbols
+    if chord_quality.to_lower().contains("dim") {
+        numeral += "°";
+    } else if chord_quality.to_lower().contains("aug") {
+        numeral += "+";
+    } else if chord_quality.to_lower().contains("7") {
+        numeral += "7";
+    }
+    
+    return numeral;
+}
+
+// ============================================================================
+// Harmonic Function Analysis
+// ============================================================================
+
+// Determine harmonic function (Tonic, Subdominant, Dominant)
+fn harmonic_function(degree) {
+    harmonic_function_ex(degree, "major")
+}
+
+fn harmonic_function_ex(degree, mode) {
+    if mode.to_lower() == "major" {
+        return switch degree {
+            1 => "tonic",
+            3 => "tonic",
+            6 => "tonic",
+            2 => "subdominant",
+            4 => "subdominant",
+            5 => "dominant",
+            7 => "dominant",
+            _ => "unknown"
+        };
+    } else {
+        // Minor mode
+        return switch degree {
+            1 => "tonic",
+            3 => "tonic",
+            6 => "tonic",
+            2 => "subdominant",
+            4 => "subdominant",
+            5 => "dominant",
+            7 => "dominant",
+            _ => "unknown"
+        };
+    }
+}
+
+// Check if progression follows functional harmony rules
+fn is_functional_progression(degrees) {
+    // T -> S -> D -> T is good
+    // T -> D -> T is good
+    // D -> S is weak
+    
+    let functions = [];
+    for degree in degrees {
+        functions.push(harmonic_function(degree));
+    }
+    
+    let score = 0;
+    
+    for i in 0..functions.len() - 1 {
+        let curr = functions[i];
+        let next = functions[i + 1];
+        
+        if curr == "tonic" && next == "subdominant" {
+            score += 2;  // Good
+        } else if curr == "subdominant" && next == "dominant" {
+            score += 3;  // Very good
+        } else if curr == "dominant" && next == "tonic" {
+            score += 3;  // Very good (cadence)
+        } else if curr == "tonic" && next == "dominant" {
+            score += 1;  // OK
+        } else if curr == "dominant" && next == "subdominant" {
+            score -= 2;  // Weak
+        }
+    }
+    
+    return score > 0;
+}
+
+// ============================================================================
+// Available Tensions
+// ============================================================================
+
+// Get available tensions/extensions for a chord
+fn available_tensions(chord_quality) {
+    available_tensions_ex(chord_quality, "jazz")
+}
+
+fn available_tensions_ex(chord_quality, context) {
+    let q = chord_quality.to_lower();
+    
+    if context.to_lower() == "jazz" {
+        return switch q {
+            "major7" => [9, 13],
+            "major" => [9, 13],
+            "minor7" => [9, 11],
+            "minor" => [9, 11],
+            "dominant7" => [9, 13],
+            "7" => [9, 13],
+            "half-diminished7" => [11],
+            "m7b5" => [11],
+            "diminished7" => [],
+            _ => []
+        };
+    } else {
+        // Classical context - more conservative
+        return switch q {
+            "major7" => [9],
+            "major" => [],
+            "minor7" => [9],
+            "minor" => [],
+            "dominant7" => [9],
+            "7" => [9],
+            _ => []
+        };
+    }
+}
+
+// Add available tension to chord
+fn add_tension(chord, tension_semitones) {
+    
+    let result = chord;
+    let root = chord[0];
+    let tension_note = core::transpose_note(root, tension_semitones);
+    result.push(tension_note);
+    
+    return result;
+}
+
+// ============================================================================
+// Scale Degree Analysis
+// ============================================================================
+
+// Get scale degree of a note in a key
+fn scale_degree(note, key_root) {
+    scale_degree_ex(note, key_root, "major")
+}
+
+fn scale_degree_ex(note, key_root, mode) {
+    
+    let scale = scales::scale(key_root, mode, 4, 7);
+    let note_pc = core::note_to_midi(note) % 12;
+    
+    for i in 0..scale.len() {
+        let scale_note_pc = core::note_to_midi(scale[i]) % 12;
+        if scale_note_pc == note_pc {
+            return i + 1;
+        }
+    }
+    
+    return 0;  // Not in scale
+}
+
+// Check if note is a chord tone
+fn is_chord_tone(note, chord) {
+    
+    let note_pc = core::note_to_midi(note) % 12;
+    
+    for chord_note in chord {
+        let chord_pc = core::note_to_midi(chord_note) % 12;
+        if note_pc == chord_pc {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+// Check if note is a scale tone
+fn is_scale_tone(note, key_root) {
+    is_scale_tone_ex(note, key_root, "major")
+}
+
+fn is_scale_tone_ex(note, key_root, mode) {
+    return scale_degree(note, key_root, mode) > 0;
+}
+
+// Classify melodic note (chord tone, passing tone, neighbor, etc.)
+fn classify_melodic_note(note, prev_note, next_note, chord, key) {
+    classify_melodic_note_ex(note, prev_note, next_note, chord, key, "major")
+}
+
+fn classify_melodic_note_ex(note, prev_note, next_note, chord, key, mode) {
+    
+    if is_chord_tone(note, chord) {
+        return "chord_tone";
+    }
+    
+    if !is_scale_tone(note, key, mode) {
+        return "chromatic";
+    }
+    
+    // Check for passing tone (stepwise motion in same direction)
+    if prev_note != () && next_note != () {
+        let interval_in = core::interval_semitones(prev_note, note);
+        let interval_out = core::interval_semitones(note, next_note);
+        
+        if (interval_in > 0 && interval_out > 0) || (interval_in < 0 && interval_out < 0) {
+            if interval_in >= -2 && interval_in <= 2 && interval_out >= -2 && interval_out <= 2 {
+                return "passing_tone";
+            }
+        }
+        
+        // Check for neighbor tone (stepwise out and back)
+        if (interval_in > 0 && interval_out < 0) || (interval_in < 0 && interval_out > 0) {
+            if interval_in >= -2 && interval_in <= 2 {
+                return "neighbor_tone";
+            }
+        }
+    }
+    
+    return "non_chord_tone";
+}
+
+// ============================================================================
+// Harmonic Rhythm
+// ============================================================================
+
+// Analyze harmonic rhythm (how often chords change)
+fn analyze_harmonic_rhythm(progression, beats_per_chord) {
+    let total_chords = progression.len();
+    let total_beats = total_chords * beats_per_chord;
+    let changes_per_bar = total_chords / (total_beats / 4.0);
+    
+    return #{
+        "total_chords": total_chords,
+        "total_beats": total_beats,
+        "changes_per_bar": changes_per_bar,
+        "pace": if changes_per_bar > 2 {
+            "fast"
+        } else if changes_per_bar > 1 {
+            "moderate"
+        } else {
+            "slow"
+        }
+    };
+}
+
+// ============================================================================
+// Chord Substitutions
+// ============================================================================
+
+// Get tritone substitution (for dominant chords)
+fn tritone_sub(chord_root) {
+    
+    return core::transpose_note(chord_root, 6);  // Transpose by tritone
+}
+
+// Get relative major/minor
+fn relative_key(key_root, current_mode) {
+    
+    if current_mode.to_lower() == "major" {
+        // Relative minor is 3 semitones down
+        return core::transpose_note(key_root, -3);
+    } else {
+        // Relative major is 3 semitones up
+        return core::transpose_note(key_root, 3);
+    }
+}
+
+// Get parallel major/minor
+fn parallel_key(key_root, current_mode) {
+    // Parallel key has same root, different mode
+    return key_root;
+}
+
+// Suggest substitute chords for a given chord
+fn suggest_substitutes(chord_root, chord_quality) {
+    
+    let subs = [];
+    
+    if chord_quality.to_lower().contains("7") {
+        // Tritone sub for dominant chords
+        subs.push(#{
+            "root": tritone_sub(chord_root),
+            "quality": chord_quality,
+            "type": "tritone"
+        });
+    }
+    
+    // Relative chords (3rd or 6th)
+    if chord_quality.to_lower().contains("major") {
+        subs.push(#{
+            "root": core::transpose_note(chord_root, -3),
+            "quality": "minor",
+            "type": "relative_minor"
+        });
+    } else if chord_quality.to_lower().contains("minor") {
+        subs.push(#{
+            "root": core::transpose_note(chord_root, 3),
+            "quality": "major",
+            "type": "relative_major"
+        });
+    }
+    
+    return subs;
+}
+
+// ============================================================================
+// Consonance and Dissonance
+// ============================================================================
+
+// Check if interval is consonant
+fn is_consonant(semitones) {
+    let interval = semitones % 12;
+    
+    // Perfect consonances: unison, P5, P8
+    // Imperfect consonances: M3, m3, M6, m6
+    return interval == 0 || interval == 3 || interval == 4 || 
+           interval == 7 || interval == 8 || interval == 9;
+}
+
+// Rate dissonance level (0 = most consonant, higher = more dissonant)
+fn dissonance_level(semitones) {
+    let interval = semitones % 12;
+    
+    return switch interval {
+        0 => 0,   // Unison
+        7 => 0,   // Perfect 5th
+        5 => 1,   // Perfect 4th
+        4 => 1,   // Major 3rd
+        3 => 1,   // Minor 3rd
+        9 => 2,   // Major 6th
+        8 => 2,   // Minor 6th
+        2 => 3,   // Major 2nd
+        10 => 3,  // Minor 7th
+        11 => 4,  // Major 7th
+        1 => 5,   // Minor 2nd
+        6 => 5,   // Tritone
+        _ => 0
+    };
+}
+
+// Analyze overall consonance of a chord
+fn chord_consonance(chord) {
+    
+    let total_dissonance = 0;
+    let interval_count = 0;
+    
+    for i in 0..chord.len() {
+        for j in i + 1..chord.len() {
+            if j < chord.len() {
+                let interval = core::interval_semitones(chord[i], chord[j]);
+                total_dissonance += dissonance_level(interval);
+                interval_count += 1;
+            }
+        }
+    }
+    
+    if interval_count == 0 {
+        return 0;
+    }
+    
+    return total_dissonance / interval_count;
+}
+

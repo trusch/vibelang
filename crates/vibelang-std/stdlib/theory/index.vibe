@@ -1,0 +1,28 @@
+// Theory Module Index
+//
+// Music theory utilities including scales, chords, melodies, and harmony.
+
+import "stdlib/theory/core.vibe";
+import "stdlib/theory/scales.vibe";
+import "stdlib/theory/chords.vibe";
+import "stdlib/theory/arpeggios.vibe";
+import "stdlib/theory/progressions.vibe";
+import "stdlib/theory/rhythm.vibe";
+import "stdlib/theory/harmony.vibe";
+import "stdlib/theory/voice_leading.vibe";
+import "stdlib/theory/melody_gen.vibe";
+import "stdlib/theory/bass_patterns.vibe";
+import "stdlib/theory/counterpoint.vibe";
+
+// Import melody collections
+import "stdlib/theory/melodies/classical.vibe";
+import "stdlib/theory/melodies/folk_songs.vibe";
+import "stdlib/theory/melodies/nursery_rhymes.vibe";
+import "stdlib/theory/melodies/holiday_songs.vibe";
+import "stdlib/theory/melodies/jazz_standards.vibe";
+import "stdlib/theory/melodies/pop_rock.vibe";
+import "stdlib/theory/melodies/movie_themes.vibe";
+import "stdlib/theory/melodies/tv_themes.vibe";
+import "stdlib/theory/melodies/video_games.vibe";
+import "stdlib/theory/melodies/national_anthems.vibe";
+import "stdlib/theory/melodies/world_music.vibe";

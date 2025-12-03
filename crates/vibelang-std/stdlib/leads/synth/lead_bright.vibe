@@ -1,0 +1,32 @@
+// Genre: Trance, Progressive | Character: Bright, energetic lead
+define_synthdef("lead_bright")
+    .param("freq", 440.0)
+    .param("amp", 0.45)
+        .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+
+        // Envelope
+        // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.01, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Bright sawtooth mix
+        let saw = saw_ar(freq);
+        let harmonic = saw_ar(freq * 2.0) * 0.3;
+        let mix = saw + harmonic;
+
+        // High-pass for extra brightness
+        let hp = hpf_ar(mix, 200.0);
+
+        // Filter
+        let filter_envelope = env_asr(0.03, 1.0, 0.1);
+        let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+        let mod_cutoff = 2000.0 + (filter_env * 4000.0);
+
+        let filtered = lpf_ar(hp, mod_cutoff);
+
+        filtered * env * amp
+    });
+

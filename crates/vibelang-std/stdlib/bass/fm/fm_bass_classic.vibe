@@ -1,0 +1,30 @@
+// Genre: Electro, Synthwave | Character: Classic FM bass with complex harmonics
+define_synthdef("fm_bass_classic", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("fm_amount", 2.5)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, fm_amount, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // FM envelope
+            let fm_envelope = env_asr(0.01, 1.0, 0.1);
+            let fm_env = NewEnvGenBuilder(fm_envelope, gate).build();
+
+            // FM modulator
+            let modulator = sin_osc_ar(freq * 1.5) * fm_env * freq * fm_amount;
+
+            // Carrier
+            let carrier = sin_osc_ar(freq + modulator);
+
+            carrier * env * amp
+        })
+});
+

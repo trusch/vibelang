@@ -1,0 +1,32 @@
+// Genre: Techno, Industrial | Character: Aggressive, driven pad
+define_synthdef("pad_aggressive", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.35)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Sharper attack
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.08, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Detuned saws with more energy
+            let osc1 = saw_ar(freq * 0.993);
+            let osc2 = saw_ar(freq);
+            let osc3 = saw_ar(freq * 1.007);
+
+            let mix = (osc1 + osc2 + osc3) * 0.4;
+
+            // Clip for aggression
+            let driven = clip(mix, -0.9, 0.9);
+
+            // Filtering
+            let filtered = lpf_ar(driven, 2800.0);
+
+            filtered * env * amp
+        })
+});
+

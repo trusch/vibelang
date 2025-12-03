@@ -1,0 +1,26 @@
+// Genre: Ambient, Experimental | Character: Wide stereo sub with slight detuning
+define_synthdef("sub_stereo", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.015, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Slightly detuned sines for width
+            let left = sin_osc_ar(freq * 0.998);
+            let right = sin_osc_ar(freq * 1.002);
+
+            // Mix for stereo width (using left + right creates subtle movement)
+            let sig = left + right;
+
+            sig * env * amp * 0.7
+        })
+});
+

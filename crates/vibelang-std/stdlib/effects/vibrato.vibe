@@ -1,0 +1,42 @@
+// Vibrato Effect
+//
+// Pitch modulation effect that creates a vibrato sound.
+//
+// Usage:
+//   group.add_effect("vib", "vibrato", #{
+//     rate: 5.0,
+//     depth: 0.002,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   rate: Vibrato rate in Hz (1.0 to 20.0)
+//   depth: Vibrato depth in seconds (0.0001 to 0.01)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("vibrato", |builder| {
+    builder
+        .param("rate", 5.0)
+        .param("depth", 0.002)
+        .param("mix", 1.0)
+        .body(|input, rate, depth, mix| {
+            // LFO for pitch modulation
+            let lfo = sin_osc_ar(rate, 0.0);
+
+            // Modulated delay time creates pitch variation
+            let delay_time = 0.01 + (depth * lfo);
+
+            // Apply modulated delay
+            let vibrato_left = delay_c_ar(input[0], 0.1, delay_time);
+            let vibrato_right = delay_c_ar(input[1], 0.1, delay_time);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * vibrato_left,
+                (1.0 - mix) * input[1] + mix * vibrato_right
+            ];
+
+            output
+        })
+});
+

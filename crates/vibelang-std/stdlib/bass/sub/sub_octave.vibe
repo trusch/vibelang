@@ -1,0 +1,30 @@
+// Genre: Dubstep, Drum & Bass | Character: Layered octaves for massive sub
+define_synthdef("sub_octave", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Fundamental
+            let fundamental = sin_osc_ar(freq);
+
+            // Octave down for extra depth
+            let sub = sin_osc_ar(freq * 0.5) * 0.6;
+
+            // Octave up for harmonics
+            let harmonic = sin_osc_ar(freq * 2.0) * 0.2;
+
+            let sig = fundamental + sub + harmonic;
+
+            sig * env * amp * 0.7
+        })
+});
+

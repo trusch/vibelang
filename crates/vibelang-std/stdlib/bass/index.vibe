@@ -1,0 +1,63 @@
+// Bass Library Index
+//
+// Import this file to load all bass synthdefs at once.
+// Usage: import "stdlib/bass/index.vibe"
+
+// Acid
+import "stdlib/bass/acid/acid_303_classic.vibe";
+import "stdlib/bass/acid/acid_aggressive.vibe";
+import "stdlib/bass/acid/acid_bubbly.vibe";
+import "stdlib/bass/acid/acid_detuned.vibe";
+import "stdlib/bass/acid/acid_distorted.vibe";
+import "stdlib/bass/acid/acid_filtered_square.vibe";
+import "stdlib/bass/acid/acid_minimal.vibe";
+import "stdlib/bass/acid/acid_modulated.vibe";
+import "stdlib/bass/acid/acid_resonant_sweep.vibe";
+import "stdlib/bass/acid/acid_squelchy.vibe";
+
+// Fm
+import "stdlib/bass/fm/fm_bass_aggressive.vibe";
+import "stdlib/bass/fm/fm_bass_classic.vibe";
+import "stdlib/bass/fm/fm_bass_deep.vibe";
+import "stdlib/bass/fm/fm_bass_evolving.vibe";
+import "stdlib/bass/fm/fm_bass_metallic.vibe";
+
+// Pluck
+import "stdlib/bass/pluck/pluck_bell.vibe";
+import "stdlib/bass/pluck/pluck_bright.vibe";
+import "stdlib/bass/pluck/pluck_dark.vibe";
+import "stdlib/bass/pluck/pluck_elastic.vibe";
+import "stdlib/bass/pluck/pluck_funky.vibe";
+import "stdlib/bass/pluck/pluck_long.vibe";
+import "stdlib/bass/pluck/pluck_muted.vibe";
+import "stdlib/bass/pluck/pluck_percussive.vibe";
+import "stdlib/bass/pluck/pluck_resonant.vibe";
+import "stdlib/bass/pluck/pluck_short.vibe";
+
+// Reese
+import "stdlib/bass/reese/reese_aggressive.vibe";
+import "stdlib/bass/reese/reese_classic.vibe";
+import "stdlib/bass/reese/reese_deep.vibe";
+import "stdlib/bass/reese/reese_distorted.vibe";
+import "stdlib/bass/reese/reese_evolving.vibe";
+import "stdlib/bass/reese/reese_smooth.vibe";
+
+// Sub
+import "stdlib/bass/sub/sub_deep.vibe";
+import "stdlib/bass/sub/sub_filtered.vibe";
+import "stdlib/bass/sub/sub_harmonic.vibe";
+import "stdlib/bass/sub/sub_modulated.vibe";
+import "stdlib/bass/sub/sub_mono.vibe";
+import "stdlib/bass/sub/sub_octave.vibe";
+import "stdlib/bass/sub/sub_pure_sine.vibe";
+import "stdlib/bass/sub/sub_stereo.vibe";
+import "stdlib/bass/sub/sub_triangle.vibe";
+import "stdlib/bass/sub/sub_warm.vibe";
+
+// Wobble
+import "stdlib/bass/wobble/wobble_aggressive.vibe";
+import "stdlib/bass/wobble/wobble_classic.vibe";
+import "stdlib/bass/wobble/wobble_deep.vibe";
+import "stdlib/bass/wobble/wobble_fm.vibe";
+import "stdlib/bass/wobble/wobble_smooth.vibe";
+import "stdlib/bass/wobble/wobble_squelch.vibe";

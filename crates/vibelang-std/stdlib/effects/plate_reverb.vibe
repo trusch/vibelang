@@ -1,0 +1,61 @@
+// Plate Reverb Effect
+//
+// Simulates a plate reverb using multiple allpass and comb filters.
+//
+// Usage:
+//   group.add_effect("plate", "plate_reverb", #{
+//     time: 2.0,
+//     damping: 0.4,
+//     mix: 0.3
+//   });
+//
+// Parameters:
+//   time: Reverb time in seconds (0.5 to 10.0)
+//   damping: High frequency damping (0.0 to 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("plate_reverb", |builder| {
+    builder
+        .param("time", 2.0)
+        .param("damping", 0.4)
+        .param("mix", 0.3)
+        .body(|input, time, damping, mix| {
+            // Mix to mono
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Pre-delay
+            let predelayed = delay_n_ar(mono, 0.1, 0.02);
+
+            // High frequency damping
+            let damped = lpf_ar(predelayed, 8000.0 * (1.0 - damping));
+
+            // Series of allpass filters for diffusion
+            let diffused = damped;
+            diffused = allpass_c_ar(diffused, 0.1, 0.0297, time * 0.1);
+            diffused = allpass_c_ar(diffused, 0.1, 0.0371, time * 0.1);
+            diffused = allpass_c_ar(diffused, 0.1, 0.0411, time * 0.1);
+            diffused = allpass_c_ar(diffused, 0.1, 0.0437, time * 0.1);
+
+            // Parallel comb filters for reverb tail
+            let comb1 = comb_l_ar(diffused, 0.2, 0.0297, time);
+            let comb2 = comb_l_ar(diffused, 0.2, 0.0371, time);
+            let comb3 = comb_l_ar(diffused, 0.2, 0.0411, time);
+            let comb4 = comb_l_ar(diffused, 0.2, 0.0437, time);
+
+            // Mix combs
+            let reverb = (comb1 + comb2 + comb3 + comb4) * 0.25;
+
+            // Create stereo with slight decorrelation
+            let left = reverb;
+            let right = delay_n_ar(reverb, 0.01, 0.005);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * left,
+                (1.0 - mix) * input[1] + mix * right
+            ];
+
+            output
+        })
+});
+

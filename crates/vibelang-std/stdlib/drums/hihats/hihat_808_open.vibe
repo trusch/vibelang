@@ -1,0 +1,28 @@
+// Genre: Hip-hop, Trap | Character: Classic 808 open hihat, longer decay
+define_synthdef("hihat_808_open")
+    .param("amp", 1.0)
+    .body(|amp| {
+        let gate = dc_ar(1.0);
+
+        // Longer envelope for open character
+        let envelope = env_perc(0.001, 0.25);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Square wave oscillators
+        let osc1 = saw_ar(315.0);
+        let osc2 = saw_ar(380.0);
+        let osc3 = saw_ar(445.0);
+        let osc4 = saw_ar(540.0);
+        let osc5 = saw_ar(620.0);
+        let osc6 = saw_ar(745.0);
+
+        let mix_osc = (osc1 + osc2 + osc3 + osc4 + osc5 + osc6) * 0.16;
+
+        // High-pass filter
+        let filtered = hpf_ar(mix_osc, 7000.0);
+
+        filtered * env * amp
+    });
+

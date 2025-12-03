@@ -1,0 +1,36 @@
+// Pitch Shift Effect
+//
+// Time-domain pitch shifting without changing duration.
+//
+// Usage:
+//   group.add_effect("pitch", "pitch_shift", #{
+//     ratio: 1.5,
+//     window: 0.2,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   ratio: Pitch ratio (0.5 = down octave, 1.0 = no change, 2.0 = up octave)
+//   window: Window size in seconds (0.05 to 0.5)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("pitch_shift", |builder| {
+    builder
+        .param("ratio", 1.5)
+        .param("window", 0.2)
+        .param("mix", 0.5)
+        .body(|input, ratio, window, mix| {
+            // Apply pitch shifting to both channels
+            let shifted_left = pitch_shift_ar(input[0], window, ratio, 0.0, 0.0);
+            let shifted_right = pitch_shift_ar(input[1], window, ratio, 0.0, 0.0);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * shifted_left,
+                (1.0 - mix) * input[1] + mix * shifted_right
+            ];
+
+            output
+        })
+});
+

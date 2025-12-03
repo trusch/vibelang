@@ -1,0 +1,44 @@
+// Tremolo Effect
+//
+// Amplitude modulation that creates a rhythmic volume variation.
+//
+// Usage:
+//   group.add_effect("trem", "tremolo", #{
+//     rate: 4.0,
+//     depth: 0.5,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   rate: Modulation rate in Hz (0.1 to 20.0)
+//   depth: Modulation depth (0.0 to 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("tremolo", |builder| {
+    builder
+        .param("rate", 4.0)
+        .param("depth", 0.5)
+        .param("mix", 1.0)
+        .body(|input, rate, depth, mix| {
+            // LFO for amplitude modulation
+            let lfo = sin_osc_ar(rate, 0.0);
+
+            // Convert LFO from -1..1 to modulation range
+            let mod = 1.0 - (depth * 0.5 * (1.0 + lfo));
+
+            // Apply modulation to both channels
+            let modulated = [
+                input[0] * mod,
+                input[1] * mod
+            ];
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * modulated[0],
+                (1.0 - mix) * input[1] + mix * modulated[1]
+            ];
+
+            output
+        })
+});
+

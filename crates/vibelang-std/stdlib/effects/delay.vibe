@@ -1,0 +1,43 @@
+// Stereo Delay Effect
+//
+// Usage:
+//   define_fx("delay", |input, time=0.25, feedback=0.5, mix=0.5| {
+//     let left = delay_n_ar(input[0], 2.0, time);
+//     let right = delay_n_ar(input[1], 2.0, time);
+//     [
+//       (1.0 - mix) * input[0] + mix * (left + feedback * left),
+//       (1.0 - mix) * input[1] + mix * (right + feedback * right)
+//     ]
+//   });
+//
+//   group("Synths").add_effect("synth_delay", "delay", #{
+//     time: 0.375,
+//     feedback: 0.6,
+//     mix: 0.4
+//   });
+//
+// Parameters:
+//   time: Delay time in seconds
+//   feedback: Feedback amount (0.0 - 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("delay", |builder| {
+    builder
+        .param("time", 0.25)
+        .param("feedback", 0.5)
+        .param("mix", 0.5)
+        .body(|input, time, feedback, mix| {
+            // Simple stereo delay with feedback
+            let left_delayed = delay_n_ar(input[0] + (feedback * delay_n_ar(input[0], 2.0, time)), 2.0, time);
+            let right_delayed = delay_n_ar(input[1] + (feedback * delay_n_ar(input[1], 2.0, time)), 2.0, time);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * left_delayed,
+                (1.0 - mix) * input[1] + mix * right_delayed
+            ];
+
+            output
+        })
+});
+

@@ -1,0 +1,63 @@
+// Lo-Fi Effect
+//
+// Combines multiple effects to create a lo-fi, degraded sound quality.
+//
+// Usage:
+//   group.add_effect("lofi", "lo_fi", #{
+//     bit_depth: 10.0,
+//     sample_rate: 16000.0,
+//     noise: 0.02,
+//     filter_freq: 3500.0,
+//     mix: 0.7
+//   });
+//
+// Parameters:
+//   bit_depth: Bit depth reduction (4.0 to 16.0)
+//   sample_rate: Sample rate reduction in Hz (4000 to 44100)
+//   noise: Noise amount (0.0 to 0.1)
+//   filter_freq: Low pass filter frequency in Hz (1000 to 8000)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("lo_fi", |builder| {
+    builder
+        .param("bit_depth", 10.0)
+        .param("sample_rate", 16000.0)
+        .param("noise", 0.02)
+        .param("filter_freq", 3500.0)
+        .param("mix", 0.7)
+        .body(|input, bit_depth, sample_rate, noise, filter_freq, mix| {
+            // Sample rate reduction
+            let rate_reduced_left = latch_ar(input[0], impulse_ar(sample_rate, 0.0));
+            let rate_reduced_right = latch_ar(input[1], impulse_ar(sample_rate, 0.0));
+
+            // Approximate bit depth reduction using drive + soft-clipping.
+            // Map bit_depth (4..16) to a modest drive factor.
+            let drive = 1.0 + (bit_depth / 8.0);
+            let crushed_left = (rate_reduced_left * drive).tanh();
+            let crushed_right = (rate_reduced_right * drive).tanh();
+
+            // Add noise
+            let noise_sig = pink_noise_ar() * noise;
+            let noisy_left = crushed_left + noise_sig;
+            let noisy_right = crushed_right + noise_sig;
+
+            // Low pass filter
+            let filtered_left = lpf_ar(noisy_left, filter_freq);
+            let filtered_right = lpf_ar(noisy_right, filter_freq);
+
+            // Slight distortion
+            let lofi = [
+                (filtered_left * 1.2).tanh(),
+                (filtered_right * 1.2).tanh()
+            ];
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * lofi[0],
+                (1.0 - mix) * input[1] + mix * lofi[1]
+            ];
+
+            output
+        })
+});
+

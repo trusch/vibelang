@@ -1,0 +1,34 @@
+// Genre: Ambient, Field Recording | Character: Field recording style ambient
+define_synthdef("texture_field", |builder| {
+    builder
+        .param("amp", 0.35)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Very long sustain
+            let envelope = env_perc(2.0, 15.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Mix of noise colors
+            let pink = pink_noise_ar() * 0.5;
+            let brown = pink_noise_ar() * 0.3;
+            let white = white_noise_ar() * 0.2;
+
+            let noise_mix = pink + brown + white;
+
+            // Natural filtering
+            let filtered = rlpf_ar(noise_mix, 2500.0, 0.7);
+
+            // Gentle evolution
+            let filter_envelope = env_perc(4.0, 12.0);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 1500.0 + (filter_env * 1500.0);
+
+            let evolved = lpf_ar(filtered, mod_cutoff);
+
+            evolved * env * amp
+        })
+});
+

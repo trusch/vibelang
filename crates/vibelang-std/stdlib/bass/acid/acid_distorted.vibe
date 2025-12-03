@@ -1,0 +1,33 @@
+// Genre: Industrial, Hard Techno | Character: Distorted, aggressive acid
+define_synthdef("acid_distorted", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filter_envelope = env_asr(0.008, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+
+            // Sawtooth with extra gain
+            let osc = saw_ar(freq) * 2.5;
+
+            // Clip for distortion
+            let distorted = clip(osc, -0.9, 0.9);
+
+            // Resonant filter
+            let mod_cutoff = 600.0 + (filter_env * 2000.0);
+            let filtered = rlpf_ar(distorted, mod_cutoff, 0.2);
+
+            filtered * env * amp * 0.5
+        })
+});
+

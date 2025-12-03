@@ -1,0 +1,28 @@
+// Pad Library Index
+//
+// Import this file to load all pad synthdefs at once.
+// Usage: import "stdlib/pads/index.vibe"
+
+// Ambient
+import "stdlib/pads/ambient/pad_bright.vibe";
+import "stdlib/pads/ambient/pad_cold.vibe";
+import "stdlib/pads/ambient/pad_dark.vibe";
+import "stdlib/pads/ambient/pad_dense.vibe";
+import "stdlib/pads/ambient/pad_evolving.vibe";
+import "stdlib/pads/ambient/pad_filtered.vibe";
+import "stdlib/pads/ambient/pad_shimmer.vibe";
+import "stdlib/pads/ambient/pad_space.vibe";
+import "stdlib/pads/ambient/pad_sparse.vibe";
+import "stdlib/pads/ambient/pad_warm.vibe";
+
+// Lush
+import "stdlib/pads/lush/pad_aggressive.vibe";
+import "stdlib/pads/lush/pad_chorus.vibe";
+import "stdlib/pads/lush/pad_detuned.vibe";
+import "stdlib/pads/lush/pad_morphing.vibe";
+import "stdlib/pads/lush/pad_narrow.vibe";
+import "stdlib/pads/lush/pad_organ.vibe";
+import "stdlib/pads/lush/pad_soft.vibe";
+import "stdlib/pads/lush/pad_string.vibe";
+import "stdlib/pads/lush/pad_voice.vibe";
+import "stdlib/pads/lush/pad_wide.vibe";

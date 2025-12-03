@@ -1,0 +1,30 @@
+// Genre: EDM, Trap | Character: White noise riser with filter sweep
+define_synthdef("riser_white_noise", |builder| {
+    builder
+        .param("amp", 0.6)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Long rise envelope
+            let envelope = env_perc(0.01, 3.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // White noise source
+            let noise = white_noise_ar();
+
+            // Rising filter sweep
+            let filter_envelope = env_perc(0.5, 2.8);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 200.0 + (filter_env * 8000.0);
+
+            let filtered = lpf_ar(noise, mod_cutoff);
+
+            // Resonance for emphasis
+            let resonant = rlpf_ar(filtered, mod_cutoff * 0.8, 0.3);
+
+            resonant * env * amp
+        })
+});
+

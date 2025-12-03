@@ -1,0 +1,50 @@
+[package]
+name = "vibelang-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core types and state management for VibeLang"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/trusch/vibelang"
+keywords = ["music", "audio", "supercollider", "livecoding"]
+categories = ["multimedia::audio"]
+
+[dependencies]
+# SFZ support
+vibelang-sfz = "0.1"
+
+# DSP/Synthdef generation
+vibelang-dsp = "0.1"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Concurrency
+crossbeam-channel = "0.5"
+
+# OSC for SuperCollider communication
+rosc = "0.10"
+
+# Randomness for patterns
+rand = { version = "0.8", features = ["std", "std_rng"] }
+
+# Logging
+log = "0.4"
+
+# Time parsing for durations
+humantime = "2.1"
+
+# Regex for step parsing
+regex = "1.10"
+
+# Scripting engine
+rhai = { version = "1.17", features = ["sync", "internals"] }
+
+# Audio analysis (BPM detection)
+aubio-rs = { version = "0.2", features = ["builtin"] }
+
+# WAV file reading for BPM analysis
+hound = "3.5"
+
+[dev-dependencies]
+env_logger = "0.11"

@@ -1,0 +1,33 @@
+// Genre: Techno, Industrial | Character: Dark, aggressive stab
+define_synthdef("stab_dark", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Quick envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.002, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Minor chord (root, minor third, fifth)
+            let root = saw_ar(freq);
+            let minor_third = saw_ar(freq * 1.2);
+            let fifth = saw_ar(freq * 1.5);
+
+            let chord = (root + minor_third * 0.8 + fifth * 0.6) * 0.4;
+
+            // Dark filter
+            let filter_envelope = env_asr(0.002, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 600.0 + (filter_env * 1500.0);
+
+            let filtered = lpf_ar(chord, mod_cutoff);
+
+            filtered * env * amp
+        })
+});
+

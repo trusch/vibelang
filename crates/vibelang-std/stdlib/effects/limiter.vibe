@@ -1,0 +1,27 @@
+// Limiter Effect
+//
+// Peak limiter to prevent clipping and control maximum output level.
+//
+// Usage:
+//   group.add_effect("limit", "limiter", #{
+//     level: 0.9,
+//     lookahead: 0.01
+//   });
+//
+// Parameters:
+//   level: Maximum output level (0.0 to 1.0)
+//   lookahead: Lookahead time in seconds (0.001 to 0.1)
+
+define_fx("limiter", |builder| {
+    builder
+        .param("level", 0.9)
+        .param("lookahead", 0.01)
+        .body(|input, level, lookahead| {
+            // Apply limiter to both channels
+            let limited_left = limiter_ar(input[0], level, lookahead);
+            let limited_right = limiter_ar(input[1], level, lookahead);
+
+            [limited_left, limited_right]
+        })
+});
+

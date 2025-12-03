@@ -1,0 +1,32 @@
+// Genre: Deep Dubstep, 140 | Character: Deep, sub-heavy wobble
+define_synthdef("wobble_deep", |builder| {
+    builder
+        .param("freq", 75.0)
+        .param("wobble_rate", 2.5)
+        .param("amp", 0.65)
+        .param("gate", 1.0)
+        .body(|freq, wobble_rate, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.015, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Saw plus sub
+            let saw = saw_ar(freq) * 0.6;
+            let sub = sin_osc_ar(freq * 0.5) * 0.4;
+            let mix = saw + sub;
+
+            // Slow, deep wobble
+            let wobble_lfo = sin_osc_ar(wobble_rate) * 0.5 + 0.5;
+            let mod_cutoff = 150.0 + (wobble_lfo * 1200.0);
+
+            // Moderate resonance
+            let filtered = rlpf_ar(mix, mod_cutoff, 0.25);
+
+            filtered * env * amp
+        })
+});
+

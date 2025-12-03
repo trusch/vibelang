@@ -1,0 +1,38 @@
+// Genre: Neurofunk, Techstep | Character: Aggressive, gritty Reese
+define_synthdef("reese_aggressive", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.65)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Punchy envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.008, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Wide detuning for aggression
+            let saw1 = saw_ar(freq * 0.975);
+            let saw2 = saw_ar(freq * 0.988);
+            let saw3 = saw_ar(freq);
+            let saw4 = saw_ar(freq * 1.012);
+            let saw5 = saw_ar(freq * 1.025);
+
+            let mix = (saw1 + saw2 + saw3 + saw4 + saw5) * 0.25;
+
+            // Clip for distortion
+            let driven = clip(mix, -0.85, 0.85);
+
+            // Aggressive filter
+            let filter_envelope = env_asr(0.01, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 500.0 + (filter_env * 2000.0);
+
+            let filtered = rlpf_ar(driven, mod_cutoff, 0.3);
+
+            filtered * env * amp
+        })
+});
+

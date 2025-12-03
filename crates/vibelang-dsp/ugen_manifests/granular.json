@@ -1,0 +1,89 @@
+[
+  {
+    "name": "TGrains",
+    "description": "Triggered granular synthesis. Generates overlapping grains from a buffer when triggered.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 2.0, "description": "Number of output channels"},
+      {"name": "trigger", "type": "signal", "default": 0.0, "description": "Trigger signal to spawn new grain"},
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number containing audio"},
+      {"name": "rate", "type": "float", "default": 1.0, "description": "Playback rate (1.0 = normal, 2.0 = double speed)"},
+      {"name": "centerPos", "type": "float", "default": 0.0, "description": "Grain center position in buffer (0 to 1)"},
+      {"name": "dur", "type": "float", "default": 0.1, "description": "Grain duration in seconds"},
+      {"name": "pan", "type": "float", "default": 0.0, "description": "Stereo pan position (-1 to 1)"},
+      {"name": "amp", "type": "float", "default": 0.1, "description": "Grain amplitude"},
+      {"name": "interp", "type": "float", "default": 4.0, "description": "Interpolation type (1=none, 2=linear, 4=cubic)"}
+    ],
+    "outputs": 2,
+    "category": "Granular"
+  },
+  {
+    "name": "GrainBuf",
+    "description": "Buffer-based granular synthesis. Continuously generates grains from a buffer.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 2.0, "description": "Number of output channels"},
+      {"name": "trigger", "type": "signal", "default": 0.0, "description": "Trigger rate for new grains"},
+      {"name": "dur", "type": "float", "default": 1.0, "description": "Grain duration in seconds"},
+      {"name": "sndbuf", "type": "float", "default": 0.0, "description": "Buffer number containing audio"},
+      {"name": "rate", "type": "float", "default": 1.0, "description": "Playback rate"},
+      {"name": "pos", "type": "float", "default": 0.0, "description": "Grain position in buffer (0 to 1)"},
+      {"name": "interp", "type": "float", "default": 2.0, "description": "Interpolation type"},
+      {"name": "pan", "type": "float", "default": 0.0, "description": "Stereo pan position"},
+      {"name": "envbufnum", "type": "float", "default": -1.0, "description": "Envelope buffer number (-1 = default Hann window)"},
+      {"name": "maxGrains", "type": "float", "default": 512.0, "description": "Maximum number of overlapping grains"}
+    ],
+    "outputs": 2,
+    "category": "Granular"
+  },
+  {
+    "name": "GrainSin",
+    "description": "Sine oscillator granular synthesis. Generates grains using sine wave oscillators.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 2.0, "description": "Number of output channels"},
+      {"name": "trigger", "type": "signal", "default": 0.0, "description": "Trigger rate for new grains"},
+      {"name": "dur", "type": "float", "default": 1.0, "description": "Grain duration in seconds"},
+      {"name": "freq", "type": "float", "default": 440.0, "description": "Frequency of sine oscillator in Hz"},
+      {"name": "pan", "type": "float", "default": 0.0, "description": "Stereo pan position"},
+      {"name": "envbufnum", "type": "float", "default": -1.0, "description": "Envelope buffer number"},
+      {"name": "maxGrains", "type": "float", "default": 512.0, "description": "Maximum number of overlapping grains"}
+    ],
+    "outputs": 2,
+    "category": "Granular"
+  },
+  {
+    "name": "GrainFM",
+    "description": "FM synthesis granular generator. Generates grains using FM synthesis.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 2.0, "description": "Number of output channels"},
+      {"name": "trigger", "type": "signal", "default": 0.0, "description": "Trigger rate for new grains"},
+      {"name": "dur", "type": "float", "default": 1.0, "description": "Grain duration in seconds"},
+      {"name": "carfreq", "type": "float", "default": 440.0, "description": "Carrier frequency in Hz"},
+      {"name": "modfreq", "type": "float", "default": 200.0, "description": "Modulator frequency in Hz"},
+      {"name": "index", "type": "float", "default": 1.0, "description": "FM modulation index"},
+      {"name": "pan", "type": "float", "default": 0.0, "description": "Stereo pan position"},
+      {"name": "envbufnum", "type": "float", "default": -1.0, "description": "Envelope buffer number"},
+      {"name": "maxGrains", "type": "float", "default": 512.0, "description": "Maximum number of overlapping grains"}
+    ],
+    "outputs": 2,
+    "category": "Granular"
+  },
+  {
+    "name": "GrainIn",
+    "description": "Live input granular synthesis. Generates grains from a live input signal.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 2.0, "description": "Number of output channels"},
+      {"name": "trigger", "type": "signal", "default": 0.0, "description": "Trigger rate for new grains"},
+      {"name": "dur", "type": "float", "default": 1.0, "description": "Grain duration in seconds"},
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Live input signal to granulate"},
+      {"name": "pan", "type": "float", "default": 0.0, "description": "Stereo pan position"},
+      {"name": "envbufnum", "type": "float", "default": -1.0, "description": "Envelope buffer number"},
+      {"name": "maxGrains", "type": "float", "default": 512.0, "description": "Maximum number of overlapping grains"}
+    ],
+    "outputs": 2,
+    "category": "Granular"
+  }
+]

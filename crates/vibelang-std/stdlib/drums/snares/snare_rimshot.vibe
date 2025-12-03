@@ -1,0 +1,26 @@
+// Genre: Latin, Reggaeton | Character: Rimshot, sharp and cutting
+define_synthdef("snare_rimshot", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Very short, sharp envelope
+            let rim_envelope = env_perc(0.0003, 0.04);
+            let rim_env = NewEnvGenBuilder(rim_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // High-frequency click
+            let click = white_noise_ar();
+            let filtered_click = hpf_ar(click, 6000.0);
+
+            // Metallic tone
+            let tone1 = sin_osc_ar(800.0) * 0.4;
+            let tone2 = sin_osc_ar(1200.0) * 0.3;
+            let tones = (tone1 + tone2) * rim_env;
+
+            (filtered_click * rim_env * 0.5 + tones) * amp
+        })
+});
+

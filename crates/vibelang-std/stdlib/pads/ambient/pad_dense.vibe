@@ -1,0 +1,31 @@
+// Genre: Ambient, Drone | Character: Dense, thick pad
+define_synthdef("pad_dense", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.35)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Moderate attack, long sustain
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.3, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Many detuned oscillators for thickness
+            let osc1 = saw_ar(freq * 0.988);
+            let osc2 = saw_ar(freq * 0.994);
+            let osc3 = saw_ar(freq);
+            let osc4 = saw_ar(freq * 1.006);
+            let osc5 = saw_ar(freq * 1.012);
+
+            let mix = (osc1 + osc2 + osc3 + osc4 + osc5) * 0.2;
+
+            // Warm filtering
+            let filtered = lpf_ar(mix, 1800.0);
+
+            filtered * env * amp
+        })
+});
+

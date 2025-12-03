@@ -1,0 +1,34 @@
+// Genre: Ambient, Chillout | Character: Long, sustained pluck
+define_synthdef("pluck_long", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Long sustain
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Rich harmonics
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.35;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.2;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.12;
+
+            let mix = h1 + h2 + h3 + h4;
+
+            // Slow filter evolution
+            let filter_envelope = env_asr(0.05, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 1200.0 + (filter_env * 3000.0);
+
+            let filtered = lpf_ar(mix, mod_cutoff);
+
+            filtered * env * amp
+        })
+});
+

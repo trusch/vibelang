@@ -1,0 +1,26 @@
+// Genre: Ambient, Nature | Character: Rain-like texture
+define_synthdef("texture_rain", |builder| {
+    builder
+        .param("amp", 0.4)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Long sustain
+            let envelope = env_perc(0.5, 10.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // White noise for rain character
+            let noise = white_noise_ar();
+
+            // Mid-range filtering
+            let filtered = rlpf_ar(noise, 3500.0, 0.6);
+
+            // High-pass to remove lows
+            let clean = hpf_ar(filtered, 400.0);
+
+            clean * env * amp * 0.7
+        })
+});
+

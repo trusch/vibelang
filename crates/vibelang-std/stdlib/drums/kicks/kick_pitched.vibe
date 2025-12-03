@@ -1,0 +1,32 @@
+// Genre: House, Melodic Techno | Character: Tonal kick with clear pitch
+define_synthdef("kick_pitched", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 1.0)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Medium decay to hear pitch
+            let amp_envelope = env_perc(0.001, 0.35);
+            let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Minimal pitch sweep to retain tonality
+            let pitch_envelope = env_perc(0.001, 0.03);
+            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let freq_mod = pitch_env * freq * 0.8;
+
+            // Main tone with harmonic
+            let sig = sin_osc_ar(freq + freq_mod);
+            let harmonic = sin_osc_ar((freq + freq_mod) * 2.0) * 0.2;
+
+            // Light click
+            let click_envelope = env_perc(0.0001, 0.005);
+            let click_env = NewEnvGenBuilder(click_envelope, gate).build();
+            let click = white_noise_ar() * click_env * 0.08;
+
+            (sig + harmonic + click) * amp_env * amp
+        })
+});
+

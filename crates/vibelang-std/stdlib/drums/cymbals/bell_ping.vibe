@@ -1,0 +1,34 @@
+// Genre: Jazz, Experimental | Character: Ride bell or cymbal ping
+define_synthdef("bell_ping", |builder| {
+    builder
+        .param("freq", 880.0)
+        .param("amp", 0.7)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Medium decay
+            let envelope = env_perc(0.001, 0.8);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Clear bell tones with inharmonic partials
+            let bell1 = sin_osc_ar(freq) * 0.4;
+            let bell2 = sin_osc_ar(freq * 1.5) * 0.3;
+            let bell3 = sin_osc_ar(freq * 2.3) * 0.2;
+            let bell4 = sin_osc_ar(freq * 3.8) * 0.1;
+
+            let bells = bell1 + bell2 + bell3 + bell4;
+
+            // Metallic shimmer
+            let metal = saw_ar(freq * 4.5) * 0.15;
+
+            // Subtle attack noise
+            let attack_envelope = env_perc(0.0005, 0.008);
+            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack = white_noise_ar() * attack_env * 0.1;
+
+            (bells + metal + attack) * env * amp
+        })
+});
+

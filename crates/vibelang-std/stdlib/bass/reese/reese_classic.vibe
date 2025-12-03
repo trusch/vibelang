@@ -1,0 +1,33 @@
+// Genre: Drum & Bass, Jungle | Character: Classic Reese bass, thick and evolving
+define_synthdef("reese_classic", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple detuned sawtooths for Reese character
+            let saw1 = saw_ar(freq * 0.985);
+            let saw2 = saw_ar(freq * 0.992);
+            let saw3 = saw_ar(freq);
+            let saw4 = saw_ar(freq * 1.008);
+            let saw5 = saw_ar(freq * 1.015);
+
+            let mix = (saw1 + saw2 + saw3 + saw4 + saw5) * 0.2;
+
+            // Filter envelope for movement
+            let filter_envelope = env_perc(0.02, 0.8);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 400.0 + (filter_env * 1200.0);
+
+            let filtered = lpf_ar(mix, mod_cutoff);
+
+            filtered * env * amp
+        })
+});
+
