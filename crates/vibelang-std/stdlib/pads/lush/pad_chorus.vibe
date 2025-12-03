@@ -1,0 +1,31 @@
+// Genre: Synthwave, Pop | Character: Chorused pad with movement
+define_synthdef("pad_chorus", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Pad envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.3, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Detuned oscillators simulating chorus
+            let osc1 = saw_ar(freq * 0.992);
+            let osc2 = saw_ar(freq * 0.996);
+            let osc3 = saw_ar(freq);
+            let osc4 = saw_ar(freq * 1.004);
+            let osc5 = saw_ar(freq * 1.008);
+
+            let mix = (osc1 + osc2 + osc3 + osc4 + osc5) * 0.2;
+
+            // Filtering
+            let filtered = lpf_ar(mix, 3000.0);
+
+            filtered * env * amp
+        })
+});
+

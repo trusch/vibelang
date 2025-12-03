@@ -1,0 +1,59 @@
+// Phaser Effect
+//
+// Creates a sweeping sound using all-pass filters with LFO modulation.
+//
+// Usage:
+//   group.add_effect("phaser", "phaser", #{
+//     rate: 0.5,
+//     depth: 1000.0,
+//     freq: 1000.0,
+//     feedback: 0.3,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   rate: LFO rate in Hz (0.05 to 5.0)
+//   depth: Modulation depth in Hz (100 to 5000)
+//   freq: Base frequency in Hz (200 to 5000)
+//   feedback: Feedback amount (0.0 to 0.9)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("phaser", |builder| {
+    builder
+        .param("rate", 0.5)
+        .param("depth", 1000.0)
+        .param("freq", 1000.0)
+        .param("feedback", 0.3)
+        .param("mix", 0.5)
+        .body(|input, rate, depth, freq, feedback, mix| {
+            // LFO for filter modulation
+            let lfo = sin_osc_ar(rate, 0.0);
+            let mod_freq = freq + (depth * lfo);
+
+            // Chain of all-pass filters for phaser effect
+            let phased_left = input[0];
+            let phased_right = input[1];
+
+            // Apply multiple stages of all-pass filtering
+            phased_left = allpass_n_ar(phased_left, 0.02, 1.0 / mod_freq, 0.0);
+            phased_left = allpass_n_ar(phased_left, 0.02, 1.0 / (mod_freq * 1.5), 0.0);
+            phased_left = allpass_n_ar(phased_left, 0.02, 1.0 / (mod_freq * 2.0), 0.0);
+
+            phased_right = allpass_n_ar(phased_right, 0.02, 1.0 / mod_freq, 0.0);
+            phased_right = allpass_n_ar(phased_right, 0.02, 1.0 / (mod_freq * 1.5), 0.0);
+            phased_right = allpass_n_ar(phased_right, 0.02, 1.0 / (mod_freq * 2.0), 0.0);
+
+            // Add feedback
+            phased_left = phased_left + (feedback * phased_left);
+            phased_right = phased_right + (feedback * phased_right);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * phased_left,
+                (1.0 - mix) * input[1] + mix * phased_right
+            ];
+
+            output
+        })
+});
+

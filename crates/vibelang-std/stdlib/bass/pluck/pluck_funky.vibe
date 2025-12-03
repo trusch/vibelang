@@ -1,0 +1,27 @@
+// Genre: Funk, Disco | Character: Funky, percussive pluck
+define_synthdef("pluck_funky", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.75)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            // Use gate parameter to control note duration
+            let envelope = env_adsr(0.001, 0.05, 0.7, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Sawtooth wave for funk character (pulse_ar not available)
+            let osc = saw_ar(freq);
+
+            // Snappy filter sweep
+            let filter_envelope = env_perc(0.001, 0.08);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 800.0 + (filter_env * 2000.0);
+
+            let filtered = lpf_ar(osc, mod_cutoff);
+
+            filtered * env * amp
+        })
+});
+

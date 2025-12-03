@@ -1,0 +1,221 @@
+.get-started {
+  background-color: var(--color-bg);
+}
+
+.get-started__header {
+  text-align: center;
+  max-width: 700px;
+  margin: 0 auto var(--space-xl);
+}
+
+.get-started__label {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--color-accent);
+  margin-bottom: var(--space-md);
+}
+
+.get-started__header h2 {
+  margin-bottom: var(--space-md);
+}
+
+.get-started__subtitle {
+  color: var(--color-text-muted);
+  font-size: 1.125rem;
+}
+
+/* Steps Grid */
+.get-started__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-lg);
+  margin-bottom: var(--space-xl);
+}
+
+.get-started__step {
+  background-color: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  padding: var(--space-xl);
+  position: relative;
+}
+
+.get-started__step-number {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+  font-family: var(--font-display);
+  font-size: 3rem;
+  color: var(--color-accent);
+  opacity: 0.2;
+  line-height: 1;
+}
+
+.get-started__step h3 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  margin-bottom: var(--space-sm);
+}
+
+.get-started__step p {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  margin-bottom: var(--space-md);
+}
+
+.get-started__step .btn {
+  font-size: 0.8rem;
+  padding: var(--space-sm) var(--space-md);
+}
+
+/* Install Command */
+.get-started__install {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  background-color: var(--color-terminal-bg);
+  border-radius: var(--border-radius);
+  padding: var(--space-md);
+  overflow-x: auto;
+}
+
+.get-started__install code {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--color-terminal-text);
+  white-space: nowrap;
+  flex: 1;
+}
+
+.get-started__copy {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: var(--space-xs) var(--space-sm);
+  background-color: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--border-radius);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.get-started__copy:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.get-started__commands {
+  background-color: var(--color-terminal-bg);
+  border-radius: var(--border-radius);
+  padding: var(--space-md);
+  overflow-x: auto;
+}
+
+.get-started__commands code {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--color-terminal-text);
+  white-space: nowrap;
+}
+
+/* Example */
+.get-started__example {
+  background-color: var(--color-terminal-bg);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-retro);
+  margin-bottom: var(--space-xl);
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.get-started__example-header {
+  padding: var(--space-md) var(--space-lg);
+  background-color: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.get-started__example-code {
+  padding: var(--space-lg);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.8;
+  color: var(--color-terminal-text);
+  overflow-x: auto;
+}
+
+.get-started__example-code code {
+  color: inherit;
+}
+
+/* Resources */
+.get-started__resources {
+  text-align: center;
+}
+
+.get-started__resources h3 {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  margin-bottom: var(--space-lg);
+}
+
+.get-started__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-md);
+}
+
+.get-started__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  transition: all var(--transition-fast);
+}
+
+.get-started__link:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.get-started__link-icon {
+  color: var(--color-accent);
+  font-size: 0.75rem;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .get-started__step {
+    padding: var(--space-lg);
+  }
+
+  .get-started__install {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+  }
+
+  .get-started__links {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .get-started__link {
+    justify-content: center;
+  }
+}

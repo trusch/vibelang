@@ -1,0 +1,26 @@
+[package]
+name = "vibelang-sfz"
+version = "0.1.0"
+edition = "2021"
+description = "SFZ instrument support for VibeLang"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/trusch/vibelang"
+keywords = ["music", "audio", "sfz", "sampler"]
+categories = ["multimedia::audio"]
+
+[dependencies]
+# SFZ file parsing (embedded)
+nom = "7.1"
+
+# DSP/Synthdef generation
+vibelang-dsp = "0.1"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+log = "0.4"
+
+# Scripting engine (for Rhai API types)
+rhai = { version = "1.17", features = ["sync", "internals"] }

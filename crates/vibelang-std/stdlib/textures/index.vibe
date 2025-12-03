@@ -1,0 +1,18 @@
+// Texture Library Index
+//
+// Import this file to load all texture synthdefs at once.
+// Usage: import "stdlib/textures/index.vibe"
+
+// Ambient
+import "stdlib/textures/ambient/texture_field.vibe";
+import "stdlib/textures/ambient/texture_granular.vibe";
+import "stdlib/textures/ambient/texture_rain.vibe";
+import "stdlib/textures/ambient/texture_space.vibe";
+import "stdlib/textures/ambient/texture_wind.vibe";
+
+// Drone
+import "stdlib/textures/drone/drone_dark.vibe";
+import "stdlib/textures/drone/drone_evolving.vibe";
+import "stdlib/textures/drone/drone_harmonic.vibe";
+import "stdlib/textures/drone/drone_noise.vibe";
+import "stdlib/textures/drone/drone_resonant.vibe";

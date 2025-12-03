@@ -1,0 +1,17 @@
+[package]
+name = "vibelang-std"
+version = "0.1.0"
+edition = "2021"
+description = "Standard library of VibeLang sound design files"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/trusch/vibelang"
+keywords = ["music", "audio", "supercollider", "sounds"]
+categories = ["multimedia::audio"]
+include = ["src/**/*", "stdlib/**/*", "Cargo.toml"]
+
+[dependencies]
+# Embed stdlib files at compile time
+include_dir = "0.7"
+
+# Cross-platform user directories
+dirs = "5.0"

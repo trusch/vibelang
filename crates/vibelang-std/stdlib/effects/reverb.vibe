@@ -1,0 +1,18 @@
+// Intentionally simple (“dumb”) reverb made from delays and filters so it is easy to debug.
+// This is not a studio-quality algorithm, but it makes the effect extremely obvious.
+
+define_fx("reverb")
+    .param("room", 0.6)
+    .param("damp", 0.4)
+    .param("mix", 0.3)
+    .body(|input, room, damp, mix| {
+        // Collapse to mono, run FreeVerb fully wet, then duplicate.
+        let mono = (input[0] + input[1]) * 0.5;
+        let wet = free_verb_ar(mono, 1.0, room, damp);
+        let stereo = dup(wet, 2);
+
+        [
+            (1.0 - mix) * input[0] + mix * stereo[0],
+            (1.0 - mix) * input[1] + mix * stereo[1]
+        ]
+    });

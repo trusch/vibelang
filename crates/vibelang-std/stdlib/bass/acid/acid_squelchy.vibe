@@ -1,0 +1,30 @@
+// Genre: Acid Techno | Character: Squelchy, high resonance
+define_synthdef("acid_squelchy", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.003, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Sharp filter envelope
+            let filter_envelope = env_asr(0.005, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+
+            // Sawtooth
+            let osc = saw_ar(freq);
+
+            // High resonance for squelch
+            let mod_cutoff = 400.0 + (filter_env * 2500.0);
+            let filtered = rlpf_ar(osc, mod_cutoff, 0.15);
+
+            filtered * env * amp
+        })
+});
+

@@ -1,0 +1,80 @@
+// ============================================================================
+// Movie Themes
+// ============================================================================
+// Iconic movie theme melodies with proper rhythm
+// Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
+
+// 2001: A Space Odyssey - Also Sprach Zarathustra (Strauss) - Grand, slow
+fn also_sprach_zarathustra() {
+    return "C3 - - - - - - - | . . . . G3 - - - | . . . . C4 - - - | . . . . E4 - - - | G4 - - - - - - - | C5 - - - - - - - |";
+}
+
+// Jaws - Main Theme - Building tension
+fn jaws_theme() {
+    return "E3 - F3 - E3 - F3 - | E3 - F3 - E3 - F3 - | E3 F3 E3 F3 E3 F3 E3 F3 | F3 F#3 G3 G#3 A3 - - - |";
+}
+
+// The Good, the Bad and the Ugly - Main Theme - 4/4 Western
+fn good_bad_ugly_theme() {
+    return "C4 - D4 - E4 - - . | A4 - - - . . . . | G4 - F4 - E4 - D4 - | C4 - - - - - - - |";
+}
+
+// The Entertainer - Ragtime (Scott Joplin) - 2/4 time
+fn the_entertainer_movie() {
+    return "D4 E4 C4 A3 | B3 G3 . D4 | E4 C4 A3 B3 | G3 . . . |";
+}
+
+// Chariots of Fire - Main Theme - Slow, inspiring 4/4
+fn chariots_of_fire() {
+    return "C4 - E4 - G4 - C5 - | . . B4 - A4 - G4 - | E4 - - . D4 - C4 - |";
+}
+
+// Star Wars - Imperial March - 4/4 march
+fn imperial_march() {
+    return "G4 - G4 - G4 - Eb4 Bb4 | G4 - Eb4 Bb4 . |  G4 - - - . |";
+}
+
+// James Bond - Main Theme - 4/4 swing
+fn james_bond_theme() {
+    return "E4 - F#4 - F#4 - F#4 - | F#4 - F#4 - F#4 - D4 - | E4 - E4 - E4 - E4 - | E4 - E4 - C4 - B3 - |";
+}
+
+// Beverly Hills Cop - Axel F - Fast 4/4 synth
+fn axel_f() {
+    return "F4 - - . Ab4 - - . | F4 - - . F4 - Bb4 - | F4 - Eb4 - F4 - - - |";
+}
+
+// Halloween - Main Theme - 5/4 time, unsettling
+fn halloween_theme() {
+    return "F#4 G4 F#4 G4 F#4 G4 F#4 Db4 . . | F4 Gb4 F4 Gb4 F4 Gb4 F4 C4 . . |";
+}
+
+// Ghostbusters - Main Riff - 4/4 funk
+fn ghostbusters_theme() {
+    return "Bb3 - C4 - D4 - Eb4 - | D4 - C4 - Bb3 - - - | Bb3 - C4 - D4 - F4 - |";
+}
+
+// Back to the Future - Main Theme - 4/4 adventurous
+fn back_to_future_theme() {
+    return "C4 - E4 - G4 - C5 - | G4 - E4 - D4 - F4 - | A4 - D5 - A4 - F4 - |";
+}
+
+// Rocky - Gonna Fly Now - 4/4 triumphant
+fn gonna_fly_now() {
+    return "C4 - E4 - G4 - C5 - | . . . . . . . . | C5 - B4 - A4 - G4 - | E4 - C4 - - - . . |";
+}
+
+// Close Encounters - Five Tone Sequence - Free time
+fn close_encounters() {
+    return "G4 - - - | A4 - - - | F4 - - - | F3 - - - | C4 - - - |";
+}
+
+// Superman - Main Theme - 4/4 heroic fanfare
+fn superman_theme() {
+    return "C4 - - . G4 - - . | C5 - - . E5 - D5 - | C5 - - . G4 - - . | C4 - - - - - - - |";
+}
+
+// Indiana Jones - Raiders March - 4/4 adventure
+fn indiana_jones_theme() {
+    return "E4 - . F4 | G4 - . C5 | D4 - . E4 | . F4 - - |";
+}

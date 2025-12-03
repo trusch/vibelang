@@ -1,0 +1,35 @@
+// Genre: Drum & Bass | Character: Evolving Reese with phase movement
+define_synthdef("reese_evolving", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Long envelope for evolution
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.015, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Wide detuning for movement
+            let saw1 = saw_ar(freq * 0.982);
+            let saw2 = saw_ar(freq * 0.991);
+            let saw3 = saw_ar(freq);
+            let saw4 = saw_ar(freq * 1.009);
+            let saw5 = saw_ar(freq * 1.018);
+
+            let mix = (saw1 + saw2 + saw3 + saw4 + saw5) * 0.2;
+
+            // Evolving filter with resonance
+            let filter_envelope = env_asr(0.04, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 350.0 + (filter_env * 1800.0);
+
+            let filtered = rlpf_ar(mix, mod_cutoff, 0.5);
+
+            filtered * env * amp
+        })
+});
+

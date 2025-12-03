@@ -1,0 +1,54 @@
+// Overdrive Effect
+//
+// Soft clipping overdrive with filtering for warm, tube-like saturation.
+//
+// Usage:
+//   group.add_effect("od", "overdrive", #{
+//     drive: 5.0,
+//     tone: 3000.0,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   drive: Input gain/drive (1.0 to 20.0)
+//   tone: Tone control (low pass filter freq, 500 to 10000 Hz)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("overdrive", |builder| {
+    builder
+        .param("drive", 5.0)
+        .param("tone", 3000.0)
+        .param("mix", 0.5)
+        .body(|input, drive, tone, mix| {
+            // Pre-emphasis (slight high pass to reduce mud)
+            let emphasized_left = hpf_ar(input[0], 80.0);
+            let emphasized_right = hpf_ar(input[1], 80.0);
+
+            // Apply drive
+            let driven_left = emphasized_left * drive;
+            let driven_right = emphasized_right * drive;
+
+            // Soft clipping
+            let clipped_left = driven_left.tanh();
+            let clipped_right = driven_right.tanh();
+
+            // Tone control (low pass filter)
+            let filtered_left = lpf_ar(clipped_left, tone);
+            let filtered_right = lpf_ar(clipped_right, tone);
+
+            // Output gain compensation
+            let overdriven = [
+                filtered_left * 0.5,
+                filtered_right * 0.5
+            ];
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * overdriven[0],
+                (1.0 - mix) * input[1] + mix * overdriven[1]
+            ];
+
+            output
+        })
+});
+

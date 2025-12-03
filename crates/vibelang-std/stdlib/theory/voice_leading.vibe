@@ -1,0 +1,405 @@
+// ============================================================================
+// Music Theory Voice Leading Module
+// ============================================================================
+// Tools for smooth voice leading between chords
+// Implements principles of common tone retention and minimal motion
+
+import "stdlib/theory/core.vibe" as core;
+import "stdlib/theory/chords.vibe" as chords;
+
+// ============================================================================
+// Voice Leading Principles
+// ============================================================================
+
+// Voice lead from one chord to another (smooth voice leading)
+fn voice_lead(chord1, chord2) {
+    
+    if chord1.len() == 0 || chord2.len() == 0 {
+        return chord2;
+    }
+    
+    // Find best voicing of chord2 that minimizes total voice motion
+    let best_voicing = chord2;
+    let best_distance = _total_voice_distance(chord1, chord2);
+    
+    // Try different inversions and octave shifts
+    for inversion in 0..chord2.len() {
+        let inverted = chords::invert_chord(chord2, inversion);
+        let distance = _total_voice_distance(chord1, inverted);
+        
+        if distance < best_distance {
+            best_distance = distance;
+            best_voicing = inverted;
+        }
+        
+        // Also try octave shifts
+        for shift in -1..2 {
+            if shift == 0 { continue; }
+            
+            let shifted = [];
+            for note in inverted {
+                shifted.push(core::shift_octave(note, shift));
+            }
+            
+            let shifted_distance = _total_voice_distance(chord1, shifted);
+            if shifted_distance < best_distance {
+                best_distance = shifted_distance;
+                best_voicing = shifted;
+            }
+        }
+    }
+    
+    return best_voicing;
+}
+
+// Helper: Calculate total distance between two chords
+fn _total_voice_distance(chord1, chord2) {
+    
+    let total = 0;
+    let voices = if chord1.len() < chord2.len() { chord1.len() } else { chord2.len() };
+    
+    for i in 0..voices {
+        if i < chord1.len() && i < chord2.len() {
+            let interval = core::interval_semitones(chord1[i], chord2[i]);
+            total += if interval < 0 { -interval } else { interval };
+        }
+    }
+    
+    return total;
+}
+
+// ============================================================================
+// Voice Lead Progression
+// ============================================================================
+
+// Apply voice leading to entire progression
+fn voice_lead_progression(progression) {
+    if progression.len() == 0 {
+        return [];
+    }
+    
+    let result = [progression[0]];
+    
+    for i in 1..progression.len() {
+        let prev_chord = result[i - 1];
+        let next_chord = progression[i];
+        let voiced = voice_lead(prev_chord, next_chord);
+        result.push(voiced);
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Common Tone Retention
+// ============================================================================
+
+// Find common tones between two chords
+fn find_common_tones(chord1, chord2) {
+    
+    let common = [];
+    
+    for note1 in chord1 {
+        let midi1 = core::note_to_midi(note1);
+        let pc1 = midi1 % 12;  // Pitch class
+        
+        for note2 in chord2 {
+            let midi2 = core::note_to_midi(note2);
+            let pc2 = midi2 % 12;
+            
+            if pc1 == pc2 && !_contains_pitch_class(common, pc1) {
+                common.push(note1);
+            }
+        }
+    }
+    
+    return common;
+}
+
+// Helper: Check if array contains a pitch class
+fn _contains_pitch_class(notes, pitch_class) {
+    
+    for note in notes {
+        let midi = core::note_to_midi(note);
+        if midi % 12 == pitch_class {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+// Retain common tones when voice leading
+fn voice_lead_with_common_tones(chord1, chord2) {
+    
+    let common_tones = find_common_tones(chord1, chord2);
+    
+    if common_tones.len() == 0 {
+        return voice_lead(chord1, chord2);
+    }
+    
+    // Build new voicing keeping common tones in place
+    let result = [];
+    let used_from_chord2 = [];
+    
+    // First, retain common tones
+    for note1 in chord1 {
+        let found_common = false;
+        let midi1 = core::note_to_midi(note1);
+        let pc1 = midi1 % 12;
+        
+        for note2 in chord2 {
+            if used_from_chord2.contains(note2) {
+                continue;
+            }
+            
+            let midi2 = core::note_to_midi(note2);
+            let pc2 = midi2 % 12;
+            
+            if pc1 == pc2 {
+                result.push(note1);  // Keep same octave
+                used_from_chord2.push(note2);
+                found_common = true;
+                break;
+            }
+        }
+        
+        if !found_common {
+            // Move to closest note from chord2
+            let closest = _find_closest_unused(note1, chord2, used_from_chord2);
+            if closest != () {
+                result.push(closest);
+                used_from_chord2.push(closest);
+            }
+        }
+    }
+    
+    return result;
+}
+
+// Helper: Find closest unused note
+fn _find_closest_unused(target, chord, used) {
+    
+    let target_midi = core::note_to_midi(target);
+    let closest = ();
+    let closest_dist = 999;
+    
+    for note in chord {
+        if used.contains(note) {
+            continue;
+        }
+        
+        let midi = core::note_to_midi(note);
+        let dist = if (target_midi - midi) < 0 {
+            midi - target_midi
+        } else {
+            target_midi - midi
+        };
+        
+        if dist < closest_dist {
+            closest_dist = dist;
+            closest = note;
+        }
+    }
+    
+    return closest;
+}
+
+// ============================================================================
+// Motion Types
+// ============================================================================
+
+// Analyze motion type between two voices
+fn analyze_motion(note1_start, note1_end, note2_start, note2_end) {
+    
+    let voice1_motion = core::interval_semitones(note1_start, note1_end);
+    let voice2_motion = core::interval_semitones(note2_start, note2_end);
+    
+    if voice1_motion == 0 && voice2_motion == 0 {
+        return "static";
+    } else if voice1_motion == 0 || voice2_motion == 0 {
+        return "oblique";
+    } else if (voice1_motion > 0 && voice2_motion > 0) || (voice1_motion < 0 && voice2_motion < 0) {
+        return "parallel";
+    } else {
+        return "contrary";
+    }
+}
+
+// Check for parallel fifths or octaves (voice leading error)
+fn check_parallel_perfect(chord1, chord2) {
+    
+    let violations = [];
+    
+    for i in 0..chord1.len() {
+        for j in i + 1..chord1.len() {
+            if i >= chord1.len() || j >= chord1.len() {
+                continue;
+            }
+            if i >= chord2.len() || j >= chord2.len() {
+                continue;
+            }
+            
+            let interval1 = core::interval_semitones(chord1[i], chord1[j]) % 12;
+            let interval2 = core::interval_semitones(chord2[i], chord2[j]) % 12;
+            
+            // Check for parallel perfect 5ths (7 semitones) or octaves (0 semitones)
+            if (interval1 == 7 && interval2 == 7) || (interval1 == 0 && interval2 == 0) {
+                violations.push(#{
+                    "voice1": i,
+                    "voice2": j,
+                    "interval": if interval1 == 7 { "fifth" } else { "octave" }
+                });
+            }
+        }
+    }
+    
+    return violations;
+}
+
+// ============================================================================
+// Voice Crossing and Range
+// ============================================================================
+
+// Check for voice crossing
+fn has_voice_crossing(chord) {
+    
+    for i in 0..chord.len() - 1 {
+        let midi1 = core::note_to_midi(chord[i]);
+        let midi2 = core::note_to_midi(chord[i + 1]);
+        
+        if midi1 > midi2 {
+            return true;  // Lower voice is higher than upper voice
+        }
+    }
+    
+    return false;
+}
+
+// Fix voice crossing by reordering notes
+fn fix_voice_crossing(chord) {
+    
+    return chords::_sort_notes_by_pitch(chord);
+}
+
+// Check if chord fits within range for each voice
+fn check_range(chord, ranges) {
+    
+    let violations = [];
+    
+    for i in 0..chord.len() {
+        if i >= ranges.len() {
+            break;
+        }
+        
+        let note = chord[i];
+        let range = ranges[i];
+        let midi = core::note_to_midi(note);
+        let low_midi = core::note_to_midi(range["low"]);
+        let high_midi = core::note_to_midi(range["high"]);
+        
+        if midi < low_midi || midi > high_midi {
+            violations.push(#{
+                "voice": i,
+                "note": note,
+                "range": range
+            });
+        }
+    }
+    
+    return violations;
+}
+
+// Standard SATB ranges
+fn satb_ranges() {
+    return [
+        #{ "low": "C3", "high": "A4" },   // Soprano
+        #{ "low": "G2", "high": "E4" },   // Alto
+        #{ "low": "C2", "high": "G3" },   // Tenor
+        #{ "low": "E1", "high": "C3" }    // Bass
+    ];
+}
+
+// ============================================================================
+// SATB Voice Leading
+// ============================================================================
+
+// Voice lead for SATB (4-part harmony)
+fn satb_voice_lead(chord1, chord2) {
+    let voiced = voice_lead_with_common_tones(chord1, chord2);
+    
+    // Ensure no voice crossing
+    if has_voice_crossing(voiced) {
+        voiced = fix_voice_crossing(voiced);
+    }
+    
+    // Check range violations
+    let ranges = satb_ranges();
+    let range_violations = check_range(voiced, ranges);
+    
+    // If range violations, try to fix by octave shifts
+    if range_violations.len() > 0 {
+        voiced = _fix_range_violations(voiced, ranges);
+    }
+    
+    return voiced;
+}
+
+// Helper: Fix range violations
+fn _fix_range_violations(chord, ranges) {
+    
+    let result = [];
+    
+    for i in 0..chord.len() {
+        let note = chord[i];
+        
+        if i < ranges.len() {
+            let range = ranges[i];
+            let midi = core::note_to_midi(note);
+            let low_midi = core::note_to_midi(range["low"]);
+            let high_midi = core::note_to_midi(range["high"]);
+            
+            // Shift octaves until in range
+            while midi < low_midi {
+                midi += 12;
+            }
+            while midi > high_midi {
+                midi -= 12;
+            }
+            
+            result.push(core::midi_to_note(midi));
+        } else {
+            result.push(note);
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Voice Leading Quality Assessment
+// ============================================================================
+
+// Rate voice leading quality (lower is better)
+fn assess_voice_leading(chord1, chord2) {
+    let score = 0;
+    
+    // Penalize large leaps
+    score += _total_voice_distance(chord1, chord2);
+    
+    // Penalize parallel perfect intervals
+    let parallels = check_parallel_perfect(chord1, chord2);
+    score += parallels.len() * 10;
+    
+    // Penalize voice crossing
+    if has_voice_crossing(chord2) {
+        score += 5;
+    }
+    
+    // Reward common tones
+    let common = find_common_tones(chord1, chord2);
+    score -= common.len() * 2;
+    
+    return score;
+}
+

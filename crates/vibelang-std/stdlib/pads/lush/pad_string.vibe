@@ -1,0 +1,35 @@
+// Genre: Orchestral, Cinematic | Character: String-like pad
+define_synthdef("pad_string", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // String-like envelope with bow attack
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.15, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple sawtooths for string character
+            let osc1 = saw_ar(freq * 0.995);
+            let osc2 = saw_ar(freq);
+            let osc3 = saw_ar(freq * 1.005);
+
+            // Add harmonics
+            let harmonic = saw_ar(freq * 2.0) * 0.15;
+
+            let mix = (osc1 + osc2 + osc3) * 0.33 + harmonic;
+
+            // String-like filtering
+            let filtered = lpf_ar(mix, 2500.0);
+
+            // Remove mud
+            let clean = hpf_ar(filtered, 150.0);
+
+            clean * env * amp
+        })
+});
+

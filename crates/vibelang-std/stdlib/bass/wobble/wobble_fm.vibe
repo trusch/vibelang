@@ -1,0 +1,31 @@
+// Genre: Experimental Dubstep | Character: FM wobble with complex harmonics
+define_synthdef("wobble_fm", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("wobble_rate", 5.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, wobble_rate, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // FM synthesis for complex timbre
+            let modulator = sin_osc_ar(freq * 1.5) * freq * 2.0;
+            let carrier = saw_ar(freq + modulator);
+
+            // Wobble LFO
+            let wobble_lfo = sin_osc_ar(wobble_rate) * 0.5 + 0.5;
+            let mod_cutoff = 250.0 + (wobble_lfo * 2800.0);
+
+            // Filter with resonance
+            let filtered = rlpf_ar(carrier, mod_cutoff, 0.15);
+
+            filtered * env * amp
+        })
+});
+

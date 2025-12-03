@@ -1,0 +1,35 @@
+// Ducking / Sidechain Effect
+//
+// Reduces volume based on input amplitude (sidechain compression).
+// Note: This uses the input as both the audio and control signal.
+// For true sidechain from another source, you'd need bus routing.
+//
+// Usage:
+//   group.add_effect("duck", "ducking", #{
+//     threshold: 0.3,
+//     ratio: 5.0,
+//     attack: 0.01,
+//     release: 0.1
+//   });
+//
+// Parameters:
+//   threshold: Threshold for ducking (0.0 to 1.0)
+//   ratio: Compression ratio (2.0 to 20.0)
+//   attack: Attack time in seconds
+//   release: Release time in seconds
+
+define_fx("ducking", |builder| {
+    builder
+        .param("threshold", 0.3)
+        .param("ratio", 5.0)
+        .param("attack", 0.01)
+        .param("release", 0.1)
+        .body(|input, threshold, ratio, attack, release| {
+            // Apply compression (ducking)
+            let ducked_left = compander_ar(input[0], input[0], threshold, 1.0, 1.0/ratio, attack, release);
+            let ducked_right = compander_ar(input[1], input[1], threshold, 1.0, 1.0/ratio, attack, release);
+
+            [ducked_left, ducked_right]
+        })
+});
+

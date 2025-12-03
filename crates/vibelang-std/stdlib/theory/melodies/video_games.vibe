@@ -1,0 +1,105 @@
+// ============================================================================
+// Video Game Music
+// ============================================================================
+// Iconic video game melodies with proper rhythm
+// Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
+
+// Tetris - Korobeiniki (Russian folk song) - 4/4 time
+fn tetris_theme() {
+    return "E5 B4 C5 D5 - | C5 B4 A4 - - | . A4 C5 E5 - | D5 C5 B4 - - | . C5 D5 - | E5 - C5 - | A4 - - - | . . . . |";
+}
+
+// Super Mario Bros - Main Theme - 4/4 time, bouncy
+fn mario_theme() {
+    return "E5 E5 . E5 | . C5 E5 . | G5 - - - | . . . . | G4 - - - |";
+}
+
+// Legend of Zelda - Main Theme - 4/4 time, heroic
+fn zelda_theme() {
+    return "Bb4 - F5 - | Bb4 - Ab4 - | Eb5 - - - | Bb4 - Ab4 - | Db5 - - - | Bb4 - Ab4 - | Eb5 - - - |";
+}
+
+// Sonic - Green Hill Zone - Fast 4/4
+fn sonic_green_hill() {
+    return "D5 . D5 E5 | F5 - F5 G5 | A5 - - - | . . . . |";
+}
+
+// Mega Man - Main Theme - 4/4 time, energetic
+fn megaman_theme() {
+    return "C5 - D5 - E5 - - - | . G5 - - E5 - D5 - | C5 - - - . . . . |";
+}
+
+// Pokemon - Main Theme - 4/4 time
+fn pokemon_theme() {
+    return "C4 - E4 - G4 - C5 - | B4 - A4 - G4 - E4 - | D4 E4 F4 G4 | A4 - - - |";
+}
+
+// Final Fantasy - Victory Fanfare - 4/4 time, triumphant
+fn ff_victory_fanfare() {
+    return "C5 C5 C5 C5 | D5 - Eb5 - | D5 - C5 - | Bb4 - C5 - - - |";
+}
+
+// Pac-Man - Opening Theme - Fast
+fn pacman_theme() {
+    return "B4 - B5 - F#5 - D#5 - | B5 - F#5 - D#5 - C5 - | C6 - G5 - E5 - C6 - | G5 - E5 - . . . . |";
+}
+
+// Donkey Kong - Original Theme - 4/4 time
+fn donkey_kong_theme() {
+    return "C4 - D4 - E4 - G4 - | C5 - G4 - E4 - C4 - | D4 E4 F4 D4 | . . . . |";
+}
+
+// Kirby - Green Greens - Happy 4/4
+fn kirby_green_greens() {
+    return "C5 - D5 - E5 - G5 - | E5 - D5 - C5 - - - | G4 - A4 - B4 - C5 - | . . . . |";
+}
+
+// Street Fighter 2 - Ryu's Theme - 4/4 energetic
+fn street_fighter_ryu() {
+    return "E4 E4 . F4 | G4 - E4 - | . D4 - - | C4 D4 E4 - |";
+}
+
+// Castlevania - Vampire Killer - Fast 4/4
+fn castlevania_vampire_killer() {
+    return "E4 E4 E4 E4 E4 E4 E4 F4 | G4 - E4 - D4 - C4 - |";
+}
+
+// Metroid - Main Theme - 4/4 atmospheric
+fn metroid_theme() {
+    return "E4 - . E4 | E4 - . E4 | E4 F4 G4 F4 | E4 - D4 - |";
+}
+
+// Contra - Jungle Theme - Energetic 4/4
+fn contra_jungle() {
+    return "E4 - G4 - A4 - B4 - | C5 - B4 - A4 - G4 - | E4 - - - . . . . |";
+}
+
+// Frogger - Main Theme - 4/4
+fn frogger_theme() {
+    return "C4 D4 E4 F4 | G4 A4 G4 F4 | E4 D4 C4 - |";
+}
+
+// Space Invaders - Main Riff - Descending
+fn space_invaders() {
+    return "E3 - . E3 | . E3 - . | C3 - . D3 | . D3 - . | D3 - . . |";
+}
+
+// Galaga - Main Theme - 4/4
+fn galaga_theme() {
+    return "C5 - E5 - G5 - E5 - | C5 - . D5 - F5 - A5 - | F5 - D5 - . . . . |";
+}
+
+// Duck Hunt - Main Theme - Upbeat 4/4
+fn duck_hunt_theme() {
+    return "G4 - E5 D5 | C5 - D5 - | E5 - F5 - | E5 - D5 - | C5 - B4 - | C5 - D5 - |";
+}
+
+// Punch-Out - Main Theme - 4/4 energetic
+fn punch_out_theme() {
+    return "E4 E4 E4 G4 | A4 - G4 E4 | D4 C4 D4 E4 | . . . . |";
+}
+
+// Chrono Trigger - Main Theme - 4/4 adventurous
+fn chrono_trigger_theme() {
+    return "C4 - E4 - G4 - C5 - | E5 - D5 - C5 - B4 - | A4 - G4 - F4 - E4 - | D4 - C4 - - - . . |";
+}

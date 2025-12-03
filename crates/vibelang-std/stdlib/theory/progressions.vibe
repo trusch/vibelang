@@ -1,0 +1,513 @@
+// ============================================================================
+// Music Theory Progressions Module
+// ============================================================================
+// Generate common chord progressions from various musical styles
+// Returns arrays of chords that can be used with vibelang patterns
+
+import "stdlib/theory/core.vibe" as core;
+import "stdlib/theory/chords.vibe" as chords;
+
+// ============================================================================
+// Core Progression Generation
+// ============================================================================
+
+// Generate chord progression from scale degrees
+// degrees: array of scale degrees (e.g., [1, 4, 5, 1] for I-IV-V-I)
+// key: root note (e.g., "C")
+// mode: "major" or "minor"
+// chord_type: "triad", "7th", or custom qualities array
+fn chord_progression(key, mode, degrees) {
+    chord_progression_ex(key, mode, degrees, 3, "triad")
+}
+
+fn chord_progression_ex(key, mode, degrees, octave, chord_type) {
+    
+    let scale_intervals = if mode.to_lower() == "major" {
+        [0, 2, 4, 5, 7, 9, 11]  // Major scale
+    } else {
+        [0, 2, 3, 5, 7, 8, 10]  // Natural minor scale
+    };
+    
+    // Determine chord qualities for each degree
+    let qualities_major_triad = ["major", "minor", "minor", "major", "major", "minor", "diminished"];
+    let qualities_minor_triad = ["minor", "diminished", "major", "minor", "minor", "major", "major"];
+    let qualities_major_7th = ["maj7", "min7", "min7", "maj7", "7", "min7", "m7b5"];
+    let qualities_minor_7th = ["min7", "m7b5", "maj7", "min7", "min7", "maj7", "7"];
+    
+    let qualities = if mode.to_lower() == "major" {
+        if chord_type == "7th" { qualities_major_7th } else { qualities_major_triad }
+    } else {
+        if chord_type == "7th" { qualities_minor_7th } else { qualities_minor_triad }
+    };
+    
+    let result = [];
+    let key_note = core::set_octave(key, octave);
+    
+    for degree in degrees {
+        let degree_idx = (degree - 1) % 7;
+        let octave_shift = (degree - 1) / 7;
+        let interval = scale_intervals[degree_idx];
+        let root = core::transpose_note(key_note, interval + (octave_shift * 12));
+        let quality = qualities[degree_idx];
+        
+        result.push(chords::chord_ex(root, quality, octave));
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Pop/Rock Progressions
+// ============================================================================
+
+// I-V-vi-IV (very common in pop: C-G-Am-F in C major)
+fn pop_progression_1(key) {
+    pop_progression_1_ex(key, 3)
+}
+
+fn pop_progression_1_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 5, 6, 4], octave, "triad");
+}
+
+// I-IV-V-IV (classic rock)
+fn rock_progression_1(key) {
+    rock_progression_1_ex(key, 3)
+}
+
+fn rock_progression_1_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 4, 5, 4], octave, "triad");
+}
+
+// vi-IV-I-V (sensitive pop progression: Am-F-C-G)
+fn pop_progression_2(key) {
+    pop_progression_2_ex(key, 3)
+}
+
+fn pop_progression_2_ex(key, octave) {
+    return chord_progression_ex(key, "major", [6, 4, 1, 5], octave, "triad");
+}
+
+// I-vi-IV-V (50s progression, "Stand By Me")
+fn fifties_progression(key) {
+    fifties_progression_ex(key, 3)
+}
+
+fn fifties_progression_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 6, 4, 5], octave, "triad");
+}
+
+// I-IV-vi-V (Axis progression, "Don't Stop Believin'")
+fn axis_progression(key) {
+    axis_progression_ex(key, 3)
+}
+
+fn axis_progression_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 4, 6, 5], octave, "triad");
+}
+
+// I-V-vi-iii-IV-I-IV-V (Pachelbel's Canon)
+fn canon_progression(key) {
+    canon_progression_ex(key, 3)
+}
+
+fn canon_progression_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 5, 6, 3, 4, 1, 4, 5], octave, "triad");
+}
+
+// ============================================================================
+// Jazz Progressions
+// ============================================================================
+
+// ii-V-I (fundamental jazz progression)
+fn jazz_ii_v_i(key) {
+    jazz_ii_v_i_ex(key, 3)
+}
+
+fn jazz_ii_v_i_ex(key, octave) {
+    return chord_progression_ex(key, "major", [2, 5, 1], octave, "7th");
+}
+
+// I-vi-ii-V (turnaround)
+fn jazz_turnaround(key) {
+    jazz_turnaround_ex(key, 3)
+}
+
+fn jazz_turnaround_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 6, 2, 5], octave, "7th");
+}
+
+// iii-vi-ii-V (Coltrane changes subset)
+fn jazz_iii_vi_ii_v(key) {
+    jazz_iii_vi_ii_v_ex(key, 3)
+}
+
+fn jazz_iii_vi_ii_v_ex(key, octave) {
+    return chord_progression_ex(key, "major", [3, 6, 2, 5], octave, "7th");
+}
+
+// I-IV-iii-vi (jazz ballad)
+fn jazz_ballad(key) {
+    jazz_ballad_ex(key, 3)
+}
+
+fn jazz_ballad_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 4, 3, 6], octave, "7th");
+}
+
+// Rhythm changes (A section: I-VI-ii-V)
+fn rhythm_changes_a(key) {
+    rhythm_changes_a_ex(key, 3)
+}
+
+fn rhythm_changes_a_ex(key, octave) {
+    
+    // Need VI as dominant 7th (A7 in C major)
+    let i_chord = chords::chord_ex(key, "maj7", octave);
+    let vi_dom = chords::chord_ex(core::transpose_note(core::set_octave(key, octave), 9), "7", octave);
+    let ii_chord = chords::chord_ex(core::transpose_note(core::set_octave(key, octave), 2), "min7", octave);
+    let v_chord = chords::chord_ex(core::transpose_note(core::set_octave(key, octave), 7), "7", octave);
+    
+    return [i_chord, vi_dom, ii_chord, v_chord];
+}
+
+// Minor ii-V-i
+fn jazz_minor_ii_v_i(key) {
+    jazz_minor_ii_v_i_ex(key, 3)
+}
+
+fn jazz_minor_ii_v_i_ex(key, octave) {
+    return chord_progression_ex(key, "minor", [2, 5, 1], octave, "7th");
+}
+
+// ============================================================================
+// Blues Progressions
+// ============================================================================
+
+// 12-bar blues (simplified to 3 chords)
+fn blues_12bar(key) {
+    blues_12bar_ex(key, 3)
+}
+
+fn blues_12bar_ex(key, octave) {
+    
+    let i7 = chords::dominant7_chord_ex(key, octave);
+    let iv7 = chords::chord_ex(key, "7", octave);
+    let v7 = chords::chord_ex(key, "7", octave);
+    
+    // I-I-I-I-IV-IV-I-I-V-IV-I-V
+    return [i7, i7, i7, i7, iv7, iv7, i7, i7, v7, iv7, i7, v7];
+}
+
+// Quick change blues (IV in bar 2)
+fn blues_quick_change(key) {
+    blues_quick_change_ex(key, 3)
+}
+
+fn blues_quick_change_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 4, 1, 1, 4, 4, 1, 1, 5, 4, 1, 5], octave, "triad");
+}
+
+// Minor blues
+fn blues_minor(key) {
+    blues_minor_ex(key, 3)
+}
+
+fn blues_minor_ex(key, octave) {
+    return chord_progression_ex(key, "minor", [1, 1, 1, 1, 4, 4, 1, 1, 5, 4, 1, 5], octave, "triad");
+}
+
+// ============================================================================
+// Modal Progressions
+// ============================================================================
+
+// Dorian vamp (i-IV)
+fn dorian_vamp(key) {
+    dorian_vamp_ex(key, 3)
+}
+
+fn dorian_vamp_ex(key, octave) {
+    
+    let i_minor = chords::minor_triad_ex(key, octave);
+    let iv_major = chords::major_triad_ex(core::transpose_note(core::set_octave(key, octave), 5), octave);
+    
+    return [i_minor, iv_major];
+}
+
+// Lydian progression (I-II)
+fn lydian_progression(key) {
+    lydian_progression_ex(key, 3)
+}
+
+fn lydian_progression_ex(key, octave) {
+    
+    let i_major = chords::major_triad_ex(key, octave);
+    let ii_major = chords::major_triad_ex(core::transpose_note(core::set_octave(key, octave), 2), octave);
+    
+    return [i_major, ii_major];
+}
+
+// Mixolydian groove (I-bVII)
+fn mixolydian_groove(key) {
+    mixolydian_groove_ex(key, 3)
+}
+
+fn mixolydian_groove_ex(key, octave) {
+    
+    let i_major = chords::major_triad_ex(key, octave);
+    let bvii_major = chords::major_triad_ex(core::transpose_note(core::set_octave(key, octave), 10), octave);
+    
+    return [i_major, bvii_major];
+}
+
+// Phrygian progression (i-bII)
+fn phrygian_progression(key) {
+    phrygian_progression_ex(key, 3)
+}
+
+fn phrygian_progression_ex(key, octave) {
+    
+    let i_minor = chords::minor_triad_ex(key, octave);
+    let bii_major = chords::major_triad_ex(core::transpose_note(core::set_octave(key, octave), 1), octave);
+    
+    return [i_minor, bii_major];
+}
+
+// ============================================================================
+// Classical/Functional Harmony
+// ============================================================================
+
+// Perfect cadence (V-I)
+fn perfect_cadence(key) {
+    perfect_cadence_ex(key, 3)
+}
+
+fn perfect_cadence_ex(key, octave) {
+    return chord_progression_ex(key, "major", [5, 1], octave, "triad");
+}
+
+// Plagal cadence (IV-I, "Amen cadence")
+fn plagal_cadence(key) {
+    plagal_cadence_ex(key, 3)
+}
+
+fn plagal_cadence_ex(key, octave) {
+    return chord_progression_ex(key, "major", [4, 1], octave, "triad");
+}
+
+// Deceptive cadence (V-vi)
+fn deceptive_cadence(key) {
+    deceptive_cadence_ex(key, 3)
+}
+
+fn deceptive_cadence_ex(key, octave) {
+    return chord_progression_ex(key, "major", [5, 6], octave, "triad");
+}
+
+// Half cadence (any-V)
+fn half_cadence(key) {
+    half_cadence_ex(key, 3)
+}
+
+fn half_cadence_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 5], octave, "triad");
+}
+
+// Andalusian cadence (i-bVII-bVI-V, flamenco)
+fn andalusian_cadence(key) {
+    andalusian_cadence_ex(key, 3)
+}
+
+fn andalusian_cadence_ex(key, octave) {
+    
+    let i_minor = chords::minor_triad_ex(key, octave);
+    let bvii_major = chords::major_triad_ex(core::transpose_note(core::set_octave(key, octave), 10), octave);
+    let bvi_major = chords::major_triad_ex(core::transpose_note(core::set_octave(key, octave), 8), octave);
+    let v_major = chords::major_triad_ex(core::transpose_note(core::set_octave(key, octave), 7), octave);
+    
+    return [i_minor, bvii_major, bvi_major, v_major];
+}
+
+// ============================================================================
+// EDM/Dance Progressions
+// ============================================================================
+
+// Four on the floor house progression (vi-IV-I-V)
+fn house_progression(key) {
+    house_progression_ex(key, 3)
+}
+
+fn house_progression_ex(key, octave) {
+    return chord_progression_ex(key, "major", [6, 4, 1, 5], octave, "triad");
+}
+
+// Trance progression (i-VI-III-VII in minor)
+fn trance_progression(key) {
+    trance_progression_ex(key, 3)
+}
+
+fn trance_progression_ex(key, octave) {
+    return chord_progression_ex(key, "minor", [1, 6, 3, 7], octave, "triad");
+}
+
+// Two-chord techno vamp (i-v)
+fn techno_vamp(key) {
+    techno_vamp_ex(key, 3)
+}
+
+fn techno_vamp_ex(key, octave) {
+    return chord_progression_ex(key, "minor", [1, 5], octave, "triad");
+}
+
+// ============================================================================
+// Latin Progressions
+// ============================================================================
+
+// Bossa nova (I-VI-ii-V or variations)
+fn bossa_nova(key) {
+    bossa_nova_ex(key, 3)
+}
+
+fn bossa_nova_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 6, 2, 5], octave, "7th");
+}
+
+// Montuno (I-IV-V or I-IV-I-V)
+fn montuno(key) {
+    montuno_ex(key, 3)
+}
+
+fn montuno_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 4, 1, 5], octave, "triad");
+}
+
+// ============================================================================
+// Extended/Complex Progressions
+// ============================================================================
+
+// Chromatic descent (I-I/VII-I/VI-I/V...)
+fn chromatic_descent(key) {
+    chromatic_descent_ex(key, 3, 4)
+}
+
+fn chromatic_descent_ex(key, octave, steps) {
+    
+    let result = [];
+    let root = core::set_octave(key, octave);
+    
+    for i in 0..steps {
+        let bass_note = core::transpose_note(root, 0 - i);
+        let chord_notes = chords::major_triad_ex(key, octave);
+        // In real use, we'd invert/voice lead, but for simplicity just return root position
+        result.push(chord_notes);
+    }
+    
+    return result;
+}
+
+// Circle of fifths (I-IV-vii°-iii-vi-ii-V-I)
+fn circle_of_fifths(key) {
+    circle_of_fifths_ex(key, 3)
+}
+
+fn circle_of_fifths_ex(key, octave) {
+    return chord_progression_ex(key, "major", [1, 4, 7, 3, 6, 2, 5, 1], octave, "triad");
+}
+
+// ============================================================================
+// Utility: Get Progression by Name
+// ============================================================================
+
+fn progression(name, key) {
+    progression_ex(name, key, 3)
+}
+
+fn progression_ex(name, key, octave) {
+    let n = name.to_lower().replace(" ", "_");
+    
+    return switch n {
+        // Pop/Rock
+        "pop_1" => pop_progression_1(key, octave),
+        "pop_2" => pop_progression_2(key, octave),
+        "rock_1" => rock_progression_1(key, octave),
+        "fifties" => fifties_progression(key, octave),
+        "axis" => axis_progression(key, octave),
+        "canon" => canon_progression(key, octave),
+        
+        // Jazz
+        "ii_v_i" => jazz_ii_v_i(key, octave),
+        "turnaround" => jazz_turnaround(key, octave),
+        "jazz_ballad" => jazz_ballad(key, octave),
+        "rhythm_changes" => rhythm_changes_a(key, octave),
+        "minor_ii_v_i" => jazz_minor_ii_v_i(key, octave),
+        
+        // Blues
+        "blues" => blues_12bar(key, octave),
+        "blues_quick" => blues_quick_change(key, octave),
+        "blues_minor" => blues_minor(key, octave),
+        
+        // Modal
+        "dorian" => dorian_vamp(key, octave),
+        "lydian" => lydian_progression(key, octave),
+        "mixolydian" => mixolydian_groove(key, octave),
+        "phrygian" => phrygian_progression(key, octave),
+        
+        // Classical
+        "perfect_cadence" => perfect_cadence(key, octave),
+        "plagal_cadence" => plagal_cadence(key, octave),
+        "deceptive_cadence" => deceptive_cadence(key, octave),
+        "half_cadence" => half_cadence(key, octave),
+        "andalusian" => andalusian_cadence(key, octave),
+        
+        // EDM
+        "house" => house_progression(key, octave),
+        "trance" => trance_progression(key, octave),
+        "techno" => techno_vamp(key, octave),
+        
+        // Latin
+        "bossa" => bossa_nova(key, octave),
+        "montuno" => montuno(key, octave),
+        
+        // Complex
+        "circle_fifths" => circle_of_fifths(key, octave),
+        
+        _ => throw `Unknown progression: ${name}`
+    };
+}
+
+// ============================================================================
+// Utility: Flatten Chord Progression to Note Array
+// ============================================================================
+
+// Convert progression (array of chord arrays) to single note array with rests
+fn flatten_progression(progression) {
+    flatten_progression_ex(progression, 1)
+}
+
+fn flatten_progression_ex(progression, notes_per_chord) {
+    let result = [];
+    
+    for chord in progression {
+        // Add first note of each chord
+        for i in 0..notes_per_chord {
+            if i < chord.len() {
+                result.push(chord[i]);
+            }
+        }
+    }
+    
+    return result;
+}
+
+// Get roots of progression (useful for bass lines)
+fn progression_roots(progression) {
+    let result = [];
+    
+    for chord in progression {
+        if chord.len() > 0 {
+            result.push(chord[0]);
+        }
+    }
+    
+    return result;
+}
+

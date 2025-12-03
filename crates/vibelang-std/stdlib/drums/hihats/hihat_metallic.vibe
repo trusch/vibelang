@@ -1,0 +1,30 @@
+// Genre: Experimental, IDM | Character: Metallic, inharmonic frequencies
+define_synthdef("hihat_metallic", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Medium envelope
+            let envelope = env_perc(0.0005, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Inharmonic frequency ratios for metallic character
+            let osc1 = saw_ar(287.0);
+            let osc2 = saw_ar(413.0);
+            let osc3 = saw_ar(571.0);
+            let osc4 = saw_ar(689.0);
+            let osc5 = saw_ar(823.0);
+            let osc6 = saw_ar(971.0);
+
+            let mix_osc = (osc1 + osc2 + osc3 + osc4 + osc5 + osc6) * 0.16;
+
+            // Band-pass for metallic ring
+            let filtered = rlpf_ar(mix_osc, 9000.0, 0.3);
+
+            filtered * env * amp
+        })
+});
+

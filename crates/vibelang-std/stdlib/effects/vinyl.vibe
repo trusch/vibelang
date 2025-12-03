@@ -1,0 +1,62 @@
+// Vinyl Record Effect
+//
+// Simulates the sound of a vinyl record with crackle, dust, and wow/flutter.
+//
+// Usage:
+//   group.add_effect("vinyl", "vinyl", #{
+//     crackle: 0.05,
+//     dust: 0.02,
+//     wow: 0.3,
+//     flutter: 0.2,
+//     wear: 4000.0,
+//     mix: 0.8
+//   });
+//
+// Parameters:
+//   crackle: Crackle amount (0.0 to 0.2)
+//   dust: Dust/click amount (0.0 to 0.1)
+//   wow: Slow pitch variation (0.0 to 1.0)
+//   flutter: Fast pitch variation (0.0 to 1.0)
+//   wear: Filter cutoff for record wear in Hz (2000 to 8000)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("vinyl", |builder| {
+    builder
+        .param("crackle", 0.05)
+        .param("dust", 0.02)
+        .param("wow", 0.3)
+        .param("flutter", 0.2)
+        .param("wear", 4000.0)
+        .param("mix", 0.8)
+        .body(|input, crackle, dust, wow, flutter, wear, mix| {
+            // Wow (slow pitch variation)
+            let wow_lfo = sin_osc_ar(0.5, 0.0) * wow * 0.001;
+            let flutter_lfo = sin_osc_ar(10.0, 0.0) * flutter * 0.0003;
+            let pitch_var = 0.01 + wow_lfo + flutter_lfo;
+
+            // Apply pitch variation via delay
+            let warbled_left = delay_c_ar(input[0], 0.1, pitch_var);
+            let warbled_right = delay_c_ar(input[1], 0.1, pitch_var);
+
+            // Record wear (high frequency rolloff)
+            let worn_left = lpf_ar(warbled_left, wear);
+            let worn_right = lpf_ar(warbled_right, wear);
+
+            // Add crackle (filtered noise)
+            let crackle_sig = lpf_ar(dust2_ar(1000.0) * crackle, 8000.0);
+
+            // Add dust pops (random impulses)
+            let dust_sig = dust_ar(50.0) * dust;
+
+            // Combine all elements
+            let vinyl_left = worn_left + crackle_sig + dust_sig;
+            let vinyl_right = worn_right + crackle_sig + dust_sig;
+
+            // Mix dry and wet signals
+            [
+                (1.0 - mix) * input[0] + mix * vinyl_left,
+                (1.0 - mix) * input[1] + mix * vinyl_right
+            ]
+        })
+});
+

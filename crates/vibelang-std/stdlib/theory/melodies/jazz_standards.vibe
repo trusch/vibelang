@@ -1,0 +1,65 @@
+// ============================================================================
+// Jazz Standards and Ragtime
+// ============================================================================
+// Traditional jazz and ragtime melodies with proper rhythm
+// Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
+
+// Traditional Spiritual - When the Saints Go Marching In - 4/4 time
+fn when_saints_go_marching() {
+    return "C4 - E4 - F4 - G4 - | . . . . C4 - E4 - | F4 - G4 - . . . . | C4 - E4 - F4 - G4 - |";
+}
+
+// Dave Brubeck - Take Five (Main Theme) - 5/4 time!
+fn take_five() {
+    return "D4 - F4 - Eb4 - C4 - D4 - | . . . . . . . . . . | D4 - F4 - Eb4 - C4 - Bb3 - |";
+}
+
+// Duke Ellington - Caravan - 4/4 time, exotic
+fn caravan() {
+    return "C4 - D4 - Eb4 - F4 - | Ab4 - - . G4 - - . | F4 - Eb4 - D4 - C4 - | . . . . . . . . |";
+}
+
+// Scott Joplin - The Entertainer (Ragtime) - 2/4 time
+fn the_entertainer() {
+    return "D4 E4 C4 A3 | B3 G3 . D4 | E4 C4 A3 B3 | G3 . . . |";
+}
+
+// Scott Joplin - Maple Leaf Rag - Fast 2/4
+fn maple_leaf_rag() {
+    return "A4 - C5 - E5 - F5 - | E5 - C5 - A4 - - - | G4 - E4 - C4 - E4 - | G4 - - - . . . . |";
+}
+
+// W.C. Handy - St. Louis Blues - Slow 4/4 blues
+fn st_louis_blues() {
+    return "C4 - Eb4 - F4 - Gb4 - | F4 - Eb4 - C4 - - - | Bb3 - C4 - Eb4 - F4 - | Eb4 - C4 - - - . . |";
+}
+
+// Glenn Miller - In the Mood - Swing 4/4
+fn in_the_mood() {
+    return "G4 A4 G4 A4 | G4 E4 C4 - | E4 G4 E4 C4 | . . . . |";
+}
+
+// Benny Goodman - Sing Sing Sing - Swing 4/4
+fn sing_sing_sing() {
+    return "E4 - E4 - E4 - . . | E4 - E4 - E4 - . . | G4 - G4 - G4 - . . | E4 - - - . . . . |";
+}
+
+// George Gershwin - Summertime - Slow 4/4
+fn summertime() {
+    return "E4 - - . | G4 - A4 - | B4 - - . | A4 - - . | G4 - - . | E4 - - . | D4 - - - |";
+}
+
+// Thelonious Monk - Blue Monk - Blues 4/4
+fn blue_monk() {
+    return "Bb3 - Db4 - Eb4 - E4 - | Eb4 - Db4 - Bb3 - - - | Gb3 - Ab3 - Bb3 - - - |";
+}
+
+// Traditional - Swing Low, Sweet Chariot - 4/4 spiritual
+fn swing_low_sweet_chariot() {
+    return "D4 - G4 - G4 - A4 - | B4 - - . G4 - E4 - | D4 - - . E4 - G4 - | D4 - - - - - - - |";
+}
+
+// Traditional Jazz - Black Bottom Stomp - Fast 4/4
+fn black_bottom_stomp() {
+    return "Bb3 - D4 - F4 - Bb4 - | F4 - D4 - Bb3 - - - | C4 - E4 - G4 - C5 - | G4 - E4 - C4 - - - |";
+}

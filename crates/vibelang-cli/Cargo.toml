@@ -1,0 +1,45 @@
+[package]
+name = "vibelang-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI binary for VibeLang - the vibe command"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/trusch/vibelang"
+keywords = ["music", "audio", "supercollider", "livecoding", "dsl"]
+categories = ["multimedia::audio", "command-line-utilities"]
+
+[[bin]]
+name = "vibe"
+path = "src/main.rs"
+
+[dependencies]
+# Core runtime (state management, scheduling, OSC, Rhai API)
+vibelang-core = "0.1"
+
+# DSP layer (UGen generation, define_synthdef)
+vibelang-dsp = "0.1"
+
+# Standard library
+vibelang-std = "0.1"
+
+# Rhai scripting engine
+rhai = { version = "1.17", features = ["sync", "internals"] }
+
+# Error handling
+anyhow = "1.0"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Signal handling
+ctrlc = "3.4"
+
+# TUI
+ratatui = "0.28"
+crossterm = "0.28"
+chrono = "0.4"
+crossbeam-channel = "0.5"

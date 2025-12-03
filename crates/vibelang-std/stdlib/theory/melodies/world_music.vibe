@@ -1,0 +1,75 @@
+// ============================================================================
+// World Music
+// ============================================================================
+// Traditional melodies from various cultures with proper rhythm
+// Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
+
+// Jewish Traditional - Hava Nagila - 4/4 time, starts slow then accelerates
+fn hava_nagila() {
+    return "E4 - E4 - E4 - F4 - | G4 - A4 - - - . . | A4 - G4 - F4 - E4 - | D4 - E4 - - - . . |";
+}
+
+// Mexican Traditional - La Cucaracha - 2/4 time
+fn la_cucaracha() {
+    return "C4 - . C4 | . C4 - . | F4 - A4 - | C4 - . C4 | . C4 - . | F4 - A4 - |";
+}
+
+// Japanese Traditional - Sakura Sakura - 4/4 time, slow
+fn sakura_sakura() {
+    return "E4 - E4 - F#4 - E4 - | F#4 - E4 - B3 - - - | C#4 - D4 - C#4 - B3 - | A3 - - - - - - - |";
+}
+
+// Russian Traditional - Kalinka - Fast 2/4 time
+fn kalinka() {
+    return "G4 - A4 - | B4 - C5 - | B4 - A4 - | G4 - - - | E4 - D4 - | C4 - D4 - | E4 - - - |";
+}
+
+// Italian Traditional - Bella Ciao - 4/4 time
+fn bella_ciao() {
+    return "E4 - F4 - G4 - A4 - | B4 - - - B4 - - - | A4 - G4 - F4 - E4 - | D4 - - - - - - - |";
+}
+
+// Australian Folk - Waltzing Matilda - 4/4 time
+fn waltzing_matilda() {
+    return "C4 - - . | E4 - G4 - | G4 - - . | A4 - G4 - | E4 - - . | D4 - E4 - | C4 - - - |";
+}
+
+// French Traditional - Frère Jacques - 4/4 time
+fn frere_jacques() {
+    return "C4 - D4 - E4 - C4 - | C4 - D4 - E4 - C4 - | E4 - F4 - G4 - - - | E4 - F4 - G4 - - - |";
+}
+
+// Spanish Traditional - Malagueña - 3/4 time
+fn malaguena() {
+    return "E4 - - | . F4 E4 | D4 - C4 | B3 - C4 | D4 - - | . E4 - |";
+}
+
+// South African Traditional - Siyahamba - 4/4 time
+fn siyahamba() {
+    return "C4 - E4 - G4 - E4 - | F4 - D4 - C4 - - - | D4 - F4 - A4 - F4 - | G4 - E4 - C4 - - - |";
+}
+
+// Cuban Traditional - Guantanamera - 4/4 time
+fn guantanamera() {
+    return "C4 - - . | E4 - G4 - | A4 - - . | G4 - - . | E4 - - . | C4 - - . | D4 - - - |";
+}
+
+// Irish Traditional - The Irish Washerwoman - Fast 6/8 jig
+fn irish_washerwoman() {
+    return "G4 - D5 D5 - D5 | E5 - D5 B4 - G4 | A4 - B4 A4 - G4 | A4 - - - - - |";
+}
+
+// Scottish Traditional - Scotland the Brave - 4/4 march
+fn scotland_brave() {
+    return "G4 - - . | B4 - D5 - | D5 - E5 - | D5 - B4 - | G4 - A4 - | B4 - - . | A4 - G4 - |";
+}
+
+// Hebrew Traditional - Hatikvah - 4/4 time, slow and hopeful
+fn hatikvah() {
+    return "E4 - E4 - F#4 - G4 - | G4 - A4 - B4 - A4 - | G4 - F#4 - E4 - - . | D4 - - - - - - - |";
+}
+
+// Greek Traditional - Zorba's Dance (Sirtaki) - Starts slow 4/4, accelerates
+fn zorbas_dance() {
+    return "D4 - E4 - F4 - E4 - | D4 - C4 - D4 - - - | D4 - E4 - F4 - G4 - | A4 - - - - - - - |";
+}

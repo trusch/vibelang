@@ -1,0 +1,35 @@
+// Genre: Brostep, Dubstep | Character: Aggressive, distorted wobble
+define_synthdef("wobble_aggressive", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("wobble_rate", 6.0)
+        .param("amp", 0.55)
+        .param("gate", 1.0)
+        .body(|freq, wobble_rate, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.008, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Detuned saws for thickness
+            let osc1 = saw_ar(freq * 0.995);
+            let osc2 = saw_ar(freq * 1.005);
+            let mix = (osc1 + osc2) * 0.7;
+
+            // Clip for distortion
+            let driven = mix; //clip(mix, -0.8, 0.8);
+
+            // Fast wobble LFO
+            let wobble_lfo = sin_osc_ar(wobble_rate) * 0.5 + 0.5;
+            let mod_cutoff = 150.0 + (wobble_lfo * 3500.0);
+
+            // High resonance for aggression
+            let filtered = rlpf_ar(driven, mod_cutoff, 0.08);
+
+            filtered * env * amp
+        })
+});
+

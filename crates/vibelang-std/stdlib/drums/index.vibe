@@ -1,0 +1,78 @@
+// Drum Library Index
+//
+// Import this file to load all drum synthdefs at once.
+// Usage: import "stdlib/drums/index.vibe"
+
+// Claps
+import "stdlib/drums/claps/clap_808.vibe";
+import "stdlib/drums/claps/clap_crowd.vibe";
+import "stdlib/drums/claps/clap_filtered.vibe";
+import "stdlib/drums/claps/clap_handclap.vibe";
+import "stdlib/drums/claps/clap_layered.vibe";
+import "stdlib/drums/claps/clap_lofi.vibe";
+import "stdlib/drums/claps/clap_loose.vibe";
+import "stdlib/drums/claps/clap_reverb.vibe";
+import "stdlib/drums/claps/clap_short.vibe";
+import "stdlib/drums/claps/clap_tight.vibe";
+
+// Cymbals
+import "stdlib/drums/cymbals/bell_ping.vibe";
+import "stdlib/drums/cymbals/china.vibe";
+import "stdlib/drums/cymbals/crash_bright.vibe";
+import "stdlib/drums/cymbals/crash_dark.vibe";
+import "stdlib/drums/cymbals/crash_reverse.vibe";
+import "stdlib/drums/cymbals/crash_swell.vibe";
+import "stdlib/drums/cymbals/ride.vibe";
+import "stdlib/drums/cymbals/splash.vibe";
+
+// Hihats
+import "stdlib/drums/hihats/hihat_808_closed.vibe";
+import "stdlib/drums/hihats/hihat_808_open.vibe";
+import "stdlib/drums/hihats/hihat_909_closed.vibe";
+import "stdlib/drums/hihats/hihat_909_open.vibe";
+import "stdlib/drums/hihats/hihat_dusty.vibe";
+import "stdlib/drums/hihats/hihat_filtered.vibe";
+import "stdlib/drums/hihats/hihat_long.vibe";
+import "stdlib/drums/hihats/hihat_metallic.vibe";
+import "stdlib/drums/hihats/hihat_short.vibe";
+import "stdlib/drums/hihats/hihat_splash.vibe";
+
+// Kicks
+import "stdlib/drums/kicks/kick_808.vibe";
+import "stdlib/drums/kicks/kick_909.vibe";
+import "stdlib/drums/kicks/kick_acoustic.vibe";
+import "stdlib/drums/kicks/kick_distorted.vibe";
+import "stdlib/drums/kicks/kick_dnb.vibe";
+import "stdlib/drums/kicks/kick_fm.vibe";
+import "stdlib/drums/kicks/kick_pitched.vibe";
+import "stdlib/drums/kicks/kick_soft.vibe";
+import "stdlib/drums/kicks/kick_sub.vibe";
+import "stdlib/drums/kicks/kick_techno_deep.vibe";
+import "stdlib/drums/kicks/kick_techno_hard.vibe";
+import "stdlib/drums/kicks/kick_trap.vibe";
+
+// Percussion
+import "stdlib/drums/percussion/clave.vibe";
+import "stdlib/drums/percussion/cowbell.vibe";
+import "stdlib/drums/percussion/rim.vibe";
+import "stdlib/drums/percussion/shaker.vibe";
+import "stdlib/drums/percussion/snap.vibe";
+import "stdlib/drums/percussion/tambourine.vibe";
+import "stdlib/drums/percussion/tom_high.vibe";
+import "stdlib/drums/percussion/tom_low.vibe";
+import "stdlib/drums/percussion/tom_mid.vibe";
+import "stdlib/drums/percussion/woodblock.vibe";
+
+// Snares
+import "stdlib/drums/snares/snare_808.vibe";
+import "stdlib/drums/snares/snare_909.vibe";
+import "stdlib/drums/snares/snare_acoustic.vibe";
+import "stdlib/drums/snares/snare_clap_snare.vibe";
+import "stdlib/drums/snares/snare_filtered.vibe";
+import "stdlib/drums/snares/snare_layered.vibe";
+import "stdlib/drums/snares/snare_lofi.vibe";
+import "stdlib/drums/snares/snare_loose_acoustic.vibe";
+import "stdlib/drums/snares/snare_piccolo.vibe";
+import "stdlib/drums/snares/snare_reverb.vibe";
+import "stdlib/drums/snares/snare_rimshot.vibe";
+import "stdlib/drums/snares/snare_tight_electronic.vibe";

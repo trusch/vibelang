@@ -1,0 +1,31 @@
+// Genre: Acoustic, Folk | Character: Natural hand clap sound
+define_synthdef("clap_handclap", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Two natural bursts
+            let burst1_envelope = env_perc(0.001, 0.022);
+            let burst1_env = NewEnvGenBuilder(burst1_envelope, gate).build();
+
+            let burst2_envelope = env_perc(0.011, 0.022);
+            let burst2_env = NewEnvGenBuilder(burst2_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Natural frequency range
+            let noise = pink_noise_ar();
+            let filtered = rlpf_ar(noise, 2400.0, 0.6);
+
+            // Add body resonance
+            let body_envelope = env_perc(0.001, 0.018);
+            let body_env = NewEnvGenBuilder(body_envelope, gate).build();
+            let body = sin_osc_ar(320.0) * body_env * 0.15;
+
+            let clap = filtered * (burst1_env + burst2_env * 0.8);
+
+            (clap + body) * amp
+        })
+});
+

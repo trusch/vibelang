@@ -1,0 +1,51 @@
+// Distortion Effect
+//
+// Hard clipping distortion with pre and post gain control.
+//
+// Usage:
+//   group.add_effect("dist", "distortion", #{
+//     drive: 8.0,
+//     tone: 5000.0,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   drive: Input gain/drive (1.0 to 50.0)
+//   tone: Low-pass filter cutoff after distortion (1000 to 12000 Hz)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("distortion", |builder| {
+    builder
+        .param("drive", 8.0)
+        .param("tone", 5000.0)
+        .param("mix", 0.5)
+        .body(|input, drive, tone, mix| {
+            // Large constant boost to ensure we hit tanh saturation even on quiet signals
+            // drive=8 -> 800x boost, drive=20 -> 2000x boost
+            let boost = 1.0;
+            
+            // Remove low-end mud and boost signal for clipping
+            let driven_left = hpf_ar(input[0], 80.0) * boost * drive;
+            let driven_right = hpf_ar(input[1], 80.0) * boost * drive;
+
+            // Soft clip using tanh for amp-like behavior
+            let clipped_left = driven_left.tanh();
+            let clipped_right = driven_right.tanh();
+
+            // Tone shaping to tame fizz
+            let shaped_left = lpf_ar(clipped_left, tone);
+            let shaped_right = lpf_ar(clipped_right, tone);
+
+            // Mix dry and wet signals
+            let dry_left = input[0] * (1.0 - mix);
+            let dry_right = input[1] * (1.0 - mix);
+            let wet_left = shaped_left * mix;
+            let wet_right = shaped_right * mix;
+            
+            [
+                dry_left + wet_left,
+                dry_right + wet_right
+            ]
+        })
+});
+

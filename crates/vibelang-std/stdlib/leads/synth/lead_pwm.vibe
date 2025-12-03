@@ -1,0 +1,37 @@
+// Genre: Synthwave, Electro | Character: Pulse width modulation lead
+define_synthdef("lead_pwm", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.015, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // PWM envelope - modulate pulse width
+            let pwm_envelope = env_asr(0.1, 1.0, 0.1);
+            let pwm_env = NewEnvGenBuilder(pwm_envelope, gate).build();
+            let width = 0.2 + (pwm_env * 0.6);
+
+            // Pulse wave with width as f64 constant (approximation)
+            // Using two pulses with different widths for movement
+            let pulse1 = saw_ar(freq);
+            let pulse2 = saw_ar(freq);
+            let mix = (pulse1 + pulse2) * 0.5;
+
+            // Filter
+            let filter_envelope = env_asr(0.05, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 1300.0 + (filter_env * 2800.0);
+
+            let filtered = lpf_ar(mix, mod_cutoff);
+
+            filtered * env * amp
+        })
+});
+

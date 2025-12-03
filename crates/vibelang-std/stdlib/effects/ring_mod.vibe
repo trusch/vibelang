@@ -1,0 +1,38 @@
+// Ring Modulator Effect
+//
+// Creates metallic, bell-like tones by multiplying the input with a sine wave.
+//
+// Usage:
+//   group.add_effect("ring", "ring_mod", #{
+//     freq: 440.0,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   freq: Modulator frequency in Hz (20 to 5000)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("ring_mod", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("mix", 0.5)
+        .body(|input, freq, mix| {
+            // Generate modulator (carrier wave)
+            let modulator = sin_osc_ar(freq, 0.0);
+
+            // Ring modulation: multiply input by modulator
+            let modulated = [
+                input[0] * modulator,
+                input[1] * modulator
+            ];
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * modulated[0],
+                (1.0 - mix) * input[1] + mix * modulated[1]
+            ];
+
+            output
+        })
+});
+

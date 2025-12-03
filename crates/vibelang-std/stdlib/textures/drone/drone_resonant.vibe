@@ -1,0 +1,32 @@
+// Genre: Ambient, Experimental | Character: Resonant, metallic drone
+define_synthdef("drone_resonant", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.35)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Long sustain
+            let envelope = env_perc(2.5, 18.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Sawtooth source
+            let osc = saw_ar(freq);
+
+            // Multiple resonant filters at different frequencies
+            let res1 = rlpf_ar(osc, freq * 2.0, 0.1) * 0.35;
+            let res2 = rlpf_ar(osc, freq * 3.0, 0.15) * 0.3;
+            let res3 = rlpf_ar(osc, freq * 5.0, 0.2) * 0.25;
+            let res4 = rlpf_ar(osc, freq * 7.0, 0.25) * 0.1;
+
+            let mix = res1 + res2 + res3 + res4;
+
+            // Overall filtering
+            let filtered = lpf_ar(mix, 3000.0);
+
+            filtered * env * amp
+        })
+});
+

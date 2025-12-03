@@ -1,0 +1,55 @@
+// ============================================================================
+// Holiday Songs
+// ============================================================================
+// Traditional holiday melodies with proper rhythm
+// Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
+
+// Traditional - Jingle Bells - 4/4 time
+fn jingle_bells() {
+    return "E4 - E4 - E4 - - - | E4 - E4 - E4 - - - | E4 - G4 - C4 - D4 - | E4 - - - - - - - |";
+}
+
+// Traditional - Silent Night - 6/8 time, slow
+fn silent_night() {
+    return "G4 - - A4 - G4 | E4 - - - - - | G4 - - A4 - G4 | E4 - - - - - |";
+}
+
+// Traditional Welsh - Deck the Halls - 4/4 time
+fn deck_the_halls() {
+    return "C4 - B3 - A3 - G3 - | F3 - G3 - A3 - F3 - | G3 - A3 - Bb3 - G3 - | A3 - - - - - - - |";
+}
+
+// Traditional - We Wish You a Merry Christmas - 3/4 time
+fn merry_christmas() {
+    return "C4 - - | F4 - F4 | F4 - G4 | F4 - E4 | D4 - - | D4 - D4 | D4 - G4 | G4 - A4 | G4 - F4 | E4 - - | C4 - - |";
+}
+
+// Traditional German - O Christmas Tree - 3/4 time
+fn o_christmas_tree() {
+    return "C4 - - | . F4 - | F4 - F4 | F4 - A4 | A4 - - | . Bb4 A4 | G4 - - | . E4 - |";
+}
+
+// Traditional - Joy to the World - 4/4 time, triumphant
+fn joy_to_world() {
+    return "C5 - B4 - A4 - G4 - | F4 - - . E4 - D4 - | C4 - - - G4 - - - | A4 - - - - - - - |";
+}
+
+// Traditional - The First Noel - 3/4 time
+fn first_noel() {
+    return "E4 - - | . D4 - | C4 - D4 | E4 - F4 | G4 - A4 | B4 - - | . C5 - | B4 - A4 | G4 - - |";
+}
+
+// Traditional - Hark! The Herald Angels Sing - 4/4 time
+fn hark_herald_angels() {
+    return "F4 - - F4 | F4 - G4 - | F4 - E4 - | D4 - - - | F4 - - F4 | F4 - G4 - | F4 - E4 - | D4 - - - |";
+}
+
+// Traditional - Happy Birthday - 3/4 time
+fn happy_birthday() {
+    return "C4 - C4 | D4 - C4 | F4 - - | E4 - - | C4 - C4 | D4 - C4 | G4 - - | F4 - - |";
+}
+
+// Traditional Scottish - Auld Lang Syne - 4/4 time
+fn auld_lang_syne_holiday() {
+    return "C4 - - . | F4 - F4 F4 | F4 - A4 - | C5 - - - | C5 - A4 - | A4 - G4 - | F4 - - - |";
+}

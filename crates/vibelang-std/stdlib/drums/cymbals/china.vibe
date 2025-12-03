@@ -1,0 +1,36 @@
+// Genre: Rock, Metal | Character: Trashy china cymbal with aggressive attack
+define_synthdef("china", |builder| {
+    builder
+        .param("amp", 0.75)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Medium-long decay
+            let envelope = env_perc(0.001, 1.8);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Very inharmonic, trashy frequencies
+            let metal1 = saw_ar(421.0) * 0.20;
+            let metal2 = saw_ar(687.0) * 0.19;
+            let metal3 = saw_ar(1134.0) * 0.18;
+            let metal4 = saw_ar(1798.0) * 0.16;
+            let metal5 = saw_ar(2611.0) * 0.13;
+            let metal6 = saw_ar(3589.0) * 0.10;
+
+            let metallic = metal1 + metal2 + metal3 + metal4 + metal5 + metal6;
+
+            // Aggressive noise component
+            let noise = white_noise_ar();
+            let filtered_noise = rlpf_ar(noise, 3500.0, 0.4) * 0.35;
+
+            let mix = metallic + filtered_noise;
+
+            // Slight low cut
+            let clean = hpf_ar(mix, 400.0);
+
+            clean * env * amp
+        })
+});
+

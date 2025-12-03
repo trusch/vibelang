@@ -1,0 +1,34 @@
+// Genre: Drum & Bass, Jungle | Character: Fast, tight, sub-focused
+define_synthdef("kick_dnb", |builder| {
+    builder
+        .param("freq", 70.0)
+        .param("amp", 1.0)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Very short envelope for fast BPM
+            let amp_envelope = env_perc(0.001, 0.15);
+            let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Quick pitch sweep
+            let pitch_envelope = env_perc(0.0005, 0.025);
+            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let freq_mod = pitch_env * freq * 2.0;
+
+            // Tight main tone
+            let sig = sin_osc_ar(freq + freq_mod);
+
+            // Sub layer for weight
+            let sub = sin_osc_ar((freq + freq_mod) * 0.5) * 0.4;
+
+            // Sharp click for definition
+            let click_envelope = env_perc(0.0001, 0.006);
+            let click_env = NewEnvGenBuilder(click_envelope, gate).build();
+            let click = white_noise_ar() * click_env * 0.2;
+
+            (sig + sub + click) * amp_env * amp
+        })
+});
+

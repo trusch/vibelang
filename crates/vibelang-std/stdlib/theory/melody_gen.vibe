@@ -1,0 +1,511 @@
+// ============================================================================
+// Music Theory Melody Generation Module
+// ============================================================================
+// Generate melodies using various techniques and rules
+// All functions return note arrays compatible with vibelang's .step()
+
+import "stdlib/theory/core.vibe" as core;
+import "stdlib/theory/scales.vibe" as scales;
+import "stdlib/theory/arpeggios.vibe" as arp;
+
+// ============================================================================
+// Scale-Based Melody Generation
+// ============================================================================
+
+// Generate random-walk melody within a scale
+fn random_walk_melody(root, scale_name, length) {
+    random_walk_melody_ex(root, scale_name, length, 4, 2)
+}
+
+fn random_walk_melody_ex(root, scale_name, length, octave, max_jump) {
+    
+    // Get scale notes (enough for melody)
+    let scale = scales::scale(root, scale_name, octave, length * 2);
+    let result = [];
+    
+    // Start in middle of scale
+    let current_idx = scale.len() / 2;
+    
+    for i in 0..length {
+        result.push(scale[current_idx]);
+        
+        // Random walk: move up or down by 1-max_jump steps
+        // For simplicity, alternate direction (in real use, would be random)
+        let direction = if i % 2 == 0 { 1 } else { -1 };
+        let jump = ((i % max_jump) + 1) * direction;
+        
+        current_idx += jump;
+        
+        // Keep within bounds
+        if current_idx < 0 {
+            current_idx = 0;
+        } else if current_idx >= scale.len() {
+            current_idx = scale.len() - 1;
+        }
+    }
+    
+    return result;
+}
+
+// Generate stepwise melody (mostly conjunct motion)
+fn stepwise_melody(root, scale_name, length) {
+    stepwise_melody_ex(root, scale_name, length, 4)
+}
+
+fn stepwise_melody_ex(root, scale_name, length, octave) {
+    
+    let scale = scales::scale(root, scale_name, octave, length + 4);
+    let result = [];
+    
+    let current_idx = 0;
+    
+    for i in 0..length {
+        result.push(scale[current_idx]);
+        current_idx += 1;
+        
+        // Wrap around if needed
+        if current_idx >= scale.len() {
+            current_idx = 0;
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Chord-Based Melody Generation
+// ============================================================================
+
+// Generate melody using chord tones
+fn chord_tone_melody(progression) {
+    chord_tone_melody_ex(progression, 4)
+}
+
+fn chord_tone_melody_ex(progression, notes_per_chord) {
+    let result = [];
+    
+    for chord in progression {
+        for i in 0..notes_per_chord {
+            if i < chord.len() {
+                result.push(chord[i % chord.len()]);
+            } else {
+                result.push(".");
+            }
+        }
+    }
+    
+    return result;
+}
+
+// Arpeggiated melody from chords
+fn arpeggiated_melody(progression) {
+    arpeggiated_melody_ex(progression, "up")
+}
+
+fn arpeggiated_melody_ex(progression, pattern) {
+    
+    let result = [];
+    
+    for chord in progression {
+        let arpeggio = if pattern == "up" {
+            arp::arpeggio_up(chord)
+        } else if pattern == "down" {
+            arp::arpeggio_down(chord)
+        } else {
+            arp::arpeggio_up_down(chord)
+        };
+        
+        for note in arpeggio {
+            result.push(note);
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Melodic Embellishments
+// ============================================================================
+
+// Add passing tones between melody notes
+fn add_passing_tones(melody) {
+    
+    let result = [];
+    
+    for i in 0..melody.len() {
+        let note = melody[i];
+        result.push(note);
+        
+        // Add passing tone between this note and next
+        if i < melody.len() - 1 && note != "." && melody[i + 1] != "." {
+            let next_note = melody[i + 1];
+            let interval = core::interval_semitones(note, next_note);
+            
+            // Add passing tone if interval is larger than whole step
+            if interval >= 3 || interval <= -3 {
+                let passing = core::transpose_note(note, if interval > 0 { 2 } else { -2 });
+                result.push(passing);
+            } else {
+                result.push(".");
+            }
+        }
+    }
+    
+    return result;
+}
+
+// Add neighbor tones (upper or lower neighbor)
+fn add_neighbor_tones(melody) {
+    add_neighbor_tones_ex(melody, true)
+}
+
+fn add_neighbor_tones_ex(melody, lower) {
+    
+    let result = [];
+    
+    for note in melody {
+        result.push(note);
+        
+        if note != "." {
+            let neighbor = if lower {
+                core::transpose_note(note, -1)  // Half step below
+            } else {
+                core::transpose_note(note, 1)   // Half step above
+            };
+            result.push(neighbor);
+        } else {
+            result.push(".");
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Contour-Based Generation
+// ============================================================================
+
+// Generate ascending melody
+fn ascending_melody(root, scale_name, length) {
+    ascending_melody_ex(root, scale_name, length, 4)
+}
+
+fn ascending_melody_ex(root, scale_name, length, octave) {
+    
+    let scale = scales::scale(root, scale_name, octave, length);
+    return scale;  // Already ascending
+}
+
+// Generate descending melody
+fn descending_melody(root, scale_name, length) {
+    descending_melody_ex(root, scale_name, length, 4)
+}
+
+fn descending_melody_ex(root, scale_name, length, octave) {
+    
+    let scale = scales::scale(root, scale_name, octave, length);
+    let result = [];
+    
+    for i in 0..length {
+        result.push(scale[length - 1 - i]);
+    }
+    
+    return result;
+}
+
+// Generate arch-shaped melody (up then down)
+fn arch_melody(root, scale_name, length) {
+    arch_melody_ex(root, scale_name, length, 4)
+}
+
+fn arch_melody_ex(root, scale_name, length, octave) {
+    
+    let scale = scales::scale(root, scale_name, octave, length);
+    let result = [];
+    
+    let half = length / 2;
+    
+    // Ascending half
+    for i in 0..half {
+        if i < scale.len() {
+            result.push(scale[i]);
+        }
+    }
+    
+    // Descending half
+    for i in 0..(length - half) {
+        let idx = half - i - 1;
+        if idx >= 0 && idx < scale.len() {
+            result.push(scale[idx]);
+        }
+    }
+    
+    return result;
+}
+
+// Generate wave melody (up-down-up-down)
+fn wave_melody(root, scale_name, length) {
+    wave_melody_ex(root, scale_name, length, 4)
+}
+
+fn wave_melody_ex(root, scale_name, length, octave) {
+    
+    let scale = scales::scale(root, scale_name, octave, length);
+    let result = [];
+    
+    let wave_length = 4;  // Length of one wave cycle
+    
+    for i in 0..length {
+        let phase = i % wave_length;
+        let idx = if phase < wave_length / 2 {
+            phase
+        } else {
+            wave_length - phase - 1
+        };
+        
+        if idx < scale.len() {
+            result.push(scale[idx]);
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Sequence/Pattern-Based Generation
+// ============================================================================
+
+// Ascending sequence (repeat a motif at higher pitches)
+fn ascending_sequence(motif, steps) {
+    ascending_sequence_ex(motif, steps, 2)
+}
+
+fn ascending_sequence_ex(motif, steps, semitone_interval) {
+    
+    let result = [];
+    
+    for step in 0..steps {
+        let transposition = step * semitone_interval;
+        
+        for note in motif {
+            if note == "." {
+                result.push(".");
+            } else {
+                result.push(core::transpose_note(note, transposition));
+            }
+        }
+    }
+    
+    return result;
+}
+
+// Descending sequence
+fn descending_sequence(motif, steps) {
+    descending_sequence_ex(motif, steps, 2)
+}
+
+fn descending_sequence_ex(motif, steps, semitone_interval) {
+    
+    let result = [];
+    
+    for step in 0..steps {
+        let transposition = -(step * semitone_interval);
+        
+        for note in motif {
+            if note == "." {
+                result.push(".");
+            } else {
+                result.push(core::transpose_note(note, transposition));
+            }
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Motivic Development
+// ============================================================================
+
+// Retrograde (reverse the motif)
+fn retrograde(motif) {
+    let result = [];
+    
+    for i in 0..motif.len() {
+        result.push(motif[motif.len() - 1 - i]);
+    }
+    
+    return result;
+}
+
+// Inversion (flip intervals)
+fn inversion(motif) {
+    
+    if motif.len() < 2 {
+        return motif;
+    }
+    
+    let result = [motif[0]];  // Keep first note as pivot
+    
+    for i in 1..motif.len() {
+        if motif[i] == "." {
+            result.push(".");
+        } else {
+            let interval = core::interval_semitones(motif[i - 1], motif[i]);
+            let inverted = core::transpose_note(result[i - 1], 0 - interval);
+            result.push(inverted);
+        }
+    }
+    
+    return result;
+}
+
+// Augmentation (double note durations by inserting rests)
+fn augmentation(motif) {
+    let result = [];
+    
+    for note in motif {
+        result.push(note);
+        result.push(".");
+    }
+    
+    return result;
+}
+
+// Diminution (halve note durations by removing rests)
+fn diminution(motif) {
+    let result = [];
+    
+    for note in motif {
+        if note != "." {
+            result.push(note);
+        }
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Call and Response
+// ============================================================================
+
+// Create call and response (motif, rest, answer)
+fn call_and_response(call_motif) {
+    call_and_response_ex(call_motif, ())
+}
+
+fn call_and_response_ex(call_motif, answer_motif) {
+    let result = [];
+
+    // Call
+    for note in call_motif {
+        result.push(note);
+    }
+
+    // Rest between call and response
+    for i in 0..call_motif.len() {
+        result.push(".");
+    }
+
+    // Response (use inverted call if no answer provided)
+    let response = if answer_motif == () {
+        inversion(call_motif)
+    } else {
+        answer_motif
+    };
+
+    for note in response {
+        result.push(note);
+    }
+
+    return result;
+}
+
+// ============================================================================
+// Jazz-Style Melody Generation
+// ============================================================================
+
+// Bebop scale run (chromatic passing tone on upbeat)
+fn bebop_run(root) {
+    bebop_run_ex(root, 4, "up")
+}
+
+fn bebop_run_ex(root, octave, direction) {
+    
+    // Bebop dominant scale: major scale + b7 and natural 7
+    let intervals = [0, 2, 4, 5, 7, 9, 10, 11];
+    let result = [];
+    
+    let root_note = core::set_octave(root, octave);
+    
+    for i in 0..intervals.len() {
+        let idx = if direction == "up" { i } else { intervals.len() - 1 - i };
+        result.push(core::transpose_note(root_note, intervals[idx]));
+    }
+    
+    return result;
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+// Fill melody with rests to specific length
+fn pad_with_rests(melody, target_length) {
+    let result = melody;
+    
+    while result.len() < target_length {
+        result.push(".");
+    }
+    
+    return result;
+}
+
+// Remove consecutive rests (leave only single rests)
+fn remove_consecutive_rests(melody) {
+    let result = [];
+    let last_was_rest = false;
+    
+    for note in melody {
+        if note == "." {
+            if !last_was_rest {
+                result.push(note);
+                last_was_rest = true;
+            }
+        } else {
+            result.push(note);
+            last_was_rest = false;
+        }
+    }
+    
+    return result;
+}
+
+// Limit melody to specific range
+fn limit_range(melody, lowest_note, highest_note) {
+    
+    let lowest_midi = core::note_to_midi(lowest_note);
+    let highest_midi = core::note_to_midi(highest_note);
+    let result = [];
+    
+    for note in melody {
+        if note == "." {
+            result.push(note);
+        } else {
+            let midi = core::note_to_midi(note);
+            
+            // Transpose to range if needed
+            while midi < lowest_midi {
+                midi += 12;
+            }
+            while midi > highest_midi {
+                midi -= 12;
+            }
+            
+            result.push(core::midi_to_note(midi));
+        }
+    }
+    
+    return result;
+}
+

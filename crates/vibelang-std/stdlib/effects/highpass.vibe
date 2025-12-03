@@ -1,0 +1,36 @@
+// High Pass Filter Effect
+//
+// Cuts frequencies below the cutoff frequency using a resonant filter.
+//
+// Usage:
+//   group.add_effect("hp", "highpass", #{
+//     cutoff: 200.0,
+//     resonance: 0.5,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   cutoff: Cutoff frequency in Hz (20 to 20000)
+//   resonance: Filter resonance (0.0 to 1.0, low values = more resonance)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("highpass", |builder| {
+    builder
+        .param("cutoff", 200.0)
+        .param("resonance", 0.5)
+        .param("mix", 1.0)
+        .body(|input, cutoff, resonance, mix| {
+            // RHPF provides resonant high pass filtering
+            let filtered_left = rhpf_ar(input[0], cutoff, resonance);
+            let filtered_right = rhpf_ar(input[1], cutoff, resonance);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * filtered_left,
+                (1.0 - mix) * input[1] + mix * filtered_right
+            ];
+
+            output
+        })
+});
+

@@ -1,0 +1,35 @@
+// Genre: Pop, EDM | Character: Layered, big stadium clap
+define_synthdef("clap_layered", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Four bursts for thick character
+            let burst1_envelope = env_perc(0.001, 0.025);
+            let burst1_env = NewEnvGenBuilder(burst1_envelope, gate).build();
+
+            let burst2_envelope = env_perc(0.009, 0.025);
+            let burst2_env = NewEnvGenBuilder(burst2_envelope, gate).build();
+
+            let burst3_envelope = env_perc(0.016, 0.025);
+            let burst3_env = NewEnvGenBuilder(burst3_envelope, gate).build();
+
+            let burst4_envelope = env_perc(0.022, 0.025);
+            let burst4_env = NewEnvGenBuilder(burst4_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple frequency bands
+            let noise = white_noise_ar();
+            let low = rlpf_ar(noise, 1200.0, 0.6) * 0.4;
+            let mid = rlpf_ar(noise, 2800.0, 0.5) * 0.7;
+            let high = hpf_ar(noise, 3500.0) * 0.5;
+
+            let mix = low + mid + high;
+            let clap = mix * (burst1_env + burst2_env * 0.85 + burst3_env * 0.7 + burst4_env * 0.55);
+
+            clap * amp * 0.7
+        })
+});
+

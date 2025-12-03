@@ -1,0 +1,33 @@
+// Stereo Width Effect
+//
+// Controls the width of the stereo field from mono to super-wide.
+//
+// Usage:
+//   group.add_effect("width", "stereo_width", #{
+//     width: 1.5
+//   });
+//
+// Parameters:
+//   width: Stereo width (0.0 = mono, 1.0 = normal, 2.0 = maximum width)
+
+define_fx("stereo_width", |builder| {
+    builder
+        .param("width", 1.5)
+        .body(|input, width| {
+            // Mid-side processing
+            let mid = (input[0] + input[1]) * 0.5;
+            let side = (input[0] - input[1]) * 0.5;
+
+            // Apply width to side signal
+            let side_widened = side * width;
+
+            // Convert back to left-right
+            let output = [
+                mid + side_widened,
+                mid - side_widened
+            ];
+
+            output
+        })
+});
+

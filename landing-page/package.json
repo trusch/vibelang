@@ -1,0 +1,21 @@
+{
+  "name": "vibelang-landing",
+  "version": "1.0.0",
+  "description": "VibeLang - Make music with code",
+  "source": "src/index.html",
+  "scripts": {
+    "start": "parcel",
+    "build": "parcel build",
+    "clean": "rm -rf dist .parcel-cache"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@parcel/transformer-svg-react": "^2.12.0",
+    "parcel": "^2.12.0",
+    "process": "^0.11.10"
+  },
+  "browserslist": "> 0.5%, last 2 versions, not dead"
+}

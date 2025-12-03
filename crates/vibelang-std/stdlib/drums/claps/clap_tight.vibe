@@ -1,0 +1,26 @@
+// Genre: Techno, Minimal | Character: Very tight, focused clap
+define_synthdef("clap_tight", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Just two very short bursts
+            let burst1_envelope = env_perc(0.0003, 0.012);
+            let burst1_env = NewEnvGenBuilder(burst1_envelope, gate).build();
+
+            let burst2_envelope = env_perc(0.006, 0.012);
+            let burst2_env = NewEnvGenBuilder(burst2_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Focused filtering
+            let noise = white_noise_ar();
+            let filtered = rlpf_ar(noise, 2400.0, 0.3);
+
+            let clap = filtered * (burst1_env + burst2_env * 0.75);
+
+            clap * amp
+        })
+});
+

@@ -1,0 +1,22 @@
+// Genre: All | Character: Focused mono sub for club systems
+define_synthdef("sub_mono", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.8)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Clean envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pure sine, centered
+            let sig = sin_osc_ar(freq);
+
+            sig * env * amp
+        })
+});
+

@@ -1,0 +1,39 @@
+// Formant Filter Effect
+//
+// Creates vowel-like resonances using formant filtering.
+//
+// Usage:
+//   group.add_effect("formant", "formant_filter", #{
+//     freq: 800.0,
+//     attack: 0.01,
+//     decay: 0.1,
+//     mix: 0.7
+//   });
+//
+// Parameters:
+//   freq: Formant frequency in Hz (200 to 5000)
+//   attack: Attack time in seconds
+//   decay: Decay time in seconds
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("formant_filter", |builder| {
+    builder
+        .param("freq", 800.0)
+        .param("attack", 0.01)
+        .param("decay", 0.1)
+        .param("mix", 0.7)
+        .body(|input, freq, attack, decay, mix| {
+            // Apply formant filtering
+            let formant_left = formlet_ar(input[0], freq, attack, decay);
+            let formant_right = formlet_ar(input[1], freq, attack, decay);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * formant_left,
+                (1.0 - mix) * input[1] + mix * formant_right
+            ];
+
+            output
+        })
+});
+

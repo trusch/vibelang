@@ -1,0 +1,32 @@
+// Genre: House, Latin | Character: Classic cowbell, bright and cutting
+define_synthdef("cowbell", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Medium-short decay
+            let envelope = env_perc(0.001, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Inharmonic frequencies for metallic bell character
+            let osc1 = saw_ar(540.0) * 0.4;
+            let osc2 = saw_ar(800.0) * 0.35;
+            let osc3 = saw_ar(1060.0) * 0.25;
+
+            let mix = osc1 + osc2 + osc3;
+
+            // Band-pass for bell resonance
+            let filtered = rlpf_ar(mix, 1200.0, 0.4);
+
+            // Add attack click
+            let click_envelope = env_perc(0.0001, 0.005);
+            let click_env = NewEnvGenBuilder(click_envelope, gate).build();
+            let click = white_noise_ar() * click_env * 0.2;
+
+            (filtered + click) * env * amp
+        })
+});
+

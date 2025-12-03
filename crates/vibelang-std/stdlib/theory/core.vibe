@@ -1,0 +1,315 @@
+// ============================================================================
+// Music Theory Core Module
+// ============================================================================
+// Foundation utilities for music theory operations
+// Provides note/MIDI/frequency conversions and interval calculations
+
+// ============================================================================
+// Note Name to MIDI Number Conversion
+// ============================================================================
+
+// Parse note name (e.g., "C4", "F#5", "Bb3") to MIDI number
+// Returns MIDI number (0-127) or throws error
+fn note_to_midi(note_name) {
+    // Extract components: note letter, accidental, octave
+    let len = note_name.len();
+    if len < 2 {
+        throw `Invalid note name: ${note_name}`;
+    }
+    
+    let note_letter = note_name[0].to_upper().to_string();
+    let octave_start = 1;
+    let accidental = "";
+    
+    // Check for accidental
+    if len > 2 {
+        let second_char = note_name[1].to_string();
+        if second_char == "#" || second_char == "b" {
+            accidental = second_char;
+            octave_start = 2;
+        }
+    }
+    
+    // Parse octave
+    let octave_str = note_name.sub_string(octave_start);
+    let octave = parse_int(octave_str);
+    if octave == () {
+        throw `Invalid octave in note: ${note_name}`;
+    }
+    
+    // Note letter to semitone (C=0)
+    let semitone = switch note_letter {
+        "C" => 0,
+        "D" => 2,
+        "E" => 4,
+        "F" => 5,
+        "G" => 7,
+        "A" => 9,
+        "B" => 11,
+        _ => throw `Invalid note letter: ${note_letter}`
+    };
+    
+    // Apply accidental
+    if accidental == "#" {
+        semitone += 1;
+    } else if accidental == "b" {
+        semitone -= 1;
+    }
+    
+    // Calculate MIDI number: C4 = 60
+    let midi = (octave + 1) * 12 + semitone;
+    
+    if midi < 0 || midi > 127 {
+        throw `MIDI number out of range (0-127): ${midi} for note ${note_name}`;
+    }
+    
+    return midi;
+}
+
+// ============================================================================
+// MIDI Number to Note Name Conversion
+// ============================================================================
+
+// Convert MIDI number to note name (with sharps by default)
+fn midi_to_note(midi_num) {
+    midi_to_note_ex(midi_num, false)
+}
+
+fn midi_to_note_ex(midi_num, use_flats) {
+    if midi_num < 0 || midi_num > 127 {
+        throw `MIDI number out of range (0-127): ${midi_num}`;
+    }
+
+    let octave = (midi_num / 12) - 1;
+    let semitone = midi_num % 12;
+
+    let note_names_sharp = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let note_names_flat = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+
+    let note_letter = if use_flats {
+        note_names_flat[semitone]
+    } else {
+        note_names_sharp[semitone]
+    };
+
+    return `${note_letter}${octave}`;
+}
+
+// ============================================================================
+// MIDI to Frequency Conversion
+// ============================================================================
+
+// Convert MIDI number to frequency in Hz
+// A4 (MIDI 69) = 440 Hz by default
+fn midi_to_freq(midi_num) {
+    midi_to_freq_ex(midi_num, 440.0)
+}
+
+fn midi_to_freq_ex(midi_num, a4_freq) {
+    return a4_freq * pow(2.0, (midi_num - 69) / 12.0);
+}
+
+// Convert note name to frequency
+fn note_to_freq(note_name) {
+    note_to_freq_ex(note_name, 440.0)
+}
+
+fn note_to_freq_ex(note_name, a4_freq) {
+    let midi = note_to_midi(note_name);
+    return midi_to_freq_ex(midi, a4_freq);
+}
+
+// ============================================================================
+// Interval Operations
+// ============================================================================
+
+// Transpose a note by a number of semitones
+fn transpose_note(note_name, semitones) {
+    let midi = note_to_midi(note_name);
+    let new_midi = midi + semitones;
+    if new_midi < 0 || new_midi > 127 {
+        throw `Transposition out of range: ${note_name} + ${semitones} semitones`;
+    }
+    return midi_to_note_ex(new_midi, note_name.contains("b"));
+}
+
+// Calculate interval between two notes in semitones
+fn interval_semitones(note1, note2) {
+    let midi1 = note_to_midi(note1);
+    let midi2 = note_to_midi(note2);
+    return midi2 - midi1;
+}
+
+// Get note at specific interval above root (in semitones)
+fn note_at_interval(root_note, semitones) {
+    return transpose_note(root_note, semitones);
+}
+
+// ============================================================================
+// Octave Operations
+// ============================================================================
+
+// Change octave of a note
+fn set_octave(note_name, new_octave) {
+    // Parse note without octave
+    let len = note_name.len();
+    let note_part = "";
+    
+    for i in 0..len {
+        let char = note_name[i].to_string();
+        if char >= "0" && char <= "9" {
+            break;
+        }
+        note_part += char;
+    }
+    
+    return `${note_part}${new_octave}`;
+}
+
+// Shift note by octaves
+fn shift_octave(note_name, octave_shift) {
+    let midi = note_to_midi(note_name);
+    let new_midi = midi + (octave_shift * 12);
+    if new_midi < 0 || new_midi > 127 {
+        throw `Octave shift out of range: ${note_name} + ${octave_shift} octaves`;
+    }
+    return midi_to_note_ex(new_midi, note_name.contains("b"));
+}
+
+// ============================================================================
+// Note Array Utilities
+// ============================================================================
+
+// Transpose an array of notes
+fn transpose_notes(notes, semitones) {
+    let result = [];
+    for note in notes {
+        if note == "." {
+            result.push(".");
+        } else {
+            result.push(transpose_note(note, semitones));
+        }
+    }
+    return result;
+}
+
+// Convert note array to MIDI array
+fn notes_to_midi(notes) {
+    let result = [];
+    for note in notes {
+        if note == "." {
+            result.push(".");
+        } else {
+            result.push(note_to_midi(note));
+        }
+    }
+    return result;
+}
+
+// Convert note array to frequency array
+fn notes_to_freq(notes) {
+    notes_to_freq_ex(notes, 440.0)
+}
+
+fn notes_to_freq_ex(notes, a4_freq) {
+    let result = [];
+    for note in notes {
+        if note == "." {
+            result.push(".");
+        } else {
+            result.push(note_to_freq_ex(note, a4_freq));
+        }
+    }
+    return result;
+}
+
+// Convert array to space-separated string (for .step() compatibility)
+fn array_to_step_string(arr) {
+    let result = "";
+    for i in 0..arr.len() {
+        if i > 0 {
+            result += " ";
+        }
+        result += arr[i].to_string();
+    }
+    return result;
+}
+
+// ============================================================================
+// Interval Name Mappings
+// ============================================================================
+
+// Get interval name from semitones
+fn interval_name(semitones) {
+    let intervals = #{
+        "0": "Unison",
+        "1": "Minor 2nd",
+        "2": "Major 2nd",
+        "3": "Minor 3rd",
+        "4": "Major 3rd",
+        "5": "Perfect 4th",
+        "6": "Tritone",
+        "7": "Perfect 5th",
+        "8": "Minor 6th",
+        "9": "Major 6th",
+        "10": "Minor 7th",
+        "11": "Major 7th",
+        "12": "Octave"
+    };
+    
+    let adjusted = semitones % 12;
+    if adjusted < 0 {
+        adjusted += 12;
+    }
+    
+    return intervals[adjusted.to_string()];
+}
+
+// Get semitones from interval name
+fn interval_to_semitones(name) {
+    let intervals = #{
+        "unison": 0, "P1": 0,
+        "m2": 1, "minor 2nd": 1,
+        "M2": 2, "major 2nd": 2,
+        "m3": 3, "minor 3rd": 3,
+        "M3": 4, "major 3rd": 4,
+        "P4": 5, "perfect 4th": 5,
+        "tritone": 6, "TT": 6, "aug4": 6, "dim5": 6,
+        "P5": 7, "perfect 5th": 7,
+        "m6": 8, "minor 6th": 8,
+        "M6": 9, "major 6th": 9,
+        "m7": 10, "minor 7th": 10,
+        "M7": 11, "major 7th": 11,
+        "octave": 12, "P8": 12
+    };
+    
+    let lower = name.to_lower();
+    if intervals.contains(lower) {
+        return intervals[lower];
+    }
+    throw `Unknown interval name: ${name}`;
+}
+
+// ============================================================================
+// Enharmonic Equivalents
+// ============================================================================
+
+// Get enharmonic equivalent (sharp <-> flat)
+fn enharmonic(note_name) {
+    let midi = note_to_midi(note_name);
+    let use_flats = !note_name.contains("b");
+    return midi_to_note(midi, use_flats);
+}
+
+// ============================================================================
+// Helper: Parse integer (Rhai doesn't have built-in parse_int on strings)
+// ============================================================================
+
+fn parse_int(str) {
+    try {
+        return eval(`${str}`);
+    } catch {
+        return ();
+    }
+}
+

@@ -1,0 +1,38 @@
+// Genre: Cinematic, Orchestral | Character: Crash with dynamic swell
+define_synthdef("crash_swell", |builder| {
+    builder
+        .param("amp", 0.7)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Build and decay envelope
+            let envelope = env_perc(0.3, 2.8);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Metallic frequencies
+            let metal1 = saw_ar(456.0) * 0.18;
+            let metal2 = saw_ar(712.0) * 0.17;
+            let metal3 = saw_ar(1089.0) * 0.16;
+            let metal4 = saw_ar(1645.0) * 0.15;
+            let metal5 = saw_ar(2387.0) * 0.13;
+            let metal6 = saw_ar(3289.0) * 0.11;
+
+            let metallic = metal1 + metal2 + metal3 + metal4 + metal5 + metal6;
+
+            // Dynamic filter for swell
+            let filter_envelope = env_perc(0.5, 2.5);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 800.0 + (filter_env * 4500.0);
+
+            let filtered = lpf_ar(metallic, mod_cutoff);
+
+            // Noise layer
+            let noise = pink_noise_ar();
+            let filtered_noise = hpf_ar(noise, 2000.0) * 0.2;
+
+            (filtered + filtered_noise) * env * amp
+        })
+});
+

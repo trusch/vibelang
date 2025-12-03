@@ -1,0 +1,36 @@
+// Genre: All | Character: Low tom, deep and resonant
+define_synthdef("tom_low", |builder| {
+    builder
+        .param("freq", 90.0)
+        .param("amp", 1.0)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Longer decay for low tom
+            let amp_envelope = env_perc(0.004, 0.4);
+            let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pitch envelope
+            let pitch_envelope = env_perc(0.002, 0.12);
+            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let freq_mod = pitch_env * freq * 1.8;
+
+            // Main tone
+            let tone = sin_osc_ar(freq + freq_mod);
+
+            // Rich harmonics for depth
+            let harmonic1 = sin_osc_ar((freq + freq_mod) * 1.3) * 0.3;
+            let harmonic2 = sin_osc_ar((freq + freq_mod) * 2.0) * 0.15;
+
+            // Attack
+            let attack_envelope = env_perc(0.002, 0.025);
+            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack = pink_noise_ar() * attack_env * 0.2;
+            let filtered_attack = lpf_ar(attack, 2000.0);
+
+            (tone + harmonic1 + harmonic2 + filtered_attack) * amp_env * amp
+        })
+});
+

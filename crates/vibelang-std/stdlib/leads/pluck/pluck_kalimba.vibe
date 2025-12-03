@@ -1,0 +1,32 @@
+// Genre: World, Ambient | Character: Kalimba/thumb piano sound
+define_synthdef("pluck_kalimba", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Quick attack, medium decay
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.001, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Metallic harmonics
+            let fundamental = sin_osc_ar(freq);
+            let harmonic2 = sin_osc_ar(freq * 3.0) * 0.3;
+            let harmonic3 = sin_osc_ar(freq * 6.0) * 0.15;
+
+            // Add subtle noise for pluck attack
+            let attack_envelope = env_asr(0.001, 1.0, 0.1);
+            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack = pink_noise_ar() * attack_env * 0.08;
+            let filtered_attack = hpf_ar(attack, 2000.0);
+
+            let mix = fundamental + harmonic2 + harmonic3 + filtered_attack;
+
+            mix * env * amp
+        })
+});
+

@@ -1,0 +1,56 @@
+// Rotary Speaker Effect
+//
+// Simulates a rotating speaker (like a Leslie speaker) with Doppler and amplitude modulation.
+//
+// Usage:
+//   group.add_effect("leslie", "rotary", #{
+//     rate: 6.0,
+//     depth: 0.003,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   rate: Rotation rate in Hz (0.5 to 10.0)
+//   depth: Doppler depth in seconds (0.001 to 0.01)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("rotary", |builder| {
+    builder
+        .param("rate", 6.0)
+        .param("depth", 0.003)
+        .param("mix", 1.0)
+        .body(|input, rate, depth, mix| {
+            // Mix to mono for effect
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // LFOs for modulation (90 degrees apart for stereo)
+            let lfo_left = sin_osc_ar(rate, 0.0);
+            let lfo_right = sin_osc_ar(rate, 1.57);
+
+            // Doppler effect (pitch modulation via delay)
+            let delay_left = 0.005 + (depth * lfo_left);
+            let delay_right = 0.005 + (depth * lfo_right);
+
+            let doppler_left = delay_c_ar(mono, 0.1, delay_left);
+            let doppler_right = delay_c_ar(mono, 0.1, delay_right);
+
+            // Amplitude modulation (volume changes as speaker rotates)
+            let amp_mod_left = 0.8 + (0.2 * lfo_left);
+            let amp_mod_right = 0.8 + (0.2 * lfo_right);
+
+            // Combine effects
+            let rotated = [
+                doppler_left * amp_mod_left,
+                doppler_right * amp_mod_right
+            ];
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * rotated[0],
+                (1.0 - mix) * input[1] + mix * rotated[1]
+            ];
+
+            output
+        })
+});
+

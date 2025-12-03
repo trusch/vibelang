@@ -1,0 +1,34 @@
+// Genre: Ambient, Sci-Fi | Character: Spacious, ethereal texture
+define_synthdef("texture_space", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.35)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Very long envelope
+            let envelope = env_perc(2.0, 12.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple slow oscillators
+            let osc1 = sin_osc_ar(freq * 0.5);
+            let osc2 = sin_osc_ar(freq * 0.75);
+            let osc3 = sin_osc_ar(freq);
+            let osc4 = sin_osc_ar(freq * 1.5);
+
+            // Mix with harmonics
+            let mix = (osc1 * 0.3 + osc2 * 0.25 + osc3 * 0.25 + osc4 * 0.2);
+
+            // Evolving filter
+            let filter_envelope = env_perc(3.0, 10.0);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 500.0 + (filter_env * 2500.0);
+
+            let filtered = lpf_ar(mix, mod_cutoff);
+
+            filtered * env * amp
+        })
+});
+

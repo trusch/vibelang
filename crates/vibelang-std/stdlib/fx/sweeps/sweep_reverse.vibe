@@ -1,0 +1,27 @@
+// Genre: Experimental, IDM | Character: Reverse sweep effect
+define_synthdef("sweep_reverse", |builder| {
+    builder
+        .param("amp", 0.6)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Reverse-style envelope (builds up)
+            let envelope = env_perc(0.8, 1.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // White noise
+            let noise = white_noise_ar();
+
+            // Reverse filter sweep (starts high, goes low, then back up)
+            let filter_envelope = env_perc(1.0, 1.2);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 6000.0 - (filter_env * 4000.0);
+
+            let filtered = rlpf_ar(noise, mod_cutoff, 0.35);
+
+            filtered * env * amp
+        })
+});
+

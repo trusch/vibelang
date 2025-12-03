@@ -1,0 +1,29 @@
+// Genre: Ambient, Chillout | Character: Smooth, gentle lead
+define_synthdef("lead_smooth", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Soft envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.08, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Sine with subtle harmonics
+            let fundamental = sin_osc_ar(freq);
+            let harmonic2 = sin_osc_ar(freq * 2.0) * 0.15;
+            let harmonic3 = sin_osc_ar(freq * 3.0) * 0.08;
+
+            let mix = fundamental + harmonic2 + harmonic3;
+
+            // Gentle filter
+            let filtered = lpf_ar(mix, 3000.0);
+
+            filtered * env * amp
+        })
+});
+

@@ -1,0 +1,33 @@
+// Genre: Ambient, Post-Rock | Character: Shimmering pad with high harmonics
+define_synthdef("pad_shimmer", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Long attack for shimmer
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.5, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Fundamental and high harmonics
+            let fundamental = saw_ar(freq) * 0.4;
+            let harmonic2 = saw_ar(freq * 2.0) * 0.25;
+            let harmonic3 = saw_ar(freq * 3.0) * 0.15;
+            let harmonic4 = saw_ar(freq * 4.0) * 0.1;
+
+            let mix = fundamental + harmonic2 + harmonic3 + harmonic4;
+
+            // Bright filter
+            let filtered = lpf_ar(mix, 4000.0);
+
+            // High-pass for air
+            let clean = hpf_ar(filtered, 200.0);
+
+            clean * env * amp
+        })
+});
+

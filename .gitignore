@@ -1,0 +1,55 @@
+# Build artifacts
+/target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Audio files (keep samples in dedicated folders)
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.aiff
+!samples/**/*.wav
+!stdlib/**/*.wav
+
+# Recording outputs
+jack_capture_*.wav
+sample.wav
+
+# VST plugins (large binaries)
+*.so
+*.dll
+*.vst
+*.vst3
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+
+# Node modules (vscode extension)
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+
+# Documentation build
+/docs/_build/
+
+# Local development
+.env
+.env.local
+*.local
+CLAUDE.md

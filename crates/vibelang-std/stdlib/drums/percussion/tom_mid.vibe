@@ -1,0 +1,36 @@
+// Genre: All | Character: Mid tom, punchy
+define_synthdef("tom_mid", |builder| {
+    builder
+        .param("freq", 140.0)
+        .param("amp", 1.0)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Medium decay
+            let amp_envelope = env_perc(0.003, 0.3);
+            let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pitch envelope
+            let pitch_envelope = env_perc(0.001, 0.1);
+            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let freq_mod = pitch_env * freq * 1.6;
+
+            // Main tone
+            let tone = sin_osc_ar(freq + freq_mod);
+
+            // Harmonics for body
+            let harmonic1 = sin_osc_ar((freq + freq_mod) * 1.4) * 0.25;
+            let harmonic2 = sin_osc_ar((freq + freq_mod) * 2.1) * 0.1;
+
+            // Attack
+            let attack_envelope = env_perc(0.001, 0.02);
+            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack = pink_noise_ar() * attack_env * 0.18;
+            let filtered_attack = lpf_ar(attack, 2500.0);
+
+            (tone + harmonic1 + harmonic2 + filtered_attack) * amp_env * amp
+        })
+});
+

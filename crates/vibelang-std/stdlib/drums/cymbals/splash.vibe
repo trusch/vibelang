@@ -1,0 +1,32 @@
+// Genre: All | Character: Small splash cymbal, quick and bright
+define_synthdef("splash", |builder| {
+    builder
+        .param("amp", 0.7)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Short decay
+            let envelope = env_perc(0.001, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // High, bright metallic frequencies
+            let metal1 = saw_ar(1823.0) * 0.22;
+            let metal2 = saw_ar(2712.0) * 0.20;
+            let metal3 = saw_ar(3845.0) * 0.18;
+            let metal4 = saw_ar(5234.0) * 0.15;
+            let metal5 = saw_ar(6921.0) * 0.12;
+
+            let metallic = metal1 + metal2 + metal3 + metal4 + metal5;
+
+            // Bright noise splash
+            let noise = white_noise_ar();
+            let filtered_noise = hpf_ar(noise, 5000.0) * 0.25;
+
+            let mix = metallic + filtered_noise;
+
+            mix * env * amp
+        })
+});
+

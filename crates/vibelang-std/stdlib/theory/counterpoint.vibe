@@ -1,0 +1,445 @@
+// ============================================================================
+// Music Theory Counterpoint Module
+// ============================================================================
+// Tools for species counterpoint and two-voice writing
+// Implements classical counterpoint rules
+
+import "stdlib/theory/core.vibe" as core;
+import "stdlib/theory/scales.vibe" as scales;
+import "stdlib/theory/harmony.vibe" as harm;
+import "stdlib/theory/voice_leading.vibe" as vl;
+
+// ============================================================================
+// Species Counterpoint Rules
+// ============================================================================
+
+// First Species: Note against note
+// Every note in cantus firmus has a corresponding note in counterpoint
+
+// Check if interval is valid for first species
+fn is_valid_first_species_interval(semitones) {
+    let interval = semitones % 12;
+    
+    // Allowed: unison, M3, m3, P5, M6, m6, P8
+    // Not allowed: 2nds, 7ths, tritone, augmented/diminished
+    return interval == 0 || interval == 3 || interval == 4 || 
+           interval == 7 || interval == 8 || interval == 9;
+}
+
+// Generate first species counterpoint above a cantus firmus
+fn first_species_above(cantus_firmus, key_root) {
+    first_species_above_ex(cantus_firmus, key_root, "major")
+}
+
+fn first_species_above_ex(cantus_firmus, key_root, mode) {
+    
+    let scale = scales::scale(key_root, mode, 5, 14);  // Two octaves
+    let counterpoint = [];
+    
+    for cf_note in cantus_firmus {
+        if cf_note == "." {
+            counterpoint.push(".");
+            continue;
+        }
+        
+        // Try to find a valid interval (prefer 3rd, 6th, or 10th)
+        let found = false;
+        let preferred_intervals = [4, 9, 16, 3, 8, 7];  // m3, M6, m10, M3, m6, P5
+        
+        for interval in preferred_intervals {
+            let candidate = core::transpose_note(cf_note, interval);
+            
+            // Check if candidate is in scale
+            let candidate_pc = core::note_to_midi(candidate) % 12;
+            let in_scale = false;
+            
+            for scale_note in scale {
+                if core::note_to_midi(scale_note) % 12 == candidate_pc {
+                    in_scale = true;
+                    break;
+                }
+            }
+            
+            if in_scale && is_valid_first_species_interval(interval) {
+                counterpoint.push(candidate);
+                found = true;
+                break;
+            }
+        }
+        
+        if !found {
+            // Fallback to octave
+            counterpoint.push(core::shift_octave(cf_note, 1));
+        }
+    }
+    
+    return counterpoint;
+}
+
+// Generate first species counterpoint below a cantus firmus
+fn first_species_below(cantus_firmus, key_root) {
+    first_species_below_ex(cantus_firmus, key_root, "major")
+}
+
+fn first_species_below_ex(cantus_firmus, key_root, mode) {
+    
+    let scale = scales::scale(key_root, mode, 3, 14);  // Lower octaves
+    let counterpoint = [];
+    
+    for cf_note in cantus_firmus {
+        if cf_note == "." {
+            counterpoint.push(".");
+            continue;
+        }
+        
+        // Prefer consonant intervals below
+        let preferred_intervals = [-4, -9, -3, -8, -7];  // M3 below, M6 below, etc.
+        
+        let found = false;
+        for interval in preferred_intervals {
+            let candidate = core::transpose_note(cf_note, interval);
+            let candidate_pc = core::note_to_midi(candidate) % 12;
+            let in_scale = false;
+            
+            for scale_note in scale {
+                if core::note_to_midi(scale_note) % 12 == candidate_pc {
+                    in_scale = true;
+                    break;
+                }
+            }
+            
+            if in_scale && is_valid_first_species_interval(-interval) {
+                counterpoint.push(candidate);
+                found = true;
+                break;
+            }
+        }
+        
+        if !found {
+            counterpoint.push(core::shift_octave(cf_note, -1));
+        }
+    }
+    
+    return counterpoint;
+}
+
+// ============================================================================
+// Consonance and Dissonance Rules
+// ============================================================================
+
+// Check if interval is consonant (for counterpoint)
+fn is_consonant_interval(semitones) {
+    return harm::is_consonant(semitones);
+}
+
+// Check if interval is perfect consonance
+fn is_perfect_consonance(semitones) {
+    let interval = semitones % 12;
+    return interval == 0 || interval == 7;  // Unison, P5, P8
+}
+
+// Check if interval is imperfect consonance
+fn is_imperfect_consonance(semitones) {
+    let interval = semitones % 12;
+    return interval == 3 || interval == 4 || interval == 8 || interval == 9;  // 3rds, 6ths
+}
+
+// Check if dissonance is prepared (approached by step from consonance)
+fn is_prepared_dissonance(prev_interval, curr_interval, step_size) {
+    if is_consonant_interval(prev_interval) && !is_consonant_interval(curr_interval) {
+        return step_size <= 2;  // Stepwise motion
+    }
+    return false;
+}
+
+// Check if dissonance is resolved (left by step to consonance)
+fn is_resolved_dissonance(curr_interval, next_interval, step_size) {
+    if !is_consonant_interval(curr_interval) && is_consonant_interval(next_interval) {
+        return step_size <= 2;  // Stepwise motion
+    }
+    return false;
+}
+
+// ============================================================================
+// Motion Rules
+// ============================================================================
+
+// Analyze motion between two voices
+fn analyze_counterpoint_motion(voice1_note1, voice1_note2, voice2_note1, voice2_note2) {
+    
+    return vl::analyze_motion(voice1_note1, voice1_note2, voice2_note1, voice2_note2);
+}
+
+// Check for forbidden parallel motion
+fn check_parallel_perfects_counterpoint(voice1, voice2) {
+    
+    let violations = [];
+    
+    for i in 0..voice1.len() - 1 {
+        if voice1[i] == "." || voice1[i + 1] == "." {
+            continue;
+        }
+        if voice2[i] == "." || voice2[i + 1] == "." {
+            continue;
+        }
+        
+        let interval1 = core::interval_semitones(voice1[i], voice2[i]) % 12;
+        let interval2 = core::interval_semitones(voice1[i + 1], voice2[i + 1]) % 12;
+        
+        // Check motion direction
+        let v1_motion = core::interval_semitones(voice1[i], voice1[i + 1]);
+        let v2_motion = core::interval_semitones(voice2[i], voice2[i + 1]);
+        
+        let parallel = (v1_motion > 0 && v2_motion > 0) || (v1_motion < 0 && v2_motion < 0);
+        
+        if parallel && is_perfect_consonance(interval1) && is_perfect_consonance(interval2) {
+            violations.push(#{
+                "position": i,
+                "interval": if interval1 == 0 { "unison" } else { "fifth" },
+                "type": "parallel_perfects"
+            });
+        }
+    }
+    
+    return violations;
+}
+
+// Check for hidden/direct fifths and octaves
+fn check_hidden_perfects(voice1, voice2) {
+    
+    let violations = [];
+    
+    for i in 0..voice1.len() - 1 {
+        if voice1[i] == "." || voice1[i + 1] == "." {
+            continue;
+        }
+        if voice2[i] == "." || voice2[i + 1] == "." {
+            continue;
+        }
+        
+        let interval = core::interval_semitones(voice1[i + 1], voice2[i + 1]) % 12;
+        
+        // Check if arriving at perfect consonance
+        if is_perfect_consonance(interval) {
+            let v1_motion = core::interval_semitones(voice1[i], voice1[i + 1]);
+            let v2_motion = core::interval_semitones(voice2[i], voice2[i + 1]);
+            
+            // Both voices moving in same direction (similar motion)
+            if (v1_motion > 0 && v2_motion > 0) || (v1_motion < 0 && v2_motion < 0) {
+                // Check if approaching by leap (especially in outer voice)
+                if v1_motion > 2 || v1_motion < -2 {
+                    violations.push(#{
+                        "position": i,
+                        "interval": if interval == 0 { "octave" } else { "fifth" },
+                        "type": "hidden_perfects"
+                    });
+                }
+            }
+        }
+    }
+    
+    return violations;
+}
+
+// ============================================================================
+// Melodic Rules
+// ============================================================================
+
+// Check if melodic interval is valid (no large leaps)
+fn is_valid_melodic_interval(semitones) {
+    let abs_interval = if semitones < 0 { -semitones } else { semitones };
+    
+    // Allow up to minor 6th (8 semitones)
+    // Tritone and major 7th are forbidden
+    if abs_interval > 8 {
+        return false;
+    }
+    if abs_interval == 6 {  // Tritone
+        return false;
+    }
+    
+    return true;
+}
+
+// Check for proper treatment of melodic leaps
+fn check_leap_treatment(melody) {
+    
+    let violations = [];
+    
+    for i in 0..melody.len() - 2 {
+        if melody[i] == "." || melody[i + 1] == "." || melody[i + 2] == "." {
+            continue;
+        }
+        
+        let interval1 = core::interval_semitones(melody[i], melody[i + 1]);
+        let interval2 = core::interval_semitones(melody[i + 1], melody[i + 2]);
+        
+        let abs_int1 = if interval1 < 0 { -interval1 } else { interval1 };
+        
+        // Large leap should be followed by step in opposite direction
+        if abs_int1 > 4 {
+            let opposite_direction = (interval1 > 0 && interval2 < 0) || (interval1 < 0 && interval2 > 0);
+            let abs_int2 = if interval2 < 0 { -interval2 } else { interval2 };
+            let is_step = abs_int2 <= 2;
+            
+            if !opposite_direction || !is_step {
+                violations.push(#{
+                    "position": i,
+                    "leap": abs_int1,
+                    "type": "untreated_leap"
+                });
+            }
+        }
+    }
+    
+    return violations;
+}
+
+// ============================================================================
+// Cadence Rules
+// ============================================================================
+
+// Check if ending is a proper cadence
+fn is_proper_cadence(voice1_final, voice2_final, voice1_penult, voice2_penult) {
+    
+    let final_interval = core::interval_semitones(voice1_final, voice2_final) % 12;
+    let penult_interval = core::interval_semitones(voice1_penult, voice2_penult) % 12;
+    
+    // Final interval should be unison or octave
+    if final_interval != 0 {
+        return false;
+    }
+    
+    // Penultimate interval should be M6 or m3
+    if penult_interval != 3 && penult_interval != 9 {
+        return false;
+    }
+    
+    // Check for proper voice leading into cadence
+    let v1_motion = core::interval_semitones(voice1_penult, voice1_final);
+    let v2_motion = core::interval_semitones(voice2_penult, voice2_final);
+    
+    // Should move in contrary motion
+    if (v1_motion > 0 && v2_motion > 0) || (v1_motion < 0 && v2_motion < 0) {
+        return false;
+    }
+    
+    return true;
+}
+
+// ============================================================================
+// Two-Voice Counterpoint Validation
+// ============================================================================
+
+// Validate complete two-voice counterpoint
+fn validate_counterpoint(voice1, voice2) {
+    let errors = [];
+    
+    // Check parallel perfects
+    let parallels = check_parallel_perfects_counterpoint(voice1, voice2);
+    for violation in parallels {
+        errors.push(violation);
+    }
+    
+    // Check hidden perfects
+    let hidden = check_hidden_perfects(voice1, voice2);
+    for violation in hidden {
+        errors.push(violation);
+    }
+    
+    // Check melodic treatment of voice1
+    let voice1_leaps = check_leap_treatment(voice1);
+    for violation in voice1_leaps {
+        violation["voice"] = 1;
+        errors.push(violation);
+    }
+    
+    // Check melodic treatment of voice2
+    let voice2_leaps = check_leap_treatment(voice2);
+    for violation in voice2_leaps {
+        violation["voice"] = 2;
+        errors.push(violation);
+    }
+    
+    // Check cadence
+    if voice1.len() >= 2 && voice2.len() >= 2 {
+        let v1_final = voice1[voice1.len() - 1];
+        let v2_final = voice2[voice2.len() - 1];
+        let v1_penult = voice1[voice1.len() - 2];
+        let v2_penult = voice2[voice2.len() - 2];
+        
+        if v1_final != "." && v2_final != "." && v1_penult != "." && v2_penult != "." {
+            if !is_proper_cadence(v1_final, v2_final, v1_penult, v2_penult) {
+                errors.push(#{
+                    "type": "improper_cadence",
+                    "position": voice1.len() - 1
+                });
+            }
+        }
+    }
+    
+    return #{
+        "valid": errors.len() == 0,
+        "errors": errors,
+        "error_count": errors.len()
+    };
+}
+
+// ============================================================================
+// Cantus Firmus Generation
+// ============================================================================
+
+// Generate simple cantus firmus
+fn generate_cantus_firmus(key_root) {
+    generate_cantus_firmus_ex(key_root, "major", 8)
+}
+
+fn generate_cantus_firmus_ex(key_root, mode, length) {
+    
+    let scale = scales::scale(key_root, mode, 4, length);
+    let cantus = [];
+    
+    // Start and end on tonic
+    cantus.push(scale[0]);
+    
+    // Middle notes (mostly stepwise motion)
+    let current_idx = 0;
+    
+    for i in 1..(length - 1) {
+        // Move by step (occasionally small leap)
+        let step = if i % 3 == 0 { 2 } else { 1 };
+        let direction = if i % 2 == 0 { 1 } else { -1 };
+        
+        current_idx += step * direction;
+        
+        // Keep in range
+        if current_idx < 0 {
+            current_idx = 0;
+        } else if current_idx >= scale.len() {
+            current_idx = scale.len() - 1;
+        }
+        
+        cantus.push(scale[current_idx]);
+    }
+    
+    // End on tonic
+    cantus.push(scale[0]);
+    
+    return cantus;
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+// Get contrapuntal quality score (higher is better)
+fn score_counterpoint(voice1, voice2) {
+    let validation = validate_counterpoint(voice1, voice2);
+    let base_score = 100;
+    
+    // Penalize each error
+    let score = base_score - (validation["error_count"] * 10);
+    
+    return if score < 0 { 0 } else { score };
+}
+

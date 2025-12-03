@@ -1,0 +1,33 @@
+// Genre: Ambient, Experimental | Character: Granular-style texture
+define_synthdef("texture_granular", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Long envelope
+            let envelope = env_perc(1.5, 9.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple detuned oscillators for grain-like character
+            let osc1 = saw_ar(freq * 0.983);
+            let osc2 = saw_ar(freq * 0.991);
+            let osc3 = saw_ar(freq);
+            let osc4 = saw_ar(freq * 1.009);
+            let osc5 = saw_ar(freq * 1.017);
+
+            let mix = (osc1 + osc2 + osc3 + osc4 + osc5) * 0.2;
+
+            // Heavy filtering for smoothness
+            let filtered = lpf_ar(mix, 1500.0);
+
+            // Additional resonant layer
+            let resonant = rlpf_ar(filtered, 2000.0, 0.6) * 0.5;
+
+            (filtered + resonant) * env * amp * 0.6
+        })
+});
+

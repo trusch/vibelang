@@ -1,0 +1,26 @@
+// Genre: Lo-fi Hip-hop | Character: Dusty, lo-fi texture
+define_synthdef("hihat_dusty", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Soft attack and medium decay
+            let envelope = env_perc(0.003, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Use pink noise for warmer character
+            let noise = pink_noise_ar();
+
+            // Gentle high-pass
+            let filtered = hpf_ar(noise, 4500.0);
+
+            // Roll off highs for dusty character
+            let rolled_off = lpf_ar(filtered, 8000.0);
+
+            rolled_off * env * amp
+        })
+});
+

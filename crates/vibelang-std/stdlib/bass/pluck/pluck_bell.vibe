@@ -1,0 +1,30 @@
+// Genre: Ambient, Experimental | Character: Bell-like pluck bass
+define_synthdef("pluck_bell", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Medium-long envelope for bell character
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.002, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Inharmonic frequencies for bell timbre
+            let osc1 = sin_osc_ar(freq) * 0.5;
+            let osc2 = sin_osc_ar(freq * 2.3) * 0.25;
+            let osc3 = sin_osc_ar(freq * 3.7) * 0.15;
+            let osc4 = sin_osc_ar(freq * 5.1) * 0.1;
+
+            let mix = osc1 + osc2 + osc3 + osc4;
+
+            // Gentle filter
+            let filtered = lpf_ar(mix, 2500.0);
+
+            filtered * env * amp
+        })
+});
+

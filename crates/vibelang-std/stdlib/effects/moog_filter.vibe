@@ -1,0 +1,36 @@
+// Moog Ladder Filter Effect
+//
+// Classic 24dB/oct Moog VCF style low pass filter with self-oscillation.
+//
+// Usage:
+//   group.add_effect("moog", "moog_filter", #{
+//     cutoff: 1000.0,
+//     resonance: 2.5,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   cutoff: Cutoff frequency in Hz (20 to 20000)
+//   resonance: Filter resonance/gain (0.0 to 4.0, values > 1.0 can self-oscillate)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("moog_filter", |builder| {
+    builder
+        .param("cutoff", 1000.0)
+        .param("resonance", 2.5)
+        .param("mix", 1.0)
+        .body(|input, cutoff, resonance, mix| {
+            // MoogFF - the classic Moog ladder filter
+            let filtered_left = moog_ff_ar(input[0], cutoff, resonance, 0.0);
+            let filtered_right = moog_ff_ar(input[1], cutoff, resonance, 0.0);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * filtered_left,
+                (1.0 - mix) * input[1] + mix * filtered_right
+            ];
+
+            output
+        })
+});
+

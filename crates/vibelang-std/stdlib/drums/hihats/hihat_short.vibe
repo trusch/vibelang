@@ -1,0 +1,23 @@
+// Genre: Techno, Minimal | Character: Very short, click-like
+define_synthdef("hihat_short", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Very short envelope
+            let envelope = env_perc(0.0002, 0.025);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // White noise
+            let noise = white_noise_ar();
+
+            // Extreme high-pass for click character
+            let filtered = hpf_ar(noise, 12000.0);
+
+            filtered * env * amp
+        })
+});
+

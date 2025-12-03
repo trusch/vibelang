@@ -1,0 +1,36 @@
+// Genre: Jazz, Ambient | Character: Dark, trashy crash cymbal
+define_synthdef("crash_dark", |builder| {
+    builder
+        .param("amp", 0.7)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Long, sustained decay
+            let envelope = env_perc(0.003, 3.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Lower inharmonic frequencies for darker sound
+            let metal1 = saw_ar(312.0) * 0.22;
+            let metal2 = saw_ar(548.0) * 0.20;
+            let metal3 = saw_ar(834.0) * 0.18;
+            let metal4 = saw_ar(1211.0) * 0.16;
+            let metal5 = saw_ar(1689.0) * 0.12;
+            let metal6 = saw_ar(2278.0) * 0.08;
+
+            let metallic = metal1 + metal2 + metal3 + metal4 + metal5 + metal6;
+
+            // Darker noise
+            let noise = pink_noise_ar();
+            let filtered_noise = rlpf_ar(noise, 4500.0, 0.6) * 0.25;
+
+            let mix = metallic + filtered_noise;
+
+            // Less aggressive high-pass
+            let clean = hpf_ar(mix, 300.0);
+
+            clean * env * amp
+        })
+});
+

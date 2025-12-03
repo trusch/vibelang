@@ -1,0 +1,36 @@
+// Low Pass Filter Effect
+//
+// Cuts frequencies above the cutoff frequency using a resonant filter.
+//
+// Usage:
+//   group.add_effect("lp", "lowpass", #{
+//     cutoff: 2000.0,
+//     resonance: 0.5,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   cutoff: Cutoff frequency in Hz (20 to 20000)
+//   resonance: Filter resonance (0.0 to 1.0, low values = more resonance)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("lowpass", |builder| {
+    builder
+        .param("cutoff", 2000.0)
+        .param("resonance", 0.5)
+        .param("mix", 1.0)
+        .body(|input, cutoff, resonance, mix| {
+            // RLPF provides resonant low pass filtering
+            let filtered_left = rlpf_ar(input[0], cutoff, resonance);
+            let filtered_right = rlpf_ar(input[1], cutoff, resonance);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * filtered_left,
+                (1.0 - mix) * input[1] + mix * filtered_right
+            ];
+
+            output
+        })
+});
+

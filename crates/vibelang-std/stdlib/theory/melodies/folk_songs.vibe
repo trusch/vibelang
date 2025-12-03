@@ -1,0 +1,80 @@
+// ============================================================================
+// Traditional Folk Songs
+// ============================================================================
+// Public domain folk melodies with proper rhythm
+// Rhythm notation: '-' extends previous note, '.' is rest, '|' separates bars
+
+// Traditional English - Greensleeves - 6/8 time
+fn greensleeves() {
+    return "A4 - - | C5 - D5 | E5 - - - F5 - | E5 - D5 - | B4 - - - G4 - | A4 - - - F#4 - | D4 - - - |";
+}
+
+// Traditional English - Scarborough Fair - 3/4 time
+fn scarborough_fair() {
+    return "D4 - - | D4 A4 - | A4 - - | . E4 F#4 | D4 - - | . D4 E4 | F#4 - - | . A4 - |";
+}
+
+// American Folk - Oh! Susanna - 2/4 time, lively
+fn oh_susanna() {
+    return "C4 D4 E4 G4 | G4 A4 G4 E4 | C4 D4 E4 E4 | D4 D4 C4 - |";
+}
+
+// American Folk - Yankee Doodle - 4/4 time
+fn yankee_doodle() {
+    return "C4 C4 D4 E4 | C4 E4 D4 - | C4 C4 D4 E4 | C4 - - - |";
+}
+
+// American Folk - Home on the Range - 3/4 time
+fn home_on_the_range() {
+    return "C4 - - | E4 - G4 | G4 - - | . A4 G4 | E4 - - | . D4 C4 | D4 - - | . E4 C4 |";
+}
+
+// American Folk - She'll Be Coming Round the Mountain - 4/4 time
+fn coming_round_the_mountain() {
+    return "G4 G4 C5 C5 | D5 E5 C5 - | G4 G4 C5 C5 | D5 - C5 - |";
+}
+
+// Children's Song - This Old Man - 2/4 time
+fn this_old_man() {
+    return "C4 E4 G4 G4 | A4 G4 F4 E4 | D4 F4 E4 D4 | C4 - - - |";
+}
+
+// American Folk - Skip to My Lou - 2/4 time
+fn skip_to_my_lou() {
+    return "C4 C4 C4 E4 | G4 G4 E4 - | F4 F4 F4 A4 | C5 - - - |";
+}
+
+// American Folk - The Camptown Races - 2/4 time
+fn camptown_races() {
+    return "G4 E4 E4 - | G4 E4 C4 - | D4 E4 F4 G4 | A4 - - - |";
+}
+
+// American Folk - Clementine - 3/4 time
+fn clementine() {
+    return "C4 - C4 | C4 - E4 | G4 - G4 | . . . | A4 - G4 | F4 - E4 | D4 - - |";
+}
+
+// American Folk - On Top of Old Smokey - 3/4 waltz
+fn old_smokey() {
+    return "C4 - - | . E4 - | G4 - - | . C5 - | B4 - - | . A4 G4 | A4 - - |";
+}
+
+// Spiritual - Down by the Riverside - 4/4 time
+fn down_by_riverside() {
+    return "C4 E4 G4 C5 | C5 C5 A4 G4 | E4 E4 E4 G4 | C4 - - - |";
+}
+
+// Traditional - Amazing Grace - 3/4 time, slow and reverent
+fn amazing_grace() {
+    return "C4 - - | . F4 - | A4 - A4 | A4 - G4 | A4 - - | . C5 - | A4 - - | . F4 - |";
+}
+
+// Scottish Traditional - Auld Lang Syne - 4/4 time
+fn auld_lang_syne() {
+    return "C4 - - . | F4 - F4 F4 | F4 - A4 - | C5 - - - | C5 - A4 - | A4 - G4 - | F4 - - - |";
+}
+
+// Irish Traditional - Danny Boy - 4/4 time, slow
+fn danny_boy() {
+    return "C4 - E4 F4 | G4 - A4 - | A4 - - - | G4 - F4 - | E4 - F4 - | D4 - - - |";
+}

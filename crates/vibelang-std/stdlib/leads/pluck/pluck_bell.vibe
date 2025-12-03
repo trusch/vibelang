@@ -1,0 +1,30 @@
+// Genre: Ambient, Experimental | Character: Bell-like with inharmonic overtones
+define_synthdef("pluck_bell", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Bell envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.003, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Inharmonic partials for bell character
+            let partial1 = sin_osc_ar(freq) * 0.6;
+            let partial2 = sin_osc_ar(freq * 2.4) * 0.3;
+            let partial3 = sin_osc_ar(freq * 3.8) * 0.15;
+            let partial4 = sin_osc_ar(freq * 5.3) * 0.08;
+
+            let mix = partial1 + partial2 + partial3 + partial4;
+
+            // Gentle filter
+            let filtered = lpf_ar(mix, 4000.0);
+
+            filtered * env * amp
+        })
+});
+

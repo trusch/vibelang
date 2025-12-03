@@ -1,0 +1,141 @@
+[
+  {
+    "name": "PlayBuf",
+    "description": "Buffer playback oscillator. Plays back audio from a buffer.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 1.0, "description": "Number of channels in the buffer"},
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number to play"},
+      {"name": "rate", "type": "float", "default": 1.0, "description": "Playback rate (1.0 = normal speed)"},
+      {"name": "trigger", "type": "signal", "default": 1.0, "description": "Trigger to start playback from beginning"},
+      {"name": "startPos", "type": "float", "default": 0.0, "description": "Starting frame position in buffer"},
+      {"name": "loop", "type": "float", "default": 0.0, "description": "Loop mode (0=no loop, 1=loop)"},
+      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Action when playback finishes"}
+    ],
+    "outputs": 1,
+    "category": "Buffers"
+  },
+  {
+    "name": "BufRd",
+    "description": "Buffer reading oscillator. Reads values from a buffer using an index.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 1.0, "description": "Number of channels in the buffer"},
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number to read from"},
+      {"name": "phase", "type": "signal", "default": 0.0, "description": "Read position (0 to numFrames)"},
+      {"name": "loop", "type": "float", "default": 1.0, "description": "Loop mode (0=no loop, 1=loop)"},
+      {"name": "interpolation", "type": "float", "default": 2.0, "description": "Interpolation type (1=none, 2=linear, 4=cubic)"}
+    ],
+    "outputs": 1,
+    "category": "Buffers"
+  },
+  {
+    "name": "BufWr",
+    "description": "Buffer writing oscillator. Writes values to a buffer using an index.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "inputArray", "type": "signal", "default": 0.0, "description": "Signal(s) to write to buffer"},
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number to write to"},
+      {"name": "phase", "type": "signal", "default": 0.0, "description": "Write position (0 to numFrames)"},
+      {"name": "loop", "type": "float", "default": 1.0, "description": "Loop mode (0=no loop, 1=loop)"}
+    ],
+    "outputs": 1,
+    "category": "Buffers"
+  },
+  {
+    "name": "RecordBuf",
+    "description": "Record into a buffer. Records audio into a buffer with optional looping.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "inputArray", "type": "signal", "default": 0.0, "description": "Signal(s) to record"},
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number to record into"},
+      {"name": "offset", "type": "float", "default": 0.0, "description": "Starting frame offset in buffer"},
+      {"name": "recLevel", "type": "float", "default": 1.0, "description": "Recording level (0 to 1)"},
+      {"name": "preLevel", "type": "float", "default": 0.0, "description": "Pre-existing content level for overdubbing"},
+      {"name": "run", "type": "float", "default": 1.0, "description": "Run/pause recording (1=run, 0=pause)"},
+      {"name": "loop", "type": "float", "default": 1.0, "description": "Loop mode (0=no loop, 1=loop)"},
+      {"name": "trigger", "type": "signal", "default": 1.0, "description": "Trigger to start recording"},
+      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Action when recording finishes"}
+    ],
+    "outputs": 1,
+    "category": "Buffers"
+  },
+  {
+    "name": "BufFrames",
+    "description": "Buffer frame count. Returns the number of frames in a buffer.",
+    "rates": ["ir", "kr"],
+    "inputs": [
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number to query"}
+    ],
+    "outputs": 1,
+    "category": "Buffers"
+  },
+  {
+    "name": "BufDur",
+    "description": "Buffer duration. Returns the duration of a buffer in seconds.",
+    "rates": ["ir", "kr"],
+    "inputs": [
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number to query"}
+    ],
+    "outputs": 1,
+    "category": "Buffers"
+  },
+  {
+    "name": "BufChannels",
+    "description": "Buffer channel count. Returns the number of channels in a buffer.",
+    "rates": ["ir", "kr"],
+    "inputs": [
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number to query"}
+    ],
+    "outputs": 1,
+    "category": "Buffers"
+  },
+  {
+    "name": "BufSampleRate",
+    "description": "Buffer sample rate. Returns the sample rate of a buffer.",
+    "rates": ["ir", "kr"],
+    "inputs": [
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number to query"}
+    ],
+    "outputs": 1,
+    "category": "Buffers"
+  },
+  {
+    "name": "BufRateScale",
+    "description": "Buffer rate scaling factor. Returns the ratio of buffer sample rate to server sample rate.",
+    "rates": ["ir", "kr"],
+    "inputs": [
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number to query"}
+    ],
+    "outputs": 1,
+    "category": "Buffers"
+  },
+  {
+    "name": "BufSamples",
+    "description": "Buffer sample count. Returns the total number of samples in a buffer (frames * channels).",
+    "rates": ["ir", "kr"],
+    "inputs": [
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number to query"}
+    ],
+    "outputs": 1,
+    "category": "Buffers"
+  },
+  {
+    "name": "Warp1",
+    "description": "Time-stretching buffer reader. Reads from a buffer with independent control of rate and pitch.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 1.0, "description": "Number of channels in the buffer"},
+      {"name": "bufnum", "type": "float", "default": 0.0, "description": "Buffer number to read from"},
+      {"name": "pointer", "type": "signal", "default": 0.0, "description": "Position in buffer (0 to 1)"},
+      {"name": "freqScale", "type": "float", "default": 1.0, "description": "Pitch/frequency scaling factor"},
+      {"name": "windowSize", "type": "float", "default": 0.2, "description": "Window size in seconds"},
+      {"name": "envbufnum", "type": "float", "default": -1.0, "description": "Envelope buffer number (-1 = default Hann)"},
+      {"name": "overlaps", "type": "float", "default": 8.0, "description": "Number of overlapping windows"},
+      {"name": "windowRandRatio", "type": "float", "default": 0.0, "description": "Window size randomization (0 to 1)"},
+      {"name": "interp", "type": "float", "default": 1.0, "description": "Interpolation type (1=none, 2=linear, 4=cubic)"}
+    ],
+    "outputs": 1,
+    "category": "Buffers"
+  }
+]

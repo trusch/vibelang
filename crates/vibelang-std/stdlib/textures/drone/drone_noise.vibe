@@ -1,0 +1,34 @@
+// Genre: Experimental, Noise | Character: Noise-based drone
+define_synthdef("drone_noise", |builder| {
+    builder
+        .param("amp", 0.35)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Long sustain
+            let envelope = env_perc(2.0, 15.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pink noise base
+            let noise = pink_noise_ar();
+
+            // Multiple resonant filters for drone character
+            let res1 = rlpf_ar(noise, 200.0, 0.1) * 0.4;
+            let res2 = rlpf_ar(noise, 450.0, 0.15) * 0.3;
+            let res3 = rlpf_ar(noise, 800.0, 0.2) * 0.3;
+
+            let mix = res1 + res2 + res3;
+
+            // Evolving filtering
+            let filter_envelope = env_perc(4.0, 12.0);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 1000.0 + (filter_env * 1500.0);
+
+            let filtered = lpf_ar(mix, mod_cutoff);
+
+            filtered * env * amp
+        })
+});
+

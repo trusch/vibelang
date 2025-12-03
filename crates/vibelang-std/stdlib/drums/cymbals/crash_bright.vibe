@@ -1,0 +1,38 @@
+// Genre: Rock, EDM | Character: Bright crash cymbal for builds and emphasis
+define_synthdef("crash_bright", |builder| {
+    builder
+        .param("amp", 0.8)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Long decay for crash
+            let envelope = env_perc(0.002, 2.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Metallic inharmonic frequencies
+            let metal1 = saw_ar(487.0) * 0.2;
+            let metal2 = saw_ar(723.0) * 0.18;
+            let metal3 = saw_ar(1156.0) * 0.16;
+            let metal4 = saw_ar(1789.0) * 0.14;
+            let metal5 = saw_ar(2473.0) * 0.12;
+            let metal6 = saw_ar(3287.0) * 0.10;
+            let metal7 = saw_ar(4231.0) * 0.08;
+
+            let metallic = metal1 + metal2 + metal3 + metal4 + metal5 + metal6 + metal7;
+
+            // Bright noise component
+            let noise = white_noise_ar();
+            let filtered_noise = hpf_ar(noise, 3000.0) * 0.3;
+
+            // Mix
+            let mix = metallic + filtered_noise;
+
+            // High-pass to remove mud
+            let clean = hpf_ar(mix, 500.0);
+
+            clean * env * amp
+        })
+});
+

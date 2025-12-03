@@ -1,0 +1,27 @@
+// Genre: House, Techno | Character: Downward filter sweep
+define_synthdef("sweep_filter_down", |builder| {
+    builder
+        .param("amp", 0.6)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Sweep envelope
+            let envelope = env_perc(0.01, 2.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // White noise source
+            let noise = white_noise_ar();
+
+            // Downward filter sweep (inverted envelope)
+            let filter_envelope = env_perc(0.01, 0.2);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 8000.0 - (filter_env * 7000.0);
+
+            let filtered = rlpf_ar(noise, mod_cutoff, 0.3);
+
+            filtered * env * amp
+        })
+});
+

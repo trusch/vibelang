@@ -1,0 +1,36 @@
+// Band Pass Filter Effect
+//
+// Passes only a band of frequencies around a center frequency.
+//
+// Usage:
+//   group.add_effect("bp", "bandpass", #{
+//     freq: 1000.0,
+//     bandwidth: 0.5,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   freq: Center frequency in Hz
+//   bandwidth: Bandwidth in octaves (reciprocal of Q)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("bandpass", |builder| {
+    builder
+        .param("freq", 1000.0)
+        .param("bandwidth", 0.5)
+        .param("mix", 1.0)
+        .body(|input, freq, bandwidth, mix| {
+            // BPF provides band pass filtering
+            let filtered_left = bpf_ar(input[0], freq, bandwidth);
+            let filtered_right = bpf_ar(input[1], freq, bandwidth);
+
+            // Mix dry and wet signals
+            let output = [
+                (1.0 - mix) * input[0] + mix * filtered_left,
+                (1.0 - mix) * input[1] + mix * filtered_right
+            ];
+
+            output
+        })
+});
+

@@ -1,0 +1,33 @@
+// Genre: Minimal, House | Character: Very short, staccato pluck
+define_synthdef("pluck_short", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Very short envelope
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.001, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Simple harmonics for clarity
+            let fundamental = sin_osc_ar(freq);
+            let harmonic2 = sin_osc_ar(freq * 2.0) * 0.3;
+            let harmonic3 = sin_osc_ar(freq * 3.0) * 0.15;
+
+            let mix = fundamental + harmonic2 + harmonic3;
+
+            // Fast filter sweep
+            let filter_envelope = env_asr(0.001, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let mod_cutoff = 1500.0 + (filter_env * 3500.0);
+
+            let filtered = lpf_ar(mix, mod_cutoff);
+
+            filtered * env * amp
+        })
+});
+

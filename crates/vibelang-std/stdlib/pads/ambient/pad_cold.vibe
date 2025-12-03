@@ -1,0 +1,30 @@
+// Genre: Ambient, Drone | Character: Cold, digital pad
+define_synthdef("pad_cold", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+
+            // Slow attack
+            // Gate-controlled ASR envelope for proper note-on/note-off behavior
+            let envelope = env_asr(0.4, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pulse waves for digital character
+            let pulse1 = saw_ar(freq * 0.997);
+            let pulse2 = saw_ar(freq);
+            let pulse3 = saw_ar(freq * 1.003);
+
+            let mix = (pulse1 + pulse2 + pulse3) * 0.33;
+
+            // Cold filtering - remove lows
+            let hp = hpf_ar(mix, 300.0);
+            let filtered = lpf_ar(hp, 2500.0);
+
+            filtered * env * amp
+        })
+});
+

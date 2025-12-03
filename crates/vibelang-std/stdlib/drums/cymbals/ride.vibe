@@ -1,0 +1,36 @@
+// Genre: Jazz, Rock | Character: Ride cymbal for keeping time
+define_synthdef("ride", |builder| {
+    builder
+        .param("amp", 0.6)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Medium decay
+            let envelope = env_perc(0.002, 1.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Clear bell-like frequencies
+            let bell1 = sin_osc_ar(523.0) * 0.3;
+            let bell2 = sin_osc_ar(784.0) * 0.25;
+            let bell3 = sin_osc_ar(1047.0) * 0.15;
+
+            // Metallic wash
+            let metal1 = saw_ar(1456.0) * 0.12;
+            let metal2 = saw_ar(2134.0) * 0.10;
+            let metal3 = saw_ar(2987.0) * 0.08;
+
+            let tones = bell1 + bell2 + bell3;
+            let metallic = metal1 + metal2 + metal3;
+
+            // Subtle noise
+            let noise = white_noise_ar();
+            let filtered_noise = hpf_ar(noise, 4000.0) * 0.15;
+
+            let mix = tones + metallic + filtered_noise;
+
+            mix * env * amp
+        })
+});
+

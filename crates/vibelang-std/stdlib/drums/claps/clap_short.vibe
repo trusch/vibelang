@@ -1,0 +1,26 @@
+// Genre: Techno, House | Character: Tight, short clap
+define_synthdef("clap_short", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Two quick bursts for tight character
+            let burst1_envelope = env_perc(0.0005, 0.018);
+            let burst1_env = NewEnvGenBuilder(burst1_envelope, gate).build();
+
+            let burst2_envelope = env_perc(0.008, 0.018);
+            let burst2_env = NewEnvGenBuilder(burst2_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Bright filtered noise
+            let noise = white_noise_ar();
+            let filtered = hpf_ar(noise, 1800.0);
+
+            let clap = filtered * (burst1_env + burst2_env * 0.7);
+
+            clap * amp
+        })
+});
+

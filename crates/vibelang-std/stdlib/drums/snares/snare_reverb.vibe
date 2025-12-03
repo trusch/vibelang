@@ -1,0 +1,31 @@
+// Genre: Ambient, Chillwave | Character: Snare with built-in reverb tail
+define_synthdef("snare_reverb", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            // Main snare
+            let snare_envelope = env_perc(0.001, 0.13);
+            let snare_env = NewEnvGenBuilder(snare_envelope, gate)
+                .with_done_action(2.0)
+                .build();
+            let snare_noise = rlpf_ar(white_noise_ar(), 3500.0, 0.5) * snare_env;
+            let tone = sin_osc_ar(210.0) * snare_env * 0.25;
+            let dry = snare_noise * 0.7 + tone;
+
+            // Reverb tail using delays
+            let delay1 = delay_l_ar(dry, 0.2, 0.037);
+            let delay2 = delay_l_ar(dry, 0.2, 0.041);
+            let delay3 = delay_l_ar(dry, 0.2, 0.053);
+            let delay4 = delay_l_ar(dry, 0.2, 0.067);
+
+            // Reverb envelope - longer tail
+            let reverb_envelope = env_perc(0.01, 0.4);
+            let reverb_env = NewEnvGenBuilder(reverb_envelope, gate).build();
+            let reverb = (delay1 + delay2 + delay3 + delay4) * 0.15 * reverb_env;
+
+            (dry + reverb) * amp
+        })
+});
+
