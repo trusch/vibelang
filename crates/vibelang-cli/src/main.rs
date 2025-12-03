@@ -169,7 +169,9 @@ fn run_vibe_file(
     // Create engine with import paths
     let mut all_import_paths = import_paths.clone();
     // Add stdlib path
-    all_import_paths.push(PathBuf::from(vibelang_std::stdlib_path()));
+    let stdlib_path = PathBuf::from(vibelang_std::stdlib_path());
+    all_import_paths.push(stdlib_path.clone());
+    all_import_paths.push(stdlib_path.parent().unwrap().to_path_buf());
 
     // Set up the script context for file resolution
     vibelang_core::api::context::set_script_dir(base_path.clone());
