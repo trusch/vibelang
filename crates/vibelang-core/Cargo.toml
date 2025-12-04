@@ -1,6 +1,6 @@
 [package]
 name = "vibelang-core"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Core types and state management for VibeLang"
 license = "MIT OR Apache-2.0"
@@ -13,7 +13,7 @@ categories = ["multimedia::audio"]
 vibelang-sfz = "0.1"
 
 # DSP/Synthdef generation
-vibelang-dsp = "0.1"
+vibelang-dsp = "0.1.1"
 
 # Error handling
 anyhow = "1.0"
