@@ -377,6 +377,56 @@ impl EnvGenBuilder {
     }
 }
 
+/// Read from hardware audio input (microphone, line-in, etc.).
+/// Channel 0 is the first hardware input.
+/// Returns an array of audio signals, one per channel.
+pub fn sound_in(num_channels: f64) -> Result<Array> {
+    let num_ch = num_channels as u32;
+    // SoundIn with bus=0 reads from hardware inputs starting at channel 0
+    // For mono, just read channel 0; for stereo, read channels 0 and 1
+    if num_ch == 1 {
+        // Single channel - SoundIn.ar(0)
+        let node_ref = with_builder(|builder| {
+            builder.add_constant(0.0);
+            let inputs = vec![Input::Constant(0.0)];
+            builder.add_node("SoundIn".to_string(), Rate::Audio, inputs, 1, 0)
+        })?;
+        let mut result = Array::new();
+        result.push(Dynamic::from(node_ref));
+        Ok(result)
+    } else {
+        // Multiple channels - use In.ar reading from NumOutputBusChannels
+        // SoundIn internally does: In.ar(NumOutputBusChannels.ir + bus, numChannels)
+        // Since we have 2 output channels, hardware inputs start at bus 2
+        let node_ref = with_builder(|builder| {
+            builder.add_constant(2.0); // NumOutputBusChannels = 2
+            builder.add_constant(num_channels as f32);
+            let inputs = vec![
+                Input::Constant(2.0),
+                Input::Constant(num_channels as f32),
+            ];
+            builder.add_node("In".to_string(), Rate::Audio, inputs, num_ch, 0)
+        })?;
+
+        let mut result = Array::new();
+        for ch in 0..num_ch {
+            let channel_ref = NodeRef::new_with_output(node_ref.id(), ch);
+            result.push(Dynamic::from(channel_ref));
+        }
+        Ok(result)
+    }
+}
+
+/// Read from hardware audio input, single channel version.
+/// Channel specifies which hardware input to read (0 = first input).
+pub fn sound_in_channel(channel: f64) -> Result<NodeRef> {
+    with_builder(|builder| {
+        builder.add_constant(channel as f32);
+        let inputs = vec![Input::Constant(channel as f32)];
+        builder.add_node("SoundIn".to_string(), Rate::Audio, inputs, 1, 0)
+    })
+}
+
 /// Read from an audio bus.
 pub fn in_ar(bus: f64, num_channels: f64) -> Result<Array> {
     let num_ch = num_channels as u32;
@@ -478,6 +528,12 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
     engine.register_fn("in_ar", |bus: NodeRef, num_channels: i64| in_ar_n(bus, num_channels as f64).unwrap());
     engine.register_fn("replace_out_ar", |bus: f64, channels: Array| replace_out_ar(bus, channels).unwrap());
     engine.register_fn("replace_out_ar", |bus: NodeRef, channels: Array| replace_out_ar_n(bus, channels).unwrap());
+
+    // Hardware audio input (line-in, microphone)
+    engine.register_fn("sound_in", |num_channels: f64| sound_in(num_channels).unwrap());
+    engine.register_fn("sound_in", |num_channels: i64| sound_in(num_channels as f64).unwrap());
+    engine.register_fn("sound_in_channel", |channel: f64| sound_in_channel(channel).unwrap());
+    engine.register_fn("sound_in_channel", |channel: i64| sound_in_channel(channel as f64).unwrap());
 
     // Mix and utilities
     engine.register_fn("mix", |arr: Array| mix(arr).unwrap());

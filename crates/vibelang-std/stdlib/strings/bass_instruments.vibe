@@ -1,0 +1,424 @@
+// Bass Instruments
+// Genre: Jazz, Classical, Rock, Funk | Character: Deep, warm, foundational
+//
+// Realistic bass instruments using:
+// - String resonance modeling
+// - Body/cabinet simulation
+// - Pickup characteristics (electric)
+// - Bow/pluck articulation (upright)
+// - Fretless slide modeling
+
+// Upright/Double Bass - Acoustic pizzicato (plucked)
+define_synthdef("upright_bass", |builder| {
+    builder
+        .param("freq", 82.41)    // E2
+        .param("amp", 0.65)
+        .param("gate", 1.0)
+        .param("position", 0.5)     // Playing position (0=bridge, 1=fingerboard)
+        .param("finger_noise", 0.4)
+        .body(|freq, amp, gate, position, finger_noise| {
+            // Pizzicato envelope
+            let decay_time = 1.2 + (1.0 / (freq / 40.0));
+            let envelope = env_perc(0.001, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Finger pluck transient
+            let pluck_data = env_perc(0.0005, 0.008);
+            let pluck_env = NewEnvGenBuilder(pluck_data, dc_ar(1.0)).build();
+            let pluck = white_noise_ar() * pluck_env * 0.3;
+            let pluck_filtered = lpf_ar(pluck, 1500.0 + ((1.0 - position) * 2000.0));
+
+            // String harmonics - thick gut/steel string
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.55;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.35;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.22;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.14;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.08;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6;
+
+            // Position affects brightness
+            let pos_cutoff = 800.0 + ((1.0 - position) * 1500.0);
+            let positioned = lpf_ar(string_tone, pos_cutoff);
+
+            // Large body resonance
+            let body1 = rlpf_ar(positioned + pluck_filtered, 60.0, 0.35) * 0.5;   // Bass resonance
+            let body2 = rlpf_ar(positioned, 200.0, 0.4) * 0.35;  // Body mode
+            let body3 = rlpf_ar(positioned, 450.0, 0.4) * 0.25;  // Top plate
+
+            // Finger noise on release
+            let noise = white_noise_ar() * finger_noise * 0.04;
+            let noise_filtered = bpf_ar(noise, 1200.0, 0.5);
+
+            let tone = positioned + body1 + body2 + body3 + pluck_filtered + noise_filtered;
+
+            hpf_ar(tone, 35.0) * env * amp * 0.5
+        })
+});
+
+// Upright Bass - Arco (bowed)
+define_synthdef("upright_bass_bowed", |builder| {
+    builder
+        .param("freq", 82.41)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("bow_pressure", 0.6)
+        .param("bow_position", 0.5)
+        .body(|freq, amp, gate, bow_pressure, bow_position| {
+            let envelope = env_asr(0.12, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Slow vibrato
+            let vib_delay_data = env_perc(0.4, 4.0);
+            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib = sin_osc_ar(5.0) * 0.004 * vib_delay + 1.0;
+            let mod_freq = freq * vib;
+
+            // Bowed string - sawtooth-like with bow noise
+            let h1 = saw_ar(mod_freq) * 0.4;
+            let h2 = saw_ar(mod_freq * 1.001) * 0.3;  // Slight chorus
+
+            let string_tone = h1 + h2;
+
+            // Bow noise - rosin scratching
+            let bow_noise = white_noise_ar() * bow_pressure * 0.06;
+            let bow_filtered = bpf_ar(bow_noise, mod_freq * 3.0, 0.4);
+
+            // Position affects tone
+            let pos_cutoff = 600.0 + ((1.0 - bow_position) * 1200.0);
+            let positioned = lpf_ar(string_tone, pos_cutoff);
+
+            // Body resonance
+            let body1 = rlpf_ar(positioned, 65.0, 0.35) * 0.45;
+            let body2 = rlpf_ar(positioned, 220.0, 0.4) * 0.35;
+            let body3 = rlpf_ar(positioned, 500.0, 0.4) * 0.2;
+
+            let tone = positioned + body1 + body2 + body3 + bow_filtered;
+
+            hpf_ar(tone, 35.0) * env * amp * 0.55
+        })
+});
+
+// Electric Bass - Precision Bass style (split coil)
+define_synthdef("electric_bass", |builder| {
+    builder
+        .param("freq", 82.41)
+        .param("amp", 0.65)
+        .param("gate", 1.0)
+        .param("tone", 0.6)          // Tone knob
+        .param("attack_style", 0.5)  // 0=finger, 1=pick
+        .body(|freq, amp, gate, tone, attack_style| {
+            let decay_time = 2.0 + (1.0 / (freq / 50.0));
+            let envelope = env_asr(0.002, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Sustain envelope
+            let sus_env_data = env_perc(0.001, decay_time);
+            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0)).build();
+
+            // Attack transient
+            let attack_data = env_perc(0.0003, 0.004 + ((1.0 - attack_style) * 0.006));
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_cutoff = 2000.0 + (attack_style * 3000.0);
+            let attack = lpf_ar(white_noise_ar() * attack_env, attack_cutoff) * 0.25;
+
+            // String harmonics
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.6;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.4;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.25;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.15;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.08;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6;
+
+            // P-Bass pickup - warm, punchy
+            let pickup = rlpf_ar(string_tone, 1000.0, 0.4);
+
+            // Tone control
+            let tone_cutoff = 500.0 + (tone * 3000.0);
+            let toned = lpf_ar(pickup, tone_cutoff);
+
+            // Amp simulation - slight warmth
+            let amped = (toned * 1.1).softclip();
+
+            let output = (amped + attack) * env * sus_env * amp * 0.5;
+            hpf_ar(output, 30.0)
+        })
+});
+
+// Electric Bass - Jazz Bass style (dual single coil)
+define_synthdef("jazz_bass", |builder| {
+    builder
+        .param("freq", 82.41)
+        .param("amp", 0.65)
+        .param("gate", 1.0)
+        .param("neck_pickup", 0.7)
+        .param("bridge_pickup", 0.5)
+        .body(|freq, amp, gate, neck_pickup, bridge_pickup| {
+            let decay_time = 2.5 + (1.0 / (freq / 50.0));
+            let envelope = env_asr(0.002, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let sus_env_data = env_perc(0.001, decay_time);
+            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0)).build();
+
+            // Finger attack
+            let attack_data = env_perc(0.0005, 0.008);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = lpf_ar(white_noise_ar() * attack_env, 2500.0) * 0.2;
+
+            // String tone
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.55;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.38;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.24;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.15;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.09;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.05;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6 + h7;
+
+            // Neck pickup - warm
+            let neck = rlpf_ar(string_tone, 800.0, 0.4) * neck_pickup;
+
+            // Bridge pickup - bright, growly
+            let bridge = rlpf_ar(string_tone, 2000.0, 0.35) * bridge_pickup;
+
+            // Mix pickups - J-Bass has characteristic mid scoop when both on
+            let mix = neck * 0.6 + bridge * 0.4;
+
+            // J-Bass has more mid growl
+            let growl = rlpf_ar(string_tone, 700.0, 0.3) * 0.2;
+
+            let output = (mix + growl + attack) * env * sus_env * amp * 0.5;
+            hpf_ar(output, 30.0)
+        })
+});
+
+// Fretless Electric Bass
+define_synthdef("fretless_bass", |builder| {
+    builder
+        .param("freq", 82.41)
+        .param("amp", 0.65)
+        .param("gate", 1.0)
+        .param("mwah", 0.6)     // Characteristic fretless "mwah"
+        .body(|freq, amp, gate, mwah| {
+            let decay_time = 2.0 + (1.0 / (freq / 50.0));
+            let envelope = env_asr(0.005, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let sus_env_data = env_perc(0.001, decay_time);
+            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0)).build();
+
+            // Soft finger attack
+            let attack_data = env_perc(0.001, 0.012);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = lpf_ar(white_noise_ar() * attack_env, 1500.0) * 0.15;
+
+            // String harmonics
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.35;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.22;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.14;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5;
+
+            // "Mwah" effect - resonant harmonic at string/finger contact
+            // This is the singing quality of fretless
+            let mwah_freq = freq * 3.0;  // Third harmonic
+            let mwah_env_data = env_perc(0.01, 0.3);
+            let mwah_env = NewEnvGenBuilder(mwah_env_data, dc_ar(1.0)).build();
+            let mwah_tone = rlpf_ar(string_tone, mwah_freq, 0.1) * mwah * mwah_env * 0.4;
+
+            // Smooth, singing tone
+            let smooth = lpf_ar(string_tone, 2500.0);
+
+            let output = (smooth + mwah_tone + attack) * env * sus_env * amp * 0.5;
+            hpf_ar(output, 30.0)
+        })
+});
+
+// Slap Bass
+define_synthdef("slap_bass", |builder| {
+    builder
+        .param("freq", 82.41)
+        .param("amp", 0.65)
+        .param("gate", 1.0)
+        .param("slap_pop", 0.0)  // 0=slap (thumb), 1=pop (finger)
+        .body(|freq, amp, gate, slap_pop| {
+            let decay_time = 0.8;
+            let envelope = env_perc(0.001, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Slap attack - thumb hitting string against fretboard
+            let slap_data = env_perc(0.0001, 0.003);
+            let slap_env = NewEnvGenBuilder(slap_data, dc_ar(1.0)).build();
+            let slap_noise = white_noise_ar() * slap_env * (1.0 - slap_pop) * 0.4;
+            let slap_filtered = bpf_ar(slap_noise, 1500.0, 0.3);
+
+            // Pop attack - string snapping against fretboard
+            let pop_data = env_perc(0.0001, 0.002);
+            let pop_env = NewEnvGenBuilder(pop_data, dc_ar(1.0)).build();
+            let pop_noise = white_noise_ar() * pop_env * slap_pop * 0.5;
+            let pop_filtered = hpf_ar(pop_noise, 3000.0);
+
+            // Bright, aggressive harmonics
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.7;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.55;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.4;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.3;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.22;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.15;
+            let h8 = sin_osc_ar(freq * 8.0) * 0.1;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8;
+
+            // Bright pickup for slap
+            let bright = rlpf_ar(string_tone, 3000.0, 0.3);
+
+            // Compression effect
+            let compressed = (bright * 1.5).softclip();
+
+            let output = (compressed + slap_filtered + pop_filtered) * env * amp * 0.45;
+            hpf_ar(output, 35.0)
+        })
+});
+
+// Synth Bass - Moog-style
+define_synthdef("synth_bass_moog", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .param("cutoff", 800.0)
+        .param("resonance", 0.5)
+        .param("filter_env", 0.6)
+        .body(|freq, amp, gate, cutoff, resonance, filter_env| {
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_perc(0.001, 0.3);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+
+            // Classic Moog oscillators - saw + square sub
+            let saw1 = saw_ar(freq) * 0.5;
+            let saw2 = saw_ar(freq * 1.005) * 0.4;  // Slight detune
+            let sub = pulse_ar(freq * 0.5, 0.5) * 0.4;  // Sub oscillator
+
+            let osc_mix = saw1 + saw2 + sub;
+
+            // Moog ladder filter
+            let mod_cutoff = cutoff + (filt_env * filter_env * cutoff * 4.0);
+            let res_val = resonance * 3.5;  // Moog resonance goes to self-oscillation
+            let filtered = moog_ff_ar(osc_mix, mod_cutoff, res_val, 0.0);
+
+            // Slight saturation
+            let warm = (filtered * 1.2).tanh();
+
+            warm * env * amp * 0.5
+        })
+});
+
+// Synth Bass - 303 Acid style
+define_synthdef("acid_bass", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .param("cutoff", 400.0)
+        .param("resonance", 0.7)
+        .param("env_mod", 0.8)
+        .param("accent", 0.0)
+        .body(|freq, amp, gate, cutoff, resonance, env_mod, accent| {
+            let envelope = env_perc(0.001, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // 303 filter envelope - very snappy
+            let filt_env_data = env_perc(0.001, 0.15);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+
+            // 303 oscillator - saw or square
+            let osc = saw_ar(freq);
+
+            // Classic 303 filter - resonant sweep
+            let accent_boost = 1.0 + (accent * 2.0);
+            let mod_cutoff = cutoff + (filt_env * env_mod * cutoff * 6.0 * accent_boost);
+            let res = 0.1 / (resonance * 0.9 + 0.1);  // Convert to rq
+
+            let filtered = rlpf_ar(osc, mod_cutoff, res);
+
+            // 303 distortion
+            let dist = (filtered * (1.5 + accent)).tanh();
+
+            dist * env * amp * 0.5
+        })
+});
+
+// Picked Bass - Rock/Metal style
+define_synthdef("picked_bass", |builder| {
+    builder
+        .param("freq", 82.41)
+        .param("amp", 0.65)
+        .param("gate", 1.0)
+        .param("pick_attack", 0.8)
+        .param("drive", 0.3)
+        .body(|freq, amp, gate, pick_attack, drive| {
+            let decay_time = 1.5;
+            let envelope = env_asr(0.001, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let sus_env_data = env_perc(0.001, decay_time);
+            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0)).build();
+
+            // Hard pick attack
+            let attack_data = env_perc(0.0001, 0.002);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = hpf_ar(white_noise_ar() * attack_env, 2500.0) * pick_attack * 0.35;
+
+            // Aggressive harmonics
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.65;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.5;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.35;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.25;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.18;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.12;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6 + h7;
+
+            // Bridge pickup - aggressive
+            let pickup = rlpf_ar(string_tone, 1500.0, 0.35);
+
+            // Amp drive
+            let driven = (pickup * (1.0 + drive * 2.0)).tanh();
+
+            // Bright EQ
+            let bright = hpf_ar(driven, 60.0);
+
+            let output = (bright + attack) * env * sus_env * amp * 0.5;
+            output.softclip()
+        })
+});

@@ -9,3 +9,6 @@ import "stdlib/brass/trombone.vibe";
 import "stdlib/brass/french_horn.vibe";
 import "stdlib/brass/tuba.vibe";
 import "stdlib/brass/synth_brass.vibe";
+
+// Realistic instruments
+import "stdlib/brass/brass_realistic.vibe";

@@ -1,0 +1,454 @@
+// Realistic Woodwinds
+// Genre: Classical, Jazz, Folk | Character: Expressive, organic, breathy
+//
+// Advanced woodwind synthesis using:
+// - Physical modeling of air column resonance
+// - Reed/embouchure simulation
+// - Register-dependent timbral changes
+// - Realistic breath noise and key clicks
+// - Formant filtering for instrument body
+
+// Realistic Clarinet with register breaks and chalumeau character
+define_synthdef("clarinet_realistic", |builder| {
+    builder
+        .param("freq", 261.63)    // Middle C default
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("reed_stiffness", 0.5)   // Softer reed = warmer
+        .param("embouchure", 0.5)       // Lip pressure
+        .param("breath", 0.3)           // Breath noise amount
+        .body(|freq, amp, gate, reed_stiffness, embouchure, breath| {
+            let envelope = env_asr(0.04, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Delayed vibrato (starts after initial attack)
+            let vib_delay_data = env_perc(0.3, 5.0);
+            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib_depth = 0.004 + (embouchure * 0.003);
+            let vib = sin_osc_ar(5.5) * vib_depth * vib_delay + 1.0;
+            let mod_freq = freq * vib;
+
+            // Clarinet's cylindrical bore produces strong odd harmonics
+            // The relative strength depends on register
+            let register_factor = freq / 261.63;  // Relative to middle C
+            let odd_emphasis = 1.0 / (1.0 + (register_factor * 0.3));
+
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.65 * odd_emphasis;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.4 * odd_emphasis;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.22 * odd_emphasis;
+            let h9 = sin_osc_ar(mod_freq * 9.0) * 0.12 * odd_emphasis;
+            let h11 = sin_osc_ar(mod_freq * 11.0) * 0.06 * odd_emphasis;
+
+            // Even harmonics (weaker, add warmth)
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.15 * reed_stiffness;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.08 * reed_stiffness;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h7 + h9 + h11;
+
+            // Reed buzz/chiff on attack
+            let chiff_data = env_perc(0.001, 0.02);
+            let chiff_env = NewEnvGenBuilder(chiff_data, dc_ar(1.0)).build();
+            let chiff = white_noise_ar() * chiff_env * reed_stiffness * 0.15;
+            let chiff_filtered = bpf_ar(chiff, mod_freq * 3.0, 0.3);
+
+            // Continuous breath noise
+            let breath_noise = white_noise_ar() * breath * 0.08;
+            let breath_filtered = bpf_ar(breath_noise, mod_freq * 2.5, 0.5);
+
+            // Bore resonance formants
+            let f1 = rlpf_ar(harmonics, 1500.0, 0.4) * 0.7;
+            let f2 = rlpf_ar(harmonics, 2800.0, 0.35) * 0.3;
+
+            // Bell flare effect (brightens low notes)
+            let bell_effect = rlpf_ar(harmonics, 4000.0, 0.5) * 0.15 * (1.0 / register_factor);
+
+            let tone = f1 + f2 + bell_effect + chiff_filtered + breath_filtered;
+
+            // Remove subsonic content
+            let clean = hpf_ar(tone, 80.0);
+
+            clean * env * amp * 0.55
+        })
+});
+
+// Realistic Alto Saxophone with growl and subtone capabilities
+define_synthdef("alto_sax_realistic", |builder| {
+    builder
+        .param("freq", 370.0)     // F#4 - comfortable alto range
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("embouchure", 0.5)    // Affects timbre brightness
+        .param("growl", 0.0)         // Throat growl amount
+        .param("subtone", 0.0)       // Airy subtone amount
+        .body(|freq, amp, gate, embouchure, growl, subtone| {
+            let envelope = env_asr(0.025, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Jazz vibrato - wider and more expressive
+            let vib_delay_data = env_perc(0.2, 4.0);
+            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib_depth = 0.006 + (embouchure * 0.004);
+            let vib_rate = 5.0 + (embouchure * 1.0);
+            let vib = sin_osc_ar(vib_rate) * vib_depth * vib_delay + 1.0;
+            let mod_freq = freq * vib;
+
+            // Saxophone's conical bore - full harmonic series
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.65;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.45;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.3;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.2;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.14;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.09;
+            let h8 = sin_osc_ar(mod_freq * 8.0) * 0.05;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8;
+
+            // Growl effect - vocal fold modulation
+            let growl_freq = 25.0 + (embouchure * 10.0);
+            let growl_mod = sin_osc_ar(growl_freq) * growl * 0.35 + 1.0;
+
+            // Subtone - breathy, airy quality
+            let sub_noise = pink_noise_ar() * subtone * 0.25;
+            let sub_filtered = bpf_ar(sub_noise, mod_freq, 0.3);
+
+            // Reed attack transient
+            let attack_data = env_perc(0.001, 0.015);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_noise = white_noise_ar() * attack_env * 0.12;
+            let attack_filtered = bpf_ar(attack_noise, mod_freq * 4.0, 0.4);
+
+            // Sax body formants (characteristic of alto)
+            let f1 = rlpf_ar(harmonics * growl_mod, 650.0, 0.4) * 0.4;  // Low resonance
+            let f2 = rlpf_ar(harmonics * growl_mod, 1400.0, 0.35) * 0.35;  // Mid
+            let f3 = rlpf_ar(harmonics * growl_mod, 2800.0, 0.3) * 0.25 * embouchure;  // High brightness
+
+            // Bell resonance
+            let bell = rlpf_ar(harmonics, 4200.0, 0.5) * 0.12;
+
+            let tone = f1 + f2 + f3 + bell + sub_filtered + attack_filtered;
+
+            hpf_ar(tone, 100.0) * env * amp * 0.5
+        })
+});
+
+// Realistic Tenor Saxophone - warmer, bigger sound
+define_synthdef("tenor_sax_realistic", |builder| {
+    builder
+        .param("freq", 277.18)   // C#4
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("warmth", 0.6)
+        .param("growl", 0.0)
+        .body(|freq, amp, gate, warmth, growl| {
+            let envelope = env_asr(0.035, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Slower, wider vibrato for tenor
+            let vib_delay_data = env_perc(0.25, 4.0);
+            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib = sin_osc_ar(4.8) * 0.007 * vib_delay + 1.0;
+            let mod_freq = freq * vib;
+
+            // Richer harmonics for bigger sound
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.6;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.42;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.28;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.18;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.12;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.07;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7;
+
+            // Growl
+            let growl_mod = sin_osc_ar(22.0) * growl * 0.35 + 1.0;
+
+            // Tenor formants - lower than alto
+            let f1 = rlpf_ar(harmonics * growl_mod, 550.0, 0.4) * 0.45;
+            let f2 = rlpf_ar(harmonics * growl_mod, 1200.0, 0.35) * 0.35;
+            let f3 = rlpf_ar(harmonics * growl_mod, 2400.0, 0.35) * 0.2 * (1.0 - warmth * 0.5);
+
+            // Warmth control - adds low-mid body
+            let warm_res = rlpf_ar(harmonics, 400.0, 0.5) * warmth * 0.25;
+
+            // Attack
+            let attack_data = env_perc(0.001, 0.018);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = bpf_ar(white_noise_ar() * attack_env * 0.1, mod_freq * 3.0, 0.4);
+
+            let tone = f1 + f2 + f3 + warm_res + attack;
+
+            hpf_ar(tone, 80.0) * env * amp * 0.55
+        })
+});
+
+// Realistic Flute with air jet modeling
+define_synthdef("flute_realistic", |builder| {
+    builder
+        .param("freq", 523.25)   // C5
+        .param("amp", 0.55)
+        .param("gate", 1.0)
+        .param("breath", 0.35)      // Breath noise amount
+        .param("air_speed", 0.5)    // Embouchure tightness
+        .body(|freq, amp, gate, breath, air_speed| {
+            let envelope = env_asr(0.06, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Flute vibrato - gentle, sine-like
+            let vib_delay_data = env_perc(0.4, 5.0);
+            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib = sin_osc_ar(5.8) * 0.005 * vib_delay + 1.0;
+            let mod_freq = freq * vib;
+
+            // Flute has weak harmonics - mostly fundamental
+            // Higher air speed = more harmonics (brighter)
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.25 * air_speed;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.1 * air_speed;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.04 * air_speed;
+
+            let harmonics = h1 + h2 + h3 + h4;
+
+            // Air jet noise - characteristic of flute
+            let jet_noise = white_noise_ar() * breath;
+            let jet_filtered = bpf_ar(jet_noise, mod_freq * 2.0, 0.4) * 0.3;
+
+            // Edge tone noise (the hiss)
+            let edge_noise = hpf_ar(white_noise_ar() * breath * 0.15, 4000.0);
+
+            // Attack breath burst
+            let attack_data = env_perc(0.005, 0.04);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_breath = white_noise_ar() * attack_env * breath * 0.4;
+            let attack_filtered = lpf_ar(attack_breath, 6000.0);
+
+            // Tube resonance
+            let resonance = rlpf_ar(harmonics, mod_freq * 2.0, 0.6) * 0.2;
+
+            let tone = harmonics + jet_filtered + edge_noise + attack_filtered + resonance;
+
+            // Clean, silvery character
+            let clean = lpf_ar(hpf_ar(tone, 150.0), 12000.0);
+
+            clean * env * amp * 0.55
+        })
+});
+
+// Realistic Oboe - nasal, penetrating
+define_synthdef("oboe_realistic", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.55)
+        .param("gate", 1.0)
+        .param("reed_pressure", 0.6)
+        .body(|freq, amp, gate, reed_pressure| {
+            let envelope = env_asr(0.03, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Oboe vibrato - subtle
+            let vib = sin_osc_ar(5.5) * 0.004 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Oboe has ALL harmonics, creating nasal quality
+            // Double reed produces rich spectrum
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.7;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.55;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.4;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.3;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.22;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.16;
+            let h8 = sin_osc_ar(mod_freq * 8.0) * 0.11;
+            let h9 = sin_osc_ar(mod_freq * 9.0) * 0.07;
+            let h10 = sin_osc_ar(mod_freq * 10.0) * 0.04;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8 + h9 + h10;
+
+            // Double reed "crow" on attack
+            let crow_data = env_perc(0.001, 0.01);
+            let crow_env = NewEnvGenBuilder(crow_data, dc_ar(1.0)).build();
+            let crow = white_noise_ar() * crow_env * reed_pressure * 0.15;
+            let crow_filtered = bpf_ar(crow, mod_freq * 5.0, 0.3);
+
+            // Nasal formants characteristic of oboe
+            let f1 = rlpf_ar(harmonics, 1400.0, 0.25) * 0.4;  // Nasal peak
+            let f2 = rlpf_ar(harmonics, 2800.0, 0.3) * 0.35;
+            let f3 = rlpf_ar(harmonics, 4200.0, 0.35) * 0.25 * reed_pressure;
+
+            let tone = f1 + f2 + f3 + crow_filtered;
+
+            hpf_ar(tone, 200.0) * env * amp * 0.5
+        })
+});
+
+// English Horn (Cor Anglais) - deeper, more melancholic
+define_synthdef("english_horn", |builder| {
+    builder
+        .param("freq", 311.13)   // Eb4
+        .param("amp", 0.55)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.04, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Gentle vibrato
+            let vib = sin_osc_ar(5.0) * 0.004 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Similar to oboe but darker
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.6;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.45;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.32;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.22;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.15;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.1;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7;
+
+            // Lower, darker formants
+            let f1 = rlpf_ar(harmonics, 1100.0, 0.3) * 0.45;
+            let f2 = rlpf_ar(harmonics, 2200.0, 0.35) * 0.35;
+            let f3 = rlpf_ar(harmonics, 3500.0, 0.4) * 0.2;
+
+            let tone = f1 + f2 + f3;
+
+            hpf_ar(tone, 150.0) * env * amp * 0.55
+        })
+});
+
+// Bassoon - rich, woody bass woodwind
+define_synthdef("bassoon_realistic", |builder| {
+    builder
+        .param("freq", 130.81)   // C3
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("reed_buzz", 0.4)
+        .body(|freq, amp, gate, reed_buzz| {
+            let envelope = env_asr(0.05, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Slow vibrato
+            let vib = sin_osc_ar(4.5) * 0.003 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Bassoon has rich harmonic spectrum
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.65;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.5;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.38;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.28;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.2;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.14;
+            let h8 = sin_osc_ar(mod_freq * 8.0) * 0.09;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8;
+
+            // Reed buzz character
+            let buzz = white_noise_ar() * reed_buzz * 0.04;
+            let buzz_filtered = bpf_ar(buzz, mod_freq * 4.0, 0.4);
+
+            // Attack
+            let attack_data = env_perc(0.001, 0.025);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = white_noise_ar() * attack_env * 0.08;
+
+            // Wooden body formants
+            let f1 = rlpf_ar(harmonics, 440.0, 0.4) * 0.4;
+            let f2 = rlpf_ar(harmonics, 1200.0, 0.35) * 0.35;
+            let f3 = rlpf_ar(harmonics, 2200.0, 0.35) * 0.25;
+
+            let tone = f1 + f2 + f3 + buzz_filtered + attack;
+
+            hpf_ar(tone, 60.0) * env * amp * 0.55
+        })
+});
+
+// Recorder - Medieval/Renaissance woodwind
+define_synthdef("recorder", |builder| {
+    builder
+        .param("freq", 523.25)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("breath", 0.4)
+        .body(|freq, amp, gate, breath| {
+            let envelope = env_asr(0.02, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Simple vibrato
+            let vib = sin_osc_ar(5.5) * 0.004 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Recorder - fairly pure with some harmonics
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.35;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.15;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.06;
+
+            let harmonics = h1 + h2 + h3 + h4;
+
+            // Breathy attack and sustain
+            let breath_noise = white_noise_ar() * breath * 0.12;
+            let breath_filtered = bpf_ar(breath_noise, mod_freq * 2.0, 0.5);
+
+            let tone = harmonics + breath_filtered;
+
+            hpf_ar(tone, 200.0) * env * amp * 0.55
+        })
+});
+
+// Pan Flute - breathy, ethereal
+define_synthdef("pan_flute", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("breath", 0.5)
+        .body(|freq, amp, gate, breath| {
+            let envelope = env_asr(0.08, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Gentle vibrato
+            let vib = sin_osc_ar(5.0) * 0.006 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Very pure - almost sine
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.15;
+
+            let harmonics = h1 + h2;
+
+            // Lots of breath/wind noise
+            let breath_noise = white_noise_ar() * breath * 0.2;
+            let breath_filtered = lpf_ar(hpf_ar(breath_noise, 1000.0), 6000.0);
+
+            // Breathy attack
+            let attack_data = env_perc(0.01, 0.08);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = white_noise_ar() * attack_env * breath * 0.3;
+
+            let tone = harmonics + breath_filtered + attack;
+
+            hpf_ar(tone, 150.0) * env * amp * 0.5
+        })
+});

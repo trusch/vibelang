@@ -1,0 +1,358 @@
+// Electric Guitar
+// Genre: Rock, Blues, Jazz, Metal | Character: Versatile, expressive, powerful
+//
+// Realistic electric guitar with various pickup simulations and amp modeling:
+// - Single coil and humbucker pickup simulations
+// - Clean, crunch, and high-gain tones
+// - Tube amp saturation modeling
+// - Cabinet impulse-style filtering
+
+// Clean Electric Guitar - Fender-style single coil
+define_synthdef("electric_guitar_clean", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("pickup_pos", 0.5)    // 0=bridge, 1=neck
+        .param("tone", 0.6)          // Tone knob
+        .body(|freq, amp, gate, pickup_pos, tone| {
+            let decay_time = 2.5 + (1.0 / (freq / 80.0));
+            let envelope = env_asr(0.001, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pick attack
+            let attack_data = env_perc(0.0002, 0.004);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = lpf_ar(white_noise_ar() * attack_env, 4000.0) * 0.3;
+
+            // Electric guitar string - sawtooth-like with harmonics
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.65;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.5;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.35;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.28;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.2;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.15;
+            let h8 = sin_osc_ar(freq * 8.0) * 0.1;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8;
+
+            // Single coil pickup characteristics
+            // Bridge pickup = brighter, more bite
+            // Neck pickup = warmer, fuller
+            let pickup_cutoff = 2500.0 + ((1.0 - pickup_pos) * 4000.0);
+            let pickup_resonance = 0.3 + (pickup_pos * 0.2);
+
+            // Pickup frequency response - single coils have characteristic resonant peak
+            let pickup_peak = 3000.0 + ((1.0 - pickup_pos) * 2000.0);
+            let pickup = rlpf_ar(string_tone, pickup_peak, pickup_resonance);
+
+            // Tone control (passive LP filter)
+            let tone_cutoff = 1000.0 + (tone * 6000.0);
+            let toned = lpf_ar(pickup, tone_cutoff);
+
+            // Clean amp - slight warmth
+            let amped = toned * 1.2;
+            let warm = lpf_ar(amped, 8000.0);
+
+            // Sustain envelope for body decay
+            let sus_env_data = env_perc(0.001, decay_time);
+            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0)).build();
+
+            let output = (warm + attack) * env * sus_env * amp * 0.5;
+            output
+        })
+});
+
+// Crunch Electric Guitar - Edge of breakup
+define_synthdef("electric_guitar_crunch", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("gain", 0.5)
+        .param("tone", 0.6)
+        .body(|freq, amp, gate, gain, tone| {
+            let envelope = env_asr(0.001, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Harder pick attack
+            let attack_data = env_perc(0.0001, 0.003);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = white_noise_ar() * attack_env * 0.25;
+
+            // Humbucker-style darker tone
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.7;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.55;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.4;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.3;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.22;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.15;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6 + h7;
+
+            // Pre-gain EQ boost
+            let boosted = rlpf_ar(string_tone, 800.0, 0.5) * 0.4 + string_tone;
+
+            // Tube-style soft clipping
+            let drive = 1.0 + (gain * 3.0);
+            let driven = (boosted * drive).tanh();
+
+            // Post-distortion EQ
+            let tone_cutoff = 2000.0 + (tone * 4000.0);
+            let toned = lpf_ar(driven, tone_cutoff);
+
+            // Cabinet simulation - remove harsh highs
+            let cabinet = lpf_ar(toned, 5000.0);
+            let cab_body = rlpf_ar(cabinet, 400.0, 0.6) * 0.2;
+
+            let output = (cabinet + cab_body + attack) * env * amp * 0.5;
+            output.softclip()
+        })
+});
+
+// High Gain Electric Guitar - Metal/Rock distortion
+define_synthdef("electric_guitar_distorted", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("gain", 0.8)
+        .param("tone", 0.5)
+        .body(|freq, amp, gate, gain, tone| {
+            let envelope = env_asr(0.001, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Aggressive pick attack
+            let attack_data = env_perc(0.0001, 0.002);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = hpf_ar(white_noise_ar() * attack_env, 1000.0) * 0.2;
+
+            // Thick humbucker tone
+            let h1 = saw_ar(freq) * 0.5;
+            let h2 = saw_ar(freq * 0.999) * 0.3;  // Slight detune for thickness
+            let h3 = saw_ar(freq * 1.001) * 0.3;
+
+            let raw = h1 + h2 + h3;
+
+            // Tight low-end before distortion
+            let tight = hpf_ar(raw, 80.0);
+
+            // Multi-stage gain (tube amp simulation)
+            let drive1 = 2.0 + (gain * 4.0);
+            let stage1 = (tight * drive1).tanh();
+
+            // Inter-stage EQ
+            let mid_boost = rlpf_ar(stage1, 1000.0, 0.4) * 0.3;
+            let stage1_eq = stage1 + mid_boost;
+
+            // Second gain stage
+            let drive2 = 1.5 + (gain * 2.0);
+            let stage2 = (stage1_eq * drive2).tanh();
+
+            // Post-distortion tone shaping
+            let high_cut = 3000.0 + (tone * 3000.0);
+            let low_cut = 80.0 + ((1.0 - tone) * 60.0);
+
+            let shaped = lpf_ar(hpf_ar(stage2, low_cut), high_cut);
+
+            // Cabinet simulation - 4x12 style
+            let cab1 = rlpf_ar(shaped, 2500.0, 0.5) * 0.6;
+            let cab2 = rlpf_ar(shaped, 500.0, 0.6) * 0.4;
+            let cab3 = lpf_ar(shaped, 4500.0);
+
+            let cabinet = (cab1 + cab2 + cab3) * 0.4;
+
+            // Noise gate effect - clean silence
+            let output = (cabinet + attack) * env * amp * 0.5;
+            output.softclip()
+        })
+});
+
+// Jazz Electric Guitar - Warm, round tone
+define_synthdef("electric_guitar_jazz", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("warmth", 0.7)
+        .body(|freq, amp, gate, warmth| {
+            let decay_time = 2.0 + (1.0 / (freq / 100.0));
+            let envelope = env_asr(0.002, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Soft thumb/finger attack
+            let attack_data = env_perc(0.001, 0.01);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = lpf_ar(white_noise_ar() * attack_env, 1500.0) * 0.15;
+
+            // Hollow body guitar tone - fewer high harmonics
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.3;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.15;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.08;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5;
+
+            // Neck humbucker - very warm
+            let pickup = lpf_ar(string_tone, 2500.0);
+
+            // Rolled off tone knob
+            let tone_cutoff = 1200.0 + ((1.0 - warmth) * 2000.0);
+            let toned = lpf_ar(pickup, tone_cutoff);
+
+            // Hollow body resonance
+            let body_res = rlpf_ar(toned, 180.0, 0.5) * 0.25;
+
+            // Clean amp with slight warmth
+            let amped = (toned + body_res) * 1.1;
+
+            // Sustain
+            let sus_env_data = env_perc(0.001, decay_time);
+            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0)).build();
+
+            let output = (amped + attack) * env * sus_env * amp * 0.5;
+            output
+        })
+});
+
+// Funk/Disco Clean Guitar - Bright, percussive
+define_synthdef("electric_guitar_funk", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            // Short, percussive envelope
+            let envelope = env_perc(0.001, 0.3);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Sharp attack
+            let attack_data = env_perc(0.0001, 0.002);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = hpf_ar(white_noise_ar() * attack_env, 2000.0) * 0.3;
+
+            // Bright single coil
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.7;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.55;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.4;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.3;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.22;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.15;
+            let h8 = sin_osc_ar(freq * 8.0) * 0.1;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8;
+
+            // Bridge pickup - bright and snappy
+            let pickup = rlpf_ar(string_tone, 4000.0, 0.3);
+
+            // Bright tone
+            let bright = hpf_ar(pickup, 200.0);
+
+            // Compression effect (soft clip)
+            let compressed = (bright * 1.5).softclip();
+
+            let output = (compressed + attack) * env * amp * 0.5;
+            output
+        })
+});
+
+// Power Chord - Thick rhythm guitar
+define_synthdef("power_chord", |builder| {
+    builder
+        .param("freq", 82.41)   // Low E default
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("gain", 0.7)
+        .body(|freq, amp, gate, gain| {
+            let envelope = env_asr(0.001, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Root note
+            let root1 = saw_ar(freq) * 0.4;
+            let root2 = saw_ar(freq * 1.002) * 0.4;
+
+            // Fifth (7 semitones up = freq * 1.498)
+            let fifth_freq = freq * 1.498;
+            let fifth1 = saw_ar(fifth_freq) * 0.35;
+            let fifth2 = saw_ar(fifth_freq * 0.998) * 0.35;
+
+            // Octave
+            let oct = saw_ar(freq * 2.0) * 0.25;
+
+            let chord = root1 + root2 + fifth1 + fifth2 + oct;
+
+            // Tight low end
+            let tight = hpf_ar(chord, 60.0);
+
+            // Distortion
+            let drive = 2.0 + (gain * 4.0);
+            let dist = (tight * drive).tanh();
+
+            // Tone shaping
+            let shaped = lpf_ar(hpf_ar(dist, 80.0), 4000.0);
+
+            // Cabinet
+            let cab = rlpf_ar(shaped, 2000.0, 0.5);
+
+            let output = cab * env * amp * 0.4;
+            output.softclip()
+        })
+});
+
+// Wah Guitar - with auto-wah effect
+define_synthdef("electric_guitar_wah", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("wah_rate", 2.0)
+        .param("wah_depth", 0.7)
+        .body(|freq, amp, gate, wah_rate, wah_depth| {
+            let envelope = env_asr(0.001, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // String tone
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.6;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.45;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.3;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.2;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.12;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6;
+
+            // Wah LFO
+            let wah_lfo = sin_osc_ar(wah_rate) * 0.5 + 0.5;  // 0 to 1
+
+            // Wah filter sweep
+            let wah_low = 400.0;
+            let wah_high = 2500.0;
+            let wah_freq = wah_low + (wah_lfo * wah_depth * (wah_high - wah_low));
+
+            let wah = rlpf_ar(string_tone, wah_freq, 0.15);
+
+            // Slight overdrive
+            let driven = (wah * 1.5).softclip();
+
+            let output = driven * env * amp * 0.5;
+            output
+        })
+});

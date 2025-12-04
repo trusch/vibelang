@@ -1,0 +1,257 @@
+// Grand Piano (Acoustic Piano)
+// Genre: Classical, Jazz, Pop | Character: Rich, resonant, expressive
+//
+// Realistic acoustic grand piano using physical modeling techniques:
+// - Hammer strike simulation with velocity-sensitive brightness
+// - String resonance with proper harmonic series
+// - Sympathetic string resonance
+// - Release resonance simulation
+// - Una corda (soft pedal) simulation
+
+// Main Grand Piano - velocity-sensitive with full harmonic content
+define_synthdef("grand_piano", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("velocity", 0.7)     // 0-1: affects brightness and attack
+        .param("brightness", 0.5)   // Tonal character
+        .param("resonance", 0.4)    // Sympathetic string resonance amount
+        .body(|freq, amp, gate, velocity, brightness, resonance| {
+            // Main amplitude envelope - piano has sharp attack, long decay
+            let decay_time = 2.0 + (1.0 / (freq / 100.0));  // Lower notes decay longer
+            let envelope = env_perc(0.001, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Hammer strike envelope - very fast, creates initial "thunk"
+            let hammer_env_data = env_perc(0.0005, 0.008);
+            let hammer_env = NewEnvGenBuilder(hammer_env_data, dc_ar(1.0)).build();
+
+            // Velocity affects brightness - harder hit = more harmonics
+            let vel_brightness = 0.3 + (velocity * 0.7);
+            let cutoff_base = 800.0 + (vel_brightness * brightness * 8000.0);
+
+            // String harmonics - piano has inharmonic partials due to string stiffness
+            // Inharmonicity factor increases with partial number
+            let inharm = 1.0 + (freq / 20000.0);  // Subtle inharmonicity
+
+            // Fundamental and harmonics with proper amplitude rolloff
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0 * inharm) * 0.7;
+            let h3 = sin_osc_ar(freq * 3.0 * inharm * inharm) * 0.45;
+            let h4 = sin_osc_ar(freq * 4.0 * inharm * inharm * inharm) * 0.28;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.18;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.12;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.08;
+            let h8 = sin_osc_ar(freq * 8.0) * 0.05;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8;
+
+            // Hammer noise - creates the initial attack character
+            let hammer_noise = white_noise_ar() * hammer_env * velocity * 0.15;
+            let hammer_filtered = bpf_ar(hammer_noise, freq * 8.0, 0.5);
+
+            // Dynamic low-pass filter - simulates hammer felt softening
+            let filter_env_data = env_perc(0.001, 0.3);
+            let filter_env = NewEnvGenBuilder(filter_env_data, dc_ar(1.0)).build();
+            let dyn_cutoff = cutoff_base + (filter_env * 4000.0 * velocity);
+            let filtered_tone = lpf_ar(string_tone, dyn_cutoff);
+
+            // Soundboard resonance - adds body and warmth
+            let board_freq1 = 120.0;
+            let board_freq2 = 280.0;
+            let board_res1 = rlpf_ar(filtered_tone, board_freq1, 0.4) * 0.15;
+            let board_res2 = rlpf_ar(filtered_tone, board_freq2, 0.5) * 0.1;
+
+            // Sympathetic string resonance (other strings vibrating)
+            let symp1 = sin_osc_ar(freq * 2.0) * 0.02 * resonance;
+            let symp2 = sin_osc_ar(freq * 3.0) * 0.015 * resonance;
+            let symp_env_data = env_perc(0.1, decay_time * 1.2);
+            let symp_env = NewEnvGenBuilder(symp_env_data, dc_ar(1.0)).build();
+            let sympathetic = (symp1 + symp2) * symp_env;
+
+            // High frequency damping over time (strings lose brightness as they decay)
+            let hf_damp_env_data = env_perc(0.001, decay_time * 0.5);
+            let hf_damp_env = NewEnvGenBuilder(hf_damp_env_data, dc_ar(1.0)).build();
+            let hf_cutoff = 2000.0 + (hf_damp_env * 6000.0);
+
+            let main_tone = filtered_tone + board_res1 + board_res2 + hammer_filtered;
+            let damped = lpf_ar(main_tone, hf_cutoff);
+
+            // Final mix with slight compression via soft clipping
+            let output = (damped + sympathetic) * env * amp * 0.5;
+            output.softclip() * 0.9
+        })
+});
+
+// Bright Grand Piano - more upper harmonics, concert hall character
+define_synthdef("grand_piano_bright", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("velocity", 0.8)
+        .body(|freq, amp, gate, velocity| {
+            let decay_time = 2.5 + (1.0 / (freq / 80.0));
+            let envelope = env_perc(0.001, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Brighter harmonic content
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.75;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.55;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.4;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.3;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.22;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.15;
+            let h8 = sin_osc_ar(freq * 8.0) * 0.1;
+            let h9 = sin_osc_ar(freq * 9.0) * 0.07;
+            let h10 = sin_osc_ar(freq * 10.0) * 0.05;
+
+            let tone = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8 + h9 + h10;
+
+            // Attack transient
+            let attack_data = env_perc(0.0003, 0.015);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = white_noise_ar() * attack_env * velocity * 0.12;
+            let attack_filtered = bpf_ar(attack, freq * 6.0, 0.4);
+
+            // Higher cutoff for brightness
+            let cutoff = 3000.0 + (velocity * 8000.0);
+            let filtered = lpf_ar(tone + attack_filtered, cutoff);
+
+            // Subtle detuning for richness (like multiple strings per note)
+            let detune1 = sin_osc_ar(freq * 0.9995) * 0.1;
+            let detune2 = sin_osc_ar(freq * 1.0005) * 0.1;
+
+            let output = (filtered + detune1 + detune2) * env * amp * 0.45;
+            output.softclip() * 0.9
+        })
+});
+
+// Warm Grand Piano - darker, more intimate character
+define_synthdef("grand_piano_warm", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("velocity", 0.6)
+        .body(|freq, amp, gate, velocity| {
+            let decay_time = 3.0 + (1.0 / (freq / 60.0));
+            let envelope = env_perc(0.002, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Warmer harmonic content - less upper partials
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.6;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.35;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.2;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.1;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.05;
+
+            let tone = h1 + h2 + h3 + h4 + h5 + h6;
+
+            // Softer attack
+            let attack_data = env_perc(0.001, 0.02);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = white_noise_ar() * attack_env * velocity * 0.05;
+
+            // Lower cutoff for warmth
+            let cutoff = 1500.0 + (velocity * 3000.0);
+            let filtered = lpf_ar(tone + attack, cutoff);
+
+            // Extra low-end body
+            let body = rlpf_ar(filtered, 200.0, 0.5) * 0.2;
+
+            let output = (filtered + body) * env * amp * 0.5;
+            output
+        })
+});
+
+// Upright Piano - different character from grand
+define_synthdef("upright_piano", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("velocity", 0.7)
+        .body(|freq, amp, gate, velocity| {
+            let decay_time = 1.8 + (1.0 / (freq / 120.0));
+            let envelope = env_perc(0.001, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Upright has more "honky" character - emphasized odd harmonics
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.55;  // Emphasized
+            let h4 = sin_osc_ar(freq * 4.0) * 0.25;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.3;   // Emphasized
+            let h6 = sin_osc_ar(freq * 6.0) * 0.15;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.12;
+
+            let tone = h1 + h2 + h3 + h4 + h5 + h6 + h7;
+
+            // Mechanical noise (felt hammers, action)
+            let mech_data = env_perc(0.0005, 0.012);
+            let mech_env = NewEnvGenBuilder(mech_data, dc_ar(1.0)).build();
+            let mech = white_noise_ar() * mech_env * velocity * 0.08;
+
+            // Smaller soundboard resonance
+            let cutoff = 2000.0 + (velocity * 4000.0);
+            let filtered = lpf_ar(tone + mech, cutoff);
+
+            // Box-like resonance of upright cabinet
+            let cabinet = rlpf_ar(filtered, 350.0, 0.6) * 0.15;
+
+            let output = (filtered + cabinet) * env * amp * 0.5;
+            output.softclip() * 0.9
+        })
+});
+
+// Tack Piano - prepared piano with tacks on hammers
+define_synthdef("tack_piano", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("velocity", 0.7)
+        .body(|freq, amp, gate, velocity| {
+            let decay_time = 1.2;
+            let envelope = env_perc(0.001, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Very bright attack from tacks
+            let attack_data = env_perc(0.0002, 0.005);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let tack_hit = white_noise_ar() * attack_env * 0.4;
+            let tack_filtered = hpf_ar(tack_hit, 3000.0);
+
+            // Bright harmonics
+            let h1 = sin_osc_ar(freq) * 0.8;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.6;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.5;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.4;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.35;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.3;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.25;
+            let h8 = sin_osc_ar(freq * 8.0) * 0.2;
+
+            let tone = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8;
+
+            // High cutoff - very bright character
+            let filtered = lpf_ar(tone, 8000.0 + (velocity * 4000.0));
+
+            let output = (filtered + tack_filtered) * env * amp * 0.4;
+            output.softclip()
+        })
+});

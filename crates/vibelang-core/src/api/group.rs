@@ -399,6 +399,26 @@ pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> Gro
         node_id,
     });
 
+    // Wait for the group to be registered in state before executing the closure.
+    // This prevents race conditions where content tries to use the group before it exists.
+    let max_wait_ms = 1000;
+    let poll_interval_ms = 1;
+    let mut waited_ms = 0;
+    while waited_ms < max_wait_ms {
+        if handle.with_state(|state| state.groups.contains_key(&full_path)) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(poll_interval_ms));
+        waited_ms += poll_interval_ms;
+    }
+    if waited_ms >= max_wait_ms {
+        log::warn!(
+            "Timeout waiting for group '{}' to be created ({}ms)",
+            full_path,
+            max_wait_ms
+        );
+    }
+
     // Push group context
     context::push_group(&name);
 

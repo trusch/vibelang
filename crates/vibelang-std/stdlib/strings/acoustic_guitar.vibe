@@ -1,0 +1,285 @@
+// Acoustic Guitar
+// Genre: Folk, Pop, Classical, Fingerstyle | Character: Warm, resonant, natural
+//
+// Realistic acoustic guitar using Karplus-Strong-inspired synthesis:
+// - Pluck excitation with filtered noise burst
+// - String resonance with comb filtering
+// - Body resonance with formant filtering
+// - Position-dependent timbre (bridge vs neck)
+// - Fret noise and string squeak simulation
+
+// Main Acoustic Guitar - steel string dreadnought style
+define_synthdef("acoustic_guitar", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("position", 0.5)     // 0=bridge (bright), 1=neck (mellow)
+        .param("pluck_hard", 0.6)   // Pluck hardness
+        .body(|freq, amp, gate, position, pluck_hard| {
+            // String decay time - lower notes ring longer
+            let decay_time = 1.5 + (1.0 / (freq / 80.0));
+            let envelope = env_perc(0.001, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pluck excitation - filtered noise burst
+            let excite_data = env_perc(0.0003, 0.003 + (1.0 - pluck_hard) * 0.01);
+            let excite_env = NewEnvGenBuilder(excite_data, dc_ar(1.0)).build();
+            let excite_noise = white_noise_ar() * excite_env;
+
+            // Filter excitation based on pluck position
+            // Near bridge = brighter (higher cutoff)
+            let excite_cutoff = 2000.0 + ((1.0 - position) * 6000.0 * pluck_hard);
+            let excite = lpf_ar(excite_noise, excite_cutoff) * 0.8;
+
+            // String harmonics - guitar has rich harmonic content
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.7;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.5;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.35;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.25;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.18;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.12;
+            let h8 = sin_osc_ar(freq * 8.0) * 0.08;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8;
+
+            // Pluck position affects harmonic emphasis
+            // Node at position suppresses harmonics that have nodes there
+            let pos_filter = 1500.0 + (position * 3000.0);
+            let string_filtered = rlpf_ar(string_tone, pos_filter, 0.5);
+
+            // Body resonance - acoustic guitar body frequencies
+            // Main air resonance around 100Hz (sound hole)
+            let body1 = rlpf_ar(string_filtered + excite, 98.0, 0.3) * 0.35;
+            // Top plate resonance
+            let body2 = rlpf_ar(string_filtered + excite, 200.0, 0.4) * 0.25;
+            // Back plate
+            let body3 = rlpf_ar(string_filtered + excite, 380.0, 0.35) * 0.2;
+            // Higher body modes
+            let body4 = rlpf_ar(string_filtered, 580.0, 0.4) * 0.15;
+
+            // High frequency damping over time
+            let hf_env_data = env_perc(0.001, decay_time * 0.4);
+            let hf_env = NewEnvGenBuilder(hf_env_data, dc_ar(1.0)).build();
+            let hf_cutoff = 1500.0 + (hf_env * 5000.0);
+
+            let tone = string_filtered + body1 + body2 + body3 + body4;
+            let damped = lpf_ar(tone, hf_cutoff);
+
+            let output = (damped + excite * 0.3) * env * amp * 0.45;
+            output.softclip()
+        })
+});
+
+// Nylon String Classical Guitar
+define_synthdef("classical_guitar", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("position", 0.6)
+        .body(|freq, amp, gate, position| {
+            let decay_time = 2.0 + (1.0 / (freq / 60.0));
+            let envelope = env_perc(0.002, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Softer pluck for nylon strings
+            let excite_data = env_perc(0.001, 0.008);
+            let excite_env = NewEnvGenBuilder(excite_data, dc_ar(1.0)).build();
+            let excite = lpf_ar(white_noise_ar() * excite_env, 2500.0) * 0.5;
+
+            // Nylon has fewer high harmonics, rounder tone
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.55;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.35;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.2;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.12;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.06;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6;
+
+            // Classical guitar body - different resonances
+            let body1 = rlpf_ar(string_tone + excite, 95.0, 0.35) * 0.4;
+            let body2 = rlpf_ar(string_tone + excite, 185.0, 0.4) * 0.3;
+            let body3 = rlpf_ar(string_tone, 350.0, 0.35) * 0.2;
+
+            // Warmer overall - lower cutoff
+            let cutoff = 2500.0 + (position * 1500.0);
+            let filtered = lpf_ar(string_tone + body1 + body2 + body3, cutoff);
+
+            let output = (filtered + excite * 0.2) * env * amp * 0.5;
+            output
+        })
+});
+
+// Steel String Fingerpicked - optimized for fingerstyle
+define_synthdef("fingerpick_guitar", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.55)
+        .param("gate", 1.0)
+        .param("nail", 0.4)  // Amount of fingernail vs flesh
+        .body(|freq, amp, gate, nail| {
+            let decay_time = 1.8 + (1.0 / (freq / 90.0));
+            let envelope = env_perc(0.001, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Finger pluck - softer than pick
+            let excite_data = env_perc(0.0005, 0.006);
+            let excite_env = NewEnvGenBuilder(excite_data, dc_ar(1.0)).build();
+            let excite_cutoff = 1800.0 + (nail * 4000.0);
+            let excite = lpf_ar(white_noise_ar() * excite_env, excite_cutoff) * 0.6;
+
+            // Warm string tone
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.65;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.4;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.28;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.18;
+            let h6 = sin_osc_ar(freq * 6.0) * 0.1;
+            let h7 = sin_osc_ar(freq * 7.0) * 0.05;
+
+            let string_tone = h1 + h2 + h3 + h4 + h5 + h6 + h7;
+
+            // Body resonance
+            let body1 = rlpf_ar(string_tone + excite, 100.0, 0.35) * 0.35;
+            let body2 = rlpf_ar(string_tone + excite, 210.0, 0.4) * 0.25;
+            let body3 = rlpf_ar(string_tone, 400.0, 0.35) * 0.18;
+
+            let tone = string_tone + body1 + body2 + body3;
+
+            // Overall warmth
+            let filtered = lpf_ar(tone, 4000.0 + (nail * 2000.0));
+
+            let output = (filtered + excite * 0.25) * env * amp * 0.5;
+            output.softclip()
+        })
+});
+
+// 12-String Acoustic Guitar - double strings create chorus effect
+define_synthdef("twelve_string_guitar", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.55)
+        .param("gate", 1.0)
+        .param("detune", 0.5)
+        .body(|freq, amp, gate, detune| {
+            let decay_time = 1.6 + (1.0 / (freq / 100.0));
+            let envelope = env_perc(0.001, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pluck excitation
+            let excite_data = env_perc(0.0003, 0.004);
+            let excite_env = NewEnvGenBuilder(excite_data, dc_ar(1.0)).build();
+            let excite = lpf_ar(white_noise_ar() * excite_env, 5000.0) * 0.6;
+
+            // Main string
+            let detune_amt = 0.002 + (detune * 0.004);
+            let h1a = sin_osc_ar(freq) * 0.5;
+            let h1b = sin_osc_ar(freq * (1.0 + detune_amt)) * 0.5;  // Paired string
+
+            // Lower strings have octave pair
+            let octave_mix = 0.4;
+            let h1c = sin_osc_ar(freq * 2.0) * octave_mix * 0.4;  // Octave string
+            let h1d = sin_osc_ar(freq * 2.0 * (1.0 - detune_amt * 0.5)) * octave_mix * 0.4;
+
+            let h2a = sin_osc_ar(freq * 2.0) * 0.35;
+            let h2b = sin_osc_ar(freq * 2.0 * (1.0 + detune_amt)) * 0.35;
+
+            let h3a = sin_osc_ar(freq * 3.0) * 0.25;
+            let h3b = sin_osc_ar(freq * 3.0 * (1.0 + detune_amt)) * 0.25;
+
+            let h4a = sin_osc_ar(freq * 4.0) * 0.15;
+            let h4b = sin_osc_ar(freq * 4.0 * (1.0 + detune_amt)) * 0.15;
+
+            let string_tone = h1a + h1b + h1c + h1d + h2a + h2b + h3a + h3b + h4a + h4b;
+
+            // Body
+            let body1 = rlpf_ar(string_tone + excite, 100.0, 0.35) * 0.3;
+            let body2 = rlpf_ar(string_tone + excite, 220.0, 0.4) * 0.22;
+
+            let tone = string_tone + body1 + body2;
+            let filtered = lpf_ar(tone, 6000.0);
+
+            let output = (filtered + excite * 0.2) * env * amp * 0.35;
+            output.softclip()
+        })
+});
+
+// Guitar Harmonic - natural harmonic sound
+define_synthdef("guitar_harmonic", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let decay_time = 3.0;
+            let envelope = env_perc(0.001, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Harmonics are pure - very few other partials
+            let main = sin_osc_ar(freq) * 1.0;
+            let slight_2nd = sin_osc_ar(freq * 2.0) * 0.08;
+
+            // Bell-like attack
+            let attack_data = env_perc(0.0002, 0.002);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = white_noise_ar() * attack_env * 0.1;
+
+            let tone = main + slight_2nd;
+
+            // Very clean, high passed
+            let clean = hpf_ar(tone, 200.0);
+
+            let output = (clean + attack) * env * amp * 0.6;
+            output
+        })
+});
+
+// Muted/Palm Muted Guitar
+define_synthdef("guitar_muted", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("mute_amount", 0.7)
+        .body(|freq, amp, gate, mute_amount| {
+            // Very short decay when muted
+            let decay_time = 0.15 + ((1.0 - mute_amount) * 0.6);
+            let envelope = env_perc(0.001, decay_time);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Punchy attack
+            let attack_data = env_perc(0.0003, 0.008);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = lpf_ar(white_noise_ar() * attack_env, 3000.0) * 0.5;
+
+            // Muted string - suppressed high harmonics
+            let h1 = sin_osc_ar(freq) * 1.0;
+            let h2 = sin_osc_ar(freq * 2.0) * 0.5 * (1.0 - mute_amount * 0.5);
+            let h3 = sin_osc_ar(freq * 3.0) * 0.3 * (1.0 - mute_amount * 0.7);
+            let h4 = sin_osc_ar(freq * 4.0) * 0.15 * (1.0 - mute_amount * 0.9);
+
+            let string_tone = h1 + h2 + h3 + h4;
+
+            // Heavy low-pass for muted character
+            let cutoff = 800.0 + ((1.0 - mute_amount) * 2000.0);
+            let filtered = lpf_ar(string_tone, cutoff);
+
+            let output = (filtered + attack) * env * amp * 0.6;
+            output.softclip()
+        })
+});
