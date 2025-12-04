@@ -1,0 +1,129 @@
+// Roland Jupiter-8 Emulation
+// Classic 1981 | Character: Thick, massive, supersaw
+//
+// The flagship Roland polysynth. Known for its
+// incredibly thick, rich sound and arpeggiator.
+
+// Jupiter Pad - Massive warm pad
+define_synthdef("jupiter_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("spread", 0.6)
+        .body(|freq, amp, gate, spread| {
+            let envelope = env_asr(0.5, 1.0, 0.6);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Two VCOs with cross-modulation
+            let detune = spread * 0.012;
+            let vco1 = saw_ar(freq * (1.0 - detune));
+            let vco2 = saw_ar(freq * (1.0 + detune));
+
+            // Sub oscillator
+            let sub = sin_osc_ar(freq * 0.5) * 0.35;
+
+            let mix = (vco1 + vco2) * 0.4 + sub;
+
+            // HPF for clarity then LPF for warmth
+            let filtered = lpf_ar(hpf_ar(mix, 60.0), 3000.0);
+
+            filtered * env * amp
+        })
+});
+
+// Jupiter Supersaw - The trance staple
+define_synthdef("jupiter_supersaw", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("detune", 0.5)
+        .body(|freq, amp, gate, detune| {
+            let envelope = env_asr(0.02, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // 7 detuned sawtooth oscillators
+            let spread = detune * 0.03;
+            let v1 = saw_ar(freq * (1.0 - spread * 3.0));
+            let v2 = saw_ar(freq * (1.0 - spread * 2.0));
+            let v3 = saw_ar(freq * (1.0 - spread));
+            let v4 = saw_ar(freq);
+            let v5 = saw_ar(freq * (1.0 + spread));
+            let v6 = saw_ar(freq * (1.0 + spread * 2.0));
+            let v7 = saw_ar(freq * (1.0 + spread * 3.0));
+
+            let stack = (v1 + v2 + v3 + v4 + v5 + v6 + v7) * 0.18;
+
+            // Bright filter
+            let filtered = lpf_ar(stack, 8000.0);
+
+            filtered * env * amp
+        })
+});
+
+// Jupiter Brass - Thick brass stab
+define_synthdef("jupiter_brass", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.04, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_asr(0.02, 1.0, 0.12);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Thick detuned oscillators
+            let v1 = saw_ar(freq * 0.995);
+            let v2 = saw_ar(freq);
+            let v3 = saw_ar(freq * 1.005);
+
+            let mix = (v1 + v2 + v3) * 0.4;
+
+            // Brass filter sweep
+            let cutoff = 400.0 + filt_env * 4000.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.3);
+
+            filtered * env * amp
+        })
+});
+
+// Jupiter Bass - Deep punchy bass
+define_synthdef("jupiter_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_perc(0.001, 0.2);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+
+            // Two oscillators plus sub
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.002);
+            let sub = sin_osc_ar(freq * 0.5) * 0.5;
+
+            let mix = (saw1 + saw2) * 0.4 + sub;
+
+            // Punchy filter
+            let cutoff = 300.0 + filt_env * 2500.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.35);
+
+            filtered * env * amp
+        })
+});

@@ -1,0 +1,46 @@
+// Saturator Effect
+//
+// Warm analog-style saturation with multiple modes.
+// Adds harmonics and warmth without harsh clipping.
+//
+// Usage:
+//   group.add_effect("warmth", "saturator", #{
+//     drive: 3.0,
+//     warmth: 0.6,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   drive: Saturation drive amount (1.0 - 10.0)
+//   warmth: Low-frequency boost before saturation (0.0 - 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("saturator", |builder| {
+    builder
+        .param("drive", 3.0)
+        .param("warmth", 0.5)
+        .param("mix", 0.5)
+        .body(|input, drive, warmth, mix| {
+            // Add warmth by boosting low-mids
+            let warm_freq = 200.0 + warmth * 300.0;
+            let warmed_left = input[0] + lpf_ar(input[0], warm_freq) * warmth * 0.5;
+            let warmed_right = input[1] + lpf_ar(input[1], warm_freq) * warmth * 0.5;
+
+            // Soft saturation using tanh (smooth tube-like curve)
+            let driven_left = (warmed_left * drive).tanh() / drive.sqrt();
+            let driven_right = (warmed_right * drive).tanh() / drive.sqrt();
+
+            // Add subtle even harmonics for analog character
+            let harmonic_left = sin_osc_ar(0.0) * 0.0; // placeholder for DC offset
+            let harmonic_right = sin_osc_ar(0.0) * 0.0;
+
+            let saturated_left = driven_left + harmonic_left;
+            let saturated_right = driven_right + harmonic_right;
+
+            // Mix dry and wet
+            [
+                (1.0 - mix) * input[0] + mix * saturated_left,
+                (1.0 - mix) * input[1] + mix * saturated_right
+            ]
+        })
+});

@@ -1,0 +1,40 @@
+// Genre: Electronic, Cinematic | Character: Shepard tone illusion riser
+define_synthdef("riser_shepard", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 6.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.1, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Shepard tone: multiple octaves fading in/out
+            let base_freq = 110.0;
+            let rise = env * 2.0; // Rise two octaves over duration
+
+            // Calculate frequencies for each octave layer
+            let f1 = base_freq * (1.0 + rise);
+            let f2 = f1 * 2.0;
+            let f3 = f1 * 4.0;
+            let f4 = f1 * 0.5;
+
+            // Amplitude curves (gaussian-like) centered on mid frequencies
+            let a1 = (1.0 - (f1 / 880.0 - 1.0).abs()).max(0.0);
+            let a2 = (1.0 - (f2 / 880.0 - 1.0).abs()).max(0.0);
+            let a3 = (1.0 - (f3 / 880.0 - 1.0).abs()).max(0.0);
+            let a4 = (1.0 - (f4 / 880.0 - 1.0).abs()).max(0.0);
+
+            // Generate tones
+            let tone1 = sin_osc_ar(f1) * a1;
+            let tone2 = sin_osc_ar(f2) * a2;
+            let tone3 = sin_osc_ar(f3) * a3;
+            let tone4 = sin_osc_ar(f4) * a4;
+
+            let combined = (tone1 + tone2 + tone3 + tone4) * 0.25;
+
+            combined * env * amp
+        })
+});

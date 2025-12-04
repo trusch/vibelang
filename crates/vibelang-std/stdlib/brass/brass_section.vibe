@@ -1,0 +1,42 @@
+// Brass Section
+// Genre: Orchestral, Jazz | Character: Powerful, majestic, bright
+//
+// Full brass section ensemble with rich harmonics.
+
+define_synthdef("brass_section", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("attack", 0.15) // Attack swell
+        .body(|freq, amp, gate, attack| {
+            // Brass swell envelope
+            let envelope = env_asr(attack, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple brass voices (detuned for section)
+            let detune = 0.004;
+            let v1 = saw_ar(freq * (1.0 - detune));
+            let v2 = saw_ar(freq);
+            let v3 = saw_ar(freq * (1.0 + detune));
+
+            // Octave layer
+            let oct_up = saw_ar(freq * 2.0) * 0.3;
+
+            let section = (v1 + v2 + v3) * 0.35 + oct_up;
+
+            // Brass filter sweep (brighter with envelope)
+            let filter_env_data = env_asr(attack * 0.5, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_env_data, gate).build();
+            let filter_freq = 800.0 + filter_env * 2500.0;
+
+            let brass = rlpf_ar(section, filter_freq, 0.3);
+
+            // Slight vibrato
+            let vib = sin_osc_ar(4.5) * 0.002 + 1.0;
+
+            brass * env * amp * vib
+        })
+});

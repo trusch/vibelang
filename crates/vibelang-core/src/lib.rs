@@ -21,6 +21,7 @@
 pub mod api;
 pub mod events;
 pub mod osc;
+pub mod reload;
 pub mod runtime;
 pub mod sample_synthdef;
 pub mod scheduler;

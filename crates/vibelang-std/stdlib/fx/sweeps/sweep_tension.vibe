@@ -1,0 +1,35 @@
+// Genre: Horror, Thriller | Character: Tension-building sweep
+define_synthdef("sweep_tension", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 4.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(1.0, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Dissonant cluster that slowly rises
+            let base = 150.0 + env * 200.0;
+            let tone1 = sin_osc_ar(base);
+            let tone2 = sin_osc_ar(base * 1.06);  // Minor second
+            let tone3 = sin_osc_ar(base * 1.12);  // Augmented
+            let tone4 = sin_osc_ar(base * 0.94);
+
+            let cluster = (tone1 + tone2 + tone3 + tone4) * 0.2;
+
+            // Tremolo for unease
+            let trem = sin_osc_ar(4.0 + env * 8.0) * 0.3 + 0.7;
+            let tremmed = cluster * trem;
+
+            // High-pitched drone
+            let high = sin_osc_ar(2000.0 + env * 3000.0) * env * 0.1;
+
+            // Low rumble
+            let rumble = lpf_ar(pink_noise_ar(), 100.0) * 0.3;
+
+            (tremmed + high + rumble) * env * amp
+        })
+});

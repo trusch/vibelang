@@ -1,0 +1,12 @@
+// Modern Sound Design Library Index
+//
+// Import this file to load all modern sound design presets.
+// Usage: import "stdlib/modern/index.vibe"
+
+import "stdlib/modern/serum_style.vibe";
+import "stdlib/modern/future_bass.vibe";
+import "stdlib/modern/trap.vibe";
+import "stdlib/modern/lofi.vibe";
+import "stdlib/modern/synthwave.vibe";
+import "stdlib/modern/dubstep.vibe";
+import "stdlib/modern/hyperpop.vibe";

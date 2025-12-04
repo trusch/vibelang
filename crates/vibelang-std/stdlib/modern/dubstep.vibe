@@ -1,0 +1,168 @@
+// Dubstep/Bass Music Sounds
+// Heavy Bass | Character: Aggressive, wobbly, distorted
+//
+// The sound of Skrillex, Excision, Virtual Riot.
+
+// Dubstep Wobble - Classic LFO wobble
+define_synthdef("dubstep_wobble", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("rate", 4.0) // Wobble rate
+        .param("intensity", 0.8)
+        .body(|freq, amp, gate, rate, intensity| {
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Bass oscillator
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.005);
+            let sub = sin_osc_ar(freq * 0.5) * 0.4;
+
+            let mix = (saw1 + saw2) * 0.4 + sub;
+
+            // LFO for wobble
+            let lfo = sin_osc_ar(rate);
+            let filter_freq = 200.0 + (lfo * 0.5 + 0.5) * intensity * 3000.0;
+
+            // Resonant filter sweep
+            let filtered = rlpf_ar(mix, filter_freq, 0.25);
+
+            // Add some grit
+            let grit = (filtered * 1.5).tanh();
+
+            grit * env * amp
+        })
+});
+
+// Dubstep Growl - Aggressive FM growl
+define_synthdef("dubstep_growl", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("aggression", 0.7)
+        .body(|freq, amp, gate, aggression| {
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // FM growl synthesis
+            let mod_depth = aggression * 5.0;
+            let modulator1 = sin_osc_ar(freq * 2.0) * mod_depth;
+            let modulator2 = sin_osc_ar(freq * 3.0) * mod_depth * 0.5;
+
+            let carrier = sin_osc_ar(freq + modulator1 + modulator2);
+
+            // Sub layer
+            let sub = sin_osc_ar(freq * 0.5) * 0.3;
+
+            let growl = carrier + sub;
+
+            // Heavy distortion
+            let dist = (growl * (2.0 + aggression * 3.0)).tanh();
+
+            // Filter for tone shaping
+            let filtered = lpf_ar(dist, 4000.0);
+
+            filtered * env * amp * 0.7
+        })
+});
+
+// Dubstep Riddim - Minimal riddim bass
+define_synthdef("dubstep_riddim", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.005, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Short filter envelope
+            let filt_env_data = env_perc(0.001, 0.08);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+
+            // Simple saw bass
+            let saw = saw_ar(freq);
+            let sub = sin_osc_ar(freq * 0.5) * 0.5;
+
+            let mix = saw * 0.6 + sub;
+
+            // Sharp filter sweep
+            let cutoff = 150.0 + filt_env * 2500.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.3);
+
+            // Distortion
+            let dist = (filtered * 2.0).tanh();
+
+            dist * env * amp
+        })
+});
+
+// Dubstep Snare - Heavy layered snare
+define_synthdef("dubstep_snare", |builder| {
+    builder
+        .param("freq", 180.0)
+        .param("amp", 0.7)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 0.25);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pitch sweep
+            let pitch_env_data = env_perc(0.001, 0.05);
+            let pitch_env = NewEnvGenBuilder(pitch_env_data, gate).build();
+
+            // Body
+            let body = sin_osc_ar(freq + pitch_env * 100.0);
+
+            // Noise layer
+            let noise = white_noise_ar();
+            let filtered_noise = lpf_ar(hpf_ar(noise, 1500.0), 8000.0);
+
+            // Distorted mix
+            let mix = body * 0.4 + filtered_noise * 0.6;
+            let dist = (mix * 2.0).tanh();
+
+            dist * env * amp
+        })
+});
+
+// Dubstep Saw Chord - Massive saw chord
+define_synthdef("dubstep_chord", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.02, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Massive detuned stack
+            let spread = 0.02;
+            let v1 = saw_ar(freq * (1.0 - spread * 2.0));
+            let v2 = saw_ar(freq * (1.0 - spread));
+            let v3 = saw_ar(freq);
+            let v4 = saw_ar(freq * (1.0 + spread));
+            let v5 = saw_ar(freq * (1.0 + spread * 2.0));
+
+            let mix = (v1 + v2 + v3 + v4 + v5) * 0.22;
+
+            // Aggressive filter
+            let filtered = rlpf_ar(mix, 5000.0, 0.35);
+
+            filtered * env * amp
+        })
+});

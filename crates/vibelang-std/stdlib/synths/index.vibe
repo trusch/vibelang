@@ -1,0 +1,24 @@
+// Classic Synthesizers Library Index
+//
+// Import this file to load all classic synth emulations.
+// Usage: import "stdlib/synths/index.vibe"
+
+// Moog
+import "stdlib/synths/minimoog.vibe";
+
+// Roland
+import "stdlib/synths/juno.vibe";
+import "stdlib/synths/jupiter.vibe";
+import "stdlib/synths/sh101.vibe";
+
+// Yamaha
+import "stdlib/synths/dx7.vibe";
+
+// Sequential Circuits
+import "stdlib/synths/prophet.vibe";
+
+// Oberheim
+import "stdlib/synths/oberheim.vibe";
+
+// ARP
+import "stdlib/synths/arp.vibe";

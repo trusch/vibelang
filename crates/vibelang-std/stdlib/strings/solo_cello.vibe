@@ -1,0 +1,44 @@
+// Solo Cello
+// Genre: Classical, Ambient | Character: Rich, deep, warm
+//
+// Deep cello-like sound with expressive vibrato.
+
+define_synthdef("solo_cello", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("vibrato", 0.5) // Vibrato amount
+        .body(|freq, amp, gate, vibrato| {
+            // Smooth bowing envelope
+            let envelope = env_asr(0.15, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Slower, deeper vibrato than violin
+            let vib_freq = 4.5;
+            let vib_depth = vibrato * 0.012;
+            let vib = sin_osc_ar(vib_freq) * vib_depth + 1.0;
+            let mod_freq = freq * vib;
+
+            // Rich bowed tone
+            let osc1 = saw_ar(mod_freq);
+            let osc2 = saw_ar(mod_freq * 0.999) * 0.6;
+            let sub = sin_osc_ar(mod_freq * 0.5) * 0.3;
+
+            let string = (osc1 + osc2) * 0.5 + sub;
+
+            // Cello body resonance (lower formants)
+            let body1 = rlpf_ar(string, 400.0, 0.3) * 0.5;
+            let body2 = rlpf_ar(string, 1200.0, 0.3) * 0.3;
+            let body3 = rlpf_ar(string, 2000.0, 0.4) * 0.2;
+
+            let cello = body1 + body2 + body3;
+
+            // Warm low pass
+            let warm = lpf_ar(cello, 3000.0);
+
+            warm * env * amp * 0.8
+        })
+});

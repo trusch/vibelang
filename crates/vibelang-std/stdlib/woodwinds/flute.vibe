@@ -1,0 +1,71 @@
+// Flute
+// Orchestral | Character: Pure, breathy, silvery
+//
+// The classic orchestral flute with its
+// pure, silvery tone and breathy character.
+
+define_synthdef("flute", |builder| {
+    builder
+        .param("freq", 880.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("breath", 0.3)
+        .body(|freq, amp, gate, breath| {
+            let envelope = env_asr(0.08, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Vibrato
+            let vib = sin_osc_ar(5.5) * 0.006 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Pure tone with weak harmonics
+            let h1 = sin_osc_ar(mod_freq);
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.2;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.05;
+
+            let tone = h1 + h2 + h3;
+
+            // Breath noise
+            let noise = white_noise_ar() * breath * 0.1;
+            let breath_filtered = lpf_ar(hpf_ar(noise, 2000.0), 8000.0);
+
+            let mix = tone + breath_filtered;
+
+            // Subtle body resonance
+            let body = rlpf_ar(mix, mod_freq * 2.0, 0.5);
+
+            body * env * amp * 0.7
+        })
+});
+
+// Piccolo
+define_synthdef("piccolo", |builder| {
+    builder
+        .param("freq", 1760.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.05, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Vibrato
+            let vib = sin_osc_ar(6.0) * 0.005 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Very pure, bright tone
+            let h1 = sin_osc_ar(mod_freq);
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.15;
+
+            let tone = h1 + h2;
+
+            // Light breath
+            let noise = white_noise_ar() * 0.03;
+            let breath = hpf_ar(noise, 4000.0);
+
+            (tone + breath) * env * amp * 0.6
+        })
+});

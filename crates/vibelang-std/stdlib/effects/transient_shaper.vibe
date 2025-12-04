@@ -1,0 +1,49 @@
+// Transient Shaper Effect
+// Inspired by: SPL Transient Designer, Native Instruments Transient Master
+//
+// Shape the attack and sustain of sounds independently.
+// Essential for drums, percussion, and adding punch or smoothness.
+//
+// Parameters:
+//   attack: Attack emphasis (-1.0 = softer, 0.0 = neutral, 1.0 = punchier)
+//   sustain: Sustain emphasis (-1.0 = shorter, 0.0 = neutral, 1.0 = longer)
+//   output: Output gain compensation
+
+define_fx("transient_shaper", |builder| {
+    builder
+        .param("attack", 0.0)
+        .param("sustain", 0.0)
+        .param("output", 1.0)
+        .body(|input, attack, sustain, output| {
+            // Fast envelope for transient detection
+            let fast_env_l = lag_ar(input[0].abs(), 0.001);
+            let fast_env_r = lag_ar(input[1].abs(), 0.001);
+
+            // Slow envelope for sustain detection
+            let slow_env_l = lag_ar(input[0].abs(), 0.1);
+            let slow_env_r = lag_ar(input[1].abs(), 0.1);
+
+            // Transient = fast - slow (positive during attacks)
+            let transient_l = (fast_env_l - slow_env_l).max(0.0);
+            let transient_r = (fast_env_r - slow_env_r).max(0.0);
+
+            // Attack gain (boost or cut transients)
+            let attack_gain = 1.0 + attack * 2.0;
+            let attack_mod_l = 1.0 + transient_l * (attack_gain - 1.0) * 10.0;
+            let attack_mod_r = 1.0 + transient_r * (attack_gain - 1.0) * 10.0;
+
+            // Sustain gain (boost or cut body)
+            let sustain_mod_l = 1.0 + slow_env_l * sustain * 2.0;
+            let sustain_mod_r = 1.0 + slow_env_r * sustain * 2.0;
+
+            // Combine attack and sustain processing
+            let out_l = input[0] * attack_mod_l * sustain_mod_l;
+            let out_r = input[1] * attack_mod_r * sustain_mod_r;
+
+            // Soft limiting to prevent clipping
+            let limited_l = (out_l * output).tanh();
+            let limited_r = (out_r * output).tanh();
+
+            [limited_l, limited_r]
+        })
+});

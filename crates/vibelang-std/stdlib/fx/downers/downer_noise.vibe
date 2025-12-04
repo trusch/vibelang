@@ -1,0 +1,27 @@
+// Genre: EDM, House | Character: Noise-based downlifter
+define_synthdef("downer_noise", |builder| {
+    builder
+        .param("amp", 0.6)
+        .param("duration", 2.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.01, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Inverted envelope for downward motion
+            let down_env = 1.0 - env;
+
+            // Falling filter on noise
+            let noise = white_noise_ar();
+            let cutoff = 200.0 + down_env * 10000.0;
+            let filtered = lpf_ar(noise, cutoff);
+
+            // Resonant sweep
+            let res = rlpf_ar(noise, cutoff * 0.8, 0.25) * 0.5;
+
+            (filtered + res) * env * amp * 0.7
+        })
+});

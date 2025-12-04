@@ -1,0 +1,31 @@
+// Genre: EDM, House | Character: Release sweep (post-drop)
+define_synthdef("sweep_release", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 2.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // High starting point, sweeping down
+            let sweep_env = 1.0 - env;  // Inverse of main envelope
+
+            // Filtered noise sweeping down
+            let noise = white_noise_ar();
+            let cutoff = 12000.0 * sweep_env + 200.0;
+            let filtered = lpf_ar(noise, cutoff);
+
+            // Resonant peak following sweep
+            let res = rlpf_ar(filtered, cutoff * 0.5, 0.2) * 0.5;
+
+            // Pitched component falling
+            let freq = 1000.0 * sweep_env + 100.0;
+            let tone = sin_osc_ar(freq) * 0.3;
+
+            (filtered * 0.5 + res + tone) * env * amp
+        })
+});

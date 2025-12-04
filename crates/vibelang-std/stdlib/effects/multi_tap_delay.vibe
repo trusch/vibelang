@@ -1,0 +1,58 @@
+// Multi-Tap Delay Effect
+// Inspired by: Eventide H8000, Strymon Volante, vintage tape delays
+//
+// Multiple delay taps creating complex rhythmic patterns and textures.
+// Great for ambient, dub, and rhythmic production.
+//
+// Parameters:
+//   time: Base delay time in seconds (0.1 to 1.0)
+//   feedback: Overall feedback amount (0.0 to 0.9)
+//   spread: Stereo spread of taps (0.0 to 1.0)
+//   filter: High frequency content (0.0 = dark, 1.0 = bright)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("multi_tap_delay", |builder| {
+    builder
+        .param("time", 0.375)
+        .param("feedback", 0.4)
+        .param("spread", 0.7)
+        .param("filter", 0.6)
+        .param("mix", 0.4)
+        .body(|input, time, feedback, spread, filter, mix| {
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Six delay taps at musical intervals
+            let tap1 = delay_c_ar(mono, 2.0, time * 0.25) * 0.8;      // 1/4
+            let tap2 = delay_c_ar(mono, 2.0, time * 0.375) * 0.7;     // dotted 8th feel
+            let tap3 = delay_c_ar(mono, 2.0, time * 0.5) * 0.6;       // 1/2
+            let tap4 = delay_c_ar(mono, 2.0, time * 0.667) * 0.5;     // 2/3
+            let tap5 = delay_c_ar(mono, 2.0, time * 0.75) * 0.4;      // 3/4
+            let tap6 = delay_c_ar(mono, 2.0, time) * 0.5;             // full
+
+            // Distribute taps in stereo field
+            let left_taps = tap1 + tap3 * (1.0 - spread * 0.5) + tap5;
+            let right_taps = tap2 + tap4 * (1.0 - spread * 0.5) + tap6;
+
+            // Cross-feed for stereo coherence
+            let cross = 0.3 * (1.0 - spread);
+            let wet_l = left_taps + right_taps * cross;
+            let wet_r = right_taps + left_taps * cross;
+
+            // Apply feedback
+            let fb_l = delay_c_ar(wet_l * feedback, 2.0, time);
+            let fb_r = delay_c_ar(wet_r * feedback, 2.0, time);
+
+            let total_l = wet_l + fb_l * feedback;
+            let total_r = wet_r + fb_r * feedback;
+
+            // Tone control
+            let cutoff = 3000.0 + filter * 9000.0;
+            let filtered_l = lpf_ar(total_l, cutoff);
+            let filtered_r = lpf_ar(total_r, cutoff);
+
+            [
+                (1.0 - mix) * input[0] + mix * filtered_l * 0.7,
+                (1.0 - mix) * input[1] + mix * filtered_r * 0.7
+            ]
+        })
+});

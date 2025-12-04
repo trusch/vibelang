@@ -1,0 +1,148 @@
+// Lo-Fi Hip-Hop Sounds
+// Chill/Study | Character: Warm, degraded, nostalgic
+//
+// The sound of lo-fi beats to study/relax to.
+
+// Lo-Fi Keys - Warm dusty keys
+define_synthdef("lofi_keys", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("dusty", 0.5) // Amount of degradation
+        .body(|freq, amp, gate, dusty| {
+            let envelope = env_asr(0.01, 1.0, 0.3);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Rhodes-like tone
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.4;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.2;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.1;
+
+            let clean = h1 + h2 + h3 + h4;
+
+            // Add vinyl warmth
+            let noise = white_noise_ar() * dusty * 0.02;
+            let warped = clean + noise;
+
+            // Lo-fi filtering (roll off highs)
+            let lofi = lpf_ar(warped, 3000.0 - dusty * 1500.0);
+
+            lofi * env * amp
+        })
+});
+
+// Lo-Fi Piano - Dusty sampled feel
+define_synthdef("lofi_piano", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.005, 1.0, 0.4);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let decay_env_data = env_perc(0.001, 1.2);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Piano harmonics
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.3;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.15;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.08;
+
+            let piano = h1 + h2 + h3 + h4 + h5;
+
+            // Lo-fi character
+            let lofi = lpf_ar(piano, 2500.0);
+
+            // Slight detuning for worn tape feel
+            let warble = sin_osc_ar(0.5) * 0.002 + 1.0;
+
+            lofi * env * decay_env * amp * warble * 0.6
+        })
+});
+
+// Lo-Fi Bass - Warm rounded bass
+define_synthdef("lofi_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.02, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Soft bass tone
+            let fund = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.3;
+
+            let bass = fund + h2;
+
+            // Warm filtering
+            let warm = lpf_ar(bass, 800.0);
+
+            warm * env * amp
+        })
+});
+
+// Lo-Fi Pad - Atmospheric background
+define_synthdef("lofi_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.3)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.8, 1.0, 0.8);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Soft detuned voices
+            let v1 = sin_osc_ar(freq * 0.998);
+            let v2 = sin_osc_ar(freq);
+            let v3 = sin_osc_ar(freq * 1.002);
+
+            let mix = (v1 + v2 + v3) * 0.35;
+
+            // Very lo-fi
+            let lofi = lpf_ar(mix, 1500.0);
+
+            // Tape warble
+            let warble = sin_osc_ar(0.3) * 0.005 + 1.0;
+
+            lofi * env * amp * warble
+        })
+});
+
+// Lo-Fi Vinyl Crackle - Background texture
+define_synthdef("lofi_crackle", |builder| {
+    builder
+        .param("amp", 0.15)
+        .param("gate", 1.0)
+        .param("density", 0.5)
+        .body(|amp, gate, density| {
+            let envelope = env_asr(0.1, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Random impulses for crackle
+            let crackle = dust_ar(5.0 + density * 20.0);
+            let filtered_crackle = hpf_ar(crackle, 1000.0);
+
+            // Background hiss
+            let hiss = white_noise_ar() * 0.02;
+            let filtered_hiss = lpf_ar(hpf_ar(hiss, 500.0), 4000.0);
+
+            (filtered_crackle * 0.3 + filtered_hiss) * env * amp
+        })
+});

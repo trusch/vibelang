@@ -1,0 +1,137 @@
+// Saxophone Family
+// Jazz/Pop | Character: Warm, expressive, brassy
+//
+// The saxophone family from soprano to baritone.
+
+// Alto Saxophone
+define_synthdef("alto_sax", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("growl", 0.0) // Growl/subtone amount
+        .body(|freq, amp, gate, growl| {
+            let envelope = env_asr(0.03, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Vibrato
+            let vib = sin_osc_ar(5.5) * 0.008 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Saxophone harmonics
+            let h1 = sin_osc_ar(mod_freq);
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.6;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.4;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.25;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.15;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.1;
+
+            let tone = h1 + h2 + h3 + h4 + h5 + h6;
+
+            // Growl (low frequency modulation)
+            let growl_mod = sin_osc_ar(30.0) * growl * 0.3 + 1.0;
+
+            // Bright sax formant
+            let body = rlpf_ar(tone * growl_mod, 2000.0, 0.3);
+            let bright = rlpf_ar(tone, 4000.0, 0.4) * 0.3;
+
+            (body + bright) * env * amp * 0.5
+        })
+});
+
+// Tenor Saxophone
+define_synthdef("tenor_sax", |builder| {
+    builder
+        .param("freq", 330.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.04, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Vibrato
+            let vib = sin_osc_ar(5.0) * 0.007 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Warmer than alto
+            let h1 = sin_osc_ar(mod_freq);
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.55;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.35;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.2;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.12;
+
+            let tone = h1 + h2 + h3 + h4 + h5;
+
+            // Warm formant
+            let body = rlpf_ar(tone, 1800.0, 0.35);
+
+            body * env * amp * 0.6
+        })
+});
+
+// Soprano Saxophone
+define_synthdef("soprano_sax", |builder| {
+    builder
+        .param("freq", 660.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.02, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Vibrato
+            let vib = sin_osc_ar(6.0) * 0.006 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Brighter than alto
+            let h1 = sin_osc_ar(mod_freq);
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.35;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.2;
+
+            let tone = h1 + h2 + h3 + h4;
+
+            // Bright formant
+            let body = rlpf_ar(tone, 2500.0, 0.3);
+
+            body * env * amp * 0.6
+        })
+});
+
+// Baritone Saxophone
+define_synthdef("bari_sax", |builder| {
+    builder
+        .param("freq", 165.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.06, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Slow vibrato
+            let vib = sin_osc_ar(4.5) * 0.005 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Full, dark harmonics
+            let h1 = sin_osc_ar(mod_freq);
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.3;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.2;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.1;
+
+            let tone = h1 + h2 + h3 + h4 + h5;
+
+            // Deep, warm formant
+            let body = rlpf_ar(tone, 1200.0, 0.35);
+
+            body * env * amp * 0.6
+        })
+});

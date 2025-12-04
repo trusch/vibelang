@@ -1,0 +1,173 @@
+// Trap Production Sounds
+// Modern Hip-Hop | Character: Dark, heavy, 808-driven
+//
+// The sound of modern trap and hip-hop production.
+
+// Trap 808 Long - Extended 808 bass
+define_synthdef("trap_808_long", |builder| {
+    builder
+        .param("freq", 40.0)
+        .param("amp", 0.8)
+        .param("gate", 1.0)
+        .param("decay", 2.0) // Long decay time
+        .body(|freq, amp, gate, decay| {
+            let envelope = env_asr(0.001, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Long decay envelope
+            let decay_env_data = env_perc(0.001, decay);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Pitch envelope for 808 character
+            let pitch_env_data = env_perc(0.001, 0.08);
+            let pitch_env = NewEnvGenBuilder(pitch_env_data, dc_ar(1.0)).build();
+            let freq_mod = pitch_env * freq * 3.0;
+
+            // Pure sine 808
+            let osc = sin_osc_ar(freq + freq_mod);
+
+            // Slight saturation for presence
+            let sat = (osc * 1.5).tanh() * 0.8;
+
+            sat * env * decay_env * amp
+        })
+});
+
+// Trap 808 Distorted - Heavy distorted 808
+define_synthdef("trap_808_dist", |builder| {
+    builder
+        .param("freq", 40.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .param("drive", 0.6)
+        .body(|freq, amp, gate, drive| {
+            let envelope = env_asr(0.001, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let decay_env_data = env_perc(0.001, 1.5);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Pitch envelope
+            let pitch_env_data = env_perc(0.001, 0.06);
+            let pitch_env = NewEnvGenBuilder(pitch_env_data, dc_ar(1.0)).build();
+            let freq_mod = pitch_env * freq * 4.0;
+
+            // 808 oscillator
+            let osc = sin_osc_ar(freq + freq_mod);
+
+            // Heavy distortion
+            let dist_amount = 2.0 + drive * 6.0;
+            let dist = (osc * dist_amount).tanh();
+
+            // Low pass to control harshness
+            let filtered = lpf_ar(dist, 3000.0);
+
+            filtered * env * decay_env * amp * 0.7
+        })
+});
+
+// Trap Hihat - Fast trap hats
+define_synthdef("trap_hat", |builder| {
+    builder
+        .param("freq", 8000.0)
+        .param("amp", 0.4)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Very short envelope
+            let envelope = env_perc(0.001, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // High-passed noise
+            let noise = white_noise_ar();
+            let filtered = hpf_ar(noise, freq);
+
+            // Metallic resonance
+            let metal = rlpf_ar(noise, freq * 1.2, 0.1) * 0.5;
+
+            (filtered + metal) * env * amp
+        })
+});
+
+// Trap Hihat Roll - Rapid-fire hats
+define_synthdef("trap_hat_roll", |builder| {
+    builder
+        .param("freq", 9000.0)
+        .param("amp", 0.3)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // Extra short for rolls
+            let envelope = env_perc(0.0001, 0.02);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Tight filtered noise
+            let noise = white_noise_ar();
+            let filtered = hpf_ar(noise, freq);
+
+            filtered * env * amp
+        })
+});
+
+// Trap Lead - Dark melodic lead
+define_synthdef("trap_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Dark detuned saw
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.004);
+
+            let source = (saw1 + saw2) * 0.5;
+
+            // Dark filter
+            let filtered = lpf_ar(source, 2500.0);
+
+            filtered * env * amp
+        })
+});
+
+// Trap Bell - Melodic bell lead
+define_synthdef("trap_bell", |builder| {
+    builder
+        .param("freq", 880.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let decay_env_data = env_perc(0.001, 0.8);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Simple FM bell
+            let mod_depth = decay_env * 2.0;
+            let modulator = sin_osc_ar(freq * 2.0) * mod_depth;
+            let carrier = sin_osc_ar(freq + modulator);
+
+            // Harmonics
+            let h2 = sin_osc_ar(freq * 2.0) * 0.3;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.15;
+
+            let bell = carrier + h2 + h3;
+
+            bell * env * decay_env * amp * 0.5
+        })
+});

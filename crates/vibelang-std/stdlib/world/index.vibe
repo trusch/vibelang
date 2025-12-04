@@ -1,0 +1,22 @@
+// World Instruments Library Index
+//
+// Import this file to load all world instrument synthdefs.
+// Usage: import "stdlib/world/index.vibe"
+
+// Indian
+import "stdlib/world/sitar.vibe";
+import "stdlib/world/tabla.vibe";
+
+// African
+import "stdlib/world/kalimba.vibe";
+import "stdlib/world/djembe.vibe";
+
+// Japanese
+import "stdlib/world/koto.vibe";
+import "stdlib/world/shakuhachi.vibe";
+
+// Caribbean
+import "stdlib/world/steel_drum.vibe";
+
+// Indonesian
+import "stdlib/world/gamelan.vibe";

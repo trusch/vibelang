@@ -1,0 +1,44 @@
+// Trumpet
+// Genre: Jazz, Orchestral | Character: Bright, brilliant, piercing
+//
+// Solo trumpet with characteristic brightness and vibrato.
+
+define_synthdef("trumpet", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("brightness", 0.7) // Filter brightness
+        .body(|freq, amp, gate, brightness| {
+            // Trumpet envelope with quick attack
+            let envelope = env_asr(0.05, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Bright sawtooth for brass
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.001) * 0.5;
+
+            let tone = (saw1 + saw2) * 0.6;
+
+            // Trumpet formants (brightness)
+            let f1 = rlpf_ar(tone, 1200.0, 0.3);
+            let f2 = rlpf_ar(tone, 2500.0, 0.25) * 0.5;
+            let f3 = rlpf_ar(tone, 3800.0, 0.2) * 0.3 * brightness;
+
+            let brass = f1 + f2 + f3;
+
+            // Attack transient (lip buzz)
+            let attack_env_data = env_perc(0.001, 0.03);
+            let attack_env = NewEnvGenBuilder(attack_env_data, dc_ar(1.0)).build();
+            let buzz = white_noise_ar() * attack_env * 0.1;
+
+            // Vibrato
+            let vib_rate = 5.5;
+            let vib = sin_osc_ar(vib_rate) * 0.008 + 1.0;
+            let mod_freq = freq * vib;
+
+            (brass + buzz) * env * amp
+        })
+});

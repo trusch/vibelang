@@ -1,0 +1,37 @@
+// Whisper Synth
+// Genre: Ambient, ASMR | Character: Breathy, whispered
+//
+// Creates whisper-like textures with filtered noise.
+
+define_synthdef("whisper", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("breathiness", 0.7) // Noise amount
+        .body(|freq, amp, gate, breathiness| {
+            // Soft envelope
+            let envelope = env_asr(0.1, 1.0, 0.3);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Mostly noise with hint of pitch
+            let noise = white_noise_ar();
+            let pitched = sin_osc_ar(freq) * 0.2;
+
+            // Formant filtering on noise for whisper character
+            let whisper_band1 = rlpf_ar(noise, freq * 2.0, 0.2);
+            let whisper_band2 = rlpf_ar(noise, freq * 4.0, 0.15) * 0.5;
+
+            let whisper = whisper_band1 + whisper_band2;
+
+            // Mix pitched and noise based on breathiness
+            let mix = pitched * (1.0 - breathiness) + whisper * breathiness;
+
+            // Shape the output
+            let shaped = lpf_ar(mix, 6000.0);
+
+            shaped * env * amp
+        })
+});

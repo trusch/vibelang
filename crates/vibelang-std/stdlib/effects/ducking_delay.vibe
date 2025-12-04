@@ -1,0 +1,50 @@
+// Ducking Delay Effect
+// Inspired by: TC Electronic Flashback, Line 6 DL4, Strymon Timeline
+//
+// Intelligent delay that ducks when the dry signal is present,
+// allowing delays to bloom in the spaces between notes.
+// Perfect for vocals and lead instruments.
+//
+// Parameters:
+//   time: Delay time in seconds (0.05 to 2.0)
+//   feedback: Feedback amount (0.0 to 0.9)
+//   duck_amount: How much to duck the delays (0.0 to 1.0)
+//   duck_speed: Speed of ducking response (0.0 = slow, 1.0 = fast)
+//   mix: Maximum wet level when not ducking (0.0 to 1.0)
+
+define_fx("ducking_delay", |builder| {
+    builder
+        .param("time", 0.4)
+        .param("feedback", 0.4)
+        .param("duck_amount", 0.7)
+        .param("duck_speed", 0.5)
+        .param("mix", 0.5)
+        .body(|input, time, feedback, duck_amount, duck_speed, mix| {
+            // Envelope follower for ducking
+            let mono_in = (input[0] + input[1]) * 0.5;
+            let amplitude = lag_ar(mono_in.abs(), 0.01 + (1.0 - duck_speed) * 0.1);
+
+            // Calculate duck level (more input = less delay)
+            let duck_mult = 1.0 - (amplitude * duck_amount * 4.0).min(1.0);
+
+            // Create the delays
+            let delay_l = delay_c_ar(input[0], 3.0, time);
+            let delay_r = delay_c_ar(input[1], 3.0, time);
+
+            // Feedback with filtering
+            let fb_l = delay_c_ar(delay_l * feedback, 3.0, time);
+            let fb_r = delay_c_ar(delay_r * feedback, 3.0, time);
+
+            let wet_l = delay_l + fb_l * feedback;
+            let wet_r = delay_r + fb_r * feedback;
+
+            // Apply ducking to wet signal
+            let ducked_l = wet_l * duck_mult;
+            let ducked_r = wet_r * duck_mult;
+
+            [
+                input[0] + ducked_l * mix,
+                input[1] + ducked_r * mix
+            ]
+        })
+});

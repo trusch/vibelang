@@ -1,0 +1,57 @@
+// Shimmer Reverb Effect
+// Inspired by: Strymon BigSky, Eventide Space, Brian Eno ambient productions
+//
+// Ethereal reverb with pitch-shifted feedback creating cascading harmonics.
+// Perfect for ambient, post-rock, and cinematic soundscapes.
+//
+// Parameters:
+//   size: Reverb size (0.0 to 1.0)
+//   shimmer: Amount of pitch-shifted feedback (0.0 to 1.0)
+//   pitch: Pitch shift interval (0.5 = octave down, 2.0 = octave up)
+//   decay: Reverb decay (0.0 to 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("shimmer_reverb", |builder| {
+    builder
+        .param("size", 0.7)
+        .param("shimmer", 0.4)
+        .param("pitch", 2.0)
+        .param("decay", 0.6)
+        .param("mix", 0.4)
+        .body(|input, size, shimmer, pitch, decay, mix| {
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Main reverb
+            let verb = free_verb_ar(mono, 1.0, 0.5 + size * 0.45, 0.3);
+
+            // Pitch shifter for shimmer effect (using delay-based pitch approximation)
+            let shift_time = 0.05 / pitch;
+            let shifted = delay_c_ar(verb, 0.2, shift_time);
+
+            // Feed the shifted signal back through more reverb
+            let shimmer_verb = free_verb_ar(shifted * shimmer, 1.0, 0.7, 0.5);
+
+            // Combine layers with decay
+            let layer1 = verb;
+            let layer2 = shimmer_verb * decay * 0.6;
+            let layer3 = delay_c_ar(shimmer_verb, 0.5, 0.2) * decay * 0.4;
+
+            let combined = layer1 + layer2 + layer3;
+
+            // Smooth high frequencies for ethereal character
+            let smoothed = lpf_ar(combined, 10000.0);
+
+            // Add subtle modulation
+            let mod_lfo = sin_osc_ar(0.3) * 0.002;
+            let modulated = delay_c_ar(smoothed, 0.05, 0.02 + mod_lfo);
+
+            // Wide stereo spread
+            let left = modulated;
+            let right = delay_c_ar(modulated, 0.02, 0.007);
+
+            [
+                (1.0 - mix) * input[0] + mix * left * 0.6,
+                (1.0 - mix) * input[1] + mix * right * 0.6
+            ]
+        })
+});

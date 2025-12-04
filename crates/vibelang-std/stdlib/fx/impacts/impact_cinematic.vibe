@@ -1,0 +1,42 @@
+// Genre: Trailer, Film Score | Character: Epic cinematic impact
+define_synthdef("impact_cinematic", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 2.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Deep sub layer
+            let sub_env = env_perc(0.001, 1.5);
+            let sub_e = NewEnvGenBuilder(sub_env, gate).build();
+            let sub = sin_osc_ar(35.0 + sub_e * 20.0) * sub_e * 0.7;
+
+            // Brass-like attack
+            let brass = saw_ar(80.0) + saw_ar(120.0) * 0.6;
+            let brass_env = env_perc(0.001, 0.3);
+            let brass_e = NewEnvGenBuilder(brass_env, gate).build();
+            let brass_filtered = lpf_ar(brass, 600.0) * brass_e * 0.4;
+
+            // Orchestral hit
+            let orch = sin_osc_ar(200.0) + sin_osc_ar(400.0) * 0.5 + sin_osc_ar(800.0) * 0.25;
+            let orch_env = env_perc(0.001, 0.4);
+            let orch_e = NewEnvGenBuilder(orch_env, gate).build();
+
+            // Noise burst
+            let noise = white_noise_ar();
+            let noise_env = env_perc(0.001, 0.15);
+            let noise_e = NewEnvGenBuilder(noise_env, gate).build();
+            let noise_filtered = lpf_ar(noise, 3000.0) * noise_e * 0.3;
+
+            // Reverb tail simulation
+            let tail = sin_osc_ar(60.0) * env * 0.3;
+
+            let mix = sub + brass_filtered + orch * orch_e * 0.3 + noise_filtered + tail;
+
+            mix * amp * 0.5
+        })
+});

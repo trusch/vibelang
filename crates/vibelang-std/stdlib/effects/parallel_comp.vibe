@@ -1,0 +1,56 @@
+// Parallel Compression Effect
+// Inspired by: New York compression technique, SSL bus compression
+//
+// Heavy compression mixed with dry signal for punch without losing dynamics.
+// Industry standard technique for drums, bass, and mix bus.
+//
+// Parameters:
+//   ratio: Compression ratio (2.0 to 20.0)
+//   attack: Attack time (0.0 = fast, 1.0 = slow)
+//   release: Release time (0.0 = fast, 1.0 = slow)
+//   makeup: Compressed signal makeup gain (0.0 to 2.0)
+//   blend: Blend of compressed signal (0.0 to 1.0)
+
+define_fx("parallel_comp", |builder| {
+    builder
+        .param("ratio", 8.0)
+        .param("attack", 0.3)
+        .param("release", 0.4)
+        .param("makeup", 1.0)
+        .param("blend", 0.5)
+        .body(|input, ratio, attack, release, makeup, blend| {
+            // Convert attack/release to time constants
+            let attack_time = 0.001 + attack * 0.05;
+            let release_time = 0.05 + release * 0.3;
+
+            // Envelope follower for compression
+            let env_l = lag_ar(input[0].abs(), attack_time);
+            let env_r = lag_ar(input[1].abs(), attack_time);
+
+            // Calculate gain reduction (ratio-based compression)
+            let threshold = 0.2;
+            let over_l = (env_l - threshold).max(0.0);
+            let over_r = (env_r - threshold).max(0.0);
+
+            // Apply ratio
+            let reduction_l = over_l * (1.0 - 1.0 / ratio);
+            let reduction_r = over_r * (1.0 - 1.0 / ratio);
+
+            // Smooth gain reduction
+            let gain_l = lag_ar(1.0 - reduction_l * 2.0, release_time).max(0.1);
+            let gain_r = lag_ar(1.0 - reduction_r * 2.0, release_time).max(0.1);
+
+            // Apply compression
+            let comp_l = input[0] * gain_l * makeup;
+            let comp_r = input[1] * gain_r * makeup;
+
+            // Parallel blend (dry + compressed)
+            let out_l = input[0] + comp_l * blend;
+            let out_r = input[1] + comp_r * blend;
+
+            // Normalize output
+            let norm = 1.0 / (1.0 + blend * 0.5);
+
+            [out_l * norm, out_r * norm]
+        })
+});

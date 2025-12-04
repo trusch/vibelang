@@ -1,0 +1,45 @@
+// Voice Drone
+// Genre: Ambient, Dark | Character: Haunting vocal drone
+//
+// Dark, evolving voice-like drone with slow modulation.
+
+define_synthdef("voice_drone", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("darkness", 0.5) // Filter darkness
+        .body(|freq, amp, gate, darkness| {
+            // Very slow attack for drone
+            let envelope = env_asr(2.0, 1.0, 1.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Deep oscillator base
+            let osc1 = saw_ar(freq);
+            let osc2 = saw_ar(freq * 0.998);
+            let sub = sin_osc_ar(freq * 0.5) * 0.4;
+
+            let source = (osc1 + osc2) * 0.5 + sub;
+
+            // Slow modulating formant
+            let mod_speed = 0.1;
+            let formant_mod = sin_osc_ar(mod_speed) * 0.5 + 0.5;
+            let formant_freq = 300.0 + formant_mod * 400.0;
+
+            // Apply formant with modulation
+            let formant = rlpf_ar(source, formant_freq, 0.2);
+
+            // Darkness control
+            let cutoff = 2000.0 - darkness * 1500.0;
+            let dark = lpf_ar(formant, cutoff);
+
+            // Add breath noise
+            let breath_mod = sin_osc_ar(0.15) * 0.5 + 0.5;
+            let breath = white_noise_ar() * 0.02 * breath_mod;
+            let breath_filtered = lpf_ar(hpf_ar(breath, 1000.0), 4000.0);
+
+            (dark + breath_filtered) * env * amp
+        })
+});

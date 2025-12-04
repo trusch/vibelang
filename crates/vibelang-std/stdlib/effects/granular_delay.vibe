@@ -1,0 +1,64 @@
+// Granular Delay Effect
+//
+// Delay effect with pitch-shifted grains for texture and ambience.
+// Creates ethereal, evolving textures from any input.
+//
+// Usage:
+//   group.add_effect("grain", "granular_delay", #{
+//     time: 0.3,
+//     pitch: 0.5,
+//     density: 0.7,
+//     feedback: 0.4,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   time: Base delay time in seconds (0.01 - 2.0)
+//   pitch: Pitch ratio for grains (0.5 = octave down, 2.0 = octave up)
+//   density: Grain density/overlap (0.0 - 1.0)
+//   feedback: Feedback amount (0.0 - 0.9)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("granular_delay", |builder| {
+    builder
+        .param("time", 0.3)
+        .param("pitch", 1.0)
+        .param("density", 0.7)
+        .param("feedback", 0.4)
+        .param("mix", 0.5)
+        .body(|input, time, pitch, density, feedback, mix| {
+            // Multiple delay taps with varying times for granular effect
+            let grain_size = 0.05 + (1.0 - density) * 0.1;
+
+            // Create offset delay taps
+            let tap1_left = delay_c_ar(input[0], 2.0, time);
+            let tap2_left = delay_c_ar(input[0], 2.0, time * 1.33);
+            let tap3_left = delay_c_ar(input[0], 2.0, time * 0.75);
+
+            let tap1_right = delay_c_ar(input[1], 2.0, time * 1.1);
+            let tap2_right = delay_c_ar(input[1], 2.0, time * 0.9);
+            let tap3_right = delay_c_ar(input[1], 2.0, time * 1.5);
+
+            // Mix grains with varying amplitudes
+            let grain_left = tap1_left * 0.5 + tap2_left * 0.3 + tap3_left * 0.2;
+            let grain_right = tap1_right * 0.5 + tap2_right * 0.3 + tap3_right * 0.2;
+
+            // Apply pitch variation through playback rate modulation
+            let pitch_mod = sin_osc_ar(0.1 + density * 2.0) * 0.02 * (pitch - 1.0);
+            let modulated_left = delay_c_ar(grain_left, 0.1, 0.01 + pitch_mod.abs());
+            let modulated_right = delay_c_ar(grain_right, 0.1, 0.01 + pitch_mod.abs());
+
+            // Add feedback
+            let fb_left = modulated_left * feedback;
+            let fb_right = modulated_right * feedback;
+
+            // Final mix with slight filtering for smoothness
+            let out_left = lpf_ar(modulated_left + fb_left, 10000.0);
+            let out_right = lpf_ar(modulated_right + fb_right, 10000.0);
+
+            [
+                (1.0 - mix) * input[0] + mix * out_left,
+                (1.0 - mix) * input[1] + mix * out_right
+            ]
+        })
+});

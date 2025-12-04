@@ -1,0 +1,10 @@
+// Woodwinds Library Index
+//
+// Import this file to load all woodwind instrument synthdefs.
+// Usage: import "stdlib/woodwinds/index.vibe"
+
+import "stdlib/woodwinds/flute.vibe";
+import "stdlib/woodwinds/clarinet.vibe";
+import "stdlib/woodwinds/oboe.vibe";
+import "stdlib/woodwinds/saxophone.vibe";
+import "stdlib/woodwinds/bassoon.vibe";

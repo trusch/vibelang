@@ -25,12 +25,20 @@ import "stdlib/effects/ring_mod.vibe";
 import "stdlib/effects/delay.vibe";
 import "stdlib/effects/ping_pong_delay.vibe";
 import "stdlib/effects/tape_delay.vibe";
+import "stdlib/effects/granular_delay.vibe";
+import "stdlib/effects/analog_delay.vibe";
+import "stdlib/effects/ducking_delay.vibe";
+import "stdlib/effects/multi_tap_delay.vibe";
 
 // Reverb Effects
 import "stdlib/effects/reverb.vibe";
 import "stdlib/effects/reverb_minimal.vibe";
 import "stdlib/effects/gverb.vibe";
 import "stdlib/effects/plate_reverb.vibe";
+import "stdlib/effects/spring_reverb.vibe";
+import "stdlib/effects/hall_reverb.vibe";
+import "stdlib/effects/room_reverb.vibe";
+import "stdlib/effects/shimmer_reverb.vibe";
 
 // Dynamics
 import "stdlib/effects/compressor.vibe";
@@ -38,22 +46,36 @@ import "stdlib/effects/limiter.vibe";
 import "stdlib/effects/gate.vibe";
 import "stdlib/effects/ducking.vibe";
 import "stdlib/effects/amp_follower.vibe";
+import "stdlib/effects/sidechain.vibe";
+import "stdlib/effects/multiband_comp.vibe";
+import "stdlib/effects/parallel_comp.vibe";
+import "stdlib/effects/transient_shaper.vibe";
+import "stdlib/effects/de_esser.vibe";
 
 // Distortion/Saturation
 import "stdlib/effects/distortion.vibe";
 import "stdlib/effects/overdrive.vibe";
 import "stdlib/effects/bitcrush.vibe";
+import "stdlib/effects/saturator.vibe";
+import "stdlib/effects/waveshaper.vibe";
+import "stdlib/effects/tape_saturation.vibe";
+import "stdlib/effects/exciter.vibe";
 
 // Spatial Effects
 import "stdlib/effects/stereo_width.vibe";
 import "stdlib/effects/haas.vibe";
+import "stdlib/effects/stereo_enhancer.vibe";
 
 // Character/Texture
 import "stdlib/effects/lo_fi.vibe";
 import "stdlib/effects/vinyl.vibe";
 
+// Modulation Effects (Classic Hardware)
+import "stdlib/effects/dimension_chorus.vibe";
+
 // Utility
 import "stdlib/effects/eq_three_band.vibe";
 import "stdlib/effects/dc_blocker.vibe";
 import "stdlib/effects/pitch_shift.vibe";
+import "stdlib/effects/freq_shift.vibe";
 

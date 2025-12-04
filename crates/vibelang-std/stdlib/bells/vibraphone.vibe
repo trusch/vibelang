@@ -1,0 +1,42 @@
+// Vibraphone
+// Genre: Jazz, Lounge | Character: Warm, mellow, vibrato
+//
+// Jazz vibraphone with characteristic motor vibrato.
+
+define_synthdef("vibraphone", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("vibrato_speed", 5.0) // Motor speed
+        .body(|freq, amp, gate, vibrato_speed| {
+            // Vibes envelope
+            let envelope = env_asr(0.005, 1.0, 0.4);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Medium-long decay
+            let decay_env_data = env_perc(0.001, 2.0);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Vibraphone partials
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.3;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.2;
+            let h5 = sin_osc_ar(freq * 4.8) * 0.1; // Slightly inharmonic
+
+            let bell = h1 + h2 + h3 + h4 + h5;
+
+            // Motor vibrato (amplitude tremolo)
+            let motor = sin_osc_ar(vibrato_speed) * 0.3 + 0.7;
+
+            // Mallet soft attack
+            let mallet_env_data = env_perc(0.001, 0.03);
+            let mallet_env = NewEnvGenBuilder(mallet_env_data, dc_ar(1.0)).build();
+            let mallet = white_noise_ar() * mallet_env * 0.05;
+
+            (bell * motor + mallet) * env * decay_env * amp * 0.6
+        })
+});

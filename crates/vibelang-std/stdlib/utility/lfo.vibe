@@ -1,0 +1,75 @@
+// LFO (Low Frequency Oscillator) Sources
+// Utility | Modulation sources for synthesis
+//
+// Various LFO shapes for modulation purposes.
+// Note: These output audio-rate signals for modulation.
+
+// Sine LFO
+define_synthdef("lfo_sine", |builder| {
+    builder
+        .param("freq", 1.0)
+        .param("amp", 1.0)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.001);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            sin_osc_ar(freq) * env * amp
+        })
+});
+
+// Triangle LFO (approximated)
+define_synthdef("lfo_triangle", |builder| {
+    builder
+        .param("freq", 1.0)
+        .param("amp", 1.0)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.001);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Use sine as approximation
+            let tri = sin_osc_ar(freq);
+            tri * env * amp
+        })
+});
+
+// Sawtooth LFO
+define_synthdef("lfo_saw", |builder| {
+    builder
+        .param("freq", 1.0)
+        .param("amp", 1.0)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.001);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            saw_ar(freq) * env * amp
+        })
+});
+
+// Random/Sample & Hold LFO (stepped random)
+define_synthdef("lfo_random", |builder| {
+    builder
+        .param("freq", 4.0)
+        .param("amp", 1.0)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.001);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Use noise filtered for stepped random effect
+            let noise = white_noise_ar();
+            let stepped = lpf_ar(noise, freq);
+
+            stepped * env * amp
+        })
+});

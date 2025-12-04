@@ -1,0 +1,51 @@
+// De-Esser Effect
+// Inspired by: FabFilter Pro-DS, Waves DeEsser, SSL dynamics
+//
+// Reduces harsh sibilance (s, sh, ch sounds) in vocals and other sources.
+// Essential for professional vocal processing.
+//
+// Parameters:
+//   freq: Center frequency of sibilance band (3000 to 10000)
+//   threshold: Detection threshold (0.0 = aggressive, 1.0 = gentle)
+//   reduction: Maximum reduction amount (0.0 to 1.0)
+//   width: Detection bandwidth (0.0 = narrow, 1.0 = wide)
+
+define_fx("de_esser", |builder| {
+    builder
+        .param("freq", 6000.0)
+        .param("threshold", 0.5)
+        .param("reduction", 0.5)
+        .param("width", 0.5)
+        .body(|input, freq, threshold, reduction, width| {
+            // Extract sibilance band
+            let q = 0.5 + (1.0 - width) * 1.5;
+            let sib_l = rlpf_ar(hpf_ar(input[0], freq * 0.7), freq, q);
+            let sib_r = rlpf_ar(hpf_ar(input[1], freq * 0.7), freq, q);
+
+            // Detect sibilance level
+            let detect_l = lag_ar(sib_l.abs(), 0.002);
+            let detect_r = lag_ar(sib_r.abs(), 0.002);
+
+            // Calculate gain reduction
+            let thresh = 0.1 + threshold * 0.4;
+            let over_l = (detect_l - thresh).max(0.0);
+            let over_r = (detect_r - thresh).max(0.0);
+
+            // Smooth gain reduction
+            let gr_l = (1.0 - over_l * reduction * 10.0).max(0.2);
+            let gr_r = (1.0 - over_r * reduction * 10.0).max(0.2);
+
+            let smooth_gr_l = lag_ar(gr_l, 0.005);
+            let smooth_gr_r = lag_ar(gr_r, 0.005);
+
+            // Apply reduction only to sibilance band
+            let reduced_sib_l = sib_l * smooth_gr_l;
+            let reduced_sib_r = sib_r * smooth_gr_r;
+
+            // Subtract original sibilance, add reduced version
+            let out_l = input[0] - sib_l + reduced_sib_l;
+            let out_r = input[1] - sib_r + reduced_sib_r;
+
+            [out_l, out_r]
+        })
+});

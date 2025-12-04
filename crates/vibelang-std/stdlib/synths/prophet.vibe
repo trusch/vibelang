@@ -1,0 +1,118 @@
+// Sequential Circuits Prophet-5 Emulation
+// Classic 1978 | Character: Warm, rich, iconic analog
+//
+// The first practical polyphonic synthesizer.
+// Known for its warm, rich sound and poly-mod.
+
+// Prophet Pad - Lush analog pad
+define_synthdef("prophet_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("spread", 0.5)
+        .body(|freq, amp, gate, spread| {
+            let envelope = env_asr(0.4, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Two oscillators with spread
+            let detune = spread * 0.01;
+            let osc_a = saw_ar(freq * (1.0 - detune));
+            let osc_b = saw_ar(freq * (1.0 + detune));
+
+            // Sub oscillator
+            let sub = sin_osc_ar(freq * 0.5) * 0.3;
+
+            let mix = (osc_a + osc_b) * 0.4 + sub;
+
+            // Warm lowpass
+            let filtered = lpf_ar(mix, 2500.0);
+
+            filtered * env * amp
+        })
+});
+
+// Prophet Brass - Classic synth brass
+define_synthdef("prophet_brass", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.06, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_asr(0.03, 1.0, 0.15);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Two saw oscillators
+            let osc_a = saw_ar(freq);
+            let osc_b = saw_ar(freq * 1.005);
+
+            let mix = (osc_a + osc_b) * 0.5;
+
+            // Bright filter sweep
+            let cutoff = 500.0 + filt_env * 4000.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.35);
+
+            filtered * env * amp
+        })
+});
+
+// Prophet Lead - Screaming lead
+define_synthdef("prophet_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("resonance", 0.4)
+        .body(|freq, amp, gate, resonance| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Poly-mod style oscillator sync simulation
+            let osc_a = saw_ar(freq);
+            let osc_b = saw_ar(freq * 2.01); // Slight detune for richness
+
+            let mix = (osc_a + osc_b * 0.5) * 0.6;
+
+            // Resonant filter
+            let filtered = rlpf_ar(mix, 3000.0, 1.0 - resonance * 0.8);
+
+            filtered * env * amp
+        })
+});
+
+// Prophet Strings - Warm polysynth strings
+define_synthdef("prophet_strings", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.25, 1.0, 0.4);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Ensemble-style detuning
+            let v1 = saw_ar(freq * 0.997);
+            let v2 = saw_ar(freq * 0.999);
+            let v3 = saw_ar(freq * 1.001);
+            let v4 = saw_ar(freq * 1.003);
+
+            let voices = (v1 + v2 + v3 + v4) * 0.3;
+
+            // Warm filter
+            let filtered = lpf_ar(voices, 3000.0);
+
+            filtered * env * amp
+        })
+});

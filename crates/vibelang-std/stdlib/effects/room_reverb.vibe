@@ -1,0 +1,49 @@
+// Room Reverb Effect
+// Inspired by: Universal Audio Ocean Way, Waves IR rooms
+//
+// Natural small room ambience with early reflections.
+// Perfect for adding space to drums, vocals, and instruments.
+//
+// Parameters:
+//   size: Room size (0.0 = closet, 1.0 = large room)
+//   brightness: High frequency content (0.0 to 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("room_reverb", |builder| {
+    builder
+        .param("size", 0.4)
+        .param("brightness", 0.5)
+        .param("mix", 0.25)
+        .body(|input, size, brightness, mix| {
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Early reflections (room walls simulation)
+            let er1 = delay_c_ar(mono, 0.1, 0.007 + size * 0.01) * 0.6;
+            let er2 = delay_c_ar(mono, 0.1, 0.013 + size * 0.015) * 0.5;
+            let er3 = delay_c_ar(mono, 0.1, 0.019 + size * 0.02) * 0.4;
+            let er4 = delay_c_ar(mono, 0.1, 0.027 + size * 0.025) * 0.3;
+            let er5 = delay_c_ar(mono, 0.1, 0.037 + size * 0.03) * 0.25;
+
+            let early = er1 + er2 + er3 + er4 + er5;
+
+            // Diffuse tail
+            let room = 0.3 + size * 0.4;
+            let tail = free_verb_ar(early, 1.0, room, 0.6 - brightness * 0.4);
+
+            // Natural room tone (absorptive surfaces)
+            let cutoff = 6000.0 + brightness * 6000.0;
+            let filtered = lpf_ar(tail, cutoff);
+
+            // Create stereo from early reflections
+            let left_er = er1 + er3 * 0.7 + er5 * 0.5;
+            let right_er = er2 + er4 * 0.7 + er5 * 0.5;
+
+            let wet_left = filtered + left_er * 0.3;
+            let wet_right = filtered + right_er * 0.3;
+
+            [
+                (1.0 - mix) * input[0] + mix * wet_left * 0.8,
+                (1.0 - mix) * input[1] + mix * wet_right * 0.8
+            ]
+        })
+});

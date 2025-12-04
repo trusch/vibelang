@@ -1,0 +1,30 @@
+// Genre: Dark Ambient, Horror | Character: Dark foreboding atmosphere
+define_synthdef("atmosphere_dark", |builder| {
+    builder
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|amp, gate| {
+            let envelope = env_asr(2.0, 1.0, 2.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Deep drone
+            let drone_freq = 40.0 + sin_osc_ar(0.05) * 5.0;
+            let drone = sin_osc_ar(drone_freq) + sin_osc_ar(drone_freq * 1.5) * 0.4;
+
+            // Distant thunder-like rumble
+            let rumble = lpf_ar(pink_noise_ar(), 60.0);
+            let rumble_mod = rumble * (sin_osc_ar(0.1) * 0.5 + 0.5);
+
+            // Eerie high frequencies
+            let high = sin_osc_ar(2000.0 + sin_osc_ar(0.07) * 300.0) * 0.03;
+
+            // Subtle metallic resonance
+            let metal = rlpf_ar(pink_noise_ar(), 800.0, 0.05) * 0.1;
+
+            let mix = drone * 0.3 + rumble_mod * 0.4 + high + metal;
+
+            mix * env * amp
+        })
+});

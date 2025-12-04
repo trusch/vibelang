@@ -1,0 +1,54 @@
+// Stereo Enhancer Effect
+// Inspired by: Waves S1, iZotope Ozone Imager, Brainworx bx_stereomaker
+//
+// Advanced stereo width control using M/S processing.
+// Widen or narrow the stereo field while maintaining mono compatibility.
+//
+// Parameters:
+//   width: Stereo width (0.0 = mono, 1.0 = normal, 2.0 = extra wide)
+//   center: Center/sides balance (-1.0 = sides only, 0.0 = normal, 1.0 = center only)
+//   bass_mono: Make low frequencies mono below this freq (20 to 200)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = processed)
+
+define_fx("stereo_enhancer", |builder| {
+    builder
+        .param("width", 1.2)
+        .param("center", 0.0)
+        .param("bass_mono", 100.0)
+        .param("mix", 1.0)
+        .body(|input, width, center, bass_mono, mix| {
+            // Encode to Mid/Side
+            let mid = (input[0] + input[1]) * 0.5;
+            let side = (input[0] - input[1]) * 0.5;
+
+            // Apply width to sides
+            let wide_side = side * width;
+
+            // Apply center boost/cut
+            let center_boost = 1.0 + center * 0.5;
+            let side_cut = 1.0 - center * 0.5;
+            let processed_mid = mid * center_boost;
+            let processed_side = wide_side * side_cut;
+
+            // Decode back to L/R
+            let wide_l = processed_mid + processed_side;
+            let wide_r = processed_mid - processed_side;
+
+            // Bass mono (sum low frequencies to center)
+            let bass_l = lpf_ar(input[0], bass_mono);
+            let bass_r = lpf_ar(input[1], bass_mono);
+            let bass_mono_sig = (bass_l + bass_r) * 0.5;
+
+            // Remove bass from widened signal, add mono bass
+            let no_bass_l = hpf_ar(wide_l, bass_mono);
+            let no_bass_r = hpf_ar(wide_r, bass_mono);
+
+            let final_l = no_bass_l + bass_mono_sig;
+            let final_r = no_bass_r + bass_mono_sig;
+
+            [
+                (1.0 - mix) * input[0] + mix * final_l,
+                (1.0 - mix) * input[1] + mix * final_r
+            ]
+        })
+});

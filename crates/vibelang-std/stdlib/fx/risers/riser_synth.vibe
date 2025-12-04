@@ -1,0 +1,35 @@
+// Genre: Trance, Progressive | Character: Synth-based melodic riser
+define_synthdef("riser_synth", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 4.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.1, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Rising pitch from low to high
+            let pitch = 80.0 + env * 800.0;
+
+            // Supersaw-style riser
+            let saw1 = saw_ar(pitch);
+            let saw2 = saw_ar(pitch * 1.005);
+            let saw3 = saw_ar(pitch * 0.995);
+            let saw4 = saw_ar(pitch * 1.01);
+            let saw5 = saw_ar(pitch * 0.99);
+
+            let supersaw = (saw1 + saw2 + saw3 + saw4 + saw5) * 0.15;
+
+            // Filter opening with rise
+            let cutoff = 500.0 + env * 8000.0;
+            let filtered = rlpf_ar(supersaw, cutoff, 0.4);
+
+            // Add shimmer
+            let shimmer = sin_osc_ar(pitch * 4.0) * env * 0.1;
+
+            (filtered + shimmer) * env * amp
+        })
+});

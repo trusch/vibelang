@@ -1,0 +1,44 @@
+// Clavinet
+// Genre: Funk, Soul | Character: Percussive, twangy, funky
+//
+// Hohner Clavinet-style keyboard with characteristic
+// percussive attack and bright, plucky tone.
+
+define_synthdef("clavinet", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("brightness", 0.7) // Filter brightness
+        .body(|freq, amp, gate, brightness| {
+            // Percussive envelope
+            let envelope = env_asr(0.001, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Decay envelope for string character
+            let decay_env_data = env_perc(0.001, 0.3);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Plucked string-like waveform (rich in harmonics)
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.001);
+
+            let source = (saw1 + saw2) * 0.5;
+
+            // Hammer/pick attack transient
+            let pick_env_data = env_perc(0.0001, 0.01);
+            let pick_env = NewEnvGenBuilder(pick_env_data, dc_ar(1.0)).build();
+            let pick = white_noise_ar() * pick_env * 0.3;
+
+            // Filter with envelope for pluck character
+            let filter_freq = 1000.0 + brightness * 4000.0 + decay_env * 3000.0;
+            let filtered = rlpf_ar(source + pick, filter_freq, 0.3);
+
+            // Emphasize fundamental
+            let fundamental = sin_osc_ar(freq) * 0.3;
+
+            (filtered + fundamental) * env * decay_env * amp * 0.8
+        })
+});

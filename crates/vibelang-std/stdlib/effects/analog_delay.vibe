@@ -1,0 +1,58 @@
+// Analog Delay Effect
+// Inspired by: Boss DM-2, Electro-Harmonix Memory Man, MXR Carbon Copy
+//
+// Classic bucket-brigade delay with warm, degrading repeats.
+// Each repeat loses high frequency content like vintage analog delays.
+//
+// Parameters:
+//   time: Delay time in seconds (0.02 to 1.0)
+//   feedback: Feedback amount (0.0 to 0.9)
+//   tone: Brightness of repeats (0.0 = dark, 1.0 = bright)
+//   mod_depth: Modulation depth for analog drift (0.0 to 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("analog_delay", |builder| {
+    builder
+        .param("time", 0.3)
+        .param("feedback", 0.5)
+        .param("tone", 0.4)
+        .param("mod_depth", 0.3)
+        .param("mix", 0.4)
+        .body(|input, time, feedback, tone, mod_depth, mix| {
+            // BBD-style modulation (clock instability)
+            let mod_lfo = sin_osc_ar(0.6) * mod_depth * 0.002;
+
+            // Modulated delay time
+            let mod_time = time + mod_lfo;
+
+            // Create the delay with feedback
+            // Simulating BBD's frequency response degradation
+            let delay_l = delay_c_ar(input[0], 2.0, mod_time);
+            let delay_r = delay_c_ar(input[1], 2.0, mod_time);
+
+            // Progressive filtering (each repeat darker)
+            let cutoff = 2000.0 + tone * 6000.0;
+            let filtered_l = lpf_ar(delay_l, cutoff);
+            let filtered_r = lpf_ar(delay_r, cutoff);
+
+            // Add subtle saturation (BBD compression)
+            let saturated_l = (filtered_l * 1.3).tanh();
+            let saturated_r = (filtered_r * 1.3).tanh();
+
+            // High-pass to remove DC and rumble
+            let cleaned_l = hpf_ar(saturated_l, 60.0);
+            let cleaned_r = hpf_ar(saturated_r, 60.0);
+
+            // Feedback path with additional filtering
+            let fb_l = delay_c_ar(cleaned_l * feedback, 2.0, mod_time);
+            let fb_r = delay_c_ar(cleaned_r * feedback, 2.0, mod_time);
+
+            let wet_l = cleaned_l + lpf_ar(fb_l, cutoff * 0.8) * feedback;
+            let wet_r = cleaned_r + lpf_ar(fb_r, cutoff * 0.8) * feedback;
+
+            [
+                (1.0 - mix) * input[0] + mix * wet_l,
+                (1.0 - mix) * input[1] + mix * wet_r
+            ]
+        })
+});

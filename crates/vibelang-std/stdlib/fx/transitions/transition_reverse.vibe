@@ -1,0 +1,32 @@
+// Genre: All genres | Character: Reverse cymbal-like transition
+define_synthdef("transition_reverse", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 1.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            // Reverse envelope (builds up)
+            let envelope = env_perc(duration * 0.9, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Cymbal-like noise
+            let noise = white_noise_ar();
+            let filtered = hpf_ar(noise, 3000.0);
+
+            // Add metallic resonance
+            let metal1 = sin_osc_ar(2500.0) * 0.1;
+            let metal2 = sin_osc_ar(4200.0) * 0.08;
+            let metal3 = sin_osc_ar(6800.0) * 0.05;
+
+            let cymbal = filtered + metal1 + metal2 + metal3;
+
+            // Filter opens as it builds
+            let cutoff = 2000.0 + env * 10000.0;
+            let final_filter = lpf_ar(cymbal, cutoff);
+
+            final_filter * env * amp * 0.5
+        })
+});

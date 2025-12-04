@@ -1,0 +1,47 @@
+// Sitar
+// Indian Classical | Character: Resonant, buzzing, sympathetic strings
+//
+// The iconic Indian stringed instrument with its distinctive
+// buzzing resonance and sympathetic string harmonics.
+
+define_synthdef("sitar", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("buzz", 0.6) // Buzz/Jivari amount
+        .body(|freq, amp, gate, buzz| {
+            let envelope = env_asr(0.01, 1.0, 0.3);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Decay envelope for pluck
+            let decay_env_data = env_perc(0.001, 1.5);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Main string
+            let fundamental = sin_osc_ar(freq);
+
+            // Harmonics (characteristic of sitar)
+            let h2 = sin_osc_ar(freq * 2.0) * 0.4;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.3;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.2;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.15;
+
+            // Sympathetic strings (slightly detuned)
+            let symp1 = sin_osc_ar(freq * 2.01) * 0.1;
+            let symp2 = sin_osc_ar(freq * 3.02) * 0.08;
+
+            let strings = fundamental + h2 + h3 + h4 + h5 + symp1 + symp2;
+
+            // Buzz/Jivari effect (adds characteristic sitar buzz)
+            let buzz_osc = sin_osc_ar(freq * 0.5) * buzz * 0.1;
+            let buzzy = strings + buzz_osc;
+
+            // Resonant filtering for body
+            let body = rlpf_ar(buzzy, 2000.0, 0.3);
+
+            body * env * decay_env * amp * 0.6
+        })
+});

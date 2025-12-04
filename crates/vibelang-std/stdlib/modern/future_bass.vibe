@@ -1,0 +1,147 @@
+// Future Bass Sounds
+// Modern 2015+ | Character: Bright, emotional, chord-stacked
+//
+// The sound of Flume, Illenium, San Holo.
+
+// Future Bass Chord - Iconic supersaws
+define_synthdef("future_chord", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("width", 0.6)
+        .body(|freq, amp, gate, width| {
+            let envelope = env_asr(0.02, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Supersaw stack
+            let spread = width * 0.025;
+            let v1 = saw_ar(freq * (1.0 - spread * 2.0));
+            let v2 = saw_ar(freq * (1.0 - spread));
+            let v3 = saw_ar(freq);
+            let v4 = saw_ar(freq * (1.0 + spread));
+            let v5 = saw_ar(freq * (1.0 + spread * 2.0));
+
+            let saws = (v1 + v2 + v3 + v4 + v5) * 0.22;
+
+            // Subtle sub layer
+            let sub = sin_osc_ar(freq * 0.5) * 0.15;
+
+            // High pass for clarity
+            let clean = hpf_ar(saws, 200.0);
+
+            (clean + sub) * env * amp
+        })
+});
+
+// Future Bass Lead - Bright lead
+define_synthdef("future_lead", |builder| {
+    builder
+        .param("freq", 880.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Clean saw with slight detune
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.003);
+
+            let source = (saw1 + saw2) * 0.5;
+
+            // Bright filtering
+            let filtered = lpf_ar(source, 8000.0);
+
+            filtered * env * amp
+        })
+});
+
+// Future Bass Wobble - Sidechain-style pump
+define_synthdef("future_wobble", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("rate", 4.0)
+        .body(|freq, amp, gate, rate| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Chord-like oscillators
+            let v1 = saw_ar(freq * 0.995);
+            let v2 = saw_ar(freq);
+            let v3 = saw_ar(freq * 1.005);
+
+            let chord = (v1 + v2 + v3) * 0.35;
+
+            // Pump LFO (simulates sidechain)
+            let pump = sin_osc_ar(rate) * 0.4 + 0.6;
+
+            let filtered = lpf_ar(chord, 4000.0);
+
+            filtered * env * amp * pump
+        })
+});
+
+// Future Bass Pad - Soft atmospheric pad
+define_synthdef("future_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.3)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.5, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Soft detuned voices
+            let v1 = saw_ar(freq * 0.997);
+            let v2 = saw_ar(freq);
+            let v3 = saw_ar(freq * 1.003);
+            let v4 = sin_osc_ar(freq * 0.5) * 0.3;
+
+            let mix = (v1 + v2 + v3) * 0.25 + v4;
+
+            // Very soft filtering
+            let filtered = lpf_ar(mix, 2500.0);
+
+            filtered * env * amp
+        })
+});
+
+// Future Bass Pluck - Short melodic pluck
+define_synthdef("future_pluck", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let decay_env_data = env_perc(0.001, 0.25);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Bright saw pluck
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.002);
+
+            let source = (saw1 + saw2) * 0.5;
+
+            // Filter sweep
+            let cutoff = 800.0 + decay_env * 5000.0;
+            let filtered = rlpf_ar(source, cutoff, 0.35);
+
+            filtered * env * decay_env * amp
+        })
+});

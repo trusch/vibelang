@@ -1,0 +1,86 @@
+// Test Tones
+// Utility | Reference tones for calibration and testing
+//
+// Various test tones for audio setup and reference.
+
+// Pure sine wave test tone
+define_synthdef("test_sine", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.3)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.01);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            sin_osc_ar(freq) * env * amp
+        })
+});
+
+// Sawtooth test tone (rich harmonics)
+define_synthdef("test_saw", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.2)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.01);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            saw_ar(freq) * env * amp
+        })
+});
+
+// A440 Reference tone
+define_synthdef("a440", |builder| {
+    builder
+        .param("amp", 0.3)
+        .param("gate", 1.0)
+        .body(|amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.01);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            sin_osc_ar(440.0) * env * amp
+        })
+});
+
+// 1kHz Reference tone (common audio test frequency)
+define_synthdef("test_1k", |builder| {
+    builder
+        .param("amp", 0.3)
+        .param("gate", 1.0)
+        .body(|amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.01);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            sin_osc_ar(1000.0) * env * amp
+        })
+});
+
+// Sweep tone (frequency sweep for testing)
+define_synthdef("test_sweep")
+    .param("amp", 0.2)
+    .body(|amp| {
+        let gate = dc_ar(1.0);
+
+        // 3-second sweep envelope
+        let envelope = env_perc(0.001, 3.0);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Sweep from 20Hz to 20kHz
+        let sweep_env_data = env_perc(0.001, 3.0);
+        let sweep_env = NewEnvGenBuilder(sweep_env_data, gate).build();
+        let freq = 20.0 + sweep_env * 19980.0;
+
+        sin_osc_ar(freq) * env * amp
+    });

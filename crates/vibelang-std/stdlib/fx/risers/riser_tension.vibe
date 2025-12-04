@@ -1,0 +1,36 @@
+// Genre: Cinematic, EDM | Character: Building tension riser
+define_synthdef("riser_tension", |builder| {
+    builder
+        .param("amp", 0.6)
+        .param("duration", 4.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            // Main envelope
+            let envelope = env_perc(0.01, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple detuned oscillators for tension
+            let freq_env = env * env * 400.0 + 60.0;  // Accelerating pitch rise
+            let osc1 = sin_osc_ar(freq_env);
+            let osc2 = sin_osc_ar(freq_env * 1.01);
+            let osc3 = sin_osc_ar(freq_env * 0.99);
+            let osc4 = saw_ar(freq_env * 2.0) * 0.3;
+
+            let combined = (osc1 + osc2 + osc3) * 0.3 + osc4;
+
+            // Rising noise layer
+            let noise = white_noise_ar() * env * 0.3;
+            let filtered_noise = hpf_ar(noise, 2000.0 + env * 6000.0);
+
+            // Combine
+            let mix = combined + filtered_noise;
+
+            // Add resonant peak for drama
+            let resonant = rlpf_ar(mix, 1000.0 + env * 4000.0, 0.2);
+
+            resonant * env * amp * 0.6
+        })
+});

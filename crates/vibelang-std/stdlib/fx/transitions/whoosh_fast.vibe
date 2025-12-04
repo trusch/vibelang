@@ -1,0 +1,28 @@
+// Genre: All genres | Character: Fast whoosh transition
+define_synthdef("whoosh_fast", |builder| {
+    builder
+        .param("amp", 0.5)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.01, 0.3);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Fast filter sweep on noise
+            let noise = white_noise_ar();
+
+            // Sweep from high to low quickly
+            let sweep_env = env_perc(0.01, 0.25);
+            let sweep_e = NewEnvGenBuilder(sweep_env, gate).build();
+            let cutoff = 500.0 + sweep_e * 10000.0;
+
+            let filtered = lpf_ar(noise, cutoff);
+
+            // Add resonance at sweep point
+            let res = rlpf_ar(noise, cutoff * 0.8, 0.2) * 0.4;
+
+            (filtered + res) * env * amp * 0.7
+        })
+});

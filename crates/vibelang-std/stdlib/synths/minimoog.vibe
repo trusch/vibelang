@@ -1,0 +1,98 @@
+// Minimoog Emulation
+// Classic 1970s | Character: Fat, warm, rich analog
+//
+// The Minimoog Model D - the synth that defined analog synthesis.
+// Three oscillators, ladder filter, legendary warmth.
+
+// Minimoog Bass - Classic fat bass
+define_synthdef("minimoog_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("filter_freq", 800.0)
+        .param("resonance", 0.3)
+        .body(|freq, amp, gate, filter_freq, resonance| {
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_asr(0.01, 1.0, 0.15);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Three detuned oscillators (classic Moog)
+            let osc1 = saw_ar(freq);
+            let osc2 = saw_ar(freq * 0.995) * 0.8;  // Slightly detuned
+            let osc3 = saw_ar(freq * 0.5) * 0.6;   // Sub octave
+
+            let mix = (osc1 + osc2 + osc3) * 0.4;
+
+            // Ladder filter emulation (resonant lowpass)
+            let cutoff = filter_freq + filt_env * 2000.0;
+            let filtered = rlpf_ar(mix, cutoff, 1.0 - resonance * 0.9);
+
+            filtered * env * amp
+        })
+});
+
+// Minimoog Lead - Screaming mono lead
+define_synthdef("minimoog_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("filter_freq", 2000.0)
+        .param("resonance", 0.4)
+        .body(|freq, amp, gate, filter_freq, resonance| {
+            let envelope = env_asr(0.02, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_asr(0.01, 1.0, 0.2);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Three oscillators - mix of saw and pulse
+            let osc1 = saw_ar(freq);
+            let osc2 = saw_ar(freq * 1.005);  // Detuned up
+            let osc3 = saw_ar(freq * 2.0) * 0.3; // Octave up
+
+            let mix = (osc1 + osc2 + osc3) * 0.4;
+
+            // Resonant filter sweep
+            let cutoff = filter_freq + filt_env * 4000.0;
+            let filtered = rlpf_ar(mix, cutoff, 1.0 - resonance * 0.85);
+
+            filtered * env * amp
+        })
+});
+
+// Minimoog Pad - Warm analog pad
+define_synthdef("minimoog_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.5, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Warm detuned oscillators
+            let osc1 = saw_ar(freq * 0.998);
+            let osc2 = saw_ar(freq);
+            let osc3 = saw_ar(freq * 1.002);
+            let sub = sin_osc_ar(freq * 0.5) * 0.3;
+
+            let mix = (osc1 + osc2 + osc3) * 0.3 + sub;
+
+            // Warm filtering
+            let filtered = lpf_ar(mix, 2500.0);
+
+            filtered * env * amp
+        })
+});

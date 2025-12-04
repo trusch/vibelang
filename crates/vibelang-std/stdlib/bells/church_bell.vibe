@@ -1,0 +1,43 @@
+// Church Bell
+// Genre: Ambient, Cinematic | Character: Deep, resonant, majestic
+//
+// Large church bell with complex inharmonic partials.
+
+define_synthdef("church_bell", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            // Bell envelope
+            let envelope = env_asr(0.001, 1.0, 1.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Very long decay
+            let decay_env_data = env_perc(0.001, 8.0);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Church bell partials (very inharmonic)
+            let h1 = sin_osc_ar(freq * 0.5);  // Hum tone
+            let h2 = sin_osc_ar(freq);         // Prime
+            let h3 = sin_osc_ar(freq * 1.2);   // Minor third
+            let h4 = sin_osc_ar(freq * 1.5) * 0.8;  // Fifth
+            let h5 = sin_osc_ar(freq * 2.0) * 0.6;  // Octave
+            let h6 = sin_osc_ar(freq * 2.5) * 0.4;  // Upper partial
+            let h7 = sin_osc_ar(freq * 3.0) * 0.3;
+            let h8 = sin_osc_ar(freq * 4.0) * 0.2;
+            let h9 = sin_osc_ar(freq * 5.5) * 0.15;
+
+            let bell = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8 + h9;
+
+            // Clapper strike
+            let strike_env_data = env_perc(0.0001, 0.08);
+            let strike_env = NewEnvGenBuilder(strike_env_data, dc_ar(1.0)).build();
+            let strike = white_noise_ar() * strike_env * 0.2;
+            let strike_filtered = lpf_ar(strike, 2000.0);
+
+            (bell * 0.4 + strike_filtered) * env * decay_env * amp
+        })
+});

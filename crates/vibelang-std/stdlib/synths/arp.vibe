@@ -1,0 +1,119 @@
+// ARP Synthesizer Emulations
+// Classic 1970s | Character: Vintage, experimental, modular
+//
+// ARP 2600 and Odyssey - pioneers of synthesis.
+
+// ARP 2600 Lead - Classic modular lead
+define_synthdef("arp_2600_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("filter_freq", 3000.0)
+        .body(|freq, amp, gate, filter_freq| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Three VCOs
+            let vco1 = saw_ar(freq);
+            let vco2 = saw_ar(freq * 2.0) * 0.5; // Octave up
+            let vco3 = saw_ar(freq * 0.5) * 0.3; // Octave down
+
+            let mix = (vco1 + vco2 + vco3) * 0.4;
+
+            // 4-pole ladder filter
+            let filtered = rlpf_ar(mix, filter_freq, 0.35);
+
+            filtered * env * amp
+        })
+});
+
+// ARP Odyssey Bass - Punchy duophonic bass
+define_synthdef("arp_odyssey_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_perc(0.001, 0.2);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+
+            // Two oscillators
+            let vco1 = saw_ar(freq);
+            let vco2 = saw_ar(freq * 0.5); // Sub
+
+            let mix = (vco1 * 0.6 + vco2 * 0.4);
+
+            // ARP filter character
+            let cutoff = 400.0 + filt_env * 2000.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.4);
+
+            filtered * env * amp
+        })
+});
+
+// ARP String Ensemble - Classic string machine
+define_synthdef("arp_strings", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.2, 1.0, 0.3);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple oscillators for ensemble
+            let v1 = saw_ar(freq * 0.995);
+            let v2 = saw_ar(freq * 0.998);
+            let v3 = saw_ar(freq * 1.002);
+            let v4 = saw_ar(freq * 1.005);
+
+            let mix = (v1 + v2 + v3 + v4) * 0.28;
+
+            // String machine filtering
+            let filtered = lpf_ar(hpf_ar(mix, 200.0), 4000.0);
+
+            filtered * env * amp
+        })
+});
+
+// ARP Solina - The string ensemble sound
+define_synthdef("arp_solina", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.15, 1.0, 0.25);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Divide-down style ensemble
+            let v1 = saw_ar(freq * 0.994);
+            let v2 = saw_ar(freq * 0.997);
+            let v3 = saw_ar(freq);
+            let v4 = saw_ar(freq * 1.003);
+            let v5 = saw_ar(freq * 1.006);
+
+            let mix = (v1 + v2 + v3 + v4 + v5) * 0.22;
+
+            // Phaser-like modulation
+            let mod_osc = sin_osc_ar(0.3) * 0.003 + 1.0;
+
+            // Bandpass for string character
+            let filtered = lpf_ar(hpf_ar(mix, 300.0), 5000.0);
+
+            filtered * env * amp * mod_osc
+        })
+});

@@ -1,0 +1,147 @@
+// Synthwave/Retrowave Sounds
+// 80s Revival | Character: Nostalgic, neon, cinematic
+//
+// The sound of Kavinsky, Perturbator, The Midnight.
+
+// Synthwave Bass - Pulsing retro bass
+define_synthdef("synthwave_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_perc(0.001, 0.15);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+
+            // Fat saw bass
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.003);
+            let sub = sin_osc_ar(freq * 0.5) * 0.5;
+
+            let mix = (saw1 + saw2) * 0.4 + sub;
+
+            // Punchy filter
+            let cutoff = 300.0 + filt_env * 2000.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.35);
+
+            filtered * env * amp
+        })
+});
+
+// Synthwave Lead - Soaring lead
+define_synthdef("synthwave_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.05, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Detuned saws
+            let saw1 = saw_ar(freq * 0.998);
+            let saw2 = saw_ar(freq);
+            let saw3 = saw_ar(freq * 1.002);
+
+            let mix = (saw1 + saw2 + saw3) * 0.35;
+
+            // Bright with slight resonance
+            let filtered = rlpf_ar(mix, 5000.0, 0.4);
+
+            filtered * env * amp
+        })
+});
+
+// Synthwave Pad - Lush retro pad
+define_synthdef("synthwave_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.4, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Juno-like chorus
+            let lfo1 = sin_osc_ar(0.5) * 0.006;
+            let lfo2 = sin_osc_ar(0.6) * 0.006;
+
+            let v1 = saw_ar(freq * (1.0 + lfo1));
+            let v2 = saw_ar(freq);
+            let v3 = saw_ar(freq * (1.0 + lfo2));
+
+            let mix = (v1 + v2 + v3) * 0.35;
+
+            // Warm filtering
+            let filtered = lpf_ar(mix, 3000.0);
+
+            filtered * env * amp
+        })
+});
+
+// Synthwave Arp - Arpeggiated lead
+define_synthdef("synthwave_arp", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.005, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Clean saw with slight detune
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.002);
+
+            let mix = (saw1 + saw2) * 0.5;
+
+            // Bright plucky filter
+            let filt_env_data = env_perc(0.001, 0.1);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let cutoff = 1000.0 + filt_env * 4000.0;
+
+            let filtered = rlpf_ar(mix, cutoff, 0.4);
+
+            filtered * env * amp
+        })
+});
+
+// Synthwave Drums - Gated reverb snare character
+define_synthdef("synthwave_snare", |builder| {
+    builder
+        .param("freq", 200.0)
+        .param("amp", 0.6)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            // 80s snare envelope
+            let envelope = env_perc(0.001, 0.3);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Snare body
+            let body = sin_osc_ar(freq);
+
+            // Noise
+            let noise = white_noise_ar();
+            let filtered_noise = hpf_ar(lpf_ar(noise, 8000.0), 2000.0);
+
+            // Mix
+            let snare = body * 0.4 + filtered_noise * 0.6;
+
+            snare * env * amp
+        })
+});

@@ -1,0 +1,42 @@
+// String Ensemble
+// Genre: Orchestral, Cinematic | Character: Lush, sweeping, emotional
+//
+// Full orchestral string section with rich detuned voices
+// for a lush, cinematic sound.
+
+define_synthdef("string_ensemble", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("attack", 0.3) // Swell attack time
+        .body(|freq, amp, gate, attack| {
+            // Slow swell envelope
+            let envelope = env_asr(attack, 1.0, 0.4);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple detuned voices for ensemble
+            let detune = 0.005;
+            let v1 = saw_ar(freq * (1.0 - detune * 2.0));
+            let v2 = saw_ar(freq * (1.0 - detune));
+            let v3 = saw_ar(freq);
+            let v4 = saw_ar(freq * (1.0 + detune));
+            let v5 = saw_ar(freq * (1.0 + detune * 2.0));
+
+            // Octave layer for depth
+            let oct_down = saw_ar(freq * 0.5) * 0.4;
+
+            let voices = (v1 + v2 + v3 + v4 + v5) * 0.25 + oct_down;
+
+            // String-like filtering
+            let filtered = lpf_ar(voices, 3500.0);
+
+            // Subtle vibrato
+            let vib_rate = 5.0;
+            let vib = sin_osc_ar(vib_rate) * 0.003 + 1.0;
+
+            filtered * env * amp * vib
+        })
+});

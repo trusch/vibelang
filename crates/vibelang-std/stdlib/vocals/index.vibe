@@ -1,0 +1,10 @@
+// Vocals Library Index
+//
+// Import this file to load all vocal synthdefs at once.
+// Usage: import "stdlib/vocals/index.vibe"
+
+import "stdlib/vocals/formant_synth.vibe";
+import "stdlib/vocals/choir_pad.vibe";
+import "stdlib/vocals/voice_drone.vibe";
+import "stdlib/vocals/vocal_chop.vibe";
+import "stdlib/vocals/whisper.vibe";

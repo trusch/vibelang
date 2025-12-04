@@ -1,0 +1,54 @@
+// Spring Reverb Effect
+// Inspired by: Fender Twin Reverb, Hammond reverb tanks
+//
+// Classic spring reverb with its distinctive metallic "boing" character.
+// Perfect for guitars, organs, and vintage sounds.
+//
+// Parameters:
+//   tension: Spring tension affecting decay and tone (0.0 to 1.0)
+//   diffusion: Spread of the reverb (0.0 to 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("spring_reverb", |builder| {
+    builder
+        .param("tension", 0.5)
+        .param("diffusion", 0.6)
+        .param("mix", 0.35)
+        .body(|input, tension, diffusion, mix| {
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Spring simulation using comb filters with slightly detuned delays
+            let base_time = 0.03 + (1.0 - tension) * 0.04;
+
+            // Multiple spring modes (simulating the coils)
+            let spring1 = delay_c_ar(mono, 0.2, base_time) * 0.5;
+            let spring2 = delay_c_ar(mono, 0.2, base_time * 1.13) * 0.4;
+            let spring3 = delay_c_ar(mono, 0.2, base_time * 1.27) * 0.3;
+            let spring4 = delay_c_ar(mono, 0.2, base_time * 0.87) * 0.35;
+
+            // Combine springs
+            let springs = spring1 + spring2 + spring3 + spring4;
+
+            // Add metallic resonance (characteristic spring "boing")
+            let resonance = rlpf_ar(springs, 2800.0 + tension * 1000.0, 0.3);
+
+            // Diffusion through allpass filtering
+            let diffused = allpass_c_ar(resonance, 0.1, 0.05 * diffusion, 0.5 * diffusion);
+
+            // High frequency damping for natural decay
+            let damped = lpf_ar(diffused, 4500.0 - (1.0 - tension) * 1500.0);
+
+            // Add subtle modulation for organic feel
+            let mod_lfo = sin_osc_ar(0.8) * 0.001;
+            let modulated = delay_c_ar(damped, 0.05, 0.02 + mod_lfo);
+
+            // Create stereo spread
+            let left = modulated;
+            let right = delay_c_ar(modulated, 0.01, 0.003);
+
+            [
+                (1.0 - mix) * input[0] + mix * left,
+                (1.0 - mix) * input[1] + mix * right
+            ]
+        })
+});

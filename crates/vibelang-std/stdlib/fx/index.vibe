@@ -9,6 +9,11 @@ import "stdlib/fx/impacts/impact_metallic.vibe";
 import "stdlib/fx/impacts/impact_noise.vibe";
 import "stdlib/fx/impacts/impact_soft.vibe";
 import "stdlib/fx/impacts/impact_sub.vibe";
+import "stdlib/fx/impacts/impact_cinematic.vibe";
+import "stdlib/fx/impacts/impact_trailer.vibe";
+import "stdlib/fx/impacts/impact_bass_drop.vibe";
+import "stdlib/fx/impacts/impact_industrial.vibe";
+import "stdlib/fx/impacts/impact_orchestral.vibe";
 
 // Risers
 import "stdlib/fx/risers/riser_filtered.vibe";
@@ -16,6 +21,11 @@ import "stdlib/fx/risers/riser_pink_noise.vibe";
 import "stdlib/fx/risers/riser_pitch.vibe";
 import "stdlib/fx/risers/riser_reverse.vibe";
 import "stdlib/fx/risers/riser_white_noise.vibe";
+import "stdlib/fx/risers/riser_tension.vibe";
+import "stdlib/fx/risers/riser_synth.vibe";
+import "stdlib/fx/risers/riser_shepard.vibe";
+import "stdlib/fx/risers/riser_cinematic.vibe";
+import "stdlib/fx/risers/riser_vocal.vibe";
 
 // Subdrops
 import "stdlib/fx/subdrops/subdrop_classic.vibe";
@@ -23,6 +33,9 @@ import "stdlib/fx/subdrops/subdrop_click.vibe";
 import "stdlib/fx/subdrops/subdrop_deep.vibe";
 import "stdlib/fx/subdrops/subdrop_distorted.vibe";
 import "stdlib/fx/subdrops/subdrop_long.vibe";
+import "stdlib/fx/subdrops/subdrop_wobble.vibe";
+import "stdlib/fx/subdrops/subdrop_cinematic.vibe";
+import "stdlib/fx/subdrops/subdrop_tight.vibe";
 
 // Sweeps
 import "stdlib/fx/sweeps/sweep_filter_down.vibe";
@@ -30,3 +43,35 @@ import "stdlib/fx/sweeps/sweep_filter_up.vibe";
 import "stdlib/fx/sweeps/sweep_pitch.vibe";
 import "stdlib/fx/sweeps/sweep_reverse.vibe";
 import "stdlib/fx/sweeps/sweep_whoosh.vibe";
+import "stdlib/fx/sweeps/sweep_cinematic.vibe";
+import "stdlib/fx/sweeps/sweep_laser.vibe";
+import "stdlib/fx/sweeps/sweep_tension.vibe";
+import "stdlib/fx/sweeps/sweep_release.vibe";
+
+// Downers (Downlifters)
+import "stdlib/fx/downers/downer_noise.vibe";
+import "stdlib/fx/downers/downer_pitch.vibe";
+import "stdlib/fx/downers/downer_synth.vibe";
+import "stdlib/fx/downers/downer_filtered.vibe";
+import "stdlib/fx/downers/downer_slow.vibe";
+
+// Stingers
+import "stdlib/fx/stingers/stinger_brass.vibe";
+import "stdlib/fx/stingers/stinger_synth.vibe";
+import "stdlib/fx/stingers/stinger_orchestral.vibe";
+import "stdlib/fx/stingers/stinger_dark.vibe";
+import "stdlib/fx/stingers/stinger_bright.vibe";
+
+// Transitions
+import "stdlib/fx/transitions/whoosh_fast.vibe";
+import "stdlib/fx/transitions/whoosh_slow.vibe";
+import "stdlib/fx/transitions/transition_sweep.vibe";
+import "stdlib/fx/transitions/transition_reverse.vibe";
+import "stdlib/fx/transitions/transition_glitch.vibe";
+
+// Atmospheres
+import "stdlib/fx/atmospheres/atmosphere_tension.vibe";
+import "stdlib/fx/atmospheres/atmosphere_dark.vibe";
+import "stdlib/fx/atmospheres/atmosphere_bright.vibe";
+import "stdlib/fx/atmospheres/atmosphere_pulse.vibe";
+import "stdlib/fx/atmospheres/atmosphere_wind.vibe";

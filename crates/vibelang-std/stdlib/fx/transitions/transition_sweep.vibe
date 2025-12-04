@@ -1,0 +1,29 @@
+// Genre: EDM, House | Character: Tonal transition sweep
+define_synthdef("transition_sweep", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 1.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.05, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pitch sweep
+            let sweep = env * (1.0 - env) * 4.0;
+            let freq = 200.0 + sweep * 2000.0;
+
+            // Synth tone
+            let tone = saw_ar(freq) + saw_ar(freq * 1.01) + saw_ar(freq * 0.99);
+
+            // Filter following pitch
+            let filtered = lpf_ar(tone, freq * 3.0) * 0.3;
+
+            // Add noise texture
+            let noise = lpf_ar(white_noise_ar(), freq * 2.0) * 0.2;
+
+            (filtered + noise) * env * amp
+        })
+});

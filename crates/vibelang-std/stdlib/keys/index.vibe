@@ -1,0 +1,11 @@
+// Keys Library Index
+//
+// Import this file to load all keyboard instrument synthdefs at once.
+// Usage: import "stdlib/keys/index.vibe"
+
+import "stdlib/keys/electric_piano.vibe";
+import "stdlib/keys/wurlitzer.vibe";
+import "stdlib/keys/hammond_organ.vibe";
+import "stdlib/keys/clavinet.vibe";
+import "stdlib/keys/honky_tonk.vibe";
+import "stdlib/keys/celeste.vibe";

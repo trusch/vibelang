@@ -1,0 +1,158 @@
+// Yamaha DX7 Emulation
+// Classic 1983 | Character: Crystalline, bell-like, FM synthesis
+//
+// The bestselling synth of the 80s. FM synthesis brought
+// electric pianos, bells, and metallic tones to the masses.
+
+// DX7 Electric Piano - The sound of the 80s
+define_synthdef("dx7_epiano", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("brightness", 0.6)
+        .body(|freq, amp, gate, brightness| {
+            let envelope = env_asr(0.005, 1.0, 0.3);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // FM modulation envelope (fast attack, medium decay)
+            let mod_env_data = env_perc(0.001, 0.3);
+            let mod_env = NewEnvGenBuilder(mod_env_data, dc_ar(1.0)).build();
+
+            // 2-operator FM synthesis
+            let mod_depth = brightness * 3.0 * mod_env + 0.5;
+            let modulator = sin_osc_ar(freq * 14.0) * mod_depth;
+            let carrier = sin_osc_ar(freq + modulator);
+
+            // Second partial for richness
+            let mod2 = sin_osc_ar(freq * 7.0) * (brightness * 1.5 * mod_env);
+            let carrier2 = sin_osc_ar(freq * 2.0 + mod2) * 0.4;
+
+            // Third partial
+            let carrier3 = sin_osc_ar(freq * 3.0) * mod_env * 0.2;
+
+            let fm = carrier + carrier2 + carrier3;
+
+            fm * env * amp * 0.5
+        })
+});
+
+// DX7 Bass - Punchy FM bass
+define_synthdef("dx7_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.003, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Sharp FM modulation envelope
+            let mod_env_data = env_perc(0.001, 0.15);
+            let mod_env = NewEnvGenBuilder(mod_env_data, dc_ar(1.0)).build();
+
+            // FM with ratio for bass punch
+            let mod_depth = mod_env * 4.0 + 0.3;
+            let modulator = sin_osc_ar(freq * 1.0) * mod_depth * freq;
+            let carrier = sin_osc_ar(freq + modulator);
+
+            // Sub for weight
+            let sub = sin_osc_ar(freq * 0.5) * 0.4;
+
+            (carrier * 0.7 + sub) * env * amp
+        })
+});
+
+// DX7 Bells - Classic FM bells
+define_synthdef("dx7_bells", |builder| {
+    builder
+        .param("freq", 880.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Long decay for bell
+            let decay_env_data = env_perc(0.001, 2.0);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Inharmonic FM ratios for bell character
+            let mod1 = sin_osc_ar(freq * 3.5) * decay_env * 2.0;
+            let carrier1 = sin_osc_ar(freq + mod1);
+
+            let mod2 = sin_osc_ar(freq * 7.1) * decay_env * 1.5;
+            let carrier2 = sin_osc_ar(freq * 2.0 + mod2) * 0.5;
+
+            let mod3 = sin_osc_ar(freq * 11.0) * decay_env * 0.8;
+            let carrier3 = sin_osc_ar(freq * 4.0 + mod3) * 0.3;
+
+            let bell = carrier1 + carrier2 + carrier3;
+
+            bell * env * decay_env * amp * 0.5
+        })
+});
+
+// DX7 Brass - Punchy FM brass
+define_synthdef("dx7_brass", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.05, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Brass-like FM modulation
+            let mod_env_data = env_asr(0.02, 1.0, 0.15);
+            let mod_env = NewEnvGenBuilder(mod_env_data, gate).build();
+
+            let mod_depth = mod_env * 2.5 + 0.5;
+            let modulator = sin_osc_ar(freq * 1.0) * mod_depth;
+            let carrier = sin_osc_ar(freq + modulator);
+
+            // Higher harmonic
+            let mod2 = sin_osc_ar(freq * 3.0) * mod_env * 1.5;
+            let carrier2 = sin_osc_ar(freq * 2.0 + mod2) * 0.4;
+
+            let brass = carrier + carrier2;
+
+            brass * env * amp * 0.6
+        })
+});
+
+// DX7 Marimba - Classic FM marimba
+define_synthdef("dx7_marimba", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Fast decay for mallet sound
+            let decay_env_data = env_perc(0.001, 0.5);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // FM for woody attack
+            let mod_depth = decay_env * 3.0;
+            let modulator = sin_osc_ar(freq * 4.0) * mod_depth;
+            let carrier = sin_osc_ar(freq + modulator);
+
+            // Fundamental
+            let fundamental = sin_osc_ar(freq) * 0.6;
+
+            (carrier * 0.5 + fundamental) * env * decay_env * amp
+        })
+});

@@ -1,0 +1,33 @@
+// Genre: Pop, Commercial | Character: Bright positive stinger
+define_synthdef("stinger_bright", |builder| {
+    builder
+        .param("amp", 0.6)
+        .param("note", 72.0)
+        .body(|amp, note| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let freq = 440.0 * (2.0.pow((note - 69.0) / 12.0));
+
+            // Bright bell-like tone
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.6;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.4;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.25;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.15;
+
+            let bell = h1 + h2 + h3 + h4 + h5;
+
+            // Add shimmer
+            let shimmer = sin_osc_ar(freq * 6.0) * 0.1;
+            let shimmer_mod = shimmer * sin_osc_ar(10.0);
+
+            let mix = bell + shimmer_mod;
+
+            mix * env * amp * 0.4
+        })
+});

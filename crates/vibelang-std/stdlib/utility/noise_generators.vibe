@@ -1,0 +1,116 @@
+// Noise Generators
+// Utility | Various noise types for synthesis and testing
+//
+// Different colored noise sources.
+
+// White Noise (all frequencies, flat spectrum)
+define_synthdef("white_noise_gen", |builder| {
+    builder
+        .param("amp", 0.3)
+        .param("gate", 1.0)
+        .body(|amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            white_noise_ar() * env * amp
+        })
+});
+
+// Pink Noise (1/f spectrum, equal energy per octave)
+define_synthdef("pink_noise_gen", |builder| {
+    builder
+        .param("amp", 0.3)
+        .param("gate", 1.0)
+        .body(|amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Approximate pink noise by filtering white noise
+            let white = white_noise_ar();
+            let pink = lpf_ar(white, 10000.0);
+
+            pink * env * amp
+        })
+});
+
+// Brown/Red Noise (1/f^2 spectrum, deeper)
+define_synthdef("brown_noise_gen", |builder| {
+    builder
+        .param("amp", 0.3)
+        .param("gate", 1.0)
+        .body(|amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Heavy low pass for brown noise character
+            let white = white_noise_ar();
+            let brown = lpf_ar(lpf_ar(white, 800.0), 400.0);
+
+            brown * env * amp * 2.0
+        })
+});
+
+// High-passed Noise (hiss, bright)
+define_synthdef("hiss_gen", |builder| {
+    builder
+        .param("amp", 0.2)
+        .param("gate", 1.0)
+        .param("freq", 4000.0) // High pass frequency
+        .body(|amp, gate, freq| {
+            let envelope = env_asr(0.01, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let white = white_noise_ar();
+            let hiss = hpf_ar(white, freq);
+
+            hiss * env * amp
+        })
+});
+
+// Filtered Noise (bandpass, focused)
+define_synthdef("filtered_noise_gen", |builder| {
+    builder
+        .param("amp", 0.3)
+        .param("gate", 1.0)
+        .param("freq", 1000.0) // Center frequency
+        .param("rq", 0.2) // Resonance (lower = more resonant)
+        .body(|amp, gate, freq, rq| {
+            let envelope = env_asr(0.01, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let white = white_noise_ar();
+            let filtered = rlpf_ar(white, freq, rq);
+
+            filtered * env * amp
+        })
+});
+
+// Crackle (random impulses)
+define_synthdef("crackle_gen", |builder| {
+    builder
+        .param("amp", 0.2)
+        .param("gate", 1.0)
+        .param("density", 0.5) // Crackle density
+        .body(|amp, gate, density| {
+            let envelope = env_asr(0.01, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Use dust for random impulses
+            let impulses = dust_ar(10.0 + density * 100.0);
+            let crackle = hpf_ar(impulses, 1000.0);
+
+            crackle * env * amp * 3.0
+        })
+});

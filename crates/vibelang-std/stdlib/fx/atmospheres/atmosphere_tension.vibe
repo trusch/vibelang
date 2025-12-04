@@ -1,0 +1,34 @@
+// Genre: Cinematic, Horror | Character: Tense building atmosphere
+define_synthdef("atmosphere_tension", |builder| {
+    builder
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|amp, gate| {
+            let envelope = env_asr(1.0, 1.0, 1.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Dissonant cluster
+            let freq = 100.0;
+            let tone1 = sin_osc_ar(freq);
+            let tone2 = sin_osc_ar(freq * 1.06);  // Minor 2nd
+            let tone3 = sin_osc_ar(freq * 1.41);  // Tritone
+            let tone4 = sin_osc_ar(freq * 1.89);  // Minor 7th
+
+            let cluster = (tone1 + tone2 * 0.7 + tone3 * 0.5 + tone4 * 0.4) * 0.2;
+
+            // Slow tremolo for unease
+            let trem = sin_osc_ar(0.5) * 0.3 + 0.7;
+
+            // High drone
+            let high = sin_osc_ar(3000.0 + sin_osc_ar(0.1) * 500.0) * 0.05;
+
+            // Low rumble
+            let rumble = lpf_ar(pink_noise_ar(), 80.0) * 0.3;
+
+            let mix = cluster * trem + high + rumble;
+
+            mix * env * amp
+        })
+});

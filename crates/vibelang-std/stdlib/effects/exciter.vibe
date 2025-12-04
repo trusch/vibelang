@@ -1,0 +1,45 @@
+// Exciter/Enhancer Effect
+// Inspired by: Aphex Aural Exciter, BBE Sonic Maximizer, SPL Vitalizer
+//
+// Adds harmonic content and presence to dull or lifeless sounds.
+// Works by generating and mixing in harmonic overtones.
+//
+// Parameters:
+//   drive: Harmonic generation intensity (0.0 to 1.0)
+//   freq: Frequency above which to excite (1000 to 8000)
+//   blend: Amount of generated harmonics to add (0.0 to 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = full effect)
+
+define_fx("exciter", |builder| {
+    builder
+        .param("drive", 0.5)
+        .param("freq", 3000.0)
+        .param("blend", 0.3)
+        .param("mix", 1.0)
+        .body(|input, drive, freq, blend, mix| {
+            // Extract high frequency content
+            let highs_l = hpf_ar(input[0], freq);
+            let highs_r = hpf_ar(input[1], freq);
+
+            // Generate harmonics through soft saturation
+            let saturated_l = (highs_l * (1.0 + drive * 4.0)).tanh();
+            let saturated_r = (highs_r * (1.0 + drive * 4.0)).tanh();
+
+            // Extract the generated harmonics (remove original)
+            let harmonics_l = saturated_l - highs_l;
+            let harmonics_r = saturated_r - highs_r;
+
+            // Filter harmonics to focus on upper frequencies
+            let focused_l = hpf_ar(harmonics_l, freq * 1.5);
+            let focused_r = hpf_ar(harmonics_r, freq * 1.5);
+
+            // Blend harmonics with original
+            let enhanced_l = input[0] + focused_l * blend;
+            let enhanced_r = input[1] + focused_r * blend;
+
+            [
+                (1.0 - mix) * input[0] + mix * enhanced_l,
+                (1.0 - mix) * input[1] + mix * enhanced_r
+            ]
+        })
+});

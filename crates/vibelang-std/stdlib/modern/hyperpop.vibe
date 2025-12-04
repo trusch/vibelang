@@ -1,0 +1,151 @@
+// Hyperpop Sounds
+// Experimental Pop | Character: Glitchy, processed, extreme
+//
+// The sound of 100 gecs, A.G. Cook, SOPHIE.
+
+// Hyperpop Lead - Bright processed lead
+define_synthdef("hyperpop_lead", |builder| {
+    builder
+        .param("freq", 880.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("crunch", 0.5)
+        .body(|freq, amp, gate, crunch| {
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Bright saw
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.005);
+
+            let source = (saw1 + saw2) * 0.5;
+
+            // Bitcrushed layer
+            let crushed = (source * (4.0 + crunch * 8.0)).tanh();
+
+            // Very bright
+            let bright = hpf_ar(crushed, 500.0);
+
+            bright * env * amp
+        })
+});
+
+// Hyperpop Chord - Processed chord stab
+define_synthdef("hyperpop_chord", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Stacked supersaws
+            let spread = 0.015;
+            let v1 = saw_ar(freq * (1.0 - spread));
+            let v2 = saw_ar(freq);
+            let v3 = saw_ar(freq * (1.0 + spread));
+
+            let mix = (v1 + v2 + v3) * 0.35;
+
+            // Crunchy processing
+            let crunched = (mix * 3.0).tanh();
+
+            // Bright filter
+            let filtered = hpf_ar(crunched, 300.0);
+
+            filtered * env * amp
+        })
+});
+
+// Hyperpop Bass - Distorted glitchy bass
+define_synthdef("hyperpop_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.003, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_perc(0.001, 0.1);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+
+            // Aggressive bass
+            let saw = saw_ar(freq);
+            let sub = sin_osc_ar(freq * 0.5) * 0.4;
+
+            let mix = saw * 0.6 + sub;
+
+            // Heavy distortion
+            let dist = (mix * 4.0).tanh();
+
+            // Filter sweep
+            let cutoff = 200.0 + filt_env * 3000.0;
+            let filtered = rlpf_ar(dist, cutoff, 0.35);
+
+            filtered * env * amp * 0.7
+        })
+});
+
+// Hyperpop Synth - Metallic processed synth
+define_synthdef("hyperpop_synth", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // FM for metallic character
+            let mod_depth = 2.0;
+            let modulator = sin_osc_ar(freq * 3.5) * mod_depth;
+            let carrier = sin_osc_ar(freq + modulator);
+
+            // Second layer
+            let saw = saw_ar(freq) * 0.3;
+
+            let mix = carrier + saw;
+
+            // Extreme processing
+            let processed = (mix * 3.0).tanh();
+
+            processed * env * amp * 0.6
+        })
+});
+
+// Hyperpop Hihat - Crushed digital hat
+define_synthdef("hyperpop_hat", |builder| {
+    builder
+        .param("freq", 12000.0)
+        .param("amp", 0.4)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 0.04);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Noise-based hat
+            let noise = white_noise_ar();
+
+            // Extreme high pass
+            let filtered = hpf_ar(noise, freq);
+
+            // Digital crunch
+            let crunched = (filtered * 5.0).tanh();
+
+            crunched * env * amp
+        })
+});

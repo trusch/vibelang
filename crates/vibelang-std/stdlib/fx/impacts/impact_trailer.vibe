@@ -1,0 +1,42 @@
+// Genre: Trailer, Action | Character: Massive trailer hit
+define_synthdef("impact_trailer", |builder| {
+    builder
+        .param("amp", 1.0)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 3.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple sub harmonics for weight
+            let sub1 = sin_osc_ar(30.0) * 0.6;
+            let sub2 = sin_osc_ar(45.0) * 0.4;
+            let sub3 = sin_osc_ar(60.0) * 0.3;
+            let sub_env = env_perc(0.001, 2.0);
+            let sub_e = NewEnvGenBuilder(sub_env, gate).build();
+            let subs = (sub1 + sub2 + sub3) * sub_e;
+
+            // Distorted mid-range punch
+            let mid = saw_ar(100.0) + saw_ar(150.0) * 0.5;
+            let mid_dist = (mid * 3.0).tanh();
+            let mid_env = env_perc(0.001, 0.5);
+            let mid_e = NewEnvGenBuilder(mid_env, gate).build();
+            let mid_filtered = lpf_ar(mid_dist, 800.0) * mid_e * 0.4;
+
+            // High-end crack
+            let crack = white_noise_ar();
+            let crack_env = env_perc(0.001, 0.08);
+            let crack_e = NewEnvGenBuilder(crack_env, gate).build();
+            let crack_filtered = hpf_ar(crack, 2000.0) * crack_e * 0.5;
+
+            // Resonant tail
+            let tail_freq = 80.0 + env * 40.0;
+            let tail = rlpf_ar(pink_noise_ar(), tail_freq, 0.1) * env * 0.2;
+
+            let mix = subs + mid_filtered + crack_filtered + tail;
+
+            mix * amp * 0.5
+        })
+});

@@ -1,0 +1,35 @@
+// Genre: Trailer, Film | Character: Cinematic sub boom
+define_synthdef("subdrop_cinematic", |builder| {
+    builder
+        .param("amp", 0.9)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.02, 3.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Deep sub with slow pitch descent
+            let pitch_env = env_perc(0.02, 2.0);
+            let pitch_e = NewEnvGenBuilder(pitch_env, gate).build();
+            let freq = 50.0 - pitch_e * 20.0;
+            let sub = sin_osc_ar(freq);
+
+            // Second sub layer
+            let sub2 = sin_osc_ar(freq * 0.5) * 0.5;
+
+            // Mid-range punch
+            let punch = sin_osc_ar(100.0) + sin_osc_ar(150.0) * 0.5;
+            let punch_env = env_perc(0.01, 0.5);
+            let punch_e = NewEnvGenBuilder(punch_env, gate).build();
+            let punch_filtered = lpf_ar(punch, 300.0) * punch_e * 0.3;
+
+            // Reverberant tail simulation
+            let tail = sin_osc_ar(40.0) * env * 0.4;
+
+            let mix = sub * 0.6 + sub2 + punch_filtered + tail;
+
+            mix * env * amp * 0.6
+        })
+});

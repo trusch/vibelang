@@ -1,0 +1,39 @@
+// French Horn
+// Genre: Orchestral, Film | Character: Noble, warm, round
+//
+// French horn with characteristic mellow, round tone.
+
+define_synthdef("french_horn", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            // Slow swell envelope
+            let envelope = env_asr(0.2, 1.0, 0.3);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Mellow brass tone
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.002) * 0.4;
+
+            let tone = (saw1 + saw2) * 0.5;
+
+            // French horn formants (round, warm)
+            let f1 = rlpf_ar(tone, 350.0, 0.25) * 0.8;
+            let f2 = rlpf_ar(tone, 900.0, 0.3) * 0.6;
+            let f3 = rlpf_ar(tone, 1800.0, 0.35) * 0.3;
+
+            let brass = f1 + f2 + f3;
+
+            // Strong low pass for mellow sound
+            let mellow = lpf_ar(brass, 2500.0);
+
+            // Gentle vibrato
+            let vib = sin_osc_ar(4.5) * 0.005 + 1.0;
+
+            mellow * env * amp * vib * 0.8
+        })
+});
