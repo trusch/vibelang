@@ -494,11 +494,44 @@ impl SynthDef {
             SynthDefError::RhaiError(format!("Body closure error: {}", e))
         })?;
 
-        // Get the result NodeRef
-        let result_node = result.try_cast::<NodeRef>().ok_or_else(|| {
+        // Get the result - can be either a single NodeRef (mono) or an Array of NodeRefs (stereo/multi-channel)
+        enum BodyResult {
+            Mono(NodeRef),
+            MultiChannel(Vec<NodeRef>),
+        }
+
+        let body_result = if let Some(node) = result.clone().try_cast::<NodeRef>() {
+            // Single NodeRef - mono signal
+            BodyResult::Mono(node)
+        } else if let Some(arr) = result.clone().try_cast::<rhai::Array>() {
+            // Array of NodeRefs - multi-channel signal
+            let mut channels = Vec::new();
+            for (i, item) in arr.iter().enumerate() {
+                if let Some(node) = item.clone().try_cast::<NodeRef>() {
+                    channels.push(node);
+                } else {
+                    clear_active_builder();
+                    return Err(SynthDefError::ValidationError(format!(
+                        "Body returned array with non-NodeRef at index {} (got {})",
+                        i,
+                        item.type_name()
+                    )));
+                }
+            }
+            if channels.is_empty() {
+                clear_active_builder();
+                return Err(SynthDefError::ValidationError(
+                    "Body returned empty array".to_string(),
+                ));
+            }
+            BodyResult::MultiChannel(channels)
+        } else {
             clear_active_builder();
-            SynthDefError::InvalidBodyReturn
-        })?;
+            return Err(SynthDefError::ValidationError(format!(
+                "Body must return a signal (NodeRef) or array of signals [left, right], got {}",
+                result.type_name()
+            )));
+        };
 
         // Get the builder back
         let mut builder = clear_active_builder().ok_or(SynthDefError::NoActiveBuilder)?;
@@ -513,66 +546,77 @@ impl SynthDef {
                 .position(|p| p.name == "out")
                 .expect("'out' parameter should exist");
 
-            // Check if result is mono (1 output) or stereo (2 outputs)
-            // Look up the node in the builder to get its output count
-            // Note: result_node.id() extracts the node_id from the lower 16 bits
-            let result_node_id = result_node.id();
-            let result_num_outputs = if (result_node_id as usize) < builder.nodes.len() {
-                builder.nodes[result_node_id as usize].num_outputs
-            } else {
-                1 // Default to mono if we can't determine
-            };
+            match body_result {
+                BodyResult::Mono(result_node) => {
+                    // Check if result is mono (1 output) or already stereo (2+ outputs)
+                    let result_node_id = result_node.id();
+                    let result_num_outputs = if (result_node_id as usize) < builder.nodes.len() {
+                        builder.nodes[result_node_id as usize].num_outputs
+                    } else {
+                        1 // Default to mono if we can't determine
+                    };
 
-            if result_num_outputs == 1 {
-                // Mono signal - use Pan2 to convert to stereo (centered)
-                // Add constants for Pan2: pos=0.0, level=1.0
-                builder.add_constant(0.0); // center position
-                builder.add_constant(1.0); // full level
+                    if result_num_outputs == 1 {
+                        // Mono signal - use Pan2 to convert to stereo (centered)
+                        builder.add_constant(0.0); // center position
+                        builder.add_constant(1.0); // full level
 
-                // Create Pan2 node to convert mono to stereo
-                let pan2_inputs = vec![
-                    Input::Node {
-                        node_id: result_node_id,
-                        output_index: 0,
-                    },
-                    Input::Constant(0.0), // pos = center
-                    Input::Constant(1.0), // level = 1.0
-                ];
-                let pan2_node =
-                    builder.add_node("Pan2".to_string(), Rate::Audio, pan2_inputs, 2, 0);
+                        let pan2_inputs = vec![
+                            Input::Node {
+                                node_id: result_node_id,
+                                output_index: 0,
+                            },
+                            Input::Constant(0.0), // pos = center
+                            Input::Constant(1.0), // level = 1.0
+                        ];
+                        let pan2_node =
+                            builder.add_node("Pan2".to_string(), Rate::Audio, pan2_inputs, 2, 0);
 
-                // Out node reads from Pan2's stereo output
-                let out_inputs = vec![
-                    Input::Node {
-                        node_id: 0,
-                        output_index: out_param_idx as u32,
-                    }, // bus from Control UGen
-                    Input::Node {
-                        node_id: pan2_node.id(),
-                        output_index: 0,
-                    }, // left channel
-                    Input::Node {
-                        node_id: pan2_node.id(),
-                        output_index: 1,
-                    }, // right channel
-                ];
-                builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
-            } else {
-                // Already stereo (or more) - output directly
-                let mut out_inputs = vec![
-                    Input::Node {
-                        node_id: 0,
-                        output_index: out_param_idx as u32,
-                    }, // bus from Control UGen
-                ];
-                // Add all output channels
-                for i in 0..result_num_outputs {
-                    out_inputs.push(Input::Node {
-                        node_id: result_node_id,
-                        output_index: i,
-                    });
+                        let out_inputs = vec![
+                            Input::Node {
+                                node_id: 0,
+                                output_index: out_param_idx as u32,
+                            },
+                            Input::Node {
+                                node_id: pan2_node.id(),
+                                output_index: 0,
+                            },
+                            Input::Node {
+                                node_id: pan2_node.id(),
+                                output_index: 1,
+                            },
+                        ];
+                        builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
+                    } else {
+                        // Already stereo (or more) from a multi-output UGen - output directly
+                        let mut out_inputs = vec![Input::Node {
+                            node_id: 0,
+                            output_index: out_param_idx as u32,
+                        }];
+                        for i in 0..result_num_outputs {
+                            out_inputs.push(Input::Node {
+                                node_id: result_node_id,
+                                output_index: i,
+                            });
+                        }
+                        builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
+                    }
                 }
-                builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
+                BodyResult::MultiChannel(channels) => {
+                    // Explicit multi-channel return (e.g., [left, right])
+                    // Output each channel directly without Pan2 wrapping
+                    let mut out_inputs = vec![Input::Node {
+                        node_id: 0,
+                        output_index: out_param_idx as u32,
+                    }];
+
+                    for channel_node in &channels {
+                        // Use to_input() which handles parameter refs correctly
+                        out_inputs.push(channel_node.to_input());
+                    }
+
+                    builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
+                }
             }
         }
 

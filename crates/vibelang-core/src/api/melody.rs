@@ -147,6 +147,7 @@ impl Melody {
     /// - `-` extends the previous note (tie)
     /// - `.` is a rest
     /// - `|` separates bars (each bar is 4 beats in 4/4 time)
+    /// - Whitespace is optional (for readability)
     pub fn notes(mut self, notes_str: String) -> Self {
         self.notes.clear();
 
@@ -166,8 +167,8 @@ impl Melody {
         let mut note_duration: f64 = 0.0;
 
         for bar in bars {
-            // Tokenize this bar
-            let tokens: Vec<&str> = bar.split_whitespace().collect();
+            // Tokenize this bar using character-based parsing (robust to missing whitespace)
+            let tokens = tokenize_bar(bar);
             if tokens.is_empty() {
                 current_beat += beats_per_bar;
                 continue;
@@ -178,44 +179,40 @@ impl Melody {
             for (i, token) in tokens.iter().enumerate() {
                 let beat = current_beat + i as f64 * beat_per_token;
 
-                match *token {
-                    "-" => {
+                match token {
+                    NoteToken::Tie => {
                         // Extend current note
                         if current_note.is_some() {
                             note_duration += beat_per_token;
                         }
                     }
-                    "." | "_" => {
+                    NoteToken::Rest => {
                         // Rest - commit any pending note
                         if let Some(midi) = current_note {
                             self.notes.push(MelodyNote {
                                 beat: note_start_beat,
                                 note: midi,
                                 velocity: 1.0,
-                                gate: note_duration, // Store actual beat duration
+                                gate: note_duration,
                             });
                             current_note = None;
                         }
                     }
-                    s => {
+                    NoteToken::Note(midi) => {
                         // Commit any pending note
-                        if let Some(midi) = current_note {
+                        if let Some(prev_midi) = current_note {
                             self.notes.push(MelodyNote {
                                 beat: note_start_beat,
-                                note: midi,
+                                note: prev_midi,
                                 velocity: 1.0,
-                                gate: note_duration, // Store actual beat duration
+                                gate: note_duration,
                             });
                         }
 
-                        // Parse new note
-                        if let Some(midi) = parse_note(s) {
-                            current_note = Some(midi);
-                            note_start_beat = beat;
-                            note_duration = beat_per_token;
-                        } else {
-                            current_note = None;
-                        }
+                        // Start new note
+                        current_note = Some(*midi);
+                        note_start_beat = beat;
+                        note_duration = beat_per_token;
                     }
                 }
             }
@@ -229,7 +226,7 @@ impl Melody {
                 beat: note_start_beat,
                 note: midi,
                 velocity: 1.0,
-                gate: note_duration, // Store actual beat duration
+                gate: note_duration,
             });
         }
 
@@ -515,6 +512,72 @@ pub fn melody(name: String) -> Melody {
     Melody::new(name)
 }
 
+/// Token type for bar parsing.
+#[derive(Debug, Clone)]
+enum NoteToken {
+    /// A note with its MIDI number
+    Note(u8),
+    /// Tie/continuation marker (-)
+    Tie,
+    /// Rest marker (. or _)
+    Rest,
+}
+
+/// Tokenize a bar string into note tokens using character-based parsing.
+/// This is robust to missing whitespace (e.g., "-G2" is parsed as [Tie, Note(43)]).
+fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
+    let mut tokens = Vec::new();
+    let mut chars = bar.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            // Whitespace is ignored (just for visual separation)
+            ' ' | '\t' | '\n' | '\r' => {}
+
+            // Tie/continuation marker
+            '-' => {
+                tokens.push(NoteToken::Tie);
+            }
+
+            // Rest markers
+            '.' | '_' => {
+                tokens.push(NoteToken::Rest);
+            }
+
+            // Start of a note name
+            'A'..='G' | 'a'..='g' => {
+                let mut note_str = String::new();
+                note_str.push(c.to_ascii_uppercase());
+
+                // Collect accidentals and octave digits
+                while let Some(&next) = chars.peek() {
+                    match next {
+                        '#' | 'b' | '♯' | '♭' => {
+                            note_str.push(chars.next().unwrap());
+                        }
+                        '0'..='9' => {
+                            note_str.push(chars.next().unwrap());
+                        }
+                        // Stop at anything else (whitespace, -, ., another note, etc.)
+                        _ => break,
+                    }
+                }
+
+                // Parse the note to MIDI
+                if let Some(midi) = parse_note(&note_str) {
+                    tokens.push(NoteToken::Note(midi));
+                }
+                // Invalid notes are silently ignored
+            }
+
+            // Unknown characters are ignored
+            _ => {}
+        }
+    }
+
+    tokens
+}
+
 /// Parse a note name to MIDI note number.
 fn parse_note(name: &str) -> Option<u8> {
     let name = name.trim();
@@ -560,8 +623,19 @@ fn parse_note(name: &str) -> Option<u8> {
         }
     }
 
-    // Parse octave
-    let octave_str: String = chars.collect();
+    // Parse octave - only collect digits (and optional leading minus for negative octaves)
+    let octave_str: String = {
+        let mut result = String::new();
+        // Optional leading minus for negative octaves (e.g., "C-1")
+        if chars.peek() == Some(&'-') {
+            result.push(chars.next().unwrap());
+        }
+        // Collect digits only
+        while chars.peek().map_or(false, |c| c.is_ascii_digit()) {
+            result.push(chars.next().unwrap());
+        }
+        result
+    };
     let octave: i8 = octave_str.parse().unwrap_or(4);
 
     // Calculate MIDI note

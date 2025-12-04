@@ -51,7 +51,7 @@ impl ScsynthProcess {
             .arg("-u")
             .arg(port.to_string())
             .arg("-i")
-            .arg("0") // Input channels
+            .arg("2") // Input channels (stereo)
             .arg("-o")
             .arg("2") // Output channels
             .env("SC_JACK_DEFAULT_INPUTS", "system")
@@ -95,21 +95,41 @@ impl ScsynthProcess {
             log::info!("JACK is running, attempting to auto-connect ports...");
             std::thread::sleep(Duration::from_millis(500));
 
-            let result1 = Command::new("jack_connect")
+            // Connect outputs
+            let out1 = Command::new("jack_connect")
                 .arg("SuperCollider:out_1")
                 .arg("system:playback_1")
                 .output();
-            let result2 = Command::new("jack_connect")
+            let out2 = Command::new("jack_connect")
                 .arg("SuperCollider:out_2")
                 .arg("system:playback_2")
                 .output();
 
-            match (result1, result2) {
-                (Ok(_), Ok(_)) => log::info!("JACK ports connected"),
+            match (&out1, &out2) {
+                (Ok(_), Ok(_)) => log::info!("JACK output ports connected"),
                 _ => {
-                    log::warn!("JACK auto-connection failed. Manually connect:");
+                    log::warn!("JACK output auto-connection failed. Manually connect:");
                     log::warn!("  jack_connect SuperCollider:out_1 system:playback_1");
                     log::warn!("  jack_connect SuperCollider:out_2 system:playback_2");
+                }
+            }
+
+            // Connect inputs (for line-in / microphone support)
+            let in1 = Command::new("jack_connect")
+                .arg("system:capture_1")
+                .arg("SuperCollider:in_1")
+                .output();
+            let in2 = Command::new("jack_connect")
+                .arg("system:capture_2")
+                .arg("SuperCollider:in_2")
+                .output();
+
+            match (&in1, &in2) {
+                (Ok(_), Ok(_)) => log::info!("JACK input ports connected"),
+                _ => {
+                    log::warn!("JACK input auto-connection failed. Manually connect:");
+                    log::warn!("  jack_connect system:capture_1 SuperCollider:in_1");
+                    log::warn!("  jack_connect system:capture_2 SuperCollider:in_2");
                 }
             }
         }

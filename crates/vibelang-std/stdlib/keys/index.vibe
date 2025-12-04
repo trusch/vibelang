@@ -9,3 +9,7 @@ import "stdlib/keys/hammond_organ.vibe";
 import "stdlib/keys/clavinet.vibe";
 import "stdlib/keys/honky_tonk.vibe";
 import "stdlib/keys/celeste.vibe";
+
+// Realistic instruments
+import "stdlib/keys/grand_piano.vibe";
+import "stdlib/keys/mallet_instruments.vibe";

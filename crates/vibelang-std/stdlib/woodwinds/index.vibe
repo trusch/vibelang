@@ -8,3 +8,6 @@ import "stdlib/woodwinds/clarinet.vibe";
 import "stdlib/woodwinds/oboe.vibe";
 import "stdlib/woodwinds/saxophone.vibe";
 import "stdlib/woodwinds/bassoon.vibe";
+
+// Realistic instruments
+import "stdlib/woodwinds/woodwinds_realistic.vibe";

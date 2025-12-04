@@ -893,6 +893,11 @@ impl RuntimeThread {
                 // TODO: Implement sequence pause/resume
             }
 
+            // === Running Voices (for continuous processing like line-in) ===
+            StateMessage::RunVoice { name } => {
+                self.handle_run_voice(name);
+            }
+
             // === OSC Feedback ===
             StateMessage::NodeCreated { .. } => {}
             StateMessage::NodeDestroyed { node_id } => {
@@ -1187,6 +1192,10 @@ impl RuntimeThread {
                 }
                 ClipSource::Melody(name) => {
                     if let Some(mel) = state.melodies.get(name).and_then(|m| m.loop_pattern.as_ref()) {
+                        let melody_group_path = state.melodies.get(name).map(|m| m.group_path.clone());
+                        let voice_name = state.melodies.get(name).and_then(|m| m.voice_name.clone());
+                        log::trace!("[SEQUENCE] Melody '{}' group_path={:?} voice={:?} events={}",
+                            name, melody_group_path, voice_name, mel.events.len());
                         Self::append_looping_events(
                             &mut events,
                             &mel.events,
@@ -1198,8 +1207,8 @@ impl RuntimeThread {
                             (
                                 None,
                                 Some(name.clone()),
-                                state.melodies.get(name).map(|m| m.group_path.clone()),
-                                state.melodies.get(name).and_then(|m| m.voice_name.clone()),
+                                melody_group_path,
+                                voice_name,
                             ),
                         );
                         // Mark as triggered if clip_once
@@ -1430,6 +1439,12 @@ impl RuntimeThread {
     /// Fire multiple events at a specific beat using a timed OSC bundle.
     /// This ensures sample-accurate timing by scheduling with scsynth's timestamp mechanism.
     fn fire_events_bundled(&mut self, beat_time: BeatTime, events: Vec<BeatEvent>, now: Instant) {
+        log::info!("[FIRE_EVENTS] Processing {} events at beat {:.2}", events.len(), beat_time.to_float());
+        for event in &events {
+            log::info!("[FIRE_EVENTS]   synth_def='{}' voice={:?} group={:?}",
+                event.synth_def, event.voice_name, event.group_path);
+        }
+
         // Skip if scrub muted
         if self.shared.with_state_read(|s| s.scrub_muted) {
             return;
@@ -1493,9 +1508,14 @@ impl RuntimeThread {
 
         // Resolve synth_def, voice info, and optional SFZ parameters (buffer_id, rate)
         let (synth_def, voice_params, voice_gain, sfz_params) = if event.synth_def == "trigger" || event.synth_def == "melody_note" {
-            event.voice_name.as_ref().and_then(|voice_name| {
+            let voice_result = event.voice_name.as_ref().and_then(|voice_name| {
                 self.shared.with_state_read(|state| {
-                    state.voices.get(voice_name).map(|v| {
+                    let voice = state.voices.get(voice_name);
+                    if voice.is_none() {
+                        log::warn!("[BUILD_SYNTH] Voice '{}' NOT FOUND for event! Available voices: {:?}",
+                            voice_name, state.voices.keys().collect::<Vec<_>>());
+                    }
+                    voice.map(|v| {
                         let synth = v.synth_name.clone().unwrap_or_else(|| event.synth_def.clone());
                         let params = v.params.clone();
                         let gain = v.gain;
@@ -1535,7 +1555,12 @@ impl RuntimeThread {
                         (synth, params, gain, sfz)
                     })
                 })
-            }).unwrap_or_else(|| (event.synth_def.clone(), std::collections::HashMap::new(), 1.0, None))
+            });
+            if voice_result.is_none() && event.voice_name.is_some() {
+                log::warn!("[BUILD_SYNTH] Using fallback synthdef '{}' because voice lookup failed",
+                    event.synth_def);
+            }
+            voice_result.unwrap_or_else(|| (event.synth_def.clone(), std::collections::HashMap::new(), 1.0, None))
         } else {
             (event.synth_def.clone(), std::collections::HashMap::new(), 1.0, None)
         };
@@ -1546,14 +1571,22 @@ impl RuntimeThread {
             .as_ref()
             .and_then(|path| {
                 self.shared.with_state_read(|state| {
-                    state.groups.get(path).map(|g| (
+                    let result = state.groups.get(path).map(|g| (
                         g.node_id.unwrap_or(1),
                         g.audio_bus.unwrap_or(0),
                         g.params.clone(),
-                    ))
+                    ));
+                    if result.is_none() {
+                        log::warn!("[BUILD_SYNTH] Group '{}' NOT FOUND in state! Available groups: {:?}",
+                            path, state.groups.keys().collect::<Vec<_>>());
+                    }
+                    result
                 })
             })
-            .unwrap_or((1, 0, std::collections::HashMap::new()));
+            .unwrap_or_else(|| {
+                log::warn!("[BUILD_SYNTH] No group_path in event, using defaults (group=1, bus=0)");
+                (1, 0, std::collections::HashMap::new())
+            });
 
         // Build merged controls with MULTIPLICATIVE amp semantics
         // final_amp = event_amp × voice_gain × voice.params["amp"] × group.params["amp"]
@@ -1864,27 +1897,54 @@ impl RuntimeThread {
             return;
         }
 
+        // Track if node was pre-created externally (non-zero node_id means SC group already exists)
+        let externally_created = node_id != 0;
+
         // Allocate node ID if not provided (0 means allocate)
         if node_id == 0 {
             node_id = self.shared.with_state_write(|state| state.allocate_group_node());
         }
 
-        // Create the group on SuperCollider
-        let parent_id = parent_path
-            .as_ref()
-            .and_then(|pp| {
-                self.shared
-                    .with_state_read(|state| state.groups.get(pp).and_then(|g| g.node_id))
-            })
-            .unwrap_or(0); // Root group
+        // Create the group on SuperCollider (only if not externally created)
+        if !externally_created {
+            // Get parent's node_id and link_synth_node_id
+            let (parent_id, parent_link_synth) = parent_path
+                .as_ref()
+                .map(|pp| {
+                    self.shared.with_state_read(|state| {
+                        state.groups.get(pp).map(|g| (g.node_id, g.link_synth_node_id))
+                    })
+                })
+                .flatten()
+                .unwrap_or((Some(0), None));
 
-        if let Err(e) = self.sc.g_new(
-            NodeId::new(node_id),
-            AddAction::AddToTail,
-            Target::from(parent_id),
-        ) {
-            log::error!("Failed to create group '{}': {}", path, e);
-            return;
+            let parent_node_id = parent_id.unwrap_or(0);
+
+            // IMPORTANT: If parent has a link synth, we must place the new group BEFORE it!
+            // Otherwise the link synth executes before the child group's audio is written,
+            // causing the child's audio to never reach the parent's bus.
+            let (add_action, target) = if let Some(link_node) = parent_link_synth {
+                log::info!(
+                    "[GROUP] Creating group '{}' BEFORE parent's link synth (node {})",
+                    path, link_node
+                );
+                (AddAction::AddBefore, Target::from(link_node))
+            } else {
+                log::info!(
+                    "[GROUP] Creating group '{}' at TAIL of parent (node {})",
+                    path, parent_node_id
+                );
+                (AddAction::AddToTail, Target::from(parent_node_id))
+            };
+
+            if let Err(e) = self.sc.g_new(
+                NodeId::new(node_id),
+                add_action,
+                target,
+            ) {
+                log::error!("Failed to create group '{}': {}", path, e);
+                return;
+            }
         }
 
         // Allocate audio bus
@@ -1958,6 +2018,16 @@ impl RuntimeThread {
         // Get all groups that need link synths, along with their last effect node
         // IMPORTANT: Sort groups so children are processed BEFORE parents.
         // This ensures parent link synths execute AFTER children have written to the parent bus.
+
+        // Debug: log all groups and their link synth status
+        self.shared.with_state_read(|state| {
+            log::info!("[FINALIZE_GROUPS] Checking {} groups for link synth creation", state.groups.len());
+            for (path, g) in &state.groups {
+                log::info!("[FINALIZE_GROUPS]   '{}': link_synth={:?}, audio_bus={:?}, node_id={:?}",
+                    path, g.link_synth_node_id, g.audio_bus, g.node_id);
+            }
+        });
+
         let mut groups: Vec<(String, i32, Option<String>, i32, Option<i32>)> = self.shared.with_state_read(|state| {
             state
                 .groups
@@ -1986,6 +2056,9 @@ impl RuntimeThread {
                 .collect()
         });
 
+        log::info!("[FINALIZE_GROUPS] {} groups need link synths: {:?}",
+            groups.len(), groups.iter().map(|(p, _, _, _, _)| p.as_str()).collect::<Vec<_>>());
+
         // Sort by path depth (descending) so children are processed before parents.
         // Children have more slashes in their path (e.g., "main/Drums" vs "main").
         groups.sort_by(|a, b| {
@@ -2012,21 +2085,21 @@ impl RuntimeThread {
             // - If there are effects, add after the last one
             // - If no effects, add to tail (after voices)
             let (add_action, target) = if let Some(last_node) = last_effect_node {
-                log::debug!(
+                log::info!(
                     "[LINK] Creating link synth for '{}' AFTER last effect (node {})",
                     path,
                     last_node
                 );
                 (AddAction::AddAfter, Target::from(last_node))
             } else {
-                log::debug!(
+                log::info!(
                     "[LINK] Creating link synth for '{}' at TAIL (no effects)",
                     path
                 );
                 (AddAction::AddToTail, Target::from(group_node_id))
             };
 
-            log::debug!(
+            log::info!(
                 "[LINK] Link synth for '{}': inbus={}, outbus={}",
                 path,
                 in_bus,
@@ -2242,7 +2315,7 @@ impl RuntimeThread {
             }
             EntityKind::Voice => {
                 // Release any active synths for this voice first
-                let synths_to_release: Vec<i32> = self.shared.with_state_write(|state| {
+                let (synths_to_release, running_node) = self.shared.with_state_write(|state| {
                     let nodes: Vec<i32> = state
                         .active_synths
                         .iter()
@@ -2252,12 +2325,18 @@ impl RuntimeThread {
                     for &node_id in &nodes {
                         state.active_synths.remove(&node_id);
                     }
+                    // Also get running node if voice was running
+                    let running_node = state.voices.get(&id).and_then(|v| v.running_node_id);
                     state.voices.remove(&id);
                     state.bump_version();
-                    nodes
+                    (nodes, running_node)
                 });
                 for node_id in synths_to_release {
                     let _ = self.sc.n_set(NodeId::new(node_id), &[("gate".to_string(), 0.0)]);
+                }
+                // Free the running node if one exists
+                if let Some(nid) = running_node {
+                    let _ = self.sc.n_free(NodeId::new(nid));
                 }
             }
             EntityKind::Effect => {
@@ -2506,11 +2585,14 @@ impl RuntimeThread {
             }
 
             // Different synthdef or group - need to recreate
+            log::info!(
+                "[EFFECT] Effect '{}' group changed from '{}' to '{}' - will recreate",
+                id, existing_group, group_path
+            );
             if let Some(nid) = existing_node_id {
-                log::debug!(
-                    "[EFFECT] Effect '{}' synthdef/group changed, freeing old node {}",
-                    id,
-                    nid
+                log::info!(
+                    "[EFFECT] Freeing old node {} for effect '{}'",
+                    nid, id
                 );
                 let _ = self.sc.n_free(NodeId::new(nid));
             }
@@ -2518,12 +2600,10 @@ impl RuntimeThread {
 
         // Get group's node ID and audio bus
         // Also find existing effects on this group to determine proper ordering
-        let (group_node_id, group_bus, last_effect_node, next_position) =
+        let (group_node_id, group_bus, last_effect_node, next_position, link_synth_node) =
             self.shared.with_state_read(|state| {
-                let group_info = state
-                    .groups
-                    .get(&group_path)
-                    .map(|g| (g.node_id, g.audio_bus));
+                let group = state.groups.get(&group_path);
+                let group_info = group.map(|g| (g.node_id, g.audio_bus, g.link_synth_node_id));
 
                 // Find all effects for this group, sorted by position
                 let mut group_effects: Vec<_> = state
@@ -2540,10 +2620,11 @@ impl RuntimeThread {
                 let next_pos = group_effects.len();
 
                 (
-                    group_info.and_then(|(n, _)| n),
-                    group_info.and_then(|(_, b)| b),
+                    group_info.and_then(|(n, _, _)| n),
+                    group_info.and_then(|(_, b, _)| b),
                     last_node,
                     next_pos,
+                    group_info.and_then(|(_, _, l)| l),
                 )
             });
 
@@ -2552,9 +2633,15 @@ impl RuntimeThread {
         let bus_out = bus_in; // Effects process in-place on the group's bus
 
         if target_node_id.is_none() {
-            log::warn!("[EFFECT] Cannot add effect '{}': group '{}' has no node ID", id, group_path);
+            log::warn!("[EFFECT] Cannot add effect '{}': group '{}' not found or has no node ID", id, group_path);
+            // Debug: list available groups
+            self.shared.with_state_read(|state| {
+                log::warn!("[EFFECT] Available groups: {:?}", state.groups.keys().collect::<Vec<_>>());
+            });
             return;
         }
+
+        log::info!("[EFFECT] Creating effect '{}' in group '{}' with bus {}", id, group_path, bus_in);
 
         // Allocate a node ID for the effect
         let node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
@@ -2568,13 +2655,17 @@ impl RuntimeThread {
 
         // Create the effect synth with proper ordering
         // - If there are existing effects, add AFTER the last one
-        // - If this is the first effect, add to TAIL (voices use AddToHead, so this goes after them)
-        // - Link synth (added in FinalizeGroups) will be added AFTER all effects
+        // - If no effects but link synth exists, add BEFORE the link synth
+        // - If no effects and no link synth, add to TAIL (voices use AddToHead, so this goes after them)
         let (add_action, target) = if let Some(last_node) = last_effect_node {
             // Add after the last effect in the chain
             (AddAction::AddAfter, Target::from(last_node))
+        } else if let Some(link_node) = link_synth_node {
+            // No effects yet, but link synth exists - add BEFORE link synth
+            // This ensures: Voice → Effect → LinkSynth
+            (AddAction::AddBefore, Target::from(link_node))
         } else {
-            // First effect - add to tail (voices use AddToHead, so this goes after them)
+            // First effect, no link synth yet - add to tail (voices use AddToHead, so this goes after them)
             (AddAction::AddToTail, Target::from(target_node_id.unwrap()))
         };
 
@@ -2682,7 +2773,7 @@ impl RuntimeThread {
         });
 
         if already_running {
-            log::debug!(
+            log::info!(
                 "[SEQUENCE] Sequence '{}' already running, preserving anchor and triggered_clips",
                 name
             );
@@ -3054,6 +3145,111 @@ impl RuntimeThread {
             buffer_id,
             num_channels,
             num_frames
+        );
+    }
+
+    /// Run a voice continuously (for line-in processing, drones, etc.).
+    ///
+    /// Unlike melody/pattern triggers, this starts the synth immediately
+    /// and keeps it running until stopped or the script is reloaded.
+    fn handle_run_voice(&mut self, name: String) {
+        // Get voice info from state
+        let voice_info = self.shared.with_state_read(|state| {
+            state.voices.get(&name).map(|v| {
+                (
+                    v.synth_name.clone(),
+                    v.group_path.clone(),
+                    v.params.clone(),
+                    v.gain,
+                    v.running,
+                    v.running_node_id,
+                )
+            })
+        });
+
+        let Some((synth_name, group_path, params, gain, already_running, existing_node)) = voice_info else {
+            log::warn!("[RUN_VOICE] Voice '{}' not found", name);
+            return;
+        };
+
+        let Some(synthdef) = synth_name else {
+            log::warn!("[RUN_VOICE] Voice '{}' has no synth defined", name);
+            return;
+        };
+
+        // If already running with same config, just mark as still running
+        if already_running && existing_node.is_some() {
+            log::debug!("[RUN_VOICE] Voice '{}' already running, updating params", name);
+            // Update params on the running node
+            if let Some(node_id) = existing_node {
+                for (param, value) in &params {
+                    let _ = self.sc.n_set(NodeId::new(node_id), &[(param.as_str(), *value)]);
+                }
+                // Update gain
+                let _ = self.sc.n_set(NodeId::new(node_id), &[("amp", gain as f32)]);
+            }
+            // Mark voice as still running
+            self.shared.with_state_write(|state| {
+                if let Some(voice) = state.voices.get_mut(&name) {
+                    voice.running = true;
+                }
+                state.bump_version();
+            });
+            return;
+        }
+
+        // Free existing node if there is one (synthdef changed)
+        if let Some(nid) = existing_node {
+            log::debug!("[RUN_VOICE] Voice '{}' synthdef changed, freeing old node {}", name, nid);
+            let _ = self.sc.n_free(NodeId::new(nid));
+        }
+
+        // Get group's audio bus for output routing
+        let group_info = self.shared.with_state_read(|state| {
+            state.groups.get(&group_path).map(|g| (g.node_id, g.audio_bus))
+        });
+
+        let (group_node_id, audio_bus) = group_info.unwrap_or((None, None));
+        let output_bus = audio_bus.unwrap_or(0);
+
+        // Allocate a node ID
+        let node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
+
+        // Build control parameters
+        let mut controls: Vec<(String, f32)> = params.iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        controls.push(("out".to_string(), output_bus as f32));
+        controls.push(("amp".to_string(), gain as f32));
+
+        // Create the synth in the group (or root if no group)
+        let target = group_node_id
+            .map(|gid| Target::new(gid))
+            .unwrap_or_else(Target::root);
+
+        if let Err(e) = self.sc.s_new(
+            &synthdef,
+            NodeId::new(node_id),
+            AddAction::AddToTail,
+            target,
+            &controls.iter().map(|(k, v)| (k.as_str(), *v)).collect::<Vec<_>>(),
+        ) {
+            log::error!("[RUN_VOICE] Failed to create synth for voice '{}': {}", name, e);
+            return;
+        }
+
+        // Update voice state
+        self.shared.with_state_write(|state| {
+            if let Some(voice) = state.voices.get_mut(&name) {
+                voice.running = true;
+                voice.running_node_id = Some(node_id);
+            }
+            state.bump_version();
+        });
+
+        log::info!(
+            "[RUN_VOICE] Voice '{}' now running (node {}) with synthdef '{}' on bus {}",
+            name, node_id, synthdef, output_bus
         );
     }
 

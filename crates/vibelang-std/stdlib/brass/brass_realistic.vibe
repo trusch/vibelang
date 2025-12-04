@@ -1,0 +1,482 @@
+// Realistic Brass Instruments
+// Genre: Jazz, Classical, Big Band | Character: Powerful, brilliant, warm
+//
+// Advanced brass synthesis using:
+// - Lip reed modeling with attack transients
+// - Formant filtering for bell/bore characteristics
+// - Mute simulations (cup, harmon, straight)
+// - Breath and valve noise
+// - Dynamic timbral response
+
+// Realistic Trumpet with mute options
+define_synthdef("trumpet_realistic", |builder| {
+    builder
+        .param("freq", 349.23)    // F4 - comfortable trumpet range
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("brightness", 0.6)    // Bell brightness
+        .param("lip_tension", 0.5)   // Affects attack and timbre
+        .param("air_pressure", 0.7)  // Dynamics
+        .body(|freq, amp, gate, brightness, lip_tension, air_pressure| {
+            let envelope = env_asr(0.03, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Delayed vibrato (musicians add vibrato after attack)
+            let vib_delay_data = env_perc(0.2, 4.0);
+            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib_rate = 5.0 + (lip_tension * 1.5);
+            let vib_depth = 0.006 + (lip_tension * 0.004);
+            let vib = sin_osc_ar(vib_rate) * vib_depth * vib_delay + 1.0;
+            let mod_freq = freq * vib;
+
+            // Trumpet harmonics - bright with strong upper partials
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.7;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.55;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.4;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.32 * brightness;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.25 * brightness;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.18 * brightness;
+            let h8 = sin_osc_ar(mod_freq * 8.0) * 0.12 * brightness;
+            let h9 = sin_osc_ar(mod_freq * 9.0) * 0.07 * brightness;
+            let h10 = sin_osc_ar(mod_freq * 10.0) * 0.04 * brightness;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8 + h9 + h10;
+
+            // Lip buzz attack transient
+            let lip_data = env_perc(0.001, 0.025);
+            let lip_env = NewEnvGenBuilder(lip_data, dc_ar(1.0)).build();
+            let lip_buzz = white_noise_ar() * lip_env * lip_tension * 0.15;
+            let lip_filtered = bpf_ar(lip_buzz, mod_freq * 6.0, 0.3);
+
+            // Bell formants - characteristic trumpet brightness
+            let f1 = rlpf_ar(harmonics, 1200.0, 0.35) * 0.35;
+            let f2 = rlpf_ar(harmonics, 2500.0, 0.3) * 0.35;
+            let f3 = rlpf_ar(harmonics, 4000.0, 0.25) * 0.3 * brightness;
+
+            // Bell flare high-frequency boost
+            let bell_boost = rlpf_ar(harmonics, 6000.0, 0.4) * 0.15 * brightness;
+
+            // Dynamic brightness - louder = brighter
+            let dyn_cutoff = 3000.0 + (air_pressure * 5000.0);
+            let dynamics = lpf_ar(f1 + f2 + f3 + bell_boost, dyn_cutoff);
+
+            let tone = dynamics + lip_filtered;
+
+            hpf_ar(tone, 150.0) * env * amp * air_pressure * 0.5
+        })
+});
+
+// Muted Trumpet - Harmon mute (wah-wah)
+define_synthdef("trumpet_harmon_mute", |builder| {
+    builder
+        .param("freq", 349.23)
+        .param("amp", 0.55)
+        .param("gate", 1.0)
+        .param("stem_in", 0.5)   // 0=stem out (bright), 1=stem in (dark)
+        .body(|freq, amp, gate, stem_in| {
+            let envelope = env_asr(0.025, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Subtle vibrato
+            let vib = sin_osc_ar(5.5) * 0.005 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Harmonics
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.65;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.5;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.38;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.28;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.2;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.14;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7;
+
+            // Harmon mute creates a nasal, buzzy quality
+            // Strong resonance around 1kHz-2kHz
+            let mute_freq = 1500.0 + ((1.0 - stem_in) * 800.0);
+            let muted = rlpf_ar(harmonics, mute_freq, 0.15);  // Very resonant
+
+            // Stem position affects high frequencies
+            let hf_cutoff = 2500.0 + ((1.0 - stem_in) * 3000.0);
+            let hf_control = lpf_ar(muted, hf_cutoff);
+
+            // Buzzy character
+            let buzz = rlpf_ar(harmonics, 3500.0, 0.2) * 0.2;
+
+            let tone = hf_control + buzz;
+
+            hpf_ar(tone, 200.0) * env * amp * 0.55
+        })
+});
+
+// Cup Muted Trumpet - softer, warmer
+define_synthdef("trumpet_cup_mute", |builder| {
+    builder
+        .param("freq", 349.23)
+        .param("amp", 0.55)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.03, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let vib = sin_osc_ar(5.2) * 0.005 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Softer harmonics
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.35;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.22;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.12;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5;
+
+            // Cup mute - warmer, less bright
+            let muted = lpf_ar(harmonics, 2500.0);
+            let warm = rlpf_ar(muted, 800.0, 0.4) * 0.3;
+
+            let tone = muted + warm;
+
+            hpf_ar(tone, 150.0) * env * amp * 0.55
+        })
+});
+
+// Flugelhorn - dark, velvety brass
+define_synthdef("flugelhorn", |builder| {
+    builder
+        .param("freq", 349.23)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("warmth", 0.7)
+        .body(|freq, amp, gate, warmth| {
+            let envelope = env_asr(0.04, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Slower, wider vibrato
+            let vib_delay_data = env_perc(0.25, 4.0);
+            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib = sin_osc_ar(4.8) * 0.006 * vib_delay + 1.0;
+            let mod_freq = freq * vib;
+
+            // Flugelhorn - darker, fewer high harmonics
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.55;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.35;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.2;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.1;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.05;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6;
+
+            // Soft attack
+            let attack_data = env_perc(0.002, 0.03);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = white_noise_ar() * attack_env * 0.06;
+
+            // Conical bore - warm, round
+            let f1 = rlpf_ar(harmonics, 800.0, 0.45) * 0.4;
+            let f2 = rlpf_ar(harmonics, 1600.0, 0.4) * 0.35;
+            let f3 = rlpf_ar(harmonics, 2800.0, 0.45) * 0.25 * (1.0 - warmth * 0.5);
+
+            // Extra warmth
+            let warm = rlpf_ar(harmonics, 400.0, 0.5) * warmth * 0.2;
+
+            let tone = f1 + f2 + f3 + warm + attack;
+
+            hpf_ar(tone, 120.0) * env * amp * 0.55
+        })
+});
+
+// Realistic Trombone with slide position simulation
+define_synthdef("trombone_realistic", |builder| {
+    builder
+        .param("freq", 174.61)    // F3
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("slide_smoothness", 0.8)  // How smooth the pitch transitions are
+        .param("brightness", 0.5)
+        .body(|freq, amp, gate, slide_smoothness, brightness| {
+            let envelope = env_asr(0.04, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Trombone vibrato - often jaw vibrato
+            let vib_delay_data = env_perc(0.3, 4.0);
+            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib = sin_osc_ar(5.0) * 0.005 * vib_delay + 1.0;
+            let mod_freq = freq * vib;
+
+            // Rich harmonic content
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.7;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.5;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.38;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.28;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.2 * brightness;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.14 * brightness;
+            let h8 = sin_osc_ar(mod_freq * 8.0) * 0.1 * brightness;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8;
+
+            // Lip attack
+            let lip_data = env_perc(0.001, 0.03);
+            let lip_env = NewEnvGenBuilder(lip_data, dc_ar(1.0)).build();
+            let lip = white_noise_ar() * lip_env * 0.1;
+            let lip_filtered = bpf_ar(lip, mod_freq * 4.0, 0.3);
+
+            // Cylindrical bore formants
+            let f1 = rlpf_ar(harmonics, 500.0, 0.4) * 0.4;
+            let f2 = rlpf_ar(harmonics, 1200.0, 0.35) * 0.35;
+            let f3 = rlpf_ar(harmonics, 2500.0, 0.35) * 0.25 * brightness;
+
+            // Bell flare
+            let bell = rlpf_ar(harmonics, 3500.0, 0.4) * 0.15 * brightness;
+
+            let tone = f1 + f2 + f3 + bell + lip_filtered;
+
+            hpf_ar(tone, 80.0) * env * amp * 0.55
+        })
+});
+
+// Bass Trombone - deeper, more powerful
+define_synthdef("bass_trombone", |builder| {
+    builder
+        .param("freq", 116.54)   // Bb2
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.05, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let vib = sin_osc_ar(4.5) * 0.004 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Full bass trombone spectrum
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.65;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.45;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.32;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.22;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.15;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.1;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7;
+
+            // Attack
+            let attack_data = env_perc(0.001, 0.035);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = white_noise_ar() * attack_env * 0.08;
+
+            // Larger bore = darker
+            let f1 = rlpf_ar(harmonics, 350.0, 0.4) * 0.45;
+            let f2 = rlpf_ar(harmonics, 900.0, 0.4) * 0.35;
+            let f3 = rlpf_ar(harmonics, 1800.0, 0.4) * 0.2;
+
+            let tone = f1 + f2 + f3 + attack;
+
+            hpf_ar(tone, 50.0) * env * amp * 0.55
+        })
+});
+
+// French Horn - noble, warm, mellow
+define_synthdef("french_horn_realistic", |builder| {
+    builder
+        .param("freq", 220.0)    // A3
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("stopped", 0.0)   // 0=open, 1=hand stopped
+        .body(|freq, amp, gate, stopped| {
+            let envelope = env_asr(0.05, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Horn vibrato - subtle
+            let vib = sin_osc_ar(5.0) * 0.004 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Horn harmonics - emphasis on odd partials (conical bore)
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.6;  // Odd emphasis
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.35;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.45;  // Odd emphasis
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.25;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.18;
+            let h8 = sin_osc_ar(mod_freq * 8.0) * 0.1;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8;
+
+            // Hand in bell creates warm, distant quality
+            // Stopped horn creates buzzy, metallic quality
+            let open_cutoff = 2500.0;
+            let stopped_peak = 1800.0;
+
+            let cutoff = open_cutoff * (1.0 - stopped * 0.4);
+            let resonance = 0.35 + (stopped * 0.25);
+
+            let filtered = rlpf_ar(harmonics, cutoff, resonance);
+
+            // Stopped horn boost
+            let stopped_buzz = rlpf_ar(harmonics, stopped_peak, 0.15) * stopped * 0.3;
+
+            // Noble, warm formants
+            let f1 = rlpf_ar(filtered, 350.0, 0.45) * 0.35;
+            let f2 = rlpf_ar(filtered, 800.0, 0.4) * 0.35;
+            let f3 = rlpf_ar(filtered, 1800.0, 0.4) * 0.3 * (1.0 - stopped * 0.5);
+
+            let tone = f1 + f2 + f3 + stopped_buzz;
+
+            hpf_ar(tone, 100.0) * env * amp * 0.55
+        })
+});
+
+// Tuba - deep, fundamental bass brass
+define_synthdef("tuba_realistic", |builder| {
+    builder
+        .param("freq", 58.27)    // Bb1
+        .param("amp", 0.65)
+        .param("gate", 1.0)
+        .param("brightness", 0.4)
+        .body(|freq, amp, gate, brightness| {
+            let envelope = env_asr(0.06, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Very slow vibrato
+            let vib = sin_osc_ar(4.0) * 0.003 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Tuba - strong fundamentals
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.55;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.38;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.25;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.16;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.1;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.06;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7;
+
+            // Slow attack
+            let attack_data = env_perc(0.002, 0.04);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = white_noise_ar() * attack_env * 0.06;
+
+            // Very large bore - dark and round
+            let f1 = rlpf_ar(harmonics, 200.0, 0.45) * 0.45;
+            let f2 = rlpf_ar(harmonics, 600.0, 0.4) * 0.35;
+            let f3 = rlpf_ar(harmonics, 1200.0, 0.4) * 0.2 * brightness;
+
+            let tone = f1 + f2 + f3 + attack;
+
+            hpf_ar(tone, 30.0) * env * amp * 0.55
+        })
+});
+
+// Euphonium - warm baritone brass
+define_synthdef("euphonium", |builder| {
+    builder
+        .param("freq", 130.81)   // C3
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("warmth", 0.6)
+        .body(|freq, amp, gate, warmth| {
+            let envelope = env_asr(0.045, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let vib = sin_osc_ar(4.8) * 0.005 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Warm, singing tone
+            let h1 = sin_osc_ar(mod_freq) * 1.0;
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.6;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.42;
+            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.28;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.18;
+            let h6 = sin_osc_ar(mod_freq * 6.0) * 0.1;
+
+            let harmonics = h1 + h2 + h3 + h4 + h5 + h6;
+
+            // Attack
+            let attack_data = env_perc(0.001, 0.03);
+            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack = white_noise_ar() * attack_env * 0.07;
+
+            // Conical bore - warm and mellow
+            let f1 = rlpf_ar(harmonics, 300.0, 0.45) * 0.4;
+            let f2 = rlpf_ar(harmonics, 850.0, 0.4) * 0.35;
+            let f3 = rlpf_ar(harmonics, 1800.0, 0.4) * 0.25 * (1.0 - warmth * 0.3);
+
+            // Extra warmth
+            let warm = rlpf_ar(harmonics, 400.0, 0.5) * warmth * 0.15;
+
+            let tone = f1 + f2 + f3 + warm + attack;
+
+            hpf_ar(tone, 60.0) * env * amp * 0.55
+        })
+});
+
+// Brass Section - ensemble sound
+define_synthdef("brass_section_realistic", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("width", 0.5)     // Ensemble width/detuning
+        .body(|freq, amp, gate, width| {
+            let envelope = env_asr(0.04, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple detuned voices
+            let detune = 0.003 + (width * 0.005);
+
+            // Trumpet section (3 players)
+            let t1 = sin_osc_ar(freq) + sin_osc_ar(freq * 2.0) * 0.5 + sin_osc_ar(freq * 3.0) * 0.3;
+            let t2 = sin_osc_ar(freq * (1.0 + detune)) + sin_osc_ar(freq * 2.0 * (1.0 + detune)) * 0.5;
+            let t3 = sin_osc_ar(freq * (1.0 - detune)) + sin_osc_ar(freq * 2.0 * (1.0 - detune)) * 0.5;
+
+            let trumpets = (t1 + t2 + t3) * 0.15;
+
+            // Trombone section (2 players, octave lower)
+            let tb1 = sin_osc_ar(freq * 0.5) + sin_osc_ar(freq) * 0.5 + sin_osc_ar(freq * 1.5) * 0.3;
+            let tb2 = sin_osc_ar(freq * 0.5 * (1.0 + detune * 0.8)) + sin_osc_ar(freq * (1.0 + detune * 0.8)) * 0.5;
+
+            let trombones = (tb1 + tb2) * 0.12;
+
+            // Horns (2 players)
+            let h1 = sin_osc_ar(freq * 0.75) + sin_osc_ar(freq * 1.5) * 0.4 + sin_osc_ar(freq * 2.25) * 0.25;
+            let h2 = sin_osc_ar(freq * 0.75 * (1.0 - detune * 0.5)) + sin_osc_ar(freq * 1.5 * (1.0 - detune * 0.5)) * 0.4;
+
+            let horns = (h1 + h2) * 0.1;
+
+            let ensemble = trumpets + trombones + horns;
+
+            // Section formants
+            let f1 = rlpf_ar(ensemble, 600.0, 0.4) * 0.4;
+            let f2 = rlpf_ar(ensemble, 1500.0, 0.35) * 0.35;
+            let f3 = rlpf_ar(ensemble, 3000.0, 0.35) * 0.25;
+
+            let tone = f1 + f2 + f3;
+
+            hpf_ar(tone, 80.0) * env * amp * 0.5
+        })
+});

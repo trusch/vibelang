@@ -263,6 +263,25 @@ impl Voice {
         self
     }
 
+    /// Run this voice continuously (for line-in, drones, etc.).
+    ///
+    /// Unlike melody/pattern triggers, this starts the synth immediately
+    /// and keeps it running until stopped or the script is reloaded.
+    ///
+    /// # Example
+    /// ```rhai
+    /// let mic = voice("mic").synth("line_in").gain(db(-6));
+    /// mic.run();  // Starts immediately
+    /// ```
+    pub fn run(self) -> Self {
+        self.sync_state();
+        let handle = require_handle();
+        let _ = handle.send(StateMessage::RunVoice {
+            name: self.name.clone(),
+        });
+        self
+    }
+
     // === Actions ===
 
     /// Sync this voice's state with the runtime.
@@ -477,6 +496,7 @@ pub fn register(engine: &mut Engine) {
 
     // Actions
     engine.register_fn("apply", Voice::apply);
+    engine.register_fn("run", Voice::run);
     engine.register_fn("trigger", voice_trigger);
     engine.register_fn("trigger", voice_trigger_no_params);
     engine.register_fn("stop", voice_stop);

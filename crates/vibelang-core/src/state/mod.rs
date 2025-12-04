@@ -18,8 +18,8 @@ pub use manager::StateManager;
 pub use messages::StateMessage;
 pub use model::{
     ActiveFadeJob, ActiveSequence, ActiveSynth, EffectState, GroupState, LoopStatus, MelodyState,
-    PatternState, SampleInfo, SampleSlice, ScheduledEvent, ScheduledNoteOff, ScriptState,
-    SequenceRunLog, VoiceState, VstInstrumentInfo,
+    PatternState, SampleInfo, SampleSlice, ScheduledEvent, ScheduledNoteOff,
+    ScriptState, SequenceRunLog, VoiceState, VstInstrumentInfo,
 };
 
 // Re-export scheduler types that are closely tied to state

@@ -184,6 +184,10 @@ pub enum StateMessage {
     /// Stop a voice.
     StopVoice { name: String },
 
+    /// Run a voice continuously (for line-in, drones, etc.).
+    /// Creates a synth immediately without note triggers.
+    RunVoice { name: String },
+
     /// Send a note-on to a voice.
     NoteOn {
         voice_name: String,
@@ -383,6 +387,7 @@ impl StateMessage {
             StateMessage::FadeVoiceParam { .. } => "FadeVoiceParam",
             StateMessage::TriggerVoice { .. } => "TriggerVoice",
             StateMessage::StopVoice { .. } => "StopVoice",
+            StateMessage::RunVoice { .. } => "RunVoice",
             StateMessage::NoteOn { .. } => "NoteOn",
             StateMessage::NoteOff { .. } => "NoteOff",
             StateMessage::ControlChange { .. } => "ControlChange",

@@ -1,6 +1,6 @@
 # Vibelang Standard Library
 
-A comprehensive collection of **421 professional-quality sounds** (363 instruments + 58 effects) covering all essential sound categories for music production.
+A comprehensive collection of **477 professional-quality sounds** (419 instruments + 58 effects) covering all essential sound categories for music production.
 
 ## Overview
 
@@ -223,6 +223,105 @@ A comprehensive music theory toolkit providing functions for scales, chords, pro
 - `drone_evolving.vibe` - Slowly evolving drone (Ambient, Drone)
 - `drone_resonant.vibe` - Resonant, metallic drone (Ambient, Experimental)
 
+---
+
+## Realistic Acoustic Instruments (56 sounds)
+
+The following instruments use advanced physical modeling and professional sound design techniques for realistic acoustic sounds.
+
+### Keys (`keys/`)
+
+#### Grand Piano (5 sounds)
+- `grand_piano` - Full acoustic piano with hammer mechanics, string resonance, and inharmonicity
+- `grand_piano_bright` - Concert hall bright piano with extended harmonics
+- `grand_piano_warm` - Intimate, dark piano with emphasis on lower partials
+- `upright_piano` - Upright piano with honky-tonk character and cabinet resonance
+- `tack_piano` - Prepared piano with tacks on hammers for bright, percussive attack
+
+#### Mallet Instruments (10 sounds)
+- `marimba` - Warm wooden bars with inharmonic partials and resonator simulation
+- `vibraphone` - Aluminum bars with motor vibrato and long sustain
+- `glockenspiel` - Bright steel bars with bell-like overtones
+- `xylophone` - Dry wooden bars without resonators
+- `tubular_bells` - Orchestral chimes with complex inharmonic partials
+- `crotales` - Antique cymbals, very pure and high
+- `steel_drum` - Caribbean steel pan with characteristic singing quality
+- `kalimba` - African thumb piano with odd harmonics
+- `celesta` - Keyboard glockenspiel with wooden resonator warmth
+- `music_box` - Classic music box with bright, short tines
+
+### Strings (`strings/`)
+
+#### Acoustic Guitar (6 sounds)
+- `acoustic_guitar` - Steel string dreadnought with body resonance and pluck dynamics
+- `classical_guitar` - Nylon string guitar with warm, round tone
+- `fingerpick_guitar` - Fingerstyle optimized with nail/flesh control
+- `twelve_string_guitar` - 12-string with chorus from paired strings
+- `guitar_harmonic` - Natural harmonics, pure bell-like tones
+- `guitar_muted` - Palm-muted guitar for rhythmic playing
+
+#### Electric Guitar (7 sounds)
+- `electric_guitar_clean` - Fender-style single coil, clean amp
+- `electric_guitar_crunch` - Edge-of-breakup tube amp tone
+- `electric_guitar_distorted` - High-gain metal/rock distortion with multi-stage saturation
+- `electric_guitar_jazz` - Warm hollow-body with neck humbucker
+- `electric_guitar_funk` - Bright, percussive bridge pickup
+- `power_chord` - Thick power chords with root, fifth, and octave
+- `electric_guitar_wah` - Auto-wah effect with resonant filter sweep
+
+#### Bass Instruments (10 sounds)
+- `upright_bass` - Acoustic double bass pizzicato with body resonance
+- `upright_bass_bowed` - Arco double bass with bow noise and vibrato
+- `electric_bass` - Precision Bass style with warm pickup
+- `jazz_bass` - Jazz Bass style with dual pickup blend
+- `fretless_bass` - Fretless with characteristic "mwah" singing quality
+- `slap_bass` - Slap and pop techniques with bright attack
+- `synth_bass_moog` - Classic Moog-style with ladder filter
+- `acid_bass` - 303-style with resonant filter sweep and accent
+- `picked_bass` - Rock/metal pick attack with drive
+
+### Woodwinds (`woodwinds/`)
+
+#### Realistic Woodwinds (10 sounds)
+- `clarinet_realistic` - Clarinet with odd harmonic emphasis and reed buzz
+- `alto_sax_realistic` - Alto saxophone with growl and subtone capabilities
+- `tenor_sax_realistic` - Tenor saxophone with warm jazz formants
+- `flute_realistic` - Flute with air jet modeling and breath noise
+- `oboe_realistic` - Nasal double-reed with rich harmonics
+- `english_horn` - Deeper, melancholic cor anglais
+- `bassoon_realistic` - Rich bass woodwind with reed character
+- `recorder` - Medieval/Renaissance wooden recorder
+- `pan_flute` - Breathy, ethereal pan pipes
+
+### Brass (`brass/`)
+
+#### Realistic Brass (11 sounds)
+- `trumpet_realistic` - Trumpet with lip buzz attack and bell formants
+- `trumpet_harmon_mute` - Harmon (wah-wah) muted trumpet
+- `trumpet_cup_mute` - Cup muted trumpet, softer and warmer
+- `flugelhorn` - Dark, velvety conical brass
+- `trombone_realistic` - Trombone with slide characteristics
+- `bass_trombone` - Deeper, more powerful bass trombone
+- `french_horn_realistic` - Noble horn with stopped/open options
+- `tuba_realistic` - Deep, fundamental bass brass
+- `euphonium` - Warm baritone brass
+- `brass_section_realistic` - Full brass section ensemble
+
+---
+
+### Sound Design Techniques Used
+
+The realistic instruments use professional synthesis techniques:
+
+- **Inharmonic Partials** - Bars and strings have non-integer partial ratios
+- **Formant Filtering** - Multiple resonant filters simulate body resonances
+- **Attack Transients** - Noise bursts and envelope shaping for realistic attacks
+- **Delayed Vibrato** - Vibrato fades in after attack, like real players
+- **Pickup Simulation** - Position-dependent filtering for electric instruments
+- **Tube Saturation** - Soft clipping (tanh) for amp modeling
+- **Mute Simulations** - Different resonant characteristics for muted brass
+- **Body Resonance** - Multiple formant frequencies for acoustic bodies
+
 ## Usage
 
 Each synthdef is self-contained in its own `.vibe` file. To use a sound in your composition:
@@ -255,6 +354,10 @@ To speed up prototyping you can now import ready-made indexes instead of referen
 - `import "stdlib/textures/index.vibe";` – load textures and drones
 - `import "stdlib/fx/index.vibe";` – load risers, impacts, sweeps, and sub drops
 - `import "stdlib/effects/index.vibe";` (or the legacy `all_effects.vibe`) – load every standard effect
+- `import "stdlib/keys/index.vibe";` – load keyboards, pianos, and mallet instruments
+- `import "stdlib/strings/index.vibe";` – load string instruments including guitars and bass
+- `import "stdlib/brass/index.vibe";` – load all brass instruments
+- `import "stdlib/woodwinds/index.vibe";` – load all woodwind instruments
 
 Use these when you want fast access to the whole arsenal, and fall back to per-file imports if you need finer control over load time.
 

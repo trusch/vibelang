@@ -235,6 +235,10 @@ pub struct VoiceState {
     pub vst_instrument: Option<String>,
     /// Reload generation.
     pub generation: u64,
+    /// Whether this voice is running continuously (for line-in, drones, etc.).
+    pub running: bool,
+    /// Node ID of the running synth (if running).
+    pub running_node_id: Option<i32>,
 }
 
 impl VoiceState {
@@ -257,6 +261,8 @@ impl VoiceState {
             round_robin_state: RoundRobinState::new(),
             vst_instrument: None,
             generation: 0,
+            running: false,
+            running_node_id: None,
         }
     }
 }
@@ -537,6 +543,7 @@ pub struct EffectState {
     pub vst_plugin: Option<String>,
 }
 
+
 /// Information about a loaded VST instrument.
 #[derive(Clone, Debug)]
 pub struct VstInstrumentInfo {
@@ -584,7 +591,7 @@ impl GroupState {
 
 impl VoiceState {
     /// Compute a content hash of this voice's configuration.
-    /// Excludes ephemeral state like active_notes, round_robin_state.
+    /// Excludes ephemeral state like active_notes, round_robin_state, running_node_id.
     pub fn content_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         self.name.hash(&mut hasher);
@@ -599,6 +606,7 @@ impl VoiceState {
         hash_params(&self.params, &mut hasher);
         self.sfz_instrument.hash(&mut hasher);
         self.vst_instrument.hash(&mut hasher);
+        self.running.hash(&mut hasher);
         hasher.finish()
     }
 }
@@ -675,6 +683,7 @@ impl EffectState {
         hasher.finish()
     }
 }
+
 
 #[cfg(test)]
 mod tests {

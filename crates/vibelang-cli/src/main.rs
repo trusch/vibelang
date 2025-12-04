@@ -18,6 +18,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use rhai::Dynamic;
 use vibelang_core::state::StateMessage;
 use vibelang_core::RuntimeHandle;
 
@@ -141,7 +142,7 @@ fn run_vibe_file(
     let script = fs::read_to_string(&file)
         .with_context(|| format!("Failed to read file: {}", file.display()))?;
 
-    match engine.eval::<()>(&script) {
+    match engine.eval::<Dynamic>(&script) {
         Ok(_) => {
             log::info!("   ✓ Script executed successfully");
         }
@@ -196,7 +197,7 @@ fn run_vibe_file(
                     // Re-read and execute
                     match fs::read_to_string(&file) {
                         Ok(new_script) => {
-                            match engine.eval::<()>(&new_script) {
+                            match engine.eval::<Dynamic>(&new_script) {
                                 Ok(_) => {
                                     log::info!("   ✓ Reload successful");
                                 }
@@ -274,7 +275,7 @@ fn run_tui_loop(
                 // Re-read and execute
                 match fs::read_to_string(vibe_file) {
                     Ok(new_script) => {
-                        match engine.eval::<()>(&new_script) {
+                        match engine.eval::<Dynamic>(&new_script) {
                             Ok(_) => {
                                 log::info!("✅ Reload successful");
                             }

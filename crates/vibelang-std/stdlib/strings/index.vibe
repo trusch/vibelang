@@ -9,3 +9,8 @@ import "stdlib/strings/solo_cello.vibe";
 import "stdlib/strings/pizzicato.vibe";
 import "stdlib/strings/tremolo_strings.vibe";
 import "stdlib/strings/harp.vibe";
+
+// Realistic instruments
+import "stdlib/strings/acoustic_guitar.vibe";
+import "stdlib/strings/electric_guitar.vibe";
+import "stdlib/strings/bass_instruments.vibe";
