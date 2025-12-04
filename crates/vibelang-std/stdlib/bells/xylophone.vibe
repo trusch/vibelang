@@ -1,0 +1,38 @@
+// Xylophone
+// Genre: Orchestral, Marimba | Character: Bright, wooden, percussive
+//
+// Wooden mallet percussion with short decay.
+
+define_synthdef("xylophone", |builder| {
+    builder
+        .param("freq", 880.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            // Short percussive envelope
+            let envelope = env_asr(0.001, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Short decay
+            let decay_env_data = env_perc(0.001, 0.3);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Xylophone partials (bright, woody)
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 3.0) * 0.4; // Strong 3rd harmonic
+            let h3 = sin_osc_ar(freq * 4.0) * 0.2;
+            let h4 = sin_osc_ar(freq * 6.0) * 0.15;
+
+            let wood = h1 + h2 + h3 + h4;
+
+            // Woody mallet click
+            let click_env_data = env_perc(0.0001, 0.015);
+            let click_env = NewEnvGenBuilder(click_env_data, dc_ar(1.0)).build();
+            let click = white_noise_ar() * click_env * 0.2;
+            let click_filtered = hpf_ar(click, 2000.0);
+
+            (wood + click_filtered) * env * decay_env * amp * 0.7
+        })
+});

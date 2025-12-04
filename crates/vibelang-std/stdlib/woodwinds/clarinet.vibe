@@ -1,0 +1,73 @@
+// Clarinet
+// Orchestral/Jazz | Character: Warm, woody, chalumeau to clarion
+//
+// The clarinet with its distinctive warm lower register
+// and bright upper register.
+
+define_synthdef("clarinet", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.05, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Vibrato
+            let vib = sin_osc_ar(5.0) * 0.004 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Clarinet has strong odd harmonics
+            let h1 = sin_osc_ar(mod_freq);
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.6;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.3;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.15;
+            let h9 = sin_osc_ar(mod_freq * 9.0) * 0.08;
+
+            let tone = h1 + h3 + h5 + h7 + h9;
+
+            // Reed buzz (very subtle)
+            let reed_env_data = env_asr(0.01, 1.0, 0.05);
+            let reed_env = NewEnvGenBuilder(reed_env_data, gate).build();
+            let reed = white_noise_ar() * reed_env * 0.02;
+            let reed_filtered = lpf_ar(hpf_ar(reed, 1000.0), 4000.0);
+
+            // Body resonance
+            let body = rlpf_ar(tone + reed_filtered, 2500.0, 0.35);
+
+            body * env * amp * 0.6
+        })
+});
+
+// Bass Clarinet
+define_synthdef("bass_clarinet", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.08, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Slow vibrato
+            let vib = sin_osc_ar(4.5) * 0.003 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Dark odd harmonics
+            let h1 = sin_osc_ar(mod_freq);
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.5;
+            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.25;
+            let h7 = sin_osc_ar(mod_freq * 7.0) * 0.1;
+
+            let tone = h1 + h3 + h5 + h7;
+
+            // Warm filtering
+            let body = lpf_ar(tone, 2000.0);
+
+            body * env * amp * 0.7
+        })
+});

@@ -1,0 +1,32 @@
+// Genre: Trance, Progressive | Character: Synth-based downlifter
+define_synthdef("downer_synth", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 3.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.1, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let down_env = 1.0 - env;
+
+            // Falling supersaw
+            let freq = 100.0 + down_env * 600.0;
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.005);
+            let saw3 = saw_ar(freq * 0.995);
+            let saw4 = saw_ar(freq * 1.01);
+            let saw5 = saw_ar(freq * 0.99);
+
+            let supersaw = (saw1 + saw2 + saw3 + saw4 + saw5) * 0.15;
+
+            // Closing filter
+            let cutoff = 500.0 + down_env * 6000.0;
+            let filtered = rlpf_ar(supersaw, cutoff, 0.4);
+
+            filtered * env * amp
+        })
+});

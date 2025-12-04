@@ -1,0 +1,51 @@
+// Tape Saturation Effect
+// Inspired by: Studer A800, Ampex ATR-102, UAD Tape machines
+//
+// Warm analog tape saturation with subtle compression and harmonic enhancement.
+// Adds that classic "glue" and warmth that makes mixes come alive.
+//
+// Parameters:
+//   drive: Input drive/saturation amount (0.0 to 1.0)
+//   bias: Tape bias affecting harmonic character (0.0 = vintage, 1.0 = modern)
+//   speed: Simulated tape speed affecting frequency response (0.0 = 7.5ips, 1.0 = 30ips)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("tape_saturation", |builder| {
+    builder
+        .param("drive", 0.4)
+        .param("bias", 0.5)
+        .param("speed", 0.7)
+        .param("mix", 0.5)
+        .body(|input, drive, bias, speed, mix| {
+            // Input gain (drive into saturation)
+            let driven_l = input[0] * (1.0 + drive * 3.0);
+            let driven_r = input[1] * (1.0 + drive * 3.0);
+
+            // Tape saturation (asymmetric soft clipping)
+            let sat_l = (driven_l * (1.0 + bias * 0.5)).tanh() + driven_l * bias * 0.1;
+            let sat_r = (driven_r * (1.0 + bias * 0.5)).tanh() + driven_r * bias * 0.1;
+
+            // Tape head bump (bass boost around 60-100Hz)
+            let bump_freq = 70.0 + speed * 50.0;
+            let bump_l = rlpf_ar(sat_l, bump_freq, 0.5) * 0.3 * (1.0 - speed * 0.5);
+            let bump_r = rlpf_ar(sat_r, bump_freq, 0.5) * 0.3 * (1.0 - speed * 0.5);
+
+            // High frequency roll-off (tape speed dependent)
+            let hf_cutoff = 8000.0 + speed * 12000.0;
+            let filtered_l = lpf_ar(sat_l, hf_cutoff);
+            let filtered_r = lpf_ar(sat_r, hf_cutoff);
+
+            // Subtle wow (very slow pitch variation)
+            let wow = sin_osc_ar(0.3) * 0.0005;
+            let final_l = delay_c_ar(filtered_l + bump_l, 0.01, 0.001 + wow);
+            let final_r = delay_c_ar(filtered_r + bump_r, 0.01, 0.001 + wow);
+
+            // Output level compensation
+            let comp = 1.0 / (1.0 + drive * 0.5);
+
+            [
+                (1.0 - mix) * input[0] + mix * final_l * comp,
+                (1.0 - mix) * input[1] + mix * final_r * comp
+            ]
+        })
+});

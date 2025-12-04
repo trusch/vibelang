@@ -1,0 +1,38 @@
+// Synth Brass
+// Genre: 80s, Synthwave | Character: Punchy, bright, fat
+//
+// Classic synth brass stab with detuned saw waves.
+
+define_synthdef("synth_brass", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("detune", 0.5) // Detune amount
+        .body(|freq, amp, gate, detune| {
+            // Fast attack envelope
+            let envelope = env_asr(0.03, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple detuned saws for fat sound
+            let detune_amt = 0.005 + detune * 0.01;
+            let saw1 = saw_ar(freq * (1.0 - detune_amt));
+            let saw2 = saw_ar(freq * (1.0 - detune_amt * 0.5));
+            let saw3 = saw_ar(freq);
+            let saw4 = saw_ar(freq * (1.0 + detune_amt * 0.5));
+            let saw5 = saw_ar(freq * (1.0 + detune_amt));
+
+            let stack = (saw1 + saw2 + saw3 + saw4 + saw5) * 0.25;
+
+            // Filter with envelope
+            let filter_env_data = env_asr(0.01, 1.0, 0.1);
+            let filter_env = NewEnvGenBuilder(filter_env_data, gate).build();
+            let filter_freq = 600.0 + filter_env * 3000.0;
+
+            let brass = rlpf_ar(stack, filter_freq, 0.4);
+
+            brass * env * amp
+        })
+});

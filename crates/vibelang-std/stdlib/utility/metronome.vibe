@@ -1,0 +1,47 @@
+// Metronome Click
+// Utility | Character: Sharp, precise click
+//
+// Simple metronome click for timing reference.
+
+define_synthdef("metronome")
+    .param("freq", 1000.0)
+    .param("amp", 0.5)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Very short click envelope
+        let envelope = env_perc(0.0001, 0.03);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Sharp click tone
+        let click = sin_osc_ar(freq);
+
+        // High frequency transient for clarity
+        let tick_env_data = env_perc(0.0001, 0.005);
+        let tick_env = NewEnvGenBuilder(tick_env_data, gate).build();
+        let tick = sin_osc_ar(freq * 4.0) * tick_env;
+
+        (click + tick * 0.5) * env * amp
+    });
+
+// Accented metronome click (for downbeats)
+define_synthdef("metronome_accent")
+    .param("freq", 1500.0)
+    .param("amp", 0.6)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Short click envelope
+        let envelope = env_perc(0.0001, 0.04);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Higher pitched accent
+        let click = sin_osc_ar(freq);
+        let click2 = sin_osc_ar(freq * 2.0) * 0.3;
+
+        (click + click2) * env * amp
+    });

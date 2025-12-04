@@ -1,0 +1,50 @@
+// Dimension Chorus Effect
+// Inspired by: Roland Dimension D (SDD-320), Boss DC-2
+//
+// Classic ensemble chorus with multiple modes creating rich, dimensional sound.
+// Famous for its ability to widen sounds without obvious "chorus" effect.
+//
+// Parameters:
+//   mode: Intensity mode 1-4 (0.25=subtle, 0.5=warm, 0.75=rich, 1.0=full)
+//   rate: Modulation speed (0.0 to 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("dimension_chorus", |builder| {
+    builder
+        .param("mode", 0.5)
+        .param("rate", 0.5)
+        .param("mix", 0.5)
+        .body(|input, mode, rate, mix| {
+            let lfo_rate = 0.3 + rate * 1.2;
+
+            // Four BBD-style delay lines with different phases
+            let lfo1 = sin_osc_ar(lfo_rate) * mode * 0.003;
+            let lfo2 = sin_osc_ar(lfo_rate, 1.57) * mode * 0.003;  // 90 degrees
+            let lfo3 = sin_osc_ar(lfo_rate, 3.14) * mode * 0.003; // 180 degrees
+            let lfo4 = sin_osc_ar(lfo_rate, 4.71) * mode * 0.003; // 270 degrees
+
+            // Base delay times (BBD character)
+            let base_delay = 0.005 + mode * 0.005;
+
+            // Chorus voices - left channel
+            let voice1_l = delay_c_ar(input[0], 0.05, base_delay + lfo1);
+            let voice2_l = delay_c_ar(input[0], 0.05, base_delay * 1.1 + lfo3);
+
+            // Chorus voices - right channel
+            let voice1_r = delay_c_ar(input[1], 0.05, base_delay + lfo2);
+            let voice2_r = delay_c_ar(input[1], 0.05, base_delay * 1.1 + lfo4);
+
+            // Subtle high frequency roll-off (BBD character)
+            let chorus_l = lpf_ar((voice1_l + voice2_l) * 0.5, 12000.0);
+            let chorus_r = lpf_ar((voice1_r + voice2_r) * 0.5, 12000.0);
+
+            // Mix with slight cross-feed for dimension
+            let wet_l = chorus_l + chorus_r * 0.15;
+            let wet_r = chorus_r + chorus_l * 0.15;
+
+            [
+                (1.0 - mix) * input[0] + mix * wet_l,
+                (1.0 - mix) * input[1] + mix * wet_r
+            ]
+        })
+});

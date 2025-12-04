@@ -1,0 +1,115 @@
+// Roland SH-101 Emulation
+// Classic 1982 | Character: Punchy, clean, versatile
+//
+// The iconic portable monosynth. Perfect for bass,
+// leads, and the classic 80s sound.
+
+// SH-101 Bass - Clean punchy bass
+define_synthdef("sh101_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("filter_env", 0.6)
+        .body(|freq, amp, gate, filter_env| {
+            let envelope = env_asr(0.003, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_perc(0.001, 0.15);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+
+            // Single VCO with sub
+            let saw = saw_ar(freq);
+            let sub = saw_ar(freq * 0.5) * 0.5;
+
+            let mix = saw * 0.6 + sub;
+
+            // 101 filter character
+            let cutoff = 300.0 + filt_env * filter_env * 3000.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.35);
+
+            filtered * env * amp
+        })
+});
+
+// SH-101 Lead - Classic mono lead
+define_synthdef("sh101_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("resonance", 0.4)
+        .body(|freq, amp, gate, resonance| {
+            let envelope = env_asr(0.01, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Single oscillator
+            let saw = saw_ar(freq);
+
+            // Resonant filter
+            let filtered = rlpf_ar(saw, 3500.0, 1.0 - resonance * 0.8);
+
+            filtered * env * amp
+        })
+});
+
+// SH-101 Sync Lead - Hard sync lead
+define_synthdef("sh101_sync", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("sync_ratio", 2.5)
+        .body(|freq, amp, gate, sync_ratio| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Simulated sync with harmonic content
+            let master = saw_ar(freq);
+            let slave = saw_ar(freq * sync_ratio) * 0.4;
+            let sync_harmonic = sin_osc_ar(freq * sync_ratio) * 0.3;
+
+            let mix = master + slave + sync_harmonic;
+
+            // Bright filter
+            let filtered = lpf_ar(mix, 6000.0);
+
+            filtered * env * amp * 0.5
+        })
+});
+
+// SH-101 Acid - For acid house
+define_synthdef("sh101_acid", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("resonance", 0.7)
+        .param("env_mod", 0.8)
+        .body(|freq, amp, gate, resonance, env_mod| {
+            let envelope = env_asr(0.002, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Sharp filter envelope
+            let filt_env_data = env_perc(0.001, 0.1);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+
+            // Saw oscillator
+            let saw = saw_ar(freq);
+
+            // Squelchy acid filter
+            let cutoff = 200.0 + filt_env * env_mod * 4000.0;
+            let filtered = rlpf_ar(saw, cutoff, 1.0 - resonance * 0.9);
+
+            filtered * env * amp
+        })
+});

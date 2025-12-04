@@ -1,0 +1,71 @@
+// Gamelan Instruments
+// Indonesian | Character: Metallic, resonant, bell-like
+//
+// Traditional Indonesian percussion ensemble instruments.
+
+// Gamelan Gong
+define_synthdef("gamelan_gong", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Very long decay for gong
+            let decay_env_data = env_perc(0.001, 4.0);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Complex inharmonic partials
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.3) * 0.5;
+            let h3 = sin_osc_ar(freq * 3.1) * 0.35;
+            let h4 = sin_osc_ar(freq * 4.7) * 0.25;
+            let h5 = sin_osc_ar(freq * 6.2) * 0.15;
+
+            let gong = h1 + h2 + h3 + h4 + h5;
+
+            // Strike
+            let strike_env_data = env_perc(0.0001, 0.05);
+            let strike_env = NewEnvGenBuilder(strike_env_data, dc_ar(1.0)).build();
+            let strike = white_noise_ar() * strike_env * 0.15;
+
+            (gong + lpf_ar(strike, 2000.0)) * env * decay_env * amp * 0.5
+        })
+});
+
+// Gamelan Metallophone (Saron/Gender)
+define_synthdef("gamelan_metal", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Medium decay
+            let decay_env_data = env_perc(0.001, 1.5);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Metallic partials
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(freq * 3.8) * 0.3; // Inharmonic
+            let h4 = sin_osc_ar(freq * 5.1) * 0.2;
+
+            let metal = h1 + h2 + h3 + h4;
+
+            // Mallet strike
+            let strike_env_data = env_perc(0.0001, 0.01);
+            let strike_env = NewEnvGenBuilder(strike_env_data, dc_ar(1.0)).build();
+            let strike = sin_osc_ar(freq * 7.0) * strike_env * 0.15;
+
+            (metal + strike) * env * decay_env * amp * 0.5
+        })
+});

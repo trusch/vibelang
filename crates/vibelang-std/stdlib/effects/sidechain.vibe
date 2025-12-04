@@ -1,0 +1,46 @@
+// Sidechain Compressor Effect
+//
+// Classic pumping/ducking effect triggered by amplitude follower.
+// Perfect for making synths duck under kicks.
+//
+// Usage:
+//   group.add_effect("pump", "sidechain", #{
+//     threshold: 0.3,
+//     ratio: 8.0,
+//     attack: 0.001,
+//     release: 0.15,
+//     amount: 0.7
+//   });
+//
+// Parameters:
+//   threshold: Trigger threshold (0.0 - 1.0)
+//   ratio: Compression ratio when triggered
+//   attack: Attack time in seconds
+//   release: Release time in seconds
+//   amount: Effect intensity (0.0 = off, 1.0 = full pump)
+
+define_fx("sidechain", |builder| {
+    builder
+        .param("threshold", 0.3)
+        .param("ratio", 8.0)
+        .param("attack", 0.001)
+        .param("release", 0.15)
+        .param("amount", 0.7)
+        .body(|input, threshold, ratio, attack, release, amount| {
+            // Follow the input amplitude for self-ducking
+            // In a real scenario you'd use a sidechain input
+            let left_amp = amplitude_ar(input[0], attack, release);
+            let right_amp = amplitude_ar(input[1], attack, release);
+            let env = (left_amp + right_amp) * 0.5;
+
+            // Calculate gain reduction when above threshold
+            let above_thresh = env - threshold;
+            let gain_reduction = 1.0 - (above_thresh.max(0.0) * (1.0 - 1.0/ratio) * amount);
+
+            // Apply gain reduction
+            [
+                input[0] * gain_reduction,
+                input[1] * gain_reduction
+            ]
+        })
+});

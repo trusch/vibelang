@@ -1,0 +1,65 @@
+// Multi-band Compressor Effect
+//
+// Three-band dynamics processing for precise control.
+// Process lows, mids, and highs independently.
+//
+// Usage:
+//   group.add_effect("multi", "multiband_comp", #{
+//     low_thresh: 0.5,
+//     mid_thresh: 0.4,
+//     high_thresh: 0.3,
+//     ratio: 4.0,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   low_freq: Low/mid crossover frequency (default 200 Hz)
+//   high_freq: Mid/high crossover frequency (default 3000 Hz)
+//   low_thresh: Low band threshold
+//   mid_thresh: Mid band threshold
+//   high_thresh: High band threshold
+//   ratio: Compression ratio for all bands
+//   mix: Dry/wet mix
+
+define_fx("multiband_comp", |builder| {
+    builder
+        .param("low_freq", 200.0)
+        .param("high_freq", 3000.0)
+        .param("low_thresh", 0.5)
+        .param("mid_thresh", 0.4)
+        .param("high_thresh", 0.3)
+        .param("ratio", 4.0)
+        .param("attack", 0.01)
+        .param("release", 0.1)
+        .param("mix", 1.0)
+        .body(|input, low_freq, high_freq, low_thresh, mid_thresh, high_thresh, ratio, attack, release, mix| {
+            // Split into bands
+            let low_left = lpf_ar(input[0], low_freq);
+            let low_right = lpf_ar(input[1], low_freq);
+
+            let high_left = hpf_ar(input[0], high_freq);
+            let high_right = hpf_ar(input[1], high_freq);
+
+            let mid_left = hpf_ar(lpf_ar(input[0], high_freq), low_freq);
+            let mid_right = hpf_ar(lpf_ar(input[1], high_freq), low_freq);
+
+            // Compress each band
+            let comp_low_left = compander_ar(low_left, low_left, low_thresh, 1.0, 1.0/ratio, attack, release);
+            let comp_low_right = compander_ar(low_right, low_right, low_thresh, 1.0, 1.0/ratio, attack, release);
+
+            let comp_mid_left = compander_ar(mid_left, mid_left, mid_thresh, 1.0, 1.0/ratio, attack, release);
+            let comp_mid_right = compander_ar(mid_right, mid_right, mid_thresh, 1.0, 1.0/ratio, attack, release);
+
+            let comp_high_left = compander_ar(high_left, high_left, high_thresh, 1.0, 1.0/ratio, attack, release);
+            let comp_high_right = compander_ar(high_right, high_right, high_thresh, 1.0, 1.0/ratio, attack, release);
+
+            // Recombine bands
+            let processed_left = comp_low_left + comp_mid_left + comp_high_left;
+            let processed_right = comp_low_right + comp_mid_right + comp_high_right;
+
+            [
+                (1.0 - mix) * input[0] + mix * processed_left,
+                (1.0 - mix) * input[1] + mix * processed_right
+            ]
+        })
+});

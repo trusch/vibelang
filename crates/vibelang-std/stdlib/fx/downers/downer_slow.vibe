@@ -1,0 +1,32 @@
+// Genre: Ambient, Cinematic | Character: Slow atmospheric downer
+define_synthdef("downer_slow", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 6.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.5, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let down_env = 1.0 - env;
+
+            // Slowly falling pad-like tone
+            let freq = 80.0 + down_env * 300.0;
+            let pad1 = sin_osc_ar(freq);
+            let pad2 = sin_osc_ar(freq * 2.0) * 0.4;
+            let pad3 = sin_osc_ar(freq * 3.0) * 0.2;
+
+            // Slow modulation
+            let mod_lfo = sin_osc_ar(0.2) * 0.1 + 0.9;
+            let pad = (pad1 + pad2 + pad3) * mod_lfo * 0.4;
+
+            // Descending noise texture
+            let noise = pink_noise_ar();
+            let noise_filtered = lpf_ar(noise, 500.0 + down_env * 3000.0) * 0.2;
+
+            (pad + noise_filtered) * env * amp
+        })
+});

@@ -1,0 +1,28 @@
+// Genre: Cinematic, Ambient | Character: Slow atmospheric whoosh
+define_synthdef("whoosh_slow", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 1.5)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.3, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let noise = pink_noise_ar();
+
+            // Slow rise and fall
+            let sweep = env * (1.0 - env) * 4.0;  // Peak in middle
+            let cutoff = 300.0 + sweep * 6000.0;
+
+            let filtered = lpf_ar(noise, cutoff);
+
+            // Add wind-like character
+            let mod_lfo = sin_osc_ar(3.0) * 0.2 + 0.8;
+            let wind = filtered * mod_lfo;
+
+            wind * env * amp * 0.8
+        })
+});

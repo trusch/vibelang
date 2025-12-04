@@ -1,0 +1,37 @@
+// Tuba
+// Genre: Orchestral, March | Character: Deep, powerful, round
+//
+// Deep tuba with full, round bass tone.
+
+define_synthdef("tuba", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            // Slow attack for tuba
+            let envelope = env_asr(0.15, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Deep brass tone
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.001) * 0.5;
+            let sub = sin_osc_ar(freq * 0.5) * 0.3;
+
+            let tone = (saw1 + saw2) * 0.4 + sub;
+
+            // Tuba formants (very warm)
+            let f1 = rlpf_ar(tone, 250.0, 0.3) * 0.8;
+            let f2 = rlpf_ar(tone, 600.0, 0.35) * 0.5;
+            let f3 = rlpf_ar(tone, 1200.0, 0.4) * 0.2;
+
+            let brass = f1 + f2 + f3;
+
+            // Heavy low pass
+            let deep = lpf_ar(brass, 2000.0);
+
+            deep * env * amp * 0.8
+        })
+});

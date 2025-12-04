@@ -1,0 +1,54 @@
+// Hall Reverb Effect
+// Inspired by: Lexicon 480L, TC Electronic Hall of Fame
+//
+// Large concert hall reverb with lush, enveloping tails.
+// Great for orchestral, ambient, and cinematic sounds.
+//
+// Parameters:
+//   size: Hall size (0.0 = small, 1.0 = cathedral)
+//   decay: Decay time (0.0 to 1.0)
+//   damping: High frequency damping (0.0 to 1.0)
+//   predelay: Pre-delay in seconds (0.0 to 0.1)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("hall_reverb", |builder| {
+    builder
+        .param("size", 0.7)
+        .param("decay", 0.6)
+        .param("damping", 0.4)
+        .param("predelay", 0.02)
+        .param("mix", 0.35)
+        .body(|input, size, decay, damping, predelay, mix| {
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Pre-delay for source separation
+            let predelayed = delay_c_ar(mono, 0.2, predelay);
+
+            // FreeVerb as core reverb engine with hall-like settings
+            let verb = free_verb_ar(predelayed, 1.0, 0.5 + size * 0.45, damping);
+
+            // Additional diffusion for hall character
+            let diff1 = allpass_c_ar(verb, 0.2, 0.067 * (1.0 + size), decay * 0.6);
+            let diff2 = allpass_c_ar(diff1, 0.2, 0.093 * (1.0 + size), decay * 0.5);
+            let diff3 = allpass_c_ar(diff2, 0.2, 0.117 * (1.0 + size), decay * 0.4);
+
+            // Late reflections
+            let late1 = delay_c_ar(diff3, 0.5, 0.13 + size * 0.15) * 0.4;
+            let late2 = delay_c_ar(diff3, 0.5, 0.19 + size * 0.12) * 0.3;
+            let late3 = delay_c_ar(diff3, 0.5, 0.27 + size * 0.1) * 0.2;
+
+            let combined = diff3 + late1 + late2 + late3;
+
+            // High frequency roll-off for natural air absorption
+            let damped = lpf_ar(combined, 8000.0 - damping * 4000.0);
+
+            // Stereo decorrelation
+            let left = damped + delay_c_ar(damped, 0.05, 0.011) * 0.3;
+            let right = damped + delay_c_ar(damped, 0.05, 0.017) * 0.3;
+
+            [
+                (1.0 - mix) * input[0] + mix * left * 0.7,
+                (1.0 - mix) * input[1] + mix * right * 0.7
+            ]
+        })
+});

@@ -1,0 +1,37 @@
+// Tremolo Strings
+// Genre: Cinematic, Dramatic | Character: Tense, dramatic, suspenseful
+//
+// Rapidly bowed tremolo strings for dramatic passages.
+
+define_synthdef("tremolo_strings", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("speed", 8.0) // Tremolo speed in Hz
+        .body(|freq, amp, gate, speed| {
+            // String envelope
+            let envelope = env_asr(0.1, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple detuned voices
+            let v1 = saw_ar(freq * 0.998);
+            let v2 = saw_ar(freq);
+            let v3 = saw_ar(freq * 1.002);
+
+            let strings = (v1 + v2 + v3) * 0.4;
+
+            // Tremolo modulation
+            let trem = sin_osc_ar(speed) * 0.4 + 0.6;
+
+            // String body
+            let body = lpf_ar(strings, 3000.0);
+
+            // Slight vibrato
+            let vib = sin_osc_ar(5.0) * 0.002 + 1.0;
+
+            body * trem * env * amp * vib
+        })
+});

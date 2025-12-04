@@ -1,0 +1,38 @@
+// Genre: Industrial, Dark Techno | Character: Harsh industrial impact
+define_synthdef("impact_industrial", |builder| {
+    builder
+        .param("amp", 0.8)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 1.0);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Metallic resonance
+            let metal1 = sin_osc_ar(230.0);
+            let metal2 = sin_osc_ar(470.0);
+            let metal3 = sin_osc_ar(890.0);
+            let metal4 = sin_osc_ar(1340.0);
+            let metal = metal1 + metal2 * 0.7 + metal3 * 0.5 + metal4 * 0.3;
+            let metal_env = env_perc(0.001, 0.5);
+            let metal_e = NewEnvGenBuilder(metal_env, gate).build();
+
+            // Distorted body
+            let body = saw_ar(60.0) + pulse_ar(90.0, 0.2);
+            let body_dist = (body * 5.0).tanh();
+            let body_env = env_perc(0.001, 0.4);
+            let body_e = NewEnvGenBuilder(body_env, gate).build();
+
+            // Noise burst with resonance
+            let noise = white_noise_ar();
+            let noise_filtered = rlpf_ar(noise, 2000.0, 0.15);
+            let noise_env = env_perc(0.001, 0.1);
+            let noise_e = NewEnvGenBuilder(noise_env, gate).build();
+
+            let mix = metal * metal_e * 0.3 + body_dist * body_e * 0.4 + noise_filtered * noise_e * 0.4;
+
+            mix * env * amp * 0.7
+        })
+});

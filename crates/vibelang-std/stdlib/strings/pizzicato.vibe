@@ -1,0 +1,42 @@
+// Pizzicato Strings
+// Genre: Orchestral, Pop | Character: Plucky, percussive, playful
+//
+// Plucked string sound for pizzicato passages.
+
+define_synthdef("pizzicato", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            // Short pluck envelope (gate-controlled for poly)
+            let envelope = env_asr(0.001, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Fast decay envelope
+            let decay_env_data = env_perc(0.001, 0.3);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Plucked string (bright attack, fast decay)
+            let fund = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.3;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.15;
+            let h5 = sin_osc_ar(freq * 5.0) * 0.08;
+
+            let harmonics = fund + h2 + h3 + h4 + h5;
+
+            // Pluck transient
+            let pluck_env_data = env_perc(0.0001, 0.02);
+            let pluck_env = NewEnvGenBuilder(pluck_env_data, dc_ar(1.0)).build();
+            let pluck = white_noise_ar() * pluck_env * 0.2;
+
+            // Filter sweep for pluck character
+            let filter_freq = 1500.0 + decay_env * 3000.0;
+            let filtered = lpf_ar(harmonics + pluck, filter_freq);
+
+            filtered * env * decay_env * amp
+        })
+});

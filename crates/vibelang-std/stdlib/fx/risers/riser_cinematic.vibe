@@ -1,0 +1,37 @@
+// Genre: Trailer, Film Score | Character: Epic cinematic riser
+define_synthdef("riser_cinematic", |builder| {
+    builder
+        .param("amp", 0.7)
+        .param("duration", 5.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.5, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Deep brass-like foundation
+            let brass_freq = 60.0 + env * 100.0;
+            let brass = saw_ar(brass_freq) + saw_ar(brass_freq * 1.5) * 0.5;
+            let brass_filtered = lpf_ar(brass, 800.0 + env * 2000.0) * 0.3;
+
+            // String-like shimmer layer
+            let string_freq = 220.0 + env * 440.0;
+            let strings = sin_osc_ar(string_freq) + sin_osc_ar(string_freq * 2.01) * 0.5;
+            let string_vib = sin_osc_ar(5.0) * 0.01 + 1.0;
+            let strings_mod = strings * string_vib * env * 0.3;
+
+            // Noise texture
+            let noise = pink_noise_ar();
+            let noise_filtered = hpf_ar(lpf_ar(noise, 4000.0 + env * 8000.0), 200.0) * 0.2;
+
+            // Sub layer
+            let sub = sin_osc_ar(40.0 + env * 20.0) * 0.4;
+
+            // Combine all layers
+            let mix = brass_filtered + strings_mod + noise_filtered * env + sub;
+
+            mix * env * amp * 0.5
+        })
+});

@@ -1,0 +1,28 @@
+// Genre: Sci-Fi, Electronic | Character: Laser-style sweep
+define_synthdef("sweep_laser", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 0.5)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Rapidly falling pitch
+            let freq = 4000.0 - env * 3800.0;
+            let laser = sin_osc_ar(freq);
+
+            // Add harmonics for richness
+            let h2 = sin_osc_ar(freq * 2.0) * 0.3;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.15;
+
+            // Resonant filter sweep
+            let combined = laser + h2 + h3;
+            let filtered = rlpf_ar(combined, freq, 0.2);
+
+            filtered * env * amp * 0.7
+        })
+});

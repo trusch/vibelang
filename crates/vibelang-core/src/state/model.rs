@@ -177,6 +177,8 @@ pub struct GroupState {
     pub soloed: bool,
     /// Synth nodes belonging to this group.
     pub synth_node_ids: Vec<i32>,
+    /// Reload generation.
+    pub generation: u64,
 }
 
 impl GroupState {
@@ -193,6 +195,7 @@ impl GroupState {
             muted: false,
             soloed: false,
             synth_node_ids: Vec::new(),
+            generation: 0,
         }
     }
 }
@@ -230,6 +233,8 @@ pub struct VoiceState {
     pub round_robin_state: RoundRobinState,
     /// VST instrument ID if using VST.
     pub vst_instrument: Option<String>,
+    /// Reload generation.
+    pub generation: u64,
 }
 
 impl VoiceState {
@@ -251,6 +256,7 @@ impl VoiceState {
             sustained_notes: HashSet::new(),
             round_robin_state: RoundRobinState::new(),
             vst_instrument: None,
+            generation: 0,
         }
     }
 }
@@ -544,6 +550,131 @@ pub struct VstInstrumentInfo {
 
 // Re-export the full SFZ instrument type from vibelang-sfz
 pub use vibelang_sfz::SfzInstrument;
+
+// ============================================================================
+// Content Hashing for Reload Diffing
+// ============================================================================
+
+use std::hash::{Hash, Hasher};
+
+/// Helper to hash a HashMap<String, f32> in a deterministic order.
+fn hash_params<H: Hasher>(params: &HashMap<String, f32>, state: &mut H) {
+    let mut keys: Vec<_> = params.keys().collect();
+    keys.sort();
+    for key in keys {
+        key.hash(state);
+        params[key].to_bits().hash(state);
+    }
+}
+
+impl GroupState {
+    /// Compute a content hash of this group's configuration.
+    /// Excludes ephemeral state like node_id, link_synth_node_id.
+    pub fn content_hash(&self) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.name.hash(&mut hasher);
+        self.path.hash(&mut hasher);
+        self.parent_path.hash(&mut hasher);
+        hash_params(&self.params, &mut hasher);
+        self.muted.hash(&mut hasher);
+        self.soloed.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl VoiceState {
+    /// Compute a content hash of this voice's configuration.
+    /// Excludes ephemeral state like active_notes, round_robin_state.
+    pub fn content_hash(&self) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.name.hash(&mut hasher);
+        self.synth_name.hash(&mut hasher);
+        self.polyphony.hash(&mut hasher);
+        self.gain.to_bits().hash(&mut hasher);
+        self.group_path.hash(&mut hasher);
+        self.group_name.hash(&mut hasher);
+        self.output_bus.hash(&mut hasher);
+        self.muted.hash(&mut hasher);
+        self.soloed.hash(&mut hasher);
+        hash_params(&self.params, &mut hasher);
+        self.sfz_instrument.hash(&mut hasher);
+        self.vst_instrument.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl PatternState {
+    /// Compute a content hash of this pattern's configuration.
+    /// Excludes ephemeral state like status.
+    pub fn content_hash(&self) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.name.hash(&mut hasher);
+        self.group_path.hash(&mut hasher);
+        self.voice_name.hash(&mut hasher);
+        // Hash the pattern data
+        if let Some(ref lp) = self.loop_pattern {
+            lp.name.hash(&mut hasher);
+            lp.loop_length_beats.to_bits().hash(&mut hasher);
+            lp.phase_offset.to_bits().hash(&mut hasher);
+            lp.events.len().hash(&mut hasher);
+            for event in &lp.events {
+                event.beat.to_bits().hash(&mut hasher);
+                event.synth_def.hash(&mut hasher);
+                for (k, v) in &event.controls {
+                    k.hash(&mut hasher);
+                    v.to_bits().hash(&mut hasher);
+                }
+            }
+        }
+        hash_params(&self.params, &mut hasher);
+        self.is_looping.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl MelodyState {
+    /// Compute a content hash of this melody's configuration.
+    /// Excludes ephemeral state like status.
+    pub fn content_hash(&self) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.name.hash(&mut hasher);
+        self.group_path.hash(&mut hasher);
+        self.voice_name.hash(&mut hasher);
+        // Hash the pattern data
+        if let Some(ref lp) = self.loop_pattern {
+            lp.name.hash(&mut hasher);
+            lp.loop_length_beats.to_bits().hash(&mut hasher);
+            lp.phase_offset.to_bits().hash(&mut hasher);
+            lp.events.len().hash(&mut hasher);
+            for event in &lp.events {
+                event.beat.to_bits().hash(&mut hasher);
+                event.synth_def.hash(&mut hasher);
+                for (k, v) in &event.controls {
+                    k.hash(&mut hasher);
+                    v.to_bits().hash(&mut hasher);
+                }
+            }
+        }
+        hash_params(&self.params, &mut hasher);
+        self.is_looping.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl EffectState {
+    /// Compute a content hash of this effect's configuration.
+    /// Excludes ephemeral state like node_id, bus routing.
+    pub fn content_hash(&self) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.id.hash(&mut hasher);
+        self.synthdef_name.hash(&mut hasher);
+        self.group_path.hash(&mut hasher);
+        hash_params(&self.params, &mut hasher);
+        self.position.hash(&mut hasher);
+        self.vst_plugin.hash(&mut hasher);
+        hasher.finish()
+    }
+}
 
 #[cfg(test)]
 mod tests {

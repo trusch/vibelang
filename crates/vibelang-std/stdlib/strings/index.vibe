@@ -1,0 +1,11 @@
+// Strings Library Index
+//
+// Import this file to load all string instrument synthdefs at once.
+// Usage: import "stdlib/strings/index.vibe"
+
+import "stdlib/strings/string_ensemble.vibe";
+import "stdlib/strings/solo_violin.vibe";
+import "stdlib/strings/solo_cello.vibe";
+import "stdlib/strings/pizzicato.vibe";
+import "stdlib/strings/tremolo_strings.vibe";
+import "stdlib/strings/harp.vibe";

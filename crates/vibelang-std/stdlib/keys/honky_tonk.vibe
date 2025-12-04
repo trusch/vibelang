@@ -1,0 +1,48 @@
+// Honky-Tonk Piano
+// Genre: Country, Ragtime | Character: Detuned, jangling, bright
+//
+// Slightly detuned piano with characteristic "tack" attack.
+
+define_synthdef("honky_tonk", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("detune", 0.5) // Detune amount
+        .body(|freq, amp, gate, detune| {
+            // Piano-like envelope
+            let envelope = env_asr(0.005, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Decay envelope for sustain
+            let decay_env_data = env_perc(0.001, 1.0);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Detuned strings (honky-tonk character)
+            let detune_amt = 0.002 + detune * 0.008;
+            let str1 = sin_osc_ar(freq * (1.0 - detune_amt));
+            let str2 = sin_osc_ar(freq);
+            let str3 = sin_osc_ar(freq * (1.0 + detune_amt));
+
+            // Harmonics
+            let h2 = sin_osc_ar(freq * 2.0) * 0.4;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.2;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.1;
+
+            let strings = (str1 + str2 + str3) * 0.4 + h2 + h3 + h4;
+
+            // Tack piano hammer sound
+            let tack_env_data = env_perc(0.0001, 0.02);
+            let tack_env = NewEnvGenBuilder(tack_env_data, dc_ar(1.0)).build();
+            let tack = white_noise_ar() * tack_env * 0.25;
+
+            let piano = strings + tack;
+
+            // Bright filtering
+            let filtered = lpf_ar(piano, 6000.0);
+
+            filtered * env * decay_env * amp * 0.6
+        })
+});

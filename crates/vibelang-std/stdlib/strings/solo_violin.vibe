@@ -1,0 +1,46 @@
+// Solo Violin
+// Genre: Classical, Film | Character: Expressive, singing, bright
+//
+// Solo violin-like sound with vibrato and bow noise.
+
+define_synthdef("solo_violin", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("vibrato", 0.6) // Vibrato amount
+        .body(|freq, amp, gate, vibrato| {
+            // Bowed string envelope
+            let envelope = env_asr(0.1, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Vibrato
+            let vib_freq = 5.5;
+            let vib_depth = vibrato * 0.015;
+            let vib = sin_osc_ar(vib_freq) * vib_depth + 1.0;
+            let mod_freq = freq * vib;
+
+            // Sawtooth-like bowed string
+            let osc1 = saw_ar(mod_freq);
+            let osc2 = saw_ar(mod_freq * 1.002) * 0.5;
+
+            let string = (osc1 + osc2) * 0.6;
+
+            // Bow noise (subtle)
+            let bow_noise = white_noise_ar() * 0.02;
+            let bow_filtered = hpf_ar(lpf_ar(bow_noise, 4000.0), 1000.0);
+
+            // Resonant body filtering
+            let body = rlpf_ar(string, 2500.0, 0.3);
+            let body2 = rlpf_ar(string, 800.0, 0.4) * 0.3;
+
+            let violin = body + body2 + bow_filtered;
+
+            // High pass to remove mud
+            let clean = hpf_ar(violin, 200.0);
+
+            clean * env * amp
+        })
+});

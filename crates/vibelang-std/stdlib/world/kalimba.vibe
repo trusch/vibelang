@@ -1,0 +1,40 @@
+// Kalimba (Thumb Piano)
+// African | Character: Bright, metallic, bell-like
+//
+// The traditional African thumb piano with its
+// distinctive bright, resonant tone.
+
+define_synthdef("kalimba", |builder| {
+    builder
+        .param("freq", 880.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Medium decay
+            let decay_env_data = env_perc(0.001, 0.8);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Metallic tine sound
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.5;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.3;
+            let h4 = sin_osc_ar(freq * 5.2) * 0.15; // Slightly inharmonic
+
+            let tine = h1 + h2 + h3 + h4;
+
+            // Pluck attack
+            let pluck_env_data = env_perc(0.0001, 0.01);
+            let pluck_env = NewEnvGenBuilder(pluck_env_data, dc_ar(1.0)).build();
+            let pluck = sin_osc_ar(freq * 8.0) * pluck_env * 0.2;
+
+            // Body resonance
+            let body = rlpf_ar(tine, 2500.0, 0.3);
+
+            (body + pluck) * env * decay_env * amp * 0.6
+        })
+});

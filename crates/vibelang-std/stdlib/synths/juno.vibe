@@ -1,0 +1,126 @@
+// Roland Juno-60/106 Emulation
+// Classic 1980s | Character: Lush, shimmering, warm chorus
+//
+// The definitive polysynth sound. Known for its
+// built-in chorus and smooth, creamy pads.
+
+// Juno Pad - The iconic lush pad
+define_synthdef("juno_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("chorus", 0.7) // Chorus depth
+        .body(|freq, amp, gate, chorus| {
+            let envelope = env_asr(0.4, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Single DCO with sub oscillator
+            let saw = saw_ar(freq);
+            let sub = sin_osc_ar(freq * 0.5) * 0.4;
+
+            let source = saw * 0.7 + sub;
+
+            // Juno-style chorus (stereo detune)
+            let lfo1 = sin_osc_ar(0.5) * chorus * 0.008;
+            let lfo2 = sin_osc_ar(0.6) * chorus * 0.008;
+
+            let voice1 = saw_ar(freq * (1.0 + lfo1));
+            let voice2 = saw_ar(freq * (1.0 + lfo2));
+
+            let chorused = (source + voice1 + voice2) * 0.35;
+
+            // Warm resonant filter
+            let filtered = rlpf_ar(chorused, 2000.0, 0.4);
+
+            filtered * env * amp
+        })
+});
+
+// Juno Brass - Classic synth brass
+define_synthdef("juno_brass", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.08, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope for brass attack
+            let filt_env_data = env_asr(0.03, 1.0, 0.15);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Saw waves with PWM character
+            let saw1 = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.003);
+
+            let source = (saw1 + saw2) * 0.5;
+
+            // Filter sweep
+            let cutoff = 600.0 + filt_env * 3000.0;
+            let filtered = rlpf_ar(source, cutoff, 0.3);
+
+            filtered * env * amp
+        })
+});
+
+// Juno Bass - Punchy analog bass
+define_synthdef("juno_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Saw + sub
+            let saw = saw_ar(freq);
+            let sub = sin_osc_ar(freq * 0.5) * 0.5;
+
+            let source = saw * 0.6 + sub;
+
+            // Punchy filter envelope
+            let filt_env_data = env_perc(0.001, 0.2);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let cutoff = 400.0 + filt_env * 2000.0;
+
+            let filtered = rlpf_ar(source, cutoff, 0.35);
+
+            filtered * env * amp
+        })
+});
+
+// Juno Strings - Classic polysynth strings
+define_synthdef("juno_strings", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.3, 1.0, 0.4);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple detuned voices
+            let v1 = saw_ar(freq * 0.996);
+            let v2 = saw_ar(freq * 0.999);
+            let v3 = saw_ar(freq * 1.001);
+            let v4 = saw_ar(freq * 1.004);
+
+            let voices = (v1 + v2 + v3 + v4) * 0.3;
+
+            // Smooth filtering
+            let filtered = lpf_ar(voices, 3500.0);
+
+            filtered * env * amp
+        })
+});

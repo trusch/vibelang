@@ -1,0 +1,169 @@
+// Serum-Style Sound Design
+// Modern EDM | Character: Clean, powerful, wavetable-inspired
+//
+// Sounds inspired by Xfer Serum - the industry standard
+// for modern EDM production.
+
+// Serum Growl Bass - The dubstep staple
+define_synthdef("serum_growl", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("growl_rate", 8.0) // LFO rate for growl
+        .param("intensity", 0.7)
+        .body(|freq, amp, gate, growl_rate, intensity| {
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // FM modulation for growl character
+            let lfo = sin_osc_ar(growl_rate);
+            let mod_depth = lfo * intensity * 0.3 + 0.3;
+
+            let modulator = sin_osc_ar(freq * 2.0) * mod_depth * freq;
+            let carrier = sin_osc_ar(freq + modulator);
+
+            // Second layer for thickness
+            let mod2 = sin_osc_ar(freq * 3.0) * mod_depth * freq * 0.5;
+            let carrier2 = sin_osc_ar(freq * 0.5 + mod2) * 0.6;
+
+            let growl = carrier * 0.5 + carrier2;
+
+            // Distortion for edge
+            let dist = (growl * 2.0).tanh();
+
+            // Filter sweep
+            let filter_mod = lfo * 1000.0 + 2000.0;
+            let filtered = rlpf_ar(dist, filter_mod, 0.4);
+
+            filtered * env * amp
+        })
+});
+
+// Serum Reese Bass - Modern reese
+define_synthdef("serum_reese", |builder| {
+    builder
+        .param("freq", 55.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("detune", 0.5)
+        .body(|freq, amp, gate, detune| {
+            let envelope = env_asr(0.02, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple detuned saws for modern reese
+            let spread = detune * 0.02;
+            let v1 = saw_ar(freq * (1.0 - spread * 2.0));
+            let v2 = saw_ar(freq * (1.0 - spread));
+            let v3 = saw_ar(freq);
+            let v4 = saw_ar(freq * (1.0 + spread));
+            let v5 = saw_ar(freq * (1.0 + spread * 2.0));
+
+            let mix = (v1 + v2 + v3 + v4 + v5) * 0.22;
+
+            // Subtle modulation
+            let mod_lfo = sin_osc_ar(0.2) * 0.002 + 1.0;
+
+            // Bass boost
+            let boosted = mix + lpf_ar(mix, 100.0) * 0.5;
+
+            boosted * env * amp * mod_lfo
+        })
+});
+
+// Serum Supersaw - Ultra-wide lead
+define_synthdef("serum_supersaw", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("width", 0.7)
+        .body(|freq, amp, gate, width| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // 7 voices with varying detune
+            let spread = width * 0.04;
+            let v1 = saw_ar(freq * (1.0 - spread * 3.0));
+            let v2 = saw_ar(freq * (1.0 - spread * 2.0));
+            let v3 = saw_ar(freq * (1.0 - spread));
+            let v4 = saw_ar(freq);
+            let v5 = saw_ar(freq * (1.0 + spread));
+            let v6 = saw_ar(freq * (1.0 + spread * 2.0));
+            let v7 = saw_ar(freq * (1.0 + spread * 3.0));
+
+            let mix = (v1 + v2 + v3 + v4 + v5 + v6 + v7) * 0.17;
+
+            // Bright filter
+            let filtered = lpf_ar(mix, 10000.0);
+
+            filtered * env * amp
+        })
+});
+
+// Serum Pluck - Modern pluck lead
+define_synthdef("serum_pluck", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Fast decay envelope
+            let decay_env_data = env_perc(0.001, 0.3);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Saw with filter sweep
+            let saw = saw_ar(freq);
+            let saw2 = saw_ar(freq * 1.005);
+
+            let source = (saw + saw2) * 0.5;
+
+            // Filter pluck
+            let cutoff = 500.0 + decay_env * 6000.0;
+            let filtered = rlpf_ar(source, cutoff, 0.3);
+
+            filtered * env * decay_env * amp
+        })
+});
+
+// Serum Hoover - Classic rave hoover updated
+define_synthdef("serum_hoover", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.05, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Detuned oscillators with movement
+            let lfo = sin_osc_ar(0.5) * 0.01 + 1.0;
+            let v1 = saw_ar(freq * 0.99 * lfo);
+            let v2 = saw_ar(freq * lfo);
+            let v3 = saw_ar(freq * 1.01 * lfo);
+
+            // Sync-like harmonics
+            let sync = saw_ar(freq * 2.5) * 0.3;
+
+            let mix = (v1 + v2 + v3) * 0.35 + sync;
+
+            // Resonant sweep
+            let filter_lfo = sin_osc_ar(0.3) * 500.0 + 2000.0;
+            let filtered = rlpf_ar(mix, filter_lfo, 0.4);
+
+            filtered * env * amp
+        })
+});

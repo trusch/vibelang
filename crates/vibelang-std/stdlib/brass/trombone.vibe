@@ -1,0 +1,44 @@
+// Trombone
+// Genre: Jazz, Orchestral | Character: Rich, warm, mellow
+//
+// Trombone with characteristic warm tone and slide capability.
+
+define_synthdef("trombone", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("slide", 0.0) // Slide amount (for glissando)
+        .body(|freq, amp, gate, slide| {
+            // Smooth attack envelope
+            let envelope = env_asr(0.1, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Slide modulation (portamento effect)
+            let slide_mod = 1.0 + slide * 0.1;
+            let mod_freq = freq * slide_mod;
+
+            // Rich brass tone
+            let saw1 = saw_ar(mod_freq);
+            let saw2 = saw_ar(mod_freq * 0.999) * 0.6;
+
+            let tone = (saw1 + saw2) * 0.5;
+
+            // Trombone formants (warmer than trumpet)
+            let f1 = rlpf_ar(tone, 500.0, 0.3) * 0.6;
+            let f2 = rlpf_ar(tone, 1200.0, 0.3);
+            let f3 = rlpf_ar(tone, 2000.0, 0.25) * 0.4;
+
+            let brass = f1 + f2 + f3;
+
+            // Warm low pass
+            let warm = lpf_ar(brass, 3000.0);
+
+            // Slow vibrato
+            let vib = sin_osc_ar(4.0) * 0.006 + 1.0;
+
+            warm * env * amp * vib
+        })
+});

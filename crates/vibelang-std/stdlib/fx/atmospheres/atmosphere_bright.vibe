@@ -1,0 +1,31 @@
+// Genre: Ambient, New Age | Character: Bright ethereal atmosphere
+define_synthdef("atmosphere_bright", |builder| {
+    builder
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|amp, gate| {
+            let envelope = env_asr(1.5, 1.0, 1.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Shimmering high frequencies
+            let shimmer1 = sin_osc_ar(2000.0 + sin_osc_ar(0.3) * 200.0);
+            let shimmer2 = sin_osc_ar(3000.0 + sin_osc_ar(0.4) * 150.0);
+            let shimmer3 = sin_osc_ar(4500.0 + sin_osc_ar(0.5) * 100.0);
+
+            let shimmer = (shimmer1 + shimmer2 * 0.6 + shimmer3 * 0.3) * 0.1;
+
+            // Warm pad underneath
+            let pad_freq = 200.0;
+            let pad = sin_osc_ar(pad_freq) + sin_osc_ar(pad_freq * 2.0) * 0.4;
+            let pad_filtered = lpf_ar(pad, 1000.0) * 0.2;
+
+            // Air texture
+            let air = hpf_ar(pink_noise_ar(), 4000.0) * 0.08;
+
+            let mix = shimmer + pad_filtered + air;
+
+            mix * env * amp
+        })
+});

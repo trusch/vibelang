@@ -1,0 +1,11 @@
+// Brass Library Index
+//
+// Import this file to load all brass instrument synthdefs at once.
+// Usage: import "stdlib/brass/index.vibe"
+
+import "stdlib/brass/brass_section.vibe";
+import "stdlib/brass/trumpet.vibe";
+import "stdlib/brass/trombone.vibe";
+import "stdlib/brass/french_horn.vibe";
+import "stdlib/brass/tuba.vibe";
+import "stdlib/brass/synth_brass.vibe";

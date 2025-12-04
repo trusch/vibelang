@@ -1,0 +1,45 @@
+// Electric Piano (Rhodes-style)
+// Genre: Jazz, R&B, Neo-Soul | Character: Warm, bell-like, mellow
+//
+// Classic Rhodes-style electric piano with characteristic bell tone
+// and warm decay.
+
+define_synthdef("electric_piano", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("brightness", 0.5) // Tine brightness
+        .body(|freq, amp, gate, brightness| {
+            // Gate-controlled envelope with classic EP decay
+            let envelope = env_asr(0.005, 1.0, 0.3);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Fast attack envelope for bell character
+            let bell_env_data = env_perc(0.001, 0.15);
+            let bell_env = NewEnvGenBuilder(bell_env_data, dc_ar(1.0)).build();
+
+            // Fundamental with harmonics (tine + tone bar)
+            let fundamental = sin_osc_ar(freq);
+            let second = sin_osc_ar(freq * 2.0) * 0.5;
+            let third = sin_osc_ar(freq * 3.0) * 0.25;
+            let fourth = sin_osc_ar(freq * 4.0) * 0.15;
+            let fifth = sin_osc_ar(freq * 5.0) * 0.1;
+
+            // Bell/tine component (higher partials with fast decay)
+            let bell = sin_osc_ar(freq * 6.0) * bell_env * 0.2 * brightness;
+            let bell2 = sin_osc_ar(freq * 7.0) * bell_env * 0.1 * brightness;
+
+            let tone = fundamental + second + third + fourth + fifth + bell + bell2;
+
+            // Slight chorus/detuning for thickness
+            let detuned = sin_osc_ar(freq * 1.002) * 0.2;
+
+            // Low pass to tame highs
+            let filtered = lpf_ar(tone + detuned, 3000.0 + brightness * 3000.0);
+
+            filtered * env * amp * 0.6
+        })
+});

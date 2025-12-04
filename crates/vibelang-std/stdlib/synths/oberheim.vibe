@@ -1,0 +1,118 @@
+// Oberheim OB-X/OB-Xa Emulation
+// Classic 1979-1981 | Character: Fat, brassy, lush
+//
+// The sound of Van Halen's "Jump". Thick, aggressive
+// brass and incredibly fat pads.
+
+// Oberheim Pad - Ultra-lush pad
+define_synthdef("oberheim_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.4, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Two VCOs per voice, slightly detuned
+            let vco1a = saw_ar(freq * 0.996);
+            let vco1b = saw_ar(freq * 0.998);
+            let vco2a = saw_ar(freq * 1.002);
+            let vco2b = saw_ar(freq * 1.004);
+
+            let mix = (vco1a + vco1b + vco2a + vco2b) * 0.28;
+
+            // Warm SEM-style filter
+            let filtered = lpf_ar(mix, 2800.0);
+
+            filtered * env * amp
+        })
+});
+
+// Oberheim Brass - The "Jump" brass
+define_synthdef("oberheim_brass", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.03, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_asr(0.015, 1.0, 0.12);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Fat oscillators
+            let vco1 = saw_ar(freq * 0.998);
+            let vco2 = saw_ar(freq * 1.002);
+
+            let mix = (vco1 + vco2) * 0.5;
+
+            // Aggressive filter sweep
+            let cutoff = 300.0 + filt_env * 5000.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.25);
+
+            filtered * env * amp
+        })
+});
+
+// Oberheim Lead - Screaming lead
+define_synthdef("oberheim_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Two saw VCOs
+            let vco1 = saw_ar(freq);
+            let vco2 = saw_ar(freq * 1.008);
+
+            let mix = (vco1 + vco2) * 0.5;
+
+            // Bright resonant filter
+            let filtered = rlpf_ar(mix, 4000.0, 0.4);
+
+            filtered * env * amp
+        })
+});
+
+// Oberheim Bass - Fat bass
+define_synthdef("oberheim_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.008, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope
+            let filt_env_data = env_perc(0.001, 0.25);
+            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+
+            // Fat oscillators with sub
+            let vco1 = saw_ar(freq);
+            let vco2 = saw_ar(freq * 1.003);
+            let sub = sin_osc_ar(freq * 0.5) * 0.4;
+
+            let mix = (vco1 + vco2) * 0.4 + sub;
+
+            // Punchy filter
+            let cutoff = 250.0 + filt_env * 3000.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.3);
+
+            filtered * env * amp
+        })
+});

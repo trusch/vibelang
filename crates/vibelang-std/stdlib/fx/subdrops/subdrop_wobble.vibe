@@ -1,0 +1,35 @@
+// Genre: Dubstep, Bass Music | Character: Wobbling sub drop
+define_synthdef("subdrop_wobble", |builder| {
+    builder
+        .param("amp", 0.8)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 1.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pitch drop
+            let pitch_env = env_perc(0.001, 0.2);
+            let pitch_e = NewEnvGenBuilder(pitch_env, gate).build();
+            let freq = 100.0 - pitch_e * 60.0;
+
+            // Main sub with wobble
+            let wobble_speed = 6.0 + (1.0 - env) * 10.0;  // Speeds up as it decays
+            let wobble = sin_osc_ar(wobble_speed) * 0.5 + 0.5;
+            let sub = sin_osc_ar(freq) * wobble;
+
+            // Second harmonic wobbling
+            let h2 = sin_osc_ar(freq * 2.0) * wobble * 0.3;
+
+            // Click transient
+            let click = white_noise_ar();
+            let click_env = env_perc(0.001, 0.01);
+            let click_e = NewEnvGenBuilder(click_env, gate).build();
+
+            let mix = sub + h2 + click * click_e * 0.2;
+
+            mix * env * amp * 0.7
+        })
+});

@@ -1,0 +1,41 @@
+// Genre: Future Bass, Pop | Character: Vocal formant riser
+define_synthdef("riser_vocal", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 3.0)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.2, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Rising pitch
+            let pitch = 150.0 + env * 400.0;
+
+            // Rich harmonic source
+            let source = saw_ar(pitch) + pulse_ar(pitch, 0.3) * 0.5;
+
+            // Morphing formants (ah -> ee transition)
+            let f1_start = 800.0;
+            let f1_end = 400.0;
+            let f2_start = 1200.0;
+            let f2_end = 2200.0;
+
+            let f1 = f1_start + env * (f1_end - f1_start);
+            let f2 = f2_start + env * (f2_end - f2_start);
+
+            // Apply formant filters
+            let formant1 = rlpf_ar(source, f1, 0.1);
+            let formant2 = rlpf_ar(source, f2, 0.15);
+            let formant3 = rlpf_ar(source, 2600.0, 0.2);
+
+            let vocal = formant1 * 0.5 + formant2 * 0.3 + formant3 * 0.2;
+
+            // Add breathiness
+            let breath = hpf_ar(pink_noise_ar(), 3000.0) * env * 0.15;
+
+            (vocal + breath) * env * amp
+        })
+});

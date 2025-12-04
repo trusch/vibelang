@@ -1,0 +1,41 @@
+// Vocal Chop Synth
+// Genre: EDM, Future Bass | Character: Stuttery, choppy vocal
+//
+// Creates short, stuttery vocal-like sounds.
+// Perfect for vocal chop style leads.
+
+define_synthdef("vocal_chop", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("vowel", 0.5) // Vowel type
+        .body(|freq, amp, gate, vowel| {
+            // Short percussive envelope for chops
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Bright harmonically rich source
+            let saw = saw_ar(freq);
+            let pulse = saw_ar(freq * 1.001);
+            let source = (saw + pulse) * 0.5;
+
+            // Vowel formants (simplified)
+            let f1 = 300.0 + vowel * 500.0;
+            let f2 = 900.0 + (1.0 - vowel) * 700.0;
+
+            let formant1 = rlpf_ar(source, f1, 0.12);
+            let formant2 = rlpf_ar(source, f2, 0.1) * 0.6;
+
+            let vocal = formant1 + formant2;
+
+            // Slight pitch envelope for attack character
+            let pitch_env_data = env_perc(0.001, 0.05);
+            let pitch_env = NewEnvGenBuilder(pitch_env_data, dc_ar(1.0)).build();
+            let pitched = sin_osc_ar(freq * (1.0 + pitch_env * 0.05)) * 0.1;
+
+            (vocal + pitched) * env * amp
+        })
+});

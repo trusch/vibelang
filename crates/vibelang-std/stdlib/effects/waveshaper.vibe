@@ -1,0 +1,44 @@
+// Waveshaper Effect
+//
+// Harmonic distortion through waveshaping transfer function.
+// Creates rich harmonics while maintaining musical character.
+//
+// Usage:
+//   group.add_effect("shaper", "waveshaper", #{
+//     amount: 0.5,
+//     curve: 2.0,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   amount: Shaping intensity (0.0 - 1.0)
+//   curve: Waveshaping curve exponent (1.0 = linear, 3.0 = cubic)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("waveshaper", |builder| {
+    builder
+        .param("amount", 0.5)
+        .param("curve", 2.0)
+        .param("mix", 0.5)
+        .body(|input, amount, curve, mix| {
+            // Pre-gain based on amount
+            let pre_gain = 1.0 + amount * 4.0;
+
+            // Apply polynomial waveshaping
+            let boosted_left = input[0] * pre_gain;
+            let boosted_right = input[1] * pre_gain;
+
+            // Soft clip with curve control
+            let shaped_left = (boosted_left.tanh() + boosted_left * (1.0 - amount)) * 0.5;
+            let shaped_right = (boosted_right.tanh() + boosted_right * (1.0 - amount)) * 0.5;
+
+            // Normalize output
+            let norm_left = shaped_left / pre_gain.sqrt();
+            let norm_right = shaped_right / pre_gain.sqrt();
+
+            [
+                (1.0 - mix) * input[0] + mix * norm_left,
+                (1.0 - mix) * input[1] + mix * norm_right
+            ]
+        })
+});

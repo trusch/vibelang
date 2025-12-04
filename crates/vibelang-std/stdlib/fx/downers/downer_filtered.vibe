@@ -1,0 +1,28 @@
+// Genre: House, Techno | Character: Resonant filter downlifter
+define_synthdef("downer_filtered", |builder| {
+    builder
+        .param("amp", 0.5)
+        .param("duration", 2.5)
+        .body(|amp, duration| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.05, duration);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let down_env = 1.0 - env;
+
+            // Rich source
+            let source = saw_ar(100.0) + pulse_ar(100.0, 0.3) * 0.5;
+
+            // Highly resonant falling filter
+            let cutoff = 300.0 + down_env * 8000.0;
+            let filtered = rlpf_ar(source, cutoff, 0.15);
+
+            // Second resonant peak
+            let peak2 = rlpf_ar(source, cutoff * 0.5, 0.2) * 0.4;
+
+            (filtered + peak2) * env * amp * 0.7
+        })
+});

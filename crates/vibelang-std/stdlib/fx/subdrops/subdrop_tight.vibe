@@ -1,0 +1,29 @@
+// Genre: Techno, Minimal | Character: Tight controlled sub
+define_synthdef("subdrop_tight", |builder| {
+    builder
+        .param("amp", 0.8)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 0.6);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Fast pitch drop
+            let pitch_env = env_perc(0.001, 0.1);
+            let pitch_e = NewEnvGenBuilder(pitch_env, gate).build();
+            let freq = 80.0 - pitch_e * 40.0;
+
+            // Clean sine sub
+            let sub = sin_osc_ar(freq);
+
+            // Subtle click
+            let click = white_noise_ar();
+            let click_env = env_perc(0.001, 0.005);
+            let click_e = NewEnvGenBuilder(click_env, gate).build();
+            let click_filtered = lpf_ar(click, 8000.0) * click_e * 0.15;
+
+            (sub + click_filtered) * env * amp * 0.8
+        })
+});

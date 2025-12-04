@@ -1,0 +1,49 @@
+// Choir Pad
+// Genre: Orchestral, Ambient | Character: Ethereal choir, angelic
+//
+// Lush choir-like pad using multiple detuned oscillators
+// with formant filtering for vocal character.
+
+define_synthdef("choir_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .param("spread", 0.5) // Stereo width and detune
+        .body(|freq, amp, gate, spread| {
+            // Slow attack for choir swell
+            let envelope = env_asr(0.8, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Multiple "voices" with slight detuning
+            let detune = 0.002 + spread * 0.006;
+            let v1 = saw_ar(freq * (1.0 - detune));
+            let v2 = saw_ar(freq);
+            let v3 = saw_ar(freq * (1.0 + detune));
+            let v4 = saw_ar(freq * (1.0 - detune * 2.0));
+            let v5 = saw_ar(freq * (1.0 + detune * 2.0));
+
+            // Octave doubling for richness
+            let octave = saw_ar(freq * 2.0) * 0.3;
+
+            let voices = (v1 + v2 + v3 + v4 + v5) * 0.25 + octave;
+
+            // Choir formant filtering (vowel blend)
+            let formant1 = rlpf_ar(voices, 600.0, 0.15);
+            let formant2 = rlpf_ar(voices, 1200.0, 0.1) * 0.5;
+            let formant3 = rlpf_ar(voices, 2400.0, 0.08) * 0.25;
+
+            let filtered = formant1 + formant2 + formant3;
+
+            // Subtle vibrato for life
+            let vib = sin_osc_ar(5.5) * 0.003;
+            let vibrato_mod = 1.0 + vib;
+
+            // Overall shaping
+            let shaped = lpf_ar(filtered, 4000.0);
+
+            shaped * env * amp * vibrato_mod
+        })
+});

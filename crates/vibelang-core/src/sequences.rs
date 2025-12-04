@@ -221,6 +221,57 @@ impl FadeDefinition {
     }
 }
 
+// ============================================================================
+// Content Hashing for Reload Diffing
+// ============================================================================
+
+use std::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
+
+impl SequenceDefinition {
+    /// Compute a content hash of this sequence's configuration.
+    /// Excludes ephemeral state like generation.
+    pub fn content_hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.name.hash(&mut hasher);
+        self.loop_beats.to_bits().hash(&mut hasher);
+        // Hash clips in order
+        for clip in &self.clips {
+            clip.start.to_bits().hash(&mut hasher);
+            clip.end.to_bits().hash(&mut hasher);
+            // Hash clip source
+            match &clip.source {
+                ClipSource::Pattern(name) => {
+                    "pattern".hash(&mut hasher);
+                    name.hash(&mut hasher);
+                }
+                ClipSource::Melody(name) => {
+                    "melody".hash(&mut hasher);
+                    name.hash(&mut hasher);
+                }
+                ClipSource::Fade(name) => {
+                    "fade".hash(&mut hasher);
+                    name.hash(&mut hasher);
+                }
+                ClipSource::Sequence(name) => {
+                    "sequence".hash(&mut hasher);
+                    name.hash(&mut hasher);
+                }
+            }
+            // Hash clip mode
+            match &clip.mode {
+                ClipMode::Loop => "loop".hash(&mut hasher),
+                ClipMode::Once => "once".hash(&mut hasher),
+                ClipMode::LoopCount(n) => {
+                    "loop_count".hash(&mut hasher);
+                    n.hash(&mut hasher);
+                }
+            }
+        }
+        hasher.finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

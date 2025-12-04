@@ -1,0 +1,41 @@
+// Shakuhachi
+// Japanese | Character: Breathy, meditative, wooden
+//
+// The traditional Japanese bamboo flute with its
+// distinctive breathy, meditative sound.
+
+define_synthdef("shakuhachi", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("breath", 0.4) // Breath noise amount
+        .body(|freq, amp, gate, breath| {
+            let envelope = env_asr(0.15, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Gentle vibrato
+            let vib = sin_osc_ar(5.0) * 0.008 + 1.0;
+            let mod_freq = freq * vib;
+
+            // Breathy tone
+            let tone = sin_osc_ar(mod_freq);
+            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.3;
+            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.1;
+
+            let flute = tone + h2 + h3;
+
+            // Breath noise
+            let noise = white_noise_ar() * breath * 0.15;
+            let breath_filtered = lpf_ar(hpf_ar(noise, 1000.0), 5000.0);
+
+            let mix = flute + breath_filtered;
+
+            // Body resonance
+            let body = rlpf_ar(mix, mod_freq * 2.0, 0.4);
+
+            body * env * amp * 0.7
+        })
+});

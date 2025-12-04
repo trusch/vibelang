@@ -1,0 +1,68 @@
+// Tabla
+// Indian Classical | Character: Pitched drums, expressive, complex
+//
+// The iconic Indian drum pair with their distinctive
+// pitched, resonant sound.
+
+// Tabla Bayan (bass drum)
+define_synthdef("tabla_bayan", |builder| {
+    builder
+        .param("freq", 80.0)
+        .param("amp", 0.7)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 0.4);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pitch bend envelope
+            let pitch_env_data = env_perc(0.001, 0.1);
+            let pitch_env = NewEnvGenBuilder(pitch_env_data, gate).build();
+            let freq_mod = freq + pitch_env * freq * 0.5;
+
+            // Body tone
+            let body = sin_osc_ar(freq_mod);
+            let h2 = sin_osc_ar(freq_mod * 2.0) * 0.3;
+
+            // Membrane sound
+            let membrane = body + h2;
+
+            // Add some thump
+            let thump_env_data = env_perc(0.001, 0.02);
+            let thump_env = NewEnvGenBuilder(thump_env_data, gate).build();
+            let thump = white_noise_ar() * thump_env * 0.2;
+
+            (membrane + lpf_ar(thump, 500.0)) * env * amp
+        })
+});
+
+// Tabla Dayan (treble drum)
+define_synthdef("tabla_dayan", |builder| {
+    builder
+        .param("freq", 300.0)
+        .param("amp", 0.6)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 0.25);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Characteristic tabla pitch
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.14) * 0.4; // Slightly inharmonic
+            let h3 = sin_osc_ar(freq * 3.0) * 0.2;
+
+            let tone = h1 + h2 + h3;
+
+            // Attack transient
+            let attack_env_data = env_perc(0.0001, 0.01);
+            let attack_env = NewEnvGenBuilder(attack_env_data, gate).build();
+            let attack = white_noise_ar() * attack_env * 0.15;
+
+            (tone + hpf_ar(attack, 2000.0)) * env * amp
+        })
+});

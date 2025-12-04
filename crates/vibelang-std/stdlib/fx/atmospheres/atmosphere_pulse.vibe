@@ -1,0 +1,30 @@
+// Genre: Electronic, Techno | Character: Pulsing rhythmic atmosphere
+define_synthdef("atmosphere_pulse", |builder| {
+    builder
+        .param("amp", 0.4)
+        .param("rate", 2.0)
+        .param("gate", 1.0)
+        .body(|amp, rate, gate| {
+            let envelope = env_asr(0.5, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Pulsing LFO
+            let pulse_lfo = sin_osc_ar(rate) * 0.5 + 0.5;
+
+            // Sub pulse
+            let sub = sin_osc_ar(50.0) * pulse_lfo * 0.4;
+
+            // Mid-range pulse
+            let mid = saw_ar(100.0) + saw_ar(100.5);
+            let mid_filtered = lpf_ar(mid, 400.0) * pulse_lfo * 0.2;
+
+            // High shimmer
+            let high = hpf_ar(white_noise_ar(), 6000.0) * pulse_lfo * 0.1;
+
+            let mix = sub + mid_filtered + high;
+
+            mix * env * amp
+        })
+});

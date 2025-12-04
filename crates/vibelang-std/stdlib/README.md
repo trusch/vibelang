@@ -1,6 +1,6 @@
 # Vibelang Standard Library
 
-A comprehensive collection of 149 professional-quality synthdefs covering all essential sound categories for music production.
+A comprehensive collection of **421 professional-quality sounds** (363 instruments + 58 effects) covering all essential sound categories for music production.
 
 ## Overview
 

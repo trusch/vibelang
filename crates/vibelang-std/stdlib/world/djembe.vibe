@@ -1,0 +1,90 @@
+// Djembe
+// West African | Character: Deep bass, sharp slap, versatile
+//
+// The traditional West African goblet drum with its
+// wide range of tones from deep bass to sharp slaps.
+
+// Djembe Bass (center hit)
+define_synthdef("djembe_bass", |builder| {
+    builder
+        .param("freq", 80.0)
+        .param("amp", 0.7)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 0.35);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Deep body tone
+            let body = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.3;
+
+            let tone = body + h2;
+
+            // Soft attack
+            let attack_env_data = env_perc(0.001, 0.02);
+            let attack_env = NewEnvGenBuilder(attack_env_data, gate).build();
+            let attack = white_noise_ar() * attack_env * 0.1;
+
+            (tone + lpf_ar(attack, 800.0)) * env * amp
+        })
+});
+
+// Djembe Tone (edge hit)
+define_synthdef("djembe_tone", |builder| {
+    builder
+        .param("freq", 200.0)
+        .param("amp", 0.6)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Mid-range tone
+            let tone = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.2) * 0.35; // Slightly inharmonic
+            let h3 = sin_osc_ar(freq * 3.0) * 0.2;
+
+            let mix = tone + h2 + h3;
+
+            // Edge attack
+            let attack_env_data = env_perc(0.0001, 0.015);
+            let attack_env = NewEnvGenBuilder(attack_env_data, gate).build();
+            let attack = white_noise_ar() * attack_env * 0.15;
+
+            (mix + hpf_ar(attack, 1500.0)) * env * amp
+        })
+});
+
+// Djembe Slap (sharp rim hit)
+define_synthdef("djembe_slap", |builder| {
+    builder
+        .param("freq", 400.0)
+        .param("amp", 0.6)
+        .body(|freq, amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.0001, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Sharp high tone
+            let tone = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.4;
+
+            let mix = tone + h2;
+
+            // Sharp attack
+            let attack_env_data = env_perc(0.0001, 0.01);
+            let attack_env = NewEnvGenBuilder(attack_env_data, gate).build();
+            let attack = white_noise_ar() * attack_env * 0.3;
+
+            (mix + hpf_ar(attack, 3000.0)) * env * amp
+        })
+});

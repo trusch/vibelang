@@ -1,0 +1,40 @@
+// Music Box
+// Genre: Ambient, Cinematic | Character: Delicate, nostalgic, twinkling
+//
+// Classic music box with characteristic tines.
+
+define_synthdef("music_box", |builder| {
+    builder
+        .param("freq", 880.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            // Quick pluck envelope
+            let envelope = env_asr(0.001, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Decay envelope
+            let decay_env_data = env_perc(0.001, 0.8);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Pure sine-based tines
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.4;
+            let h3 = sin_osc_ar(freq * 3.0) * 0.2;
+            let h4 = sin_osc_ar(freq * 4.0) * 0.1;
+
+            let tine = h1 + h2 + h3 + h4;
+
+            // Tine pluck attack
+            let pluck_env_data = env_perc(0.0001, 0.008);
+            let pluck_env = NewEnvGenBuilder(pluck_env_data, dc_ar(1.0)).build();
+            let pluck = sin_osc_ar(freq * 5.0) * pluck_env * 0.3;
+
+            // High pass for clarity
+            let bright = hpf_ar(tine + pluck, 500.0);
+
+            bright * env * decay_env * amp * 0.6
+        })
+});

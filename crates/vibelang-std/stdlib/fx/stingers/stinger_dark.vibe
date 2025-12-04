@@ -1,0 +1,36 @@
+// Genre: Horror, Dark Ambient | Character: Dark ominous stinger
+define_synthdef("stinger_dark", |builder| {
+    builder
+        .param("amp", 0.7)
+        .body(|amp| {
+            let gate = dc_ar(1.0);
+
+            let envelope = env_perc(0.001, 1.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Dissonant cluster
+            let freq = 80.0;
+            let tone1 = sin_osc_ar(freq);
+            let tone2 = sin_osc_ar(freq * 1.06);  // Minor second
+            let tone3 = sin_osc_ar(freq * 1.41);  // Tritone
+            let tone4 = sin_osc_ar(freq * 0.5);   // Sub
+
+            let cluster = tone1 + tone2 * 0.7 + tone3 * 0.5 + tone4 * 0.6;
+
+            // Add metallic resonance
+            let metal = sin_osc_ar(300.0) * sin_osc_ar(450.0);
+            let metal_env = env_perc(0.001, 0.3);
+            let metal_e = NewEnvGenBuilder(metal_env, gate).build();
+
+            // Noise burst
+            let noise = lpf_ar(white_noise_ar(), 2000.0);
+            let noise_env = env_perc(0.001, 0.1);
+            let noise_e = NewEnvGenBuilder(noise_env, gate).build();
+
+            let mix = cluster * 0.3 + metal * metal_e * 0.2 + noise * noise_e * 0.3;
+
+            mix * env * amp * 0.6
+        })
+});

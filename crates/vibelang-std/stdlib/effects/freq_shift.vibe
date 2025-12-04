@@ -1,0 +1,39 @@
+// Frequency Shifter Effect
+//
+// Shifts all frequencies by a fixed amount in Hz.
+// Unlike pitch shifting, this creates inharmonic, metallic textures.
+//
+// Usage:
+//   group.add_effect("shift", "freq_shift", #{
+//     shift: 5.0,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   shift: Frequency shift in Hz (-500 to 500)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("freq_shift", |builder| {
+    builder
+        .param("shift", 5.0)
+        .param("mix", 0.5)
+        .body(|input, shift, mix| {
+            // Ring modulation with sine wave creates frequency shifting
+            // Positive shift moves frequencies up, negative moves down
+            let mod_osc = sin_osc_ar(shift.abs());
+
+            // Apply ring modulation
+            let shifted_left = input[0] * mod_osc;
+            let shifted_right = input[1] * mod_osc;
+
+            // Filter to remove unwanted sidebands
+            let filtered_left = lpf_ar(shifted_left, 12000.0);
+            let filtered_right = lpf_ar(shifted_right, 12000.0);
+
+            // Mix dry and wet
+            [
+                (1.0 - mix) * input[0] + mix * filtered_left,
+                (1.0 - mix) * input[1] + mix * filtered_right
+            ]
+        })
+});

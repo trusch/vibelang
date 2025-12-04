@@ -1,0 +1,12 @@
+// Bells Library Index
+//
+// Import this file to load all bell instrument synthdefs at once.
+// Usage: import "stdlib/bells/index.vibe"
+
+import "stdlib/bells/tubular_bells.vibe";
+import "stdlib/bells/glockenspiel.vibe";
+import "stdlib/bells/music_box.vibe";
+import "stdlib/bells/vibraphone.vibe";
+import "stdlib/bells/xylophone.vibe";
+import "stdlib/bells/marimba.vibe";
+import "stdlib/bells/church_bell.vibe";

@@ -1,0 +1,39 @@
+// Steel Drum (Steel Pan)
+// Caribbean | Character: Bright, metallic, tropical
+//
+// The iconic Caribbean instrument with its distinctive
+// bright, metallic tone.
+
+define_synthdef("steel_drum", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Medium decay
+            let decay_env_data = env_perc(0.001, 0.6);
+            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+
+            // Metallic partials (slightly inharmonic for steel character)
+            let h1 = sin_osc_ar(freq);
+            let h2 = sin_osc_ar(freq * 2.0) * 0.6;
+            let h3 = sin_osc_ar(freq * 2.95) * 0.4; // Slightly flat
+            let h4 = sin_osc_ar(freq * 4.05) * 0.25; // Slightly sharp
+            let h5 = sin_osc_ar(freq * 5.0) * 0.15;
+            let h6 = sin_osc_ar(freq * 6.1) * 0.1;
+
+            let metal = h1 + h2 + h3 + h4 + h5 + h6;
+
+            // Mallet attack
+            let attack_env_data = env_perc(0.0001, 0.02);
+            let attack_env = NewEnvGenBuilder(attack_env_data, dc_ar(1.0)).build();
+            let attack = sin_osc_ar(freq * 6.0) * attack_env * 0.2;
+
+            (metal + attack) * env * decay_env * amp * 0.5
+        })
+});

@@ -7,6 +7,7 @@
 //! - Communicates with SuperCollider
 
 use crate::events::{BeatEvent, FadeTargetType};
+use crate::reload::{ChangeOp, EntityKind, ReloadManager, StateSnapshot};
 use crate::scheduler::{EventScheduler, LoopKind, LoopSnapshot};
 use crate::scsynth::{AddAction, BufNum, NodeId, Scsynth, Target};
 use crate::scsynth_process::ScsynthProcess;
@@ -222,6 +223,8 @@ struct RuntimeThread {
     scheduler: EventScheduler,
     transport: TransportClock,
     last_tick: Instant,
+    /// Manages live reload state transitions.
+    reload_manager: ReloadManager,
 }
 
 impl RuntimeThread {
@@ -233,6 +236,7 @@ impl RuntimeThread {
             scheduler: EventScheduler::new(),
             transport: TransportClock::new(),
             last_tick: Instant::now(),
+            reload_manager: ReloadManager::new(),
         }
     }
 
@@ -398,6 +402,16 @@ impl RuntimeThread {
                 });
             }
             StateMessage::BeginReload => {
+                // Capture a snapshot of current state BEFORE incrementing generation.
+                // This snapshot will be used to diff against the new state after script execution.
+                let snapshot = self.capture_state_snapshot();
+                self.reload_manager.begin_reload(snapshot);
+
+                // Update quantization from state
+                let quantization = self.shared.with_state_read(|s| s.quantization_beats);
+                self.reload_manager.set_quantization(quantization);
+
+                // Increment generation for tracking which entities were touched
                 self.shared.with_state_write(|state| {
                     state.reload_generation += 1;
                     state.bump_version();
@@ -469,6 +483,7 @@ impl RuntimeThread {
                 sfz_instrument,
                 vst_instrument,
             } => {
+                let generation = self.shared.with_state_read(|s| s.reload_generation);
                 self.shared.with_state_write(|state| {
                     let voice = state.voices.entry(name.clone()).or_insert_with(|| {
                         VoiceState::new(name.clone(), group_path.clone())
@@ -484,6 +499,7 @@ impl RuntimeThread {
                     voice.params = params;
                     voice.sfz_instrument = sfz_instrument;
                     voice.vst_instrument = vst_instrument;
+                    voice.generation = generation;
                     state.bump_version();
                 });
             }
@@ -919,6 +935,9 @@ impl RuntimeThread {
 
         // Process active sequences - start/stop patterns based on current beat
         self.process_active_sequences(current_beat);
+
+        // Process pending reload changes at quantization boundary
+        self.process_pending_reload(current_beat);
 
         // Collect loops that need event expansion
         let loops = self.collect_active_loops();
@@ -1827,13 +1846,21 @@ impl RuntimeThread {
         parent_path: Option<String>,
         mut node_id: i32,
     ) {
+        let generation = self.shared.with_state_read(|s| s.reload_generation);
+
         // Check if the group already exists in state (was created externally)
         let already_exists = self
             .shared
             .with_state_read(|state| state.groups.contains_key(&path));
 
         if already_exists {
-            log::debug!("Group '{}' already exists, skipping creation", path);
+            // Update generation even if group exists
+            self.shared.with_state_write(|state| {
+                if let Some(group) = state.groups.get_mut(&path) {
+                    group.generation = generation;
+                }
+            });
+            log::debug!("Group '{}' already exists, updated generation", path);
             return;
         }
 
@@ -1868,6 +1895,7 @@ impl RuntimeThread {
             let mut group = GroupState::new(name, path.clone(), parent_path);
             group.node_id = Some(node_id);
             group.audio_bus = Some(audio_bus);
+            group.generation = generation;
             state.groups.insert(path, group);
             state.bump_version();
         });
@@ -2023,6 +2051,255 @@ impl RuntimeThread {
                     state.bump_version();
                 }
             });
+        }
+
+        // Finalize the reload: capture new snapshot, compute diff, and queue changes
+        self.finalize_reload();
+    }
+
+    /// Capture a snapshot of the current state for reload diffing.
+    /// If `filter_by_generation` is Some, only include entities with that generation.
+    /// This is used for the "after" snapshot to only include entities touched by the script.
+    fn capture_state_snapshot_filtered(&self, filter_generation: Option<u64>) -> StateSnapshot {
+        self.shared.with_state_read(|state| {
+            let mut snapshot = StateSnapshot::new();
+
+            // Snapshot groups - root groups (no parent) are always included to protect them
+            for (path, group) in &state.groups {
+                let is_root = group.parent_path.is_none();
+                if is_root || filter_generation.map_or(true, |gen| group.generation == gen) {
+                    snapshot.add(EntityKind::Group, path.clone(), group.content_hash());
+                }
+            }
+
+            // Snapshot voices (filter by generation if specified)
+            for (name, voice) in &state.voices {
+                if filter_generation.map_or(true, |gen| voice.generation == gen) {
+                    snapshot.add(EntityKind::Voice, name.clone(), voice.content_hash());
+                }
+            }
+
+            // Snapshot patterns (filter by generation if specified)
+            for (name, pattern) in &state.patterns {
+                if filter_generation.map_or(true, |gen| pattern.generation == gen) {
+                    snapshot.add(EntityKind::Pattern, name.clone(), pattern.content_hash());
+                }
+            }
+
+            // Snapshot melodies (filter by generation if specified)
+            for (name, melody) in &state.melodies {
+                if filter_generation.map_or(true, |gen| melody.generation == gen) {
+                    snapshot.add(EntityKind::Melody, name.clone(), melody.content_hash());
+                }
+            }
+
+            // Snapshot sequences (filter by generation if specified)
+            for (name, seq) in &state.sequences {
+                if filter_generation.map_or(true, |gen| seq.generation == gen) {
+                    snapshot.add(EntityKind::Sequence, name.clone(), seq.content_hash());
+                }
+            }
+
+            // Snapshot effects (filter by generation if specified)
+            for (id, effect) in &state.effects {
+                if filter_generation.map_or(true, |gen| effect.generation == gen) {
+                    snapshot.add(EntityKind::Effect, id.clone(), effect.content_hash());
+                }
+            }
+
+            snapshot
+        })
+    }
+
+    /// Capture a snapshot of ALL entities in state (for "before" snapshot).
+    fn capture_state_snapshot(&self) -> StateSnapshot {
+        self.capture_state_snapshot_filtered(None)
+    }
+
+    /// Finalize a reload by computing the diff and queuing changes.
+    fn finalize_reload(&mut self) {
+        // Get current generation - only entities with this generation were touched by the script
+        let current_generation = self.shared.with_state_read(|s| s.reload_generation);
+
+        // Capture new snapshot filtered to ONLY entities touched by this script run
+        // This is key: commented-out entities won't have the current generation
+        let new_snapshot = self.capture_state_snapshot_filtered(Some(current_generation));
+        let current_beat = self.transport.beat_at(Instant::now()).to_float();
+
+        log::debug!(
+            "[RELOAD] Captured new snapshot with {} entities (generation {})",
+            new_snapshot.total_count(),
+            current_generation
+        );
+
+        // Compute diff and queue changes
+        if let Some(pending) = self.reload_manager.finalize_reload(new_snapshot, current_beat) {
+            let (keep, add, update, remove) = pending.change_counts();
+            log::info!(
+                "[RELOAD] Diff computed: {} keep, {} add, {} update, {} remove",
+                keep, add, update, remove
+            );
+
+            // Log details about what will change
+            for op in &pending.changes {
+                match op {
+                    ChangeOp::Keep { kind, id } => {
+                        log::debug!("[RELOAD]   KEEP {} '{}'", kind, id);
+                    }
+                    ChangeOp::Add { kind, id } => {
+                        log::info!("[RELOAD]   ADD {} '{}'", kind, id);
+                    }
+                    ChangeOp::Update { kind, id, .. } => {
+                        log::info!("[RELOAD]   UPDATE {} '{}'", kind, id);
+                    }
+                    ChangeOp::Remove { kind, id } => {
+                        log::info!("[RELOAD]   REMOVE {} '{}'", kind, id);
+                    }
+                }
+            }
+        }
+
+        // NOTE: Old generation-based cleanup is disabled. We now use diff-based cleanup
+        // which only removes entities that were actually removed from the script,
+        // not just entities with old generations. This preserves unchanged entities.
+    }
+
+    /// Process pending reload at quantization boundary.
+    /// This applies queued changes when the transport reaches the target beat.
+    fn process_pending_reload(&mut self, current_beat: f64) {
+        // Check if we should apply pending changes
+        if !self.reload_manager.should_apply(current_beat) {
+            return;
+        }
+
+        // Take the pending reload
+        let pending = match self.reload_manager.take_pending_reload() {
+            Some(p) => p,
+            None => return,
+        };
+
+        log::info!(
+            "[RELOAD] Applying changes at beat {:.2} (target was {:.2})",
+            current_beat,
+            pending.apply_at_beat
+        );
+
+        // Process each change operation
+        for op in &pending.changes {
+            match op {
+                ChangeOp::Keep { .. } => {
+                    // No action needed - entity unchanged
+                }
+                ChangeOp::Add { kind, id } => {
+                    // New entity - already added to state during script execution
+                    log::debug!("[RELOAD] Applied ADD {} '{}'", kind, id);
+                }
+                ChangeOp::Update { kind, id, .. } => {
+                    // Updated entity - content already in state from script execution.
+                    // Scheduler will naturally pick up new content at next loop iteration.
+                    log::debug!("[RELOAD] Applied UPDATE {} '{}' (will use new content at next iteration)", kind, id);
+                }
+                ChangeOp::Remove { kind, id } => {
+                    // Entity removed - clean up immediately
+                    self.remove_entity(*kind, id.clone());
+                }
+            }
+        }
+    }
+
+    /// Remove an entity that was deleted from the script.
+    fn remove_entity(&mut self, kind: EntityKind, id: String) {
+        log::info!("[RELOAD] Removing {} '{}'", kind, id);
+
+        // Reset scheduler loop tracking for loops
+        match kind {
+            EntityKind::Pattern | EntityKind::Melody | EntityKind::Sequence => {
+                self.scheduler.reset_loop(&id);
+            }
+            _ => {}
+        }
+
+        // Remove from state and free any associated nodes
+        match kind {
+            EntityKind::Pattern => {
+                self.shared.with_state_write(|state| {
+                    state.patterns.remove(&id);
+                    state.bump_version();
+                });
+            }
+            EntityKind::Melody => {
+                self.shared.with_state_write(|state| {
+                    state.melodies.remove(&id);
+                    state.bump_version();
+                });
+            }
+            EntityKind::Sequence => {
+                self.shared.with_state_write(|state| {
+                    state.sequences.remove(&id);
+                    state.active_sequences.remove(&id);
+                    state.bump_version();
+                });
+            }
+            EntityKind::Voice => {
+                // Release any active synths for this voice first
+                let synths_to_release: Vec<i32> = self.shared.with_state_write(|state| {
+                    let nodes: Vec<i32> = state
+                        .active_synths
+                        .iter()
+                        .filter(|(_, synth)| synth.voice_names.contains(&id))
+                        .map(|(nid, _)| *nid)
+                        .collect();
+                    for &node_id in &nodes {
+                        state.active_synths.remove(&node_id);
+                    }
+                    state.voices.remove(&id);
+                    state.bump_version();
+                    nodes
+                });
+                for node_id in synths_to_release {
+                    let _ = self.sc.n_set(NodeId::new(node_id), &[("gate".to_string(), 0.0)]);
+                }
+            }
+            EntityKind::Effect => {
+                let node_id = self.shared.with_state_read(|state| {
+                    state.effects.get(&id).and_then(|e| e.node_id)
+                });
+                if let Some(nid) = node_id {
+                    let _ = self.sc.n_free(NodeId::new(nid));
+                }
+                self.shared.with_state_write(|state| {
+                    state.effects.remove(&id);
+                    state.bump_version();
+                });
+            }
+            EntityKind::Group => {
+                // Protect root-level groups from removal
+                let is_root = self.shared.with_state_read(|state| {
+                    state.groups.get(&id).map(|g| g.parent_path.is_none()).unwrap_or(false)
+                });
+                if is_root {
+                    log::debug!("[RELOAD] Protecting root group '{}' from removal", id);
+                    return;
+                }
+
+                // Get group info before removal
+                let group_info = self.shared.with_state_read(|state| {
+                    state.groups.get(&id).map(|g| (g.node_id, g.link_synth_node_id))
+                });
+                if let Some((node_id, link_node_id)) = group_info {
+                    // Free link synth first, then group
+                    if let Some(lnid) = link_node_id {
+                        let _ = self.sc.n_free(NodeId::new(lnid));
+                    }
+                    if let Some(nid) = node_id {
+                        let _ = self.sc.n_free(NodeId::new(nid));
+                    }
+                }
+                self.shared.with_state_write(|state| {
+                    state.groups.remove(&id);
+                    state.bump_version();
+                });
+            }
         }
     }
 
