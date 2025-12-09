@@ -1,0 +1,32 @@
+// Genre: Rave, Hardcore, Jungle | Character: Hoover/Mentasm sound - aggressive and iconic
+define_synthdef("lead_juno_hoover")
+    .param("freq", 220.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.01, 1.0, 0.15);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Pitch LFO for characteristic wobble
+        let pitch_lfo = sin_osc_ar(6.0) * freq * 0.02;
+
+        // Multiple heavily detuned saws
+        let osc1 = saw_ar(freq * 0.97 + pitch_lfo);
+        let osc2 = saw_ar(freq * 0.99);
+        let osc3 = saw_ar(freq);
+        let osc4 = saw_ar(freq * 1.01);
+        let osc5 = saw_ar(freq * 1.03 + pitch_lfo * 0.5);
+
+        let mix = (osc1 + osc2 + osc3 + osc4 + osc5) * 0.18;
+
+        // PWM layer
+        let pwm = sin_osc_ar(0.3) * 0.3 + 0.5;
+        let pulse_layer = pulse_ar(freq * 0.5, pwm) * 0.3;
+
+        let sig = mix + pulse_layer;
+
+        // Aggressive filter
+        rlpf_ar(sig, 3000.0, 0.4) * env * amp
+    });

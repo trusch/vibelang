@@ -1,0 +1,30 @@
+// Genre: Latin, Salsa, Afro-Cuban | Character: Deep conga tone with warm resonance
+define_synthdef("conga_low")
+    .param("freq", 180.0)
+    .param("amp", 0.8)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Longer decay for low conga
+        let amp_envelope = env_perc(0.001, 0.4);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Pitch envelope
+        let pitch_envelope = env_perc(0.001, 0.05);
+        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let freq_mod = pitch_env * freq * 1.5;
+
+        // Warm body tone
+        let body = sin_osc_ar(freq + freq_mod) * 0.8;
+        let sub = sin_osc_ar((freq + freq_mod) * 0.5) * 0.15;
+        let overtone = sin_osc_ar((freq + freq_mod) * 2.0) * 0.1;
+
+        // Soft attack
+        let attack_envelope = env_perc(0.0001, 0.01);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = lpf_ar(white_noise_ar(), 2000.0) * attack_env * 0.1;
+
+        (body + sub + overtone + attack) * amp_env * amp
+    });

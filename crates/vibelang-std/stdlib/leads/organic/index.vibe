@@ -1,0 +1,12 @@
+// Organic Leads Library Index
+//
+// Organic, hybrid, and textured lead sounds.
+// Usage: import "stdlib/leads/organic/index.vibe"
+
+import "stdlib/leads/organic/lead_whistle.vibe";
+import "stdlib/leads/organic/lead_flute.vibe";
+import "stdlib/leads/organic/lead_vocal.vibe";
+import "stdlib/leads/organic/lead_theremin.vibe";
+import "stdlib/leads/organic/lead_granular.vibe";
+import "stdlib/leads/organic/lead_bitcrushed.vibe";
+import "stdlib/leads/organic/lead_tape.vibe";

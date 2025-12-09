@@ -1,0 +1,7 @@
+// Breakbeat Library Index
+//
+// Classic breakbeat-style drum sounds.
+// Usage: import "stdlib/drums/breakbeats/index.vibe"
+
+import "stdlib/drums/breakbeats/break_amen.vibe";
+import "stdlib/drums/breakbeats/break_funky.vibe";

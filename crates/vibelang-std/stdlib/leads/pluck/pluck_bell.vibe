@@ -1,5 +1,5 @@
 // Genre: Ambient, Experimental | Character: Bell-like with inharmonic overtones
-define_synthdef("pluck_bell", |builder| {
+define_synthdef("lead_pluck_bell", |builder| {
     builder
         .param("freq", 440.0)
         .param("amp", 0.6)

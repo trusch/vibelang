@@ -1,0 +1,26 @@
+// Genre: Ambient, Cinematic | Character: "Aaah" choir voice
+define_synthdef("vocal_aaah")
+    .param("freq", 220.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.2, 1.0, 0.25);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Vibrato
+        let vib = sin_osc_ar(5.5) * freq * 0.008;
+
+        // Vocal source
+        let source = saw_ar(freq + vib) * 0.4;
+
+        // "Aaah" formants
+        let f1 = bpf_ar(source, 700.0, 0.12) * 0.5;
+        let f2 = bpf_ar(source, 1200.0, 0.15) * 0.3;
+        let f3 = bpf_ar(source, 2500.0, 0.2) * 0.15;
+
+        let sig = f1 + f2 + f3;
+
+        sig * env * amp
+    });

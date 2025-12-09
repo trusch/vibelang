@@ -28,9 +28,18 @@
 /* Steps Grid */
 .get-started__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: var(--space-lg);
   margin-bottom: var(--space-xl);
+}
+
+@media (max-width: 1024px) {
+  .get-started__grid {
+    grid-template-columns: 1fr;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
 .get-started__step {
@@ -77,22 +86,23 @@
   gap: var(--space-md);
   background-color: var(--color-terminal-bg);
   border-radius: var(--border-radius);
-  padding: var(--space-md);
-  overflow-x: auto;
+  padding: var(--space-md) var(--space-lg);
+  overflow: hidden;
 }
 
 .get-started__install code {
   font-family: var(--font-mono);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--color-terminal-text);
   white-space: nowrap;
   flex: 1;
+  min-width: 0;
 }
 
 .get-started__copy {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.65rem;
+  padding: 4px 8px;
   background-color: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: var(--border-radius);
@@ -100,6 +110,7 @@
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .get-started__copy:hover {
@@ -110,8 +121,7 @@
 .get-started__commands {
   background-color: var(--color-terminal-bg);
   border-radius: var(--border-radius);
-  padding: var(--space-md);
-  overflow-x: auto;
+  padding: var(--space-md) var(--space-lg);
 }
 
 .get-started__commands code {
@@ -134,12 +144,38 @@
 }
 
 .get-started__example-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: var(--space-md) var(--space-lg);
   background-color: rgba(255, 255, 255, 0.03);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   font-family: var(--font-mono);
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.5);
+}
+
+.get-started__example-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: #27ca40;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+}
+
+.get-started__example-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #27ca40;
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 .get-started__example-code {
@@ -204,10 +240,33 @@
     padding: var(--space-lg);
   }
 
+  .get-started__step h3 {
+    font-size: 1.25rem;
+  }
+
+  .get-started__step p {
+    font-size: 0.85rem;
+  }
+
   .get-started__install {
     flex-direction: column;
     align-items: stretch;
     gap: var(--space-sm);
+  }
+
+  .get-started__install code {
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  .get-started__example-code {
+    font-size: 0.7rem;
+    padding: var(--space-md);
+    line-height: 1.6;
+  }
+
+  .get-started__resources h3 {
+    font-size: 1.5rem;
   }
 
   .get-started__links {
@@ -217,5 +276,6 @@
 
   .get-started__link {
     justify-content: center;
+    font-size: 0.8rem;
   }
 }

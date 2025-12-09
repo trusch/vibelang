@@ -1,0 +1,91 @@
+// Korg MS-20 Emulation
+// Classic 1978 | Character: Aggressive, gritty, raw analog
+
+// MS-20 Bass - Aggressive filter bass
+define_synthdef("ms20_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("filter_freq", 600.0)
+        .param("resonance", 0.5)
+        .body(|freq, amp, gate, filter_freq, resonance| {
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_asr(0.02, 1.0, 0.15);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Dual oscillator - MS-20 style
+            let osc1 = saw_ar(freq);
+            let osc2 = pulse_ar(freq * 0.5, 0.4) * 0.7;
+
+            let mix = (osc1 + osc2) * 0.5;
+
+            // MS-20's aggressive high-pass then low-pass
+            let hp = hpf_ar(mix, 80.0);
+            let cutoff = filter_freq + filt_env * 1500.0;
+            let filtered = rlpf_ar(hp, cutoff, 1.0 - resonance * 0.95);
+
+            filtered * env * amp
+        })
+});
+
+// MS-20 Lead - Screaming acid lead
+define_synthdef("ms20_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("filter_freq", 1500.0)
+        .param("resonance", 0.6)
+        .body(|freq, amp, gate, filter_freq, resonance| {
+            let envelope = env_asr(0.01, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_asr(0.01, 1.0, 0.2);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Ring mod style cross modulation
+            let osc1 = saw_ar(freq);
+            let osc2 = pulse_ar(freq * 1.002, 0.3);
+            let ring = osc1 * sin_osc_ar(freq * 2.0) * 0.3;
+
+            let mix = (osc1 + osc2 * 0.5 + ring) * 0.4;
+
+            let cutoff = filter_freq + filt_env * 3000.0;
+            let filtered = rlpf_ar(mix, cutoff, 1.0 - resonance * 0.9);
+
+            filtered * env * amp
+        })
+});
+
+// MS-20 Sync - Oscillator sync sound
+define_synthdef("ms20_sync", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("sync_ratio", 2.5)
+        .body(|freq, amp, gate, sync_ratio| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Simulated sync with multiple harmonics
+            let fund = saw_ar(freq) * 0.4;
+            let sync_freq = freq * sync_ratio;
+            let sync1 = saw_ar(sync_freq) * 0.3;
+            let sync2 = sin_osc_ar(sync_freq * 2.0) * 0.15;
+
+            let mix = fund + sync1 + sync2;
+            let filtered = lpf_ar(mix, 4000.0);
+
+            filtered * env * amp
+        })
+});

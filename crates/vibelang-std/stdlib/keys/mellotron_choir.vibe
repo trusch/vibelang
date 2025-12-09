@@ -1,0 +1,29 @@
+// Sampler-style | Character: Classic mellotron choir
+define_synthdef("mellotron_choir")
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.2, 1.0, 0.3);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Tape warble
+        let warble = sin_osc_ar(4.0) * freq * 0.005;
+
+        // Choir-like source
+        let source = saw_ar(freq + warble) * 0.4;
+
+        // Choir formants
+        let f1 = bpf_ar(source, 600.0, 0.15) * 0.4;
+        let f2 = bpf_ar(source, 1200.0, 0.18) * 0.3;
+        let f3 = bpf_ar(source, 2400.0, 0.2) * 0.15;
+
+        let sig = f1 + f2 + f3;
+
+        // Tape lo-fi character
+        let filtered = lpf_ar(sig, 5000.0);
+
+        filtered * env * amp
+    });

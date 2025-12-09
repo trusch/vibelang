@@ -1,0 +1,20 @@
+// Genre: Experimental, Soundtrack | Character: Theremin emulation - eerie and wavering
+define_synthdef("lead_theremin")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.1, 1.0, 0.2);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Characteristic wavering vibrato
+        let vib1 = sin_osc_ar(6.0) * freq * 0.015;
+        let vib2 = sin_osc_ar(0.5) * freq * 0.008;
+
+        // Pure sine tone
+        let body = sin_osc_ar(freq + vib1 + vib2);
+
+        body * env * amp
+    });

@@ -1,0 +1,12 @@
+// Modern Leads Library Index
+//
+// Modern electronic music lead sounds.
+// Usage: import "stdlib/leads/modern/index.vibe"
+
+import "stdlib/leads/modern/lead_neuro.vibe";
+import "stdlib/leads/modern/lead_complextro.vibe";
+import "stdlib/leads/modern/lead_future_bass.vibe";
+import "stdlib/leads/modern/lead_hardstyle.vibe";
+import "stdlib/leads/modern/lead_trance.vibe";
+import "stdlib/leads/modern/lead_psytrance.vibe";
+import "stdlib/leads/modern/lead_progressive.vibe";

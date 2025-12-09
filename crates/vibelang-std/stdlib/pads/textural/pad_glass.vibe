@@ -1,0 +1,26 @@
+// Genre: Ambient, Cinematic | Character: Glass/crystalline pad - bright and delicate
+define_synthdef("pad_glass")
+    .param("freq", 440.0)
+    .param("amp", 0.45)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.3, 1.0, 0.4);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Bright sine harmonics
+        let h1 = sin_osc_ar(freq) * 0.4;
+        let h2 = sin_osc_ar(freq * 2.0) * 0.25;
+        let h3 = sin_osc_ar(freq * 3.0) * 0.15;
+        let h4 = sin_osc_ar(freq * 4.0) * 0.1;
+        let h5 = sin_osc_ar(freq * 5.0) * 0.06;
+
+        // Slight shimmer
+        let shimmer_lfo = sin_osc_ar(4.0) * 0.02 + 1.0;
+        let shimmer = sin_osc_ar(freq * 6.0 * shimmer_lfo) * 0.04;
+
+        let sig = h1 + h2 + h3 + h4 + h5 + shimmer;
+
+        sig * env * amp
+    });

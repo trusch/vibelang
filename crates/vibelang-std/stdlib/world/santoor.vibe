@@ -1,0 +1,28 @@
+// Region: Persian/Indian | Character: Hammered dulcimer with shimmering tone
+define_synthdef("santoor")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.001, 1.0, 0.4);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Hammer strike
+        let strike_env = NewEnvGenBuilder(env_perc(0.001, 0.01), dc_ar(1.0)).build();
+        let strike = hpf_ar(white_noise_ar(), 4000.0) * strike_env * 0.3;
+
+        // Multiple courses - slight detuning for shimmer
+        let str1 = sin_osc_ar(freq) * 0.35;
+        let str2 = sin_osc_ar(freq * 1.002) * 0.35;
+        let str3 = sin_osc_ar(freq * 0.998) * 0.35;
+
+        // Bright harmonics
+        let harm1 = sin_osc_ar(freq * 2.0) * 0.2;
+        let harm2 = sin_osc_ar(freq * 3.0) * 0.1;
+
+        let sig = str1 + str2 + str3 + harm1 + harm2 + strike;
+
+        sig * env * amp
+    });

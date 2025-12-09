@@ -1,0 +1,29 @@
+// Slapback Delay Effect
+//
+// Classic rockabilly/50s slapback echo.
+//
+// Usage:
+//   group.add_effect("slap", "slapback", #{
+//     time: 0.12,
+//     level: 0.6
+//   });
+//
+// Parameters:
+//   time: Delay time in seconds (0.05 to 0.2)
+//   level: Delay level (0.0 to 1.0)
+
+define_fx("slapback", |builder| {
+    builder
+        .param("time", 0.12)
+        .param("level", 0.6)
+        .body(|input, time, level| {
+            // Single delay tap, no feedback
+            let delayed_left = delay_c_ar(input[0], 0.25, time);
+            let delayed_right = delay_c_ar(input[1], 0.25, time);
+
+            [
+                input[0] + delayed_left * level,
+                input[1] + delayed_right * level
+            ]
+        })
+});

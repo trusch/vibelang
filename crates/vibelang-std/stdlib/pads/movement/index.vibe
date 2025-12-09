@@ -1,0 +1,10 @@
+// Movement Pads Library Index
+//
+// Pads with motion and modulation.
+// Usage: import "stdlib/pads/movement/index.vibe"
+
+import "stdlib/pads/movement/pad_pulsing.vibe";
+import "stdlib/pads/movement/pad_swelling.vibe";
+import "stdlib/pads/movement/pad_gate.vibe";
+import "stdlib/pads/movement/pad_arp.vibe";
+import "stdlib/pads/movement/pad_random.vibe";

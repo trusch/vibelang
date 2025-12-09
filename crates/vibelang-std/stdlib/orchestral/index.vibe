@@ -1,0 +1,10 @@
+// Orchestral Library Index
+//
+// Orchestral instruments and ensembles.
+// Usage: import "stdlib/orchestral/index.vibe"
+
+import "stdlib/orchestral/timpani.vibe";
+import "stdlib/orchestral/strings_staccato.vibe";
+import "stdlib/orchestral/strings_legato.vibe";
+import "stdlib/orchestral/brass_stab.vibe";
+import "stdlib/orchestral/wind_chimes.vibe";

@@ -1,0 +1,94 @@
+// Roland TB-303 Emulation
+// Classic 1982 | Character: Acidic, squelchy, resonant
+
+// TB-303 Bass - Classic acid bass
+define_synthdef("tb303_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("cutoff", 1000.0)
+        .param("resonance", 0.7)
+        .param("env_mod", 0.5)
+        .param("decay", 0.3)
+        .body(|freq, amp, gate, cutoff, resonance, env_mod, decay| {
+            let envelope = env_asr(0.003, 1.0, 0.05);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Filter envelope - key to 303 sound
+            // Use env_perc with base time of 1.0, then scale by decay parameter
+            let filt_env_data = env_perc(0.003, 1.0);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate)
+                .with_time_scale(decay)
+                .build();
+
+            // Single saw oscillator
+            let osc = saw_ar(freq);
+
+            // Characteristic resonant filter
+            let mod_cutoff = cutoff + filt_env * env_mod * 8000.0;
+            let filtered = rlpf_ar(osc, mod_cutoff, 1.0 - resonance * 0.95);
+
+            // Slight overdrive
+            let driven = (filtered * 1.5).tanh() * 0.7;
+
+            driven * env * amp
+        })
+});
+
+// TB-303 Slide - Portamento acid line
+define_synthdef("tb303_slide", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("cutoff", 800.0)
+        .param("resonance", 0.75)
+        .body(|freq, amp, gate, cutoff, resonance| {
+            let envelope = env_asr(0.001, 1.0, 0.08);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_perc(0.001, 0.2);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            let osc = saw_ar(freq);
+
+            let mod_cutoff = cutoff + filt_env * 6000.0;
+            let filtered = rlpf_ar(osc, mod_cutoff, 1.0 - resonance * 0.97);
+
+            let driven = (filtered * 1.8).tanh() * 0.65;
+
+            driven * env * amp
+        })
+});
+
+// TB-303 Accent - Accented acid hit
+define_synthdef("tb303_accent", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.7)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.001, 1.0, 0.06);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_perc(0.001, 0.15);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            let osc = saw_ar(freq);
+
+            // High resonance, big envelope sweep
+            let mod_cutoff = 400.0 + filt_env * 10000.0;
+            let filtered = rlpf_ar(osc, mod_cutoff, 0.08);
+
+            let driven = (filtered * 2.0).tanh() * 0.6;
+
+            driven * env * amp
+        })
+});

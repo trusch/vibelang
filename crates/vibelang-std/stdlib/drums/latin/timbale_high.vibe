@@ -1,0 +1,31 @@
+// Genre: Latin, Salsa, Mambo | Character: Bright, ringing timbale with metallic overtones
+define_synthdef("timbale_high")
+    .param("freq", 450.0)
+    .param("amp", 0.8)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Ringing decay
+        let amp_envelope = env_perc(0.001, 0.5);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Pitch envelope
+        let pitch_envelope = env_perc(0.001, 0.01);
+        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let freq_mod = pitch_env * freq * 1.5;
+
+        // Metallic body with harmonics
+        let body = sin_osc_ar(freq + freq_mod) * 0.5;
+        let ring1 = sin_osc_ar((freq + freq_mod) * 2.5) * 0.25;
+        let ring2 = sin_osc_ar((freq + freq_mod) * 4.2) * 0.15;
+        let ring3 = sin_osc_ar((freq + freq_mod) * 5.8) * 0.08;
+
+        // Sharp metallic attack
+        let attack_envelope = env_perc(0.0001, 0.003);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = hpf_ar(white_noise_ar(), 5000.0) * attack_env * 0.2;
+
+        (body + ring1 + ring2 + ring3 + attack) * amp_env * amp
+    });

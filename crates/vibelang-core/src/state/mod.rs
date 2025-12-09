@@ -18,7 +18,8 @@ pub use manager::StateManager;
 pub use messages::StateMessage;
 pub use model::{
     ActiveFadeJob, ActiveSequence, ActiveSynth, EffectState, GroupState, LoopStatus, MelodyState,
-    PatternState, SampleInfo, SampleSlice, ScheduledEvent, ScheduledNoteOff,
+    MidiCallbackInfo, MidiCallbackType, MidiConfiguration, MidiDeviceState, MidiRecordingState,
+    PatternState, RecordedMidiNote, SampleInfo, SampleSlice, ScheduledEvent, ScheduledNoteOff,
     ScriptState, SequenceRunLog, VoiceState, VstInstrumentInfo,
 };
 

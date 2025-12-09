@@ -1,0 +1,26 @@
+// Genre: Pop, Electronic | Character: "Eee" vowel sound
+define_synthdef("vocal_eee")
+    .param("freq", 220.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.15, 1.0, 0.2);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Vibrato
+        let vib = sin_osc_ar(5.5) * freq * 0.008;
+
+        // Vocal source
+        let source = saw_ar(freq + vib) * 0.4;
+
+        // "Eee" formants (high front vowel)
+        let f1 = bpf_ar(source, 270.0, 0.08) * 0.35;
+        let f2 = bpf_ar(source, 2300.0, 0.15) * 0.45;
+        let f3 = bpf_ar(source, 3000.0, 0.2) * 0.15;
+
+        let sig = f1 + f2 + f3;
+
+        sig * env * amp
+    });

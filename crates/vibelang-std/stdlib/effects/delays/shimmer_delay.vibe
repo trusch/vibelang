@@ -1,0 +1,39 @@
+// Shimmer Delay Effect
+//
+// Delay with pitch-shifted feedback for ethereal shimmer.
+//
+// Usage:
+//   group.add_effect("shim", "shimmer_delay", #{
+//     time: 0.4,
+//     feedback: 0.6,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   time: Delay time in seconds (0.1 to 1.0)
+//   feedback: Feedback amount (0.0 to 0.9)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("shimmer_delay", |builder| {
+    builder
+        .param("time", 0.4)
+        .param("feedback", 0.6)
+        .param("mix", 0.5)
+        .body(|input, time, feedback, mix| {
+            // Main delay
+            let delayed_left = comb_c_ar(input[0], 1.0, time, feedback * 3.0);
+            let delayed_right = comb_c_ar(input[1], 1.0, time * 1.01, feedback * 3.0);
+
+            // Octave up simulation using ring mod
+            let octave_left = delayed_left * sin_osc_ar(880.0) * 0.3;
+            let octave_right = delayed_right * sin_osc_ar(880.0) * 0.3;
+
+            let shimmer_left = delayed_left * 0.7 + octave_left;
+            let shimmer_right = delayed_right * 0.7 + octave_right;
+
+            [
+                (1.0 - mix) * input[0] + mix * shimmer_left,
+                (1.0 - mix) * input[1] + mix * shimmer_right
+            ]
+        })
+});

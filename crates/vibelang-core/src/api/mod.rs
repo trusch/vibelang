@@ -20,6 +20,10 @@ pub mod helpers;
 pub mod context;
 pub mod sfz;
 pub mod sample;
+pub mod midi;
+
+// Re-export MIDI callback functions for use by CLI
+pub use midi::{clear_callbacks, clear_midi_devices, execute_pending_callbacks, get_callback_fnptr};
 
 use crate::runtime::RuntimeHandle;
 use rhai::Engine;
@@ -95,6 +99,9 @@ pub fn register_api(engine: &mut Engine) {
 
     // Register sample API
     sample::register(engine);
+
+    // Register MIDI API
+    midi::register(engine);
 }
 
 /// Create a Rhai engine with all VibeLang API registered.
@@ -104,6 +111,23 @@ pub fn create_engine() -> Engine {
     // Set appropriate limits for complex scripts
     engine.set_max_expr_depths(4096, 4096);
     engine.set_max_call_levels(4096);
+
+    // Override print() to route through the log system instead of stdout
+    // This ensures print output appears in the TUI log widget
+    engine.on_print(|text| {
+        log::info!("[script] {}", text);
+    });
+
+    // Override debug() similarly
+    engine.on_debug(|text, source, pos| {
+        let loc = match (source, pos) {
+            (Some(src), pos) if !pos.is_none() => format!(" ({}:{})", src, pos),
+            (Some(src), _) => format!(" ({})", src),
+            (None, pos) if !pos.is_none() => format!(" ({})", pos),
+            _ => String::new(),
+        };
+        log::debug!("[script]{} {}", loc, text);
+    });
 
     register_api(&mut engine);
 

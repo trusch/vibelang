@@ -64,9 +64,11 @@
 /* Content */
 .code-demo__content {
   display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: var(--space-lg);
+  grid-template-columns: 300px 1fr;
+  gap: var(--space-xl);
   align-items: start;
+  max-width: 1100px;
+  margin: 0 auto;
 }
 
 .code-demo__info {
@@ -149,19 +151,20 @@
 }
 
 .code-demo__code {
-  padding: var(--space-lg);
+  padding: var(--space-lg) var(--space-xl);
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.85rem;
   line-height: 1.8;
   color: var(--color-terminal-text);
   overflow-x: auto;
-  min-height: 300px;
+  min-height: 380px;
 }
 
 .code-demo__code code {
   color: inherit;
   white-space: pre;
+  display: block;
 }
 
 /* Hint */
@@ -199,11 +202,29 @@
 
   .code-demo__tab {
     padding: var(--space-xs) var(--space-sm);
-    font-size: 0.75rem;
+    font-size: 0.7rem;
+  }
+
+  .code-demo__info {
+    padding: var(--space-md);
+  }
+
+  .code-demo__info h3 {
+    font-size: 1.25rem;
+  }
+
+  .code-demo__info p {
+    font-size: 0.85rem;
   }
 
   .code-demo__code {
-    font-size: 0.75rem;
+    font-size: 0.65rem;
     padding: var(--space-md);
+    min-height: auto;
+    line-height: 1.6;
+  }
+
+  .code-demo__hint {
+    font-size: 0.7rem;
   }
 }

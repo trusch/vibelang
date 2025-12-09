@@ -1,0 +1,9 @@
+// Cinematic Library Index
+//
+// Cinematic sound design elements.
+// Usage: import "stdlib/cinematic/index.vibe"
+
+import "stdlib/cinematic/braam.vibe";
+import "stdlib/cinematic/impact_cinematic.vibe";
+import "stdlib/cinematic/drone_tension.vibe";
+import "stdlib/cinematic/whoosh_tonal.vibe";

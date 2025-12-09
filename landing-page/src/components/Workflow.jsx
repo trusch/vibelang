@@ -1,4 +1,5 @@
 import React from 'react';
+import { highlightCode } from '../utils/syntaxHighlight';
 import './Workflow.css';
 
 const steps = [
@@ -6,19 +7,19 @@ const steps = [
     number: '01',
     title: 'Write',
     description: 'Create a .vibe file in your favorite editor. Import sounds, define patterns, write melodies.',
-    code: 'let kick = voice("kick", drums.kick_808);'
+    code: 'let kick = voice("kick").synth("kick_808");'
   },
   {
     number: '02',
     title: 'Save',
-    description: 'Hit Cmd+S. Watch mode detects the change and recompiles your script in milliseconds.',
-    code: '// File saved - changes detected'
+    description: 'Hit Cmd+S. Watch mode detects the change and recompiles in milliseconds.',
+    code: '// Changes detected, recompiling...'
   },
   {
     number: '03',
     title: 'Hear',
     description: 'Your music updates in real-time. No restart, no waiting. Iterate at the speed of thought.',
-    code: '// Playing: beat.vibe [120 BPM]'
+    code: '// Now playing: beat.vibe [120 BPM]'
   }
 ];
 
@@ -42,7 +43,7 @@ function Workflow() {
                 <h3 className="workflow-step__title">{step.title}</h3>
                 <p className="workflow-step__description">{step.description}</p>
                 <div className="workflow-step__code">
-                  <code>{step.code}</code>
+                  <code>{highlightCode(step.code)}</code>
                 </div>
               </div>
               {index < steps.length - 1 && (

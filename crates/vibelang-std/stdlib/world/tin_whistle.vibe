@@ -1,0 +1,25 @@
+// Genre: Celtic, Irish | Character: Irish tin whistle
+define_synthdef("tin_whistle")
+    .param("freq", 880.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.02, 1.0, 0.05);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Light vibrato
+        let vib = sin_osc_ar(5.0) * freq * 0.008;
+
+        // Pure tone with slight harmonics
+        let body = sin_osc_ar(freq + vib) * 0.6;
+        let harm = sin_osc_ar((freq + vib) * 2.0) * 0.15;
+
+        // Breath
+        let breath = bpf_ar(pink_noise_ar(), freq * 2.0, 0.6) * 0.15;
+
+        let sig = body + harm + breath;
+
+        sig * env * amp
+    });

@@ -1,0 +1,18 @@
+// Retro/Chiptune Library Index
+//
+// 8-bit, chiptune, and retro game sounds.
+// Usage: import "stdlib/retro/index.vibe"
+
+// Chip waves
+import "stdlib/retro/chip_pulse.vibe";
+import "stdlib/retro/chip_triangle.vibe";
+import "stdlib/retro/chip_noise.vibe";
+
+// Sound effects
+import "stdlib/retro/sfx_coin.vibe";
+import "stdlib/retro/sfx_powerup.vibe";
+import "stdlib/retro/sfx_jump.vibe";
+import "stdlib/retro/sfx_laser.vibe";
+
+// 80s synths
+import "stdlib/retro/synth_80s_brass.vibe";

@@ -1,0 +1,27 @@
+// Genre: Lo-fi, Synthwave | Character: Tape-saturated warm lead
+define_synthdef("lead_tape")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.01, 1.0, 0.12);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Tape wow/flutter
+        let wow = sin_osc_ar(0.4) * freq * 0.003;
+        let flutter = sin_osc_ar(6.0) * freq * 0.001;
+
+        // Slightly detuned oscillators
+        let osc1 = saw_ar(freq + wow + flutter);
+        let osc2 = saw_ar(freq * 1.003 + wow);
+
+        let mix = (osc1 + osc2) * 0.4;
+
+        // Tape saturation
+        let saturated = (mix * 1.5).tanh();
+
+        // Warm filtering (rolled off highs)
+        lpf_ar(saturated, 4000.0) * env * amp
+    });

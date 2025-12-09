@@ -1,5 +1,5 @@
 // Genre: House, Funk | Character: Bright, cutting pluck
-define_synthdef("pluck_bright", |builder| {
+define_synthdef("bass_pluck_bright", |builder| {
     builder
         .param("freq", 110.0)
         .param("amp", 0.7)

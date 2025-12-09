@@ -1,0 +1,23 @@
+// Genre: Latin, Brazilian, Samba | Character: Metal beads against shell texture
+define_synthdef("cabasa")
+    .param("freq", 7000.0)
+    .param("amp", 0.5)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Short, swishing envelope
+        let amp_envelope = env_perc(0.001, 0.15);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Bead rattle texture
+        let rattle_rate = 80.0;
+        let rattle = sin_osc_ar(rattle_rate) * 0.3 + 0.7;
+
+        // High-frequency metallic noise
+        let beads = hpf_ar(white_noise_ar(), freq);
+        let body = bpf_ar(white_noise_ar(), freq * 0.6, 0.5) * 0.4;
+
+        (beads + body) * rattle * amp_env * amp
+    });

@@ -23,6 +23,9 @@
   --font-display: 'VT323', ui-monospace, monospace;
   --font-mono: 'Space Mono', ui-monospace, monospace;
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Logo font - toggle between the two lines below */
+  /* --font-logo: 'Space Mono', ui-monospace, monospace; */
+  --font-logo: 'VT323', ui-monospace, monospace;
 
   /* Spacing */
   --space-xs: 0.25rem;
@@ -246,6 +249,27 @@ code, pre {
 .code-block .function { color: #dcdcaa; }
 .code-block .variable { color: #9cdcfe; }
 .code-block .operator { color: #d4d4d4; }
+
+/* VibeLang Syntax Highlighting */
+.highlighted-code {
+  margin: 0;
+  white-space: pre;
+}
+
+.highlighted-code code {
+  display: block;
+}
+
+.hl-comment { color: #6a9955; font-style: italic; }
+.hl-keyword { color: #c586c0; }
+.hl-string { color: #ce9178; }
+.hl-number { color: #b5cea8; }
+.hl-builtin { color: #dcdcaa; }
+.hl-method { color: #dcdcaa; }
+.hl-identifier { color: #9cdcfe; }
+.hl-operator { color: #d4d4d4; }
+.hl-bracket { color: #ffd700; }
+.hl-punctuation { color: #d4d4d4; }
 
 /* Cards */
 .card {

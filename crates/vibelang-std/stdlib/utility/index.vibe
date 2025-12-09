@@ -7,3 +7,19 @@ import "stdlib/utility/metronome.vibe";
 import "stdlib/utility/test_tones.vibe";
 import "stdlib/utility/noise_generators.vibe";
 import "stdlib/utility/lfo.vibe";
+
+// Additional noise sources
+import "stdlib/utility/noise_white.vibe";
+import "stdlib/utility/noise_pink.vibe";
+
+// Test tones
+import "stdlib/utility/oscilloscope_tones.vibe";
+
+// Tuning reference
+import "stdlib/utility/tuner.vibe";
+
+// Click tracks
+import "stdlib/utility/click_track.vibe";
+
+// Routing
+import "stdlib/utility/silence.vibe";

@@ -5,20 +5,32 @@
 
 // Moog
 import "stdlib/synths/minimoog.vibe";
+import "stdlib/synths/memorymoog.vibe";
 
 // Roland
 import "stdlib/synths/juno.vibe";
 import "stdlib/synths/jupiter.vibe";
 import "stdlib/synths/sh101.vibe";
+import "stdlib/synths/tb303.vibe";
 
 // Yamaha
 import "stdlib/synths/dx7.vibe";
+import "stdlib/synths/cs80.vibe";
 
 // Sequential Circuits
 import "stdlib/synths/prophet.vibe";
+import "stdlib/synths/pro_one.vibe";
 
 // Oberheim
 import "stdlib/synths/oberheim.vibe";
 
 // ARP
 import "stdlib/synths/arp.vibe";
+import "stdlib/synths/odyssey.vibe";
+
+// Korg
+import "stdlib/synths/ms20.vibe";
+import "stdlib/synths/polysix.vibe";
+
+// PPG
+import "stdlib/synths/ppg_wave.vibe";

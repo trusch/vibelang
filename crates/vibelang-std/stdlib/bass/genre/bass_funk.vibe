@@ -1,0 +1,31 @@
+// Genre: Funk, Disco | Character: Funky bass with bright attack and groove
+define_synthdef("bass_funk")
+    .param("freq", 70.0)
+    .param("amp", 0.85)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.005, 1.0, 0.08);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope for funky attack
+        let filt_env_shape = env_perc(0.005, 0.15);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Punchy body with harmonics
+        let body = sin_osc_ar(freq) * 0.45;
+        let harm1 = sin_osc_ar(freq * 2.0) * 0.25;
+        let harm2 = sin_osc_ar(freq * 3.0) * 0.12;
+
+        // Attack pop
+        let pop_env = env_perc(0.001, 0.02);
+        let pop = NewEnvGenBuilder(pop_env, dc_ar(1.0)).build();
+        let attack = bpf_ar(white_noise_ar(), 2000.0, 0.4) * pop * 0.2;
+
+        let sig = body + harm1 + harm2 + attack;
+
+        // Dynamic filter
+        let cutoff = 1000.0 + filt_env * 2500.0;
+        lpf_ar(sig, cutoff) * env * amp
+    });

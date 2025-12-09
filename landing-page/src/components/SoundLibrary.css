@@ -167,3 +167,40 @@
     padding: var(--space-md);
   }
 }
+
+@media (max-width: 480px) {
+  .sound-library__grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-sm);
+  }
+
+  .sound-card {
+    padding: var(--space-sm);
+  }
+
+  .sound-card__icon {
+    font-size: 1.5rem;
+  }
+
+  .sound-card__count {
+    font-size: 1rem;
+  }
+
+  .sound-card__title {
+    font-size: 1.25rem;
+  }
+
+  .sound-card__list li {
+    font-size: 0.65rem;
+    padding: 2px 0;
+  }
+
+  .sound-library__example-content {
+    padding: var(--space-md);
+  }
+
+  .sound-library__example-content code {
+    font-size: 0.7rem;
+    line-height: 1.6;
+  }
+}

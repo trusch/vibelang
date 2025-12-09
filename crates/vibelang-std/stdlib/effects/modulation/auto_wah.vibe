@@ -1,0 +1,40 @@
+// Auto-Wah Effect
+//
+// Envelope-following wah effect.
+//
+// Usage:
+//   group.add_effect("wah", "auto_wah", #{
+//     sensitivity: 0.5,
+//     depth: 2000.0,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   sensitivity: Envelope follower sensitivity (0.1 to 1.0)
+//   depth: Filter sweep depth in Hz (500 to 4000)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("auto_wah", |builder| {
+    builder
+        .param("sensitivity", 0.5)
+        .param("depth", 2000.0)
+        .param("mix", 1.0)
+        .body(|input, sensitivity, depth, mix| {
+            // Envelope follower
+            let env_left = amplitude_ar(input[0], 0.01, 0.1);
+            let env_right = amplitude_ar(input[1], 0.01, 0.1);
+
+            // Calculate filter cutoff based on envelope
+            let cutoff_left = 400.0 + env_left * sensitivity * depth;
+            let cutoff_right = 400.0 + env_right * sensitivity * depth;
+
+            // Resonant bandpass for wah character
+            let wah_left = bpf_ar(input[0], cutoff_left, 0.2);
+            let wah_right = bpf_ar(input[1], cutoff_right, 0.2);
+
+            [
+                (1.0 - mix) * input[0] + mix * wah_left,
+                (1.0 - mix) * input[1] + mix * wah_right
+            ]
+        })
+});

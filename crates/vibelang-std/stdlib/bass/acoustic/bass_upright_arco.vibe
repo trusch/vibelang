@@ -1,0 +1,28 @@
+// Genre: Classical, Orchestral | Character: Bowed upright bass
+define_synthdef("bass_upright_arco")
+    .param("freq", 80.0)
+    .param("amp", 0.7)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        // Slow attack for bowing
+        let envelope = env_asr(0.15, 1.0, 0.2);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Bow pressure modulation
+        let bow_lfo = sin_osc_ar(4.5) * 0.02 + 1.0;
+
+        // Rich harmonic content from bowing
+        let body = sin_osc_ar(freq * bow_lfo) * 0.4;
+        let harm1 = sin_osc_ar(freq * 2.0 * bow_lfo) * 0.25;
+        let harm2 = sin_osc_ar(freq * 3.0) * 0.15;
+        let harm3 = sin_osc_ar(freq * 4.0) * 0.08;
+        let harm4 = sin_osc_ar(freq * 5.0) * 0.04;
+
+        // Bow noise
+        let bow_noise = bpf_ar(pink_noise_ar(), 2000.0, 0.5) * 0.08;
+
+        let sig = body + harm1 + harm2 + harm3 + harm4 + bow_noise;
+        lpf_ar(sig, 4000.0) * env * amp
+    });

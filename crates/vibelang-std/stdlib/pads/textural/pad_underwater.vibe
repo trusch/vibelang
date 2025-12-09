@@ -1,0 +1,27 @@
+// Genre: Ambient, Soundscape | Character: Underwater pad - muffled and deep
+define_synthdef("pad_underwater")
+    .param("freq", 110.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.4, 1.0, 0.5);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Slow movement
+        let wobble = sin_osc_ar(0.3) * freq * 0.01;
+
+        // Deep tones
+        let deep1 = sin_osc_ar(freq + wobble) * 0.5;
+        let deep2 = sin_osc_ar(freq * 2.0 + wobble * 0.5) * 0.2;
+
+        // Bubble-like texture
+        let bubble_rate = 3.0;
+        let bubbles = sin_osc_ar(freq * 4.0) * dust_ar(bubble_rate) * 0.1;
+
+        let sig = deep1 + deep2 + bubbles;
+
+        // Heavy low-pass for underwater muffled effect
+        lpf_ar(sig, 800.0) * env * amp
+    });

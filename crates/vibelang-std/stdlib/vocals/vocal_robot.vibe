@@ -1,0 +1,26 @@
+// Genre: Electronic, Experimental | Character: Robot voice effect
+define_synthdef("vocal_robot")
+    .param("freq", 220.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.001, 1.0, 0.01);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Metallic carrier
+        let carrier = pulse_ar(freq, 0.5) * 0.3;
+
+        // Ring modulation for robot effect
+        let ring_freq = 200.0;
+        let ring = carrier * sin_osc_ar(ring_freq);
+
+        // Formant-like filtering
+        let f1 = bpf_ar(ring, 800.0, 0.2) * 0.5;
+        let f2 = bpf_ar(ring, 2000.0, 0.25) * 0.35;
+
+        let sig = f1 + f2;
+
+        sig * env * amp
+    });

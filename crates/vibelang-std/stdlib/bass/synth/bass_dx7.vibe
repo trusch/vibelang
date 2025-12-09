@@ -1,0 +1,29 @@
+// Genre: 80s Pop, R&B, Electronic | Character: DX7 FM bass - punchy and clear
+define_synthdef("bass_dx7")
+    .param("freq", 60.0)
+    .param("amp", 0.8)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.001, 1.0, 0.08);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // FM index envelope
+        let mod_env_shape = env_perc(0.001, 0.15);
+        let mod_env = NewEnvGenBuilder(mod_env_shape, dc_ar(1.0)).build();
+
+        // FM synthesis - carrier and modulator
+        let mod_ratio = 1.0;
+        let mod_index = 2.0 + mod_env * 5.0;
+        let modulator = sin_osc_ar(freq * mod_ratio) * mod_index * freq;
+        let carrier = sin_osc_ar(freq + modulator);
+
+        // Second operator for more harmonics
+        let mod2 = sin_osc_ar(freq * 2.0) * mod_env * freq * 0.5;
+        let carrier2 = sin_osc_ar(freq + mod2) * 0.3;
+
+        let sig = (carrier + carrier2) * 0.5;
+
+        sig * env * amp
+    });

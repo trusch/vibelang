@@ -1,0 +1,43 @@
+// Utility: Click track for timing reference
+
+// Click high - Downbeat marker
+define_synthdef("click_high")
+    .param("amp", 0.6)
+    .body(|amp| {
+        let gate = dc_ar(1.0);
+        let envelope = env_perc(0.001, 0.03);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        sin_osc_ar(1500.0) * env * amp
+    });
+
+// Click low - Off-beat marker
+define_synthdef("click_low")
+    .param("amp", 0.5)
+    .body(|amp| {
+        let gate = dc_ar(1.0);
+        let envelope = env_perc(0.001, 0.025);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        sin_osc_ar(1000.0) * env * amp
+    });
+
+// Click wood - Natural sounding click
+define_synthdef("click_wood")
+    .param("amp", 0.55)
+    .body(|amp| {
+        let gate = dc_ar(1.0);
+        let envelope = env_perc(0.001, 0.02);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        let noise = hpf_ar(white_noise_ar(), 2000.0);
+        let body = sin_osc_ar(800.0) * 0.3;
+
+        (noise * 0.7 + body) * env * amp
+    });

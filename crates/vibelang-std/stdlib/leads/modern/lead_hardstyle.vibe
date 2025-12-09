@@ -1,0 +1,29 @@
+// Genre: Hardstyle, Hardcore | Character: Hardstyle screech lead
+define_synthdef("lead_hardstyle")
+    .param("freq", 440.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.001, 1.0, 0.08);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope for screech
+        let filt_env_shape = env_perc(0.001, 0.4);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Detuned saws
+        let osc1 = saw_ar(freq * 0.99);
+        let osc2 = saw_ar(freq);
+        let osc3 = saw_ar(freq * 1.01);
+
+        let mix = (osc1 + osc2 + osc3) * 0.35;
+
+        // Aggressive resonant filter (the screech)
+        let cutoff = 1000.0 + filt_env * 6000.0;
+        let filtered = rlpf_ar(mix, cutoff, 0.6);
+
+        // Distortion
+        (filtered * 2.0).tanh() * env * amp
+    });

@@ -1,0 +1,33 @@
+// Genre: Brazilian, Capoeira | Character: Musical bow with gourd resonator
+define_synthdef("berimbau")
+    .param("freq", 120.0)
+    .param("amp", 0.7)
+    .param("open", 1.0)
+    .body(|freq, amp, open| {
+        let gate = dc_ar(1.0);
+
+        // Decay length based on open/closed
+        let decay_time = 0.2 + (open * 0.4);
+        let amp_envelope = env_perc(0.001, 1.0);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_time_scale(decay_time)
+            .with_done_action(2.0)
+            .build();
+
+        // Wire string with harmonics
+        let body = sin_osc_ar(freq) * 0.5;
+        let harm1 = sin_osc_ar(freq * 2.0) * 0.25;
+        let harm2 = sin_osc_ar(freq * 3.0) * 0.15;
+        let harm3 = sin_osc_ar(freq * 4.0) * 0.08;
+
+        // Gourd resonance (filter based on open/closed)
+        let cutoff = 400.0 + (open * 2000.0);
+        let resonated = lpf_ar(body + harm1 + harm2 + harm3, cutoff);
+
+        // Stick attack
+        let attack_envelope = env_perc(0.0001, 0.008);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = bpf_ar(white_noise_ar(), 2000.0, 0.5) * attack_env * 0.2;
+
+        (resonated + attack) * amp_env * amp
+    });

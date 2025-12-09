@@ -54,7 +54,7 @@ pub fn db_int(decibels: i64) -> f64 {
 /// let midi = note("A#3"); // Returns 58
 /// ```
 pub fn note(name: &str) -> i64 {
-    parse_note(name).unwrap_or(60) as i64
+    parse_note_name(name).unwrap_or(60) as i64
 }
 
 /// Convert bars to beats using current time signature.
@@ -110,7 +110,7 @@ pub fn exit_with_code(code: i64) {
 }
 
 /// Parse a note name to MIDI note number.
-fn parse_note(name: &str) -> Option<u8> {
+pub fn parse_note_name(name: &str) -> Option<u8> {
     let name = name.trim();
     if name.is_empty() {
         return None;
@@ -219,13 +219,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_note() {
-        assert_eq!(parse_note("C4"), Some(60));
-        assert_eq!(parse_note("A4"), Some(69));
-        assert_eq!(parse_note("C#4"), Some(61));
-        assert_eq!(parse_note("Db4"), Some(61));
-        assert_eq!(parse_note("C5"), Some(72));
-        assert_eq!(parse_note("C3"), Some(48));
+    fn test_parse_note_name() {
+        assert_eq!(parse_note_name("C4"), Some(60));
+        assert_eq!(parse_note_name("A4"), Some(69));
+        assert_eq!(parse_note_name("C#4"), Some(61));
+        assert_eq!(parse_note_name("Db4"), Some(61));
+        assert_eq!(parse_note_name("C5"), Some(72));
+        assert_eq!(parse_note_name("C3"), Some(48));
     }
 
     #[test]

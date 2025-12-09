@@ -1,0 +1,27 @@
+// Genre: Horror, Dark Ambient | Character: Horror pad - dark and unsettling
+define_synthdef("pad_horror")
+    .param("freq", 80.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.6, 1.0, 0.5);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Slow detuning for unease
+        let detune = sin_osc_ar(0.1) * freq * 0.03;
+
+        // Dark oscillators
+        let osc1 = saw_ar(freq + detune) * 0.3;
+        let osc2 = saw_ar(freq * 1.5 - detune) * 0.2;
+        let sub = sin_osc_ar(freq * 0.5) * 0.25;
+
+        // Noise texture
+        let noise = lpf_ar(pink_noise_ar(), 400.0) * 0.1;
+
+        let mix = osc1 + osc2 + sub + noise;
+
+        // Dark filtering
+        lpf_ar(mix, 600.0) * env * amp
+    });

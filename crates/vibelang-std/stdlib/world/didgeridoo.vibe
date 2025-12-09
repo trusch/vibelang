@@ -1,0 +1,29 @@
+// Region: Australian | Character: Deep drone instrument
+define_synthdef("didgeridoo")
+    .param("freq", 55.0)
+    .param("amp", 0.6)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.1, 1.0, 0.2);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Fundamental drone
+        let fundamental = saw_ar(freq) * 0.4;
+
+        // Overtones with slight variations
+        let lfo = sin_osc_ar(0.3) * 1.5;
+        let ot1 = saw_ar(freq * 2.0 + lfo) * 0.2;
+        let ot2 = pulse_ar(freq * 3.0, 0.3) * 0.1;
+
+        // Breath noise
+        let breath = lpf_ar(pink_noise_ar(), 300.0) * 0.15;
+
+        let sig = fundamental + ot1 + ot2 + breath;
+
+        // Resonant filter for tubular character
+        let filtered = rlpf_ar(sig, 200.0, 0.3);
+
+        filtered * env * amp
+    });

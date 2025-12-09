@@ -1,0 +1,28 @@
+// Genre: Experimental, Ambient, IDM | Character: Granular bass texture
+define_synthdef("bass_granular")
+    .param("freq", 60.0)
+    .param("amp", 0.7)
+    .param("gate", 1.0)
+    .param("grain_rate", 20.0)
+    .body(|freq, amp, gate, grain_rate| {
+        let envelope = env_asr(0.05, 1.0, 0.2);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Base tone
+        let base = sin_osc_ar(freq) * 0.4;
+
+        // Granular texture using multiple modulated oscillators
+        let grain_mod = sin_osc_ar(grain_rate) * 0.5 + 0.5;
+        let grain1 = sin_osc_ar(freq * 1.01) * grain_mod * 0.2;
+        let grain2 = sin_osc_ar(freq * 0.99) * (1.0 - grain_mod) * 0.2;
+
+        // Random frequency deviations
+        let dust_mod = dust_ar(grain_rate) * freq * 0.02;
+        let grain3 = sin_osc_ar(freq + dust_mod) * 0.15;
+
+        let mix = base + grain1 + grain2 + grain3;
+
+        lpf_ar(mix, 2000.0) * env * amp
+    });

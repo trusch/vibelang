@@ -6,8 +6,9 @@ define_synthdef("sweep_tension", |builder| {
         .body(|amp, duration| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(1.0, duration);
+            let envelope = env_perc(1.0, 1.0);
             let env = NewEnvGenBuilder(envelope, gate)
+                .with_time_scale(duration)
                 .with_done_action(2.0)
                 .build();
 

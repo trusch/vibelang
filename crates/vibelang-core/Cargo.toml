@@ -23,7 +23,7 @@ thiserror = "1.0"
 crossbeam-channel = "0.5"
 
 # OSC for SuperCollider communication
-rosc = "0.10"
+rosc = "0.11"
 
 # Randomness for patterns
 rand = { version = "0.8", features = ["std", "std_rng"] }
@@ -45,6 +45,15 @@ aubio-rs = { version = "0.2", features = ["builtin"] }
 
 # WAV file reading for BPM analysis
 hound = "3.5"
+
+# Tar archive for .vibescore format
+tar = "0.4"
+
+# MIDI input support
+midir = "0.10"
+
+# JACK audio/MIDI support
+jack = "0.13"
 
 [dev-dependencies]
 env_logger = "0.11"

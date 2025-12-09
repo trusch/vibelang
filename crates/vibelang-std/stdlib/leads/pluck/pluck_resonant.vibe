@@ -1,5 +1,5 @@
 // Genre: Techno, House | Character: Resonant pluck with filter character
-define_synthdef("pluck_resonant", |builder| {
+define_synthdef("lead_pluck_resonant", |builder| {
     builder
         .param("freq", 440.0)
         .param("amp", 0.6)

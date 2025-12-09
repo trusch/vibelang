@@ -43,3 +43,15 @@ ratatui = "0.28"
 crossterm = "0.28"
 chrono = "0.4"
 crossbeam-channel = "0.5"
+
+# Clipboard (for MIDI recording export)
+arboard = "3.4"
+
+# OS-level keyboard input (for virtual keyboard key release detection)
+rdev = "0.5"
+
+# Render command
+tempfile = "3.10"
+which = "7"
+rosc = "0.11"
+tar = "0.4"

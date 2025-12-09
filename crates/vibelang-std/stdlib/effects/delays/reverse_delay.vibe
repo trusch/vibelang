@@ -1,0 +1,44 @@
+// Reverse Delay Effect
+//
+// Creates a backwards-sounding delay effect.
+//
+// Usage:
+//   group.add_effect("rev", "reverse_delay", #{
+//     time: 0.3,
+//     feedback: 0.4,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   time: Delay time in seconds (0.1 to 1.0)
+//   feedback: Feedback amount (0.0 to 0.8)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("reverse_delay", |builder| {
+    builder
+        .param("time", 0.3)
+        .param("feedback", 0.4)
+        .param("mix", 0.5)
+        .body(|input, time, feedback, mix| {
+            // Simulate reverse using multiple staggered delays with envelope
+            let env = sin_osc_ar(1.0 / time) * 0.5 + 0.5;
+
+            let d1_left = delay_c_ar(input[0], 1.0, time * 0.25) * (1.0 - env) * 0.3;
+            let d2_left = delay_c_ar(input[0], 1.0, time * 0.5) * env * 0.5;
+            let d3_left = delay_c_ar(input[0], 1.0, time * 0.75) * (1.0 - env) * 0.7;
+            let d4_left = delay_c_ar(input[0], 1.0, time) * env;
+
+            let d1_right = delay_c_ar(input[1], 1.0, time * 0.25) * (1.0 - env) * 0.3;
+            let d2_right = delay_c_ar(input[1], 1.0, time * 0.5) * env * 0.5;
+            let d3_right = delay_c_ar(input[1], 1.0, time * 0.75) * (1.0 - env) * 0.7;
+            let d4_right = delay_c_ar(input[1], 1.0, time) * env;
+
+            let wet_left = (d1_left + d2_left + d3_left + d4_left) * 0.4;
+            let wet_right = (d1_right + d2_right + d3_right + d4_right) * 0.4;
+
+            [
+                (1.0 - mix) * input[0] + mix * wet_left,
+                (1.0 - mix) * input[1] + mix * wet_right
+            ]
+        })
+});

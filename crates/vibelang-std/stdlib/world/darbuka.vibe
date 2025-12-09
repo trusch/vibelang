@@ -1,0 +1,36 @@
+// Genre: Middle Eastern, Arabic | Character: Darbuka/doumbek hand drum
+define_synthdef("darbuka")
+    .param("freq", 200.0)
+    .param("amp", 0.8)
+    .param("type", 0.0) // 0=doum, 0.5=tek, 1.0=ka
+    .body(|freq, amp, type_param| {
+        let gate = dc_ar(1.0);
+
+        // Decay based on type
+        let decay = 0.3 - type_param * 0.2;
+        let amp_envelope = env_perc(0.001, 1.0);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_time_scale(decay)
+            .with_done_action(2.0)
+            .build();
+
+        // Pitch based on type
+        let pitch = freq * (1.0 + type_param * 2.0);
+
+        // Pitch envelope
+        let pitch_envelope = env_perc(0.001, 0.02);
+        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+
+        // Body
+        let body = sin_osc_ar(pitch + pitch_env * pitch * (1.0 - type_param)) * (1.0 - type_param * 0.5);
+
+        // High slap for tek/ka
+        let slap = hpf_ar(white_noise_ar(), 3000.0 + type_param * 3000.0) * type_param * 0.4;
+
+        // Attack
+        let attack_envelope = env_perc(0.0001, 0.005);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = white_noise_ar() * attack_env * 0.2;
+
+        (body + slap + attack) * amp_env * amp
+    });

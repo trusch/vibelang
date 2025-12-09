@@ -1,0 +1,29 @@
+// Genre: Gospel, Jazz, Rock | Character: Hammond B3 organ with drawbars
+define_synthdef("organ_b3")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.005, 1.0, 0.05);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Tonewheel harmonics (simplified drawbar settings)
+        let h1 = sin_osc_ar(freq * 0.5) * 0.15;    // 16'
+        let h2 = sin_osc_ar(freq * 0.75) * 0.08;   // 5 1/3'
+        let h3 = sin_osc_ar(freq) * 0.4;           // 8'
+        let h4 = sin_osc_ar(freq * 2.0) * 0.25;    // 4'
+        let h5 = sin_osc_ar(freq * 3.0) * 0.1;     // 2 2/3'
+        let h6 = sin_osc_ar(freq * 4.0) * 0.15;    // 2'
+        let h7 = sin_osc_ar(freq * 6.0) * 0.05;    // 1 1/3'
+
+        let mix = h1 + h2 + h3 + h4 + h5 + h6 + h7;
+
+        // Key click
+        let click_env = env_perc(0.0001, 0.003);
+        let click = NewEnvGenBuilder(click_env, dc_ar(1.0)).build();
+        let key_click = white_noise_ar() * click * 0.08;
+
+        (mix + key_click) * env * amp
+    });

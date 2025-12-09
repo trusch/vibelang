@@ -1,0 +1,27 @@
+// Genre: Mystery, Thriller | Character: Mysterious pad - enigmatic and suspenseful
+define_synthdef("pad_mysterious")
+    .param("freq", 165.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.45, 1.0, 0.4);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Slow, mysterious modulation
+        let mod1 = sin_osc_ar(0.2) * freq * 0.015;
+        let mod2 = sin_osc_ar(0.13) * freq * 0.01;
+
+        // Layered tones
+        let tone1 = sin_osc_ar(freq + mod1) * 0.4;
+        let tone2 = sin_osc_ar(freq * 1.5 + mod2) * 0.2;
+        let tone3 = lf_tri_ar(freq * 2.0) * 0.15;
+
+        // Subtle texture
+        let texture = bpf_ar(pink_noise_ar(), freq * 4.0, 0.5) * 0.08;
+
+        let mix = tone1 + tone2 + tone3 + texture;
+
+        lpf_ar(mix, 2500.0) * env * amp
+    });

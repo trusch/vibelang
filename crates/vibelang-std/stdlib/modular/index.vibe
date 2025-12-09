@@ -1,0 +1,8 @@
+// Modular Synthesis Library Index
+//
+// Modular synthesizer-style building blocks.
+// Usage: import "stdlib/modular/index.vibe"
+
+import "stdlib/modular/mod_vco.vibe";
+import "stdlib/modular/mod_noise.vibe";
+import "stdlib/modular/mod_lfo.vibe";

@@ -1,0 +1,87 @@
+// PPG Wave Emulation
+// Classic 1981 | Character: Digital, metallic, evolving wavetables
+
+// PPG Wave Pad - Digital wavetable pad
+define_synthdef("ppg_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.45)
+        .param("gate", 1.0)
+        .param("table_pos", 0.5)
+        .body(|freq, amp, gate, table_pos| {
+            let envelope = env_asr(0.3, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Simulated wavetable scanning with multiple waveforms
+            let saw_amt = table_pos;
+            let pulse_amt = 1.0 - table_pos;
+            let pw = table_pos * 0.4 + 0.1;
+
+            let osc1 = saw_ar(freq) * saw_amt;
+            let osc2 = pulse_ar(freq, pw) * pulse_amt;
+            let osc3 = sin_osc_ar(freq * 2.0) * 0.2;
+
+            let mix = (osc1 + osc2 + osc3) * 0.5;
+
+            // Digital-ish filtering
+            let filtered = lpf_ar(mix, 4000.0);
+
+            filtered * env * amp
+        })
+});
+
+// PPG Wave Lead - Digital metallic lead
+define_synthdef("ppg_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.02, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Metallic digital character
+            let osc1 = pulse_ar(freq, 0.3) * 0.4;
+            let osc2 = saw_ar(freq * 2.003) * 0.25;
+            let osc3 = sin_osc_ar(freq * 3.0) * 0.15;
+
+            let mix = osc1 + osc2 + osc3;
+
+            let filtered = lpf_ar(mix, 6000.0);
+
+            filtered * env * amp
+        })
+});
+
+// PPG Wave Bass - Digital bass
+define_synthdef("ppg_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.55)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_asr(0.01, 1.0, 0.12);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Wavetable-style with harmonics
+            let osc1 = saw_ar(freq) * 0.5;
+            let osc2 = pulse_ar(freq, 0.25) * 0.3;
+            let sub = sin_osc_ar(freq * 0.5) * 0.4;
+
+            let mix = osc1 + osc2 + sub;
+
+            let cutoff = 600.0 + filt_env * 1500.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.5);
+
+            filtered * env * amp
+        })
+});

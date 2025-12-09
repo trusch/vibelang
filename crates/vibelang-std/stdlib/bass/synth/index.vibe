@@ -1,0 +1,13 @@
+// Synth Bass Library Index
+//
+// Classic synthesizer bass emulations.
+// Usage: import "stdlib/bass/synth/index.vibe"
+
+import "stdlib/bass/synth/bass_moog.vibe";
+import "stdlib/bass/synth/bass_prophet.vibe";
+import "stdlib/bass/synth/bass_juno.vibe";
+import "stdlib/bass/synth/bass_dx7.vibe";
+import "stdlib/bass/synth/bass_101.vibe";
+import "stdlib/bass/synth/bass_ms20.vibe";
+import "stdlib/bass/synth/bass_wavetable.vibe";
+import "stdlib/bass/synth/bass_granular.vibe";

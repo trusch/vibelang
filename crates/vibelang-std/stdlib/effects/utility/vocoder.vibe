@@ -1,0 +1,37 @@
+// Vocoder Effect
+//
+// Classic vocoder effect using bandpass filter banks.
+//
+// Usage:
+//   group.add_effect("voc", "vocoder", #{
+//     bands: 16.0,
+//     mix: 0.8
+//   });
+//
+// Parameters:
+//   bands: Number of frequency bands (8 to 32)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("vocoder", |builder| {
+    builder
+        .param("bands", 16.0)
+        .param("mix", 0.8)
+        .body(|input, bands, mix| {
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Simplified vocoder using multiple bandpass filters
+            let band1 = bpf_ar(mono, 200.0, 0.2) * 0.2;
+            let band2 = bpf_ar(mono, 400.0, 0.2) * 0.2;
+            let band3 = bpf_ar(mono, 800.0, 0.2) * 0.2;
+            let band4 = bpf_ar(mono, 1600.0, 0.2) * 0.2;
+            let band5 = bpf_ar(mono, 3200.0, 0.2) * 0.15;
+            let band6 = bpf_ar(mono, 6400.0, 0.2) * 0.1;
+
+            let wet = band1 + band2 + band3 + band4 + band5 + band6;
+
+            [
+                (1.0 - mix) * input[0] + mix * wet,
+                (1.0 - mix) * input[1] + mix * wet
+            ]
+        })
+});

@@ -1,0 +1,10 @@
+// Cinematic Pads Library Index
+//
+// Film score and cinematic pad sounds.
+// Usage: import "stdlib/pads/cinematic/index.vibe"
+
+import "stdlib/pads/cinematic/pad_tension.vibe";
+import "stdlib/pads/cinematic/pad_horror.vibe";
+import "stdlib/pads/cinematic/pad_scifi.vibe";
+import "stdlib/pads/cinematic/pad_epic.vibe";
+import "stdlib/pads/cinematic/pad_mysterious.vibe";

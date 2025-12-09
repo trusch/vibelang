@@ -1,0 +1,29 @@
+// Genre: Experimental, IDM | Character: Karplus-Strong plucked bass
+define_synthdef("bass_karplus")
+    .param("freq", 80.0)
+    .param("amp", 0.8)
+    .param("decay", 0.5)
+    .body(|freq, amp, decay| {
+        let gate = dc_ar(1.0);
+
+        // Karplus-Strong style using comb filter
+        let amp_envelope = env_perc(0.001, 1.0);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_time_scale(decay * 2.0)
+            .with_done_action(2.0)
+            .build();
+
+        // Excitation noise burst
+        let excite_env = env_perc(0.0001, 0.005);
+        let excite = NewEnvGenBuilder(excite_env, dc_ar(1.0)).build();
+        let noise = white_noise_ar() * excite;
+
+        // Delay time for pitch
+        let delay_time = 1.0 / freq;
+
+        // Comb filter with feedback for string-like resonance
+        let resonated = comb_c_ar(noise, 0.05, delay_time, decay * 3.0);
+
+        // Low pass for warmth
+        lpf_ar(resonated, 2000.0) * amp_env * amp
+    });

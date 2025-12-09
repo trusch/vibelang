@@ -1,0 +1,21 @@
+// Genre: Chiptune, Lo-fi | Character: Bitcrushed lo-fi lead
+define_synthdef("lead_bitcrushed")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .param("bits", 8.0)
+    .body(|freq, amp, gate, bits| {
+        let envelope = env_asr(0.005, 1.0, 0.08);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Source oscillator
+        let osc = saw_ar(freq);
+
+        // Bit reduction
+        let levels = (2.0).pow(bits);
+        let crushed = (osc * levels).floor() / levels;
+
+        crushed * env * amp
+    });

@@ -1,0 +1,28 @@
+// Genre: Ambient, World, Electronic | Character: Synth flute - breathy and soft
+define_synthdef("lead_flute")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.08, 1.0, 0.15);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Vibrato
+        let vib = sin_osc_ar(5.0) * freq * 0.01;
+
+        // Main tone with harmonics
+        let body = sin_osc_ar(freq + vib) * 0.5;
+        let harm1 = sin_osc_ar((freq + vib) * 2.0) * 0.2;
+        let harm2 = sin_osc_ar((freq + vib) * 3.0) * 0.08;
+
+        // Breath noise
+        let breath_env = env_asr(0.1, 0.6, 0.15);
+        let breath_e = NewEnvGenBuilder(breath_env, gate).build();
+        let breath = bpf_ar(pink_noise_ar(), freq * 1.5, 0.8) * breath_e * 0.2;
+
+        let sig = body + harm1 + harm2 + breath;
+
+        sig * env * amp
+    });

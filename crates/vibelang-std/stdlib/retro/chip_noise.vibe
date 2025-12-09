@@ -1,0 +1,17 @@
+// Genre: Chiptune, 8-bit | Character: Chip noise channel for drums/sfx
+define_synthdef("chip_noise")
+    .param("freq", 8000.0)
+    .param("amp", 0.5)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        let amp_envelope = env_perc(0.001, 0.15);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filtered noise (simulating chip noise)
+        let noise = hpf_ar(white_noise_ar(), freq);
+
+        noise * amp_env * amp
+    });

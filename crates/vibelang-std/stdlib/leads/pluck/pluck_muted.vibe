@@ -1,5 +1,5 @@
 // Genre: Lo-fi, Jazz | Character: Muted, soft pluck
-define_synthdef("pluck_muted", |builder| {
+define_synthdef("lead_pluck_muted", |builder| {
     builder
         .param("freq", 440.0)
         .param("amp", 0.7)

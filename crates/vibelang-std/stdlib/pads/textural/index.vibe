@@ -1,0 +1,11 @@
+// Textural Pads Library Index
+//
+// Textured and atmospheric pad sounds.
+// Usage: import "stdlib/pads/textural/index.vibe"
+
+import "stdlib/pads/textural/pad_glass.vibe";
+import "stdlib/pads/textural/pad_metallic.vibe";
+import "stdlib/pads/textural/pad_breath.vibe";
+import "stdlib/pads/textural/pad_choir.vibe";
+import "stdlib/pads/textural/pad_ghostly.vibe";
+import "stdlib/pads/textural/pad_underwater.vibe";

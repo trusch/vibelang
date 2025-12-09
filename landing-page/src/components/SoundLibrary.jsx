@@ -1,48 +1,77 @@
 import React from 'react';
+import { highlightCode } from '../utils/syntaxHighlight';
 import './SoundLibrary.css';
 
 const categories = [
   {
     name: 'Drums',
-    count: 54,
+    count: 125,
     icon: 'X',
-    items: ['Kicks (12)', 'Snares (12)', 'Hi-hats (10)', 'Claps (10)', 'Percussion (10)'],
+    items: ['Kicks (20)', 'Snares (16)', 'Hi-hats (10)', 'Latin Percussion (20)', 'Drum Machines (16)', 'Breakbeats (2)', 'Foley (5)'],
     color: '#ff6b35'
   },
   {
     name: 'Bass',
-    count: 30,
+    count: 75,
     icon: '~',
-    items: ['Sub Bass (10)', 'Acid 303 (10)', 'Pluck Bass (10)'],
+    items: ['Sub Bass (10)', 'Acoustic (8)', 'Synth Bass (8)', 'Genre-Specific (12)', 'Acid 303', 'Reese', 'Wobble'],
     color: '#7c3aed'
   },
   {
-    name: 'Leads',
-    count: 20,
-    icon: '^',
-    items: ['Synth Leads (10)', 'Pluck Leads (10)'],
-    color: '#10b981'
-  },
-  {
-    name: 'Pads',
-    count: 20,
-    icon: '=',
-    items: ['Ambient Pads (10)', 'Lush Pads (10)'],
+    name: 'Leads & Pads',
+    count: 91,
+    icon: '▣',
+    items: ['Classic Leads (8)', 'Modern Leads (7)', 'Organic Leads (7)', 'Analog Pads (5)', 'Cinematic Pads (5)', 'Textures (10)'],
     color: '#3b82f6'
   },
   {
-    name: 'FX',
-    count: 15,
-    icon: '*',
-    items: ['Risers', 'Impacts', 'Sweeps', 'Textures', 'Drones'],
+    name: 'Classic Synths',
+    count: 16,
+    icon: '♦',
+    items: ['Minimoog', 'Juno', 'Jupiter', 'TB-303', 'MS-20', 'CS-80', 'Prophet', 'Polysix'],
+    color: '#ec4899'
+  },
+  {
+    name: 'Keys & Piano',
+    count: 19,
+    icon: '♪',
+    items: ['Grand Piano', 'Rhodes (2)', 'Wurlitzer', 'Hammond', 'Harpsichord', 'Pipe Organ', 'Mellotron (3)'],
     color: '#f59e0b'
   },
   {
-    name: 'Theory',
-    count: '80+',
-    icon: '#',
-    items: ['30+ Scales', 'Chords', '20+ Progressions', 'Bass Patterns'],
-    color: '#ec4899'
+    name: 'World',
+    count: 24,
+    icon: '◇',
+    items: ['Sitar', 'Tabla', 'Kalimba', 'Koto', 'Oud', 'Erhu', 'Didgeridoo', 'Hang Drum', 'Mbira'],
+    color: '#10b981'
+  },
+  {
+    name: 'Orchestral',
+    count: 28,
+    icon: '♫',
+    items: ['Strings (9)', 'Brass (7)', 'Woodwinds (6)', 'Bells (7)', 'Timpani', 'Wind Chimes'],
+    color: '#06b6d4'
+  },
+  {
+    name: 'Cinematic & Retro',
+    count: 12,
+    icon: '◎',
+    items: ['Braams', 'Impacts', 'Drones', 'Whooshes', 'Chip Sounds (4)', 'Game SFX (4)'],
+    color: '#84cc16'
+  },
+  {
+    name: 'Effects',
+    count: 66,
+    icon: '*',
+    items: ['Delays (11)', 'Reverbs (8)', 'Filters (9)', 'Modulation (12)', 'Dynamics (10)', 'Distortion (10)'],
+    color: '#8b5cf6'
+  },
+  {
+    name: 'FX & Utility',
+    count: 68,
+    icon: '^',
+    items: ['Risers', 'Impacts', 'Sweeps', 'Test Tones', 'Tuners', 'Click Tracks', 'Noise Generators'],
+    color: '#6b7280'
   }
 ];
 
@@ -52,10 +81,10 @@ function SoundLibrary() {
       <div className="container">
         <div className="sound-library__header">
           <span className="sound-library__label">// sound palette</span>
-          <h2>149+ production-ready sounds</h2>
+          <h2>580+ production-ready sounds</h2>
           <p className="sound-library__subtitle">
-            Every sound is a readable .vibe file. Learn synthesis by exploring,
-            or use them as-is for instant results.
+            Every sound is a readable .vibe file. Peek under the hood to learn synthesis,
+            or just use them and start making music.
           </p>
         </div>
 
@@ -81,24 +110,27 @@ function SoundLibrary() {
             <span className="sound-library__example-label">Example: Using the standard library</span>
           </div>
           <div className="sound-library__example-content">
-            <pre><code>{`// Import entire category
-import "stdlib/drums" as drums;
+            <pre><code>{highlightCode(`// Import the sounds you need
+import "stdlib/drums/kicks/kick_808.vibe";
+import "stdlib/bass/acid/acid_303_classic.vibe";
 
-// Or import specific sounds
-import "stdlib/bass/acid" as acid;
+// Create voices and start playing
+let kick = voice("kick")
+    .synth("kick_808")
+    .gain(db(-6));
 
-// Use them directly
-let kick = voice("kick", drums.kicks.kick_808);
-let bass = voice("bass", acid.acid_303);
+let bass = voice("bass")
+    .synth("acid_303_classic")
+    .gain(db(-10));
 
-// Each sound file is pure VibeLang code
-// Open it, learn from it, modify it`}</code></pre>
+// Each .vibe file is readable code
+// Open it, learn from it, make it yours`)}</code></pre>
           </div>
         </div>
 
         <div className="sound-library__cta">
-          <p>All sounds are open source and customizable.</p>
-          <a href="#" className="btn btn-secondary">
+          <p>All sounds are open source and customizable. Tweak them, learn from them, make them yours.</p>
+          <a href="https://github.com/trusch/vibelang/tree/main/crates/vibelang-std/stdlib" className="btn btn-secondary" target="_blank" rel="noopener noreferrer">
             Browse the full library
           </a>
         </div>

@@ -1,0 +1,33 @@
+// Genre: Pop, Modern | Character: Modern pop kick with controlled punch
+define_synthdef("kick_punchy")
+    .param("freq", 52.0)
+    .param("amp", 1.0)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Controlled decay
+        let amp_envelope = env_perc(0.001, 0.35);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Tight pitch envelope
+        let pitch_envelope = env_perc(0.001, 0.035);
+        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let freq_mod = pitch_env * freq * 5.0;
+
+        // Punchy body
+        let body = sin_osc_ar(freq + freq_mod) * 0.85;
+
+        // Mid punch
+        let mid_envelope = env_perc(0.001, 0.05);
+        let mid_env = NewEnvGenBuilder(mid_envelope, gate).build();
+        let mid = sin_osc_ar(freq * 2.5) * mid_env * 0.15;
+
+        // Click
+        let click_envelope = env_perc(0.0001, 0.008);
+        let click_env = NewEnvGenBuilder(click_envelope, gate).build();
+        let click = bpf_ar(white_noise_ar(), 2800.0, 0.5) * click_env * 0.2;
+
+        (body + mid + click) * amp_env * amp
+    });

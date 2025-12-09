@@ -1,0 +1,32 @@
+// Genre: 90s Hip-hop, Boom Bap | Character: E-mu SP-1200 kick - crunchy, 12-bit warmth
+define_synthdef("sp1200_kick")
+    .param("freq", 48.0)
+    .param("amp", 1.0)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Punchy decay
+        let amp_envelope = env_perc(0.001, 0.4);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Pitch envelope
+        let pitch_envelope = env_perc(0.001, 0.07);
+        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let freq_mod = pitch_env * freq * 3.5;
+
+        // Main body with slight saturation (12-bit character)
+        let raw = sin_osc_ar(freq + freq_mod);
+        let body = (raw * 1.2).tanh() * 0.8;
+
+        // Sub layer
+        let sub = sin_osc_ar((freq + freq_mod) * 0.5) * 0.15;
+
+        // Crunchy click
+        let click_envelope = env_perc(0.0001, 0.012);
+        let click_env = NewEnvGenBuilder(click_envelope, gate).build();
+        let click = lpf_ar(white_noise_ar(), 3000.0) * click_env * 0.2;
+
+        (body + sub + click) * amp_env * amp
+    });

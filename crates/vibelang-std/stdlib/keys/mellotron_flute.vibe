@@ -1,0 +1,26 @@
+// Sampler-style | Character: Classic mellotron flute sound
+define_synthdef("mellotron_flute")
+    .param("freq", 440.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.1, 1.0, 0.2);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Tape warble
+        let warble = sin_osc_ar(3.5) * freq * 0.004;
+
+        // Flute-like tone
+        let pure = sin_osc_ar(freq + warble) * 0.5;
+        let breath = bpf_ar(pink_noise_ar(), freq * 2.0, 0.2) * 0.15;
+        let second_harmonic = sin_osc_ar(freq * 2.0 + warble) * 0.15;
+
+        let sig = pure + breath + second_harmonic;
+
+        // Tape character - slight filtering
+        let filtered = lpf_ar(sig, 4000.0);
+
+        filtered * env * amp
+    });

@@ -1,0 +1,89 @@
+// ARP Odyssey Emulation
+// Classic 1972 | Character: Aggressive, raw, biting
+
+// Odyssey Bass - Fat duophonic bass
+define_synthdef("odyssey_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("filter_freq", 700.0)
+        .body(|freq, amp, gate, filter_freq| {
+            let envelope = env_asr(0.01, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_asr(0.01, 1.0, 0.12);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Dual oscillators with sync option
+            let osc1 = saw_ar(freq);
+            let osc2 = pulse_ar(freq * 0.5, 0.5) * 0.6;
+
+            let mix = (osc1 + osc2) * 0.5;
+
+            let cutoff = filter_freq + filt_env * 1800.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.55);
+
+            filtered * env * amp
+        })
+});
+
+// Odyssey Lead - Biting mono lead
+define_synthdef("odyssey_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("resonance", 0.5)
+        .body(|freq, amp, gate, resonance| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_asr(0.01, 1.0, 0.2);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Ring mod character
+            let osc1 = saw_ar(freq);
+            let osc2 = saw_ar(freq * 1.005);
+            let ring = osc1 * sin_osc_ar(freq * 1.5) * 0.2;
+
+            let mix = (osc1 + osc2) * 0.4 + ring;
+
+            let cutoff = 1200.0 + filt_env * 4000.0;
+            let filtered = rlpf_ar(mix, cutoff, 1.0 - resonance * 0.9);
+
+            filtered * env * amp
+        })
+});
+
+// Odyssey Sample Hold - Random stepped modulation
+define_synthdef("odyssey_sh", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.45)
+        .param("gate", 1.0)
+        .param("rate", 8.0)
+        .body(|freq, amp, gate, rate| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // S&H style random modulation
+            let sh = dust_ar(rate) * 100.0;
+            let mod_freq = freq + sh;
+
+            let osc1 = saw_ar(mod_freq);
+            let osc2 = pulse_ar(freq, 0.5) * 0.5;
+
+            let mix = (osc1 + osc2) * 0.45;
+
+            let filtered = rlpf_ar(mix, 2500.0, 0.6);
+
+            filtered * env * amp
+        })
+});

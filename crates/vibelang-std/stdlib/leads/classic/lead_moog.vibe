@@ -1,0 +1,29 @@
+// Genre: Funk, Progressive Rock | Character: Classic Minimoog lead - fat and expressive
+define_synthdef("lead_moog")
+    .param("freq", 440.0)
+    .param("amp", 0.6)
+    .param("gate", 1.0)
+    .param("cutoff", 2000.0)
+    .body(|freq, amp, gate, cutoff| {
+        let envelope = env_asr(0.01, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.01, 0.4);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Three oscillators slightly detuned
+        let osc1 = saw_ar(freq);
+        let osc2 = saw_ar(freq * 1.005);
+        let osc3 = saw_ar(freq * 0.5); // Sub octave
+
+        let mix = (osc1 + osc2 + osc3 * 0.5) * 0.35;
+
+        // Classic Moog filter
+        let mod_cutoff = cutoff + filt_env * 3000.0;
+        let filtered = rlpf_ar(mix, mod_cutoff, 0.25);
+
+        filtered * env * amp
+    });

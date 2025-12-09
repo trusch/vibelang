@@ -1,0 +1,26 @@
+// Genre: Brazilian, Samba, Latin | Character: High-pitched agogo bell
+define_synthdef("agogo_high")
+    .param("freq", 900.0)
+    .param("amp", 0.7)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Metallic ring decay
+        let amp_envelope = env_perc(0.001, 0.4);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Bell harmonics
+        let body = sin_osc_ar(freq) * 0.5;
+        let ring1 = sin_osc_ar(freq * 2.4) * 0.25;
+        let ring2 = sin_osc_ar(freq * 3.8) * 0.15;
+        let ring3 = sin_osc_ar(freq * 5.2) * 0.08;
+
+        // Stick attack
+        let attack_envelope = env_perc(0.0001, 0.002);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = hpf_ar(white_noise_ar(), 4000.0) * attack_env * 0.2;
+
+        (body + ring1 + ring2 + ring3 + attack) * amp_env * amp
+    });

@@ -1,0 +1,13 @@
+// Modulation Effects Index
+import "stdlib/effects/modulation/chorus.vibe";
+import "stdlib/effects/modulation/flanger.vibe";
+import "stdlib/effects/modulation/phaser.vibe";
+import "stdlib/effects/modulation/tremolo.vibe";
+import "stdlib/effects/modulation/auto_pan.vibe";
+import "stdlib/effects/modulation/vibrato.vibe";
+import "stdlib/effects/modulation/rotary.vibe";
+import "stdlib/effects/modulation/dimension_chorus.vibe";
+import "stdlib/effects/modulation/ring_mod.vibe";
+import "stdlib/effects/modulation/freq_shift.vibe";
+import "stdlib/effects/modulation/pitch_shift.vibe";
+import "stdlib/effects/modulation/auto_wah.vibe";

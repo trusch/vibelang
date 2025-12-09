@@ -1,0 +1,28 @@
+// Genre: Cinematic, Synthwave | Character: Yamaha CS-80 pad - expressive and cinematic
+define_synthdef("pad_cs80")
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.25, 1.0, 0.35);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Slow filter envelope
+        let filt_env_shape = env_asr(0.4, 1.0, 0.4);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, gate).build();
+
+        // Rich detuned oscillators
+        let osc1 = saw_ar(freq * 0.994);
+        let osc2 = saw_ar(freq * 0.998);
+        let osc3 = saw_ar(freq);
+        let osc4 = saw_ar(freq * 1.002);
+        let osc5 = saw_ar(freq * 1.006);
+
+        let mix = (osc1 + osc2 + osc3 + osc4 + osc5) * 0.18;
+
+        // Expressive filter
+        let cutoff = 500.0 + filt_env * 2500.0;
+        rlpf_ar(mix, cutoff, 0.12) * env * amp
+    });

@@ -1,5 +1,5 @@
 // Genre: House, Pop | Character: Bright, shimmering pluck lead
-define_synthdef("pluck_bright", |builder| {
+define_synthdef("lead_pluck_bright", |builder| {
     builder
         .param("freq", 440.0)
         .param("amp", 0.6)

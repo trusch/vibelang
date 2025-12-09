@@ -1,0 +1,12 @@
+// Delay Effects Index
+import "stdlib/effects/delays/delay.vibe";
+import "stdlib/effects/delays/analog_delay.vibe";
+import "stdlib/effects/delays/tape_delay.vibe";
+import "stdlib/effects/delays/ping_pong_delay.vibe";
+import "stdlib/effects/delays/ducking_delay.vibe";
+import "stdlib/effects/delays/multi_tap_delay.vibe";
+import "stdlib/effects/delays/granular_delay.vibe";
+import "stdlib/effects/delays/dub_delay.vibe";
+import "stdlib/effects/delays/shimmer_delay.vibe";
+import "stdlib/effects/delays/reverse_delay.vibe";
+import "stdlib/effects/delays/slapback.vibe";

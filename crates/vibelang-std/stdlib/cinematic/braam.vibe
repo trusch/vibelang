@@ -1,0 +1,30 @@
+// Genre: Trailer, Epic | Character: Inception-style BRAAM
+define_synthdef("braam")
+    .param("freq", 55.0)
+    .param("amp", 0.9)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Long, powerful decay
+        let amp_envelope = env_perc(0.05, 2.0);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.05, 1.5);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Massive detuned oscillators
+        let osc1 = saw_ar(freq * 0.99) * 0.2;
+        let osc2 = saw_ar(freq) * 0.25;
+        let osc3 = saw_ar(freq * 1.01) * 0.2;
+        let osc4 = saw_ar(freq * 2.0) * 0.15;
+        let osc5 = saw_ar(freq * 0.5) * 0.2;
+
+        let mix = osc1 + osc2 + osc3 + osc4 + osc5;
+
+        // Powerful filter sweep
+        let cutoff = 200.0 + filt_env * 3000.0;
+        rlpf_ar(mix, cutoff, 0.2) * amp_env * amp
+    });

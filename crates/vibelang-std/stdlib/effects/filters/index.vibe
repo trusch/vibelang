@@ -1,0 +1,10 @@
+// Filter Effects Index
+import "stdlib/effects/filters/lowpass.vibe";
+import "stdlib/effects/filters/highpass.vibe";
+import "stdlib/effects/filters/bandpass.vibe";
+import "stdlib/effects/filters/moog_filter.vibe";
+import "stdlib/effects/filters/comb_filter.vibe";
+import "stdlib/effects/filters/formant_filter.vibe";
+import "stdlib/effects/filters/eq_three_band.vibe";
+import "stdlib/effects/filters/ladder_filter.vibe";
+import "stdlib/effects/filters/resonator.vibe";

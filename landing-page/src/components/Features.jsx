@@ -1,4 +1,5 @@
 import React from 'react';
+import { highlightCode } from '../utils/syntaxHighlight';
 import './Features.css';
 
 const features = [
@@ -65,22 +66,28 @@ function Features() {
 
         <div className="features__highlight">
           <div className="features__highlight-content">
-            <span className="features__highlight-label">Music Theory Library</span>
-            <h3>30+ scales • Complete chord library • 20+ progressions</h3>
+            <span className="features__highlight-label">SuperCollider Powered</span>
+            <h3>Real audio synthesis • Zero latency • Professional quality</h3>
             <p>
-              Built-in music theory functions for scales, chords, and progressions.
-              Generate bass lines, melodies, and voice leading automatically.
-              From pentatonic to Phrygian dominant—theory meets code.
+              VibeLang compiles to SuperCollider, the same engine used in universities
+              and professional studios worldwide. Get pristine audio quality
+              with sub-millisecond latency and rock-solid timing.
             </p>
           </div>
           <div className="features__highlight-code">
-            <pre><code>{`// Use music theory helpers
-let scale = theory.scale("C", "minor");
-let chord = theory.chord("Am7");
-let prog = theory.progression("jazz_251");
-
-// Generate a bass line
-bass.melody(theory.bass_pattern(prog), 120);`}</code></pre>
+            <pre><code>{highlightCode(`// Build your own synth from scratch
+define_synthdef("my_bass")
+    .param("freq", 440.0)
+    .param("amp", 0.3)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let osc = saw_ar(freq) + saw_ar(freq * 0.5);
+        let env = env_adsr(0.01, 0.1, 0.7, 0.3);
+        let envGen = NewEnvGenBuilder(env, gate)
+            .with_done_action(2.0)
+            .build();
+        rlpf_ar(osc, 800.0, 0.2) * envGen * amp
+    });`)}</code></pre>
           </div>
         </div>
       </div>

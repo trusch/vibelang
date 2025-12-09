@@ -156,9 +156,9 @@ define_synthdef("serum_hoover", |builder| {
             let v3 = saw_ar(freq * 1.01 * lfo);
 
             // Sync-like harmonics
-            let sync = saw_ar(freq * 2.5) * 0.3;
+            let sync_osc = saw_ar(freq * 2.5) * 0.3;
 
-            let mix = (v1 + v2 + v3) * 0.35 + sync;
+            let mix = (v1 + v2 + v3) * 0.35 + sync_osc;
 
             // Resonant sweep
             let filter_lfo = sin_osc_ar(0.3) * 500.0 + 2000.0;

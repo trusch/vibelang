@@ -1,0 +1,43 @@
+// Dub Delay Effect
+//
+// Dub-style delay with heavy feedback and filtering.
+//
+// Usage:
+//   group.add_effect("dub", "dub_delay", #{
+//     time: 0.375,
+//     feedback: 0.7,
+//     cutoff: 2000.0,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   time: Delay time in seconds (0.1 to 2.0)
+//   feedback: Feedback amount (0.0 to 0.95)
+//   cutoff: Filter cutoff for feedback path (200 to 8000 Hz)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("dub_delay", |builder| {
+    builder
+        .param("time", 0.375)
+        .param("feedback", 0.7)
+        .param("cutoff", 2000.0)
+        .param("mix", 0.5)
+        .body(|input, time, feedback, cutoff, mix| {
+            // Comb filter delay with filtering in feedback path
+            let delayed_left = comb_c_ar(input[0], 2.0, time, feedback * 4.0);
+            let delayed_right = comb_c_ar(input[1], 2.0, time * 1.02, feedback * 4.0);
+
+            // Filter the delayed signal (dub character)
+            let filtered_left = lpf_ar(delayed_left, cutoff);
+            let filtered_right = lpf_ar(delayed_right, cutoff);
+
+            // Add some saturation
+            let sat_left = (filtered_left * 1.2).tanh();
+            let sat_right = (filtered_right * 1.2).tanh();
+
+            [
+                (1.0 - mix) * input[0] + mix * sat_left,
+                (1.0 - mix) * input[1] + mix * sat_right
+            ]
+        })
+});

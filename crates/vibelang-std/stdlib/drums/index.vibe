@@ -3,6 +3,12 @@
 // Import this file to load all drum synthdefs at once.
 // Usage: import "stdlib/drums/index.vibe"
 
+// Subdirectories with their own index files
+import "stdlib/drums/latin/index.vibe";
+import "stdlib/drums/machines/index.vibe";
+import "stdlib/drums/breakbeats/index.vibe";
+import "stdlib/drums/foley/index.vibe";
+
 // Claps
 import "stdlib/drums/claps/clap_808.vibe";
 import "stdlib/drums/claps/clap_crowd.vibe";
@@ -50,6 +56,14 @@ import "stdlib/drums/kicks/kick_sub.vibe";
 import "stdlib/drums/kicks/kick_techno_deep.vibe";
 import "stdlib/drums/kicks/kick_techno_hard.vibe";
 import "stdlib/drums/kicks/kick_trap.vibe";
+import "stdlib/drums/kicks/kick_boomy.vibe";
+import "stdlib/drums/kicks/kick_click.vibe";
+import "stdlib/drums/kicks/kick_gabber.vibe";
+import "stdlib/drums/kicks/kick_jungle.vibe";
+import "stdlib/drums/kicks/kick_layered.vibe";
+import "stdlib/drums/kicks/kick_lofi.vibe";
+import "stdlib/drums/kicks/kick_punchy.vibe";
+import "stdlib/drums/kicks/kick_reggaeton.vibe";
 
 // Percussion
 import "stdlib/drums/percussion/clave.vibe";
@@ -76,3 +90,17 @@ import "stdlib/drums/snares/snare_piccolo.vibe";
 import "stdlib/drums/snares/snare_reverb.vibe";
 import "stdlib/drums/snares/snare_rimshot.vibe";
 import "stdlib/drums/snares/snare_tight_electronic.vibe";
+import "stdlib/drums/snares/snare_brush.vibe";
+import "stdlib/drums/snares/snare_garage.vibe";
+import "stdlib/drums/snares/snare_gated.vibe";
+import "stdlib/drums/snares/snare_jungle.vibe";
+import "stdlib/drums/snares/snare_marching.vibe";
+import "stdlib/drums/snares/snare_noise_layer.vibe";
+import "stdlib/drums/snares/snare_pitched.vibe";
+
+// Toms
+import "stdlib/drums/toms/tom_808.vibe";
+import "stdlib/drums/toms/tom_concert.vibe";
+import "stdlib/drums/toms/tom_floor.vibe";
+import "stdlib/drums/toms/tom_roto.vibe";
+import "stdlib/drums/toms/tom_synth.vibe";

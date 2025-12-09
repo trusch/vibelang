@@ -1,0 +1,17 @@
+// Genre: Modular, Experimental | Character: Noise source module
+define_synthdef("mod_noise")
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .param("color", 0.5) // 0=white, 1=pink
+    .body(|amp, gate, color| {
+        let envelope = env_asr(0.001, 1.0, 0.001);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Crossfade white to pink
+        let white = white_noise_ar() * (1.0 - color);
+        let pink = pink_noise_ar() * color;
+
+        (white + pink) * env * amp
+    });

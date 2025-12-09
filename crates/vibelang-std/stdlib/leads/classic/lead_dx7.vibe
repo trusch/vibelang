@@ -1,0 +1,29 @@
+// Genre: 80s Pop, R&B | Character: DX7 FM lead - bell-like and cutting
+define_synthdef("lead_dx7")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.001, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // FM index envelope
+        let mod_env_shape = env_perc(0.001, 0.3);
+        let mod_env = NewEnvGenBuilder(mod_env_shape, dc_ar(1.0)).build();
+
+        // 2-operator FM
+        let mod_ratio = 2.0;
+        let mod_index = 3.0 + mod_env * 8.0;
+        let modulator = sin_osc_ar(freq * mod_ratio) * mod_index * freq;
+        let carrier = sin_osc_ar(freq + modulator);
+
+        // Second carrier for brightness
+        let mod2 = sin_osc_ar(freq * 3.0) * mod_env * freq * 2.0;
+        let carrier2 = sin_osc_ar(freq + mod2) * 0.4;
+
+        let sig = (carrier + carrier2) * 0.5;
+
+        sig * env * amp
+    });

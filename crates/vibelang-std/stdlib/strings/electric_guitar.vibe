@@ -58,8 +58,10 @@ define_synthdef("electric_guitar_clean", |builder| {
             let warm = lpf_ar(amped, 8000.0);
 
             // Sustain envelope for body decay
-            let sus_env_data = env_perc(0.001, decay_time);
-            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0)).build();
+            let sus_env_data = env_perc(0.001, 1.0);
+            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0))
+                .with_time_scale(decay_time)
+                .build();
 
             let output = (warm + attack) * env * sus_env * amp * 0.5;
             output
@@ -218,8 +220,10 @@ define_synthdef("electric_guitar_jazz", |builder| {
             let amped = (toned + body_res) * 1.1;
 
             // Sustain
-            let sus_env_data = env_perc(0.001, decay_time);
-            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0)).build();
+            let sus_env_data = env_perc(0.001, 1.0);
+            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0))
+                .with_time_scale(decay_time)
+                .build();
 
             let output = (amped + attack) * env * sus_env * amp * 0.5;
             output

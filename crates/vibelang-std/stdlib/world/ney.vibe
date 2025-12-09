@@ -1,0 +1,25 @@
+// Genre: Middle Eastern, Sufi | Character: Ney flute - breathy and haunting
+define_synthdef("ney")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.1, 1.0, 0.15);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Vibrato
+        let vib = sin_osc_ar(5.5) * freq * 0.012;
+
+        // Main tone with breath
+        let body = sin_osc_ar(freq + vib) * 0.5;
+        let harm = sin_osc_ar((freq + vib) * 2.0) * 0.15;
+
+        // Breath component
+        let breath = bpf_ar(pink_noise_ar(), freq * 2.5, 0.6) * 0.25;
+
+        let sig = body + harm + breath;
+
+        sig * env * amp
+    });

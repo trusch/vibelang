@@ -1,0 +1,29 @@
+// Genre: Ambient, Soul | Character: Humming "Mmm" sound
+define_synthdef("vocal_mmm")
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.2, 1.0, 0.3);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Vibrato
+        let vib = sin_osc_ar(5.0) * freq * 0.006;
+
+        // Nasal resonance source
+        let source = saw_ar(freq + vib) * 0.35;
+
+        // Humming formants (nasal, closed mouth)
+        let f1 = bpf_ar(source, 250.0, 0.05) * 0.4;
+        let f2 = bpf_ar(source, 1000.0, 0.1) * 0.2;
+        let nasal = bpf_ar(source, 2500.0, 0.15) * 0.15;
+
+        let sig = f1 + f2 + nasal;
+
+        // Slight low pass for warmth
+        let filtered = lpf_ar(sig, 3000.0);
+
+        filtered * env * amp
+    });

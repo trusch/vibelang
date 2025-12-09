@@ -1,0 +1,25 @@
+// Genre: Rock, Pop, R&B | Character: Fingerstyle electric bass
+define_synthdef("bass_fingered")
+    .param("freq", 80.0)
+    .param("amp", 0.8)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        // Natural envelope
+        let envelope = env_asr(0.008, 1.0, 0.3);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Warm body
+        let body = sin_osc_ar(freq) * 0.5;
+        let harm1 = sin_osc_ar(freq * 2.0) * 0.22;
+        let harm2 = sin_osc_ar(freq * 3.0) * 0.1;
+
+        // Finger attack
+        let finger_env = env_perc(0.001, 0.03);
+        let finger = NewEnvGenBuilder(finger_env, dc_ar(1.0)).build();
+        let attack = bpf_ar(white_noise_ar(), 1800.0, 0.5) * finger * 0.18;
+
+        let sig = body + harm1 + harm2 + attack;
+        lpf_ar(sig, 3500.0) * env * amp
+    });

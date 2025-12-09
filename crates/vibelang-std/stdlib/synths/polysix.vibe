@@ -1,0 +1,85 @@
+// Korg Polysix Emulation
+// Classic 1981 | Character: Warm, lush, chorus-rich
+
+// Polysix Pad - Warm chorus pad
+define_synthdef("polysix_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.45)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.4, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Single oscillator with sub
+            let osc = saw_ar(freq);
+            let sub = pulse_ar(freq * 0.5, 0.5) * 0.3;
+
+            // Built-in ensemble effect simulation
+            let lfo1 = sin_osc_ar(0.5) * 0.003;
+            let lfo2 = sin_osc_ar(0.7) * 0.003;
+            let chorus1 = saw_ar(freq * (1.0 + lfo1)) * 0.3;
+            let chorus2 = saw_ar(freq * (1.0 + lfo2)) * 0.3;
+
+            let mix = osc * 0.4 + sub + chorus1 + chorus2;
+
+            let filtered = lpf_ar(mix, 2500.0);
+
+            filtered * env * amp
+        })
+});
+
+// Polysix Strings - Classic string machine sound
+define_synthdef("polysix_strings", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.4)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.25, 1.0, 0.4);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Ensemble detuning
+            let lfo = sin_osc_ar(6.0) * 0.004;
+            let osc1 = saw_ar(freq * (0.998 + lfo));
+            let osc2 = saw_ar(freq);
+            let osc3 = saw_ar(freq * (1.002 - lfo));
+
+            let mix = (osc1 + osc2 + osc3) * 0.35;
+
+            let filtered = lpf_ar(mix, 3500.0);
+
+            filtered * env * amp
+        })
+});
+
+// Polysix Bass - Punchy poly bass
+define_synthdef("polysix_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.55)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.01, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_asr(0.01, 1.0, 0.15);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            let osc = saw_ar(freq);
+            let sub = pulse_ar(freq * 0.5, 0.5) * 0.5;
+
+            let mix = (osc + sub) * 0.5;
+
+            let cutoff = 500.0 + filt_env * 1500.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.6);
+
+            filtered * env * amp
+        })
+});

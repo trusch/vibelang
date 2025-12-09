@@ -1,0 +1,29 @@
+// Genre: Street, Experimental | Character: Plastic bucket drum
+define_synthdef("foley_bucket")
+    .param("freq", 180.0)
+    .param("amp", 0.8)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Plastic resonance
+        let amp_envelope = env_perc(0.001, 0.25);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Pitched body
+        let pitch_envelope = env_perc(0.001, 0.02);
+        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let body = sin_osc_ar(freq + pitch_env * freq * 1.5) * 0.5;
+
+        // Plastic overtones
+        let overtone1 = sin_osc_ar(freq * 2.3) * 0.2;
+        let overtone2 = sin_osc_ar(freq * 3.7) * 0.1;
+
+        // Slap attack
+        let attack_envelope = env_perc(0.0001, 0.01);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = bpf_ar(white_noise_ar(), 2500.0, 0.4) * attack_env * 0.3;
+
+        (body + overtone1 + overtone2 + attack) * amp_env * amp
+    });

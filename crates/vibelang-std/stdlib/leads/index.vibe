@@ -3,6 +3,11 @@
 // Import this file to load all lead synthdefs at once.
 // Usage: import "stdlib/leads/index.vibe"
 
+// Subdirectories with their own index files
+import "stdlib/leads/classic/index.vibe";
+import "stdlib/leads/modern/index.vibe";
+import "stdlib/leads/organic/index.vibe";
+
 // Pluck
 import "stdlib/leads/pluck/pluck_bell.vibe";
 import "stdlib/leads/pluck/pluck_bright.vibe";

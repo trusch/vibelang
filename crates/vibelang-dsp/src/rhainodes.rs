@@ -245,6 +245,33 @@ impl NodeRef {
         })
     }
 
+    /// Floor - round down to nearest integer.
+    pub fn floor(self) -> Result<NodeRef> {
+        with_builder(|builder| {
+            let inputs = vec![self.to_input()];
+            let rate = builder.max_rate_from_inputs(&inputs);
+            builder.add_node("UnaryOpUGen".to_string(), rate, inputs, 1, 9) // 9 = floor
+        })
+    }
+
+    /// Ceil - round up to nearest integer.
+    pub fn ceil(self) -> Result<NodeRef> {
+        with_builder(|builder| {
+            let inputs = vec![self.to_input()];
+            let rate = builder.max_rate_from_inputs(&inputs);
+            builder.add_node("UnaryOpUGen".to_string(), rate, inputs, 1, 10) // 10 = ceil
+        })
+    }
+
+    /// Round to nearest integer.
+    pub fn round(self) -> Result<NodeRef> {
+        with_builder(|builder| {
+            let inputs = vec![self.to_input()];
+            let rate = builder.max_rate_from_inputs(&inputs);
+            builder.add_node("UnaryOpUGen".to_string(), rate, inputs, 1, 8) // 8 = round
+        })
+    }
+
     /// Minimum of two signals.
     pub fn min(self, other: NodeRef) -> Result<NodeRef> {
         with_builder(|builder| {
@@ -260,6 +287,26 @@ impl NodeRef {
             let inputs = vec![self.to_input(), other.to_input()];
             let rate = builder.max_rate_from_inputs(&inputs);
             builder.add_node("BinaryOpUGen".to_string(), rate, inputs, 1, 13) // 13 = max
+        })
+    }
+
+    /// Maximum of signal and constant.
+    pub fn max_f(self, other: f64) -> Result<NodeRef> {
+        with_builder(|builder| {
+            builder.add_constant(other as f32);
+            let inputs = vec![self.to_input(), Input::Constant(other as f32)];
+            let rate = builder.max_rate_from_inputs(&inputs);
+            builder.add_node("BinaryOpUGen".to_string(), rate, inputs, 1, 13) // 13 = max
+        })
+    }
+
+    /// Minimum of signal and constant.
+    pub fn min_f(self, other: f64) -> Result<NodeRef> {
+        with_builder(|builder| {
+            builder.add_constant(other as f32);
+            let inputs = vec![self.to_input(), Input::Constant(other as f32)];
+            let rate = builder.max_rate_from_inputs(&inputs);
+            builder.add_node("BinaryOpUGen".to_string(), rate, inputs, 1, 12) // 12 = min
         })
     }
 
@@ -406,6 +453,9 @@ pub fn register_node_ref(engine: &mut rhai::Engine) {
     engine.register_fn("ln", |a: NodeRef| a.ln().unwrap());
     engine.register_fn("distort", |a: NodeRef| a.distort().unwrap());
     engine.register_fn("softclip", |a: NodeRef| a.softclip().unwrap());
+    engine.register_fn("floor", |a: NodeRef| a.floor().unwrap());
+    engine.register_fn("ceil", |a: NodeRef| a.ceil().unwrap());
+    engine.register_fn("round", |a: NodeRef| a.round().unwrap());
 
     // Signal processing
     engine.register_fn("clip", |a: NodeRef, lo: f64, hi: f64| a.clip(lo, hi).unwrap());
@@ -414,8 +464,21 @@ pub fn register_node_ref(engine: &mut rhai::Engine) {
 
     // Binary math ops
     engine.register_fn("min", |a: NodeRef, b: NodeRef| a.min(b).unwrap());
+    engine.register_fn("min", |a: NodeRef, b: f64| a.min_f(b).unwrap());
     engine.register_fn("max", |a: NodeRef, b: NodeRef| a.max(b).unwrap());
+    engine.register_fn("max", |a: NodeRef, b: f64| a.max_f(b).unwrap());
     engine.register_fn("pow", |a: NodeRef, b: f64| a.pow(b).unwrap());
+    engine.register_fn("pow", |a: NodeRef, b: NodeRef| a.pow_node(b).unwrap());
+    // pow(base: f64, exponent: NodeRef) - base^exponent where exponent is a signal
+    engine.register_fn("pow", |base: f64, exp: NodeRef| {
+        with_builder(|builder| {
+            builder.add_constant(base as f32);
+            let inputs = vec![Input::Constant(base as f32), exp.to_input()];
+            let rate = builder.max_rate_from_inputs(&inputs);
+            builder.add_node("BinaryOpUGen".to_string(), rate, inputs, 1, 25) // 25 = pow
+        })
+        .unwrap()
+    });
     engine.register_fn("modulo", |a: NodeRef, b: f64| a.modulo(b).unwrap());
     engine.register_fn("round_to", |a: NodeRef, b: f64| a.round_to(b).unwrap());
 

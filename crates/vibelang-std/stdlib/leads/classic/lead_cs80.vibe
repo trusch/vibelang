@@ -1,0 +1,27 @@
+// Genre: Cinematic, Synthwave | Character: Yamaha CS-80 brass lead - expressive and lush
+define_synthdef("lead_cs80")
+    .param("freq", 440.0)
+    .param("amp", 0.6)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.02, 1.0, 0.15);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope with slow attack
+        let filt_env_shape = env_asr(0.1, 1.0, 0.2);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, gate).build();
+
+        // Multiple detuned oscillators for thickness
+        let osc1 = saw_ar(freq * 0.998);
+        let osc2 = saw_ar(freq);
+        let osc3 = saw_ar(freq * 1.002);
+        let osc4 = saw_ar(freq * 1.006);
+
+        let mix = (osc1 + osc2 + osc3 + osc4) * 0.22;
+
+        // Expressive filter
+        let cutoff = 800.0 + filt_env * 4000.0;
+        rlpf_ar(mix, cutoff, 0.15) * env * amp
+    });

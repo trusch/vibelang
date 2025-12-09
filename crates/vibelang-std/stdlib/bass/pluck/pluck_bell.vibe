@@ -1,5 +1,5 @@
 // Genre: Ambient, Experimental | Character: Bell-like pluck bass
-define_synthdef("pluck_bell", |builder| {
+define_synthdef("bass_pluck_bell", |builder| {
     builder
         .param("freq", 110.0)
         .param("amp", 0.7)

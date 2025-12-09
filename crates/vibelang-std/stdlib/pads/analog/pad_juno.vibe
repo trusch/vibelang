@@ -1,0 +1,28 @@
+// Genre: House, Synthwave | Character: Roland Juno chorus pad - lush and warm
+define_synthdef("pad_juno")
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.2, 1.0, 0.3);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // PWM characteristic of Juno
+        let pwm = sin_osc_ar(0.3) * 0.25 + 0.5;
+        let osc1 = pulse_ar(freq, pwm);
+        let osc2 = pulse_ar(freq * 1.005, pwm);
+
+        // Sub layer
+        let sub = pulse_ar(freq * 0.5, 0.5) * 0.3;
+
+        let mix = (osc1 + osc2 + sub) * 0.3;
+
+        // Juno-style chorus simulation
+        let chorus_lfo = sin_osc_ar(0.5);
+        let delayed = delay_c_ar(mix, 0.03, 0.015 + chorus_lfo * 0.005);
+        let chorused = (mix + delayed) * 0.5;
+
+        lpf_ar(chorused, 3000.0) * env * amp
+    });

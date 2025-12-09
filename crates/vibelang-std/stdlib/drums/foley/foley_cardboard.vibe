@@ -1,0 +1,24 @@
+// Genre: Experimental, Lo-fi | Character: Cardboard box as drum
+define_synthdef("foley_cardboard")
+    .param("freq", 120.0)
+    .param("amp", 0.7)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Cardboard resonance
+        let amp_envelope = env_perc(0.001, 0.2);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Hollow body
+        let body = sin_osc_ar(freq) * 0.4;
+        let resonance = bpf_ar(white_noise_ar(), freq * 2.5, 0.3) * 0.3;
+
+        // Paper-y attack
+        let attack_envelope = env_perc(0.0001, 0.02);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = lpf_ar(white_noise_ar(), 3000.0) * attack_env * 0.35;
+
+        (body + resonance + attack) * amp_env * amp
+    });

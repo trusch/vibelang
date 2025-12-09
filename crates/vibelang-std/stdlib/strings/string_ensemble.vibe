@@ -9,10 +9,9 @@ define_synthdef("string_ensemble", |builder| {
         .param("freq", 440.0)
         .param("amp", 0.4)
         .param("gate", 1.0)
-        .param("attack", 0.3) // Swell attack time
-        .body(|freq, amp, gate, attack| {
+        .body(|freq, amp, gate| {
             // Slow swell envelope
-            let envelope = env_asr(attack, 1.0, 0.4);
+            let envelope = env_asr(0.3, 1.0, 0.4);
             let env = NewEnvGenBuilder(envelope, gate)
                 .with_done_action(2.0)
                 .build();

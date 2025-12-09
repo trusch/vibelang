@@ -3,6 +3,15 @@
 // Import this file to load all bass synthdefs at once.
 // Usage: import "stdlib/bass/index.vibe"
 
+// Acoustic
+import "stdlib/bass/acoustic/index.vibe";
+
+// Genre
+import "stdlib/bass/genre/index.vibe";
+
+// Synth
+import "stdlib/bass/synth/index.vibe";
+
 // Acid
 import "stdlib/bass/acid/acid_303_classic.vibe";
 import "stdlib/bass/acid/acid_aggressive.vibe";
