@@ -1,0 +1,31 @@
+// Genre: Neurofunk, Drum & Bass | Character: Neurofunk lead - aggressive and morphing
+define_synthdef("lead_neuro")
+    .param("freq", 220.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .param("morph", 0.5)
+    .body(|freq, amp, gate, morph| {
+        let envelope = env_asr(0.002, 1.0, 0.08);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // LFO for morphing
+        let morph_lfo = sin_osc_ar(4.0 + morph * 8.0) * 0.5 + 0.5;
+
+        // FM modulation
+        let mod_amount = morph_lfo * morph * 10.0;
+        let modulator = sin_osc_ar(freq * 2.0) * mod_amount * freq;
+        let carrier = saw_ar(freq + modulator);
+
+        // Ring mod layer
+        let ring = carrier * sin_osc_ar(freq * 1.5) * morph;
+
+        let mix = (carrier + ring) * 0.4;
+
+        // Aggressive filtered
+        let cutoff = 500.0 + morph_lfo * 4000.0;
+        let filtered = rlpf_ar(mix, cutoff, 0.4 + morph * 0.3);
+
+        (filtered * 1.5).tanh() * env * amp
+    });

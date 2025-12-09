@@ -1,10 +1,11 @@
 //! UI rendering logic for the TUI - Unified Hierarchy View
 
 use crate::tui::app::{
-    BeatInfo, HierarchyEntry, HierarchyKind, LogEntry, PanelFocus, QueueMetrics, ResourceStats,
-    SequenceDisplay, SummaryStats, TuiApp,
+    BeatInfo, ExportMode, HierarchyEntry, HierarchyKind, LogEntry, PanelFocus, QueueMetrics,
+    ResourceStats, SequenceDisplay, SummaryStats, TuiApp,
 };
-use crate::tui::layout::{create_layout, truncate_string};
+use crate::tui::keyboard::{note_name, VirtualKeyboard};
+use crate::tui::layout::{create_layout_with_keyboard, truncate_string};
 use log::Level;
 use ratatui::{
     layout::{Alignment, Rect},
@@ -17,7 +18,8 @@ use ratatui::{
 /// Render the entire UI - simplified structure
 pub fn render_ui(frame: &mut Frame, app: &mut TuiApp) {
     let area = frame.area();
-    let layout = create_layout(area);
+    let show_keyboard = app.virtual_keyboard.visible;
+    let layout = create_layout_with_keyboard(area, show_keyboard);
 
     // Update page size based on visible area
     app.page_size = layout.main.height.saturating_sub(2) as usize;
@@ -30,6 +32,11 @@ pub fn render_ui(frame: &mut Frame, app: &mut TuiApp) {
 
     if app.show_error_modal {
         render_error_modal(frame, app, area);
+        return;
+    }
+
+    if app.midi_export.visible {
+        render_midi_export_panel(frame, app, area);
         return;
     }
 
@@ -89,6 +96,11 @@ pub fn render_ui(frame: &mut Frame, app: &mut TuiApp) {
         );
 
         render_log(frame, layout.log, app, app.focused_panel == PanelFocus::Log);
+    }
+
+    // Render keyboard if visible
+    if let Some(keyboard_area) = layout.keyboard {
+        render_keyboard(frame, keyboard_area, &app.virtual_keyboard, app.keyboard_port_name.as_deref(), app.os_keyboard_active);
     }
 
     // Render footer
@@ -823,6 +835,15 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &TuiApp) {
         Span::styled("/", Style::default().fg(Color::White)),
         Span::styled(" find", Style::default().fg(Color::DarkGray)),
         Span::raw("  "),
+        Span::styled(
+            if app.keyboard_active() { "K" } else { "K" },
+            Style::default().fg(if app.keyboard_active() { Color::Cyan } else { Color::White }),
+        ),
+        Span::styled(
+            if app.keyboard_active() { " 🎹" } else { " piano" },
+            Style::default().fg(if app.keyboard_active() { Color::Cyan } else { Color::DarkGray }),
+        ),
+        Span::raw("  "),
         Span::styled("L", Style::default().fg(Color::White)),
         Span::styled(
             if app.log_maximized { " mini" } else { " max" },
@@ -1028,6 +1049,26 @@ fn render_help_modal(frame: &mut Frame, area: Rect) {
         ]),
         Line::from(""),
         Line::from(vec![
+            Span::styled("  Virtual Keyboard", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("  K (capital) ", Style::default().fg(Color::White)),
+            Span::styled("Toggle virtual MIDI keyboard", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("  < >         ", Style::default().fg(Color::White)),
+            Span::styled("Octave down/up (when keyboard active)", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Lower oct   ", Style::default().fg(Color::White)),
+            Span::styled("Y-M row (white), SFGJKL (black): A2-C4", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Upper oct   ", Style::default().fg(Color::White)),
+            Span::styled("QWERTZU row (white), 12456 (black): D4-C5", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
             Span::styled("  q/Ctrl+c    ", Style::default().fg(Color::White)),
             Span::styled("Quit", Style::default().fg(Color::Gray)),
         ]),
@@ -1059,6 +1100,208 @@ fn render_help_modal(frame: &mut Frame, area: Rect) {
         .style(Style::default().fg(Color::Gray));
 
     frame.render_widget(help, help_area);
+}
+
+/// Render MIDI export panel for pattern/melody export
+fn render_midi_export_panel(frame: &mut Frame, app: &TuiApp, area: Rect) {
+    let modal_width = area.width.saturating_sub(10).min(80);
+    let modal_height = area.height.saturating_sub(4).min(30);
+
+    let modal_x = (area.width.saturating_sub(modal_width)) / 2;
+    let modal_y = (area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    // Build the content
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Mode selector
+    let melody_style = if matches!(app.midi_export.export_mode, ExportMode::Melody) {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+    let pattern_style = if matches!(app.midi_export.export_mode, ExportMode::Pattern) {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+
+    lines.push(Line::from(vec![
+        Span::styled("  Mode: ", Style::default().fg(Color::White)),
+        Span::styled(" Melody ", melody_style),
+        Span::raw("  "),
+        Span::styled(" Pattern ", pattern_style),
+        Span::styled("   (Tab)", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    // Settings on same line
+    lines.push(Line::from(vec![
+        Span::styled("  Bars: ", Style::default().fg(Color::White)),
+        Span::styled(
+            format!("{}", app.midi_export.bar_count),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" (+/-)", Style::default().fg(Color::DarkGray)),
+        Span::styled("   Quant: ", Style::default().fg(Color::White)),
+        Span::styled(
+            format!("1/{}", app.midi_export.quantization),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" (←/→)", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    lines.push(Line::from(""));
+
+    // Voice selection section
+    lines.push(Line::from(vec![
+        Span::styled("  Voices", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(
+                " ({}/{})",
+                app.midi_export.selected_voices.len(),
+                app.midi_export.available_voices.len()
+            ),
+            Style::default().fg(Color::DarkGray),
+        ),
+        Span::styled("   (↑/↓ navigate, Space select, a=all, n=none)", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    if app.midi_export.available_voices.is_empty() {
+        lines.push(Line::from(vec![
+            Span::styled("    ", Style::default()),
+            Span::styled("(no recorded voices)", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+        ]));
+    } else {
+        // Show up to 6 voices
+        let max_voices = 6;
+        let start_idx = if app.midi_export.voice_cursor >= max_voices {
+            app.midi_export.voice_cursor - max_voices + 1
+        } else {
+            0
+        };
+        let end_idx = (start_idx + max_voices).min(app.midi_export.available_voices.len());
+
+        for (i, voice) in app.midi_export.available_voices.iter().enumerate().skip(start_idx).take(end_idx - start_idx) {
+            let is_cursor = i == app.midi_export.voice_cursor;
+            let is_selected = app.midi_export.selected_voices.contains(&i);
+
+            let checkbox = if is_selected { "[✓]" } else { "[ ]" };
+            let cursor_marker = if is_cursor { ">" } else { " " };
+
+            let style = if is_cursor {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else if is_selected {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(format!("   {}", cursor_marker), Style::default().fg(Color::Cyan)),
+                Span::styled(format!("{} {}", checkbox, voice), style),
+            ]));
+        }
+
+        // Show scroll indicator if needed
+        if app.midi_export.available_voices.len() > max_voices {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("    ... ({} more)", app.midi_export.available_voices.len() - max_voices),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+
+    // Preview section
+    lines.push(Line::from(vec![
+        Span::styled("  Output", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+    ]));
+
+    // Show preview or placeholder
+    if app.midi_export.preview.starts_with('(') {
+        // Placeholder message
+        lines.push(Line::from(vec![
+            Span::styled("    ", Style::default()),
+            Span::styled(&app.midi_export.preview, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+        ]));
+    } else {
+        // Split preview into lines
+        let max_preview_width = (modal_width as usize).saturating_sub(8);
+        let preview_lines: Vec<&str> = app.midi_export.preview.lines().collect();
+
+        // Show up to 6 lines of preview
+        for line in preview_lines.iter().take(6) {
+            let display_line = if line.len() > max_preview_width {
+                format!("{}...", &line[..max_preview_width - 3])
+            } else {
+                line.to_string()
+            };
+            lines.push(Line::from(vec![
+                Span::styled("    ", Style::default()),
+                Span::styled(display_line, Style::default().fg(Color::Green)),
+            ]));
+        }
+        if preview_lines.len() > 6 {
+            lines.push(Line::from(vec![
+                Span::styled("    ", Style::default()),
+                Span::styled(format!("... ({} more lines)", preview_lines.len() - 6), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+
+    // Status message
+    if let Some((msg, _)) = &app.midi_export.status_message {
+        let style = if msg.contains('✓') {
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Red)
+        };
+        lines.push(Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(msg.clone(), style),
+        ]));
+    } else {
+        lines.push(Line::from(""));
+    }
+
+    // Help line
+    lines.push(Line::from(vec![
+        Span::styled(
+            "  Enter/y: Copy | c: Clear | Esc/q: Close",
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]));
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(" MIDI Export ")
+        .style(Style::default().bg(Color::Black));
+
+    let text = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
+
+    // Clear background and render
+    frame.render_widget(ratatui::widgets::Clear, modal_area);
+    frame.render_widget(text, modal_area);
 }
 
 /// Render maximized log panel (takes main area)
@@ -1187,4 +1430,333 @@ fn vu_meter_color(level: f32) -> Color {
     } else {
         Color::Red
     }
+}
+
+/// Render the virtual MIDI keyboard with piano-style visualization
+pub fn render_keyboard(frame: &mut Frame, area: Rect, keyboard: &VirtualKeyboard, port_name: Option<&str>, os_keyboard_active: bool) {
+    if !keyboard.visible || area.height < 4 || area.width < 40 {
+        return;
+    }
+
+    // Create the block with title showing port name and input mode
+    let input_mode = if os_keyboard_active { "OS" } else { "Terminal" };
+    let title = if let Some(port) = port_name {
+        format!(" 🎹 Piano [{}] ({}) → {} ", keyboard.octave_name(), input_mode, port)
+    } else {
+        format!(" 🎹 Piano [{}] (JACK not available) ", keyboard.octave_name())
+    };
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    frame.render_widget(block, area);
+
+    let inner = Rect {
+        x: area.x + 1,
+        y: area.y + 1,
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    };
+
+    if inner.height < 3 || inner.width < 70 {
+        // Fallback to compact view for narrow terminals
+        render_keyboard_compact(frame, inner, keyboard);
+        return;
+    }
+
+    // Extended piano layout - all keys in one continuous row (A2 to C5):
+    //    ┌S┐        ┌F┐ ┌G┐        ┌J┐ ┌K┐ ┌L┐    ┌1┐ ┌2┐     ┌4┐ ┌5┐ ┌6┐
+    //    └─┘        └─┘ └─┘        └─┘ └─┘ └─┘    └─┘ └─┘     └─┘ └─┘ └─┘
+    //   │  Y  │  X  │  C  │  V  │  B  │  N  │  M  │  ,  │  .  │  -  │  Q  │  W  │  E  │  R  │  T  │  Z  │  U  │
+    //   │ A2  │ B2  │ C3  │ D3  │ E3  │ F3  │ G3  │ A3  │ B3  │ C4  │ D4  │ E4  │ F4  │ G4  │ A4  │ B4  │ C5  │
+
+    let base = keyboard.effective_base_note();
+    let key_width: usize = 6;
+
+    // Get all white keys sorted by note offset
+    let white_keys = keyboard.config.white_keys();
+    let total_width = white_keys.len() * key_width;
+
+    // Calculate left padding to center the keyboard
+    let left_padding = if inner.width as usize > total_width {
+        (inner.width as usize - total_width) / 2
+    } else {
+        0
+    };
+    let padding_str: String = " ".repeat(left_padding);
+
+    // All black keys with their positions (after_white_index, key_char, note_offset)
+    // The index refers to which white key the black key appears AFTER
+    // White key indices: Y=0, X=1, C=2, V=3, B=4, N=5, M=6, ,=7, .=8, -=9, Q=10, W=11, E=12, R=13, T=14, Z=15, U=16
+    let black_keys: [(usize, char, i8); 11] = [
+        (0, 'S', -2),   // A#2 - between Y(A2) and X(B2)
+        (2, 'F', 1),    // C#3 - between C(C3) and V(D3)
+        (3, 'G', 3),    // D#3 - between V(D3) and B(E3)
+        (5, 'J', 6),    // F#3 - between N(F3) and M(G3)
+        (6, 'K', 8),    // G#3 - between M(G3) and ,(A3)
+        (7, 'L', 10),   // A#3 - between ,(A3) and .(B3)
+        // Upper octave: -(C4)=9, Q(D4)=10, W(E4)=11, E(F4)=12, R(G4)=13, T(A4)=14, Z(B4)=15, U(C5)=16
+        (9, '1', 13),   // C#4 - between -(C4) and Q(D4)
+        (10, '2', 15),  // D#4 - between Q(D4) and W(E4)
+        // No black between E4-F4 (W and E)
+        (12, '4', 18),  // F#4 - between E(F4) and R(G4)
+        (13, '5', 20),  // G#4 - between R(G4) and T(A4)
+        (14, '6', 22),  // A#4 - between T(A4) and Z(B4)
+        // No black between B4-C5 (Z and U)
+    ];
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Helper to check if note is pressed
+    let is_note_pressed = |offset: i8| -> bool {
+        let note = (base as i16 + offset as i16).clamp(0, 127) as u8;
+        keyboard.pressed_notes.contains(&note)
+    };
+
+    // Row 1: Black key tops (┌X┐)
+    let mut row1_chars: Vec<(char, Style)> = vec![(' ', Style::default()); total_width];
+    for (idx, wk) in white_keys.iter().enumerate() {
+        let wstyle = if is_note_pressed(wk.note_offset) {
+            Style::default().bg(Color::Cyan)
+        } else {
+            Style::default().bg(Color::White)
+        };
+        let start = idx * key_width;
+        for i in 0..key_width {
+            if start + i < row1_chars.len() {
+                row1_chars[start + i] = (' ', wstyle);
+            }
+        }
+    }
+    for idx in 1..white_keys.len() {
+        let pos = idx * key_width;
+        if pos < row1_chars.len() {
+            row1_chars[pos] = ('│', Style::default().fg(Color::Black).bg(Color::White));
+        }
+    }
+    for (after_idx, key_char, offset) in black_keys.iter() {
+        let bstyle = if is_note_pressed(*offset) {
+            Style::default().fg(Color::White).bg(Color::Magenta).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray).bg(Color::Rgb(30, 30, 30))
+        };
+        let boundary = (*after_idx + 1) * key_width;
+        let start = boundary.saturating_sub(1);
+        if start + 3 <= row1_chars.len() {
+            row1_chars[start] = ('┌', bstyle);
+            row1_chars[start + 1] = (*key_char, bstyle);
+            row1_chars[start + 2] = ('┐', bstyle);
+        }
+    }
+    let mut row1_spans = vec![Span::raw(padding_str.clone())];
+    row1_spans.extend(build_spans_from_chars(&row1_chars));
+    row1_spans.push(Span::raw("  "));
+    row1_spans.push(Span::styled("Playing: ", Style::default().fg(Color::DarkGray)));
+    let pressed_str = if keyboard.pressed_notes.is_empty() {
+        "—".to_string()
+    } else {
+        let mut notes: Vec<_> = keyboard.pressed_notes.iter().copied().collect();
+        notes.sort();
+        notes.iter().map(|n| note_name(*n)).collect::<Vec<_>>().join(" ")
+    };
+    row1_spans.push(Span::styled(pressed_str, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+    lines.push(Line::from(row1_spans));
+
+    // Row 2: Black key bottoms (└─┘)
+    let mut row2_chars: Vec<(char, Style)> = vec![(' ', Style::default()); total_width];
+    for (idx, wk) in white_keys.iter().enumerate() {
+        let wstyle = if is_note_pressed(wk.note_offset) {
+            Style::default().bg(Color::Cyan)
+        } else {
+            Style::default().bg(Color::White)
+        };
+        let start = idx * key_width;
+        for i in 0..key_width {
+            if start + i < row2_chars.len() {
+                row2_chars[start + i] = (' ', wstyle);
+            }
+        }
+    }
+    for idx in 1..white_keys.len() {
+        let pos = idx * key_width;
+        if pos < row2_chars.len() {
+            row2_chars[pos] = ('│', Style::default().fg(Color::Black).bg(Color::White));
+        }
+    }
+    for (after_idx, _, offset) in black_keys.iter() {
+        let bstyle = if is_note_pressed(*offset) {
+            Style::default().fg(Color::Magenta).bg(Color::Magenta)
+        } else {
+            Style::default().fg(Color::Rgb(30, 30, 30)).bg(Color::Rgb(30, 30, 30))
+        };
+        let boundary = (*after_idx + 1) * key_width;
+        let start = boundary.saturating_sub(1);
+        if start + 3 <= row2_chars.len() {
+            row2_chars[start] = ('└', bstyle);
+            row2_chars[start + 1] = ('─', bstyle);
+            row2_chars[start + 2] = ('┘', bstyle);
+        }
+    }
+    let mut row2_spans = vec![Span::raw(padding_str.clone())];
+    row2_spans.extend(build_spans_from_chars(&row2_chars));
+    lines.push(Line::from(row2_spans));
+
+    // Row 3: White keys with keyboard chars
+    let mut row3_spans: Vec<Span> = vec![Span::raw(padding_str.clone())];
+    for (idx, wk) in white_keys.iter().enumerate() {
+        let is_pressed = is_note_pressed(wk.note_offset);
+        let wstyle = if is_pressed {
+            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Black).bg(Color::White)
+        };
+        if idx == 0 {
+            row3_spans.push(Span::styled(format!("  {}   ", wk.display_char), wstyle));
+        } else {
+            row3_spans.push(Span::styled("│", Style::default().fg(Color::Black).bg(Color::White)));
+            row3_spans.push(Span::styled(format!("  {}  ", wk.display_char), wstyle));
+        }
+    }
+    row3_spans.push(Span::raw("  "));
+    row3_spans.push(Span::styled("<> ", Style::default().fg(Color::White)));
+    row3_spans.push(Span::styled("oct  ", Style::default().fg(Color::DarkGray)));
+    row3_spans.push(Span::styled("Esc ", Style::default().fg(Color::White)));
+    row3_spans.push(Span::styled("hide", Style::default().fg(Color::DarkGray)));
+    lines.push(Line::from(row3_spans));
+
+    // Row 4: White keys with note names
+    let mut row4_spans: Vec<Span> = vec![Span::raw(padding_str.clone())];
+    for (idx, wk) in white_keys.iter().enumerate() {
+        let wnote = (base as i16 + wk.note_offset as i16).clamp(0, 127) as u8;
+        let is_pressed = is_note_pressed(wk.note_offset);
+        let note_str = note_name(wnote);
+        let wstyle = if is_pressed {
+            Style::default().fg(Color::DarkGray).bg(Color::Cyan)
+        } else {
+            Style::default().fg(Color::DarkGray).bg(Color::White)
+        };
+        if idx == 0 {
+            row4_spans.push(Span::styled(format!(" {:^3}  ", note_str), wstyle));
+        } else {
+            row4_spans.push(Span::styled("│", Style::default().fg(Color::Black).bg(Color::White)));
+            row4_spans.push(Span::styled(format!(" {:^3} ", note_str), wstyle));
+        }
+    }
+    lines.push(Line::from(row4_spans));
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
+}
+
+/// Convert a character buffer with styles into spans (grouping consecutive chars with same style)
+fn build_spans_from_chars(chars: &[(char, Style)]) -> Vec<Span<'static>> {
+    if chars.is_empty() {
+        return vec![];
+    }
+
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut current_style = chars[0].1;
+    let mut buffer = String::new();
+
+    for (ch, style) in chars {
+        if *style == current_style {
+            buffer.push(*ch);
+        } else {
+            if !buffer.is_empty() {
+                spans.push(Span::styled(buffer.clone(), current_style));
+                buffer.clear();
+            }
+            buffer.push(*ch);
+            current_style = *style;
+        }
+    }
+
+    if !buffer.is_empty() {
+        spans.push(Span::styled(buffer, current_style));
+    }
+
+    spans
+}
+
+/// Compact keyboard view for narrow terminals
+fn render_keyboard_compact(frame: &mut Frame, area: Rect, keyboard: &VirtualKeyboard) {
+    let base = keyboard.effective_base_note();
+    let white_keys = keyboard.config.white_keys();
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Black keys info: (after_white_index, key_char, note_offset)
+    // Piano has black keys: A#, C#, D#, F#, G#, A# (no black between B-C and E-F)
+    let black_keys: [(usize, char, i8); 6] = [
+        (0, 'S', -2),  // A#2 - between Y(A2) and X(B2)
+        (2, 'F', 1),   // C#3 - between C(C3) and V(D3)
+        (3, 'G', 3),   // D#3 - between V(D3) and B(E3)
+        (5, 'J', 6),   // F#3 - between N(F3) and M(G3)
+        (6, 'K', 8),   // G#3 - between M(G3) and ,(A3)
+        (7, 'L', 10),  // A#3 - between ,(A3) and .(B3)
+    ];
+
+    let key_width: usize = 3;
+    let total_width = white_keys.len() * key_width;
+
+    // Build black keys row using character buffer for precise positioning
+    let mut black_chars: Vec<(char, Style)> = vec![(' ', Style::default()); total_width];
+
+    // Place black keys at boundaries (offset by half a white key width)
+    for (after_idx, key_char, offset) in black_keys.iter() {
+        let note = (base as i16 + *offset as i16).clamp(0, 127) as u8;
+        let is_pressed = keyboard.pressed_notes.contains(&note);
+        let style = if is_pressed {
+            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40))
+        };
+        // Position at boundary between white keys (after_idx * width + width/2)
+        let boundary = (*after_idx + 1) * key_width;
+        let start = boundary.saturating_sub(1);
+        if start + 3 <= black_chars.len() {
+            black_chars[start] = ('[', style);
+            black_chars[start + 1] = (*key_char, style);
+            black_chars[start + 2] = (']', style);
+        }
+    }
+
+    let mut black_spans = vec![Span::raw(" ")];
+    black_spans.extend(build_spans_from_chars(&black_chars));
+    lines.push(Line::from(black_spans));
+
+    // White keys row
+    let mut white_spans: Vec<Span> = vec![Span::raw(" ")];
+    for wk in white_keys.iter() {
+        let note = (base as i16 + wk.note_offset as i16).clamp(0, 127) as u8;
+        let is_pressed = keyboard.pressed_notes.contains(&note);
+        let style = if is_pressed {
+            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Black).bg(Color::White)
+        };
+        white_spans.push(Span::styled(format!(" {} ", wk.display_char), style));
+    }
+    lines.push(Line::from(white_spans));
+
+    // Status line with notes being played
+    let pressed: String = if keyboard.pressed_notes.is_empty() {
+        "-".to_string()
+    } else {
+        keyboard.pressed_notes.iter().map(|n| note_name(*n)).collect::<Vec<_>>().join(" ")
+    };
+    lines.push(Line::from(vec![
+        Span::styled(" ▶ ", Style::default().fg(Color::Cyan)),
+        Span::styled(pressed, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("    ", Style::default()),
+        Span::styled("<>", Style::default().fg(Color::White)),
+        Span::styled(":oct ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Esc", Style::default().fg(Color::White)),
+        Span::styled(":hide", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
 }

@@ -1,0 +1,31 @@
+// Genre: Rock, Acoustic, Live | Character: Room-y acoustic kick with natural boom
+define_synthdef("kick_boomy")
+    .param("freq", 60.0)
+    .param("amp", 0.9)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Long, boomy decay
+        let amp_envelope = env_perc(0.002, 0.55);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Natural pitch envelope
+        let pitch_envelope = env_perc(0.001, 0.08);
+        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let freq_mod = pitch_env * freq * 1.8;
+
+        // Main body
+        let body = sin_osc_ar(freq + freq_mod) * 0.7;
+
+        // Room resonance
+        let room = sin_osc_ar(freq * 0.5) * 0.2;
+
+        // Beater attack
+        let attack_envelope = env_perc(0.001, 0.02);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = bpf_ar(white_noise_ar(), 1200.0, 0.5) * attack_env * 0.25;
+
+        (body + room + attack) * amp_env * amp
+    });

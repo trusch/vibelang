@@ -322,15 +322,31 @@ fn env_gen_with_env_impl(
     })
 }
 
+/// Enum to hold either a constant f64 or a NodeRef for EnvGen parameters.
+#[derive(Clone, Debug)]
+pub enum EnvGenParam {
+    Constant(f64),
+    Node(NodeRef),
+}
+
+impl EnvGenParam {
+    fn to_input(&self) -> Input {
+        match self {
+            EnvGenParam::Constant(v) => Input::Constant(*v as f32),
+            EnvGenParam::Node(n) => n.to_input(),
+        }
+    }
+}
+
 /// Builder pattern for EnvGen.
 #[derive(Clone, Debug)]
 pub struct EnvGenBuilder {
     env: Env,
     gate: NodeRef,
-    level_scale: Option<f64>,
-    level_bias: Option<f64>,
-    time_scale: Option<f64>,
-    done_action: Option<f64>,
+    level_scale: Option<EnvGenParam>,
+    level_bias: Option<EnvGenParam>,
+    time_scale: Option<EnvGenParam>,
+    done_action: Option<EnvGenParam>,
 }
 
 impl EnvGenBuilder {
@@ -346,33 +362,58 @@ impl EnvGenBuilder {
     }
 
     pub fn with_level_scale(mut self, level_scale: f64) -> Self {
-        self.level_scale = Some(level_scale);
+        self.level_scale = Some(EnvGenParam::Constant(level_scale));
+        self
+    }
+
+    pub fn with_level_scale_n(mut self, level_scale: NodeRef) -> Self {
+        self.level_scale = Some(EnvGenParam::Node(level_scale));
         self
     }
 
     pub fn with_level_bias(mut self, level_bias: f64) -> Self {
-        self.level_bias = Some(level_bias);
+        self.level_bias = Some(EnvGenParam::Constant(level_bias));
+        self
+    }
+
+    pub fn with_level_bias_n(mut self, level_bias: NodeRef) -> Self {
+        self.level_bias = Some(EnvGenParam::Node(level_bias));
         self
     }
 
     pub fn with_time_scale(mut self, time_scale: f64) -> Self {
-        self.time_scale = Some(time_scale);
+        self.time_scale = Some(EnvGenParam::Constant(time_scale));
+        self
+    }
+
+    pub fn with_time_scale_n(mut self, time_scale: NodeRef) -> Self {
+        self.time_scale = Some(EnvGenParam::Node(time_scale));
         self
     }
 
     pub fn with_done_action(mut self, done_action: f64) -> Self {
-        self.done_action = Some(done_action);
+        self.done_action = Some(EnvGenParam::Constant(done_action));
+        self
+    }
+
+    pub fn with_done_action_n(mut self, done_action: NodeRef) -> Self {
+        self.done_action = Some(EnvGenParam::Node(done_action));
         self
     }
 
     pub fn build(self) -> Result<NodeRef> {
-        env_gen_with_env(
+        let level_scale = self.level_scale.unwrap_or(EnvGenParam::Constant(1.0));
+        let level_bias = self.level_bias.unwrap_or(EnvGenParam::Constant(0.0));
+        let time_scale = self.time_scale.unwrap_or(EnvGenParam::Constant(1.0));
+        let done_action = self.done_action.unwrap_or(EnvGenParam::Constant(0.0));
+
+        env_gen_with_env_impl(
             self.env,
             self.gate,
-            self.level_scale.unwrap_or(1.0),
-            self.level_bias.unwrap_or(0.0),
-            self.time_scale.unwrap_or(1.0),
-            self.done_action.unwrap_or(0.0),
+            level_scale.to_input(),
+            level_bias.to_input(),
+            time_scale.to_input(),
+            done_action.to_input(),
         )
     }
 }
@@ -551,9 +592,13 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
         .register_type::<EnvGenBuilder>()
         .register_fn("NewEnvGenBuilder", EnvGenBuilder::new)
         .register_fn("with_level_scale", EnvGenBuilder::with_level_scale)
+        .register_fn("with_level_scale", EnvGenBuilder::with_level_scale_n)
         .register_fn("with_level_bias", EnvGenBuilder::with_level_bias)
+        .register_fn("with_level_bias", EnvGenBuilder::with_level_bias_n)
         .register_fn("with_time_scale", EnvGenBuilder::with_time_scale)
+        .register_fn("with_time_scale", EnvGenBuilder::with_time_scale_n)
         .register_fn("with_done_action", EnvGenBuilder::with_done_action)
+        .register_fn("with_done_action", EnvGenBuilder::with_done_action_n)
         .register_fn("build", |builder: EnvGenBuilder| EnvGenBuilder::build(builder).unwrap());
 
     // EnvGen with Env

@@ -1,0 +1,12 @@
+// Utility: Pure pink noise generator
+define_synthdef("noise_pink")
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|amp, gate| {
+        let envelope = env_asr(0.01, 1.0, 0.01);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        pink_noise_ar() * env * amp
+    });

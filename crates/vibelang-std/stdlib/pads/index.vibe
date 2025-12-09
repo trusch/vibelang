@@ -3,6 +3,12 @@
 // Import this file to load all pad synthdefs at once.
 // Usage: import "stdlib/pads/index.vibe"
 
+// Subdirectories with their own index files
+import "stdlib/pads/analog/index.vibe";
+import "stdlib/pads/cinematic/index.vibe";
+import "stdlib/pads/movement/index.vibe";
+import "stdlib/pads/textural/index.vibe";
+
 // Ambient
 import "stdlib/pads/ambient/pad_bright.vibe";
 import "stdlib/pads/ambient/pad_cold.vibe";

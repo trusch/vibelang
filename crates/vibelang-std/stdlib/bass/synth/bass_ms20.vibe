@@ -1,0 +1,32 @@
+// Genre: Industrial, Techno, Experimental | Character: Korg MS-20 bass - aggressive and nasty
+define_synthdef("bass_ms20")
+    .param("freq", 60.0)
+    .param("amp", 0.8)
+    .param("gate", 1.0)
+    .param("drive", 2.0)
+    .body(|freq, amp, gate, drive| {
+        let envelope = env_asr(0.003, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.003, 0.25);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Ring mod-ish oscillators
+        let osc1 = saw_ar(freq);
+        let osc2 = pulse_ar(freq * 1.01, 0.3);
+
+        let mix = (osc1 + osc2) * 0.4;
+
+        // MS-20 style high-pass then low-pass with drive
+        let hp = hpf_ar(mix, 60.0);
+        let driven = (hp * drive).tanh();
+
+        // Aggressive filter
+        let cutoff = 400.0 + filt_env * 2500.0;
+        let filtered = rlpf_ar(driven, cutoff, 0.4);
+
+        filtered * env * amp
+    });

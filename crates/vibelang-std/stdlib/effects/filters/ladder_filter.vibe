@@ -1,0 +1,44 @@
+// Ladder Filter Effect
+//
+// Moog-style ladder filter with resonance.
+//
+// Usage:
+//   group.add_effect("lad", "ladder_filter", #{
+//     cutoff: 1000.0,
+//     res: 0.5,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   cutoff: Filter cutoff frequency (50 to 15000 Hz)
+//   res: Resonance (0.0 to 1.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("ladder_filter", |builder| {
+    builder
+        .param("cutoff", 1000.0)
+        .param("res", 0.5)
+        .param("mix", 1.0)
+        .body(|input, cutoff, res, mix| {
+            // Multi-stage lowpass for ladder characteristic
+            let stage1_left = lpf_ar(input[0], cutoff);
+            let stage2_left = lpf_ar(stage1_left, cutoff);
+            let stage3_left = lpf_ar(stage2_left, cutoff);
+            let stage4_left = lpf_ar(stage3_left, cutoff);
+
+            let stage1_right = lpf_ar(input[1], cutoff);
+            let stage2_right = lpf_ar(stage1_right, cutoff);
+            let stage3_right = lpf_ar(stage2_right, cutoff);
+            let stage4_right = lpf_ar(stage3_right, cutoff);
+
+            // Add resonance feedback
+            let feedback = res * 3.8;
+            let res_left = stage4_left + input[0] * feedback * 0.1;
+            let res_right = stage4_right + input[1] * feedback * 0.1;
+
+            [
+                (1.0 - mix) * input[0] + mix * res_left,
+                (1.0 - mix) * input[1] + mix * res_right
+            ]
+        })
+});

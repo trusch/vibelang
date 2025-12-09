@@ -1,0 +1,28 @@
+// Region: Hawaiian | Character: Small, bright, cheerful plucked string
+define_synthdef("ukulele")
+    .param("freq", 440.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.001, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Nylon string character - softer attack
+        let pluck_env = NewEnvGenBuilder(env_perc(0.002, 0.04), dc_ar(1.0)).build();
+        let exciter = lpf_ar(pink_noise_ar(), 4000.0) * pluck_env * 0.3;
+
+        // Warm harmonics
+        let str1 = sin_osc_ar(freq) * 0.5;
+        let str2 = sin_osc_ar(freq * 2.0) * 0.25;
+        let str3 = sin_osc_ar(freq * 3.0) * 0.1;
+
+        let sig = str1 + str2 + str3 + exciter;
+
+        // Small body resonance - warm and bright
+        let body = bpf_ar(sig, 500.0, 0.2) * 0.3;
+        let output = sig + body;
+
+        output * env * amp
+    });

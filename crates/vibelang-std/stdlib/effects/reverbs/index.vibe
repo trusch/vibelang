@@ -1,0 +1,9 @@
+// Reverb Effects Index
+import "stdlib/effects/reverbs/reverb.vibe";
+import "stdlib/effects/reverbs/reverb_minimal.vibe";
+import "stdlib/effects/reverbs/gverb.vibe";
+import "stdlib/effects/reverbs/plate_reverb.vibe";
+import "stdlib/effects/reverbs/spring_reverb.vibe";
+import "stdlib/effects/reverbs/hall_reverb.vibe";
+import "stdlib/effects/reverbs/room_reverb.vibe";
+import "stdlib/effects/reverbs/shimmer_reverb.vibe";

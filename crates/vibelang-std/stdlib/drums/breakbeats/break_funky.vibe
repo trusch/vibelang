@@ -1,0 +1,34 @@
+// Genre: Funk, Hip-hop | Character: Funky Drummer-style kit sound
+define_synthdef("break_funky")
+    .param("freq", 190.0)
+    .param("amp", 0.85)
+    .param("type", 0.0) // 0=kick, 0.5=snare, 1.0=hat
+    .body(|freq, amp, type_param| {
+        let gate = dc_ar(1.0);
+
+        // Tight decay
+        let decay = 0.25 - type_param * 0.1;
+        let amp_envelope = env_perc(0.001, 1.0);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_time_scale(decay)
+            .with_done_action(2.0)
+            .build();
+
+        // Kick
+        let kick_amount = 1.0 - type_param;
+        let kick_pitch_env = env_perc(0.001, 0.035);
+        let kick_penv = NewEnvGenBuilder(kick_pitch_env, gate).build();
+        let kick = sin_osc_ar(55.0 + kick_penv * 150.0) * kick_amount * 0.65;
+
+        // Snare (funky, tight)
+        let snare_amount = 1.0 - (type_param - 0.5).abs() * 2.0;
+        let snare_body = sin_osc_ar(freq) * snare_amount * 0.3;
+        let snare_noise_env = env_perc(0.001, 0.12);
+        let snare_nenv = NewEnvGenBuilder(snare_noise_env, gate).build();
+        let snare_noise = bpf_ar(white_noise_ar(), 4000.0, 0.5) * snare_nenv * snare_amount * 0.4;
+
+        // Hat (crisp)
+        let hat = hpf_ar(white_noise_ar(), 9000.0) * type_param * 0.35;
+
+        (kick + snare_body + snare_noise + hat) * amp_env * amp
+    });

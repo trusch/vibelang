@@ -19,14 +19,17 @@ define_synthdef("acoustic_guitar", |builder| {
         .body(|freq, amp, gate, position, pluck_hard| {
             // String decay time - lower notes ring longer
             let decay_time = 1.5 + (1.0 / (freq / 80.0));
-            let envelope = env_perc(0.001, decay_time);
+            let envelope = env_perc(0.001, 1.0);
             let env = NewEnvGenBuilder(envelope, gate)
+                .with_time_scale(decay_time)
                 .with_done_action(2.0)
                 .build();
 
             // Pluck excitation - filtered noise burst
-            let excite_data = env_perc(0.0003, 0.003 + (1.0 - pluck_hard) * 0.01);
-            let excite_env = NewEnvGenBuilder(excite_data, dc_ar(1.0)).build();
+            let excite_data = env_perc(0.0003, 1.0);
+            let excite_env = NewEnvGenBuilder(excite_data, dc_ar(1.0))
+                .with_time_scale(0.003 + (1.0 - pluck_hard) * 0.01)
+                .build();
             let excite_noise = white_noise_ar() * excite_env;
 
             // Filter excitation based on pluck position
@@ -62,8 +65,10 @@ define_synthdef("acoustic_guitar", |builder| {
             let body4 = rlpf_ar(string_filtered, 580.0, 0.4) * 0.15;
 
             // High frequency damping over time
-            let hf_env_data = env_perc(0.001, decay_time * 0.4);
-            let hf_env = NewEnvGenBuilder(hf_env_data, dc_ar(1.0)).build();
+            let hf_env_data = env_perc(0.001, 0.4);
+            let hf_env = NewEnvGenBuilder(hf_env_data, dc_ar(1.0))
+                .with_time_scale(decay_time)
+                .build();
             let hf_cutoff = 1500.0 + (hf_env * 5000.0);
 
             let tone = string_filtered + body1 + body2 + body3 + body4;
@@ -83,8 +88,9 @@ define_synthdef("classical_guitar", |builder| {
         .param("position", 0.6)
         .body(|freq, amp, gate, position| {
             let decay_time = 2.0 + (1.0 / (freq / 60.0));
-            let envelope = env_perc(0.002, decay_time);
+            let envelope = env_perc(0.002, 1.0);
             let env = NewEnvGenBuilder(envelope, gate)
+                .with_time_scale(decay_time)
                 .with_done_action(2.0)
                 .build();
 
@@ -126,8 +132,9 @@ define_synthdef("fingerpick_guitar", |builder| {
         .param("nail", 0.4)  // Amount of fingernail vs flesh
         .body(|freq, amp, gate, nail| {
             let decay_time = 1.8 + (1.0 / (freq / 90.0));
-            let envelope = env_perc(0.001, decay_time);
+            let envelope = env_perc(0.001, 1.0);
             let env = NewEnvGenBuilder(envelope, gate)
+                .with_time_scale(decay_time)
                 .with_done_action(2.0)
                 .build();
 
@@ -172,8 +179,9 @@ define_synthdef("twelve_string_guitar", |builder| {
         .param("detune", 0.5)
         .body(|freq, amp, gate, detune| {
             let decay_time = 1.6 + (1.0 / (freq / 100.0));
-            let envelope = env_perc(0.001, decay_time);
+            let envelope = env_perc(0.001, 1.0);
             let env = NewEnvGenBuilder(envelope, gate)
+                .with_time_scale(decay_time)
                 .with_done_action(2.0)
                 .build();
 
@@ -257,8 +265,9 @@ define_synthdef("guitar_muted", |builder| {
         .body(|freq, amp, gate, mute_amount| {
             // Very short decay when muted
             let decay_time = 0.15 + ((1.0 - mute_amount) * 0.6);
-            let envelope = env_perc(0.001, decay_time);
+            let envelope = env_perc(0.001, 1.0);
             let env = NewEnvGenBuilder(envelope, gate)
+                .with_time_scale(decay_time)
                 .with_done_action(2.0)
                 .build();
 

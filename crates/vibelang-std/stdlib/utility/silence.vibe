@@ -1,0 +1,14 @@
+// Utility: Silent placeholder for routing
+
+// Silence - Output nothing (useful for bus routing setup)
+define_synthdef("silence")
+    .param("amp", 0.0)
+    .param("gate", 1.0)
+    .body(|amp, gate| {
+        let envelope = env_asr(0.0, 1.0, 0.0);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        dc_ar(0.0) * env * amp
+    });

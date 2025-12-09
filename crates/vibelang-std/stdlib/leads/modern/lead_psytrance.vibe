@@ -1,0 +1,29 @@
+// Genre: Psytrance, Goa | Character: Psytrance acid lead - hypnotic and squelchy
+define_synthdef("lead_psytrance")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .param("acid", 0.7)
+    .body(|freq, amp, gate, acid| {
+        let envelope = env_asr(0.001, 1.0, 0.08);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Accent/filter envelope
+        let filt_env_shape = env_perc(0.001, 0.2);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Saw oscillator
+        let osc = saw_ar(freq);
+
+        // Sub for power
+        let sub = sin_osc_ar(freq * 0.5) * 0.3;
+
+        let mix = (osc + sub) * 0.5;
+
+        // Acid filter with high resonance
+        let cutoff = 400.0 + filt_env * acid * 5000.0;
+        let res = 0.3 + acid * 0.4;
+        rlpf_ar(mix, cutoff, res) * env * amp
+    });

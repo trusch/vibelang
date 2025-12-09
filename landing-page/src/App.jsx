@@ -7,6 +7,7 @@ import SoundLibrary from './components/SoundLibrary';
 import Workflow from './components/Workflow';
 import GetStarted from './components/GetStarted';
 import Footer from './components/Footer';
+import Documentation from './components/Documentation';
 
 function App() {
   const [theme, setTheme] = useState(() => {
@@ -14,6 +15,13 @@ function App() {
       return localStorage.getItem('theme') || 'system';
     }
     return 'system';
+  });
+
+  const [currentPage, setCurrentPage] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.hash === '#/docs' ? 'docs' : 'home';
+    }
+    return 'home';
   });
 
   useEffect(() => {
@@ -27,6 +35,15 @@ function App() {
     }
   }, [theme]);
 
+  // Handle browser navigation (hash-based routing)
+  useEffect(() => {
+    const handleHashChange = () => {
+      setCurrentPage(window.location.hash === '#/docs' ? 'docs' : 'home');
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
   const toggleTheme = () => {
     setTheme(current => {
       if (current === 'system') return 'dark';
@@ -35,6 +52,12 @@ function App() {
     });
   };
 
+  // Render docs page
+  if (currentPage === 'docs') {
+    return <Documentation theme={theme} onToggleTheme={toggleTheme} />;
+  }
+
+  // Render landing page
   return (
     <>
       <Header theme={theme} onToggleTheme={toggleTheme} />

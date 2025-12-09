@@ -1,0 +1,26 @@
+// Genre: Acid, Techno, Synthpop | Character: Roland SH-101 lead - clean and versatile
+define_synthdef("lead_sh101")
+    .param("freq", 440.0)
+    .param("amp", 0.6)
+    .param("gate", 1.0)
+    .param("pw", 0.5)
+    .body(|freq, amp, gate, pw| {
+        let envelope = env_asr(0.003, 1.0, 0.08);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.003, 0.25);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Single oscillator with selectable wave
+        let osc = pulse_ar(freq, pw);
+        let sub = pulse_ar(freq * 0.5, 0.5) * 0.3;
+
+        let mix = (osc + sub) * 0.45;
+
+        // Classic 101 filter
+        let cutoff = 1000.0 + filt_env * 3500.0;
+        rlpf_ar(mix, cutoff, 0.35) * env * amp
+    });

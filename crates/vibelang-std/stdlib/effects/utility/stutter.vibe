@@ -1,0 +1,32 @@
+// Stutter Effect
+//
+// Creates rhythmic stutter/glitch effects by repeating small buffer segments.
+//
+// Usage:
+//   group.add_effect("stut", "stutter", #{
+//     rate: 8.0,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   rate: Stutter rate in Hz (1.0 to 32.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("stutter", |builder| {
+    builder
+        .param("rate", 8.0)
+        .param("mix", 0.5)
+        .body(|input, rate, mix| {
+            // Buffer size based on rate
+            let buf_time = 1.0 / rate;
+
+            // Stuttered signal using comb filter technique
+            let stutter_left = comb_c_ar(input[0], 0.5, buf_time, 0.0);
+            let stutter_right = comb_c_ar(input[1], 0.5, buf_time, 0.0);
+
+            [
+                (1.0 - mix) * input[0] + mix * stutter_left,
+                (1.0 - mix) * input[1] + mix * stutter_right
+            ]
+        })
+});

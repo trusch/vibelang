@@ -1,0 +1,28 @@
+// Region: Swiss | Character: Handpan with bell-like, ethereal tones
+define_synthdef("hang_drum")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.001, 1.0, 0.8);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Bell-like attack
+        let attack_env = NewEnvGenBuilder(env_perc(0.001, 0.1), dc_ar(1.0)).build();
+        let attack = sin_osc_ar(freq * 4.0) * attack_env * 0.3;
+
+        // Main tone with detuned partials
+        let main = sin_osc_ar(freq) * 0.5;
+        let partial1 = sin_osc_ar(freq * 2.01) * 0.25;
+        let partial2 = sin_osc_ar(freq * 3.0) * 0.15;
+        let partial3 = sin_osc_ar(freq * 4.02) * 0.1;
+
+        // Subtle beating for ethereal quality
+        let beat = sin_osc_ar(freq * 1.002) * 0.2;
+
+        let sig = main + partial1 + partial2 + partial3 + beat + attack;
+
+        sig * env * amp
+    });

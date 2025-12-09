@@ -1,0 +1,30 @@
+// Genre: Electronic, Lo-fi | Character: Korg Volca Beats style kick - analog, characterful
+define_synthdef("volca_kick")
+    .param("freq", 55.0)
+    .param("amp", 1.0)
+    .param("click", 0.5)
+    .body(|freq, amp, click| {
+        let gate = dc_ar(1.0);
+
+        // Analog-style decay
+        let amp_envelope = env_perc(0.001, 0.35);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Pitch envelope
+        let pitch_envelope = env_perc(0.001, 0.05);
+        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let freq_mod = pitch_env * freq * 3.0;
+
+        // Analog body with slight waveshaping
+        let raw = sin_osc_ar(freq + freq_mod);
+        let body = (raw * 1.1).tanh() * 0.85;
+
+        // Variable click
+        let click_envelope = env_perc(0.0001, 0.01);
+        let click_env = NewEnvGenBuilder(click_envelope, gate).build();
+        let click_sound = bpf_ar(white_noise_ar(), 1800.0, 0.5) * click_env * click * 0.3;
+
+        (body + click_sound) * amp_env * amp
+    });

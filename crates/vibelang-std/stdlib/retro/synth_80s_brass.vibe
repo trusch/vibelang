@@ -1,0 +1,26 @@
+// Genre: Synthwave, 80s | Character: Classic 80s brass stab
+define_synthdef("synth_80s_brass")
+    .param("freq", 220.0)
+    .param("amp", 0.6)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.02, 1.0, 0.15);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.02, 0.3);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Detuned saws
+        let osc1 = saw_ar(freq * 0.998);
+        let osc2 = saw_ar(freq);
+        let osc3 = saw_ar(freq * 1.002);
+
+        let mix = (osc1 + osc2 + osc3) * 0.35;
+
+        // Bright filter sweep
+        let cutoff = 1000.0 + filt_env * 4000.0;
+        rlpf_ar(mix, cutoff, 0.2) * env * amp
+    });

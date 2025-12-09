@@ -1,0 +1,28 @@
+// Genre: Acid, Techno, Electronic | Character: Roland SH-101 bass - classic mono synth
+define_synthdef("bass_101")
+    .param("freq", 60.0)
+    .param("amp", 0.8)
+    .param("gate", 1.0)
+    .param("cutoff", 1000.0)
+    .body(|freq, amp, gate, cutoff| {
+        let envelope = env_asr(0.005, 1.0, 0.08);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.005, 0.2);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Single saw oscillator with sub
+        let osc = saw_ar(freq);
+        let sub = pulse_ar(freq * 0.5, 0.5) * 0.5;
+
+        let mix = (osc + sub) * 0.45;
+
+        // Snappy filter
+        let mod_cutoff = cutoff + filt_env * 2000.0;
+        let filtered = rlpf_ar(mix, mod_cutoff, 0.3);
+
+        filtered * env * amp
+    });

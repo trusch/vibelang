@@ -1,0 +1,26 @@
+// Genre: Future Bass, Kawaii | Character: Future bass lead - bright and wobbly
+define_synthdef("lead_future_bass")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.01, 1.0, 0.12);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Wobble LFO
+        let wobble = sin_osc_ar(6.0) * 0.5 + 0.5;
+
+        // Bright supersaws
+        let saw1 = saw_ar(freq * 0.995);
+        let saw2 = saw_ar(freq);
+        let saw3 = saw_ar(freq * 1.005);
+        let saw4 = saw_ar(freq * 2.0) * 0.3; // Octave
+
+        let mix = (saw1 + saw2 + saw3 + saw4) * 0.25;
+
+        // Wobbling filter
+        let cutoff = 2000.0 + wobble * 4000.0;
+        rlpf_ar(mix, cutoff, 0.15) * env * amp
+    });

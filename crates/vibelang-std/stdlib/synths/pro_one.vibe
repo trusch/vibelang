@@ -1,0 +1,89 @@
+// Sequential Circuits Pro-One Emulation
+// Classic 1981 | Character: Aggressive, mono, versatile
+
+// Pro-One Bass - Punchy mono bass
+define_synthdef("pro_one_bass", |builder| {
+    builder
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("filter_freq", 800.0)
+        .param("resonance", 0.4)
+        .body(|freq, amp, gate, filter_freq, resonance| {
+            let envelope = env_asr(0.005, 1.0, 0.1);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_asr(0.005, 1.0, 0.15);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Dual oscillators
+            let osc1 = saw_ar(freq);
+            let osc2 = pulse_ar(freq * 0.5, 0.3) * 0.7;
+
+            let mix = (osc1 + osc2) * 0.5;
+
+            let cutoff = filter_freq + filt_env * 2000.0;
+            let filtered = rlpf_ar(mix, cutoff, 1.0 - resonance * 0.9);
+
+            filtered * env * amp
+        })
+});
+
+// Pro-One Lead - Aggressive lead
+define_synthdef("pro_one_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("pw", 0.3)
+        .body(|freq, amp, gate, pw| {
+            let envelope = env_asr(0.01, 1.0, 0.12);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_asr(0.01, 1.0, 0.2);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // PWM lead
+            let pwm = sin_osc_ar(3.0) * 0.2 + pw;
+            let osc1 = pulse_ar(freq, pwm);
+            let osc2 = saw_ar(freq * 1.003) * 0.5;
+
+            let mix = (osc1 + osc2) * 0.45;
+
+            let cutoff = 1500.0 + filt_env * 3500.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.65);
+
+            filtered * env * amp
+        })
+});
+
+// Pro-One Sync - Hard sync lead
+define_synthdef("pro_one_sync", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("sync_ratio", 2.0)
+        .body(|freq, amp, gate, sync_ratio| {
+            let envelope = env_asr(0.01, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Simulated hard sync
+            let master = saw_ar(freq);
+            let slave_freq = freq * sync_ratio;
+            let slave = saw_ar(slave_freq) * 0.6;
+            let harmonics = sin_osc_ar(slave_freq * 2.0) * 0.2;
+
+            let mix = (master + slave + harmonics) * 0.4;
+
+            let filtered = lpf_ar(mix, 5000.0);
+
+            filtered * env * amp
+        })
+});

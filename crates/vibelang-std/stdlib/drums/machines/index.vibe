@@ -1,0 +1,36 @@
+// Drum Machine Library Index
+//
+// Classic and modern drum machine emulations.
+// Usage: import "stdlib/drums/machines/index.vibe"
+
+// LinnDrum
+import "stdlib/drums/machines/linn_kick.vibe";
+import "stdlib/drums/machines/linn_snare.vibe";
+
+// Roland CR-78
+import "stdlib/drums/machines/cr78_kick.vibe";
+import "stdlib/drums/machines/cr78_snare.vibe";
+
+// Oberheim DMX
+import "stdlib/drums/machines/dmx_kick.vibe";
+import "stdlib/drums/machines/dmx_snare.vibe";
+
+// E-mu SP-1200
+import "stdlib/drums/machines/sp1200_kick.vibe";
+import "stdlib/drums/machines/sp1200_snare.vibe";
+
+// MPC
+import "stdlib/drums/machines/mpc_kick.vibe";
+import "stdlib/drums/machines/mpc_snare.vibe";
+
+// Korg Volca Beats
+import "stdlib/drums/machines/volca_kick.vibe";
+import "stdlib/drums/machines/volca_snare.vibe";
+
+// DSI Tempest
+import "stdlib/drums/machines/tempest_kick.vibe";
+import "stdlib/drums/machines/tempest_snare.vibe";
+
+// Elektron Machinedrum
+import "stdlib/drums/machines/machinedrum_kick.vibe";
+import "stdlib/drums/machines/machinedrum_snare.vibe";

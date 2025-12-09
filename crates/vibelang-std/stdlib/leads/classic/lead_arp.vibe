@@ -1,0 +1,28 @@
+// Genre: Progressive Rock, Electronic | Character: ARP Odyssey-style lead - bright and buzzy
+define_synthdef("lead_arp")
+    .param("freq", 440.0)
+    .param("amp", 0.6)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.005, 1.0, 0.08);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.005, 0.3);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Two oscillators with hard sync feel
+        let osc1 = saw_ar(freq);
+        let osc2 = pulse_ar(freq * 1.01, 0.4);
+
+        // Ring mod option
+        let ring = osc1 * osc2 * 0.3;
+
+        let mix = (osc1 + osc2 + ring) * 0.3;
+
+        // Bright filter
+        let cutoff = 1500.0 + filt_env * 4000.0;
+        rlpf_ar(mix, cutoff, 0.3) * env * amp
+    });

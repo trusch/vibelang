@@ -4,9 +4,10 @@
   "description": "VibeLang - Make music with code",
   "source": "src/index.html",
   "scripts": {
-    "start": "parcel",
-    "build": "parcel build",
-    "clean": "rm -rf dist .parcel-cache"
+    "generate-docs": "node scripts/generate-docs.js",
+    "start": "npm run generate-docs && parcel",
+    "build": "npm run generate-docs && parcel build",
+    "clean": "rm -rf dist .parcel-cache src/generated"
   },
   "dependencies": {
     "react": "^18.2.0",

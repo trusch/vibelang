@@ -1,0 +1,27 @@
+// Genre: Classical, Cinematic | Character: Operatic voice
+define_synthdef("vocal_operatic")
+    .param("freq", 440.0)
+    .param("amp", 0.6)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.25, 1.0, 0.4);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Strong vibrato
+        let vib = sin_osc_ar(6.0) * freq * 0.02;
+
+        // Rich harmonic source
+        let source = saw_ar(freq + vib) * 0.5;
+
+        // Operatic formants - strong singer's formant
+        let f1 = bpf_ar(source, 700.0, 0.1) * 0.35;
+        let f2 = bpf_ar(source, 1500.0, 0.12) * 0.3;
+        let f3 = bpf_ar(source, 2500.0, 0.15) * 0.25;
+        let singers_formant = bpf_ar(source, 3000.0, 0.1) * 0.35;
+
+        let sig = f1 + f2 + f3 + singers_formant;
+
+        sig * env * amp
+    });

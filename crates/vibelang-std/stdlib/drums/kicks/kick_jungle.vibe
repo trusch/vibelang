@@ -1,0 +1,28 @@
+// Genre: Jungle, Drum & Bass | Character: Pitched, punchy jungle kick
+define_synthdef("kick_jungle")
+    .param("freq", 70.0)
+    .param("amp", 1.0)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Short, punchy decay
+        let amp_envelope = env_perc(0.001, 0.25);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Sharp pitch envelope
+        let pitch_envelope = env_perc(0.001, 0.03);
+        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let freq_mod = pitch_env * freq * 5.0;
+
+        // Punchy body
+        let body = sin_osc_ar(freq + freq_mod) * 0.85;
+
+        // Attack transient
+        let attack_envelope = env_perc(0.0001, 0.006);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = hpf_ar(white_noise_ar(), 2000.0) * attack_env * 0.2;
+
+        (body + attack) * amp_env * amp
+    });

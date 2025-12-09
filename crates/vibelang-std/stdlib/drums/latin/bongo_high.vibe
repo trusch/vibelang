@@ -1,0 +1,30 @@
+// Genre: Latin, Cuban, World | Character: Bright, crisp bongo with sharp attack
+define_synthdef("bongo_high")
+    .param("freq", 500.0)
+    .param("amp", 0.8)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Short decay
+        let amp_envelope = env_perc(0.001, 0.15);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Pitch bend
+        let pitch_envelope = env_perc(0.001, 0.015);
+        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let freq_mod = pitch_env * freq * 3.0;
+
+        // Bright tone
+        let body = sin_osc_ar(freq + freq_mod) * 0.6;
+        let overtone1 = sin_osc_ar((freq + freq_mod) * 2.3) * 0.25;
+        let overtone2 = sin_osc_ar((freq + freq_mod) * 3.7) * 0.1;
+
+        // Crisp attack
+        let attack_envelope = env_perc(0.0001, 0.004);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = hpf_ar(white_noise_ar(), 3000.0) * attack_env * 0.15;
+
+        (body + overtone1 + overtone2 + attack) * amp_env * amp
+    });

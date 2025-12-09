@@ -1,0 +1,21 @@
+// Genre: Modular, Experimental | Character: LFO module (as audio rate for AM effects)
+define_synthdef("mod_lfo")
+    .param("freq", 5.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .param("wave", 0.0) // 0=sine, 0.5=triangle, 1.0=saw
+    .body(|freq, amp, gate, wave| {
+        let envelope = env_asr(0.01, 1.0, 0.01);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Crossfade LFO shapes
+        let sine_wave = sin_osc_ar(freq) * (1.0 - wave * 2.0).max(0.0);
+        let tri_wave = lf_tri_ar(freq) * (1.0 - (wave - 0.5).abs() * 2.0).max(0.0);
+        let saw_wave = saw_ar(freq) * ((wave - 0.5) * 2.0).max(0.0);
+
+        let mix = (sine_wave + tri_wave + saw_wave) * 0.5 + 0.5;
+
+        mix * env * amp
+    });

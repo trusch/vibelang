@@ -1,0 +1,27 @@
+// Genre: Electronic, Synthpop | Character: Roland Jupiter-8 pad - bright and wide
+define_synthdef("pad_jupiter")
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.18, 1.0, 0.28);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_asr(0.25, 1.0, 0.3);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, gate).build();
+
+        // Detuned saws with pulse
+        let saw1 = saw_ar(freq * 0.997);
+        let saw2 = saw_ar(freq);
+        let saw3 = saw_ar(freq * 1.003);
+        let pulse = pulse_ar(freq, 0.45) * 0.4;
+
+        let mix = (saw1 + saw2 + saw3 + pulse) * 0.25;
+
+        // Bright but smooth filter
+        let cutoff = 1000.0 + filt_env * 3500.0;
+        rlpf_ar(mix, cutoff, 0.15) * env * amp
+    });

@@ -1,0 +1,33 @@
+// Resonator Effect
+//
+// Modal resonator that adds pitched resonance.
+//
+// Usage:
+//   group.add_effect("res", "resonator", #{
+//     freq: 440.0,
+//     decay: 0.5,
+//     mix: 0.5
+//   });
+//
+// Parameters:
+//   freq: Resonant frequency in Hz
+//   decay: Resonance decay time (0.1 to 2.0)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("resonator", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("decay", 0.5)
+        .param("mix", 0.5)
+        .body(|input, freq, decay, mix| {
+            // Comb filter for resonance
+            let delay_time = 1.0 / freq;
+            let resonated_left = comb_c_ar(input[0], 0.05, delay_time, decay * 2.0);
+            let resonated_right = comb_c_ar(input[1], 0.05, delay_time, decay * 2.0);
+
+            [
+                (1.0 - mix) * input[0] + mix * resonated_left,
+                (1.0 - mix) * input[1] + mix * resonated_right
+            ]
+        })
+});

@@ -1,0 +1,26 @@
+// Genre: West African | Character: Kora - African harp-like instrument
+define_synthdef("kora")
+    .param("freq", 440.0)
+    .param("amp", 0.65)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.003, 1.0, 0.2);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Bright, harp-like harmonics
+        let h1 = sin_osc_ar(freq) * 0.4;
+        let h2 = sin_osc_ar(freq * 2.0) * 0.28;
+        let h3 = sin_osc_ar(freq * 3.0) * 0.18;
+        let h4 = sin_osc_ar(freq * 4.0) * 0.1;
+
+        // Pluck attack
+        let pluck_env = env_perc(0.001, 0.02);
+        let pluck = NewEnvGenBuilder(pluck_env, dc_ar(1.0)).build();
+        let attack = hpf_ar(white_noise_ar(), 3000.0) * pluck * 0.15;
+
+        let sig = h1 + h2 + h3 + h4 + attack;
+
+        sig * env * amp
+    });

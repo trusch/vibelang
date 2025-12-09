@@ -1,0 +1,50 @@
+[package]
+name = "vibelang-keys"
+version = "0.1.0"
+edition = "2021"
+description = "Terminal MIDI keyboard for VibeLang - play MIDI from your computer keyboard"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/trusch/vibelang"
+keywords = ["midi", "keyboard", "tui", "music", "terminal", "vibelang"]
+categories = ["multimedia::audio", "command-line-utilities"]
+
+[lib]
+name = "vibelang_keys"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vibe-keys"
+path = "src/main.rs"
+
+[dependencies]
+# TUI
+ratatui = "0.28"
+crossterm = "0.28"
+
+# OS-level keyboard input (for reliable key release detection)
+rdev = "0.5"
+
+# Configuration
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+directories = "5"
+
+# Channel communication
+crossbeam-channel = "0.5"
+
+# MIDI output via JACK
+jack = "0.13"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,29 @@
+// Genre: Pop, R&B | Character: Breathy vocal texture
+define_synthdef("vocal_breathy")
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.15, 1.0, 0.25);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Soft vibrato
+        let vib = sin_osc_ar(4.5) * freq * 0.005;
+
+        // Pitched component
+        let pitched = saw_ar(freq + vib) * 0.25;
+
+        // Breath noise
+        let breath = bpf_ar(pink_noise_ar(), freq * 2.0, 0.3) * 0.35;
+
+        // Formants
+        let mix = pitched + breath;
+        let f1 = bpf_ar(mix, 600.0, 0.12) * 0.4;
+        let f2 = bpf_ar(mix, 1200.0, 0.15) * 0.3;
+
+        let sig = f1 + f2;
+
+        sig * env * amp
+    });

@@ -1,0 +1,11 @@
+// Dynamics Effects Index
+import "stdlib/effects/dynamics/compressor.vibe";
+import "stdlib/effects/dynamics/limiter.vibe";
+import "stdlib/effects/dynamics/gate.vibe";
+import "stdlib/effects/dynamics/ducking.vibe";
+import "stdlib/effects/dynamics/sidechain.vibe";
+import "stdlib/effects/dynamics/transient_shaper.vibe";
+import "stdlib/effects/dynamics/multiband_comp.vibe";
+import "stdlib/effects/dynamics/de_esser.vibe";
+import "stdlib/effects/dynamics/parallel_comp.vibe";
+import "stdlib/effects/dynamics/amp_follower.vibe";

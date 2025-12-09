@@ -1,0 +1,40 @@
+// Fuzz Effect
+//
+// Classic fuzz pedal distortion with aggressive clipping.
+//
+// Usage:
+//   group.add_effect("fz", "fuzz", #{
+//     gain: 10.0,
+//     tone: 3000.0,
+//     mix: 1.0
+//   });
+//
+// Parameters:
+//   gain: Fuzz gain (2.0 to 50.0)
+//   tone: Tone control cutoff (500 to 8000 Hz)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+
+define_fx("fuzz", |builder| {
+    builder
+        .param("gain", 10.0)
+        .param("tone", 3000.0)
+        .param("mix", 1.0)
+        .body(|input, gain, tone, mix| {
+            // Boost and clip
+            let fuzzed_left = (input[0] * gain).tanh();
+            let fuzzed_right = (input[1] * gain).tanh();
+
+            // Additional hard clipping for that fuzz character
+            let clipped_left = fuzzed_left.clip(-0.8, 0.8);
+            let clipped_right = fuzzed_right.clip(-0.8, 0.8);
+
+            // Tone control
+            let toned_left = lpf_ar(clipped_left, tone);
+            let toned_right = lpf_ar(clipped_right, tone);
+
+            [
+                (1.0 - mix) * input[0] + mix * toned_left,
+                (1.0 - mix) * input[1] + mix * toned_right
+            ]
+        })
+});

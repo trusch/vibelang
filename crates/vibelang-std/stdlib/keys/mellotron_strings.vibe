@@ -1,0 +1,28 @@
+// Genre: Progressive Rock, Psychedelic | Character: Mellotron string sound
+define_synthdef("mellotron_strings")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.1, 1.0, 0.2);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Slightly detuned for tape character
+        let wow = sin_osc_ar(0.5) * freq * 0.004;
+
+        let osc1 = saw_ar(freq + wow) * 0.3;
+        let osc2 = saw_ar(freq * 1.002) * 0.25;
+        let osc3 = saw_ar(freq * 0.998 + wow * 0.5) * 0.25;
+
+        let mix = osc1 + osc2 + osc3;
+
+        // Tape-like filtering
+        let filtered = lpf_ar(mix, 3500.0);
+
+        // Add noise for tape hiss
+        let hiss = hpf_ar(white_noise_ar(), 6000.0) * 0.02;
+
+        (filtered + hiss) * env * amp
+    });

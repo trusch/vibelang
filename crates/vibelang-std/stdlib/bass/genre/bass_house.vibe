@@ -1,0 +1,25 @@
+// Genre: House, Deep House | Character: Deep house bass - warm and rolling
+define_synthdef("bass_house")
+    .param("freq", 55.0)
+    .param("amp", 0.85)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.01, 1.0, 0.12);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.01, 0.25);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Warm saw with sub
+        let osc = saw_ar(freq) * 0.4;
+        let sub = sin_osc_ar(freq * 0.5) * 0.35;
+
+        let mix = osc + sub;
+
+        // Warm, rolling filter
+        let cutoff = 500.0 + filt_env * 1200.0;
+        rlpf_ar(mix, cutoff, 0.2) * env * amp
+    });

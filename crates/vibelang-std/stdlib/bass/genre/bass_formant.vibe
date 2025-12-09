@@ -1,0 +1,30 @@
+// Genre: Experimental, EDM | Character: Vowel/formant bass with vocal quality
+define_synthdef("bass_formant")
+    .param("freq", 55.0)
+    .param("amp", 0.75)
+    .param("gate", 1.0)
+    .param("vowel", 0.5)
+    .body(|freq, amp, gate, vowel| {
+        let envelope = env_asr(0.01, 1.0, 0.12);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Rich harmonic source
+        let osc = saw_ar(freq) * 0.5;
+
+        // Formant frequencies (morphing between vowels)
+        let f1 = 300.0 + vowel * 500.0;  // First formant
+        let f2 = 900.0 + vowel * 1200.0; // Second formant
+
+        // Resonant bandpass filters for formants
+        let form1 = bpf_ar(osc, f1, 0.15) * 0.5;
+        let form2 = bpf_ar(osc, f2, 0.2) * 0.3;
+
+        // Sub foundation
+        let sub = sin_osc_ar(freq) * 0.4;
+
+        let sig = form1 + form2 + sub;
+
+        sig * env * amp
+    });

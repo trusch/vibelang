@@ -1,0 +1,13 @@
+// Acoustic Bass Library Index
+//
+// Acoustic and electric bass guitar sounds.
+// Usage: import "stdlib/bass/acoustic/index.vibe"
+
+import "stdlib/bass/acoustic/bass_upright.vibe";
+import "stdlib/bass/acoustic/bass_upright_pizz.vibe";
+import "stdlib/bass/acoustic/bass_upright_arco.vibe";
+import "stdlib/bass/acoustic/bass_fretless.vibe";
+import "stdlib/bass/acoustic/bass_slap.vibe";
+import "stdlib/bass/acoustic/bass_fingered.vibe";
+import "stdlib/bass/acoustic/bass_picked.vibe";
+import "stdlib/bass/acoustic/bass_muted.vibe";

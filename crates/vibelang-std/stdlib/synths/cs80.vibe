@@ -1,0 +1,90 @@
+// Yamaha CS-80 Emulation
+// Classic 1977 | Character: Lush, expressive, cinematic
+
+// CS-80 Lead - Expressive lead with vibrato
+define_synthdef("cs80_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("vibrato", 0.5)
+        .body(|freq, amp, gate, vibrato| {
+            let envelope = env_asr(0.05, 1.0, 0.3);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Characteristic vibrato
+            let vib = sin_osc_ar(5.0) * freq * 0.015 * vibrato;
+            let mod_freq = freq + vib;
+
+            // Dual layers - saw and ring mod
+            let osc1 = saw_ar(mod_freq) * 0.4;
+            let osc2 = saw_ar(mod_freq * 1.003) * 0.4;
+            let ring = sin_osc_ar(mod_freq * 2.0) * 0.2;
+
+            let mix = osc1 + osc2 + ring;
+
+            // Warm filtering
+            let filtered = lpf_ar(mix, 3500.0);
+
+            filtered * env * amp
+        })
+});
+
+// CS-80 Brass - Famous brass sound (Blade Runner)
+define_synthdef("cs80_brass", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.55)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.08, 1.0, 0.25);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_asr(0.1, 1.0, 0.2);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Dual oscillators with detune
+            let osc1 = saw_ar(freq * 0.998);
+            let osc2 = saw_ar(freq * 1.002);
+            let sub = saw_ar(freq * 0.5) * 0.3;
+
+            let mix = (osc1 + osc2) * 0.4 + sub;
+
+            // Resonant filter sweep
+            let cutoff = 800.0 + filt_env * 2500.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.7);
+
+            filtered * env * amp
+        })
+});
+
+// CS-80 Strings - Lush string pad
+define_synthdef("cs80_strings", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.45)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.3, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Chorus-like detuning
+            let lfo = sin_osc_ar(0.3) * 0.003;
+            let osc1 = saw_ar(freq * (0.997 + lfo));
+            let osc2 = saw_ar(freq * (1.0 - lfo));
+            let osc3 = saw_ar(freq * (1.003 + lfo));
+
+            let mix = (osc1 + osc2 + osc3) * 0.35;
+
+            // Warm string filtering
+            let filtered = lpf_ar(mix, 3000.0);
+
+            filtered * env * amp
+        })
+});

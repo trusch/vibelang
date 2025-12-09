@@ -1,0 +1,30 @@
+// Genre: Funk, Electronic, Classic | Character: Classic Minimoog bass - fat and warm
+define_synthdef("bass_moog")
+    .param("freq", 60.0)
+    .param("amp", 0.8)
+    .param("gate", 1.0)
+    .param("cutoff", 800.0)
+    .param("res", 0.3)
+    .body(|freq, amp, gate, cutoff, res| {
+        let envelope = env_asr(0.01, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.01, 0.3);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Multiple oscillators slightly detuned
+        let osc1 = saw_ar(freq);
+        let osc2 = saw_ar(freq * 1.005);
+        let osc3 = pulse_ar(freq * 0.5, 0.5) * 0.5;
+
+        let mix = (osc1 + osc2 + osc3) * 0.35;
+
+        // Moog-style ladder filter
+        let mod_cutoff = cutoff + filt_env * 1500.0;
+        let filtered = rlpf_ar(mix, mod_cutoff, res);
+
+        filtered * env * amp
+    });

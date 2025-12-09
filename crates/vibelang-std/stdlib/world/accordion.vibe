@@ -1,0 +1,25 @@
+// Genre: Folk, Tango, Zydeco | Character: Accordion/melodeon
+define_synthdef("accordion")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.03, 1.0, 0.08);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Reed-like tone
+        let osc1 = pulse_ar(freq, 0.4) * 0.3;
+        let osc2 = pulse_ar(freq * 1.003, 0.45) * 0.25;
+
+        // Upper harmonics
+        let harm = sin_osc_ar(freq * 2.0) * 0.15;
+
+        let mix = osc1 + osc2 + harm;
+
+        // Bellows variation
+        let bellows = sin_osc_ar(0.3) * 0.1 + 0.9;
+
+        lpf_ar(mix, 4000.0) * bellows * env * amp
+    });

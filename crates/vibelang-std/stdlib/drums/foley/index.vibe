@@ -1,0 +1,10 @@
+// Foley Drums Library Index
+//
+// Found sounds and everyday objects as drums.
+// Usage: import "stdlib/drums/foley/index.vibe"
+
+import "stdlib/drums/foley/foley_cardboard.vibe";
+import "stdlib/drums/foley/foley_bucket.vibe";
+import "stdlib/drums/foley/foley_pot_lid.vibe";
+import "stdlib/drums/foley/foley_door_slam.vibe";
+import "stdlib/drums/foley/foley_book_drop.vibe";

@@ -1,0 +1,30 @@
+// Genre: Trance, Progressive | Character: Trance supersaw lead - massive and euphoric
+define_synthdef("lead_trance")
+    .param("freq", 440.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.015, 1.0, 0.15);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_asr(0.05, 1.0, 0.15);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, gate).build();
+
+        // 7 detuned oscillators for supersaw
+        let osc1 = saw_ar(freq * 0.985);
+        let osc2 = saw_ar(freq * 0.992);
+        let osc3 = saw_ar(freq * 0.998);
+        let osc4 = saw_ar(freq);
+        let osc5 = saw_ar(freq * 1.002);
+        let osc6 = saw_ar(freq * 1.008);
+        let osc7 = saw_ar(freq * 1.015);
+
+        let mix = (osc1 + osc2 + osc3 + osc4 + osc5 + osc6 + osc7) * 0.14;
+
+        // Euphoric filter
+        let cutoff = 1500.0 + filt_env * 4000.0;
+        rlpf_ar(mix, cutoff, 0.12) * env * amp
+    });

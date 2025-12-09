@@ -9,7 +9,6 @@ import "stdlib/fx/impacts/impact_metallic.vibe";
 import "stdlib/fx/impacts/impact_noise.vibe";
 import "stdlib/fx/impacts/impact_soft.vibe";
 import "stdlib/fx/impacts/impact_sub.vibe";
-import "stdlib/fx/impacts/impact_cinematic.vibe";
 import "stdlib/fx/impacts/impact_trailer.vibe";
 import "stdlib/fx/impacts/impact_bass_drop.vibe";
 import "stdlib/fx/impacts/impact_industrial.vibe";

@@ -1,0 +1,61 @@
+// Utility: Oscilloscope calibration and test tones
+
+// Sweep tone - Frequency sweep for testing
+define_synthdef("sweep_tone")
+    .param("amp", 0.4)
+    .param("gate", 1.0)
+    .param("rate", 0.5)
+    .body(|amp, gate, rate| {
+        let envelope = env_asr(0.01, 1.0, 0.01);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // LFO sweeping from 100Hz to 5000Hz
+        let lfo = sin_osc_ar(rate) * 0.5 + 0.5;
+        let freq = 100.0 + lfo * 4900.0;
+
+        sin_osc_ar(freq) * env * amp
+    });
+
+// Square test - Square wave test tone
+define_synthdef("square_test")
+    .param("freq", 440.0)
+    .param("amp", 0.35)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.01, 1.0, 0.01);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        pulse_ar(freq, 0.5) * env * amp
+    });
+
+// Saw test - Sawtooth test tone
+define_synthdef("saw_test")
+    .param("freq", 440.0)
+    .param("amp", 0.35)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.01, 1.0, 0.01);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        saw_ar(freq) * env * amp
+    });
+
+// Triangle test - Triangle wave test tone
+define_synthdef("tri_test")
+    .param("freq", 440.0)
+    .param("amp", 0.4)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.01, 1.0, 0.01);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        lf_tri_ar(freq) * env * amp
+    });

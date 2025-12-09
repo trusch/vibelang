@@ -1,0 +1,26 @@
+// Genre: Progressive House, Melodic Techno | Character: Progressive lead - smooth and evolving
+define_synthdef("lead_progressive")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.03, 1.0, 0.2);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Slow filter envelope
+        let filt_env_shape = env_asr(0.2, 1.0, 0.3);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, gate).build();
+
+        // Slightly detuned for width
+        let osc1 = saw_ar(freq * 0.998);
+        let osc2 = saw_ar(freq);
+        let osc3 = saw_ar(freq * 1.002);
+
+        let mix = (osc1 + osc2 + osc3) * 0.3;
+
+        // Smooth, evolving filter
+        let cutoff = 800.0 + filt_env * 3000.0;
+        rlpf_ar(mix, cutoff, 0.15) * env * amp
+    });

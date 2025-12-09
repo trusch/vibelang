@@ -1,0 +1,40 @@
+// Latin Percussion Library Index
+//
+// Import this file to load all Latin percussion sounds.
+// Usage: import "stdlib/drums/latin/index.vibe"
+
+// Congas
+import "stdlib/drums/latin/conga_high.vibe";
+import "stdlib/drums/latin/conga_low.vibe";
+import "stdlib/drums/latin/conga_muted.vibe";
+
+// Bongos
+import "stdlib/drums/latin/bongo_high.vibe";
+import "stdlib/drums/latin/bongo_low.vibe";
+
+// Timbales
+import "stdlib/drums/latin/timbale_high.vibe";
+import "stdlib/drums/latin/timbale_low.vibe";
+import "stdlib/drums/latin/timbale_rim.vibe";
+
+// Guiro
+import "stdlib/drums/latin/guiro.vibe";
+import "stdlib/drums/latin/guiro_short.vibe";
+
+// Shakers
+import "stdlib/drums/latin/cabasa.vibe";
+import "stdlib/drums/latin/maracas.vibe";
+
+// Agogo Bells
+import "stdlib/drums/latin/agogo_high.vibe";
+import "stdlib/drums/latin/agogo_low.vibe";
+
+// Brazilian
+import "stdlib/drums/latin/cuica.vibe";
+import "stdlib/drums/latin/surdo.vibe";
+import "stdlib/drums/latin/pandeiro.vibe";
+import "stdlib/drums/latin/berimbau.vibe";
+
+// Cajon
+import "stdlib/drums/latin/cajon.vibe";
+import "stdlib/drums/latin/cajon_slap.vibe";

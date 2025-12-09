@@ -1,0 +1,27 @@
+// Genre: Horror, Thriller | Character: Tension drone
+define_synthdef("drone_tension")
+    .param("freq", 55.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(1.0, 1.0, 1.0);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Slow, unsettling modulation
+        let mod1 = sin_osc_ar(0.1) * freq * 0.02;
+        let mod2 = sin_osc_ar(0.07) * freq * 0.015;
+
+        // Dissonant tones
+        let tone1 = sin_osc_ar(freq + mod1) * 0.3;
+        let tone2 = sin_osc_ar(freq * 1.05 + mod2) * 0.2;
+        let tone3 = sin_osc_ar(freq * 0.98) * 0.25;
+
+        // Rumble
+        let rumble = lpf_ar(pink_noise_ar(), 80.0) * 0.15;
+
+        let sig = tone1 + tone2 + tone3 + rumble;
+
+        lpf_ar(sig, 800.0) * env * amp
+    });

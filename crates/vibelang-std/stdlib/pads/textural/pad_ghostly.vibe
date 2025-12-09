@@ -1,0 +1,27 @@
+// Genre: Horror, Dark Ambient | Character: Ghostly pad - eerie and unsettling
+define_synthdef("pad_ghostly")
+    .param("freq", 220.0)
+    .param("amp", 0.45)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.5, 1.0, 0.6);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Slow, eerie modulation
+        let mod1 = sin_osc_ar(0.15) * freq * 0.02;
+        let mod2 = sin_osc_ar(0.23) * freq * 0.015;
+
+        // Detuned, wavering tones
+        let tone1 = sin_osc_ar(freq + mod1) * 0.35;
+        let tone2 = sin_osc_ar(freq * 1.01 + mod2) * 0.25;
+        let tone3 = sin_osc_ar(freq * 0.99 - mod1) * 0.25;
+
+        // Spectral component
+        let spectral = bpf_ar(pink_noise_ar(), freq * 3.0, 0.3) * 0.1;
+
+        let sig = tone1 + tone2 + tone3 + spectral;
+
+        lpf_ar(sig, 2500.0) * env * amp
+    });

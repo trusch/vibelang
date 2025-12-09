@@ -1,0 +1,25 @@
+// Genre: Orchestral, Ambient | Character: Metal wind chimes
+define_synthdef("wind_chimes")
+    .param("freq", 2000.0)
+    .param("amp", 0.4)
+    .param("density", 0.5)
+    .body(|freq, amp, density| {
+        let gate = dc_ar(1.0);
+
+        // Overall envelope
+        let amp_envelope = env_perc(0.001, 2.0);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Multiple resonant frequencies
+        let chime1 = sin_osc_ar(freq) * dust_ar(density * 10.0) * 0.2;
+        let chime2 = sin_osc_ar(freq * 1.2) * dust_ar(density * 8.0) * 0.18;
+        let chime3 = sin_osc_ar(freq * 1.5) * dust_ar(density * 12.0) * 0.15;
+        let chime4 = sin_osc_ar(freq * 0.8) * dust_ar(density * 6.0) * 0.15;
+        let chime5 = sin_osc_ar(freq * 1.8) * dust_ar(density * 10.0) * 0.12;
+
+        let mix = chime1 + chime2 + chime3 + chime4 + chime5;
+
+        mix * amp_env * amp
+    });

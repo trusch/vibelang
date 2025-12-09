@@ -1,0 +1,29 @@
+// Genre: Jazz, Fusion, R&B | Character: Fretless electric bass with smooth slides
+define_synthdef("bass_fretless")
+    .param("freq", 80.0)
+    .param("amp", 0.8)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        // Smooth envelope
+        let envelope = env_asr(0.02, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Subtle vibrato
+        let vib = sin_osc_ar(5.0) * freq * 0.008;
+
+        // Warm, mwah-y tone
+        let body = sin_osc_ar(freq + vib) * 0.45;
+        let harm1 = sin_osc_ar((freq + vib) * 2.0) * 0.28;
+        let harm2 = sin_osc_ar((freq + vib) * 3.0) * 0.15;
+        let harm3 = sin_osc_ar((freq + vib) * 4.0) * 0.08;
+
+        // Mwah characteristic (filter sweep on attack)
+        let mwah_env = env_perc(0.01, 0.2);
+        let mwah = NewEnvGenBuilder(mwah_env, dc_ar(1.0)).build();
+        let cutoff = 800.0 + mwah * 2000.0;
+
+        let sig = body + harm1 + harm2 + harm3;
+        lpf_ar(sig, cutoff) * env * amp
+    });

@@ -1,0 +1,27 @@
+// Genre: Experimental, Ambient | Character: Random modulation pad
+define_synthdef("pad_random")
+    .param("freq", 220.0)
+    .param("amp", 0.45)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.2, 1.0, 0.3);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Random modulations
+        let rand1 = lf_noise1_ar(2.0) * freq * 0.01;
+        let rand2 = lf_noise1_ar(3.0) * freq * 0.008;
+        let rand_amp = lf_noise1_ar(1.0) * 0.2 + 0.8;
+
+        // Oscillators with random pitch
+        let osc1 = sin_osc_ar(freq + rand1) * 0.4;
+        let osc2 = sin_osc_ar(freq * 2.0 + rand2) * 0.2;
+        let osc3 = saw_ar(freq + rand1 * 0.5) * 0.25;
+
+        let mix = (osc1 + osc2 + osc3) * rand_amp;
+
+        // Random filter
+        let rand_cutoff = lf_noise1_ar(0.5) * 1500.0 + 2000.0;
+        lpf_ar(mix, rand_cutoff) * env * amp
+    });

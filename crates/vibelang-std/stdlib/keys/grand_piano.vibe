@@ -20,8 +20,9 @@ define_synthdef("grand_piano", |builder| {
         .body(|freq, amp, gate, velocity, brightness, resonance| {
             // Main amplitude envelope - piano has sharp attack, long decay
             let decay_time = 2.0 + (1.0 / (freq / 100.0));  // Lower notes decay longer
-            let envelope = env_perc(0.001, decay_time);
+            let envelope = env_perc(0.001, 1.0);
             let env = NewEnvGenBuilder(envelope, gate)
+                .with_time_scale(decay_time)
                 .with_done_action(2.0)
                 .build();
 
@@ -68,13 +69,17 @@ define_synthdef("grand_piano", |builder| {
             // Sympathetic string resonance (other strings vibrating)
             let symp1 = sin_osc_ar(freq * 2.0) * 0.02 * resonance;
             let symp2 = sin_osc_ar(freq * 3.0) * 0.015 * resonance;
-            let symp_env_data = env_perc(0.1, decay_time * 1.2);
-            let symp_env = NewEnvGenBuilder(symp_env_data, dc_ar(1.0)).build();
+            let symp_env_data = env_perc(0.1, 1.2);
+            let symp_env = NewEnvGenBuilder(symp_env_data, dc_ar(1.0))
+                .with_time_scale(decay_time)
+                .build();
             let sympathetic = (symp1 + symp2) * symp_env;
 
             // High frequency damping over time (strings lose brightness as they decay)
-            let hf_damp_env_data = env_perc(0.001, decay_time * 0.5);
-            let hf_damp_env = NewEnvGenBuilder(hf_damp_env_data, dc_ar(1.0)).build();
+            let hf_damp_env_data = env_perc(0.001, 0.5);
+            let hf_damp_env = NewEnvGenBuilder(hf_damp_env_data, dc_ar(1.0))
+                .with_time_scale(decay_time)
+                .build();
             let hf_cutoff = 2000.0 + (hf_damp_env * 6000.0);
 
             let main_tone = filtered_tone + board_res1 + board_res2 + hammer_filtered;
@@ -95,8 +100,9 @@ define_synthdef("grand_piano_bright", |builder| {
         .param("velocity", 0.8)
         .body(|freq, amp, gate, velocity| {
             let decay_time = 2.5 + (1.0 / (freq / 80.0));
-            let envelope = env_perc(0.001, decay_time);
+            let envelope = env_perc(0.001, 1.0);
             let env = NewEnvGenBuilder(envelope, gate)
+                .with_time_scale(decay_time)
                 .with_done_action(2.0)
                 .build();
 
@@ -142,8 +148,9 @@ define_synthdef("grand_piano_warm", |builder| {
         .param("velocity", 0.6)
         .body(|freq, amp, gate, velocity| {
             let decay_time = 3.0 + (1.0 / (freq / 60.0));
-            let envelope = env_perc(0.002, decay_time);
+            let envelope = env_perc(0.002, 1.0);
             let env = NewEnvGenBuilder(envelope, gate)
+                .with_time_scale(decay_time)
                 .with_done_action(2.0)
                 .build();
 
@@ -183,8 +190,9 @@ define_synthdef("upright_piano", |builder| {
         .param("velocity", 0.7)
         .body(|freq, amp, gate, velocity| {
             let decay_time = 1.8 + (1.0 / (freq / 120.0));
-            let envelope = env_perc(0.001, decay_time);
+            let envelope = env_perc(0.001, 1.0);
             let env = NewEnvGenBuilder(envelope, gate)
+                .with_time_scale(decay_time)
                 .with_done_action(2.0)
                 .build();
 

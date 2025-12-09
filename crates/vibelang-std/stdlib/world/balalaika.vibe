@@ -1,0 +1,28 @@
+// Region: Russian | Character: Triangular stringed instrument
+define_synthdef("balalaika")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.001, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Plucked string excitation
+        let pluck_env = NewEnvGenBuilder(env_perc(0.001, 0.03), dc_ar(1.0)).build();
+        let exciter = lpf_ar(white_noise_ar(), 3000.0) * pluck_env * 0.8;
+
+        // Bright triangular body resonance
+        let body1 = sin_osc_ar(freq) * 0.5;
+        let body2 = sin_osc_ar(freq * 2.0) * 0.3;
+        let body3 = sin_osc_ar(freq * 3.0) * 0.15;
+        let body4 = sin_osc_ar(freq * 4.0) * 0.08;
+
+        let sig = body1 + body2 + body3 + body4 + exciter;
+
+        // Bright character
+        let filtered = hpf_ar(sig, 200.0);
+
+        filtered * env * amp
+    });

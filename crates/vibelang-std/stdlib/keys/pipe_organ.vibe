@@ -1,0 +1,24 @@
+// Church instrument | Character: Majestic, sustained
+define_synthdef("pipe_organ")
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.15, 1.0, 0.3);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Multiple pipes at different footages
+        let pipe8 = sin_osc_ar(freq) * 0.4;
+        let pipe4 = sin_osc_ar(freq * 2.0) * 0.25;
+        let pipe2 = sin_osc_ar(freq * 4.0) * 0.15;
+        let pipe16 = sin_osc_ar(freq * 0.5) * 0.3;
+
+        // Wind noise
+        let wind = lpf_ar(pink_noise_ar(), 500.0) * 0.05;
+
+        let sig = pipe8 + pipe4 + pipe2 + pipe16 + wind;
+
+        sig * env * amp
+    });

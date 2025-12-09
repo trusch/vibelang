@@ -1,0 +1,28 @@
+// Genre: Film Score, Horror | Character: Tension-building pad
+define_synthdef("pad_tension")
+    .param("freq", 110.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.5, 1.0, 0.4);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Dissonant cluster
+        let osc1 = sin_osc_ar(freq) * 0.35;
+        let osc2 = sin_osc_ar(freq * 1.06) * 0.25; // Minor 2nd
+        let osc3 = sin_osc_ar(freq * 1.12) * 0.2;  // Augmented
+
+        // Low rumble
+        let rumble = lpf_ar(pink_noise_ar(), 100.0) * 0.15;
+
+        // Slow rising filter
+        let filt_env_shape = env_asr(1.0, 1.0, 0.5);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, gate).build();
+
+        let mix = osc1 + osc2 + osc3 + rumble;
+        let cutoff = 200.0 + filt_env * 1500.0;
+
+        lpf_ar(mix, cutoff) * env * amp
+    });

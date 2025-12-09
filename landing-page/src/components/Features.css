@@ -156,4 +156,29 @@
   .feature-card {
     padding: var(--space-lg);
   }
+
+  .feature-card__title {
+    font-size: 1.5rem;
+  }
+
+  .feature-card__description {
+    font-size: 0.85rem;
+  }
+
+  .features__highlight {
+    padding: var(--space-lg);
+  }
+
+  .features__highlight-content h3 {
+    font-size: 1.25rem;
+  }
+
+  .features__highlight-code {
+    padding: var(--space-md);
+  }
+
+  .features__highlight-code code {
+    font-size: 0.7rem;
+    line-height: 1.6;
+  }
 }

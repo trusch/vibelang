@@ -9,16 +9,22 @@
 //! - **vibelang-core**: State management, scheduling, OSC communication, Rhai API
 //! - **vibelang-dsp**: SynthDef generation and UGen graph building
 //! - **vibelang-std**: Standard library of `.vibe` files
+//!
+//! # Commands
+//!
+//! - `vibe run <file>` - Run a .vibe file interactively (default)
+//! - `vibe render <file>` - Render a .vibe file to audio
 
+mod render;
 mod tui;
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use rhai::Dynamic;
+use rhai::AST;
 use vibelang_core::state::StateMessage;
 use vibelang_core::RuntimeHandle;
 
@@ -27,10 +33,41 @@ use vibelang_core::RuntimeHandle;
 #[command(name = "vibe")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "A musical programming language for SuperCollider", long_about = None)]
-struct Args {
-    /// Path to the .vibe file to execute
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    /// Path to the .vibe file (shortcut for `vibe run <file>`)
     #[arg(value_name = "FILE")]
     file: Option<PathBuf>,
+
+    /// Disable watch mode (watching is enabled by default)
+    #[arg(long, global = true)]
+    no_watch: bool,
+
+    /// Enable TUI mode (Terminal User Interface)
+    #[arg(long, global = true)]
+    tui: bool,
+
+    /// Additional import directories
+    #[arg(short = 'I', long = "import-path", value_name = "PATH", global = true)]
+    import_paths: Vec<PathBuf>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Run a .vibe file interactively (default behavior)
+    Run(RunArgs),
+
+    /// Render a .vibe file to an audio file (offline)
+    Render(RenderArgs),
+}
+
+#[derive(Args, Debug)]
+struct RunArgs {
+    /// Path to the .vibe file to execute
+    #[arg(value_name = "FILE")]
+    file: PathBuf,
 
     /// Disable watch mode (watching is enabled by default)
     #[arg(long)]
@@ -43,20 +80,71 @@ struct Args {
     /// Additional import directories
     #[arg(short = 'I', long = "import-path", value_name = "PATH")]
     import_paths: Vec<PathBuf>,
+
+    /// Record events to an audio file (wav, mp3, flac, ogg) or score file (.vibescore)
+    /// Use --record alone to create out.wav, or --record <path> for a specific output
+    #[arg(long, value_name = "PATH", default_missing_value = "out.wav", num_args = 0..=1)]
+    record: Option<PathBuf>,
+
+    /// Exit automatically when the specified sequence completes (useful with --record)
+    #[arg(long, value_name = "NAME")]
+    exit_after_sequence: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct RenderArgs {
+    /// Path to the score file (.osc) to render
+    #[arg(value_name = "SCORE_FILE")]
+    pub score_file: PathBuf,
+
+    /// Output audio file path
+    #[arg(value_name = "OUTPUT")]
+    pub output: PathBuf,
+
+    /// Output format (wav, mp3, flac, ogg) - inferred from extension if not specified
+    #[arg(long)]
+    pub format: Option<String>,
+
+    /// Sample rate
+    #[arg(long, default_value = "48000")]
+    pub sample_rate: u32,
+
+    /// Bit depth for WAV (16, 24, 32)
+    #[arg(long, default_value = "24")]
+    pub bit_depth: u8,
+
+    /// Add tail time at the end (seconds)
+    #[arg(long, default_value = "2.0")]
+    pub tail: f64,
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let cli = Cli::parse();
 
-    // Require a file argument
-    let file = args.file.ok_or_else(|| {
-        anyhow::anyhow!("Missing required argument: FILE\n\nUsage: vibe <FILE> [OPTIONS]\n\nFor more information, try '--help'")
-    })?;
-
-    // Watch mode is ON by default, disabled with --no-watch
-    let watch = !args.no_watch;
-
-    run_vibe_file(file, watch, args.tui, args.import_paths)
+    match cli.command {
+        Some(Commands::Run(args)) => {
+            let watch = !args.no_watch;
+            run_vibe_file(args.file, watch, args.tui, args.import_paths, args.record, args.exit_after_sequence)
+        }
+        Some(Commands::Render(args)) => {
+            render::render(args)
+        }
+        None => {
+            // No subcommand - check if a file was provided directly
+            if let Some(file) = cli.file {
+                let watch = !cli.no_watch;
+                run_vibe_file(file, watch, cli.tui, cli.import_paths, None, None)
+            } else {
+                anyhow::bail!(
+                    "Missing required argument: FILE\n\n\
+                    Usage: vibe <FILE> [OPTIONS]\n\
+                           vibe run <FILE> [OPTIONS]\n\
+                           vibe render <SCORE_FILE> [OPTIONS]\n\n\
+                    For more information, try '--help'"
+                )
+            }
+        }
+    }
 }
 
 fn run_vibe_file(
@@ -64,13 +152,34 @@ fn run_vibe_file(
     watch: bool,
     tui_mode: bool,
     import_paths: Vec<PathBuf>,
+    record: Option<PathBuf>,
+    exit_after_sequence: Option<String>,
 ) -> Result<()> {
+    use vibelang_core::JackMidiOutput;
+
     // Initialize logger based on TUI mode
     if tui_mode {
         tui::init_tui_logger();
     } else {
         tui::init_logger();
     }
+
+    // Create JACK MIDI output for virtual keyboard EARLY (before script runs)
+    // This ensures the MIDI port exists when script calls midi_open("vibelang-keyboard")
+    let jack_keyboard = if tui_mode {
+        match JackMidiOutput::new("vibelang-keyboard", "midi_out") {
+            Ok(output) => {
+                log::info!("Virtual keyboard JACK port created: {}", output.port_name);
+                Some(output)
+            }
+            Err(e) => {
+                log::warn!("Could not create JACK MIDI output for virtual keyboard: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // Validate the file exists
     if !file.exists() {
@@ -101,8 +210,19 @@ fn run_vibe_file(
     vibelang_core::init_api(handle.clone());
 
     // Set up the synthdef deploy callback
+    // This callback both sends to scsynth AND stores in state for score capture
     let deploy_handle = handle.clone();
     vibelang_dsp::set_deploy_callback(move |bytes| {
+        // Extract synthdef name from bytes (SuperCollider synthdef format)
+        let name = extract_synthdef_name(&bytes).unwrap_or_else(|| "unknown".to_string());
+
+        // Store in state for score capture
+        let _ = deploy_handle.send(StateMessage::LoadSynthDef {
+            name: name.clone(),
+            bytes: bytes.clone(),
+        });
+
+        // Send to scsynth
         deploy_handle.scsynth().d_recv_bytes(bytes)
             .map_err(|e| e.to_string())
     });
@@ -137,20 +257,75 @@ fn run_vibe_file(
     vibelang_dsp::register_dsp_api(&mut engine);
     log::info!("   ✓ Engine ready");
 
-    // 7. Read and execute the script
-    log::info!("7. Executing .vibe file...");
+    // Enable score capture BEFORE script runs if --record flag is set
+    // This ensures all events from beat 0 are captured
+    // Determine if we need to auto-render after recording
+    let (score_capture_path, render_output_path) = if let Some(ref record_path) = record {
+        let ext = record_path.extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+
+        if ext == "vibescore" {
+            // Direct vibescore output - no rendering needed
+            log::info!("📼 Recording score to: {}", record_path.display());
+            (record_path.clone(), None)
+        } else {
+            // Audio output - use temp vibescore, then render
+            let temp_score = std::env::temp_dir().join(format!(
+                "vibelang_record_{}.vibescore",
+                std::process::id()
+            ));
+            log::info!("📼 Recording to: {} (via temp score)", record_path.display());
+            (temp_score, Some(record_path.clone()))
+        }
+    } else {
+        (PathBuf::new(), None)
+    };
+
+    if record.is_some() {
+        handle.send(StateMessage::EnableScoreCapture { path: score_capture_path.clone() })?;
+    }
+
+    // 7. Read and compile the script
+    log::info!("7. Compiling .vibe file...");
     let script = fs::read_to_string(&file)
         .with_context(|| format!("Failed to read file: {}", file.display()))?;
 
-    match engine.eval::<Dynamic>(&script) {
-        Ok(_) => {
-            log::info!("   ✓ Script executed successfully");
+    // Clear any existing callbacks and MIDI devices from previous runs
+    vibelang_core::api::clear_callbacks();
+    vibelang_core::api::clear_midi_devices();
+
+    // Compile the script to AST (we need the AST for callback execution)
+    let mut current_ast: Option<AST> = match engine.compile(&script) {
+        Ok(ast) => {
+            log::info!("   ✓ Script compiled successfully");
+            Some(ast)
         }
         Err(e) => {
-            log::error!("Script error: {}", e);
-            // Continue running to allow sounds to play
+            log::error!("Compile error: {}", e);
+            None
+        }
+    };
+
+    // Execute the compiled AST
+    if let Some(ref ast) = current_ast {
+        match engine.run_ast(ast) {
+            Ok(_) => {
+                log::info!("   ✓ Script executed successfully");
+            }
+            Err(e) => {
+                log::error!("Script error: {}", e);
+                // Continue running to allow sounds to play
+            }
         }
     }
+
+    // Start the scheduler AFTER script evaluation
+    // This ensures sequences started during initial evaluation anchor at beat 0.0
+    // (before this, transport.beat_at() returns 0.0, so quantization gives beat 0.0)
+    handle.send(StateMessage::StartScheduler)?;
+    log::info!("   ✓ Scheduler started");
 
     // Finalize groups
     handle.send(StateMessage::FinalizeGroups)?;
@@ -159,28 +334,115 @@ fn run_vibe_file(
     // Keep the process running
     if tui_mode {
         // TUI mode - run the TUI event loop
-        run_tui_loop(&file, engine, handle.clone(), watch, &import_paths)?;
+        run_tui_loop(&file, engine, handle.clone(), watch, &import_paths, current_ast, jack_keyboard)?;
     } else {
-        // Set up Ctrl-C handler
+        // Set up Ctrl-C handler with record support
+        let ctrlc_handle = handle.clone();
+        let is_recording = record.is_some();
+        let ctrlc_score_path = score_capture_path.clone();
+        let ctrlc_render_path = render_output_path.clone();
         ctrlc::set_handler(move || {
             log::info!("\n\n⚠️  Interrupted by user (Ctrl+C)");
+            // Disable score capture to flush and save the file
+            if is_recording {
+                log::info!("📼 Stopping recording and saving score file...");
+                let _ = ctrlc_handle.send(StateMessage::DisableScoreCapture);
+                // Give time for the message to be processed
+                std::thread::sleep(std::time::Duration::from_millis(500));
+
+                // Auto-render if output is an audio format
+                if let Some(ref output_path) = ctrlc_render_path {
+                    log::info!("🎬 Rendering audio...");
+                    let render_args = crate::RenderArgs {
+                        score_file: ctrlc_score_path.clone(),
+                        output: output_path.clone(),
+                        format: None,
+                        sample_rate: 48000,
+                        bit_depth: 24,
+                        tail: 2.0,
+                    };
+                    if let Err(e) = crate::render::render_score(render_args) {
+                        log::error!("Render failed: {}", e);
+                    } else {
+                        // Clean up temp score file
+                        let _ = std::fs::remove_file(&ctrlc_score_path);
+                    }
+                }
+            }
             log::info!("👋 Exiting...");
             std::process::exit(0);
         })
         .expect("Error setting Ctrl-C handler");
 
-        if watch {
+        // Log status message
+        if let Some(ref seq_name) = exit_after_sequence {
+            log::info!("\n8. Waiting for sequence '{}' to complete...", seq_name);
+        } else if watch {
             log::info!("\n8. Watch mode enabled - monitoring file for changes...");
             log::info!("   (Press Ctrl+C to exit)\n");
+        } else {
+            log::info!("\n8. Script running... (Press Ctrl+C to exit)");
+        }
 
-            // Simple watch loop - poll file modification time
-            let mut last_modified = fs::metadata(&file)
-                .ok()
-                .and_then(|m| m.modified().ok());
+        // Simple watch loop - poll file modification time
+        let mut last_modified = fs::metadata(&file)
+            .ok()
+            .and_then(|m| m.modified().ok());
 
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(500));
+        // Create a scope for callback execution
+        let mut callback_scope = rhai::Scope::new();
 
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+
+            // Execute any pending MIDI callbacks
+            if let Some(ref ast) = current_ast {
+                let executed = vibelang_core::api::execute_pending_callbacks(
+                    &engine,
+                    ast,
+                    &mut callback_scope,
+                );
+                if executed > 0 {
+                    log::debug!("Executed {} MIDI callback(s)", executed);
+                }
+            }
+
+            // Check for sequence completion if --exit-after-sequence was specified
+            if let Some(ref seq_name) = exit_after_sequence {
+                if handle.is_sequence_completed(seq_name) {
+                    log::info!("\n✅ Sequence '{}' completed!", seq_name);
+                    // Disable score capture if recording
+                    if record.is_some() {
+                        log::info!("📼 Stopping recording and saving score file...");
+                        let _ = handle.send(StateMessage::DisableScoreCapture);
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+
+                        // Auto-render if output is an audio format
+                        if let Some(ref output_path) = render_output_path {
+                            log::info!("🎬 Rendering audio...");
+                            let render_args = crate::RenderArgs {
+                                score_file: score_capture_path.clone(),
+                                output: output_path.clone(),
+                                format: None,
+                                sample_rate: 48000,
+                                bit_depth: 24,
+                                tail: 2.0,
+                            };
+                            if let Err(e) = crate::render::render_score(render_args) {
+                                log::error!("Render failed: {}", e);
+                            } else {
+                                // Clean up temp score file
+                                let _ = std::fs::remove_file(&score_capture_path);
+                            }
+                        }
+                    }
+                    log::info!("👋 Exiting...");
+                    break;
+                }
+            }
+
+            // Check for file changes if watch mode is enabled
+            if watch {
                 let current_modified = fs::metadata(&file)
                     .ok()
                     .and_then(|m| m.modified().ok());
@@ -194,15 +456,28 @@ fn run_vibe_file(
                         let _ = h.send(StateMessage::BeginReload);
                     }
 
-                    // Re-read and execute
+                    // Clear existing callbacks and MIDI devices before reload
+                    vibelang_core::api::clear_callbacks();
+                    vibelang_core::api::clear_midi_devices();
+
+                    // Re-read, compile, and execute
                     match fs::read_to_string(&file) {
                         Ok(new_script) => {
-                            match engine.eval::<Dynamic>(&new_script) {
-                                Ok(_) => {
-                                    log::info!("   ✓ Reload successful");
+                            match engine.compile(&new_script) {
+                                Ok(ast) => {
+                                    match engine.run_ast(&ast) {
+                                        Ok(_) => {
+                                            log::info!("   ✓ Reload successful");
+                                            // Update the current AST for callback execution
+                                            current_ast = Some(ast);
+                                        }
+                                        Err(e) => {
+                                            log::error!("   Reload failed: {}", e);
+                                        }
+                                    }
                                 }
                                 Err(e) => {
-                                    log::error!("   Reload failed: {}", e);
+                                    log::error!("   Compile failed: {}", e);
                                 }
                             }
                         }
@@ -217,13 +492,6 @@ fn run_vibe_file(
                     }
                 }
             }
-        } else {
-            log::info!("\n8. Script running... (Press Ctrl+C to exit)");
-
-            // Wait indefinitely
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
         }
     }
 
@@ -237,6 +505,8 @@ fn run_tui_loop(
     handle: RuntimeHandle,
     watch: bool,
     _import_paths: &[PathBuf],
+    initial_ast: Option<AST>,
+    jack_keyboard: Option<vibelang_core::JackMidiOutput>,
 ) -> Result<()> {
     // Shutdown signal shared between threads
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -245,18 +515,34 @@ fn run_tui_loop(
     // Clone handle for TUI thread
     let tui_handle = handle.clone();
 
-    // Spawn TUI rendering thread
-    let tui_thread = std::thread::spawn(move || run_tui_render_thread(shutdown_clone, tui_handle));
+    // Spawn TUI rendering thread (pass in the pre-created JACK output)
+    let tui_thread = std::thread::spawn(move || run_tui_render_thread(shutdown_clone, tui_handle, jack_keyboard));
 
-    // Main thread handles file watching and reloading
+    // Main thread handles file watching, reloading, and callback execution
     let mut last_modified = fs::metadata(vibe_file)
         .ok()
         .and_then(|m| m.modified().ok());
+
+    // Track current AST for callback execution
+    let mut current_ast = initial_ast;
+    let mut callback_scope = rhai::Scope::new();
 
     loop {
         // Check if TUI thread signaled shutdown
         if shutdown.load(Ordering::Relaxed) {
             break;
+        }
+
+        // Execute any pending MIDI callbacks
+        if let Some(ref ast) = current_ast {
+            let executed = vibelang_core::api::execute_pending_callbacks(
+                &engine,
+                ast,
+                &mut callback_scope,
+            );
+            if executed > 0 {
+                log::debug!("Executed {} MIDI callback(s)", executed);
+            }
         }
 
         // Check for file changes if watch mode is enabled
@@ -272,15 +558,28 @@ fn run_tui_loop(
                 // Signal reload
                 let _ = handle.send(StateMessage::BeginReload);
 
-                // Re-read and execute
+                // Clear existing callbacks and MIDI devices before reload
+                vibelang_core::api::clear_callbacks();
+                vibelang_core::api::clear_midi_devices();
+
+                // Re-read, compile, and execute
                 match fs::read_to_string(vibe_file) {
                     Ok(new_script) => {
-                        match engine.eval::<Dynamic>(&new_script) {
-                            Ok(_) => {
-                                log::info!("✅ Reload successful");
+                        match engine.compile(&new_script) {
+                            Ok(ast) => {
+                                match engine.run_ast(&ast) {
+                                    Ok(_) => {
+                                        log::info!("✅ Reload successful");
+                                        // Update the current AST for callback execution
+                                        current_ast = Some(ast);
+                                    }
+                                    Err(e) => {
+                                        log::error!("Reload failed: {}", e);
+                                    }
+                                }
                             }
                             Err(e) => {
-                                log::error!("Reload failed: {}", e);
+                                log::error!("Compile failed: {}", e);
                             }
                         }
                     }
@@ -304,9 +603,17 @@ fn run_tui_loop(
 }
 
 /// TUI rendering thread - handles all UI updates and input
-fn run_tui_render_thread(shutdown: Arc<AtomicBool>, handle: RuntimeHandle) -> Result<()> {
+fn run_tui_render_thread(
+    shutdown: Arc<AtomicBool>,
+    handle: RuntimeHandle,
+    jack_output: Option<vibelang_core::JackMidiOutput>,
+) -> Result<()> {
     use crossterm::{
-        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+        event::{
+            self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture,
+            Event, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
+            PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        },
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     };
@@ -317,14 +624,68 @@ fn run_tui_render_thread(shutdown: Arc<AtomicBool>, handle: RuntimeHandle) -> Re
     // Initialize TUI event receiver
     let tui_receiver = tui::init_tui_channel();
 
+    // Log the JACK output status (it was created earlier, before script execution)
+    if let Some(ref output) = jack_output {
+        log::info!("Virtual keyboard using JACK port: {}", output.port_name);
+    } else {
+        log::warn!("Virtual keyboard disabled (no JACK output)");
+    }
+
+    // Create OS-level keyboard listener for reliable key release detection
+    // This bypasses terminal limitations by capturing events at the OS level
+    let os_keyboard = if jack_output.is_some() && tui::os_keyboard::is_available() {
+        match tui::os_keyboard::OsKeyboardListener::new() {
+            Some(listener) => {
+                log::info!("OS keyboard listener started - key release events will work reliably");
+                Some(listener)
+            }
+            None => {
+                log::warn!("Could not start OS keyboard listener - falling back to terminal input");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+
+    // Enable keyboard enhancement for key release events (kitty protocol)
+    // This may not be supported by all terminals, so we ignore errors
+    let keyboard_enhanced = execute!(
+        stdout,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+    )
+    .is_ok();
+
+    // Enable focus change events so we know when terminal loses/gains focus
+    // This is important for the OS keyboard listener to avoid capturing keys
+    // when the user switches to another application or tab
+    let focus_enabled = execute!(stdout, EnableFocusChange).is_ok();
+    if focus_enabled {
+        log::debug!("Terminal focus change events enabled");
+    }
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = tui::TuiApp::new();
+
+    // If focus events are supported, start with focus (assume we have it)
+    // Otherwise fall back to timestamp-based detection
+    app.set_focus_events_supported(focus_enabled);
+    if focus_enabled {
+        app.set_has_focus(true);
+    }
+
+    // Set the JACK port name for the keyboard UI display
+    app.set_keyboard_port(jack_output.as_ref().map(|o| o.port_name.clone()));
+
+    // Set whether OS keyboard is active
+    app.set_os_keyboard_active(os_keyboard.is_some());
 
     // Main TUI render loop
     let result = loop {
@@ -350,6 +711,64 @@ fn run_tui_render_thread(shutdown: Arc<AtomicBool>, handle: RuntimeHandle) -> Re
             }
         }
 
+        // Check for expired keyboard notes (auto-release for terminals without key-up support)
+        // Only needed when OS keyboard listener is not available
+        if os_keyboard.is_none() {
+            if let Some(ref jack) = jack_output {
+                let channel = app.virtual_keyboard.channel();
+                for note in app.virtual_keyboard.get_expired_notes() {
+                    log::debug!("Auto-releasing expired note: {}", note);
+                    let _ = jack.note_off(channel, note);
+                }
+            }
+        }
+
+        // Process OS-level keyboard events (for reliable key release detection)
+        // Only process when terminal has focus to avoid capturing keys in other apps
+        if let (Some(ref os_kb), Some(ref jack)) = (&os_keyboard, &jack_output) {
+            let channel = app.virtual_keyboard.channel();
+            while let Some(event) = os_kb.try_recv() {
+                // Only process when keyboard is visible AND terminal has focus
+                if app.keyboard_active() && app.terminal_has_focus() {
+                    match event {
+                        tui::os_keyboard::OsKeyEvent::Press(c) => {
+                            // Handle special keys
+                            if c == '\x1b' {
+                                // Escape - hide keyboard
+                                for note in app.virtual_keyboard.hide() {
+                                    let _ = jack.note_off(channel, note);
+                                }
+                            } else if c == 'k' || c == 'K' {
+                                // K - toggle keyboard off (need shift check separately)
+                                // For now, lowercase k toggles too for simplicity
+                            } else if c == ' ' {
+                                // Space - play/pause
+                                let is_running = handle.with_state(|s| s.transport_running);
+                                if is_running {
+                                    let _ = handle.send(StateMessage::StopScheduler);
+                                } else {
+                                    let _ = handle.send(StateMessage::StartScheduler);
+                                }
+                            } else {
+                                // Note key press
+                                if let Some((note, velocity)) = app.virtual_keyboard.key_down(KeyCode::Char(c)) {
+                                    log::debug!("OS key press: '{}' -> note {} on", c, note);
+                                    let _ = jack.note_on(channel, note, velocity);
+                                }
+                            }
+                        }
+                        tui::os_keyboard::OsKeyEvent::Release(c) => {
+                            // Note key release
+                            if let Some(note) = app.virtual_keyboard.key_up(KeyCode::Char(c)) {
+                                log::debug!("OS key release: '{}' -> note {} off", c, note);
+                                let _ = jack.note_off(channel, note);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Draw UI
         if let Err(e) = terminal.draw(|f| tui::ui::render_ui(f, &mut app)) {
             // If drawing fails, we should exit
@@ -362,8 +781,15 @@ fn run_tui_render_thread(shutdown: Arc<AtomicBool>, handle: RuntimeHandle) -> Re
 
         // Check for keyboard/terminal events (short timeout to keep UI responsive)
         if event::poll(Duration::from_millis(50))? {
-            match event::read()? {
+            let evt = event::read()?;
+            // Mark that we received a terminal event (for focus detection)
+            app.mark_terminal_event();
+
+            match evt {
                 Event::Key(key) => {
+                    // Log every key event for debugging
+                    log::trace!("Key event: code={:?}, kind={:?}, modifiers={:?}", key.code, key.kind, key.modifiers);
+
                     // Handle search mode input first
                     if app.in_input_mode() {
                         match key.code {
@@ -380,6 +806,167 @@ fn run_tui_render_thread(shutdown: Arc<AtomicBool>, handle: RuntimeHandle) -> Re
                                 app.search_push_char(c);
                             }
                             _ => {}
+                        }
+                    } else if app.midi_export.visible {
+                        // MIDI export panel mode
+                        match key.code {
+                            // Close panel
+                            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('M') => {
+                                app.midi_export.visible = false;
+                            }
+                            // Toggle mode (melody/pattern)
+                            KeyCode::Tab => {
+                                app.midi_export_toggle_mode();
+                            }
+                            // Voice cursor up
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                app.midi_export_voice_up();
+                            }
+                            // Voice cursor down
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                app.midi_export_voice_down();
+                            }
+                            // Toggle voice selection
+                            KeyCode::Char(' ') => {
+                                app.midi_export_toggle_voice();
+                            }
+                            // Decrease quantization (finer)
+                            KeyCode::Left | KeyCode::Char('h') => {
+                                if let Some(new_quant) = app.midi_export_decrease_quantization() {
+                                    let _ = handle.send(StateMessage::MidiSetRecordingQuantization {
+                                        positions_per_bar: new_quant,
+                                    });
+                                }
+                            }
+                            // Increase quantization (coarser)
+                            KeyCode::Right | KeyCode::Char('l') => {
+                                if let Some(new_quant) = app.midi_export_increase_quantization() {
+                                    let _ = handle.send(StateMessage::MidiSetRecordingQuantization {
+                                        positions_per_bar: new_quant,
+                                    });
+                                }
+                            }
+                            // Increase bar count
+                            KeyCode::Char('+') | KeyCode::Char('=') => {
+                                app.midi_export_increase_bars();
+                            }
+                            // Decrease bar count
+                            KeyCode::Char('-') | KeyCode::Char('_') => {
+                                app.midi_export_decrease_bars();
+                            }
+                            // Select all voices
+                            KeyCode::Char('a') => {
+                                app.midi_export_select_all();
+                            }
+                            // Select no voices
+                            KeyCode::Char('n') => {
+                                app.midi_export_select_none();
+                            }
+                            // Copy to clipboard
+                            KeyCode::Enter | KeyCode::Char('y') => {
+                                app.copy_midi_export_to_clipboard();
+                            }
+                            // Clear recording history
+                            KeyCode::Char('c') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                let _ = handle.send(StateMessage::MidiClearRecording);
+                                // Refresh voices list and preview
+                                app.midi_export.available_voices.clear();
+                                app.midi_export.selected_voices.clear();
+                                app.update_midi_export_preview();
+                            }
+                            // Quit with Ctrl+C
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                shutdown.store(true, Ordering::Relaxed);
+                                break Ok(());
+                            }
+                            _ => {}
+                        }
+                    } else if app.keyboard_active() && jack_output.is_some() {
+                        // Virtual keyboard mode - intercept note keys
+                        let jack = jack_output.as_ref().unwrap();
+                        let channel = app.virtual_keyboard.channel();
+                        log::debug!("Keyboard mode active - processing key: code={:?}, kind={:?}", key.code, key.kind);
+
+                        // Handle key release events for note-off
+                        if key.kind == KeyEventKind::Release {
+                            if let KeyCode::Char(c) = key.code {
+                                if let Some(note) = app.virtual_keyboard.key_up(KeyCode::Char(c)) {
+                                    let _ = jack.note_off(channel, note);
+                                }
+                            }
+                        } else if key.kind == KeyEventKind::Press {
+                            // Handle key press events
+                            match key.code {
+                                // Quit still works
+                                KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    // Release all notes before quitting
+                                    for note in app.virtual_keyboard.hide() {
+                                        let _ = jack.note_off(channel, note);
+                                    }
+                                    shutdown.store(true, Ordering::Relaxed);
+                                    break Ok(());
+                                }
+                                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    // Release all notes before quitting
+                                    for note in app.virtual_keyboard.hide() {
+                                        let _ = jack.note_off(channel, note);
+                                    }
+                                    shutdown.store(true, Ordering::Relaxed);
+                                    break Ok(());
+                                }
+                                // Toggle keyboard off
+                                KeyCode::Char('K') | KeyCode::Esc => {
+                                    // Release all notes when hiding keyboard
+                                    for note in app.virtual_keyboard.hide() {
+                                        let _ = jack.note_off(channel, note);
+                                    }
+                                }
+                                // Octave shift
+                                KeyCode::Char('<') => {
+                                    for note in app.virtual_keyboard.octave_down() {
+                                        let _ = jack.note_off(channel, note);
+                                    }
+                                }
+                                KeyCode::Char('>') => {
+                                    for note in app.virtual_keyboard.octave_up() {
+                                        let _ = jack.note_off(channel, note);
+                                    }
+                                }
+                                // Play/pause still works
+                                KeyCode::Char(' ') => {
+                                    let is_running = handle.with_state(|s| s.transport_running);
+                                    if is_running {
+                                        let _ = handle.send(StateMessage::StopScheduler);
+                                    } else {
+                                        let _ = handle.send(StateMessage::StartScheduler);
+                                    }
+                                }
+                                // Handle note key presses
+                                KeyCode::Char(c) => {
+                                    log::debug!("Keyboard key press: '{}', kind: {:?}", c, key.kind);
+                                    if let Some((note, velocity)) = app.virtual_keyboard.key_down(KeyCode::Char(c)) {
+                                        log::debug!("Sending note-on: note={}, velocity={}", note, velocity);
+                                        let _ = jack.note_on(channel, note, velocity);
+                                    } else {
+                                        log::debug!("key_down returned None (note already pressed or not a keyboard key)");
+                                    }
+                                }
+                                _ => {}
+                            }
+                        } else if key.kind == KeyEventKind::Repeat {
+                            // Key repeat - extend the note duration OR trigger if not already playing
+                            // Some terminals (like VS Code) may send Repeat instead of Press
+                            if let KeyCode::Char(c) = key.code {
+                                // First try to trigger note-on (in case this is the first event)
+                                if let Some((note, velocity)) = app.virtual_keyboard.key_down(KeyCode::Char(c)) {
+                                    log::debug!("Repeat event triggered note-on: note={}, velocity={}", note, velocity);
+                                    let _ = jack.note_on(channel, note, velocity);
+                                }
+                                // key_down already updates timestamp for existing notes
+                            }
+                        } else {
+                            // Log unexpected event kinds
+                            log::debug!("Unexpected key event kind: {:?}", key.kind);
                         }
                     } else {
                         // Normal mode key handling
@@ -407,6 +994,15 @@ fn run_tui_render_thread(shutdown: Arc<AtomicBool>, handle: RuntimeHandle) -> Re
                                 } else {
                                     app.close_error_modal();
                                 }
+                            }
+                            // Toggle virtual keyboard
+                            KeyCode::Char('K') => {
+                                app.virtual_keyboard.toggle();
+                                log::info!("Virtual keyboard toggled: visible={}", app.virtual_keyboard.visible);
+                            }
+                            // Toggle MIDI export panel
+                            KeyCode::Char('M') => {
+                                app.toggle_midi_export_panel();
                             }
                             // Filter toggle
                             KeyCode::Char('f') => {
@@ -533,6 +1129,21 @@ fn run_tui_render_thread(shutdown: Arc<AtomicBool>, handle: RuntimeHandle) -> Re
                 Event::Resize(_, _) => {
                     // Terminal was resized, the next draw will handle it automatically
                 }
+                Event::FocusGained => {
+                    log::debug!("Terminal focus gained");
+                    app.set_has_focus(true);
+                }
+                Event::FocusLost => {
+                    log::debug!("Terminal focus lost");
+                    app.set_has_focus(false);
+                    // Release all notes when losing focus to prevent stuck notes
+                    if let Some(ref jack) = jack_output {
+                        let channel = app.virtual_keyboard.channel();
+                        for note in app.virtual_keyboard.release_all() {
+                            let _ = jack.note_off(channel, note);
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -540,6 +1151,14 @@ fn run_tui_render_thread(shutdown: Arc<AtomicBool>, handle: RuntimeHandle) -> Re
 
     // Cleanup terminal
     disable_raw_mode()?;
+    // Pop keyboard enhancement flags if we enabled them
+    if keyboard_enhanced {
+        let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
+    }
+    // Disable focus change events if we enabled them
+    if focus_enabled {
+        let _ = execute!(terminal.backend_mut(), DisableFocusChange);
+    }
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
@@ -548,4 +1167,32 @@ fn run_tui_render_thread(shutdown: Arc<AtomicBool>, handle: RuntimeHandle) -> Re
     terminal.show_cursor()?;
 
     result
+}
+
+/// Extract the synthdef name from SuperCollider synthdef bytes.
+///
+/// SuperCollider synthdef format:
+/// - 4 bytes: "SCgf" magic
+/// - 4 bytes: file version (int32 big-endian)
+/// - 2 bytes: number of synthdefs (int16 big-endian)
+/// - For each synthdef:
+///   - pstring: 1 byte length + name bytes
+fn extract_synthdef_name(bytes: &[u8]) -> Option<String> {
+    // Minimum size: 4 (magic) + 4 (version) + 2 (count) + 1 (name length) + 1 (at least one char)
+    if bytes.len() < 12 {
+        return None;
+    }
+
+    // Check magic "SCgf"
+    if &bytes[0..4] != b"SCgf" {
+        return None;
+    }
+
+    // Skip version (4 bytes) and count (2 bytes), get name at offset 10
+    let name_len = bytes[10] as usize;
+    if bytes.len() < 11 + name_len {
+        return None;
+    }
+
+    String::from_utf8(bytes[11..11 + name_len].to_vec()).ok()
 }

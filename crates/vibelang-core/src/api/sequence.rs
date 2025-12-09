@@ -175,6 +175,7 @@ impl Sequence {
             loop_beats: self.loop_beats,
             clips,
             generation: 0,
+            play_once: false,
         };
 
         let _ = handle.send(StateMessage::CreateSequence {
@@ -194,6 +195,16 @@ impl Sequence {
         let handle = require_handle();
         log::info!("Sending StartSequence message for '{}'", self.name);
         let _ = handle.send(StateMessage::StartSequence {
+            name: self.name.clone(),
+        });
+    }
+
+    /// Start the sequence playing once (no loop).
+    pub fn start_once(&mut self) {
+        self.do_apply();
+        let handle = require_handle();
+        log::info!("Sending StartSequenceOnce message for '{}'", self.name);
+        let _ = handle.send(StateMessage::StartSequenceOnce {
             name: self.name.clone(),
         });
     }
@@ -442,6 +453,7 @@ pub fn register(engine: &mut Engine) {
     // Sequence actions
     engine.register_fn("apply", Sequence::apply);
     engine.register_fn("start", Sequence::start);
+    engine.register_fn("start_once", Sequence::start_once);
     engine.register_fn("stop", Sequence::stop);
     engine.register_fn("launch", Sequence::launch);
     engine.register_get("name", |s: &mut Sequence| s.name.clone());

@@ -1,0 +1,25 @@
+// Genre: Funk, R&B, Pop | Character: Palm-muted bass with short, controlled notes
+define_synthdef("bass_muted")
+    .param("freq", 80.0)
+    .param("amp", 0.75)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Very short decay
+        let amp_envelope = env_perc(0.002, 0.12);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Muted, darker tone
+        let body = sin_osc_ar(freq) * 0.6;
+        let harm1 = sin_osc_ar(freq * 2.0) * 0.15;
+
+        // Soft attack
+        let attack_envelope = env_perc(0.001, 0.02);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = lpf_ar(white_noise_ar(), 1500.0) * attack_env * 0.15;
+
+        let sig = body + harm1 + attack;
+        lpf_ar(sig, 1500.0) * amp_env * amp
+    });

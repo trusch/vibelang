@@ -1,0 +1,32 @@
+// Genre: Funk, Experimental | Character: Talk box-style bass with vocal modulation
+define_synthdef("bass_talking")
+    .param("freq", 60.0)
+    .param("amp", 0.75)
+    .param("gate", 1.0)
+    .param("talk", 0.5)
+    .body(|freq, amp, gate, talk| {
+        let envelope = env_asr(0.01, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // LFO for "talking" modulation
+        let talk_lfo = sin_osc_ar(3.0 + talk * 4.0);
+
+        // Rich source
+        let osc = saw_ar(freq) * 0.5;
+
+        // Modulated formants
+        let f1 = 400.0 + talk_lfo * 300.0;
+        let f2 = 1200.0 + talk_lfo * 600.0;
+
+        let form1 = bpf_ar(osc, f1, 0.12) * 0.5;
+        let form2 = bpf_ar(osc, f2, 0.15) * 0.3;
+
+        // Sub
+        let sub = sin_osc_ar(freq) * 0.35;
+
+        let sig = form1 + form2 + sub;
+
+        sig * env * amp
+    });

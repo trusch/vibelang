@@ -4,6 +4,7 @@ use vibelang_core::sequences::ClipSource;
 use vibelang_core::state::{
     EffectState, GroupState, LoopStatus, MelodyState, PatternState, ScriptState, VoiceState,
 };
+use crate::tui::keyboard::VirtualKeyboard;
 use crate::tui::TuiEvent;
 use log::Level;
 use ratatui::style::Color;
@@ -15,6 +16,53 @@ const MAX_LOG_ENTRIES: usize = 100;
 
 /// Debounce duration for transport seeking (in milliseconds)
 const SEEK_DEBOUNCE_MS: u64 = 250;
+
+/// Export mode for MIDI recording
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum ExportMode {
+    #[default]
+    Melody,
+    Pattern,
+}
+
+/// State for the MIDI recording export panel
+#[derive(Debug, Clone)]
+pub struct MidiExportState {
+    /// Whether the panel is visible
+    pub visible: bool,
+    /// Number of bars to export (1, 2, 4, 8, 16)
+    pub bar_count: u8,
+    /// Export mode (melody or pattern)
+    pub export_mode: ExportMode,
+    /// Current quantization (synced from state)
+    pub quantization: u8,
+    /// Preview of the exported text
+    pub preview: String,
+    /// Status message (e.g., "Copied to clipboard!")
+    pub status_message: Option<(String, Instant)>,
+    /// Available voices that have recorded notes
+    pub available_voices: Vec<String>,
+    /// Selected voice indices (for multi-select)
+    pub selected_voices: std::collections::HashSet<usize>,
+    /// Current cursor position in voice list
+    pub voice_cursor: usize,
+}
+
+impl Default for MidiExportState {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            bar_count: 2,
+            export_mode: ExportMode::Melody,
+            quantization: 16,
+            preview: String::new(),
+            status_message: None,
+            available_voices: Vec::new(),
+            selected_voices: std::collections::HashSet::new(),
+            voice_cursor: 0,
+        }
+    }
+}
 
 /// Main TUI application state - simplified for unified hierarchy view
 pub struct TuiApp {
@@ -70,6 +118,20 @@ pub struct TuiApp {
     pub log_search_mode: bool,
     /// Log scroll position
     pub log_scroll: usize,
+    /// Virtual MIDI keyboard
+    pub virtual_keyboard: VirtualKeyboard,
+    /// JACK MIDI port name for the virtual keyboard (None if JACK not available)
+    pub keyboard_port_name: Option<String>,
+    /// Whether OS-level keyboard listener is active (for reliable key release)
+    pub os_keyboard_active: bool,
+    /// Last time we received a terminal event (for focus detection fallback)
+    pub last_terminal_event: Option<Instant>,
+    /// Whether the terminal explicitly has focus (from FocusGained/FocusLost events)
+    pub has_focus: bool,
+    /// Whether focus events are supported by the terminal
+    pub focus_events_supported: bool,
+    /// MIDI recording export panel state
+    pub midi_export: MidiExportState,
 }
 
 impl TuiApp {
@@ -103,6 +165,55 @@ impl TuiApp {
             log_search_query: String::new(),
             log_search_mode: false,
             log_scroll: 0,
+            virtual_keyboard: VirtualKeyboard::default(),
+            keyboard_port_name: None,
+            os_keyboard_active: false,
+            last_terminal_event: None,
+            has_focus: true, // Assume we have focus initially
+            focus_events_supported: false,
+            midi_export: MidiExportState::default(),
+        }
+    }
+
+    /// Set the JACK port name for the virtual keyboard
+    pub fn set_keyboard_port(&mut self, port_name: Option<String>) {
+        self.keyboard_port_name = port_name;
+    }
+
+    /// Set whether OS keyboard listener is active
+    pub fn set_os_keyboard_active(&mut self, active: bool) {
+        self.os_keyboard_active = active;
+    }
+
+    /// Set whether focus events are supported by the terminal
+    pub fn set_focus_events_supported(&mut self, supported: bool) {
+        self.focus_events_supported = supported;
+    }
+
+    /// Set explicit focus state (from FocusGained/FocusLost events)
+    pub fn set_has_focus(&mut self, has_focus: bool) {
+        self.has_focus = has_focus;
+    }
+
+    /// Mark that we received a terminal event (for focus detection fallback)
+    pub fn mark_terminal_event(&mut self) {
+        self.last_terminal_event = Some(Instant::now());
+    }
+
+    /// Check if terminal appears to have focus
+    /// If focus events are supported, uses explicit focus state
+    /// Otherwise falls back to timestamp-based detection (within 500ms)
+    pub fn terminal_has_focus(&self) -> bool {
+        if self.focus_events_supported {
+            // Use explicit focus tracking when available
+            self.has_focus
+        } else {
+            // Fallback: consider focused if we received an event recently
+            if let Some(last_event) = self.last_terminal_event {
+                last_event.elapsed() < Duration::from_millis(500)
+            } else {
+                false
+            }
         }
     }
 
@@ -242,6 +353,268 @@ impl TuiApp {
     /// Toggle help modal
     pub fn toggle_help_modal(&mut self) {
         self.show_help_modal = !self.show_help_modal;
+    }
+
+    /// Toggle MIDI export panel
+    pub fn toggle_midi_export_panel(&mut self) {
+        self.midi_export.visible = !self.midi_export.visible;
+        if self.midi_export.visible {
+            // Refresh available voices
+            if let Some(state) = &self.state {
+                self.midi_export.available_voices = state.midi_recording.get_voices();
+                // Select all voices by default
+                self.midi_export.selected_voices = (0..self.midi_export.available_voices.len()).collect();
+                self.midi_export.voice_cursor = 0;
+            }
+            self.update_midi_export_preview();
+        }
+    }
+
+    /// Update the MIDI export preview based on current settings
+    pub fn update_midi_export_preview(&mut self) {
+        if let Some(state) = &self.state {
+            let beats_per_bar = state.time_signature.beats_per_bar();
+            let current_beat = state.current_beat;
+
+            // Sync quantization from state
+            self.midi_export.quantization = state.midi_recording.quantization;
+
+            // Get selected voice names
+            let selected_voices: Vec<String> = self
+                .midi_export
+                .selected_voices
+                .iter()
+                .filter_map(|&idx| self.midi_export.available_voices.get(idx).cloned())
+                .collect();
+
+            if selected_voices.is_empty() {
+                self.midi_export.preview = "(no voices selected)".to_string();
+                return;
+            }
+
+            if let Some((start, end)) = state.midi_recording.find_active_bars(
+                self.midi_export.bar_count,
+                current_beat,
+                beats_per_bar,
+            ) {
+                self.midi_export.preview = match self.midi_export.export_mode {
+                    ExportMode::Melody => {
+                        state.midi_recording.export_full_melodies(start, end, beats_per_bar, &selected_voices)
+                    }
+                    ExportMode::Pattern => {
+                        state.midi_recording.export_full_patterns(start, end, beats_per_bar, &selected_voices)
+                    }
+                };
+                if self.midi_export.preview.is_empty() {
+                    self.midi_export.preview = "(no notes in selected range)".to_string();
+                }
+            } else {
+                self.midi_export.preview = "(no notes recorded)".to_string();
+            }
+        } else {
+            self.midi_export.preview = "(no state available)".to_string();
+        }
+    }
+
+    /// Copy the MIDI export preview to clipboard
+    pub fn copy_midi_export_to_clipboard(&mut self) {
+        // Don't copy placeholder messages
+        if self.midi_export.preview.starts_with('(') {
+            self.midi_export.status_message = Some((
+                "✗ Nothing to copy".to_string(),
+                Instant::now(),
+            ));
+            return;
+        }
+
+        // Try system clipboard tools first (more reliable on Linux)
+        if self.copy_with_system_tools(&self.midi_export.preview.clone()) {
+            self.midi_export.status_message = Some((
+                "✓ Copied to clipboard!".to_string(),
+                Instant::now(),
+            ));
+            return;
+        }
+
+        // Fallback to arboard
+        match arboard::Clipboard::new() {
+            Ok(mut clipboard) => {
+                if clipboard.set_text(&self.midi_export.preview).is_ok() {
+                    self.midi_export.status_message = Some((
+                        "✓ Copied to clipboard!".to_string(),
+                        Instant::now(),
+                    ));
+                } else {
+                    self.midi_export.status_message = Some((
+                        "✗ Failed to copy".to_string(),
+                        Instant::now(),
+                    ));
+                }
+            }
+            Err(_) => {
+                self.midi_export.status_message = Some((
+                    "✗ Clipboard unavailable".to_string(),
+                    Instant::now(),
+                ));
+            }
+        }
+    }
+
+    /// Try to copy text using system clipboard tools (xclip, wl-copy, etc.)
+    fn copy_with_system_tools(&self, text: &str) -> bool {
+        use std::process::{Command, Stdio};
+        use std::io::Write;
+
+        // Try wl-copy first (Wayland)
+        if let Ok(mut child) = Command::new("wl-copy")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            if let Some(stdin) = child.stdin.as_mut() {
+                if stdin.write_all(text.as_bytes()).is_ok()
+                    && child.wait().map(|s| s.success()).unwrap_or(false) {
+                        return true;
+                    }
+            }
+        }
+
+        // Try xclip (X11) - copy to both selection and clipboard
+        if let Ok(mut child) = Command::new("xclip")
+            .args(["-selection", "clipboard"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            if let Some(stdin) = child.stdin.as_mut() {
+                if stdin.write_all(text.as_bytes()).is_ok()
+                    && child.wait().map(|s| s.success()).unwrap_or(false) {
+                        return true;
+                    }
+            }
+        }
+
+        // Try xsel as another fallback
+        if let Ok(mut child) = Command::new("xsel")
+            .args(["--clipboard", "--input"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            if let Some(stdin) = child.stdin.as_mut() {
+                if stdin.write_all(text.as_bytes()).is_ok()
+                    && child.wait().map(|s| s.success()).unwrap_or(false) {
+                        return true;
+                    }
+            }
+        }
+
+        false
+    }
+
+    /// Move voice cursor up
+    pub fn midi_export_voice_up(&mut self) {
+        if !self.midi_export.available_voices.is_empty() && self.midi_export.voice_cursor > 0 {
+            self.midi_export.voice_cursor -= 1;
+        }
+    }
+
+    /// Move voice cursor down
+    pub fn midi_export_voice_down(&mut self) {
+        if !self.midi_export.available_voices.is_empty()
+            && self.midi_export.voice_cursor < self.midi_export.available_voices.len() - 1
+        {
+            self.midi_export.voice_cursor += 1;
+        }
+    }
+
+    /// Toggle selection of current voice
+    pub fn midi_export_toggle_voice(&mut self) {
+        let cursor = self.midi_export.voice_cursor;
+        if cursor < self.midi_export.available_voices.len() {
+            if self.midi_export.selected_voices.contains(&cursor) {
+                self.midi_export.selected_voices.remove(&cursor);
+            } else {
+                self.midi_export.selected_voices.insert(cursor);
+            }
+            self.update_midi_export_preview();
+        }
+    }
+
+    /// Select all voices
+    pub fn midi_export_select_all(&mut self) {
+        self.midi_export.selected_voices = (0..self.midi_export.available_voices.len()).collect();
+        self.update_midi_export_preview();
+    }
+
+    /// Deselect all voices
+    pub fn midi_export_select_none(&mut self) {
+        self.midi_export.selected_voices.clear();
+        self.update_midi_export_preview();
+    }
+
+    /// Cycle MIDI export bar count up (1 -> 2 -> 4 -> 8 -> 16)
+    pub fn midi_export_increase_bars(&mut self) {
+        self.midi_export.bar_count = match self.midi_export.bar_count {
+            1 => 2,
+            2 => 4,
+            4 => 8,
+            8 => 16,
+            _ => 16,
+        };
+        self.update_midi_export_preview();
+    }
+
+    /// Cycle MIDI export bar count down (16 -> 8 -> 4 -> 2 -> 1)
+    pub fn midi_export_decrease_bars(&mut self) {
+        self.midi_export.bar_count = match self.midi_export.bar_count {
+            16 => 8,
+            8 => 4,
+            4 => 2,
+            2 => 1,
+            _ => 1,
+        };
+        self.update_midi_export_preview();
+    }
+
+    /// Toggle MIDI export mode between Melody and Pattern
+    pub fn midi_export_toggle_mode(&mut self) {
+        self.midi_export.export_mode = match self.midi_export.export_mode {
+            ExportMode::Melody => ExportMode::Pattern,
+            ExportMode::Pattern => ExportMode::Melody,
+        };
+        self.update_midi_export_preview();
+    }
+
+    /// Increase MIDI export quantization (coarser -> finer: 4 -> 8 -> 16 -> 32 -> 64)
+    pub fn midi_export_increase_quantization(&mut self) -> Option<u8> {
+        let new_quant = match self.midi_export.quantization {
+            4 => 8,
+            8 => 16,
+            16 => 32,
+            32 => 64,
+            _ => 64,
+        };
+        self.midi_export.quantization = new_quant;
+        self.update_midi_export_preview();
+        Some(new_quant)
+    }
+
+    /// Decrease MIDI export quantization (finer -> coarser: 64 -> 32 -> 16 -> 8 -> 4)
+    pub fn midi_export_decrease_quantization(&mut self) -> Option<u8> {
+        let new_quant = match self.midi_export.quantization {
+            64 => 32,
+            32 => 16,
+            16 => 8,
+            8 => 4,
+            _ => 4,
+        };
+        self.midi_export.quantization = new_quant;
+        self.update_midi_export_preview();
+        Some(new_quant)
     }
 
     /// Jump to first active pattern/melody
@@ -420,6 +793,11 @@ impl TuiApp {
     /// Check if currently in any search/input mode
     pub fn in_input_mode(&self) -> bool {
         self.search_mode || self.log_search_mode
+    }
+
+    /// Check if the virtual keyboard is active and capturing keys
+    pub fn keyboard_active(&self) -> bool {
+        self.virtual_keyboard.visible
     }
 
     /// Add to the pending seek offset (debounced - actual seek happens later)

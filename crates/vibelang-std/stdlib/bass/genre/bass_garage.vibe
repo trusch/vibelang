@@ -1,0 +1,26 @@
+// Genre: UK Garage, 2-Step | Character: UK garage bass - bouncy and warm
+define_synthdef("bass_garage")
+    .param("freq", 55.0)
+    .param("amp", 0.8)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.008, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.008, 0.2);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Warm sine with harmonics
+        let body = sin_osc_ar(freq) * 0.5;
+        let sub = sin_osc_ar(freq * 0.5) * 0.25;
+        let harm = sin_osc_ar(freq * 2.0) * 0.15;
+
+        let mix = body + sub + harm;
+
+        // Bouncy filter
+        let cutoff = 600.0 + filt_env * 1500.0;
+        lpf_ar(mix, cutoff) * env * amp
+    });

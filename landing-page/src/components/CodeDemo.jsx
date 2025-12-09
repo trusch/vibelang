@@ -1,101 +1,81 @@
 import React, { useState } from 'react';
+import { highlightCode } from '../utils/syntaxHighlight';
 import './CodeDemo.css';
 
 const demos = [
   {
-    id: 'beat',
-    name: 'Simple Beat',
-    description: 'A classic four-on-the-floor pattern with hi-hats',
-    code: `// Simple 4/4 beat - the foundation of electronic music
-set_tempo(120);
+    id: 'sandstorm',
+    name: 'Sandstorm',
+    description: 'Darude\'s 1999 anthem. The drop that defined a generation.',
+    code: `// Dududududu
+set_tempo(136);
+import "stdlib/synths/leads/lead_saw.vibe";
+import "stdlib/drums/kicks/kick_909.vibe";
 
-import "stdlib/drums/kicks/kick_808.vibe";
-import "stdlib/drums/hihats/hihat_808_closed.vibe";
-import "stdlib/drums/snares/snare_808.vibe";
+let lead = voice("lead").synth("lead_saw").poly(1);
+let kick = voice("kick").synth("kick_909");
 
-let kick = voice("kick").synth("kick_808").gain(db(-6));
-let snare = voice("snare").synth("snare_808").gain(db(-8));
-let hat = voice("hat").synth("hihat_808_closed").gain(db(-12));
-
-// x = hit, . = rest
 pattern("kick").on(kick).step("x...x...x...x...").start();
-pattern("snare").on(snare).step("....x.......x...").start();
-pattern("hat").on(hat).step(".x.x.x.x.x.x.x.x").start();`
-  },
-  {
-    id: 'melody',
-    name: 'Bass Line',
-    description: 'A funky bass line with the 303',
-    code: `// Funky bass line with acid sound
-set_tempo(110);
-
-import "stdlib/bass/acid/acid_303_classic.vibe";
-
-let bass = voice("bass").synth("acid_303_classic").gain(db(-10)).poly(1);
-
-// Notes: pitch, - = sustain, . = rest, | = visual bar
-melody("bassline")
-    .on(bass)
-    .notes("C2 - - . | E2 - . . | G2 - . . | Bb2 - . .")
+melody("storm").on(lead)
+    .notes("B4 B4 B4 B4 E5 E5 E5 E5 | D5 D5 D5 D5 A4 A4 B4 B4")
     .start();`
   },
   {
-    id: 'house',
-    name: 'Deep House',
-    description: 'A complete deep house groove with arrangement',
-    code: `// Deep House groove with pad and bass
-set_tempo(122);
-
+    id: 'da-funk',
+    name: 'Da Funk',
+    description: 'Daft Punk\'s gritty filter bass. French house in 8 lines.',
+    code: `// The funk. You can feel it.
+set_tempo(110);
 import "stdlib/drums/kicks/kick_808.vibe";
-import "stdlib/drums/hihats/hihat_808_open.vibe";
-import "stdlib/bass/sub/sub_deep.vibe";
-import "stdlib/effects/reverb.vibe";
+import "stdlib/bass/acid/acid_303_classic.vibe";
 
-let drums = define_group("Drums", || {
-    let kick = voice("kick").synth("kick_808").gain(db(-6));
-    let hat = voice("hat").synth("hihat_808_open").gain(db(-14));
+let kick = voice("kick").synth("kick_808");
+let bass = voice("bass").synth("acid_303_classic").poly(1);
 
-    pattern("kick").on(kick).step("x...x...x...x...").start();
-    pattern("hat").on(hat).step(".x.x.x.x.x.x.x.x").start();
-});
-
-let bass = define_group("Bass", || {
-    let sub = voice("sub").synth("sub_deep").gain(db(-10)).poly(1);
-
-    melody("bassline")
-        .on(sub)
-        .notes("C2 - - - | C2 - - - | A1 - - - | F1 - - -")
-        .start();
-
-    fx("bass_verb").synth("reverb").param("room", 0.3).param("mix", 0.1).apply();
-});`
+pattern("kick").on(kick).step("x...x...x...x...").start();
+melody("funk").on(bass)
+    .notes("G2 . . . Bb2 . . . | C3 . . . G2 . . .")
+    .start();`
   },
   {
-    id: 'synthdef',
+    id: 'ambient-pad',
+    name: 'Ambient Pad',
+    description: 'Lush pads with reverb and delay. Effects make the vibe.',
+    code: `// Space and atmosphere
+set_tempo(90);
+import "stdlib/pads/ambient/pad_warm.vibe";
+import "stdlib/effects/reverb.vibe";
+import "stdlib/effects/delay.vibe";
+
+let pad = voice("pad").synth("pad_warm").poly(4);
+
+melody("drift").on(pad)
+    .notes("C4 - - - - - - - E4 - - - - - - - | G4 - - - - - - - C5 - - - - - - -")
+    .start();
+
+fx("verb").synth("reverb").param("room", 0.8).param("mix", 0.5).apply();
+fx("echo").synth("delay").param("time", 0.375).param("feedback", 0.4).apply();`
+  },
+  {
+    id: 'custom-synth',
     name: 'Custom Synth',
-    description: 'Design your own synthesizer',
-    code: `// Create a custom detuned supersaw
+    description: 'Build your own sounds from scratch. Full DSP control.',
+    code: `// Fat supersaw from oscillators
+set_tempo(128);
 define_synthdef("supersaw")
-    .param("freq", 440.0)
-    .param("amp", 0.3)
-    .param("gate", 1.0)
+    .param("freq", 440.0).param("amp", 0.3).param("gate", 1.0)
     .body(|freq, amp, gate| {
-        // Detuned sawtooth oscillators
-        let osc1 = saw_ar(freq * 0.99);
-        let osc2 = saw_ar(freq);
-        let osc3 = saw_ar(freq * 1.01);
-        let mix = (osc1 + osc2 + osc3) * 0.3;
-
-        // Filter and envelope
-        let filtered = rlpf_ar(mix, 2000.0, 0.3);
-        let env = env_adsr(0.01, 0.1, 0.7, 0.3);
-        let env = NewEnvGenBuilder(env, gate).with_done_action(2.0).build();
-
-        filtered * env * amp
+        let osc = saw_ar(freq*0.99) + saw_ar(freq) + saw_ar(freq*1.01);
+        let filt = rlpf_ar(osc * 0.3, 2000.0, 0.3);
+        let env = NewEnvGenBuilder(env_adsr(0.01, 0.1, 0.7, 0.3), gate)
+            .with_done_action(2.0).build();
+        filt * env * amp
     });
 
-let lead = voice("lead").synth("supersaw").gain(db(-6)).poly(4);
-melody("lead").on(lead).notes("C4 - E4 - | G4 - C5 - | B4 - G4 - | E4 - C4 -").start();`
+let lead = voice("lead").synth("supersaw").poly(4);
+melody("hook").on(lead)
+    .notes("E4 - - - G4 - - - | B4 - - - E5 - - - | D5 - - - B4 - - - | G4 - - - E4 - - -")
+    .start();`
   }
 ];
 
@@ -109,7 +89,7 @@ function CodeDemo() {
           <span className="code-demo__label">// see it in action</span>
           <h2>Code that sounds good</h2>
           <p className="code-demo__subtitle">
-            From simple beats to complex compositions—see how VibeLang makes music production feel like programming should.
+            From a simple beat to a full track—VibeLang grows with you. Start simple, go deep when you're ready.
           </p>
         </div>
 
@@ -143,14 +123,14 @@ function CodeDemo() {
               </span>
             </div>
             <pre className="code-demo__code">
-              <code>{activeDemo.code}</code>
+              <code>{highlightCode(activeDemo.code)}</code>
             </pre>
           </div>
         </div>
 
         <div className="code-demo__hint">
-          <span className="code-demo__hint-icon">*</span>
-          <span>Save the file and hear changes instantly in watch mode</span>
+          <span className="code-demo__hint-icon">✨</span>
+          <span>Edit. Save. Hear it change. That's the whole workflow.</span>
         </div>
       </div>
     </section>

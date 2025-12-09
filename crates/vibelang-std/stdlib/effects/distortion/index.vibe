@@ -1,0 +1,11 @@
+// Distortion Effects Index
+import "stdlib/effects/distortion/distortion.vibe";
+import "stdlib/effects/distortion/overdrive.vibe";
+import "stdlib/effects/distortion/bitcrush.vibe";
+import "stdlib/effects/distortion/saturator.vibe";
+import "stdlib/effects/distortion/waveshaper.vibe";
+import "stdlib/effects/distortion/tape_saturation.vibe";
+import "stdlib/effects/distortion/lo_fi.vibe";
+import "stdlib/effects/distortion/vinyl.vibe";
+import "stdlib/effects/distortion/exciter.vibe";
+import "stdlib/effects/distortion/fuzz.vibe";

@@ -1,0 +1,30 @@
+// Genre: Cinematic, Ambient | Character: Choir pad - ethereal voices
+define_synthdef("pad_choir")
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.35, 1.0, 0.4);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Vibrato
+        let vib = sin_osc_ar(5.0) * freq * 0.008;
+
+        // Multiple voices with formants
+        let voice1 = saw_ar(freq + vib) * 0.3;
+        let voice2 = saw_ar(freq * 1.002 + vib * 0.8) * 0.25;
+        let voice3 = saw_ar(freq * 0.998 + vib * 1.2) * 0.25;
+
+        let mix = voice1 + voice2 + voice3;
+
+        // Vowel formants (aaah)
+        let f1 = bpf_ar(mix, 700.0, 0.12) * 0.5;
+        let f2 = bpf_ar(mix, 1200.0, 0.15) * 0.3;
+        let f3 = bpf_ar(mix, 2500.0, 0.2) * 0.15;
+
+        let sig = f1 + f2 + f3;
+
+        sig * env * amp
+    });

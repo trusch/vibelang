@@ -8,3 +8,15 @@ import "stdlib/vocals/choir_pad.vibe";
 import "stdlib/vocals/voice_drone.vibe";
 import "stdlib/vocals/vocal_chop.vibe";
 import "stdlib/vocals/whisper.vibe";
+
+// Vowel sounds
+import "stdlib/vocals/vocal_aaah.vibe";
+import "stdlib/vocals/vocal_oooh.vibe";
+import "stdlib/vocals/vocal_eee.vibe";
+import "stdlib/vocals/vocal_mmm.vibe";
+
+// Character vocals
+import "stdlib/vocals/vocal_robot.vibe";
+import "stdlib/vocals/vocal_breathy.vibe";
+import "stdlib/vocals/vocal_falsetto.vibe";
+import "stdlib/vocals/vocal_operatic.vibe";

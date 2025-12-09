@@ -1,0 +1,28 @@
+// Genre: Epic, Trailer | Character: Epic orchestral pad - massive and powerful
+define_synthdef("pad_epic")
+    .param("freq", 110.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.4, 1.0, 0.4);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope for power
+        let filt_env_shape = env_asr(0.5, 1.0, 0.4);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, gate).build();
+
+        // Multiple octaves for size
+        let low = saw_ar(freq) * 0.3;
+        let mid1 = saw_ar(freq * 2.0 * 0.998) * 0.2;
+        let mid2 = saw_ar(freq * 2.0) * 0.2;
+        let mid3 = saw_ar(freq * 2.0 * 1.002) * 0.2;
+        let high = saw_ar(freq * 4.0) * 0.1;
+
+        let mix = low + mid1 + mid2 + mid3 + high;
+
+        // Powerful filter sweep
+        let cutoff = 400.0 + filt_env * 4000.0;
+        rlpf_ar(mix, cutoff, 0.15) * env * amp
+    });

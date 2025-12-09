@@ -1,0 +1,13 @@
+// Classic Synth Leads Library Index
+//
+// Classic synthesizer lead emulations.
+// Usage: import "stdlib/leads/classic/index.vibe"
+
+import "stdlib/leads/classic/lead_moog.vibe";
+import "stdlib/leads/classic/lead_arp.vibe";
+import "stdlib/leads/classic/lead_sh101.vibe";
+import "stdlib/leads/classic/lead_ms20.vibe";
+import "stdlib/leads/classic/lead_prophet.vibe";
+import "stdlib/leads/classic/lead_dx7.vibe";
+import "stdlib/leads/classic/lead_cs80.vibe";
+import "stdlib/leads/classic/lead_juno_hoover.vibe";

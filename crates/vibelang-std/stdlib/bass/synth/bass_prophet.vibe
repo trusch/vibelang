@@ -1,0 +1,27 @@
+// Genre: Synth-pop, Electronic | Character: Prophet-5 style bass - punchy and rich
+define_synthdef("bass_prophet")
+    .param("freq", 60.0)
+    .param("amp", 0.8)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.005, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.005, 0.25);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Two oscillators
+        let osc1 = saw_ar(freq);
+        let osc2 = pulse_ar(freq * 1.003, 0.4);
+
+        let mix = (osc1 + osc2) * 0.4;
+
+        // Punchy filter
+        let cutoff = 500.0 + filt_env * 2000.0;
+        let filtered = rlpf_ar(mix, cutoff, 0.25);
+
+        filtered * env * amp
+    });

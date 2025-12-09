@@ -1,0 +1,28 @@
+// Genre: Sci-Fi, Electronic | Character: Sci-fi pad - futuristic and alien
+define_synthdef("pad_scifi")
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.3, 1.0, 0.35);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // FM modulation for sci-fi texture
+        let mod_lfo = sin_osc_ar(0.3) * 3.0 + 5.0;
+        let modulator = sin_osc_ar(freq * 2.0) * mod_lfo * freq;
+        let carrier = sin_osc_ar(freq + modulator) * 0.4;
+
+        // Metallic ring
+        let ring = sin_osc_ar(freq * 3.14) * 0.15;
+
+        // Sub tone
+        let sub = sin_osc_ar(freq * 0.5) * 0.2;
+
+        let mix = carrier + ring + sub;
+
+        // Sweeping filter
+        let sweep = sin_osc_ar(0.2) * 1500.0 + 2500.0;
+        lpf_ar(mix, sweep) * env * amp
+    });

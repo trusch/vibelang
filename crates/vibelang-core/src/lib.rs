@@ -20,11 +20,14 @@
 
 pub mod api;
 pub mod events;
+pub mod midi;
 pub mod osc;
+pub mod osc_sender;
 pub mod reload;
 pub mod runtime;
 pub mod sample_synthdef;
 pub mod scheduler;
+pub mod score;
 pub mod scsynth;
 pub mod scsynth_process;
 pub mod sequences;
@@ -34,10 +37,12 @@ pub mod timing;
 // Re-export main types for convenience
 pub use events::{ActiveFade, BeatEvent, FadeClip, FadeTargetType, Pattern};
 pub use osc::OscClient;
+pub use osc_sender::{OscSender, OscTiming, ScoreCaptureState};
 pub use scheduler::{EventScheduler, LoopKind, LoopSnapshot};
 pub use scsynth::{AddAction, BufNum, NodeId, Scsynth, Target};
 pub use scsynth_process::ScsynthProcess;
 pub use runtime::{Runtime, RuntimeHandle};
+pub use score::{ScoreWriter, ScoredEvent, beats_to_seconds, seconds_to_osc_time};
 pub use sequences::{ClipMode, ClipSource, FadeDefinition, SequenceClip, SequenceDefinition};
 pub use state::{
     ActiveFadeJob, ActiveSequence, ActiveSynth, EffectState, GroupState,
@@ -47,6 +52,12 @@ pub use state::{
 };
 pub use timing::{
     Bars, BeatTime, Beats, LatencyCompensation, TimeSignature, TransportClock,
+};
+pub use midi::{
+    CcCallback, CcRoute, CcTarget, JackMidiClient, JackMidiOutput, KeyboardRoute, MidiBackend,
+    MidiDeviceInfo, MidiInputManager, MidiMessage, MidiRouting, NoteCallback, NoteRoute,
+    ParameterCurve, PendingMidiCallback, QueuedMidiEvent, SharedMidiState, VelocityCurve,
+    is_jack_running, list_all_midi_devices, list_jack_midi_sources,
 };
 
 // Re-export API module

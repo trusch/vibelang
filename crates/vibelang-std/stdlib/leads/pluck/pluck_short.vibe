@@ -1,5 +1,5 @@
 // Genre: Minimal, House | Character: Very short, staccato pluck
-define_synthdef("pluck_short", |builder| {
+define_synthdef("lead_pluck_short", |builder| {
     builder
         .param("freq", 440.0)
         .param("amp", 0.7)

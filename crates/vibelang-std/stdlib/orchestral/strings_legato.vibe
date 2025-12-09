@@ -1,0 +1,25 @@
+// Genre: Orchestral, Cinematic | Character: Smooth legato string section
+define_synthdef("strings_legato")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        // Smooth legato envelope
+        let envelope = env_asr(0.15, 1.0, 0.25);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Vibrato
+        let vib = sin_osc_ar(5.5) * freq * 0.006;
+
+        // String section
+        let v1 = saw_ar(freq * 0.997 + vib) * 0.22;
+        let v2 = saw_ar(freq + vib * 0.8) * 0.25;
+        let v3 = saw_ar(freq * 1.003 + vib * 1.1) * 0.22;
+        let v4 = saw_ar(freq * 1.006) * 0.18;
+
+        let mix = v1 + v2 + v3 + v4;
+
+        lpf_ar(mix, 5000.0) * env * amp
+    });

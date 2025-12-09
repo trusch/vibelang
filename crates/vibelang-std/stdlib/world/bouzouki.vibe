@@ -1,0 +1,28 @@
+// Region: Greek | Character: Long-necked lute with metallic tone
+define_synthdef("bouzouki")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.001, 1.0, 0.15);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Double string courses - slight detuning
+        let detune = 1.003;
+        let str1 = saw_ar(freq) * 0.3;
+        let str2 = saw_ar(freq * detune) * 0.3;
+
+        // Metallic overtones
+        let metal1 = sin_osc_ar(freq * 2.0) * 0.2;
+        let metal2 = sin_osc_ar(freq * 3.0) * 0.12;
+        let metal3 = sin_osc_ar(freq * 5.0) * 0.05;
+
+        let sig = str1 + str2 + metal1 + metal2 + metal3;
+
+        // Resonant metallic filter
+        let filtered = bpf_ar(sig, 2000.0, 0.3) + sig * 0.5;
+
+        filtered * env * amp
+    });

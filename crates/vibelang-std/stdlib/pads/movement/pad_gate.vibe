@@ -1,0 +1,24 @@
+// Genre: Trance, EDM | Character: Gated/sidechain pad effect
+define_synthdef("pad_gate")
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .param("rate", 4.0)
+    .body(|freq, amp, gate, rate| {
+        let envelope = env_asr(0.05, 1.0, 0.15);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Gate LFO (sharp on/off)
+        let gate_lfo = pulse_ar(rate, 0.5) * 0.8 + 0.2;
+
+        // Pad oscillators
+        let osc1 = saw_ar(freq * 0.998);
+        let osc2 = saw_ar(freq);
+        let osc3 = saw_ar(freq * 1.002);
+
+        let mix = (osc1 + osc2 + osc3) * 0.3;
+
+        lpf_ar(mix, 3000.0) * gate_lfo * env * amp
+    });

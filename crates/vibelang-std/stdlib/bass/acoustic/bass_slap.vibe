@@ -1,0 +1,32 @@
+// Genre: Funk, Disco, R&B | Character: Slap bass with percussive attack
+define_synthdef("bass_slap")
+    .param("freq", 80.0)
+    .param("amp", 0.9)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Punchy envelope
+        let amp_envelope = env_perc(0.001, 0.35);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Body with harmonics
+        let body = sin_osc_ar(freq) * 0.4;
+        let harm1 = sin_osc_ar(freq * 2.0) * 0.25;
+        let harm2 = sin_osc_ar(freq * 3.0) * 0.15;
+        let harm3 = sin_osc_ar(freq * 4.0) * 0.1;
+
+        // Slap transient - very prominent
+        let slap_envelope = env_perc(0.0001, 0.02);
+        let slap_env = NewEnvGenBuilder(slap_envelope, gate).build();
+        let slap = bpf_ar(white_noise_ar(), 2500.0, 0.3) * slap_env * 0.5;
+
+        // String pop
+        let pop_envelope = env_perc(0.0001, 0.008);
+        let pop_env = NewEnvGenBuilder(pop_envelope, gate).build();
+        let pop = hpf_ar(white_noise_ar(), 4000.0) * pop_env * 0.3;
+
+        let sig = body + harm1 + harm2 + harm3 + slap + pop;
+        sig * amp_env * amp
+    });

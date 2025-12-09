@@ -1,0 +1,4 @@
+// Spatial Effects Index
+import "stdlib/effects/spatial/stereo_width.vibe";
+import "stdlib/effects/spatial/haas.vibe";
+import "stdlib/effects/spatial/stereo_enhancer.vibe";

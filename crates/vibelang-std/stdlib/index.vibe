@@ -14,11 +14,12 @@ import "stdlib/textures/index.vibe";
 // Keyboard instruments
 import "stdlib/keys/index.vibe";
 
-// Orchestral
+// Orchestral sections
 import "stdlib/strings/index.vibe";
 import "stdlib/brass/index.vibe";
 import "stdlib/woodwinds/index.vibe";
 import "stdlib/bells/index.vibe";
+import "stdlib/orchestral/index.vibe";
 
 // Vocals and voice
 import "stdlib/vocals/index.vibe";
@@ -40,3 +41,15 @@ import "stdlib/effects/index.vibe";
 
 // Utility
 import "stdlib/utility/index.vibe";
+
+// Cinematic and film scoring
+import "stdlib/cinematic/index.vibe";
+
+// Retro and video game sounds
+import "stdlib/retro/index.vibe";
+
+// Modular synthesis
+import "stdlib/modular/index.vibe";
+
+// Music theory and patterns
+import "stdlib/theory/index.vibe";

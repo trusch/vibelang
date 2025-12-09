@@ -13,3 +13,26 @@ import "stdlib/keys/celeste.vibe";
 // Realistic instruments
 import "stdlib/keys/grand_piano.vibe";
 import "stdlib/keys/mallet_instruments.vibe";
+
+// Rhodes variations
+import "stdlib/keys/rhodes_bright.vibe";
+import "stdlib/keys/rhodes_dark.vibe";
+
+// Organs
+import "stdlib/keys/organ_b3.vibe";
+
+// Piano variations
+import "stdlib/keys/piano_felt.vibe";
+import "stdlib/keys/piano_toy.vibe";
+
+// Sampler-style
+import "stdlib/keys/mellotron_strings.vibe";
+import "stdlib/keys/mellotron_flute.vibe";
+import "stdlib/keys/mellotron_choir.vibe";
+
+// Historical
+import "stdlib/keys/harpsichord.vibe";
+import "stdlib/keys/pipe_organ.vibe";
+
+// Folk
+import "stdlib/keys/accordion_keys.vibe";

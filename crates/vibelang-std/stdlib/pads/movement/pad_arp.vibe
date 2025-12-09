@@ -1,0 +1,28 @@
+// Genre: Ambient, Electronic | Character: Arpeggiated pad texture
+define_synthdef("pad_arp")
+    .param("freq", 220.0)
+    .param("amp", 0.45)
+    .param("gate", 1.0)
+    .param("rate", 8.0)
+    .body(|freq, amp, gate, rate| {
+        let envelope = env_asr(0.1, 1.0, 0.25);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Arp-like amplitude modulation
+        let arp_lfo = sin_osc_ar(rate);
+        let arp_env = arp_lfo * 0.5 + 0.5;
+
+        // Different pitches modulated
+        let osc1 = sin_osc_ar(freq) * arp_env;
+        let osc2 = sin_osc_ar(freq * 1.5) * (1.0 - arp_env) * 0.5;
+        let osc3 = sin_osc_ar(freq * 2.0) * arp_env * 0.3;
+
+        // Pad bed
+        let bed = saw_ar(freq * 0.5) * 0.15;
+
+        let mix = osc1 + osc2 + osc3 + bed;
+
+        lpf_ar(mix, 4000.0) * env * amp
+    });

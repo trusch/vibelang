@@ -1,0 +1,30 @@
+// Genre: Complextro, Electro House | Character: Complextro lead - glitchy and dynamic
+define_synthdef("lead_complextro")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.001, 1.0, 0.05);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.001, 0.15);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Multiple waveforms
+        let saw = saw_ar(freq) * 0.4;
+        let pulse = pulse_ar(freq, 0.3) * 0.3;
+        let square = pulse_ar(freq, 0.5) * 0.2;
+
+        // Bit reduction effect
+        let mix = saw + pulse + square;
+        let crushed = (mix * 8.0).floor() / 8.0 * 0.3;
+
+        let sig = mix * 0.7 + crushed;
+
+        // Sharp, punchy filter
+        let cutoff = 1000.0 + filt_env * 5000.0;
+        rlpf_ar(sig, cutoff, 0.4) * env * amp
+    });

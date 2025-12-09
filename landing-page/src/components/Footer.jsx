@@ -29,18 +29,17 @@ function Footer() {
 
             <div className="footer__column">
               <h4>Resources</h4>
-              <a href="#">Documentation</a>
-              <a href="#">Examples</a>
-              <a href="#">API Reference</a>
-              <a href="#">Changelog</a>
+              <a href="#/docs">Documentation</a>
+              <a href="https://github.com/trusch/vibelang/tree/main/examples" target="_blank" rel="noopener noreferrer">Examples</a>
+              <a href="#/docs">API Reference</a>
+              <a href="https://github.com/trusch/vibelang/releases" target="_blank" rel="noopener noreferrer">Changelog</a>
             </div>
 
             <div className="footer__column">
               <h4>Community</h4>
-              <a href="#">GitHub</a>
-              <a href="#">Discord</a>
-              <a href="#">Twitter</a>
-              <a href="#">YouTube</a>
+              <a href="https://github.com/trusch/vibelang" target="_blank" rel="noopener noreferrer">GitHub</a>
+              <a href="https://github.com/trusch/vibelang/discussions" target="_blank" rel="noopener noreferrer">Discussions</a>
+              <a href="https://github.com/trusch/vibelang/issues" target="_blank" rel="noopener noreferrer">Issues</a>
             </div>
           </div>
         </div>

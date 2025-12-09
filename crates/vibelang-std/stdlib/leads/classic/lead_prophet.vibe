@@ -1,0 +1,26 @@
+// Genre: Synthpop, New Wave | Character: Prophet-5 lead - lush and expressive
+define_synthdef("lead_prophet")
+    .param("freq", 440.0)
+    .param("amp", 0.6)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.008, 1.0, 0.12);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.008, 0.35);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Two oscillators detuned
+        let osc1 = saw_ar(freq);
+        let osc2 = saw_ar(freq * 1.008);
+        let pulse_osc = pulse_ar(freq, 0.45) * 0.5;
+
+        let mix = (osc1 + osc2 + pulse_osc) * 0.3;
+
+        // Lush filter
+        let cutoff = 1200.0 + filt_env * 3000.0;
+        rlpf_ar(mix, cutoff, 0.2) * env * amp
+    });

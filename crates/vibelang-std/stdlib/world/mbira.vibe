@@ -1,0 +1,28 @@
+// Region: Zimbabwe | Character: Thumb piano with buzzing resonance
+define_synthdef("mbira")
+    .param("freq", 440.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.001, 1.0, 0.3);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Metal tine pluck
+        let pluck_env = NewEnvGenBuilder(env_perc(0.001, 0.05), dc_ar(1.0)).build();
+        let exciter = hpf_ar(white_noise_ar(), 3000.0) * pluck_env * 0.4;
+
+        // Main tone with inharmonic partials
+        let main = sin_osc_ar(freq) * 0.45;
+        let partial1 = sin_osc_ar(freq * 2.3) * 0.2;
+        let partial2 = sin_osc_ar(freq * 3.7) * 0.12;
+        let partial3 = sin_osc_ar(freq * 5.1) * 0.08;
+
+        // Characteristic buzz/rattle
+        let buzz = pulse_ar(freq * 0.5, 0.1) * 0.05;
+
+        let sig = main + partial1 + partial2 + partial3 + buzz + exciter;
+
+        sig * env * amp
+    });

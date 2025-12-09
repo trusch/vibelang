@@ -1,0 +1,10 @@
+// Analog Pads Library Index
+//
+// Classic analog synthesizer pad sounds.
+// Usage: import "stdlib/pads/analog/index.vibe"
+
+import "stdlib/pads/analog/pad_juno.vibe";
+import "stdlib/pads/analog/pad_prophet.vibe";
+import "stdlib/pads/analog/pad_oberheim.vibe";
+import "stdlib/pads/analog/pad_cs80.vibe";
+import "stdlib/pads/analog/pad_jupiter.vibe";

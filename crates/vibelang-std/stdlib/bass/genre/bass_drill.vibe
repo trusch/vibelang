@@ -1,0 +1,25 @@
+// Genre: Drill, UK Drill | Character: Sliding drill bass with pitch glide
+define_synthdef("bass_drill")
+    .param("freq", 45.0)
+    .param("amp", 0.9)
+    .param("gate", 1.0)
+    .param("slide", 0.3)
+    .body(|freq, amp, gate, slide| {
+        let envelope = env_asr(0.01, 1.0, 0.15);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Pitch glide characteristic of drill
+        let glide_env = env_perc(0.01, 0.3);
+        let glide = NewEnvGenBuilder(glide_env, dc_ar(1.0)).build();
+        let pitch = freq * (1.0 + glide * slide);
+
+        // Deep sine bass
+        let body = sin_osc_ar(pitch) * 0.7;
+        let sub = sin_osc_ar(pitch * 0.5) * 0.25;
+
+        let sig = body + sub;
+
+        lpf_ar(sig, 500.0) * env * amp
+    });

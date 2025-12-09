@@ -1,0 +1,26 @@
+// Genre: Electronic, Trance | Character: Rhythmic pulsing pad
+define_synthdef("pad_pulsing")
+    .param("freq", 220.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .param("rate", 4.0)
+    .body(|freq, amp, gate, rate| {
+        let envelope = env_asr(0.1, 1.0, 0.2);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Pulse LFO
+        let pulse_lfo = sin_osc_ar(rate) * 0.4 + 0.6;
+
+        // Pad sound
+        let osc1 = saw_ar(freq * 0.998);
+        let osc2 = saw_ar(freq);
+        let osc3 = saw_ar(freq * 1.002);
+
+        let mix = (osc1 + osc2 + osc3) * 0.3;
+
+        // Filter with pulse
+        let cutoff = 800.0 + pulse_lfo * 2000.0;
+        rlpf_ar(mix, cutoff, 0.15) * pulse_lfo * env * amp
+    });

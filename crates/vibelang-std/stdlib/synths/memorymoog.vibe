@@ -1,0 +1,90 @@
+// Memorymoog Emulation
+// Classic 1982 | Character: Massive, warm, rich polyphonic Moog
+
+// Memorymoog Pad - Lush poly pad
+define_synthdef("memorymoog_pad", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.45)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.4, 1.0, 0.5);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            // Six voice unison simulation
+            let detune = 0.003;
+            let osc1 = saw_ar(freq * (1.0 - detune * 2.0)) * 0.2;
+            let osc2 = saw_ar(freq * (1.0 - detune)) * 0.2;
+            let osc3 = saw_ar(freq) * 0.2;
+            let osc4 = saw_ar(freq * (1.0 + detune)) * 0.2;
+            let osc5 = saw_ar(freq * (1.0 + detune * 2.0)) * 0.2;
+            let sub = sin_osc_ar(freq * 0.5) * 0.15;
+
+            let mix = osc1 + osc2 + osc3 + osc4 + osc5 + sub;
+
+            // Warm Moog ladder filter
+            let filtered = lpf_ar(mix, 2800.0);
+
+            filtered * env * amp
+        })
+});
+
+// Memorymoog Brass - Poly brass section
+define_synthdef("memorymoog_brass", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.08, 1.0, 0.2);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_asr(0.1, 1.0, 0.25);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Rich detuned oscillators
+            let osc1 = saw_ar(freq * 0.997);
+            let osc2 = saw_ar(freq);
+            let osc3 = saw_ar(freq * 1.003);
+
+            let mix = (osc1 + osc2 + osc3) * 0.4;
+
+            let cutoff = 600.0 + filt_env * 3000.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.65);
+
+            filtered * env * amp
+        })
+});
+
+// Memorymoog Lead - Fat poly lead
+define_synthdef("memorymoog_lead", |builder| {
+    builder
+        .param("freq", 440.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .body(|freq, amp, gate| {
+            let envelope = env_asr(0.02, 1.0, 0.15);
+            let env = NewEnvGenBuilder(envelope, gate)
+                .with_done_action(2.0)
+                .build();
+
+            let filt_env_data = env_asr(0.02, 1.0, 0.2);
+            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+
+            // Three oscillators
+            let osc1 = saw_ar(freq);
+            let osc2 = saw_ar(freq * 1.004) * 0.8;
+            let osc3 = pulse_ar(freq * 2.0, 0.3) * 0.3;
+
+            let mix = (osc1 + osc2 + osc3) * 0.4;
+
+            let cutoff = 2000.0 + filt_env * 4000.0;
+            let filtered = rlpf_ar(mix, cutoff, 0.6);
+
+            filtered * env * amp
+        })
+});

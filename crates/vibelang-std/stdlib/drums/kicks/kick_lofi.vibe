@@ -1,0 +1,29 @@
+// Genre: Lo-fi Hip-hop, Chillhop | Character: Warm, dusty lo-fi kick
+define_synthdef("kick_lofi")
+    .param("freq", 55.0)
+    .param("amp", 0.9)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Soft decay
+        let amp_envelope = env_perc(0.003, 0.35);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Gentle pitch sweep
+        let pitch_envelope = env_perc(0.001, 0.06);
+        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let freq_mod = pitch_env * freq * 2.0;
+
+        // Warm body with slight saturation
+        let raw = sin_osc_ar(freq + freq_mod);
+        let body = lpf_ar((raw * 1.2).tanh(), 2000.0) * 0.8;
+
+        // Soft attack
+        let attack_envelope = env_perc(0.001, 0.015);
+        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack = lpf_ar(white_noise_ar(), 1500.0) * attack_env * 0.12;
+
+        (body + attack) * amp_env * amp
+    });

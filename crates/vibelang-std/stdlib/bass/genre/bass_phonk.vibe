@@ -1,0 +1,22 @@
+// Genre: Phonk, Memphis Rap | Character: Distorted phonk bass - gritty and heavy
+define_synthdef("bass_phonk")
+    .param("freq", 45.0)
+    .param("amp", 0.9)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.005, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Heavy, distorted bass
+        let body = sin_osc_ar(freq) * 0.6;
+        let sub = sin_osc_ar(freq * 0.5) * 0.3;
+
+        // Add grit
+        let gritty = (body * 2.0).tanh();
+
+        let sig = (gritty + sub) * 0.6;
+
+        lpf_ar(sig, 600.0) * env * amp
+    });

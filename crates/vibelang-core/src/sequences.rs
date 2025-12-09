@@ -129,6 +129,8 @@ pub struct SequenceDefinition {
     pub clips: Vec<SequenceClip>,
     /// Generation counter for tracking stale sequences across reloads.
     pub generation: u64,
+    /// If true, sequence stops after one iteration instead of looping.
+    pub play_once: bool,
 }
 
 impl SequenceDefinition {
@@ -139,6 +141,7 @@ impl SequenceDefinition {
             loop_beats: 16.0,
             clips: Vec::new(),
             generation: 0,
+            play_once: false,
         }
     }
 
@@ -235,6 +238,7 @@ impl SequenceDefinition {
         let mut hasher = DefaultHasher::new();
         self.name.hash(&mut hasher);
         self.loop_beats.to_bits().hash(&mut hasher);
+        self.play_once.hash(&mut hasher);
         // Hash clips in order
         for clip in &self.clips {
             clip.start.to_bits().hash(&mut hasher);

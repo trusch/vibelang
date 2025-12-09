@@ -1,0 +1,17 @@
+// Genre-Specific Bass Library Index
+//
+// Bass sounds optimized for specific music genres.
+// Usage: import "stdlib/bass/genre/index.vibe"
+
+import "stdlib/bass/genre/bass_reggae.vibe";
+import "stdlib/bass/genre/bass_funk.vibe";
+import "stdlib/bass/genre/bass_disco.vibe";
+import "stdlib/bass/genre/bass_house.vibe";
+import "stdlib/bass/genre/bass_techno.vibe";
+import "stdlib/bass/genre/bass_garage.vibe";
+import "stdlib/bass/genre/bass_drill.vibe";
+import "stdlib/bass/genre/bass_phonk.vibe";
+import "stdlib/bass/genre/bass_afrobeat.vibe";
+import "stdlib/bass/genre/bass_formant.vibe";
+import "stdlib/bass/genre/bass_talking.vibe";
+import "stdlib/bass/genre/bass_karplus.vibe";

@@ -1,0 +1,35 @@
+// Genre: Modern Electronic, EDM | Character: Wavetable-style bass with morphing character
+define_synthdef("bass_wavetable")
+    .param("freq", 60.0)
+    .param("amp", 0.8)
+    .param("gate", 1.0)
+    .param("morph", 0.5)
+    .body(|freq, amp, gate, morph| {
+        let envelope = env_asr(0.005, 1.0, 0.1);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Simulate wavetable morphing with crossfading waveforms
+        let sine = sin_osc_ar(freq);
+        let tri = lf_tri_ar(freq);
+        let saw = saw_ar(freq);
+        let pulse = pulse_ar(freq, 0.3);
+
+        // Crossfade based on morph parameter
+        let mix1 = sine * (1.0 - morph * 2.0).max(0.0);
+        let mix2 = tri * (1.0 - (morph - 0.25).abs() * 4.0).max(0.0);
+        let mix3 = saw * (1.0 - (morph - 0.5).abs() * 4.0).max(0.0);
+        let mix4 = pulse * (1.0 - (morph - 0.75).abs() * 4.0).max(0.0);
+
+        let mix = (mix1 + mix2 + mix3 + mix4) * 0.5;
+
+        // Sub layer
+        let sub = sin_osc_ar(freq * 0.5) * 0.3;
+
+        // Filter
+        let cutoff = 800.0 + morph * 2000.0;
+        let filtered = lpf_ar(mix + sub, cutoff);
+
+        filtered * env * amp
+    });

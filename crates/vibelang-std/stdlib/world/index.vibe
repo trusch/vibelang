@@ -10,6 +10,7 @@ import "stdlib/world/tabla.vibe";
 // African
 import "stdlib/world/kalimba.vibe";
 import "stdlib/world/djembe.vibe";
+import "stdlib/world/kora.vibe";
 
 // Japanese
 import "stdlib/world/koto.vibe";
@@ -20,3 +21,36 @@ import "stdlib/world/steel_drum.vibe";
 
 // Indonesian
 import "stdlib/world/gamelan.vibe";
+
+// Middle Eastern
+import "stdlib/world/oud.vibe";
+import "stdlib/world/ney.vibe";
+import "stdlib/world/darbuka.vibe";
+
+// Chinese
+import "stdlib/world/erhu.vibe";
+
+// Celtic
+import "stdlib/world/bagpipe.vibe";
+import "stdlib/world/tin_whistle.vibe";
+
+// European
+import "stdlib/world/accordion.vibe";
+import "stdlib/world/balalaika.vibe";
+import "stdlib/world/bouzouki.vibe";
+
+// American
+import "stdlib/world/banjo.vibe";
+import "stdlib/world/ukulele.vibe";
+
+// Australian
+import "stdlib/world/didgeridoo.vibe";
+
+// Swiss
+import "stdlib/world/hang_drum.vibe";
+
+// Additional African
+import "stdlib/world/mbira.vibe";
+
+// Persian
+import "stdlib/world/santoor.vibe";

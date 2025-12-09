@@ -1,5 +1,5 @@
 // Genre: Dubstep, Bass Music | Character: Longer pluck with sustain
-define_synthdef("pluck_long", |builder| {
+define_synthdef("bass_pluck_long", |builder| {
     builder
         .param("freq", 110.0)
         .param("amp", 0.7)

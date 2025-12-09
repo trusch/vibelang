@@ -1,0 +1,32 @@
+// Genre: Electronic, Synthpop | Character: Vocal synth lead - human-like formants
+define_synthdef("lead_vocal")
+    .param("freq", 440.0)
+    .param("amp", 0.55)
+    .param("gate", 1.0)
+    .param("vowel", 0.5)
+    .body(|freq, amp, gate, vowel| {
+        let envelope = env_asr(0.02, 1.0, 0.12);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Vibrato
+        let vib = sin_osc_ar(5.5) * freq * 0.008;
+
+        // Rich harmonic source
+        let osc = saw_ar(freq + vib) * 0.5;
+
+        // Formant frequencies based on vowel
+        let f1 = 400.0 + vowel * 400.0;
+        let f2 = 1000.0 + vowel * 1000.0;
+        let f3 = 2500.0 + vowel * 500.0;
+
+        // Formant filters
+        let form1 = bpf_ar(osc, f1, 0.12) * 0.5;
+        let form2 = bpf_ar(osc, f2, 0.15) * 0.3;
+        let form3 = bpf_ar(osc, f3, 0.2) * 0.15;
+
+        let sig = form1 + form2 + form3;
+
+        sig * env * amp
+    });

@@ -3,8 +3,10 @@
 //! Provides a real-time display of system state using ratatui
 
 pub mod app;
+pub mod keyboard;
 pub mod layout;
 pub mod logger;
+pub mod os_keyboard;
 pub mod ui;
 
 pub use app::TuiApp;

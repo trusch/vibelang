@@ -38,35 +38,3 @@ define_synthdef("oboe", |builder| {
             body * env * amp * 0.5
         })
 });
-
-// English Horn
-define_synthdef("english_horn", |builder| {
-    builder
-        .param("freq", 330.0)
-        .param("amp", 0.5)
-        .param("gate", 1.0)
-        .body(|freq, amp, gate| {
-            let envelope = env_asr(0.06, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
-                .build();
-
-            // Vibrato
-            let vib = sin_osc_ar(5.0) * 0.005 + 1.0;
-            let mod_freq = freq * vib;
-
-            // Darker than oboe
-            let h1 = sin_osc_ar(mod_freq);
-            let h2 = sin_osc_ar(mod_freq * 2.0) * 0.6;
-            let h3 = sin_osc_ar(mod_freq * 3.0) * 0.4;
-            let h4 = sin_osc_ar(mod_freq * 4.0) * 0.25;
-            let h5 = sin_osc_ar(mod_freq * 5.0) * 0.15;
-
-            let tone = h1 + h2 + h3 + h4 + h5;
-
-            // Warmer formant
-            let body = rlpf_ar(tone, 1200.0, 0.3);
-
-            body * env * amp * 0.6
-        })
-});

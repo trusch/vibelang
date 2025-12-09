@@ -1,0 +1,21 @@
+// Genre: Modular, Experimental | Character: Basic VCO module
+define_synthdef("mod_vco")
+    .param("freq", 440.0)
+    .param("amp", 0.7)
+    .param("gate", 1.0)
+    .param("wave", 0.0) // 0=saw, 0.5=pulse, 1.0=sine
+    .body(|freq, amp, gate, wave| {
+        let envelope = env_asr(0.001, 1.0, 0.001);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Crossfade between waveforms
+        let saw_wave = saw_ar(freq) * (1.0 - wave * 2.0).max(0.0);
+        let pulse_wave = pulse_ar(freq, 0.5) * (1.0 - (wave - 0.5).abs() * 2.0).max(0.0);
+        let sine_wave = sin_osc_ar(freq) * ((wave - 0.5) * 2.0).max(0.0);
+
+        let mix = saw_wave + pulse_wave + sine_wave;
+
+        mix * env * amp
+    });

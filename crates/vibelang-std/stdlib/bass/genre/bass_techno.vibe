@@ -1,0 +1,25 @@
+// Genre: Techno, Industrial | Character: Driving techno bass - punchy and relentless
+define_synthdef("bass_techno")
+    .param("freq", 50.0)
+    .param("amp", 0.9)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let envelope = env_asr(0.002, 1.0, 0.08);
+        let env = NewEnvGenBuilder(envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Filter envelope
+        let filt_env_shape = env_perc(0.002, 0.15);
+        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+
+        // Aggressive saw
+        let osc = saw_ar(freq) * 0.5;
+        let sub = sin_osc_ar(freq) * 0.4;
+
+        let mix = osc + sub;
+
+        // Punchy filter
+        let cutoff = 300.0 + filt_env * 2000.0;
+        rlpf_ar(mix, cutoff, 0.35) * env * amp
+    });

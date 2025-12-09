@@ -458,25 +458,22 @@ pub fn set_group_gain(path: String, value: f64) {
     });
 }
 
-/// Create the main group.
-/// Main group constants
+/// Update the main group's generation for reload tracking.
+///
+/// The main group is created automatically at runtime startup with:
+/// - node_id = 1 (standard SuperCollider main group)
+/// - audio_bus = 0 (main hardware output)
+///
+/// This function just updates the generation to mark it as "still in use"
+/// during hot reloads.
 const MAIN_GROUP_NODE_ID: i32 = 1; // Fixed node ID for the main group
 
 pub fn create_main_group() {
     let handle = require_handle();
 
-    // First create the group in SuperCollider directly
-    use crate::scsynth::{AddAction, NodeId, Target};
-    if let Err(e) = handle.scsynth().g_new(
-        NodeId::new(MAIN_GROUP_NODE_ID),
-        AddAction::AddToTail,
-        Target::root(),
-    ) {
-        log::error!("Failed to create main group in SuperCollider: {}", e);
-        return;
-    }
-
-    // Then register it with the state manager
+    // The main group is already created at runtime startup.
+    // We just send a RegisterGroup message to update its generation.
+    // The handler will see it already exists and just update the generation.
     let _ = handle.send(StateMessage::RegisterGroup {
         name: "main".to_string(),
         path: "main".to_string(),

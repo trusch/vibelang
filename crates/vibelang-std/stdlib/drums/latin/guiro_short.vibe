@@ -1,0 +1,22 @@
+// Genre: Latin, Caribbean, World | Character: Short guiro accent
+define_synthdef("guiro_short")
+    .param("freq", 3500.0)
+    .param("amp", 0.6)
+    .body(|freq, amp| {
+        let gate = dc_ar(1.0);
+
+        // Quick scrape
+        let amp_envelope = env_perc(0.005, 0.08);
+        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
+            .with_done_action(2.0)
+            .build();
+
+        // Fast ridges
+        let ridge_rate = 60.0;
+        let ridges = sin_osc_ar(ridge_rate) * 0.4 + 0.6;
+
+        // Bright scraping noise
+        let scrape = bpf_ar(white_noise_ar(), freq, 0.4);
+
+        scrape * ridges * amp_env * amp
+    });
