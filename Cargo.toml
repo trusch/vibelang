@@ -5,6 +5,7 @@ members = [
     "crates/vibelang-sfz",
     "crates/vibelang-std",
     "crates/vibelang-cli",
+    "crates/vibelang-keys",
 ]
 default-members = ["crates/vibelang-cli"]
 resolver = "2"
