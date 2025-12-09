@@ -5,7 +5,7 @@ edition = "2021"
 description = "Terminal MIDI keyboard for VibeLang - play MIDI from your computer keyboard"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/trusch/vibelang"
-keywords = ["midi", "keyboard", "tui", "music", "terminal", "vibelang"]
+keywords = ["midi", "keyboard", "music", "terminal", "vibelang"]
 categories = ["multimedia::audio", "command-line-utilities"]
 
 [lib]
