@@ -9,9 +9,10 @@ define_synthdef("white_noise_gen", |builder| {
         .param("amp", 0.3)
         .param("gate", 1.0)
         .body(|amp, gate| {
-            let envelope = env_asr(0.01, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             white_noise_ar() * env * amp
@@ -24,9 +25,10 @@ define_synthdef("pink_noise_gen", |builder| {
         .param("amp", 0.3)
         .param("gate", 1.0)
         .body(|amp, gate| {
-            let envelope = env_asr(0.01, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Approximate pink noise by filtering white noise
@@ -43,9 +45,10 @@ define_synthdef("brown_noise_gen", |builder| {
         .param("amp", 0.3)
         .param("gate", 1.0)
         .body(|amp, gate| {
-            let envelope = env_asr(0.01, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Heavy low pass for brown noise character
@@ -63,9 +66,10 @@ define_synthdef("hiss_gen", |builder| {
         .param("gate", 1.0)
         .param("freq", 4000.0) // High pass frequency
         .body(|amp, gate, freq| {
-            let envelope = env_asr(0.01, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             let white = white_noise_ar();
@@ -83,9 +87,10 @@ define_synthdef("filtered_noise_gen", |builder| {
         .param("freq", 1000.0) // Center frequency
         .param("rq", 0.2) // Resonance (lower = more resonant)
         .body(|amp, gate, freq, rq| {
-            let envelope = env_asr(0.01, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             let white = white_noise_ar();
@@ -102,9 +107,10 @@ define_synthdef("crackle_gen", |builder| {
         .param("gate", 1.0)
         .param("density", 0.5) // Crackle density
         .body(|amp, gate, density| {
-            let envelope = env_asr(0.01, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Use dust for random impulses

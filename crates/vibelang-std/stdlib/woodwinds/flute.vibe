@@ -11,9 +11,10 @@ define_synthdef("flute", |builder| {
         .param("gate", 1.0)
         .param("breath", 0.3)
         .body(|freq, amp, gate, breath| {
-            let envelope = env_asr(0.08, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.08, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Vibrato
@@ -47,9 +48,10 @@ define_synthdef("piccolo", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.05, 1.0, 0.08);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.05, 1.0, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Vibrato

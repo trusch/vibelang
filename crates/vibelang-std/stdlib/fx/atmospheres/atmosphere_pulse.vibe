@@ -5,9 +5,10 @@ define_synthdef("atmosphere_pulse", |builder| {
         .param("rate", 2.0)
         .param("gate", 1.0)
         .body(|amp, rate, gate| {
-            let envelope = env_asr(0.5, 1.0, 0.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.5, 1.0, 0.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Pulsing LFO

@@ -7,9 +7,10 @@ define_synthdef("texture_granular", |builder| {
             let gate = dc_ar(1.0);
 
             // Long envelope
-            let envelope = env_perc(1.5, 9.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(1.5, 9.0)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Multiple detuned oscillators for grain-like character

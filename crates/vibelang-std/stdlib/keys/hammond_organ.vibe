@@ -12,9 +12,10 @@ define_synthdef("hammond_organ", |builder| {
         .param("percussion", 0.5) // Percussion amount
         .body(|freq, amp, gate, percussion| {
             // Instant attack organ envelope
-            let envelope = env_asr(0.003, 1.0, 0.01);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.003, 1.0, 0.01)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Drawbar harmonics (typical jazz setting: 888000000)
@@ -40,13 +41,15 @@ define_synthdef("hammond_organ", |builder| {
             let drawbars = d1 + d2 + d3 + d4 + d5 + d6 + d7 + d8 + d9;
 
             // Percussion envelope (fast decay click)
-            let perc_env_data = env_perc(0.001, 0.1);
-            let perc_env = NewEnvGenBuilder(perc_env_data, dc_ar(1.0)).build();
+            let perc_env = envelope()
+                .perc(0.001, 0.1)
+                .build();
             let perc = sin_osc_ar(freq * 3.0) * perc_env * percussion * 0.4;
 
             // Key click
-            let click_env_data = env_perc(0.0001, 0.003);
-            let click_env = NewEnvGenBuilder(click_env_data, dc_ar(1.0)).build();
+            let click_env = envelope()
+                .perc(0.0001, 0.003)
+                .build();
             let click = white_noise_ar() * click_env * 0.1;
 
             let organ = drawbars * 0.4 + perc + click;

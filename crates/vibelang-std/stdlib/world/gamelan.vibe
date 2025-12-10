@@ -10,14 +10,16 @@ define_synthdef("gamelan_gong", |builder| {
         .param("amp", 0.6)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Very long decay for gong
-            let decay_env_data = env_perc(0.001, 4.0);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 4.0)
+                .build();
 
             // Complex inharmonic partials
             let h1 = sin_osc_ar(freq);
@@ -29,8 +31,9 @@ define_synthdef("gamelan_gong", |builder| {
             let gong = h1 + h2 + h3 + h4 + h5;
 
             // Strike
-            let strike_env_data = env_perc(0.0001, 0.05);
-            let strike_env = NewEnvGenBuilder(strike_env_data, dc_ar(1.0)).build();
+            let strike_env = envelope()
+                .perc(0.0001, 0.05)
+                .build();
             let strike = white_noise_ar() * strike_env * 0.15;
 
             (gong + lpf_ar(strike, 2000.0)) * env * decay_env * amp * 0.5
@@ -44,14 +47,16 @@ define_synthdef("gamelan_metal", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Medium decay
-            let decay_env_data = env_perc(0.001, 1.5);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 1.5)
+                .build();
 
             // Metallic partials
             let h1 = sin_osc_ar(freq);
@@ -62,8 +67,9 @@ define_synthdef("gamelan_metal", |builder| {
             let metal = h1 + h2 + h3 + h4;
 
             // Mallet strike
-            let strike_env_data = env_perc(0.0001, 0.01);
-            let strike_env = NewEnvGenBuilder(strike_env_data, dc_ar(1.0)).build();
+            let strike_env = envelope()
+                .perc(0.0001, 0.01)
+                .build();
             let strike = sin_osc_ar(freq * 7.0) * strike_env * 0.15;
 
             (metal + strike) * env * decay_env * amp * 0.5

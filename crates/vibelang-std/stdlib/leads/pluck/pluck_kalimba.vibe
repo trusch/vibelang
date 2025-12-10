@@ -8,9 +8,10 @@ define_synthdef("pluck_kalimba", |builder| {
 
             // Quick attack, medium decay
             // Gate-controlled ASR envelope for proper note-on/note-off behavior
-            let envelope = env_asr(0.001, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Metallic harmonics
@@ -19,8 +20,10 @@ define_synthdef("pluck_kalimba", |builder| {
             let harmonic3 = sin_osc_ar(freq * 6.0) * 0.15;
 
             // Add subtle noise for pluck attack
-            let attack_envelope = env_asr(0.001, 1.0, 0.1);
-            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack_env = envelope()
+                .asr(0.001, 1.0, 0.1)
+                .gate(gate)
+                .build();
             let attack = pink_noise_ar() * attack_env * 0.08;
             let filtered_attack = hpf_ar(attack, 2000.0);
 

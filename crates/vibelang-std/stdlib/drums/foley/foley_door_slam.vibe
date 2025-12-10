@@ -6,22 +6,27 @@ define_synthdef("foley_door_slam")
         let gate = dc_ar(1.0);
 
         // Impact decay
-        let amp_envelope = env_perc(0.001, 0.35);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 0.35)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Low thud
-        let pitch_envelope = env_perc(0.001, 0.05);
-        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let pitch_env = envelope()
+            .perc(0.001, 0.05)
+            .gate(gate)
+            .build();
         let body = sin_osc_ar(freq + pitch_env * freq * 2.0) * 0.6;
 
         // Wood resonance
         let wood = bpf_ar(white_noise_ar(), 300.0, 0.3) * 0.25;
 
         // Impact noise
-        let impact_envelope = env_perc(0.0001, 0.03);
-        let impact_env = NewEnvGenBuilder(impact_envelope, gate).build();
+        let impact_env = envelope()
+            .perc(0.0001, 0.03)
+            .gate(gate)
+            .build();
         let impact = lpf_ar(white_noise_ar(), 2000.0) * impact_env * 0.4;
 
         (body + wood + impact) * amp_env * amp

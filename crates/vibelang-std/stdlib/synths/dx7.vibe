@@ -12,14 +12,16 @@ define_synthdef("dx7_epiano", |builder| {
         .param("gate", 1.0)
         .param("brightness", 0.6)
         .body(|freq, amp, gate, brightness| {
-            let envelope = env_asr(0.005, 1.0, 0.3);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // FM modulation envelope (fast attack, medium decay)
-            let mod_env_data = env_perc(0.001, 0.3);
-            let mod_env = NewEnvGenBuilder(mod_env_data, dc_ar(1.0)).build();
+            let mod_env = envelope()
+                .perc(0.001, 0.3)
+                .build();
 
             // 2-operator FM synthesis
             let mod_depth = brightness * 3.0 * mod_env + 0.5;
@@ -46,14 +48,16 @@ define_synthdef("dx7_bass", |builder| {
         .param("amp", 0.6)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.003, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.003, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Sharp FM modulation envelope
-            let mod_env_data = env_perc(0.001, 0.15);
-            let mod_env = NewEnvGenBuilder(mod_env_data, dc_ar(1.0)).build();
+            let mod_env = envelope()
+                .perc(0.001, 0.15)
+                .build();
 
             // FM with ratio for bass punch
             let mod_depth = mod_env * 4.0 + 0.3;
@@ -74,14 +78,16 @@ define_synthdef("dx7_bells", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Long decay for bell
-            let decay_env_data = env_perc(0.001, 2.0);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 2.0)
+                .build();
 
             // Inharmonic FM ratios for bell character
             let mod1 = sin_osc_ar(freq * 3.5) * decay_env * 2.0;
@@ -106,14 +112,17 @@ define_synthdef("dx7_brass", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.05, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.05, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Brass-like FM modulation
-            let mod_env_data = env_asr(0.02, 1.0, 0.15);
-            let mod_env = NewEnvGenBuilder(mod_env_data, gate).build();
+            let mod_env = envelope()
+                .asr(0.02, 1.0, 0.15)
+                .gate(gate)
+                .build();
 
             let mod_depth = mod_env * 2.5 + 0.5;
             let modulator = sin_osc_ar(freq * 1.0) * mod_depth;
@@ -136,14 +145,16 @@ define_synthdef("dx7_marimba", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Fast decay for mallet sound
-            let decay_env_data = env_perc(0.001, 0.5);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 0.5)
+                .build();
 
             // FM for woody attack
             let mod_depth = decay_env * 3.0;

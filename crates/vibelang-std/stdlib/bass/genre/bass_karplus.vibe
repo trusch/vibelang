@@ -7,15 +7,17 @@ define_synthdef("bass_karplus")
         let gate = dc_ar(1.0);
 
         // Karplus-Strong style using comb filter
-        let amp_envelope = env_perc(0.001, 1.0);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_time_scale(decay * 2.0)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 1.0)
+            .gate(gate)
+            .time_scale(decay * 2.0)
+            .cleanup_on_finish()
             .build();
 
         // Excitation noise burst
-        let excite_env = env_perc(0.0001, 0.005);
-        let excite = NewEnvGenBuilder(excite_env, dc_ar(1.0)).build();
+        let excite = envelope()
+            .perc(0.0001, 0.005)
+            .build();
         let noise = white_noise_ar() * excite;
 
         // Delay time for pitch

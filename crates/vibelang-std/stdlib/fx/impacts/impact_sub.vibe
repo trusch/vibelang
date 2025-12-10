@@ -6,9 +6,10 @@ define_synthdef("impact_sub", |builder| {
             let gate = dc_ar(1.0);
 
             // Medium decay
-            let envelope = env_perc(0.002, 1.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.002, 1.0)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Very low frequencies
@@ -16,8 +17,10 @@ define_synthdef("impact_sub", |builder| {
             let sub2 = sin_osc_ar(70.0) * 0.3;
 
             // Minimal noise for definition
-            let noise_envelope = env_perc(0.001, 0.05);
-            let noise_env = NewEnvGenBuilder(noise_envelope, gate).build();
+            let noise_env = envelope()
+                .perc(0.001, 0.05)
+                .gate(gate)
+                .build();
             let noise = pink_noise_ar() * noise_env * 0.1;
             let filtered_noise = lpf_ar(noise, 300.0);
 

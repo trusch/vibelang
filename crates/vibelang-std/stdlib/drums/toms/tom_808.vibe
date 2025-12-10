@@ -6,14 +6,17 @@ define_synthdef("tom_808")
         let gate = dc_ar(1.0);
 
         // 808 tom decay
-        let amp_envelope = env_perc(0.001, 0.4);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 0.4)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Classic 808 pitch envelope
-        let pitch_envelope = env_perc(0.001, 0.08);
-        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let pitch_env = envelope()
+            .perc(0.001, 0.08)
+            .gate(gate)
+            .build();
         let freq_mod = pitch_env * freq * 2.5;
 
         // Clean sine

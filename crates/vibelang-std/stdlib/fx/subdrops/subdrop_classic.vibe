@@ -7,14 +7,17 @@ define_synthdef("subdrop_classic", |builder| {
             let gate = dc_ar(1.0);
 
             // Quick attack, medium decay
-            let envelope = env_perc(0.01, 0.8);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.01, 0.8)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Pitch drop envelope
-            let pitch_envelope = env_perc(0.01, 0.15);
-            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let pitch_env = envelope()
+                .perc(0.01, 0.15)
+                .gate(gate)
+                .build();
             let freq_mod = pitch_env * freq * 4.0;
 
             // Sub sine

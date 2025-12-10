@@ -5,17 +5,20 @@ define_synthdef("whoosh_fast", |builder| {
         .body(|amp| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(0.01, 0.3);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.01, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Fast filter sweep on noise
             let noise = white_noise_ar();
 
             // Sweep from high to low quickly
-            let sweep_env = env_perc(0.01, 0.25);
-            let sweep_e = NewEnvGenBuilder(sweep_env, gate).build();
+            let sweep_e = envelope()
+                .perc(0.01, 0.25)
+                .gate(gate)
+                .build();
             let cutoff = 500.0 + sweep_e * 10000.0;
 
             let filtered = lpf_ar(noise, cutoff);

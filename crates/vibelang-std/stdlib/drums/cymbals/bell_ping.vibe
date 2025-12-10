@@ -7,9 +7,10 @@ define_synthdef("bell_ping", |builder| {
             let gate = dc_ar(1.0);
 
             // Medium decay
-            let envelope = env_perc(0.001, 0.8);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 0.8)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Clear bell tones with inharmonic partials
@@ -24,8 +25,10 @@ define_synthdef("bell_ping", |builder| {
             let metal = saw_ar(freq * 4.5) * 0.15;
 
             // Subtle attack noise
-            let attack_envelope = env_perc(0.0005, 0.008);
-            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack_env = envelope()
+                .perc(0.0005, 0.008)
+                .gate(gate)
+                .build();
             let attack = white_noise_ar() * attack_env * 0.1;
 
             (bells + metal + attack) * env * amp

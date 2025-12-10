@@ -6,9 +6,10 @@ define_synthdef("foley_pot_lid")
         let gate = dc_ar(1.0);
 
         // Metallic ring
-        let amp_envelope = env_perc(0.001, 0.6);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 0.6)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Inharmonic metallic partials
@@ -19,8 +20,10 @@ define_synthdef("foley_pot_lid")
         let ring4 = sin_osc_ar(freq * 4.6) * 0.08;
 
         // Hit attack
-        let attack_envelope = env_perc(0.0001, 0.003);
-        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack_env = envelope()
+            .perc(0.0001, 0.003)
+            .gate(gate)
+            .build();
         let attack = hpf_ar(white_noise_ar(), 5000.0) * attack_env * 0.25;
 
         (body + ring1 + ring2 + ring3 + ring4 + attack) * amp_env * amp

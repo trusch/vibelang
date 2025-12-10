@@ -12,9 +12,10 @@ define_synthdef("prophet_pad", |builder| {
         .param("gate", 1.0)
         .param("spread", 0.5)
         .body(|freq, amp, gate, spread| {
-            let envelope = env_asr(0.4, 1.0, 0.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.4, 1.0, 0.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Two oscillators with spread
@@ -41,14 +42,17 @@ define_synthdef("prophet_brass", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.06, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.06, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope
-            let filt_env_data = env_asr(0.03, 1.0, 0.15);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.03, 1.0, 0.15)
+                .gate(gate)
+                .build();
 
             // Two saw oscillators
             let osc_a = saw_ar(freq);
@@ -72,9 +76,10 @@ define_synthdef("prophet_lead", |builder| {
         .param("gate", 1.0)
         .param("resonance", 0.4)
         .body(|freq, amp, gate, resonance| {
-            let envelope = env_asr(0.01, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Poly-mod style oscillator sync simulation
@@ -97,9 +102,10 @@ define_synthdef("prophet_strings", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.25, 1.0, 0.4);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.25, 1.0, 0.4)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Ensemble-style detuning

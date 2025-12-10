@@ -5,9 +5,10 @@ define_synthdef("stinger_dark", |builder| {
         .body(|amp| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(0.001, 1.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 1.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Dissonant cluster
@@ -21,13 +22,17 @@ define_synthdef("stinger_dark", |builder| {
 
             // Add metallic resonance
             let metal = sin_osc_ar(300.0) * sin_osc_ar(450.0);
-            let metal_env = env_perc(0.001, 0.3);
-            let metal_e = NewEnvGenBuilder(metal_env, gate).build();
+            let metal_e = envelope()
+                .perc(0.001, 0.3)
+                .gate(gate)
+                .build();
 
             // Noise burst
             let noise = lpf_ar(white_noise_ar(), 2000.0);
-            let noise_env = env_perc(0.001, 0.1);
-            let noise_e = NewEnvGenBuilder(noise_env, gate).build();
+            let noise_e = envelope()
+                .perc(0.001, 0.1)
+                .gate(gate)
+                .build();
 
             let mix = cluster * 0.3 + metal * metal_e * 0.2 + noise * noise_e * 0.3;
 

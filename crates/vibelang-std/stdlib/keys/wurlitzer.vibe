@@ -11,9 +11,10 @@ define_synthdef("wurlitzer", |builder| {
         .param("drive", 0.3) // Overdrive amount
         .body(|freq, amp, gate, drive| {
             // Envelope with punchy attack
-            let envelope = env_asr(0.003, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.003, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Reed-like oscillators
@@ -23,8 +24,9 @@ define_synthdef("wurlitzer", |builder| {
             let odd4 = sin_osc_ar(freq * 7.0) * 0.1;
 
             // Characteristic wurli bark
-            let bark_env_data = env_perc(0.001, 0.03);
-            let bark_env = NewEnvGenBuilder(bark_env_data, dc_ar(1.0)).build();
+            let bark_env = envelope()
+                .perc(0.001, 0.03)
+                .build();
             let bark = white_noise_ar() * bark_env * 0.15;
 
             let tone = fund + odd2 + odd3 + odd4 + bark;

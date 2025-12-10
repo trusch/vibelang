@@ -4,9 +4,10 @@ define_synthdef("atmosphere_tension", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|amp, gate| {
-            let envelope = env_asr(1.0, 1.0, 1.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(1.0, 1.0, 1.0)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Dissonant cluster

@@ -7,22 +7,27 @@ define_synthdef("kick_sub", |builder| {
             let gate = dc_ar(1.0);
 
             // Medium-long decay for sub presence
-            let amp_envelope = env_perc(0.005, 0.55);
-            let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-                .with_done_action(2.0)
+            let amp_env = envelope()
+                .perc(0.005, 0.55)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Gentle pitch sweep
-            let pitch_envelope = env_perc(0.001, 0.1);
-            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let pitch_env = envelope()
+                .perc(0.001, 0.1)
+                .gate(gate)
+                .build();
             let freq_mod = pitch_env * freq * 2.0;
 
             // Pure sine wave for clean sub
             let sig = sin_osc_ar(freq + freq_mod);
 
             // Very minimal click - just for timing reference
-            let click_envelope = env_perc(0.0001, 0.002);
-            let click_env = NewEnvGenBuilder(click_envelope, gate).build();
+            let click_env = envelope()
+                .perc(0.0001, 0.002)
+                .gate(gate)
+                .build();
             let click = white_noise_ar() * click_env * 0.02;
             let filtered_click = lpf_ar(click, 8000.0);
 

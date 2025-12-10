@@ -8,9 +8,10 @@ define_synthdef("memorymoog_pad", |builder| {
         .param("amp", 0.45)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.4, 1.0, 0.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.4, 1.0, 0.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Six voice unison simulation
@@ -38,13 +39,16 @@ define_synthdef("memorymoog_brass", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.08, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.08, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let filt_env_data = env_asr(0.1, 1.0, 0.25);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.1, 1.0, 0.25)
+                .gate(gate)
+                .build();
 
             // Rich detuned oscillators
             let osc1 = saw_ar(freq * 0.997);
@@ -67,13 +71,16 @@ define_synthdef("memorymoog_lead", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.02, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.02, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let filt_env_data = env_asr(0.02, 1.0, 0.2);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.02, 1.0, 0.2)
+                .gate(gate)
+                .build();
 
             // Three oscillators
             let osc1 = saw_ar(freq);

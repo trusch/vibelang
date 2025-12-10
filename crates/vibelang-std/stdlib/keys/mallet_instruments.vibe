@@ -19,14 +19,16 @@ define_synthdef("crotales", |builder| {
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
             let decay_time = 3.0;
-            let envelope = env_perc(0.001, decay_time);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, decay_time)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Light strike
-            let strike_data = env_perc(0.0001, 0.001);
-            let strike_env = NewEnvGenBuilder(strike_data, dc_ar(1.0)).build();
+            let strike_env = envelope()
+                .perc(0.0001, 0.001)
+                .build();
             let strike = white_noise_ar() * strike_env * 0.1;
 
             // Very pure, bell-like
@@ -48,14 +50,16 @@ define_synthdef("celesta", |builder| {
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
             let decay_time = 1.8;
-            let envelope = env_perc(0.001, decay_time);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, decay_time)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Felt hammer - softer than glockenspiel
-            let strike_data = env_perc(0.001, 0.006);
-            let strike_env = NewEnvGenBuilder(strike_data, dc_ar(1.0)).build();
+            let strike_env = envelope()
+                .perc(0.001, 0.006)
+                .build();
             let strike = white_noise_ar() * strike_env * 0.08;
 
             // Steel bars with resonators - warmer than glockenspiel
@@ -70,9 +74,9 @@ define_synthdef("celesta", |builder| {
             let resonator = rlpf_ar(bar_tone, freq * 1.5, 0.4) * 0.25;
 
             // High freq decay
-            let hf_data = env_perc(0.001, 0.4);
-            let hf_env = NewEnvGenBuilder(hf_data, dc_ar(1.0))
-                .with_time_scale(decay_time)
+            let hf_env = envelope()
+                .perc(0.001, 0.4)
+                .time_scale(decay_time)
                 .build();
 
             let tone = h1 + (h2 + h3 + h4) * hf_env + resonator + strike;

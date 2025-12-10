@@ -4,9 +4,10 @@ define_synthdef("pad_tension")
     .param("amp", 0.5)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.5, 1.0, 0.4);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.5, 1.0, 0.4)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Dissonant cluster
@@ -18,8 +19,10 @@ define_synthdef("pad_tension")
         let rumble = lpf_ar(pink_noise_ar(), 100.0) * 0.15;
 
         // Slow rising filter
-        let filt_env_shape = env_asr(1.0, 1.0, 0.5);
-        let filt_env = NewEnvGenBuilder(filt_env_shape, gate).build();
+        let filt_env = envelope()
+            .asr(1.0, 1.0, 0.5)
+            .gate(gate)
+            .build();
 
         let mix = osc1 + osc2 + osc3 + rumble;
         let cutoff = 200.0 + filt_env * 1500.0;

@@ -19,15 +19,17 @@ define_synthdef("upright_bass", |builder| {
         .body(|freq, amp, gate, position, finger_noise| {
             // Pizzicato envelope
             let decay_time = 1.2 + (1.0 / (freq / 40.0));
-            let envelope = env_perc(0.001, 1.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_time_scale(decay_time)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 1.0)
+                .gate(gate)
+                .time_scale(decay_time)
+                .cleanup_on_finish()
                 .build();
 
             // Finger pluck transient
-            let pluck_data = env_perc(0.0005, 0.008);
-            let pluck_env = NewEnvGenBuilder(pluck_data, dc_ar(1.0)).build();
+            let pluck_env = envelope()
+                .perc(0.0005, 0.008)
+                .build();
             let pluck = white_noise_ar() * pluck_env * 0.3;
             let pluck_filtered = lpf_ar(pluck, 1500.0 + ((1.0 - position) * 2000.0));
 
@@ -69,14 +71,16 @@ define_synthdef("upright_bass_bowed", |builder| {
         .param("bow_pressure", 0.6)
         .param("bow_position", 0.5)
         .body(|freq, amp, gate, bow_pressure, bow_position| {
-            let envelope = env_asr(0.12, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.12, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Slow vibrato
-            let vib_delay_data = env_perc(0.4, 4.0);
-            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib_delay = envelope()
+                .perc(0.4, 4.0)
+                .build();
             let vib = sin_osc_ar(5.0) * 0.004 * vib_delay + 1.0;
             let mod_freq = freq * vib;
 
@@ -115,21 +119,22 @@ define_synthdef("electric_bass", |builder| {
         .param("attack_style", 0.5)  // 0=finger, 1=pick
         .body(|freq, amp, gate, tone, attack_style| {
             let decay_time = 2.0 + (1.0 / (freq / 50.0));
-            let envelope = env_asr(0.002, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.002, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Sustain envelope
-            let sus_env_data = env_perc(0.001, 1.0);
-            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0))
-                .with_time_scale(decay_time)
+            let sus_env = envelope()
+                .perc(0.001, 1.0)
+                .time_scale(decay_time)
                 .build();
 
             // Attack transient
-            let attack_data = env_perc(0.0003, 1.0);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0))
-                .with_time_scale(0.004 + ((1.0 - attack_style) * 0.006))
+            let attack_env = envelope()
+                .perc(0.0003, 1.0)
+                .time_scale(0.004 + ((1.0 - attack_style)
                 .build();
             let attack_cutoff = 2000.0 + (attack_style * 3000.0);
             let attack = lpf_ar(white_noise_ar() * attack_env, attack_cutoff) * 0.25;
@@ -169,19 +174,21 @@ define_synthdef("jazz_bass", |builder| {
         .param("bridge_pickup", 0.5)
         .body(|freq, amp, gate, neck_pickup, bridge_pickup| {
             let decay_time = 2.5 + (1.0 / (freq / 50.0));
-            let envelope = env_asr(0.002, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.002, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let sus_env_data = env_perc(0.001, 1.0);
-            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0))
-                .with_time_scale(decay_time)
+            let sus_env = envelope()
+                .perc(0.001, 1.0)
+                .time_scale(decay_time)
                 .build();
 
             // Finger attack
-            let attack_data = env_perc(0.0005, 0.008);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.0005, 0.008)
+                .build();
             let attack = lpf_ar(white_noise_ar() * attack_env, 2500.0) * 0.2;
 
             // String tone
@@ -221,19 +228,21 @@ define_synthdef("fretless_bass", |builder| {
         .param("mwah", 0.6)     // Characteristic fretless "mwah"
         .body(|freq, amp, gate, mwah| {
             let decay_time = 2.0 + (1.0 / (freq / 50.0));
-            let envelope = env_asr(0.005, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let sus_env_data = env_perc(0.001, 1.0);
-            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0))
-                .with_time_scale(decay_time)
+            let sus_env = envelope()
+                .perc(0.001, 1.0)
+                .time_scale(decay_time)
                 .build();
 
             // Soft finger attack
-            let attack_data = env_perc(0.001, 0.012);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.001, 0.012)
+                .build();
             let attack = lpf_ar(white_noise_ar() * attack_env, 1500.0) * 0.15;
 
             // String harmonics
@@ -248,8 +257,9 @@ define_synthdef("fretless_bass", |builder| {
             // "Mwah" effect - resonant harmonic at string/finger contact
             // This is the singing quality of fretless
             let mwah_freq = freq * 3.0;  // Third harmonic
-            let mwah_env_data = env_perc(0.01, 0.3);
-            let mwah_env = NewEnvGenBuilder(mwah_env_data, dc_ar(1.0)).build();
+            let mwah_env = envelope()
+                .perc(0.01, 0.3)
+                .build();
             let mwah_tone = rlpf_ar(string_tone, mwah_freq, 0.1) * mwah * mwah_env * 0.4;
 
             // Smooth, singing tone
@@ -269,20 +279,23 @@ define_synthdef("slap_bass", |builder| {
         .param("slap_pop", 0.0)  // 0=slap (thumb), 1=pop (finger)
         .body(|freq, amp, gate, slap_pop| {
             let decay_time = 0.8;
-            let envelope = env_perc(0.001, decay_time);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, decay_time)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Slap attack - thumb hitting string against fretboard
-            let slap_data = env_perc(0.0001, 0.003);
-            let slap_env = NewEnvGenBuilder(slap_data, dc_ar(1.0)).build();
+            let slap_env = envelope()
+                .perc(0.0001, 0.003)
+                .build();
             let slap_noise = white_noise_ar() * slap_env * (1.0 - slap_pop) * 0.4;
             let slap_filtered = bpf_ar(slap_noise, 1500.0, 0.3);
 
             // Pop attack - string snapping against fretboard
-            let pop_data = env_perc(0.0001, 0.002);
-            let pop_env = NewEnvGenBuilder(pop_data, dc_ar(1.0)).build();
+            let pop_env = envelope()
+                .perc(0.0001, 0.002)
+                .build();
             let pop_noise = white_noise_ar() * pop_env * slap_pop * 0.5;
             let pop_filtered = hpf_ar(pop_noise, 3000.0);
 
@@ -319,14 +332,16 @@ define_synthdef("synth_bass_moog", |builder| {
         .param("resonance", 0.5)
         .param("filter_env", 0.6)
         .body(|freq, amp, gate, cutoff, resonance, filter_env| {
-            let envelope = env_asr(0.005, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope
-            let filt_env_data = env_perc(0.001, 0.3);
-            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.3)
+                .build();
 
             // Classic Moog oscillators - saw + square sub
             let saw1 = saw_ar(freq) * 0.5;
@@ -358,14 +373,16 @@ define_synthdef("acid_bass", |builder| {
         .param("env_mod", 0.8)
         .param("accent", 0.0)
         .body(|freq, amp, gate, cutoff, resonance, env_mod, accent| {
-            let envelope = env_perc(0.001, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // 303 filter envelope - very snappy
-            let filt_env_data = env_perc(0.001, 0.15);
-            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.15)
+                .build();
 
             // 303 oscillator - saw or square
             let osc = saw_ar(freq);
@@ -394,17 +411,20 @@ define_synthdef("picked_bass", |builder| {
         .param("drive", 0.3)
         .body(|freq, amp, gate, pick_attack, drive| {
             let decay_time = 1.5;
-            let envelope = env_asr(0.001, 1.0, 0.08);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let sus_env_data = env_perc(0.001, decay_time);
-            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0)).build();
+            let sus_env = envelope()
+                .perc(0.001, decay_time)
+                .build();
 
             // Hard pick attack
-            let attack_data = env_perc(0.0001, 0.002);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.0001, 0.002)
+                .build();
             let attack = hpf_ar(white_noise_ar() * attack_env, 2500.0) * pick_attack * 0.35;
 
             // Aggressive harmonics

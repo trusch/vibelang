@@ -5,9 +5,10 @@ define_synthdef("lead_neuro")
     .param("gate", 1.0)
     .param("morph", 0.5)
     .body(|freq, amp, gate, morph| {
-        let envelope = env_asr(0.002, 1.0, 0.08);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.002, 1.0, 0.08)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // LFO for morphing

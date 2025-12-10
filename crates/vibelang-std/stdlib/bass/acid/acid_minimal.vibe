@@ -8,14 +8,17 @@ define_synthdef("acid_minimal", |builder| {
 
             // Clean envelope
             // Gate-controlled ASR envelope for proper note-on/note-off behavior
-            let envelope = env_asr(0.008, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.008, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Gentle filter envelope
-            let filter_envelope = env_asr(0.02, 1.0, 0.1);
-            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let filter_env = envelope()
+                .asr(0.02, 1.0, 0.1)
+                .gate(gate)
+                .build();
 
             // Sawtooth
             let osc = saw_ar(freq);

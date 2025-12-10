@@ -11,9 +11,10 @@ define_synthdef("trumpet", |builder| {
         .param("brightness", 0.7) // Filter brightness
         .body(|freq, amp, gate, brightness| {
             // Trumpet envelope with quick attack
-            let envelope = env_asr(0.05, 1.0, 0.08);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.05, 1.0, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Bright sawtooth for brass
@@ -30,8 +31,9 @@ define_synthdef("trumpet", |builder| {
             let brass = f1 + f2 + f3;
 
             // Attack transient (lip buzz)
-            let attack_env_data = env_perc(0.001, 0.03);
-            let attack_env = NewEnvGenBuilder(attack_env_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.001, 0.03)
+                .build();
             let buzz = white_noise_ar() * attack_env * 0.1;
 
             // Vibrato

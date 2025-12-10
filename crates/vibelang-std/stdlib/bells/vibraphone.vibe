@@ -11,14 +11,16 @@ define_synthdef("vibraphone", |builder| {
         .param("vibrato_speed", 5.0) // Motor speed
         .body(|freq, amp, gate, vibrato_speed| {
             // Vibes envelope
-            let envelope = env_asr(0.005, 1.0, 0.4);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.4)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Medium-long decay
-            let decay_env_data = env_perc(0.001, 2.0);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 2.0)
+                .build();
 
             // Vibraphone partials
             let h1 = sin_osc_ar(freq);
@@ -33,8 +35,9 @@ define_synthdef("vibraphone", |builder| {
             let motor = sin_osc_ar(vibrato_speed) * 0.3 + 0.7;
 
             // Mallet soft attack
-            let mallet_env_data = env_perc(0.001, 0.03);
-            let mallet_env = NewEnvGenBuilder(mallet_env_data, dc_ar(1.0)).build();
+            let mallet_env = envelope()
+                .perc(0.001, 0.03)
+                .build();
             let mallet = white_noise_ar() * mallet_env * 0.05;
 
             (bell * motor + mallet) * env * decay_env * amp * 0.6

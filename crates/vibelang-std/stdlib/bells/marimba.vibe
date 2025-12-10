@@ -10,14 +10,16 @@ define_synthdef("marimba", |builder| {
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
             // Marimba envelope
-            let envelope = env_asr(0.001, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Medium decay
-            let decay_env_data = env_perc(0.001, 0.6);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 0.6)
+                .build();
 
             // Marimba partials (warm, strong fundamental)
             let h1 = sin_osc_ar(freq);
@@ -28,8 +30,9 @@ define_synthdef("marimba", |builder| {
             let wood = h1 + h2 + h3 + h4;
 
             // Soft mallet attack
-            let mallet_env_data = env_perc(0.001, 0.02);
-            let mallet_env = NewEnvGenBuilder(mallet_env_data, dc_ar(1.0)).build();
+            let mallet_env = envelope()
+                .perc(0.001, 0.02)
+                .build();
             let mallet = white_noise_ar() * mallet_env * 0.08;
             let mallet_filtered = lpf_ar(mallet, 3000.0);
 

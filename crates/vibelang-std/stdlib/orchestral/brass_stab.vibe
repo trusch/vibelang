@@ -6,14 +6,16 @@ define_synthdef("brass_stab")
         let gate = dc_ar(1.0);
 
         // Punchy brass envelope
-        let amp_envelope = env_perc(0.01, 0.3);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.01, 0.3)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Filter envelope
-        let filt_env_shape = env_perc(0.01, 0.2);
-        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+        let filt_env = envelope()
+            .perc(0.01, 0.2)
+            .build();
 
         // Brass section
         let osc1 = saw_ar(freq * 0.998) * 0.3;

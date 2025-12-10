@@ -6,17 +6,20 @@ define_synthdef("riser_reverse", |builder| {
             let gate = dc_ar(1.0);
 
             // Reverse envelope (starts high, fades slightly, then rises)
-            let envelope = env_perc(1.5, 2.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(1.5, 2.0)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Pink noise
             let noise = pink_noise_ar();
 
             // Filter sweeps backwards then forwards
-            let filter_envelope = env_perc(1.2, 1.8);
-            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let filter_env = envelope()
+                .perc(1.2, 1.8)
+                .gate(gate)
+                .build();
             let mod_cutoff = 5000.0 + (filter_env * 5000.0);
 
             let filtered = lpf_ar(noise, mod_cutoff);

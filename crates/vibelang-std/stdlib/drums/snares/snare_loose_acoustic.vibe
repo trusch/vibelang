@@ -6,22 +6,27 @@ define_synthdef("snare_loose_acoustic", |builder| {
             let gate = dc_ar(1.0);
 
             // Longer decay for loose character
-            let noise_envelope = env_perc(0.003, 0.35);
-            let noise_env = NewEnvGenBuilder(noise_envelope, gate)
-                .with_done_action(2.0)
+            let noise_env = envelope()
+                .perc(0.003, 0.35)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
             let noise = white_noise_ar();
             let filtered_noise = rlpf_ar(noise, 6000.0, 0.7);
             let snare_noise = filtered_noise * noise_env;
 
             // Body tone
-            let body_envelope = env_perc(0.002, 0.18);
-            let body_env = NewEnvGenBuilder(body_envelope, gate).build();
+            let body_env = envelope()
+                .perc(0.002, 0.18)
+                .gate(gate)
+                .build();
             let body = sin_osc_ar(195.0) * body_env * 0.2;
 
             // Rattling snare wires - use LFNoise for texture
-            let wire_envelope = env_perc(0.002, 0.3);
-            let wire_env = NewEnvGenBuilder(wire_envelope, gate).build();
+            let wire_env = envelope()
+                .perc(0.002, 0.3)
+                .gate(gate)
+                .build();
             let wires = hpf_ar(white_noise_ar(), 3000.0) * wire_env * 0.15;
 
             (snare_noise * 0.6 + body + wires) * amp

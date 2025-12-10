@@ -13,9 +13,10 @@ define_synthdef("serum_growl", |builder| {
         .param("growl_rate", 8.0) // LFO rate for growl
         .param("intensity", 0.7)
         .body(|freq, amp, gate, growl_rate, intensity| {
-            let envelope = env_asr(0.01, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // FM modulation for growl character
@@ -50,9 +51,10 @@ define_synthdef("serum_reese", |builder| {
         .param("gate", 1.0)
         .param("detune", 0.5)
         .body(|freq, amp, gate, detune| {
-            let envelope = env_asr(0.02, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.02, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Multiple detuned saws for modern reese
@@ -83,9 +85,10 @@ define_synthdef("serum_supersaw", |builder| {
         .param("gate", 1.0)
         .param("width", 0.7)
         .body(|freq, amp, gate, width| {
-            let envelope = env_asr(0.01, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // 7 voices with varying detune
@@ -114,14 +117,16 @@ define_synthdef("serum_pluck", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Fast decay envelope
-            let decay_env_data = env_perc(0.001, 0.3);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 0.3)
+                .build();
 
             // Saw with filter sweep
             let saw = saw_ar(freq);
@@ -144,9 +149,10 @@ define_synthdef("serum_hoover", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.05, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.05, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Detuned oscillators with movement

@@ -11,9 +11,10 @@ define_synthdef("future_chord", |builder| {
         .param("gate", 1.0)
         .param("width", 0.6)
         .body(|freq, amp, gate, width| {
-            let envelope = env_asr(0.02, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.02, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Supersaw stack
@@ -43,9 +44,10 @@ define_synthdef("future_lead", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.01, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Clean saw with slight detune
@@ -69,9 +71,10 @@ define_synthdef("future_wobble", |builder| {
         .param("gate", 1.0)
         .param("rate", 4.0)
         .body(|freq, amp, gate, rate| {
-            let envelope = env_asr(0.01, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Chord-like oscillators
@@ -97,9 +100,10 @@ define_synthdef("future_pad", |builder| {
         .param("amp", 0.3)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.5, 1.0, 0.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.5, 1.0, 0.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Soft detuned voices
@@ -124,13 +128,15 @@ define_synthdef("future_pluck", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let decay_env_data = env_perc(0.001, 0.25);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 0.25)
+                .build();
 
             // Bright saw pluck
             let saw1 = saw_ar(freq);

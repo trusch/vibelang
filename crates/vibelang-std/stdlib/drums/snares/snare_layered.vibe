@@ -6,25 +6,32 @@ define_synthdef("snare_layered", |builder| {
             let gate = dc_ar(1.0);
 
             // Top layer - bright noise
-            let top_envelope = env_perc(0.001, 0.15);
-            let top_env = NewEnvGenBuilder(top_envelope, gate)
-                .with_done_action(2.0)
+            let top_env = envelope()
+                .perc(0.001, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
             let top = hpf_ar(white_noise_ar(), 4000.0) * top_env * 0.5;
 
             // Mid layer - body
-            let mid_envelope = env_perc(0.001, 0.2);
-            let mid_env = NewEnvGenBuilder(mid_envelope, gate).build();
+            let mid_env = envelope()
+                .perc(0.001, 0.2)
+                .gate(gate)
+                .build();
             let mid = rlpf_ar(white_noise_ar(), 2500.0, 0.5) * mid_env * 0.6;
 
             // Bottom layer - tone
-            let bottom_envelope = env_perc(0.001, 0.12);
-            let bottom_env = NewEnvGenBuilder(bottom_envelope, gate).build();
+            let bottom_env = envelope()
+                .perc(0.001, 0.12)
+                .gate(gate)
+                .build();
             let bottom = sin_osc_ar(200.0) * bottom_env * 0.4;
 
             // Attack transient
-            let attack_envelope = env_perc(0.0001, 0.005);
-            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack_env = envelope()
+                .perc(0.0001, 0.005)
+                .gate(gate)
+                .build();
             let attack = white_noise_ar() * attack_env * 0.3;
 
             (top + mid + bottom + attack) * amp * 0.7

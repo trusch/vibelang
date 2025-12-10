@@ -6,9 +6,10 @@ define_synthdef("hihat_metallic", |builder| {
             let gate = dc_ar(1.0);
 
             // Medium envelope
-            let envelope = env_perc(0.0005, 0.08);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.0005, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Inharmonic frequency ratios for metallic character

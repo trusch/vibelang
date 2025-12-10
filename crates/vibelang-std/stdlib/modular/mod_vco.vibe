@@ -5,9 +5,10 @@ define_synthdef("mod_vco")
     .param("gate", 1.0)
     .param("wave", 0.0) // 0=saw, 0.5=pulse, 1.0=sine
     .body(|freq, amp, gate, wave| {
-        let envelope = env_asr(0.001, 1.0, 0.001);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.001, 1.0, 0.001)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Crossfade between waveforms

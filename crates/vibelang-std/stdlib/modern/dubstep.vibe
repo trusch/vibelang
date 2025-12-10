@@ -12,9 +12,10 @@ define_synthdef("dubstep_wobble", |builder| {
         .param("rate", 4.0) // Wobble rate
         .param("intensity", 0.8)
         .body(|freq, amp, gate, rate, intensity| {
-            let envelope = env_asr(0.01, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Bass oscillator
@@ -46,9 +47,10 @@ define_synthdef("dubstep_growl", |builder| {
         .param("gate", 1.0)
         .param("aggression", 0.7)
         .body(|freq, amp, gate, aggression| {
-            let envelope = env_asr(0.01, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // FM growl synthesis
@@ -80,14 +82,16 @@ define_synthdef("dubstep_riddim", |builder| {
         .param("amp", 0.6)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.005, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Short filter envelope
-            let filt_env_data = env_perc(0.001, 0.08);
-            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.08)
+                .build();
 
             // Simple saw bass
             let saw = saw_ar(freq);
@@ -114,14 +118,17 @@ define_synthdef("dubstep_snare", |builder| {
         .body(|freq, amp| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(0.001, 0.25);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 0.25)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Pitch sweep
-            let pitch_env_data = env_perc(0.001, 0.05);
-            let pitch_env = NewEnvGenBuilder(pitch_env_data, gate).build();
+            let pitch_env = envelope()
+                .perc(0.001, 0.05)
+                .gate(gate)
+                .build();
 
             // Body
             let body = sin_osc_ar(freq + pitch_env * 100.0);
@@ -145,9 +152,10 @@ define_synthdef("dubstep_chord", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.02, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.02, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Massive detuned stack

@@ -10,9 +10,10 @@ define_synthdef("tuba", |builder| {
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
             // Slow attack for tuba
-            let envelope = env_asr(0.15, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.15, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Deep brass tone

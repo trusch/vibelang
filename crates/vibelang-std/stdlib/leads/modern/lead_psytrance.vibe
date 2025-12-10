@@ -5,14 +5,16 @@ define_synthdef("lead_psytrance")
     .param("gate", 1.0)
     .param("acid", 0.7)
     .body(|freq, amp, gate, acid| {
-        let envelope = env_asr(0.001, 1.0, 0.08);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.001, 1.0, 0.08)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Accent/filter envelope
-        let filt_env_shape = env_perc(0.001, 0.2);
-        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+        let filt_env = envelope()
+            .perc(0.001, 0.2)
+            .build();
 
         // Saw oscillator
         let osc = saw_ar(freq);

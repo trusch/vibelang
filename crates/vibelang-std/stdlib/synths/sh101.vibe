@@ -12,14 +12,16 @@ define_synthdef("sh101_bass", |builder| {
         .param("gate", 1.0)
         .param("filter_env", 0.6)
         .body(|freq, amp, gate, filter_env| {
-            let envelope = env_asr(0.003, 1.0, 0.08);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.003, 1.0, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope
-            let filt_env_data = env_perc(0.001, 0.15);
-            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.15)
+                .build();
 
             // Single VCO with sub
             let saw = saw_ar(freq);
@@ -43,9 +45,10 @@ define_synthdef("sh101_lead", |builder| {
         .param("gate", 1.0)
         .param("resonance", 0.4)
         .body(|freq, amp, gate, resonance| {
-            let envelope = env_asr(0.01, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Single oscillator
@@ -66,9 +69,10 @@ define_synthdef("sh101_sync", |builder| {
         .param("gate", 1.0)
         .param("sync_ratio", 2.5)
         .body(|freq, amp, gate, sync_ratio| {
-            let envelope = env_asr(0.01, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Simulated sync with harmonic content
@@ -94,14 +98,16 @@ define_synthdef("sh101_acid", |builder| {
         .param("resonance", 0.7)
         .param("env_mod", 0.8)
         .body(|freq, amp, gate, resonance, env_mod| {
-            let envelope = env_asr(0.002, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.002, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Sharp filter envelope
-            let filt_env_data = env_perc(0.001, 0.1);
-            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.1)
+                .build();
 
             // Saw oscillator
             let saw = saw_ar(freq);

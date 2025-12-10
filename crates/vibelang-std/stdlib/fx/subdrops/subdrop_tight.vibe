@@ -5,14 +5,17 @@ define_synthdef("subdrop_tight", |builder| {
         .body(|amp| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(0.001, 0.6);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 0.6)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Fast pitch drop
-            let pitch_env = env_perc(0.001, 0.1);
-            let pitch_e = NewEnvGenBuilder(pitch_env, gate).build();
+            let pitch_e = envelope()
+                .perc(0.001, 0.1)
+                .gate(gate)
+                .build();
             let freq = 80.0 - pitch_e * 40.0;
 
             // Clean sine sub
@@ -20,8 +23,10 @@ define_synthdef("subdrop_tight", |builder| {
 
             // Subtle click
             let click = white_noise_ar();
-            let click_env = env_perc(0.001, 0.005);
-            let click_e = NewEnvGenBuilder(click_env, gate).build();
+            let click_e = envelope()
+                .perc(0.001, 0.005)
+                .gate(gate)
+                .build();
             let click_filtered = lpf_ar(click, 8000.0) * click_e * 0.15;
 
             (sub + click_filtered) * env * amp * 0.8

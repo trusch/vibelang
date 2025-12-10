@@ -11,9 +11,10 @@ define_synthdef("tremolo_strings", |builder| {
         .param("speed", 8.0) // Tremolo speed in Hz
         .body(|freq, amp, gate, speed| {
             // String envelope
-            let envelope = env_asr(0.1, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.1, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Multiple detuned voices

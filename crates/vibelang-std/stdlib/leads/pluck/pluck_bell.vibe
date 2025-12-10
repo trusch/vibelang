@@ -8,9 +8,10 @@ define_synthdef("lead_pluck_bell", |builder| {
 
             // Bell envelope
             // Gate-controlled ASR envelope for proper note-on/note-off behavior
-            let envelope = env_asr(0.003, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.003, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Inharmonic partials for bell character

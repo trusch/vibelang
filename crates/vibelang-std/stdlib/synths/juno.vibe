@@ -12,9 +12,10 @@ define_synthdef("juno_pad", |builder| {
         .param("gate", 1.0)
         .param("chorus", 0.7) // Chorus depth
         .body(|freq, amp, gate, chorus| {
-            let envelope = env_asr(0.4, 1.0, 0.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.4, 1.0, 0.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Single DCO with sub oscillator
@@ -46,14 +47,17 @@ define_synthdef("juno_brass", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.08, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.08, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope for brass attack
-            let filt_env_data = env_asr(0.03, 1.0, 0.15);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.03, 1.0, 0.15)
+                .gate(gate)
+                .build();
 
             // Saw waves with PWM character
             let saw1 = saw_ar(freq);
@@ -76,9 +80,10 @@ define_synthdef("juno_bass", |builder| {
         .param("amp", 0.6)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.005, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Saw + sub
@@ -88,8 +93,9 @@ define_synthdef("juno_bass", |builder| {
             let source = saw * 0.6 + sub;
 
             // Punchy filter envelope
-            let filt_env_data = env_perc(0.001, 0.2);
-            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.2)
+                .build();
             let cutoff = 400.0 + filt_env * 2000.0;
 
             let filtered = rlpf_ar(source, cutoff, 0.35);
@@ -105,9 +111,10 @@ define_synthdef("juno_strings", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.3, 1.0, 0.4);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.3, 1.0, 0.4)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Multiple detuned voices

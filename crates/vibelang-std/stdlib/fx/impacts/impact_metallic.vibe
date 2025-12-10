@@ -6,9 +6,10 @@ define_synthdef("impact_metallic", |builder| {
             let gate = dc_ar(1.0);
 
             // Sharp attack, long resonance
-            let envelope = env_perc(0.001, 1.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 1.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Inharmonic metallic frequencies
@@ -21,8 +22,10 @@ define_synthdef("impact_metallic", |builder| {
             let mix = metal1 + metal2 + metal3 + metal4 + metal5;
 
             // Add noise burst
-            let noise_envelope = env_perc(0.001, 0.08);
-            let noise_env = NewEnvGenBuilder(noise_envelope, gate).build();
+            let noise_env = envelope()
+                .perc(0.001, 0.08)
+                .gate(gate)
+                .build();
             let noise = white_noise_ar() * noise_env * 0.3;
             let filtered_noise = hpf_ar(noise, 3000.0);
 

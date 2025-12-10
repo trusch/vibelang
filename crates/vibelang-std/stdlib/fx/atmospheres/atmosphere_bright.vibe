@@ -4,9 +4,10 @@ define_synthdef("atmosphere_bright", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|amp, gate| {
-            let envelope = env_asr(1.5, 1.0, 1.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(1.5, 1.0, 1.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Shimmering high frequencies

@@ -11,9 +11,10 @@ define_synthdef("lfo_sine", |builder| {
         .param("amp", 1.0)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.001);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.001)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             sin_osc_ar(freq) * env * amp
@@ -27,9 +28,10 @@ define_synthdef("lfo_triangle", |builder| {
         .param("amp", 1.0)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.001);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.001)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Use sine as approximation
@@ -45,9 +47,10 @@ define_synthdef("lfo_saw", |builder| {
         .param("amp", 1.0)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.001);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.001)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             saw_ar(freq) * env * amp
@@ -61,9 +64,10 @@ define_synthdef("lfo_random", |builder| {
         .param("amp", 1.0)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.001);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.001)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Use noise filtered for stepped random effect

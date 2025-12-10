@@ -11,9 +11,10 @@ define_synthdef("synth_brass", |builder| {
         .param("detune", 0.5) // Detune amount
         .body(|freq, amp, gate, detune| {
             // Fast attack envelope
-            let envelope = env_asr(0.03, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.03, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Multiple detuned saws for fat sound
@@ -27,8 +28,10 @@ define_synthdef("synth_brass", |builder| {
             let stack = (saw1 + saw2 + saw3 + saw4 + saw5) * 0.25;
 
             // Filter with envelope
-            let filter_env_data = env_asr(0.01, 1.0, 0.1);
-            let filter_env = NewEnvGenBuilder(filter_env_data, gate).build();
+            let filter_env = envelope()
+                .asr(0.01, 1.0, 0.1)
+                .gate(gate)
+                .build();
             let filter_freq = 600.0 + filter_env * 3000.0;
 
             let brass = rlpf_ar(stack, filter_freq, 0.4);

@@ -5,17 +5,20 @@ define_synthdef("snare_808")
         let gate = dc_ar(1.0);
 
         // Noise component - short decay
-        let noise_envelope = env_perc(0.001, 0.12);
-        let noise_env = NewEnvGenBuilder(noise_envelope, gate)
-            .with_done_action(2.0)
+        let noise_env = envelope()
+            .perc(0.001, 0.12)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
         let noise = white_noise_ar();
         let filtered_noise = hpf_ar(noise, 2000.0);
         let snare_noise = filtered_noise * noise_env * 0.7;
 
         // Tone component - metallic ring
-        let tone_envelope = env_perc(0.001, 0.08);
-        let tone_env = NewEnvGenBuilder(tone_envelope, gate).build();
+        let tone_env = envelope()
+            .perc(0.001, 0.08)
+            .gate(gate)
+            .build();
         let tone = sin_osc_ar(180.0) * tone_env * 0.3;
 
         (snare_noise + tone) * amp

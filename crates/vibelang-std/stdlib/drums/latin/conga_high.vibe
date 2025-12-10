@@ -6,14 +6,17 @@ define_synthdef("conga_high")
         let gate = dc_ar(1.0);
 
         // Main body envelope
-        let amp_envelope = env_perc(0.001, 0.25);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 0.25)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Pitch envelope for that conga "pop"
-        let pitch_envelope = env_perc(0.001, 0.03);
-        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let pitch_env = envelope()
+            .perc(0.001, 0.03)
+            .gate(gate)
+            .build();
         let freq_mod = pitch_env * freq * 2.0;
 
         // Main tone - combination of sine and resonant body
@@ -22,8 +25,10 @@ define_synthdef("conga_high")
         let click = sin_osc_ar((freq + freq_mod) * 3.5) * 0.1;
 
         // Attack transient
-        let attack_envelope = env_perc(0.0001, 0.008);
-        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack_env = envelope()
+            .perc(0.0001, 0.008)
+            .gate(gate)
+            .build();
         let attack = white_noise_ar() * attack_env * 0.15;
 
         (body + overtone + click + attack) * amp_env * amp

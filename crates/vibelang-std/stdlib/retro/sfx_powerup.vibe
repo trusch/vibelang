@@ -5,14 +5,17 @@ define_synthdef("sfx_powerup")
     .body(|freq, amp| {
         let gate = dc_ar(1.0);
 
-        let amp_envelope = env_perc(0.001, 0.4);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 0.4)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Ascending pitch
-        let pitch_envelope = env_perc(0.001, 0.35);
-        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let pitch_env = envelope()
+            .perc(0.001, 0.35)
+            .gate(gate)
+            .build();
         let sweep_freq = freq + pitch_env * freq * 4.0;
 
         // Pulse wave for chip sound

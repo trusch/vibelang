@@ -11,9 +11,10 @@ define_synthdef("shakuhachi", |builder| {
         .param("gate", 1.0)
         .param("breath", 0.4) // Breath noise amount
         .body(|freq, amp, gate, breath| {
-            let envelope = env_asr(0.15, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.15, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Gentle vibrato

@@ -4,13 +4,16 @@ define_synthdef("hang_drum")
     .param("amp", 0.55)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.001, 1.0, 0.8);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.001, 1.0, 0.8)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Bell-like attack
-        let attack_env = NewEnvGenBuilder(env_perc(0.001, 0.1), dc_ar(1.0)).build();
+        let attack_env = envelope()
+            .perc(0.001, 0.1)
+            .build();
         let attack = sin_osc_ar(freq * 4.0) * attack_env * 0.3;
 
         // Main tone with detuned partials

@@ -10,14 +10,16 @@ define_synthdef("music_box", |builder| {
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
             // Quick pluck envelope
-            let envelope = env_asr(0.001, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Decay envelope
-            let decay_env_data = env_perc(0.001, 0.8);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 0.8)
+                .build();
 
             // Pure sine-based tines
             let h1 = sin_osc_ar(freq);
@@ -28,8 +30,9 @@ define_synthdef("music_box", |builder| {
             let tine = h1 + h2 + h3 + h4;
 
             // Tine pluck attack
-            let pluck_env_data = env_perc(0.0001, 0.008);
-            let pluck_env = NewEnvGenBuilder(pluck_env_data, dc_ar(1.0)).build();
+            let pluck_env = envelope()
+                .perc(0.0001, 0.008)
+                .build();
             let pluck = sin_osc_ar(freq * 5.0) * pluck_env * 0.3;
 
             // High pass for clarity

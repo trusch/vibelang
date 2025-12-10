@@ -6,9 +6,10 @@ define_synthdef("hihat_splash", |builder| {
             let gate = dc_ar(1.0);
 
             // Long, complex envelope
-            let envelope = env_perc(0.005, 0.8);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.005, 0.8)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Mix multiple noise colors for complex texture

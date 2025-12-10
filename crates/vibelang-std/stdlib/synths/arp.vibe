@@ -11,9 +11,10 @@ define_synthdef("arp_2600_lead", |builder| {
         .param("gate", 1.0)
         .param("filter_freq", 3000.0)
         .body(|freq, amp, gate, filter_freq| {
-            let envelope = env_asr(0.01, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Three VCOs
@@ -37,14 +38,16 @@ define_synthdef("arp_odyssey_bass", |builder| {
         .param("amp", 0.6)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.005, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope
-            let filt_env_data = env_perc(0.001, 0.2);
-            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.2)
+                .build();
 
             // Two oscillators
             let vco1 = saw_ar(freq);
@@ -67,9 +70,10 @@ define_synthdef("arp_strings", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.2, 1.0, 0.3);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.2, 1.0, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Multiple oscillators for ensemble
@@ -94,9 +98,10 @@ define_synthdef("arp_solina", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.15, 1.0, 0.25);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.15, 1.0, 0.25)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Divide-down style ensemble

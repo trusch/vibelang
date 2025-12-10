@@ -5,9 +5,10 @@ define_synthdef("tuner_a440")
     .param("amp", 0.3)
     .param("gate", 1.0)
     .body(|amp, gate| {
-        let envelope = env_asr(0.01, 1.0, 0.01);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.01, 1.0, 0.01)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         sin_osc_ar(440.0) * env * amp
@@ -18,9 +19,10 @@ define_synthdef("tuner_a432")
     .param("amp", 0.3)
     .param("gate", 1.0)
     .body(|amp, gate| {
-        let envelope = env_asr(0.01, 1.0, 0.01);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.01, 1.0, 0.01)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         sin_osc_ar(432.0) * env * amp
@@ -31,9 +33,10 @@ define_synthdef("tuner_e_low")
     .param("amp", 0.35)
     .param("gate", 1.0)
     .body(|amp, gate| {
-        let envelope = env_asr(0.01, 1.0, 0.01);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.01, 1.0, 0.01)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // 82.41 Hz - Low E

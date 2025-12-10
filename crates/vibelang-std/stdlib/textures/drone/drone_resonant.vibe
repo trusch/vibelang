@@ -7,9 +7,10 @@ define_synthdef("drone_resonant", |builder| {
             let gate = dc_ar(1.0);
 
             // Long sustain
-            let envelope = env_perc(2.5, 18.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(2.5, 18.0)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Sawtooth source

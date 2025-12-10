@@ -6,17 +6,20 @@ define_synthdef("sweep_filter_down", |builder| {
             let gate = dc_ar(1.0);
 
             // Sweep envelope
-            let envelope = env_perc(0.01, 2.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.01, 2.0)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // White noise source
             let noise = white_noise_ar();
 
             // Downward filter sweep (inverted envelope)
-            let filter_envelope = env_perc(0.01, 0.2);
-            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let filter_env = envelope()
+                .perc(0.01, 0.2)
+                .gate(gate)
+                .build();
             let mod_cutoff = 8000.0 - (filter_env * 7000.0);
 
             let filtered = rlpf_ar(noise, mod_cutoff, 0.3);

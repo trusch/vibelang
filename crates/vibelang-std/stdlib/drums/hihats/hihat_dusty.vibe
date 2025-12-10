@@ -6,9 +6,10 @@ define_synthdef("hihat_dusty", |builder| {
             let gate = dc_ar(1.0);
 
             // Soft attack and medium decay
-            let envelope = env_perc(0.003, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.003, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Use pink noise for warmer character

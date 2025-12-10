@@ -13,14 +13,17 @@ define_synthdef("minimoog_bass", |builder| {
         .param("filter_freq", 800.0)
         .param("resonance", 0.3)
         .body(|freq, amp, gate, filter_freq, resonance| {
-            let envelope = env_asr(0.01, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope
-            let filt_env_data = env_asr(0.01, 1.0, 0.15);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.01, 1.0, 0.15)
+                .gate(gate)
+                .build();
 
             // Three detuned oscillators (classic Moog)
             let osc1 = saw_ar(freq);
@@ -46,14 +49,17 @@ define_synthdef("minimoog_lead", |builder| {
         .param("filter_freq", 2000.0)
         .param("resonance", 0.4)
         .body(|freq, amp, gate, filter_freq, resonance| {
-            let envelope = env_asr(0.02, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.02, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope
-            let filt_env_data = env_asr(0.01, 1.0, 0.2);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.01, 1.0, 0.2)
+                .gate(gate)
+                .build();
 
             // Three oscillators - mix of saw and pulse
             let osc1 = saw_ar(freq);
@@ -77,9 +83,10 @@ define_synthdef("minimoog_pad", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.5, 1.0, 0.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.5, 1.0, 0.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Warm detuned oscillators

@@ -11,9 +11,10 @@ define_synthdef("solo_violin", |builder| {
         .param("vibrato", 0.6) // Vibrato amount
         .body(|freq, amp, gate, vibrato| {
             // Bowed string envelope
-            let envelope = env_asr(0.1, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.1, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Vibrato

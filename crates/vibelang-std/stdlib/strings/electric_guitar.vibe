@@ -17,14 +17,16 @@ define_synthdef("electric_guitar_clean", |builder| {
         .param("tone", 0.6)          // Tone knob
         .body(|freq, amp, gate, pickup_pos, tone| {
             let decay_time = 2.5 + (1.0 / (freq / 80.0));
-            let envelope = env_asr(0.001, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Pick attack
-            let attack_data = env_perc(0.0002, 0.004);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.0002, 0.004)
+                .build();
             let attack = lpf_ar(white_noise_ar() * attack_env, 4000.0) * 0.3;
 
             // Electric guitar string - sawtooth-like with harmonics
@@ -58,9 +60,9 @@ define_synthdef("electric_guitar_clean", |builder| {
             let warm = lpf_ar(amped, 8000.0);
 
             // Sustain envelope for body decay
-            let sus_env_data = env_perc(0.001, 1.0);
-            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0))
-                .with_time_scale(decay_time)
+            let sus_env = envelope()
+                .perc(0.001, 1.0)
+                .time_scale(decay_time)
                 .build();
 
             let output = (warm + attack) * env * sus_env * amp * 0.5;
@@ -77,14 +79,16 @@ define_synthdef("electric_guitar_crunch", |builder| {
         .param("gain", 0.5)
         .param("tone", 0.6)
         .body(|freq, amp, gate, gain, tone| {
-            let envelope = env_asr(0.001, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Harder pick attack
-            let attack_data = env_perc(0.0001, 0.003);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.0001, 0.003)
+                .build();
             let attack = white_noise_ar() * attack_env * 0.25;
 
             // Humbucker-style darker tone
@@ -127,14 +131,16 @@ define_synthdef("electric_guitar_distorted", |builder| {
         .param("gain", 0.8)
         .param("tone", 0.5)
         .body(|freq, amp, gate, gain, tone| {
-            let envelope = env_asr(0.001, 1.0, 0.08);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Aggressive pick attack
-            let attack_data = env_perc(0.0001, 0.002);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.0001, 0.002)
+                .build();
             let attack = hpf_ar(white_noise_ar() * attack_env, 1000.0) * 0.2;
 
             // Thick humbucker tone
@@ -187,14 +193,16 @@ define_synthdef("electric_guitar_jazz", |builder| {
         .param("warmth", 0.7)
         .body(|freq, amp, gate, warmth| {
             let decay_time = 2.0 + (1.0 / (freq / 100.0));
-            let envelope = env_asr(0.002, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.002, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Soft thumb/finger attack
-            let attack_data = env_perc(0.001, 0.01);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.001, 0.01)
+                .build();
             let attack = lpf_ar(white_noise_ar() * attack_env, 1500.0) * 0.15;
 
             // Hollow body guitar tone - fewer high harmonics
@@ -220,9 +228,9 @@ define_synthdef("electric_guitar_jazz", |builder| {
             let amped = (toned + body_res) * 1.1;
 
             // Sustain
-            let sus_env_data = env_perc(0.001, 1.0);
-            let sus_env = NewEnvGenBuilder(sus_env_data, dc_ar(1.0))
-                .with_time_scale(decay_time)
+            let sus_env = envelope()
+                .perc(0.001, 1.0)
+                .time_scale(decay_time)
                 .build();
 
             let output = (amped + attack) * env * sus_env * amp * 0.5;
@@ -238,14 +246,16 @@ define_synthdef("electric_guitar_funk", |builder| {
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
             // Short, percussive envelope
-            let envelope = env_perc(0.001, 0.3);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Sharp attack
-            let attack_data = env_perc(0.0001, 0.002);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.0001, 0.002)
+                .build();
             let attack = hpf_ar(white_noise_ar() * attack_env, 2000.0) * 0.3;
 
             // Bright single coil
@@ -282,9 +292,10 @@ define_synthdef("power_chord", |builder| {
         .param("gate", 1.0)
         .param("gain", 0.7)
         .body(|freq, amp, gate, gain| {
-            let envelope = env_asr(0.001, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Root note
@@ -328,9 +339,10 @@ define_synthdef("electric_guitar_wah", |builder| {
         .param("wah_rate", 2.0)
         .param("wah_depth", 0.7)
         .body(|freq, amp, gate, wah_rate, wah_depth| {
-            let envelope = env_asr(0.001, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // String tone

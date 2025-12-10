@@ -6,9 +6,10 @@ define_synthdef("impact_soft", |builder| {
             let gate = dc_ar(1.0);
 
             // Gentle envelope
-            let envelope = env_perc(0.005, 1.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.005, 1.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Low frequency body

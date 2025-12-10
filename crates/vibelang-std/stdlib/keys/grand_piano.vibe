@@ -20,15 +20,17 @@ define_synthdef("grand_piano", |builder| {
         .body(|freq, amp, gate, velocity, brightness, resonance| {
             // Main amplitude envelope - piano has sharp attack, long decay
             let decay_time = 2.0 + (1.0 / (freq / 100.0));  // Lower notes decay longer
-            let envelope = env_perc(0.001, 1.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_time_scale(decay_time)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 1.0)
+                .gate(gate)
+                .time_scale(decay_time)
+                .cleanup_on_finish()
                 .build();
 
             // Hammer strike envelope - very fast, creates initial "thunk"
-            let hammer_env_data = env_perc(0.0005, 0.008);
-            let hammer_env = NewEnvGenBuilder(hammer_env_data, dc_ar(1.0)).build();
+            let hammer_env = envelope()
+                .perc(0.0005, 0.008)
+                .build();
 
             // Velocity affects brightness - harder hit = more harmonics
             let vel_brightness = 0.3 + (velocity * 0.7);
@@ -55,8 +57,9 @@ define_synthdef("grand_piano", |builder| {
             let hammer_filtered = bpf_ar(hammer_noise, freq * 8.0, 0.5);
 
             // Dynamic low-pass filter - simulates hammer felt softening
-            let filter_env_data = env_perc(0.001, 0.3);
-            let filter_env = NewEnvGenBuilder(filter_env_data, dc_ar(1.0)).build();
+            let filter_env = envelope()
+                .perc(0.001, 0.3)
+                .build();
             let dyn_cutoff = cutoff_base + (filter_env * 4000.0 * velocity);
             let filtered_tone = lpf_ar(string_tone, dyn_cutoff);
 
@@ -69,16 +72,16 @@ define_synthdef("grand_piano", |builder| {
             // Sympathetic string resonance (other strings vibrating)
             let symp1 = sin_osc_ar(freq * 2.0) * 0.02 * resonance;
             let symp2 = sin_osc_ar(freq * 3.0) * 0.015 * resonance;
-            let symp_env_data = env_perc(0.1, 1.2);
-            let symp_env = NewEnvGenBuilder(symp_env_data, dc_ar(1.0))
-                .with_time_scale(decay_time)
+            let symp_env = envelope()
+                .perc(0.1, 1.2)
+                .time_scale(decay_time)
                 .build();
             let sympathetic = (symp1 + symp2) * symp_env;
 
             // High frequency damping over time (strings lose brightness as they decay)
-            let hf_damp_env_data = env_perc(0.001, 0.5);
-            let hf_damp_env = NewEnvGenBuilder(hf_damp_env_data, dc_ar(1.0))
-                .with_time_scale(decay_time)
+            let hf_damp_env = envelope()
+                .perc(0.001, 0.5)
+                .time_scale(decay_time)
                 .build();
             let hf_cutoff = 2000.0 + (hf_damp_env * 6000.0);
 
@@ -100,10 +103,11 @@ define_synthdef("grand_piano_bright", |builder| {
         .param("velocity", 0.8)
         .body(|freq, amp, gate, velocity| {
             let decay_time = 2.5 + (1.0 / (freq / 80.0));
-            let envelope = env_perc(0.001, 1.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_time_scale(decay_time)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 1.0)
+                .gate(gate)
+                .time_scale(decay_time)
+                .cleanup_on_finish()
                 .build();
 
             // Brighter harmonic content
@@ -121,8 +125,9 @@ define_synthdef("grand_piano_bright", |builder| {
             let tone = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8 + h9 + h10;
 
             // Attack transient
-            let attack_data = env_perc(0.0003, 0.015);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.0003, 0.015)
+                .build();
             let attack = white_noise_ar() * attack_env * velocity * 0.12;
             let attack_filtered = bpf_ar(attack, freq * 6.0, 0.4);
 
@@ -148,10 +153,11 @@ define_synthdef("grand_piano_warm", |builder| {
         .param("velocity", 0.6)
         .body(|freq, amp, gate, velocity| {
             let decay_time = 3.0 + (1.0 / (freq / 60.0));
-            let envelope = env_perc(0.002, 1.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_time_scale(decay_time)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.002, 1.0)
+                .gate(gate)
+                .time_scale(decay_time)
+                .cleanup_on_finish()
                 .build();
 
             // Warmer harmonic content - less upper partials
@@ -165,8 +171,9 @@ define_synthdef("grand_piano_warm", |builder| {
             let tone = h1 + h2 + h3 + h4 + h5 + h6;
 
             // Softer attack
-            let attack_data = env_perc(0.001, 0.02);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.001, 0.02)
+                .build();
             let attack = white_noise_ar() * attack_env * velocity * 0.05;
 
             // Lower cutoff for warmth
@@ -190,10 +197,11 @@ define_synthdef("upright_piano", |builder| {
         .param("velocity", 0.7)
         .body(|freq, amp, gate, velocity| {
             let decay_time = 1.8 + (1.0 / (freq / 120.0));
-            let envelope = env_perc(0.001, 1.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_time_scale(decay_time)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 1.0)
+                .gate(gate)
+                .time_scale(decay_time)
+                .cleanup_on_finish()
                 .build();
 
             // Upright has more "honky" character - emphasized odd harmonics
@@ -208,8 +216,9 @@ define_synthdef("upright_piano", |builder| {
             let tone = h1 + h2 + h3 + h4 + h5 + h6 + h7;
 
             // Mechanical noise (felt hammers, action)
-            let mech_data = env_perc(0.0005, 0.012);
-            let mech_env = NewEnvGenBuilder(mech_data, dc_ar(1.0)).build();
+            let mech_env = envelope()
+                .perc(0.0005, 0.012)
+                .build();
             let mech = white_noise_ar() * mech_env * velocity * 0.08;
 
             // Smaller soundboard resonance
@@ -233,14 +242,16 @@ define_synthdef("tack_piano", |builder| {
         .param("velocity", 0.7)
         .body(|freq, amp, gate, velocity| {
             let decay_time = 1.2;
-            let envelope = env_perc(0.001, decay_time);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, decay_time)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Very bright attack from tacks
-            let attack_data = env_perc(0.0002, 0.005);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.0002, 0.005)
+                .build();
             let tack_hit = white_noise_ar() * attack_env * 0.4;
             let tack_filtered = hpf_ar(tack_hit, 3000.0);
 

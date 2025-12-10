@@ -8,9 +8,10 @@ define_synthdef("pluck_harp", |builder| {
 
             // Harp envelope
             // Gate-controlled ASR envelope for proper note-on/note-off behavior
-            let envelope = env_asr(0.005, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Rich harmonic series
@@ -23,8 +24,10 @@ define_synthdef("pluck_harp", |builder| {
             let mix = h1 + h2 + h3 + h4 + h5;
 
             // Pluck attack
-            let attack_envelope = env_asr(0.002, 1.0, 0.1);
-            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack_env = envelope()
+                .asr(0.002, 1.0, 0.1)
+                .gate(gate)
+                .build();
             let attack = pink_noise_ar() * attack_env * 0.12;
             let filtered_attack = lpf_ar(attack, 3000.0);
 

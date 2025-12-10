@@ -4,9 +4,10 @@ define_synthdef("lead_flute")
     .param("amp", 0.55)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.08, 1.0, 0.15);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.08, 1.0, 0.15)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Vibrato
@@ -18,8 +19,10 @@ define_synthdef("lead_flute")
         let harm2 = sin_osc_ar((freq + vib) * 3.0) * 0.08;
 
         // Breath noise
-        let breath_env = env_asr(0.1, 0.6, 0.15);
-        let breath_e = NewEnvGenBuilder(breath_env, gate).build();
+        let breath_e = envelope()
+            .asr(0.1, 0.6, 0.15)
+            .gate(gate)
+            .build();
         let breath = bpf_ar(pink_noise_ar(), freq * 1.5, 0.8) * breath_e * 0.2;
 
         let sig = body + harm1 + harm2 + breath;

@@ -8,14 +8,17 @@ define_synthdef("sub_modulated", |builder| {
 
             // Envelope
             // Gate-controlled ASR envelope for proper note-on/note-off behavior
-            let envelope = env_asr(0.01, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Modulator for subtle phase modulation
-            let mod_envelope = env_asr(0.05, 1.0, 0.1);
-            let mod_env = NewEnvGenBuilder(mod_envelope, gate).build();
+            let mod_env = envelope()
+                .asr(0.05, 1.0, 0.1)
+                .gate(gate)
+                .build();
             let modulator = sin_osc_ar(freq * 0.5) * mod_env * 0.3;
 
             // Carrier with modulation

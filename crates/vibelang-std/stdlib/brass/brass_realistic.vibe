@@ -18,14 +18,16 @@ define_synthdef("trumpet_realistic", |builder| {
         .param("lip_tension", 0.5)   // Affects attack and timbre
         .param("air_pressure", 0.7)  // Dynamics
         .body(|freq, amp, gate, brightness, lip_tension, air_pressure| {
-            let envelope = env_asr(0.03, 1.0, 0.08);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.03, 1.0, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Delayed vibrato (musicians add vibrato after attack)
-            let vib_delay_data = env_perc(0.2, 4.0);
-            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib_delay = envelope()
+                .perc(0.2, 4.0)
+                .build();
             let vib_rate = 5.0 + (lip_tension * 1.5);
             let vib_depth = 0.006 + (lip_tension * 0.004);
             let vib = sin_osc_ar(vib_rate) * vib_depth * vib_delay + 1.0;
@@ -46,8 +48,9 @@ define_synthdef("trumpet_realistic", |builder| {
             let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8 + h9 + h10;
 
             // Lip buzz attack transient
-            let lip_data = env_perc(0.001, 0.025);
-            let lip_env = NewEnvGenBuilder(lip_data, dc_ar(1.0)).build();
+            let lip_env = envelope()
+                .perc(0.001, 0.025)
+                .build();
             let lip_buzz = white_noise_ar() * lip_env * lip_tension * 0.15;
             let lip_filtered = bpf_ar(lip_buzz, mod_freq * 6.0, 0.3);
 
@@ -77,9 +80,10 @@ define_synthdef("trumpet_harmon_mute", |builder| {
         .param("gate", 1.0)
         .param("stem_in", 0.5)   // 0=stem out (bright), 1=stem in (dark)
         .body(|freq, amp, gate, stem_in| {
-            let envelope = env_asr(0.025, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.025, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Subtle vibrato
@@ -122,9 +126,10 @@ define_synthdef("trumpet_cup_mute", |builder| {
         .param("amp", 0.55)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.03, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.03, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             let vib = sin_osc_ar(5.2) * 0.005 + 1.0;
@@ -157,14 +162,16 @@ define_synthdef("flugelhorn", |builder| {
         .param("gate", 1.0)
         .param("warmth", 0.7)
         .body(|freq, amp, gate, warmth| {
-            let envelope = env_asr(0.04, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.04, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Slower, wider vibrato
-            let vib_delay_data = env_perc(0.25, 4.0);
-            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib_delay = envelope()
+                .perc(0.25, 4.0)
+                .build();
             let vib = sin_osc_ar(4.8) * 0.006 * vib_delay + 1.0;
             let mod_freq = freq * vib;
 
@@ -179,8 +186,9 @@ define_synthdef("flugelhorn", |builder| {
             let harmonics = h1 + h2 + h3 + h4 + h5 + h6;
 
             // Soft attack
-            let attack_data = env_perc(0.002, 0.03);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.002, 0.03)
+                .build();
             let attack = white_noise_ar() * attack_env * 0.06;
 
             // Conical bore - warm, round
@@ -206,14 +214,16 @@ define_synthdef("trombone_realistic", |builder| {
         .param("slide_smoothness", 0.8)  // How smooth the pitch transitions are
         .param("brightness", 0.5)
         .body(|freq, amp, gate, slide_smoothness, brightness| {
-            let envelope = env_asr(0.04, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.04, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Trombone vibrato - often jaw vibrato
-            let vib_delay_data = env_perc(0.3, 4.0);
-            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib_delay = envelope()
+                .perc(0.3, 4.0)
+                .build();
             let vib = sin_osc_ar(5.0) * 0.005 * vib_delay + 1.0;
             let mod_freq = freq * vib;
 
@@ -230,8 +240,9 @@ define_synthdef("trombone_realistic", |builder| {
             let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8;
 
             // Lip attack
-            let lip_data = env_perc(0.001, 0.03);
-            let lip_env = NewEnvGenBuilder(lip_data, dc_ar(1.0)).build();
+            let lip_env = envelope()
+                .perc(0.001, 0.03)
+                .build();
             let lip = white_noise_ar() * lip_env * 0.1;
             let lip_filtered = bpf_ar(lip, mod_freq * 4.0, 0.3);
 
@@ -256,9 +267,10 @@ define_synthdef("bass_trombone", |builder| {
         .param("amp", 0.6)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.05, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.05, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             let vib = sin_osc_ar(4.5) * 0.004 + 1.0;
@@ -276,8 +288,9 @@ define_synthdef("bass_trombone", |builder| {
             let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7;
 
             // Attack
-            let attack_data = env_perc(0.001, 0.035);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.001, 0.035)
+                .build();
             let attack = white_noise_ar() * attack_env * 0.08;
 
             // Larger bore = darker
@@ -299,9 +312,10 @@ define_synthdef("french_horn_realistic", |builder| {
         .param("gate", 1.0)
         .param("stopped", 0.0)   // 0=open, 1=hand stopped
         .body(|freq, amp, gate, stopped| {
-            let envelope = env_asr(0.05, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.05, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Horn vibrato - subtle
@@ -352,9 +366,10 @@ define_synthdef("tuba_realistic", |builder| {
         .param("gate", 1.0)
         .param("brightness", 0.4)
         .body(|freq, amp, gate, brightness| {
-            let envelope = env_asr(0.06, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.06, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Very slow vibrato
@@ -373,8 +388,9 @@ define_synthdef("tuba_realistic", |builder| {
             let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7;
 
             // Slow attack
-            let attack_data = env_perc(0.002, 0.04);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.002, 0.04)
+                .build();
             let attack = white_noise_ar() * attack_env * 0.06;
 
             // Very large bore - dark and round
@@ -396,9 +412,10 @@ define_synthdef("euphonium", |builder| {
         .param("gate", 1.0)
         .param("warmth", 0.6)
         .body(|freq, amp, gate, warmth| {
-            let envelope = env_asr(0.045, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.045, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             let vib = sin_osc_ar(4.8) * 0.005 + 1.0;
@@ -415,8 +432,9 @@ define_synthdef("euphonium", |builder| {
             let harmonics = h1 + h2 + h3 + h4 + h5 + h6;
 
             // Attack
-            let attack_data = env_perc(0.001, 0.03);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.001, 0.03)
+                .build();
             let attack = white_noise_ar() * attack_env * 0.07;
 
             // Conical bore - warm and mellow
@@ -441,9 +459,10 @@ define_synthdef("brass_section_realistic", |builder| {
         .param("gate", 1.0)
         .param("width", 0.5)     // Ensemble width/detuning
         .body(|freq, amp, gate, width| {
-            let envelope = env_asr(0.04, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.04, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Multiple detuned voices

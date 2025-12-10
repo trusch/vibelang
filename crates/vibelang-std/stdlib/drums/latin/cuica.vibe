@@ -7,14 +7,17 @@ define_synthdef("cuica")
         let gate = dc_ar(1.0);
 
         // Envelope
-        let amp_envelope = env_perc(0.01, 0.25);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.01, 0.25)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Pitch bend envelope for characteristic "voice"
-        let bend_envelope = env_perc(0.01, 0.2);
-        let bend_env = NewEnvGenBuilder(bend_envelope, gate).build();
+        let bend_env = envelope()
+            .perc(0.01, 0.2)
+            .gate(gate)
+            .build();
         let pitch = freq + (bend_env * bend);
 
         // Main tone with slight instability

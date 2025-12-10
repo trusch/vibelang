@@ -6,9 +6,10 @@ define_synthdef("hihat_909_closed", |builder| {
             let gate = dc_ar(1.0);
 
             // Short, tight envelope
-            let envelope = env_perc(0.0003, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.0003, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // White noise base

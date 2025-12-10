@@ -5,20 +5,25 @@ define_synthdef("impact_bass_drop", |builder| {
         .body(|amp| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(0.001, 1.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 1.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Pitch-dropping sine
-            let pitch_env = env_perc(0.001, 0.3);
-            let pitch_e = NewEnvGenBuilder(pitch_env, gate).build();
+            let pitch_e = envelope()
+                .perc(0.001, 0.3)
+                .gate(gate)
+                .build();
             let freq = 200.0 - pitch_e * 160.0;
             let drop = sin_osc_ar(freq);
 
             // Sub layer
-            let sub_env = env_perc(0.01, 1.2);
-            let sub_e = NewEnvGenBuilder(sub_env, gate).build();
+            let sub_e = envelope()
+                .perc(0.01, 1.2)
+                .gate(gate)
+                .build();
             let sub = sin_osc_ar(35.0) * sub_e * 0.8;
 
             // Distorted layer for aggression
@@ -26,8 +31,10 @@ define_synthdef("impact_bass_drop", |builder| {
 
             // Click transient
             let click = white_noise_ar();
-            let click_env = env_perc(0.001, 0.02);
-            let click_e = NewEnvGenBuilder(click_env, gate).build();
+            let click_e = envelope()
+                .perc(0.001, 0.02)
+                .gate(gate)
+                .build();
             let click_filtered = lpf_ar(click, 5000.0) * click_e * 0.3;
 
             let mix = drop * env * 0.5 + sub + dist * env + click_filtered;

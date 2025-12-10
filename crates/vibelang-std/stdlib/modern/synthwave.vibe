@@ -10,14 +10,16 @@ define_synthdef("synthwave_bass", |builder| {
         .param("amp", 0.6)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.01, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope
-            let filt_env_data = env_perc(0.001, 0.15);
-            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.15)
+                .build();
 
             // Fat saw bass
             let saw1 = saw_ar(freq);
@@ -41,9 +43,10 @@ define_synthdef("synthwave_lead", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.05, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.05, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Detuned saws
@@ -67,9 +70,10 @@ define_synthdef("synthwave_pad", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.4, 1.0, 0.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.4, 1.0, 0.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Juno-like chorus
@@ -96,9 +100,10 @@ define_synthdef("synthwave_arp", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.005, 1.0, 0.08);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Clean saw with slight detune
@@ -108,8 +113,9 @@ define_synthdef("synthwave_arp", |builder| {
             let mix = (saw1 + saw2) * 0.5;
 
             // Bright plucky filter
-            let filt_env_data = env_perc(0.001, 0.1);
-            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.1)
+                .build();
             let cutoff = 1000.0 + filt_env * 4000.0;
 
             let filtered = rlpf_ar(mix, cutoff, 0.4);
@@ -127,9 +133,10 @@ define_synthdef("synthwave_snare", |builder| {
             let gate = dc_ar(1.0);
 
             // 80s snare envelope
-            let envelope = env_perc(0.001, 0.3);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Snare body

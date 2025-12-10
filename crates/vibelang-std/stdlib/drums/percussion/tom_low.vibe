@@ -7,14 +7,17 @@ define_synthdef("tom_low", |builder| {
             let gate = dc_ar(1.0);
 
             // Longer decay for low tom
-            let amp_envelope = env_perc(0.004, 0.4);
-            let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-                .with_done_action(2.0)
+            let amp_env = envelope()
+                .perc(0.004, 0.4)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Pitch envelope
-            let pitch_envelope = env_perc(0.002, 0.12);
-            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let pitch_env = envelope()
+                .perc(0.002, 0.12)
+                .gate(gate)
+                .build();
             let freq_mod = pitch_env * freq * 1.8;
 
             // Main tone
@@ -25,8 +28,10 @@ define_synthdef("tom_low", |builder| {
             let harmonic2 = sin_osc_ar((freq + freq_mod) * 2.0) * 0.15;
 
             // Attack
-            let attack_envelope = env_perc(0.002, 0.025);
-            let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+            let attack_env = envelope()
+                .perc(0.002, 0.025)
+                .gate(gate)
+                .build();
             let attack = pink_noise_ar() * attack_env * 0.2;
             let filtered_attack = lpf_ar(attack, 2000.0);
 

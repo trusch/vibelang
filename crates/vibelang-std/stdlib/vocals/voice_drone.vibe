@@ -11,9 +11,10 @@ define_synthdef("voice_drone", |builder| {
         .param("darkness", 0.5) // Filter darkness
         .body(|freq, amp, gate, darkness| {
             // Very slow attack for drone
-            let envelope = env_asr(2.0, 1.0, 1.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(2.0, 1.0, 1.0)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Deep oscillator base

@@ -11,9 +11,10 @@ define_synthdef("trombone", |builder| {
         .param("slide", 0.0) // Slide amount (for glissando)
         .body(|freq, amp, gate, slide| {
             // Smooth attack envelope
-            let envelope = env_asr(0.1, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.1, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Slide modulation (portamento effect)

@@ -4,14 +4,17 @@ define_synthdef("lead_trance")
     .param("amp", 0.5)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.015, 1.0, 0.15);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.015, 1.0, 0.15)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Filter envelope
-        let filt_env_shape = env_asr(0.05, 1.0, 0.15);
-        let filt_env = NewEnvGenBuilder(filt_env_shape, gate).build();
+        let filt_env = envelope()
+            .asr(0.05, 1.0, 0.15)
+            .gate(gate)
+            .build();
 
         // 7 detuned oscillators for supersaw
         let osc1 = saw_ar(freq * 0.985);
