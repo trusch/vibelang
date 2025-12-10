@@ -42,11 +42,18 @@ fn main() {
     // Generate one function per UGen rate (snake_case_ar, snake_case_kr, etc.)
     for ugen in &manifest {
         let name = ugen["name"].as_str().unwrap();
+        let rates = ugen["rates"].as_array().unwrap();
+
+        // Skip documentation-only entries (like fluent builder API docs)
+        let has_only_builder_rate = rates.iter().all(|r| r.as_str() == Some("builder"));
+        if has_only_builder_rate {
+            continue;
+        }
+
         let description = ugen
             .get("description")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let rates = ugen["rates"].as_array().unwrap();
         let inputs = ugen["inputs"].as_array().unwrap();
         let outputs = ugen["outputs"].as_i64().unwrap();
         let category = ugen
@@ -150,6 +157,13 @@ fn main() {
     for ugen in &manifest {
         let name = ugen["name"].as_str().unwrap();
         let rates = ugen["rates"].as_array().unwrap();
+
+        // Skip documentation-only entries (like fluent builder API docs)
+        let has_only_builder_rate = rates.iter().all(|r| r.as_str() == Some("builder"));
+        if has_only_builder_rate {
+            continue;
+        }
+
         let inputs = ugen["inputs"].as_array().unwrap();
         let snake_name = to_snake_case(name);
 
