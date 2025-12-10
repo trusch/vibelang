@@ -1,6 +1,6 @@
 [
   {
-    "name": "envelope()",
+    "name": "envelope",
     "description": "Fluent envelope builder. Creates ADSR, ASR, or percussive envelopes with an intuitive chainable API. Defaults to a constant gate of 1.0 if no gate is specified. Times can be specified as numbers (seconds) or humantime strings like \"5ms\", \"1s\", \"500ms\".",
     "rates": ["builder"],
     "inputs": [
