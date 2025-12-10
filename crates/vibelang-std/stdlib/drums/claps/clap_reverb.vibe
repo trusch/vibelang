@@ -6,15 +6,20 @@ define_synthdef("clap_reverb", |builder| {
             let gate = dc_ar(1.0);
 
             // Multiple bursts
-            let burst1_envelope = env_perc(0.001, 0.022);
-            let burst1_env = NewEnvGenBuilder(burst1_envelope, gate).build();
+            let burst1_env = envelope()
+                .perc(0.001, 0.022)
+                .gate(gate)
+                .build();
 
-            let burst2_envelope = env_perc(0.010, 0.022);
-            let burst2_env = NewEnvGenBuilder(burst2_envelope, gate).build();
+            let burst2_env = envelope()
+                .perc(0.010, 0.022)
+                .gate(gate)
+                .build();
 
-            let burst3_envelope = env_perc(0.018, 0.022);
-            let burst3_env = NewEnvGenBuilder(burst3_envelope, gate)
-                .with_done_action(2.0)
+            let burst3_env = envelope()
+                .perc(0.018, 0.022)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filtered noise
@@ -23,8 +28,10 @@ define_synthdef("clap_reverb", |builder| {
             let dry_clap = filtered * (burst1_env + burst2_env * 0.8 + burst3_env * 0.6);
 
             // Reverb tail envelope
-            let reverb_envelope = env_perc(0.02, 0.35);
-            let reverb_env = NewEnvGenBuilder(reverb_envelope, gate).build();
+            let reverb_env = envelope()
+                .perc(0.02, 0.35)
+                .gate(gate)
+                .build();
             let reverb = lpf_ar(filtered, 4000.0) * reverb_env * 0.3;
 
             (dry_clap + reverb) * amp

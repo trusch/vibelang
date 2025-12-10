@@ -6,10 +6,11 @@ define_synthdef("downer_slow", |builder| {
         .body(|amp, duration| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(0.5, 1.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_time_scale(duration)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.5, 1.0)
+                .gate(gate)
+                .time_scale(duration)
+                .cleanup_on_finish()
                 .build();
 
             let down_env = 1.0 - env;

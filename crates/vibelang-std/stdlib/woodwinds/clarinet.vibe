@@ -10,9 +10,10 @@ define_synthdef("clarinet", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.05, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.05, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Vibrato
@@ -29,8 +30,10 @@ define_synthdef("clarinet", |builder| {
             let tone = h1 + h3 + h5 + h7 + h9;
 
             // Reed buzz (very subtle)
-            let reed_env_data = env_asr(0.01, 1.0, 0.05);
-            let reed_env = NewEnvGenBuilder(reed_env_data, gate).build();
+            let reed_env = envelope()
+                .asr(0.01, 1.0, 0.05)
+                .gate(gate)
+                .build();
             let reed = white_noise_ar() * reed_env * 0.02;
             let reed_filtered = lpf_ar(hpf_ar(reed, 1000.0), 4000.0);
 
@@ -48,9 +51,10 @@ define_synthdef("bass_clarinet", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.08, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.08, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Slow vibrato

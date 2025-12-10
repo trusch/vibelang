@@ -4,14 +4,17 @@ define_synthdef("pad_cs80")
     .param("amp", 0.5)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.25, 1.0, 0.35);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.25, 1.0, 0.35)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Slow filter envelope
-        let filt_env_shape = env_asr(0.4, 1.0, 0.4);
-        let filt_env = NewEnvGenBuilder(filt_env_shape, gate).build();
+        let filt_env = envelope()
+            .asr(0.4, 1.0, 0.4)
+            .gate(gate)
+            .build();
 
         // Rich detuned oscillators
         let osc1 = saw_ar(freq * 0.994);

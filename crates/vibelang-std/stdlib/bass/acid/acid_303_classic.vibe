@@ -8,14 +8,17 @@ define_synthdef("acid_303_classic", |builder| {
         .param("res", 0.7)
         .body(|freq, amp, gate, cutoff, res| {
             // Gate-controlled ASR envelope for proper note-on/note-off behavior
-            let envelope = env_asr(0.005, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope for sweep (triggered on note-on)
-            let filter_envelope = env_perc(0.01, 0.4);
-            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let filter_env = envelope()
+                .perc(0.01, 0.4)
+                .gate(gate)
+                .build();
 
             // Sawtooth oscillator
             let osc = saw_ar(freq);

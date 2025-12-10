@@ -5,9 +5,10 @@ define_synthdef("hihat_808_open")
         let gate = dc_ar(1.0);
 
         // Longer envelope for open character
-        let envelope = env_perc(0.001, 0.25);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .perc(0.001, 0.25)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Square wave oscillators

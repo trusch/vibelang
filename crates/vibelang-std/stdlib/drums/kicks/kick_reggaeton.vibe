@@ -6,22 +6,27 @@ define_synthdef("kick_reggaeton")
         let gate = dc_ar(1.0);
 
         // Short, tight decay
-        let amp_envelope = env_perc(0.001, 0.28);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 0.28)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Quick pitch drop
-        let pitch_envelope = env_perc(0.001, 0.03);
-        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let pitch_env = envelope()
+            .perc(0.001, 0.03)
+            .gate(gate)
+            .build();
         let freq_mod = pitch_env * freq * 4.5;
 
         // Punchy body
         let body = sin_osc_ar(freq + freq_mod) * 0.85;
 
         // Sharp attack
-        let attack_envelope = env_perc(0.0001, 0.005);
-        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack_env = envelope()
+            .perc(0.0001, 0.005)
+            .gate(gate)
+            .build();
         let attack = bpf_ar(white_noise_ar(), 3000.0, 0.4) * attack_env * 0.2;
 
         (body + attack) * amp_env * amp

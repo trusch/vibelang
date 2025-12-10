@@ -6,26 +6,35 @@ define_synthdef("snare_clap_snare", |builder| {
             let gate = dc_ar(1.0);
 
             // Clap layer - multiple short bursts
-            let clap_envelope1 = env_perc(0.001, 0.03);
-            let clap_env1 = NewEnvGenBuilder(clap_envelope1, gate).build();
-            let clap_envelope2 = env_perc(0.015, 0.03);
-            let clap_env2 = NewEnvGenBuilder(clap_envelope2, gate).build();
-            let clap_envelope3 = env_perc(0.025, 0.03);
-            let clap_env3 = NewEnvGenBuilder(clap_envelope3, gate)
-                .with_done_action(2.0)
+            let clap_env1 = envelope()
+                .perc(0.001, 0.03)
+                .gate(gate)
+                .build();
+            let clap_env2 = envelope()
+                .perc(0.015, 0.03)
+                .gate(gate)
+                .build();
+            let clap_env3 = envelope()
+                .perc(0.025, 0.03)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             let clap_noise = white_noise_ar();
             let clap = hpf_ar(clap_noise, 1500.0) * (clap_env1 + clap_env2 * 0.7 + clap_env3 * 0.5);
 
             // Snare layer
-            let snare_envelope = env_perc(0.001, 0.15);
-            let snare_env = NewEnvGenBuilder(snare_envelope, gate).build();
+            let snare_env = envelope()
+                .perc(0.001, 0.15)
+                .gate(gate)
+                .build();
             let snare_noise = rlpf_ar(white_noise_ar(), 4000.0, 0.5) * snare_env;
 
             // Tone
-            let tone_envelope = env_perc(0.001, 0.1);
-            let tone_env = NewEnvGenBuilder(tone_envelope, gate).build();
+            let tone_env = envelope()
+                .perc(0.001, 0.1)
+                .gate(gate)
+                .build();
             let tone = sin_osc_ar(190.0) * tone_env * 0.2;
 
             (clap * 0.5 + snare_noise * 0.6 + tone) * amp

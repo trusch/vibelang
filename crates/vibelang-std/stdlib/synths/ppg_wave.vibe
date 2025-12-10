@@ -9,9 +9,10 @@ define_synthdef("ppg_pad", |builder| {
         .param("gate", 1.0)
         .param("table_pos", 0.5)
         .body(|freq, amp, gate, table_pos| {
-            let envelope = env_asr(0.3, 1.0, 0.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.3, 1.0, 0.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Simulated wavetable scanning with multiple waveforms
@@ -39,9 +40,10 @@ define_synthdef("ppg_lead", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.02, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.02, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Metallic digital character
@@ -64,13 +66,16 @@ define_synthdef("ppg_bass", |builder| {
         .param("amp", 0.55)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.01, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let filt_env_data = env_asr(0.01, 1.0, 0.12);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.01, 1.0, 0.12)
+                .gate(gate)
+                .build();
 
             // Wavetable-style with harmonics
             let osc1 = saw_ar(freq) * 0.5;

@@ -12,14 +12,16 @@ define_synthdef("clavinet", |builder| {
         .param("brightness", 0.7) // Filter brightness
         .body(|freq, amp, gate, brightness| {
             // Percussive envelope
-            let envelope = env_asr(0.001, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Decay envelope for string character
-            let decay_env_data = env_perc(0.001, 0.3);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 0.3)
+                .build();
 
             // Plucked string-like waveform (rich in harmonics)
             let saw1 = saw_ar(freq);
@@ -28,8 +30,9 @@ define_synthdef("clavinet", |builder| {
             let source = (saw1 + saw2) * 0.5;
 
             // Hammer/pick attack transient
-            let pick_env_data = env_perc(0.0001, 0.01);
-            let pick_env = NewEnvGenBuilder(pick_env_data, dc_ar(1.0)).build();
+            let pick_env = envelope()
+                .perc(0.0001, 0.01)
+                .build();
             let pick = white_noise_ar() * pick_env * 0.3;
 
             // Filter with envelope for pluck character

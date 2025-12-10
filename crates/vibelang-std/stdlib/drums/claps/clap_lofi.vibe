@@ -6,15 +6,20 @@ define_synthdef("clap_lofi", |builder| {
             let gate = dc_ar(1.0);
 
             // Soft, dusty bursts
-            let burst1_envelope = env_perc(0.003, 0.035);
-            let burst1_env = NewEnvGenBuilder(burst1_envelope, gate).build();
+            let burst1_env = envelope()
+                .perc(0.003, 0.035)
+                .gate(gate)
+                .build();
 
-            let burst2_envelope = env_perc(0.018, 0.035);
-            let burst2_env = NewEnvGenBuilder(burst2_envelope, gate).build();
+            let burst2_env = envelope()
+                .perc(0.018, 0.035)
+                .gate(gate)
+                .build();
 
-            let burst3_envelope = env_perc(0.030, 0.035);
-            let burst3_env = NewEnvGenBuilder(burst3_envelope, gate)
-                .with_done_action(2.0)
+            let burst3_env = envelope()
+                .perc(0.030, 0.035)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Pink noise for warmth

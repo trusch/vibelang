@@ -4,14 +4,16 @@ define_synthdef("bass_house")
     .param("amp", 0.85)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.01, 1.0, 0.12);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.01, 1.0, 0.12)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Filter envelope
-        let filt_env_shape = env_perc(0.01, 0.25);
-        let filt_env = NewEnvGenBuilder(filt_env_shape, dc_ar(1.0)).build();
+        let filt_env = envelope()
+            .perc(0.01, 0.25)
+            .build();
 
         // Warm saw with sub
         let osc = saw_ar(freq) * 0.4;

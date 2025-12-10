@@ -10,14 +10,16 @@ define_synthdef("glockenspiel", |builder| {
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
             // Quick attack envelope
-            let envelope = env_asr(0.001, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Medium decay
-            let decay_env_data = env_perc(0.001, 1.5);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 1.5)
+                .build();
 
             // Bright metallic partials
             let h1 = sin_osc_ar(freq);
@@ -30,8 +32,9 @@ define_synthdef("glockenspiel", |builder| {
             let bell = h1 + h2 + h3 + h4 + h5 + h6;
 
             // Mallet attack
-            let mallet_env_data = env_perc(0.0001, 0.01);
-            let mallet_env = NewEnvGenBuilder(mallet_env_data, dc_ar(1.0)).build();
+            let mallet_env = envelope()
+                .perc(0.0001, 0.01)
+                .build();
             let mallet = sin_osc_ar(freq * 6.0) * mallet_env * 0.2;
 
             (bell + mallet) * env * decay_env * amp * 0.5

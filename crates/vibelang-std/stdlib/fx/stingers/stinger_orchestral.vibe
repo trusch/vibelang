@@ -6,9 +6,10 @@ define_synthdef("stinger_orchestral", |builder| {
         .body(|amp, note| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(0.02, 1.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.02, 1.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             let freq = 440.0 * (2.0.pow((note - 69.0) / 12.0));
@@ -20,8 +21,10 @@ define_synthdef("stinger_orchestral", |builder| {
 
             // Brass
             let brass = saw_ar(freq) + saw_ar(freq * 1.5) * 0.4;
-            let brass_env = env_perc(0.02, 0.6);
-            let brass_e = NewEnvGenBuilder(brass_env, gate).build();
+            let brass_e = envelope()
+                .perc(0.02, 0.6)
+                .gate(gate)
+                .build();
             let brass_filtered = lpf_ar(brass, 1500.0) * brass_e * 0.25;
 
             // Low end

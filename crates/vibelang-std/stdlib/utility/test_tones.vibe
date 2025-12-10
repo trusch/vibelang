@@ -10,9 +10,10 @@ define_synthdef("test_sine", |builder| {
         .param("amp", 0.3)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.01, 1.0, 0.01);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.01)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             sin_osc_ar(freq) * env * amp
@@ -26,9 +27,10 @@ define_synthdef("test_saw", |builder| {
         .param("amp", 0.2)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.01, 1.0, 0.01);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.01)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             saw_ar(freq) * env * amp
@@ -41,9 +43,10 @@ define_synthdef("a440", |builder| {
         .param("amp", 0.3)
         .param("gate", 1.0)
         .body(|amp, gate| {
-            let envelope = env_asr(0.01, 1.0, 0.01);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.01)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             sin_osc_ar(440.0) * env * amp
@@ -56,9 +59,10 @@ define_synthdef("test_1k", |builder| {
         .param("amp", 0.3)
         .param("gate", 1.0)
         .body(|amp, gate| {
-            let envelope = env_asr(0.01, 1.0, 0.01);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.01)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             sin_osc_ar(1000.0) * env * amp
@@ -72,14 +76,17 @@ define_synthdef("test_sweep")
         let gate = dc_ar(1.0);
 
         // 3-second sweep envelope
-        let envelope = env_perc(0.001, 3.0);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .perc(0.001, 3.0)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Sweep from 20Hz to 20kHz
-        let sweep_env_data = env_perc(0.001, 3.0);
-        let sweep_env = NewEnvGenBuilder(sweep_env_data, gate).build();
+        let sweep_env = envelope()
+            .perc(0.001, 3.0)
+            .gate(gate)
+            .build();
         let freq = 20.0 + sweep_env * 19980.0;
 
         sin_osc_ar(freq) * env * amp

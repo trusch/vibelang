@@ -10,17 +10,20 @@ define_synthdef("metronome")
         let gate = dc_ar(1.0);
 
         // Very short click envelope
-        let envelope = env_perc(0.0001, 0.03);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .perc(0.0001, 0.03)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Sharp click tone
         let click = sin_osc_ar(freq);
 
         // High frequency transient for clarity
-        let tick_env_data = env_perc(0.0001, 0.005);
-        let tick_env = NewEnvGenBuilder(tick_env_data, gate).build();
+        let tick_env = envelope()
+            .perc(0.0001, 0.005)
+            .gate(gate)
+            .build();
         let tick = sin_osc_ar(freq * 4.0) * tick_env;
 
         (click + tick * 0.5) * env * amp
@@ -34,9 +37,10 @@ define_synthdef("metronome_accent")
         let gate = dc_ar(1.0);
 
         // Short click envelope
-        let envelope = env_perc(0.0001, 0.04);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .perc(0.0001, 0.04)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Higher pitched accent

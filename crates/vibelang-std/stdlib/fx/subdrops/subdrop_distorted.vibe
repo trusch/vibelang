@@ -7,14 +7,17 @@ define_synthdef("subdrop_distorted", |builder| {
             let gate = dc_ar(1.0);
 
             // Envelope
-            let envelope = env_perc(0.008, 0.9);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.008, 0.9)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Pitch drop
-            let pitch_envelope = env_perc(0.008, 0.18);
-            let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+            let pitch_env = envelope()
+                .perc(0.008, 0.18)
+                .gate(gate)
+                .build();
             let freq_mod = pitch_env * freq * 4.5;
 
             // Sub with distortion

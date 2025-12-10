@@ -5,9 +5,10 @@ define_synthdef("bass_fretless")
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
         // Smooth envelope
-        let envelope = env_asr(0.02, 1.0, 0.1);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.02, 1.0, 0.1)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Subtle vibrato
@@ -20,8 +21,9 @@ define_synthdef("bass_fretless")
         let harm3 = sin_osc_ar((freq + vib) * 4.0) * 0.08;
 
         // Mwah characteristic (filter sweep on attack)
-        let mwah_env = env_perc(0.01, 0.2);
-        let mwah = NewEnvGenBuilder(mwah_env, dc_ar(1.0)).build();
+        let mwah = envelope()
+            .perc(0.01, 0.2)
+            .build();
         let cutoff = 800.0 + mwah * 2000.0;
 
         let sig = body + harm1 + harm2 + harm3;

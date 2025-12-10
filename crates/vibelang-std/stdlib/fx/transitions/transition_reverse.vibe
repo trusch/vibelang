@@ -6,9 +6,10 @@ define_synthdef("transition_reverse", |builder| {
             let gate = dc_ar(1.0);
 
             // Reverse envelope (builds up)
-            let envelope = env_perc(0.9, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.9, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Cymbal-like noise

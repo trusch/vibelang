@@ -12,16 +12,18 @@ define_synthdef("tb303_bass", |builder| {
         .param("env_mod", 0.5)
         .param("decay", 0.3)
         .body(|freq, amp, gate, cutoff, resonance, env_mod, decay| {
-            let envelope = env_asr(0.003, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.003, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope - key to 303 sound
             // Use env_perc with base time of 1.0, then scale by decay parameter
-            let filt_env_data = env_perc(0.003, 1.0);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate)
-                .with_time_scale(decay)
+            let filt_env = envelope()
+                .perc(0.003, 1.0)
+                .gate(gate)
+                .time_scale(decay)
                 .build();
 
             // Single saw oscillator
@@ -47,13 +49,16 @@ define_synthdef("tb303_slide", |builder| {
         .param("cutoff", 800.0)
         .param("resonance", 0.75)
         .body(|freq, amp, gate, cutoff, resonance| {
-            let envelope = env_asr(0.001, 1.0, 0.08);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let filt_env_data = env_perc(0.001, 0.2);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.2)
+                .gate(gate)
+                .build();
 
             let osc = saw_ar(freq);
 
@@ -73,13 +78,16 @@ define_synthdef("tb303_accent", |builder| {
         .param("amp", 0.7)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.06);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.06)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let filt_env_data = env_perc(0.001, 0.15);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.15)
+                .gate(gate)
+                .build();
 
             let osc = saw_ar(freq);
 

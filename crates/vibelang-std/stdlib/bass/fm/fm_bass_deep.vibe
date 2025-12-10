@@ -9,14 +9,17 @@ define_synthdef("fm_bass_deep", |builder| {
 
             // Envelope
             // Gate-controlled ASR envelope for proper note-on/note-off behavior
-            let envelope = env_asr(0.015, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.015, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // FM envelope
-            let fm_envelope = env_asr(0.015, 1.0, 0.1);
-            let fm_env = NewEnvGenBuilder(fm_envelope, gate).build();
+            let fm_env = envelope()
+                .asr(0.015, 1.0, 0.1)
+                .gate(gate)
+                .build();
 
             // FM with sub ratio
             let modulator = sin_osc_ar(freq * 0.5) * fm_env * freq * fm_amount;

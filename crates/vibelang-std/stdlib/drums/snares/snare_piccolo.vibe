@@ -6,22 +6,27 @@ define_synthdef("snare_piccolo", |builder| {
             let gate = dc_ar(1.0);
 
             // Bright, short noise
-            let noise_envelope = env_perc(0.001, 0.08);
-            let noise_env = NewEnvGenBuilder(noise_envelope, gate)
-                .with_done_action(2.0)
+            let noise_env = envelope()
+                .perc(0.001, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
             let noise = white_noise_ar();
             let filtered_noise = hpf_ar(noise, 4000.0);
             let snare_noise = filtered_noise * noise_env;
 
             // High-pitched tone
-            let tone_envelope = env_perc(0.001, 0.06);
-            let tone_env = NewEnvGenBuilder(tone_envelope, gate).build();
+            let tone_env = envelope()
+                .perc(0.001, 0.06)
+                .gate(gate)
+                .build();
             let tone = sin_osc_ar(280.0) * tone_env * 0.35;
 
             // Crack/stick sound
-            let crack_envelope = env_perc(0.0005, 0.004);
-            let crack_env = NewEnvGenBuilder(crack_envelope, gate).build();
+            let crack_env = envelope()
+                .perc(0.0005, 0.004)
+                .gate(gate)
+                .build();
             let crack = white_noise_ar() * crack_env * 0.3;
 
             (snare_noise * 0.7 + tone + crack) * amp

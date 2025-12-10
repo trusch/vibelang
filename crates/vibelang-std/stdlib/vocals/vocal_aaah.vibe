@@ -4,9 +4,10 @@ define_synthdef("vocal_aaah")
     .param("amp", 0.55)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.2, 1.0, 0.25);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.2, 1.0, 0.25)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Vibrato

@@ -6,9 +6,10 @@ define_synthdef("crash_reverse", |builder| {
             let gate = dc_ar(1.0);
 
             // Reverse envelope (builds up)
-            let envelope = env_perc(1.5, 0.3);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(1.5, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Metallic components
@@ -21,8 +22,10 @@ define_synthdef("crash_reverse", |builder| {
             let metallic = metal1 + metal2 + metal3 + metal4 + metal5;
 
             // Reverse filter sweep
-            let filter_envelope = env_perc(1.2, 0.5);
-            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let filter_env = envelope()
+                .perc(1.2, 0.5)
+                .gate(gate)
+                .build();
             let mod_cutoff = 500.0 + (filter_env * 5000.0);
 
             let filtered = lpf_ar(metallic, mod_cutoff);

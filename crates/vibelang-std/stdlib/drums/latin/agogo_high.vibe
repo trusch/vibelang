@@ -6,9 +6,10 @@ define_synthdef("agogo_high")
         let gate = dc_ar(1.0);
 
         // Metallic ring decay
-        let amp_envelope = env_perc(0.001, 0.4);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 0.4)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Bell harmonics
@@ -18,8 +19,10 @@ define_synthdef("agogo_high")
         let ring3 = sin_osc_ar(freq * 5.2) * 0.08;
 
         // Stick attack
-        let attack_envelope = env_perc(0.0001, 0.002);
-        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack_env = envelope()
+            .perc(0.0001, 0.002)
+            .gate(gate)
+            .build();
         let attack = hpf_ar(white_noise_ar(), 4000.0) * attack_env * 0.2;
 
         (body + ring1 + ring2 + ring3 + attack) * amp_env * amp

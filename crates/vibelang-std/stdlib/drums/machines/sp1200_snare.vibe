@@ -6,26 +6,33 @@ define_synthdef("sp1200_snare")
         let gate = dc_ar(1.0);
 
         // Medium decay
-        let amp_envelope = env_perc(0.001, 0.28);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 0.28)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Body with saturation
-        let pitch_envelope = env_perc(0.001, 0.025);
-        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let pitch_env = envelope()
+            .perc(0.001, 0.025)
+            .gate(gate)
+            .build();
         let raw_body = sin_osc_ar(freq + pitch_env * freq * 2.0);
         let body = (raw_body * 1.3).tanh() * 0.35;
 
         // Crunchy noise
-        let noise_envelope = env_perc(0.001, 0.22);
-        let noise_env = NewEnvGenBuilder(noise_envelope, gate).build();
+        let noise_env = envelope()
+            .perc(0.001, 0.22)
+            .gate(gate)
+            .build();
         let raw_noise = bpf_ar(white_noise_ar(), 3500.0, 0.5);
         let noise = (raw_noise * 1.5).tanh() * noise_env * 0.5;
 
         // Attack
-        let attack_envelope = env_perc(0.0001, 0.005);
-        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack_env = envelope()
+            .perc(0.0001, 0.005)
+            .gate(gate)
+            .build();
         let attack = white_noise_ar() * attack_env * 0.18;
 
         (body + noise + attack) * amp_env * amp

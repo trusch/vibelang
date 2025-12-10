@@ -12,14 +12,16 @@ define_synthdef("electric_piano", |builder| {
         .param("brightness", 0.5) // Tine brightness
         .body(|freq, amp, gate, brightness| {
             // Gate-controlled envelope with classic EP decay
-            let envelope = env_asr(0.005, 1.0, 0.3);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Fast attack envelope for bell character
-            let bell_env_data = env_perc(0.001, 0.15);
-            let bell_env = NewEnvGenBuilder(bell_env_data, dc_ar(1.0)).build();
+            let bell_env = envelope()
+                .perc(0.001, 0.15)
+                .build();
 
             // Fundamental with harmonics (tine + tone bar)
             let fundamental = sin_osc_ar(freq);

@@ -12,9 +12,10 @@ define_synthdef("formant_synth", |builder| {
         .param("formant", 0.5) // 0=a, 0.5=e, 1.0=o
         .body(|freq, amp, gate, formant| {
             // Gate-controlled envelope
-            let envelope = env_asr(0.1, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.1, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Rich source oscillator with harmonics

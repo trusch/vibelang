@@ -10,13 +10,16 @@ define_synthdef("pro_one_bass", |builder| {
         .param("filter_freq", 800.0)
         .param("resonance", 0.4)
         .body(|freq, amp, gate, filter_freq, resonance| {
-            let envelope = env_asr(0.005, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let filt_env_data = env_asr(0.005, 1.0, 0.15);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.005, 1.0, 0.15)
+                .gate(gate)
+                .build();
 
             // Dual oscillators
             let osc1 = saw_ar(freq);
@@ -39,13 +42,16 @@ define_synthdef("pro_one_lead", |builder| {
         .param("gate", 1.0)
         .param("pw", 0.3)
         .body(|freq, amp, gate, pw| {
-            let envelope = env_asr(0.01, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let filt_env_data = env_asr(0.01, 1.0, 0.2);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.01, 1.0, 0.2)
+                .gate(gate)
+                .build();
 
             // PWM lead
             let pwm = sin_osc_ar(3.0) * 0.2 + pw;
@@ -69,9 +75,10 @@ define_synthdef("pro_one_sync", |builder| {
         .param("gate", 1.0)
         .param("sync_ratio", 2.0)
         .body(|freq, amp, gate, sync_ratio| {
-            let envelope = env_asr(0.01, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Simulated hard sync

@@ -6,18 +6,25 @@ define_synthdef("clap_layered", |builder| {
             let gate = dc_ar(1.0);
 
             // Four bursts for thick character
-            let burst1_envelope = env_perc(0.001, 0.025);
-            let burst1_env = NewEnvGenBuilder(burst1_envelope, gate).build();
+            let burst1_env = envelope()
+                .perc(0.001, 0.025)
+                .gate(gate)
+                .build();
 
-            let burst2_envelope = env_perc(0.009, 0.025);
-            let burst2_env = NewEnvGenBuilder(burst2_envelope, gate).build();
+            let burst2_env = envelope()
+                .perc(0.009, 0.025)
+                .gate(gate)
+                .build();
 
-            let burst3_envelope = env_perc(0.016, 0.025);
-            let burst3_env = NewEnvGenBuilder(burst3_envelope, gate).build();
+            let burst3_env = envelope()
+                .perc(0.016, 0.025)
+                .gate(gate)
+                .build();
 
-            let burst4_envelope = env_perc(0.022, 0.025);
-            let burst4_env = NewEnvGenBuilder(burst4_envelope, gate)
-                .with_done_action(2.0)
+            let burst4_env = envelope()
+                .perc(0.022, 0.025)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Multiple frequency bands

@@ -6,9 +6,10 @@ define_synthdef("maracas")
         let gate = dc_ar(1.0);
 
         // Quick shake envelope
-        let amp_envelope = env_perc(0.001, 0.1);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 0.1)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Seed rattle texture

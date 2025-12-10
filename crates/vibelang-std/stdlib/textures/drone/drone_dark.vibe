@@ -7,9 +7,10 @@ define_synthdef("drone_dark", |builder| {
             let gate = dc_ar(1.0);
 
             // Very long sustain
-            let envelope = env_perc(3.0, 20.0);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(3.0, 20.0)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Low, detuned oscillators

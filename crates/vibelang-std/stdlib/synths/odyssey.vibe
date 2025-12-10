@@ -9,13 +9,16 @@ define_synthdef("odyssey_bass", |builder| {
         .param("gate", 1.0)
         .param("filter_freq", 700.0)
         .body(|freq, amp, gate, filter_freq| {
-            let envelope = env_asr(0.01, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let filt_env_data = env_asr(0.01, 1.0, 0.12);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.01, 1.0, 0.12)
+                .gate(gate)
+                .build();
 
             // Dual oscillators with sync option
             let osc1 = saw_ar(freq);
@@ -38,13 +41,16 @@ define_synthdef("odyssey_lead", |builder| {
         .param("gate", 1.0)
         .param("resonance", 0.5)
         .body(|freq, amp, gate, resonance| {
-            let envelope = env_asr(0.01, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let filt_env_data = env_asr(0.01, 1.0, 0.2);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.01, 1.0, 0.2)
+                .gate(gate)
+                .build();
 
             // Ring mod character
             let osc1 = saw_ar(freq);
@@ -68,9 +74,10 @@ define_synthdef("odyssey_sh", |builder| {
         .param("gate", 1.0)
         .param("rate", 8.0)
         .body(|freq, amp, gate, rate| {
-            let envelope = env_asr(0.01, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // S&H style random modulation

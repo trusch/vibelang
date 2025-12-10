@@ -6,9 +6,10 @@ define_synthdef("sweep_tone")
     .param("gate", 1.0)
     .param("rate", 0.5)
     .body(|amp, gate, rate| {
-        let envelope = env_asr(0.01, 1.0, 0.01);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.01, 1.0, 0.01)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // LFO sweeping from 100Hz to 5000Hz
@@ -24,9 +25,10 @@ define_synthdef("square_test")
     .param("amp", 0.35)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.01, 1.0, 0.01);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.01, 1.0, 0.01)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         pulse_ar(freq, 0.5) * env * amp
@@ -38,9 +40,10 @@ define_synthdef("saw_test")
     .param("amp", 0.35)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.01, 1.0, 0.01);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.01, 1.0, 0.01)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         saw_ar(freq) * env * amp
@@ -52,9 +55,10 @@ define_synthdef("tri_test")
     .param("amp", 0.4)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.01, 1.0, 0.01);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.01, 1.0, 0.01)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         lf_tri_ar(freq) * env * amp

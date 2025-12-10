@@ -6,24 +6,31 @@ define_synthdef("foley_book_drop")
         let gate = dc_ar(1.0);
 
         // Soft thump decay
-        let amp_envelope = env_perc(0.002, 0.18);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.002, 0.18)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Muffled thud
-        let pitch_envelope = env_perc(0.001, 0.03);
-        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let pitch_env = envelope()
+            .perc(0.001, 0.03)
+            .gate(gate)
+            .build();
         let body = sin_osc_ar(freq + pitch_env * freq * 1.2) * 0.5;
 
         // Paper flutter
-        let paper_envelope = env_perc(0.01, 0.1);
-        let paper_env = NewEnvGenBuilder(paper_envelope, gate).build();
+        let paper_env = envelope()
+            .perc(0.01, 0.1)
+            .gate(gate)
+            .build();
         let paper = bpf_ar(pink_noise_ar(), 2000.0, 0.8) * paper_env * 0.2;
 
         // Impact
-        let impact_envelope = env_perc(0.001, 0.015);
-        let impact_env = NewEnvGenBuilder(impact_envelope, gate).build();
+        let impact_env = envelope()
+            .perc(0.001, 0.015)
+            .gate(gate)
+            .build();
         let impact = lpf_ar(white_noise_ar(), 1500.0) * impact_env * 0.25;
 
         (body + paper + impact) * amp_env * amp

@@ -12,9 +12,10 @@ define_synthdef("jupiter_pad", |builder| {
         .param("gate", 1.0)
         .param("spread", 0.6)
         .body(|freq, amp, gate, spread| {
-            let envelope = env_asr(0.5, 1.0, 0.6);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.5, 1.0, 0.6)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Two VCOs with cross-modulation
@@ -42,9 +43,10 @@ define_synthdef("jupiter_supersaw", |builder| {
         .param("gate", 1.0)
         .param("detune", 0.5)
         .body(|freq, amp, gate, detune| {
-            let envelope = env_asr(0.02, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.02, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // 7 detuned sawtooth oscillators
@@ -73,14 +75,17 @@ define_synthdef("jupiter_brass", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.04, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.04, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope
-            let filt_env_data = env_asr(0.02, 1.0, 0.12);
-            let filt_env = NewEnvGenBuilder(filt_env_data, gate).build();
+            let filt_env = envelope()
+                .asr(0.02, 1.0, 0.12)
+                .gate(gate)
+                .build();
 
             // Thick detuned oscillators
             let v1 = saw_ar(freq * 0.995);
@@ -104,14 +109,16 @@ define_synthdef("jupiter_bass", |builder| {
         .param("amp", 0.6)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.005, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.005, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Filter envelope
-            let filt_env_data = env_perc(0.001, 0.2);
-            let filt_env = NewEnvGenBuilder(filt_env_data, dc_ar(1.0)).build();
+            let filt_env = envelope()
+                .perc(0.001, 0.2)
+                .build();
 
             // Two oscillators plus sub
             let saw1 = saw_ar(freq);

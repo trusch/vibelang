@@ -12,9 +12,10 @@ define_synthdef("choir_pad", |builder| {
         .param("spread", 0.5) // Stereo width and detune
         .body(|freq, amp, gate, spread| {
             // Slow attack for choir swell
-            let envelope = env_asr(0.8, 1.0, 0.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.8, 1.0, 0.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Multiple "voices" with slight detuning

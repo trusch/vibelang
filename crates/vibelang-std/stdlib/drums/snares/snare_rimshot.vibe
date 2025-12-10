@@ -6,9 +6,10 @@ define_synthdef("snare_rimshot", |builder| {
             let gate = dc_ar(1.0);
 
             // Very short, sharp envelope
-            let rim_envelope = env_perc(0.0003, 0.04);
-            let rim_env = NewEnvGenBuilder(rim_envelope, gate)
-                .with_done_action(2.0)
+            let rim_env = envelope()
+                .perc(0.0003, 0.04)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // High-frequency click

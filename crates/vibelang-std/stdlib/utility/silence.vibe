@@ -5,9 +5,10 @@ define_synthdef("silence")
     .param("amp", 0.0)
     .param("gate", 1.0)
     .body(|amp, gate| {
-        let envelope = env_asr(0.0, 1.0, 0.0);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.0, 1.0, 0.0)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         dc_ar(0.0) * env * amp

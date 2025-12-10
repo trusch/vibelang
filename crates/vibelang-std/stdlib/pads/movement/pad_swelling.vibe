@@ -5,14 +5,17 @@ define_synthdef("pad_swelling")
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
         // Very slow attack
-        let envelope = env_asr(2.0, 1.0, 0.5);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(2.0, 1.0, 0.5)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Filter swell envelope
-        let filt_env_shape = env_asr(2.5, 1.0, 0.5);
-        let filt_env = NewEnvGenBuilder(filt_env_shape, gate).build();
+        let filt_env = envelope()
+            .asr(2.5, 1.0, 0.5)
+            .gate(gate)
+            .build();
 
         // Rich detuned oscillators
         let osc1 = saw_ar(freq * 0.996);

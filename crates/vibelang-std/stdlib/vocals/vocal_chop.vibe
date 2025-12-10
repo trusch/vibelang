@@ -12,9 +12,10 @@ define_synthdef("vocal_chop", |builder| {
         .param("vowel", 0.5) // Vowel type
         .body(|freq, amp, gate, vowel| {
             // Short percussive envelope for chops
-            let envelope = env_asr(0.01, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Bright harmonically rich source
@@ -32,8 +33,9 @@ define_synthdef("vocal_chop", |builder| {
             let vocal = formant1 + formant2;
 
             // Slight pitch envelope for attack character
-            let pitch_env_data = env_perc(0.001, 0.05);
-            let pitch_env = NewEnvGenBuilder(pitch_env_data, dc_ar(1.0)).build();
+            let pitch_env = envelope()
+                .perc(0.001, 0.05)
+                .build();
             let pitched = sin_osc_ar(freq * (1.0 + pitch_env * 0.05)) * 0.1;
 
             (vocal + pitched) * env * amp

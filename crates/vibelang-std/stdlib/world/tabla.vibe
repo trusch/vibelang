@@ -12,14 +12,17 @@ define_synthdef("tabla_bayan", |builder| {
         .body(|freq, amp| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(0.001, 0.4);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 0.4)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Pitch bend envelope
-            let pitch_env_data = env_perc(0.001, 0.1);
-            let pitch_env = NewEnvGenBuilder(pitch_env_data, gate).build();
+            let pitch_env = envelope()
+                .perc(0.001, 0.1)
+                .gate(gate)
+                .build();
             let freq_mod = freq + pitch_env * freq * 0.5;
 
             // Body tone
@@ -30,8 +33,10 @@ define_synthdef("tabla_bayan", |builder| {
             let membrane = body + h2;
 
             // Add some thump
-            let thump_env_data = env_perc(0.001, 0.02);
-            let thump_env = NewEnvGenBuilder(thump_env_data, gate).build();
+            let thump_env = envelope()
+                .perc(0.001, 0.02)
+                .gate(gate)
+                .build();
             let thump = white_noise_ar() * thump_env * 0.2;
 
             (membrane + lpf_ar(thump, 500.0)) * env * amp
@@ -46,9 +51,10 @@ define_synthdef("tabla_dayan", |builder| {
         .body(|freq, amp| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(0.001, 0.25);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 0.25)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Characteristic tabla pitch
@@ -59,8 +65,10 @@ define_synthdef("tabla_dayan", |builder| {
             let tone = h1 + h2 + h3;
 
             // Attack transient
-            let attack_env_data = env_perc(0.0001, 0.01);
-            let attack_env = NewEnvGenBuilder(attack_env_data, gate).build();
+            let attack_env = envelope()
+                .perc(0.0001, 0.01)
+                .gate(gate)
+                .build();
             let attack = white_noise_ar() * attack_env * 0.15;
 
             (tone + hpf_ar(attack, 2000.0)) * env * amp

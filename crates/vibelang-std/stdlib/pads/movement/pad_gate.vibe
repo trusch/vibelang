@@ -5,9 +5,10 @@ define_synthdef("pad_gate")
     .param("gate", 1.0)
     .param("rate", 4.0)
     .body(|freq, amp, gate, rate| {
-        let envelope = env_asr(0.05, 1.0, 0.15);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.05, 1.0, 0.15)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Gate LFO (sharp on/off)

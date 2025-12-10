@@ -5,15 +5,17 @@ define_synthdef("sfx_coin")
     .body(|freq, amp| {
         let gate = dc_ar(1.0);
 
-        let amp_envelope = env_perc(0.001, 0.15);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 0.15)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Two-tone coin sound
         let tone1 = sin_osc_ar(freq) * 0.5;
-        let tone2_env = env_perc(0.05, 0.1);
-        let tone2_e = NewEnvGenBuilder(tone2_env, dc_ar(1.0)).build();
+        let tone2_e = envelope()
+            .perc(0.05, 0.1)
+            .build();
         let tone2 = sin_osc_ar(freq * 1.5) * tone2_e * 0.5;
 
         (tone1 + tone2) * amp_env * amp

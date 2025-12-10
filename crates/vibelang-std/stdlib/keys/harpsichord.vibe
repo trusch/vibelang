@@ -4,13 +4,16 @@ define_synthdef("harpsichord")
     .param("amp", 0.55)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.001, 1.0, 0.05);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.001, 1.0, 0.05)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Pluck attack
-        let pluck_env = NewEnvGenBuilder(env_perc(0.001, 0.02), dc_ar(1.0)).build();
+        let pluck_env = envelope()
+            .perc(0.001, 0.02)
+            .build();
         let attack = hpf_ar(white_noise_ar(), 3000.0) * pluck_env * 0.4;
 
         // Bright string resonance

@@ -6,9 +6,10 @@ define_synthdef("snare_reverb", |builder| {
             let gate = dc_ar(1.0);
 
             // Main snare
-            let snare_envelope = env_perc(0.001, 0.13);
-            let snare_env = NewEnvGenBuilder(snare_envelope, gate)
-                .with_done_action(2.0)
+            let snare_env = envelope()
+                .perc(0.001, 0.13)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
             let snare_noise = rlpf_ar(white_noise_ar(), 3500.0, 0.5) * snare_env;
             let tone = sin_osc_ar(210.0) * snare_env * 0.25;
@@ -21,8 +22,10 @@ define_synthdef("snare_reverb", |builder| {
             let delay4 = delay_l_ar(dry, 0.2, 0.067);
 
             // Reverb envelope - longer tail
-            let reverb_envelope = env_perc(0.01, 0.4);
-            let reverb_env = NewEnvGenBuilder(reverb_envelope, gate).build();
+            let reverb_env = envelope()
+                .perc(0.01, 0.4)
+                .gate(gate)
+                .build();
             let reverb = (delay1 + delay2 + delay3 + delay4) * 0.15 * reverb_env;
 
             (dry + reverb) * amp

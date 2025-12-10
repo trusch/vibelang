@@ -11,20 +11,22 @@ define_synthdef("trap_808_long", |builder| {
         .param("gate", 1.0)
         .param("decay", 2.0) // Long decay time
         .body(|freq, amp, gate, decay| {
-            let envelope = env_asr(0.001, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Long decay envelope
-            let decay_env_data = env_perc(0.001, 1.0);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0))
-                .with_time_scale(decay)
+            let decay_env = envelope()
+                .perc(0.001, 1.0)
+                .time_scale(decay)
                 .build();
 
             // Pitch envelope for 808 character
-            let pitch_env_data = env_perc(0.001, 0.08);
-            let pitch_env = NewEnvGenBuilder(pitch_env_data, dc_ar(1.0)).build();
+            let pitch_env = envelope()
+                .perc(0.001, 0.08)
+                .build();
             let freq_mod = pitch_env * freq * 3.0;
 
             // Pure sine 808
@@ -45,17 +47,20 @@ define_synthdef("trap_808_dist", |builder| {
         .param("gate", 1.0)
         .param("drive", 0.6)
         .body(|freq, amp, gate, drive| {
-            let envelope = env_asr(0.001, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let decay_env_data = env_perc(0.001, 1.5);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 1.5)
+                .build();
 
             // Pitch envelope
-            let pitch_env_data = env_perc(0.001, 0.06);
-            let pitch_env = NewEnvGenBuilder(pitch_env_data, dc_ar(1.0)).build();
+            let pitch_env = envelope()
+                .perc(0.001, 0.06)
+                .build();
             let freq_mod = pitch_env * freq * 4.0;
 
             // 808 oscillator
@@ -81,9 +86,10 @@ define_synthdef("trap_hat", |builder| {
             let gate = dc_ar(1.0);
 
             // Very short envelope
-            let envelope = env_perc(0.001, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.001, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // High-passed noise
@@ -106,9 +112,10 @@ define_synthdef("trap_hat_roll", |builder| {
             let gate = dc_ar(1.0);
 
             // Extra short for rolls
-            let envelope = env_perc(0.0001, 0.02);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.0001, 0.02)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Tight filtered noise
@@ -126,9 +133,10 @@ define_synthdef("trap_lead", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.01, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.01, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Dark detuned saw
@@ -151,13 +159,15 @@ define_synthdef("trap_bell", |builder| {
         .param("amp", 0.4)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.2);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.2)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
-            let decay_env_data = env_perc(0.001, 0.8);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 0.8)
+                .build();
 
             // Simple FM bell
             let mod_depth = decay_env * 2.0;

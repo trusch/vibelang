@@ -5,9 +5,10 @@ define_synthdef("pad_pulsing")
     .param("gate", 1.0)
     .param("rate", 4.0)
     .body(|freq, amp, gate, rate| {
-        let envelope = env_asr(0.1, 1.0, 0.2);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.1, 1.0, 0.2)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Pulse LFO

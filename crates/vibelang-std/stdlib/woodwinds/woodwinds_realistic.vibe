@@ -18,14 +18,16 @@ define_synthdef("clarinet_realistic", |builder| {
         .param("embouchure", 0.5)       // Lip pressure
         .param("breath", 0.3)           // Breath noise amount
         .body(|freq, amp, gate, reed_stiffness, embouchure, breath| {
-            let envelope = env_asr(0.04, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.04, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Delayed vibrato (starts after initial attack)
-            let vib_delay_data = env_perc(0.3, 5.0);
-            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib_delay = envelope()
+                .perc(0.3, 5.0)
+                .build();
             let vib_depth = 0.004 + (embouchure * 0.003);
             let vib = sin_osc_ar(5.5) * vib_depth * vib_delay + 1.0;
             let mod_freq = freq * vib;
@@ -49,8 +51,9 @@ define_synthdef("clarinet_realistic", |builder| {
             let harmonics = h1 + h2 + h3 + h4 + h5 + h7 + h9 + h11;
 
             // Reed buzz/chiff on attack
-            let chiff_data = env_perc(0.001, 0.02);
-            let chiff_env = NewEnvGenBuilder(chiff_data, dc_ar(1.0)).build();
+            let chiff_env = envelope()
+                .perc(0.001, 0.02)
+                .build();
             let chiff = white_noise_ar() * chiff_env * reed_stiffness * 0.15;
             let chiff_filtered = bpf_ar(chiff, mod_freq * 3.0, 0.3);
 
@@ -84,14 +87,16 @@ define_synthdef("alto_sax_realistic", |builder| {
         .param("growl", 0.0)         // Throat growl amount
         .param("subtone", 0.0)       // Airy subtone amount
         .body(|freq, amp, gate, embouchure, growl, subtone| {
-            let envelope = env_asr(0.025, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.025, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Jazz vibrato - wider and more expressive
-            let vib_delay_data = env_perc(0.2, 4.0);
-            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib_delay = envelope()
+                .perc(0.2, 4.0)
+                .build();
             let vib_depth = 0.006 + (embouchure * 0.004);
             let vib_rate = 5.0 + (embouchure * 1.0);
             let vib = sin_osc_ar(vib_rate) * vib_depth * vib_delay + 1.0;
@@ -118,8 +123,9 @@ define_synthdef("alto_sax_realistic", |builder| {
             let sub_filtered = bpf_ar(sub_noise, mod_freq, 0.3);
 
             // Reed attack transient
-            let attack_data = env_perc(0.001, 0.015);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.001, 0.015)
+                .build();
             let attack_noise = white_noise_ar() * attack_env * 0.12;
             let attack_filtered = bpf_ar(attack_noise, mod_freq * 4.0, 0.4);
 
@@ -146,14 +152,16 @@ define_synthdef("tenor_sax_realistic", |builder| {
         .param("warmth", 0.6)
         .param("growl", 0.0)
         .body(|freq, amp, gate, warmth, growl| {
-            let envelope = env_asr(0.035, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.035, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Slower, wider vibrato for tenor
-            let vib_delay_data = env_perc(0.25, 4.0);
-            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib_delay = envelope()
+                .perc(0.25, 4.0)
+                .build();
             let vib = sin_osc_ar(4.8) * 0.007 * vib_delay + 1.0;
             let mod_freq = freq * vib;
 
@@ -180,8 +188,9 @@ define_synthdef("tenor_sax_realistic", |builder| {
             let warm_res = rlpf_ar(harmonics, 400.0, 0.5) * warmth * 0.25;
 
             // Attack
-            let attack_data = env_perc(0.001, 0.018);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.001, 0.018)
+                .build();
             let attack = bpf_ar(white_noise_ar() * attack_env * 0.1, mod_freq * 3.0, 0.4);
 
             let tone = f1 + f2 + f3 + warm_res + attack;
@@ -199,14 +208,16 @@ define_synthdef("flute_realistic", |builder| {
         .param("breath", 0.35)      // Breath noise amount
         .param("air_speed", 0.5)    // Embouchure tightness
         .body(|freq, amp, gate, breath, air_speed| {
-            let envelope = env_asr(0.06, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.06, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Flute vibrato - gentle, sine-like
-            let vib_delay_data = env_perc(0.4, 5.0);
-            let vib_delay = NewEnvGenBuilder(vib_delay_data, dc_ar(1.0)).build();
+            let vib_delay = envelope()
+                .perc(0.4, 5.0)
+                .build();
             let vib = sin_osc_ar(5.8) * 0.005 * vib_delay + 1.0;
             let mod_freq = freq * vib;
 
@@ -227,8 +238,9 @@ define_synthdef("flute_realistic", |builder| {
             let edge_noise = hpf_ar(white_noise_ar() * breath * 0.15, 4000.0);
 
             // Attack breath burst
-            let attack_data = env_perc(0.005, 0.04);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.005, 0.04)
+                .build();
             let attack_breath = white_noise_ar() * attack_env * breath * 0.4;
             let attack_filtered = lpf_ar(attack_breath, 6000.0);
 
@@ -252,9 +264,10 @@ define_synthdef("oboe_realistic", |builder| {
         .param("gate", 1.0)
         .param("reed_pressure", 0.6)
         .body(|freq, amp, gate, reed_pressure| {
-            let envelope = env_asr(0.03, 1.0, 0.08);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.03, 1.0, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Oboe vibrato - subtle
@@ -277,8 +290,9 @@ define_synthdef("oboe_realistic", |builder| {
             let harmonics = h1 + h2 + h3 + h4 + h5 + h6 + h7 + h8 + h9 + h10;
 
             // Double reed "crow" on attack
-            let crow_data = env_perc(0.001, 0.01);
-            let crow_env = NewEnvGenBuilder(crow_data, dc_ar(1.0)).build();
+            let crow_env = envelope()
+                .perc(0.001, 0.01)
+                .build();
             let crow = white_noise_ar() * crow_env * reed_pressure * 0.15;
             let crow_filtered = bpf_ar(crow, mod_freq * 5.0, 0.3);
 
@@ -300,9 +314,10 @@ define_synthdef("english_horn", |builder| {
         .param("amp", 0.55)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.04, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.04, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Gentle vibrato
@@ -339,9 +354,10 @@ define_synthdef("bassoon_realistic", |builder| {
         .param("gate", 1.0)
         .param("reed_buzz", 0.4)
         .body(|freq, amp, gate, reed_buzz| {
-            let envelope = env_asr(0.05, 1.0, 0.12);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.05, 1.0, 0.12)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Slow vibrato
@@ -365,8 +381,9 @@ define_synthdef("bassoon_realistic", |builder| {
             let buzz_filtered = bpf_ar(buzz, mod_freq * 4.0, 0.4);
 
             // Attack
-            let attack_data = env_perc(0.001, 0.025);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.001, 0.025)
+                .build();
             let attack = white_noise_ar() * attack_env * 0.08;
 
             // Wooden body formants
@@ -388,9 +405,10 @@ define_synthdef("recorder", |builder| {
         .param("gate", 1.0)
         .param("breath", 0.4)
         .body(|freq, amp, gate, breath| {
-            let envelope = env_asr(0.02, 1.0, 0.08);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.02, 1.0, 0.08)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Simple vibrato
@@ -423,9 +441,10 @@ define_synthdef("pan_flute", |builder| {
         .param("gate", 1.0)
         .param("breath", 0.5)
         .body(|freq, amp, gate, breath| {
-            let envelope = env_asr(0.08, 1.0, 0.15);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.08, 1.0, 0.15)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Gentle vibrato
@@ -443,8 +462,9 @@ define_synthdef("pan_flute", |builder| {
             let breath_filtered = lpf_ar(hpf_ar(breath_noise, 1000.0), 6000.0);
 
             // Breathy attack
-            let attack_data = env_perc(0.01, 0.08);
-            let attack_env = NewEnvGenBuilder(attack_data, dc_ar(1.0)).build();
+            let attack_env = envelope()
+                .perc(0.01, 0.08)
+                .build();
             let attack = white_noise_ar() * attack_env * breath * 0.3;
 
             let tone = harmonics + breath_filtered + attack;

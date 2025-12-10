@@ -5,9 +5,10 @@ define_synthdef("mod_lfo")
     .param("gate", 1.0)
     .param("wave", 0.0) // 0=sine, 0.5=triangle, 1.0=saw
     .body(|freq, amp, gate, wave| {
-        let envelope = env_asr(0.01, 1.0, 0.01);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.01, 1.0, 0.01)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Crossfade LFO shapes

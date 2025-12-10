@@ -8,22 +8,27 @@ define_synthdef("break_amen")
 
         // Different envelopes based on type
         let decay = 0.3 - type_param * 0.15;
-        let amp_envelope = env_perc(0.001, 1.0);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_time_scale(decay)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 1.0)
+            .gate(gate)
+            .time_scale(decay)
+            .cleanup_on_finish()
             .build();
 
         // Kick component (more at type=0)
         let kick_amount = 1.0 - type_param;
-        let kick_pitch_env = env_perc(0.001, 0.04);
-        let kick_penv = NewEnvGenBuilder(kick_pitch_env, gate).build();
+        let kick_penv = envelope()
+            .perc(0.001, 0.04)
+            .gate(gate)
+            .build();
         let kick = sin_osc_ar(60.0 + kick_penv * 200.0) * kick_amount * 0.6;
 
         // Snare component (more at type=0.5)
         let snare_amount = 1.0 - (type_param - 0.5).abs() * 2.0;
-        let snare_noise_env = env_perc(0.001, 0.15);
-        let snare_nenv = NewEnvGenBuilder(snare_noise_env, gate).build();
+        let snare_nenv = envelope()
+            .perc(0.001, 0.15)
+            .gate(gate)
+            .build();
         let snare_body = sin_osc_ar(freq) * snare_amount * 0.3;
         let snare_noise = hpf_ar(white_noise_ar(), 3000.0) * snare_nenv * snare_amount * 0.4;
 
@@ -31,8 +36,10 @@ define_synthdef("break_amen")
         let hat = hpf_ar(white_noise_ar(), 8000.0) * type_param * 0.4;
 
         // Attack
-        let attack_envelope = env_perc(0.0001, 0.004);
-        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack_env = envelope()
+            .perc(0.0001, 0.004)
+            .gate(gate)
+            .build();
         let attack = white_noise_ar() * attack_env * 0.15;
 
         (kick + snare_body + snare_noise + hat + attack) * amp_env * amp

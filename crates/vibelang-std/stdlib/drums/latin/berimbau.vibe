@@ -8,10 +8,11 @@ define_synthdef("berimbau")
 
         // Decay length based on open/closed
         let decay_time = 0.2 + (open * 0.4);
-        let amp_envelope = env_perc(0.001, 1.0);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_time_scale(decay_time)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 1.0)
+            .gate(gate)
+            .time_scale(decay_time)
+            .cleanup_on_finish()
             .build();
 
         // Wire string with harmonics
@@ -25,8 +26,10 @@ define_synthdef("berimbau")
         let resonated = lpf_ar(body + harm1 + harm2 + harm3, cutoff);
 
         // Stick attack
-        let attack_envelope = env_perc(0.0001, 0.008);
-        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack_env = envelope()
+            .perc(0.0001, 0.008)
+            .gate(gate)
+            .build();
         let attack = bpf_ar(white_noise_ar(), 2000.0, 0.5) * attack_env * 0.2;
 
         (resonated + attack) * amp_env * amp

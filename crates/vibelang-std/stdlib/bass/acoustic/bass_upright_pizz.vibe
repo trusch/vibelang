@@ -6,9 +6,10 @@ define_synthdef("bass_upright_pizz")
         let gate = dc_ar(1.0);
 
         // Pizzicato envelope - short decay
-        let amp_envelope = env_perc(0.005, 0.4);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.005, 0.4)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Warm body
@@ -17,8 +18,10 @@ define_synthdef("bass_upright_pizz")
         let harm2 = sin_osc_ar(freq * 3.0) * 0.1;
 
         // Finger pluck attack
-        let pluck_envelope = env_perc(0.001, 0.05);
-        let pluck_env = NewEnvGenBuilder(pluck_envelope, gate).build();
+        let pluck_env = envelope()
+            .perc(0.001, 0.05)
+            .gate(gate)
+            .build();
         let pluck = bpf_ar(white_noise_ar(), 1200.0, 0.5) * pluck_env * 0.25;
 
         let sig = body + harm1 + harm2 + pluck;

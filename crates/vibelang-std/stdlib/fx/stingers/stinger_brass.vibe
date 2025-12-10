@@ -6,9 +6,10 @@ define_synthdef("stinger_brass", |builder| {
         .body(|amp, note| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(0.01, 0.8);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.01, 0.8)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             let freq = 440.0 * (2.0.pow((note - 69.0) / 12.0));
@@ -21,8 +22,10 @@ define_synthdef("stinger_brass", |builder| {
             let brass = brass1 + brass2 + brass3;
 
             // Opening filter for brass attack
-            let filter_env = env_perc(0.01, 0.2);
-            let filter_e = NewEnvGenBuilder(filter_env, gate).build();
+            let filter_e = envelope()
+                .perc(0.01, 0.2)
+                .gate(gate)
+                .build();
             let cutoff = 500.0 + filter_e * 2500.0;
             let filtered = lpf_ar(brass, cutoff);
 

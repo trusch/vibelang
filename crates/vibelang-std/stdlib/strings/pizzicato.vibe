@@ -10,14 +10,16 @@ define_synthdef("pizzicato", |builder| {
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
             // Short pluck envelope (gate-controlled for poly)
-            let envelope = env_asr(0.001, 1.0, 0.05);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.05)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Fast decay envelope
-            let decay_env_data = env_perc(0.001, 0.3);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 0.3)
+                .build();
 
             // Plucked string (bright attack, fast decay)
             let fund = sin_osc_ar(freq);
@@ -29,8 +31,9 @@ define_synthdef("pizzicato", |builder| {
             let harmonics = fund + h2 + h3 + h4 + h5;
 
             // Pluck transient
-            let pluck_env_data = env_perc(0.0001, 0.02);
-            let pluck_env = NewEnvGenBuilder(pluck_env_data, dc_ar(1.0)).build();
+            let pluck_env = envelope()
+                .perc(0.0001, 0.02)
+                .build();
             let pluck = white_noise_ar() * pluck_env * 0.2;
 
             // Filter sweep for pluck character

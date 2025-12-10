@@ -8,18 +8,21 @@ define_synthdef("darbuka")
 
         // Decay based on type
         let decay = 0.3 - type_param * 0.2;
-        let amp_envelope = env_perc(0.001, 1.0);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_time_scale(decay)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 1.0)
+            .gate(gate)
+            .time_scale(decay)
+            .cleanup_on_finish()
             .build();
 
         // Pitch based on type
         let pitch = freq * (1.0 + type_param * 2.0);
 
         // Pitch envelope
-        let pitch_envelope = env_perc(0.001, 0.02);
-        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let pitch_env = envelope()
+            .perc(0.001, 0.02)
+            .gate(gate)
+            .build();
 
         // Body
         let body = sin_osc_ar(pitch + pitch_env * pitch * (1.0 - type_param)) * (1.0 - type_param * 0.5);
@@ -28,8 +31,10 @@ define_synthdef("darbuka")
         let slap = hpf_ar(white_noise_ar(), 3000.0 + type_param * 3000.0) * type_param * 0.4;
 
         // Attack
-        let attack_envelope = env_perc(0.0001, 0.005);
-        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack_env = envelope()
+            .perc(0.0001, 0.005)
+            .gate(gate)
+            .build();
         let attack = white_noise_ar() * attack_env * 0.2;
 
         (body + slap + attack) * amp_env * amp

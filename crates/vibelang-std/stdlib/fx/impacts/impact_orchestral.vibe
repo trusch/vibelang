@@ -5,9 +5,10 @@ define_synthdef("impact_orchestral", |builder| {
         .body(|amp| {
             let gate = dc_ar(1.0);
 
-            let envelope = env_perc(0.02, 2.5);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .perc(0.02, 2.5)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Brass section
@@ -16,26 +17,34 @@ define_synthdef("impact_orchestral", |builder| {
             let brass3 = saw_ar(262.0);
             let brass = (brass1 + brass2 * 0.8 + brass3 * 0.6) * 0.2;
             let brass_filtered = lpf_ar(brass, 1200.0);
-            let brass_env = env_perc(0.02, 1.5);
-            let brass_e = NewEnvGenBuilder(brass_env, gate).build();
+            let brass_e = envelope()
+                .perc(0.02, 1.5)
+                .gate(gate)
+                .build();
 
             // String section
             let str1 = sin_osc_ar(262.0);
             let str2 = sin_osc_ar(392.0);
             let str3 = sin_osc_ar(523.0);
             let strings = (str1 + str2 * 0.7 + str3 * 0.5) * 0.25;
-            let str_env = env_perc(0.05, 2.0);
-            let str_e = NewEnvGenBuilder(str_env, gate).build();
+            let str_e = envelope()
+                .perc(0.05, 2.0)
+                .gate(gate)
+                .build();
 
             // Timpani-like bass
             let timp = sin_osc_ar(65.0) + sin_osc_ar(130.0) * 0.4;
-            let timp_env = env_perc(0.001, 0.8);
-            let timp_e = NewEnvGenBuilder(timp_env, gate).build();
+            let timp_e = envelope()
+                .perc(0.001, 0.8)
+                .gate(gate)
+                .build();
 
             // Cymbal crash
             let cymbal = hpf_ar(white_noise_ar(), 6000.0);
-            let cym_env = env_perc(0.01, 1.5);
-            let cym_e = NewEnvGenBuilder(cym_env, gate).build();
+            let cym_e = envelope()
+                .perc(0.01, 1.5)
+                .gate(gate)
+                .build();
 
             let mix = brass_filtered * brass_e + strings * str_e + timp * timp_e * 0.5 + cymbal * cym_e * 0.15;
 

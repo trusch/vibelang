@@ -8,14 +8,17 @@ define_synthdef("acid_bubbly", |builder| {
 
             // Bouncy envelope
             // Gate-controlled ASR envelope for proper note-on/note-off behavior
-            let envelope = env_asr(0.002, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.002, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Quick filter sweep for bubbles
-            let filter_envelope = env_asr(0.003, 1.0, 0.1);
-            let filter_env = NewEnvGenBuilder(filter_envelope, gate).build();
+            let filter_env = envelope()
+                .asr(0.003, 1.0, 0.1)
+                .gate(gate)
+                .build();
 
             // Pulse wave for different timbre
             let osc = saw_ar(freq);

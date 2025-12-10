@@ -10,9 +10,10 @@ define_synthdef("brass_section", |builder| {
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
             // Brass swell envelope
-            let envelope = env_asr(0.15, 1.0, 0.1);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.15, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Multiple brass voices (detuned for section)
@@ -27,8 +28,10 @@ define_synthdef("brass_section", |builder| {
             let section = (v1 + v2 + v3) * 0.35 + oct_up;
 
             // Brass filter sweep (brighter with envelope)
-            let filter_env_data = env_asr(0.075, 1.0, 0.1);
-            let filter_env = NewEnvGenBuilder(filter_env_data, gate).build();
+            let filter_env = envelope()
+                .asr(0.075, 1.0, 0.1)
+                .gate(gate)
+                .build();
             let filter_freq = 800.0 + filter_env * 2500.0;
 
             let brass = rlpf_ar(section, filter_freq, 0.3);

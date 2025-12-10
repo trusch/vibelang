@@ -6,9 +6,10 @@ define_synthdef("snare_acoustic", |builder| {
             let gate = dc_ar(1.0);
 
             // Noise component - longer for acoustic character
-            let noise_envelope = env_perc(0.002, 0.25);
-            let noise_env = NewEnvGenBuilder(noise_envelope, gate)
-                .with_done_action(2.0)
+            let noise_env = envelope()
+                .perc(0.002, 0.25)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
             let noise = white_noise_ar();
             // Less aggressive filtering for natural sound
@@ -16,13 +17,17 @@ define_synthdef("snare_acoustic", |builder| {
             let snare_noise = filtered_noise * noise_env;
 
             // Body tone - lower fundamental
-            let body_envelope = env_perc(0.001, 0.15);
-            let body_env = NewEnvGenBuilder(body_envelope, gate).build();
+            let body_env = envelope()
+                .perc(0.001, 0.15)
+                .gate(gate)
+                .build();
             let body = sin_osc_ar(200.0) * body_env * 0.25;
 
             // Snare wires - higher harmonics
-            let wire_envelope = env_perc(0.001, 0.2);
-            let wire_env = NewEnvGenBuilder(wire_envelope, gate).build();
+            let wire_env = envelope()
+                .perc(0.001, 0.2)
+                .gate(gate)
+                .build();
             let wires = (sin_osc_ar(320.0) * 0.15 + sin_osc_ar(480.0) * 0.1) * wire_env;
 
             (snare_noise * 0.7 + body + wires) * amp

@@ -11,9 +11,10 @@ define_synthdef("whisper", |builder| {
         .param("breathiness", 0.7) // Noise amount
         .body(|freq, amp, gate, breathiness| {
             // Soft envelope
-            let envelope = env_asr(0.1, 1.0, 0.3);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.1, 1.0, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Mostly noise with hint of pitch

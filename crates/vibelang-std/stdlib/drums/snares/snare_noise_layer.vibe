@@ -7,18 +7,21 @@ define_synthdef("snare_noise_layer")
         let gate = dc_ar(1.0);
 
         // Adjustable decay
-        let amp_envelope = env_perc(0.001, 1.0);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_time_scale(decay)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 1.0)
+            .gate(gate)
+            .time_scale(decay)
+            .cleanup_on_finish()
             .build();
 
         // Pure filtered noise
         let noise = bpf_ar(white_noise_ar(), freq, 0.5);
 
         // Attack transient
-        let attack_envelope = env_perc(0.0001, 0.003);
-        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack_env = envelope()
+            .perc(0.0001, 0.003)
+            .gate(gate)
+            .build();
         let attack = white_noise_ar() * attack_env * 0.2;
 
         (noise + attack) * amp_env * amp

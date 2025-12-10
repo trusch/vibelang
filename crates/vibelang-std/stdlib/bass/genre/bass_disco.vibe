@@ -4,9 +4,10 @@ define_synthdef("bass_disco")
     .param("amp", 0.8)
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
-        let envelope = env_asr(0.003, 1.0, 0.06);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.003, 1.0, 0.06)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Body with octave
@@ -15,8 +16,9 @@ define_synthdef("bass_disco")
         let harm = sin_osc_ar(freq * 3.0) * 0.1;
 
         // Quick attack
-        let attack_env = env_perc(0.001, 0.015);
-        let attack = NewEnvGenBuilder(attack_env, dc_ar(1.0)).build();
+        let attack = envelope()
+            .perc(0.001, 0.015)
+            .build();
         let click = hpf_ar(white_noise_ar(), 3000.0) * attack * 0.15;
 
         let sig = body + octave + harm + click;

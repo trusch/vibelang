@@ -5,9 +5,10 @@ define_synthdef("bass_picked")
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
         // Envelope with quick attack
-        let envelope = env_asr(0.003, 1.0, 0.08);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .asr(0.003, 1.0, 0.08)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Brighter harmonic content
@@ -17,8 +18,9 @@ define_synthdef("bass_picked")
         let harm3 = sin_osc_ar(freq * 4.0) * 0.08;
 
         // Pick attack - bright and defined
-        let pick_env = env_perc(0.0001, 0.015);
-        let pick = NewEnvGenBuilder(pick_env, dc_ar(1.0)).build();
+        let pick = envelope()
+            .perc(0.0001, 0.015)
+            .build();
         let attack = hpf_ar(white_noise_ar(), 3000.0) * pick * 0.25;
 
         let sig = body + harm1 + harm2 + harm3 + attack;

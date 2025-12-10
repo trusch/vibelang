@@ -10,14 +10,16 @@ define_synthdef("koto", |builder| {
         .param("amp", 0.5)
         .param("gate", 1.0)
         .body(|freq, amp, gate| {
-            let envelope = env_asr(0.001, 1.0, 0.3);
-            let env = NewEnvGenBuilder(envelope, gate)
-                .with_done_action(2.0)
+            let env = envelope()
+                .asr(0.001, 1.0, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
                 .build();
 
             // Decay for pluck
-            let decay_env_data = env_perc(0.001, 1.2);
-            let decay_env = NewEnvGenBuilder(decay_env_data, dc_ar(1.0)).build();
+            let decay_env = envelope()
+                .perc(0.001, 1.2)
+                .build();
 
             // String harmonics
             let h1 = sin_osc_ar(freq);
@@ -29,8 +31,9 @@ define_synthdef("koto", |builder| {
             let string = h1 + h2 + h3 + h4 + h5;
 
             // Pluck attack
-            let pluck_env_data = env_perc(0.0001, 0.015);
-            let pluck_env = NewEnvGenBuilder(pluck_env_data, dc_ar(1.0)).build();
+            let pluck_env = envelope()
+                .perc(0.0001, 0.015)
+                .build();
             let pluck = white_noise_ar() * pluck_env * 0.15;
 
             // Bridge resonance

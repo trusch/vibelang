@@ -6,24 +6,31 @@ define_synthdef("snare_jungle")
         let gate = dc_ar(1.0);
 
         // Tight decay
-        let amp_envelope = env_perc(0.001, 0.18);
-        let amp_env = NewEnvGenBuilder(amp_envelope, gate)
-            .with_done_action(2.0)
+        let amp_env = envelope()
+            .perc(0.001, 0.18)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Body
-        let pitch_envelope = env_perc(0.001, 0.015);
-        let pitch_env = NewEnvGenBuilder(pitch_envelope, gate).build();
+        let pitch_env = envelope()
+            .perc(0.001, 0.015)
+            .gate(gate)
+            .build();
         let body = sin_osc_ar(freq + pitch_env * freq * 2.5) * 0.35;
 
         // Bright, cutting noise
-        let noise_envelope = env_perc(0.001, 0.15);
-        let noise_env = NewEnvGenBuilder(noise_envelope, gate).build();
+        let noise_env = envelope()
+            .perc(0.001, 0.15)
+            .gate(gate)
+            .build();
         let noise = hpf_ar(white_noise_ar(), 3500.0) * noise_env * 0.55;
 
         // Sharp attack
-        let attack_envelope = env_perc(0.0001, 0.003);
-        let attack_env = NewEnvGenBuilder(attack_envelope, gate).build();
+        let attack_env = envelope()
+            .perc(0.0001, 0.003)
+            .gate(gate)
+            .build();
         let attack = white_noise_ar() * attack_env * 0.25;
 
         (body + noise + attack) * amp_env * amp

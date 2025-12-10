@@ -5,9 +5,10 @@ define_synthdef("hihat_808_closed")
         let gate = dc_ar(1.0);
 
         // Very short envelope
-        let envelope = env_perc(0.0005, 0.04);
-        let env = NewEnvGenBuilder(envelope, gate)
-            .with_done_action(2.0)
+        let env = envelope()
+            .perc(0.0005, 0.04)
+            .gate(gate)
+            .cleanup_on_finish()
             .build();
 
         // Square wave oscillators for metallic character
