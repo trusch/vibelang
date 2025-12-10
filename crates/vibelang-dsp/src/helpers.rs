@@ -418,6 +418,378 @@ impl EnvGenBuilder {
     }
 }
 
+/// Parse a duration value from either a f64 (seconds) or a humantime string.
+fn parse_duration(value: rhai::Dynamic) -> Result<f64> {
+    if let Some(f) = value.clone().try_cast::<f64>() {
+        Ok(f)
+    } else if let Some(i) = value.clone().try_cast::<i64>() {
+        Ok(i as f64)
+    } else if let Some(s) = value.clone().try_cast::<rhai::ImmutableString>() {
+        humantime::parse_duration(s.as_str())
+            .map(|d| d.as_secs_f64())
+            .map_err(|e| SynthDefError::ValidationError(format!("Invalid duration '{}': {}", s, e)))
+    } else {
+        Err(SynthDefError::ValidationError(format!(
+            "Expected number or duration string, got {}",
+            value.type_name()
+        )))
+    }
+}
+
+/// Fluent builder for envelope generators.
+///
+/// This builder provides a convenient API for creating envelope generators
+/// with smart selection of the underlying envelope type (perc, asr, adsr).
+///
+/// # Example
+/// ```ignore
+/// // Simple percussive envelope
+/// let env = envelope()
+///     .attack("5ms")
+///     .release("50ms")
+///     .gate(gate)
+///     .cleanup_on_finish()
+///     .build();
+///
+/// // ADSR envelope
+/// let env = envelope()
+///     .adsr("10ms", "100ms", 0.7, "200ms")
+///     .gate(gate)
+///     .build();
+/// ```
+#[derive(Clone, Debug)]
+pub struct EnvelopeBuilder {
+    // Envelope parameters
+    attack: Option<f64>,
+    decay: Option<f64>,
+    sustain: Option<f64>,
+    release: Option<f64>,
+
+    // Gate and done action
+    gate: Option<NodeRef>,
+    done_action: Option<EnvGenParam>,
+
+    // Optional modifiers (from EnvGenBuilder)
+    level_scale: Option<EnvGenParam>,
+    level_bias: Option<EnvGenParam>,
+    time_scale: Option<EnvGenParam>,
+}
+
+impl EnvelopeBuilder {
+    /// Create a new envelope builder with default values.
+    pub fn new() -> Self {
+        EnvelopeBuilder {
+            attack: None,
+            decay: None,
+            sustain: None,
+            release: None,
+            gate: None,
+            done_action: None,
+            level_scale: None,
+            level_bias: None,
+            time_scale: None,
+        }
+    }
+
+    /// Set the attack time.
+    /// Accepts f64 (seconds), i64 (seconds), or humantime strings like "5ms", "1s".
+    pub fn attack(mut self, value: rhai::Dynamic) -> Self {
+        if let Ok(t) = parse_duration(value) {
+            self.attack = Some(t);
+        }
+        self
+    }
+
+    /// Set the attack time from f64 (seconds).
+    pub fn attack_f(mut self, seconds: f64) -> Self {
+        self.attack = Some(seconds);
+        self
+    }
+
+    /// Set the decay time.
+    /// Accepts f64 (seconds), i64 (seconds), or humantime strings like "5ms", "1s".
+    pub fn decay(mut self, value: rhai::Dynamic) -> Self {
+        if let Ok(t) = parse_duration(value) {
+            self.decay = Some(t);
+        }
+        self
+    }
+
+    /// Set the decay time from f64 (seconds).
+    pub fn decay_f(mut self, seconds: f64) -> Self {
+        self.decay = Some(seconds);
+        self
+    }
+
+    /// Set the sustain level (0.0 to 1.0).
+    pub fn sustain(mut self, level: f64) -> Self {
+        self.sustain = Some(level.clamp(0.0, 1.0));
+        self
+    }
+
+    /// Set the release time.
+    /// Accepts f64 (seconds), i64 (seconds), or humantime strings like "5ms", "1s".
+    pub fn release(mut self, value: rhai::Dynamic) -> Self {
+        if let Ok(t) = parse_duration(value) {
+            self.release = Some(t);
+        }
+        self
+    }
+
+    /// Set the release time from f64 (seconds).
+    pub fn release_f(mut self, seconds: f64) -> Self {
+        self.release = Some(seconds);
+        self
+    }
+
+    /// Set the gate signal (NodeRef).
+    pub fn gate(mut self, gate: NodeRef) -> Self {
+        self.gate = Some(gate);
+        self
+    }
+
+    /// Set done_action to 2 (free the synth when envelope completes).
+    pub fn cleanup_on_finish(mut self) -> Self {
+        self.done_action = Some(EnvGenParam::Constant(2.0));
+        self
+    }
+
+    /// Set a custom done_action value.
+    pub fn done_action(mut self, action: f64) -> Self {
+        self.done_action = Some(EnvGenParam::Constant(action));
+        self
+    }
+
+    /// Set done_action from a NodeRef.
+    pub fn done_action_n(mut self, action: NodeRef) -> Self {
+        self.done_action = Some(EnvGenParam::Node(action));
+        self
+    }
+
+    /// Set the level scale (amplitude multiplier).
+    pub fn level_scale(mut self, scale: f64) -> Self {
+        self.level_scale = Some(EnvGenParam::Constant(scale));
+        self
+    }
+
+    /// Set the level scale from a NodeRef.
+    pub fn level_scale_n(mut self, scale: NodeRef) -> Self {
+        self.level_scale = Some(EnvGenParam::Node(scale));
+        self
+    }
+
+    /// Set the level bias (DC offset).
+    pub fn level_bias(mut self, bias: f64) -> Self {
+        self.level_bias = Some(EnvGenParam::Constant(bias));
+        self
+    }
+
+    /// Set the level bias from a NodeRef.
+    pub fn level_bias_n(mut self, bias: NodeRef) -> Self {
+        self.level_bias = Some(EnvGenParam::Node(bias));
+        self
+    }
+
+    /// Set the time scale (time multiplier).
+    pub fn time_scale(mut self, scale: f64) -> Self {
+        self.time_scale = Some(EnvGenParam::Constant(scale));
+        self
+    }
+
+    /// Set the time scale from a NodeRef.
+    pub fn time_scale_n(mut self, scale: NodeRef) -> Self {
+        self.time_scale = Some(EnvGenParam::Node(scale));
+        self
+    }
+
+    /// Configure a percussive envelope (attack → release, no sustain).
+    /// Accepts f64 (seconds), i64 (seconds), or humantime strings.
+    pub fn perc(mut self, attack: rhai::Dynamic, release: rhai::Dynamic) -> Self {
+        if let Ok(a) = parse_duration(attack) {
+            self.attack = Some(a);
+        }
+        if let Ok(r) = parse_duration(release) {
+            self.release = Some(r);
+        }
+        // Clear decay and sustain to ensure perc envelope
+        self.decay = None;
+        self.sustain = None;
+        self
+    }
+
+    /// Configure a percussive envelope with f64 values.
+    pub fn perc_f(mut self, attack: f64, release: f64) -> Self {
+        self.attack = Some(attack);
+        self.release = Some(release);
+        self.decay = None;
+        self.sustain = None;
+        self
+    }
+
+    /// Configure an ASR envelope (attack → sustain → release).
+    /// Accepts f64 (seconds), i64 (seconds), or humantime strings for times.
+    pub fn asr(
+        mut self,
+        attack: rhai::Dynamic,
+        sustain: f64,
+        release: rhai::Dynamic,
+    ) -> Self {
+        if let Ok(a) = parse_duration(attack) {
+            self.attack = Some(a);
+        }
+        self.sustain = Some(sustain.clamp(0.0, 1.0));
+        if let Ok(r) = parse_duration(release) {
+            self.release = Some(r);
+        }
+        self.decay = None;
+        self
+    }
+
+    /// Configure an ASR envelope with f64 values.
+    pub fn asr_f(mut self, attack: f64, sustain: f64, release: f64) -> Self {
+        self.attack = Some(attack);
+        self.sustain = Some(sustain.clamp(0.0, 1.0));
+        self.release = Some(release);
+        self.decay = None;
+        self
+    }
+
+    /// Configure an ADSR envelope (attack → decay → sustain → release).
+    /// Accepts f64 (seconds), i64 (seconds), or humantime strings for times.
+    pub fn adsr(
+        mut self,
+        attack: rhai::Dynamic,
+        decay: rhai::Dynamic,
+        sustain: f64,
+        release: rhai::Dynamic,
+    ) -> Self {
+        if let Ok(a) = parse_duration(attack) {
+            self.attack = Some(a);
+        }
+        if let Ok(d) = parse_duration(decay) {
+            self.decay = Some(d);
+        }
+        self.sustain = Some(sustain.clamp(0.0, 1.0));
+        if let Ok(r) = parse_duration(release) {
+            self.release = Some(r);
+        }
+        self
+    }
+
+    /// Configure an ADSR envelope with f64 values.
+    pub fn adsr_f(mut self, attack: f64, decay: f64, sustain: f64, release: f64) -> Self {
+        self.attack = Some(attack);
+        self.decay = Some(decay);
+        self.sustain = Some(sustain.clamp(0.0, 1.0));
+        self.release = Some(release);
+        self
+    }
+
+    /// Configure a triangle envelope (attack to peak, then release).
+    /// Accepts f64 (seconds), i64 (seconds), or humantime strings.
+    pub fn triangle(mut self, duration: rhai::Dynamic) -> Self {
+        if let Ok(d) = parse_duration(duration) {
+            self.attack = Some(d / 2.0);
+            self.release = Some(d / 2.0);
+        }
+        self.decay = None;
+        self.sustain = None;
+        self
+    }
+
+    /// Configure a triangle envelope with f64 duration.
+    pub fn triangle_f(mut self, duration: f64) -> Self {
+        self.attack = Some(duration / 2.0);
+        self.release = Some(duration / 2.0);
+        self.decay = None;
+        self.sustain = None;
+        self
+    }
+
+    /// Build the envelope generator and return a NodeRef.
+    ///
+    /// Automatically selects the envelope type based on which parameters are set:
+    /// - attack + release only → perc envelope
+    /// - attack + sustain + release → asr envelope
+    /// - attack + decay + sustain + release → adsr envelope
+    ///
+    /// If no gate is specified, defaults to dc_ar(1.0) (always on).
+    pub fn build(self) -> Result<NodeRef> {
+        // Default gate to dc_ar(1.0) if not provided
+        let gate = match self.gate {
+            Some(g) => g,
+            None => {
+                // Create a DC(1.0) node as the default gate
+                with_builder(|builder| {
+                    builder.add_constant(1.0f32);
+                    let inputs = vec![Input::Constant(1.0f32)];
+                    builder.add_node("DC".to_string(), Rate::Audio, inputs, 1, 0)
+                })?
+            }
+        };
+
+        // Determine envelope type and create Env
+        let env = self.determine_envelope();
+
+        // Build inputs with defaults
+        let level_scale = self.level_scale.unwrap_or(EnvGenParam::Constant(1.0));
+        let level_bias = self.level_bias.unwrap_or(EnvGenParam::Constant(0.0));
+        let time_scale = self.time_scale.unwrap_or(EnvGenParam::Constant(1.0));
+        let done_action = self.done_action.unwrap_or(EnvGenParam::Constant(0.0));
+
+        // Add constants to builder before using them (required for Input::Constant to work)
+        with_builder(|builder| {
+            if let EnvGenParam::Constant(v) = &level_scale {
+                builder.add_constant(*v as f32);
+            }
+            if let EnvGenParam::Constant(v) = &level_bias {
+                builder.add_constant(*v as f32);
+            }
+            if let EnvGenParam::Constant(v) = &time_scale {
+                builder.add_constant(*v as f32);
+            }
+            if let EnvGenParam::Constant(v) = &done_action {
+                builder.add_constant(*v as f32);
+            }
+        })?;
+
+        env_gen_with_env_impl(
+            env,
+            gate,
+            level_scale.to_input(),
+            level_bias.to_input(),
+            time_scale.to_input(),
+            done_action.to_input(),
+        )
+    }
+
+    /// Determine the envelope type based on set parameters.
+    fn determine_envelope(&self) -> Env {
+        let attack = self.attack.unwrap_or(0.01);
+        let release = self.release.unwrap_or(0.1);
+
+        match (self.decay, self.sustain) {
+            // Full ADSR
+            (Some(decay), Some(sustain)) => Env::adsr(attack, decay, sustain, release),
+            // ASR (no decay, has sustain)
+            (None, Some(sustain)) => Env::asr(attack, sustain, release),
+            // Perc (no sustain, no decay)
+            _ => Env::perc(attack, release),
+        }
+    }
+}
+
+impl Default for EnvelopeBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Create a new envelope builder.
+pub fn envelope() -> EnvelopeBuilder {
+    EnvelopeBuilder::new()
+}
+
 /// Read from hardware audio input (microphone, line-in, etc.).
 /// Channel 0 is the first hardware input.
 /// Returns an array of audio signals, one per channel.
@@ -600,6 +972,46 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
         .register_fn("with_done_action", EnvGenBuilder::with_done_action)
         .register_fn("with_done_action", EnvGenBuilder::with_done_action_n)
         .register_fn("build", |builder: EnvGenBuilder| EnvGenBuilder::build(builder).unwrap());
+
+    // New fluent EnvelopeBuilder API
+    engine
+        .register_type::<EnvelopeBuilder>()
+        .register_fn("envelope", envelope)
+        // Attack methods
+        .register_fn("attack", EnvelopeBuilder::attack)
+        .register_fn("attack", EnvelopeBuilder::attack_f)
+        // Decay methods
+        .register_fn("decay", EnvelopeBuilder::decay)
+        .register_fn("decay", EnvelopeBuilder::decay_f)
+        // Sustain method
+        .register_fn("sustain", EnvelopeBuilder::sustain)
+        // Release methods
+        .register_fn("release", EnvelopeBuilder::release)
+        .register_fn("release", EnvelopeBuilder::release_f)
+        // Gate method
+        .register_fn("gate", EnvelopeBuilder::gate)
+        // Done action methods
+        .register_fn("cleanup_on_finish", EnvelopeBuilder::cleanup_on_finish)
+        .register_fn("done_action", EnvelopeBuilder::done_action)
+        .register_fn("done_action", EnvelopeBuilder::done_action_n)
+        // Scale/bias methods
+        .register_fn("level_scale", EnvelopeBuilder::level_scale)
+        .register_fn("level_scale", EnvelopeBuilder::level_scale_n)
+        .register_fn("level_bias", EnvelopeBuilder::level_bias)
+        .register_fn("level_bias", EnvelopeBuilder::level_bias_n)
+        .register_fn("time_scale", EnvelopeBuilder::time_scale)
+        .register_fn("time_scale", EnvelopeBuilder::time_scale_n)
+        // Convenience envelope methods
+        .register_fn("perc", EnvelopeBuilder::perc)
+        .register_fn("perc", EnvelopeBuilder::perc_f)
+        .register_fn("asr", EnvelopeBuilder::asr)
+        .register_fn("asr", EnvelopeBuilder::asr_f)
+        .register_fn("adsr", EnvelopeBuilder::adsr)
+        .register_fn("adsr", EnvelopeBuilder::adsr_f)
+        .register_fn("triangle", EnvelopeBuilder::triangle)
+        .register_fn("triangle", EnvelopeBuilder::triangle_f)
+        // Build method
+        .register_fn("build", |builder: EnvelopeBuilder| EnvelopeBuilder::build(builder).unwrap());
 
     // EnvGen with Env
     engine.register_fn(

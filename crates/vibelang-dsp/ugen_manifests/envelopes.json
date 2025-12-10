@@ -1,7 +1,31 @@
 [
   {
+    "name": "envelope()",
+    "description": "Fluent envelope builder. Creates ADSR, ASR, or percussive envelopes with an intuitive chainable API. Defaults to a constant gate of 1.0 if no gate is specified. Times can be specified as numbers (seconds) or humantime strings like \"5ms\", \"1s\", \"500ms\".",
+    "rates": ["builder"],
+    "inputs": [
+      {"name": ".attack(time)", "type": "method", "default": null, "description": "Set the attack time. Accepts seconds (0.01) or humantime strings (\"10ms\")."},
+      {"name": ".decay(time)", "type": "method", "default": null, "description": "Set the decay time. Accepts seconds or humantime strings."},
+      {"name": ".sustain(level)", "type": "method", "default": null, "description": "Set the sustain level (0.0 to 1.0). Setting this creates an ASR or ADSR envelope."},
+      {"name": ".release(time)", "type": "method", "default": null, "description": "Set the release time. Accepts seconds or humantime strings."},
+      {"name": ".perc(attack, release)", "type": "method", "default": null, "description": "Shorthand for percussive envelope - quick attack, natural decay. Clears sustain. Ideal for drums, plucks, piano."},
+      {"name": ".asr(attack, sustain, release)", "type": "method", "default": null, "description": "Shorthand for attack-sustain-release envelope. Sustain is the level (0-1), not time. Ideal for pads, brass."},
+      {"name": ".adsr(attack, decay, sustain, release)", "type": "method", "default": null, "description": "Shorthand for full ADSR envelope. Sustain is the level (0-1). Most versatile envelope shape."},
+      {"name": ".triangle(duration)", "type": "method", "default": null, "description": "Create symmetric triangle envelope - fades in for half duration, fades out for half duration."},
+      {"name": ".gate(signal)", "type": "method", "default": "dc_ar(1.0)", "description": "Set the gate signal that controls envelope triggering. Defaults to constant 1.0 (always on) if not specified."},
+      {"name": ".time_scale(factor)", "type": "method", "default": "1.0", "description": "Multiply all envelope times by this factor. Use for pitch-dependent decay (lower notes decay longer) or tempo sync."},
+      {"name": ".level_scale(factor)", "type": "method", "default": "1.0", "description": "Multiply envelope output by this factor. Useful for velocity sensitivity."},
+      {"name": ".level_bias(offset)", "type": "method", "default": "0.0", "description": "Add DC offset to envelope output."},
+      {"name": ".cleanup_on_finish()", "type": "method", "default": null, "description": "Free the synth when envelope completes (sets done_action=2). Essential for one-shot sounds."},
+      {"name": ".done_action(value)", "type": "method", "default": "0", "description": "Set custom done_action. 0=none, 2=free synth. Use cleanup_on_finish() for common case."},
+      {"name": ".build()", "type": "method", "default": null, "description": "Build and return the envelope signal. Call this at the end of the chain."}
+    ],
+    "outputs": 1,
+    "category": "Envelopes"
+  },
+  {
     "name": "EnvGen",
-    "description": "Envelope generator. Plays back break-point envelopes specified by arrays of levels and times.",
+    "description": "Low-level envelope generator. Plays back break-point envelopes specified by arrays of levels and times. For most use cases, prefer the envelope() fluent builder instead.",
     "rates": ["ar", "kr"],
     "inputs": [
       {"name": "gate", "type": "float", "default": 1.0, "description": "Trigger signal. When gate goes from <=0 to >0, envelope is triggered"},

@@ -13,6 +13,9 @@ categories = ["multimedia::audio"]
 anyhow = "1.0"
 thiserror = "1.0"
 
+# Duration parsing for human-readable time values
+humantime = "2.1"
+
 # Binary encoding for SynthDef format
 byteorder = "1.5"
 
