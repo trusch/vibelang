@@ -278,7 +278,7 @@ import "stdlib/drums/kicks/kick_808.vibe";
 import "stdlib/drums/snares/snare_808.vibe";
 import "stdlib/drums/hihats/hihat_808_closed.vibe";
 import "stdlib/bass/sub/sub_deep.vibe";
-import "stdlib/synths/leads/lead_saw.vibe";
+import "stdlib/leads/synth/lead_saw.vibe";
 
 set_tempo(120);
 set_time_signature(4, 4);
@@ -308,10 +308,7 @@ let lead = voice("lead")
 
 melody("lead_melody")
     .on(lead)
-    .notes("
-        C4 . E4 . | G4 . E4 . | C4 . E4 G4 | A4 - - . |
-        G4 . E4 . | C4 . D4 . | E4 - - - | - . . .
-    ")
+    .notes("C4 . E4 . | G4 . E4 . | C4 . E4 G4 | A4 - - . | G4 . E4 . | C4 . D4 . | E4 - - - | - . . .")
     .start();
 ```
 
@@ -331,7 +328,7 @@ melody("sustained")
 For chords, create multiple melodies on a polyphonic voice:
 
 ```rhai
-import "stdlib/synths/pads/pad_warm.vibe";
+import "stdlib/pads/ambient/pad_warm.vibe";
 
 let pad = voice("pad")
     .synth("pad_warm")
@@ -359,7 +356,7 @@ import "stdlib/drums/snares/snare_808.vibe";
 import "stdlib/drums/hihats/hihat_808_closed.vibe";
 import "stdlib/drums/claps/clap_808.vibe";
 import "stdlib/bass/sub/sub_deep.vibe";
-import "stdlib/synths/leads/lead_saw.vibe";
+import "stdlib/leads/synth/lead_saw.vibe";
 
 set_tempo(120);
 set_time_signature(4, 4);
@@ -426,7 +423,7 @@ import "stdlib/drums/snares/snare_808.vibe";
 import "stdlib/drums/hihats/hihat_808_closed.vibe";
 import "stdlib/drums/claps/clap_808.vibe";
 import "stdlib/bass/sub/sub_deep.vibe";
-import "stdlib/synths/leads/lead_saw.vibe";
+import "stdlib/leads/synth/lead_saw.vibe";
 
 // Import effects
 import "stdlib/effects/reverbs/reverb.vibe";
@@ -523,10 +520,10 @@ fx("ping").synth("ping_pong_delay").param("time", 0.375).param("feedback", 0.4).
 fx("dub").synth("dub_delay").param("time", 0.5).param("feedback", 0.6).param("mix", 0.35).apply();
 
 // Filters
-import "stdlib/effects/filters/lpf.vibe";
+import "stdlib/effects/filters/lowpass.vibe";
 import "stdlib/effects/filters/moog_filter.vibe";
 
-fx("lowpass").synth("lpf").param("cutoff", 800.0).param("resonance", 0.3).apply();
+fx("lowpass").synth("lowpass").param("cutoff", 800.0).param("resonance", 0.3).apply();
 fx("moog").synth("moog_filter").param("cutoff", 1200.0).param("resonance", 0.5).apply();
 
 // Dynamics
@@ -545,10 +542,10 @@ fx("phaser").synth("phaser").param("rate", 0.25).param("depth", 0.6).param("mix"
 
 // Distortion
 import "stdlib/effects/distortion/distortion.vibe";
-import "stdlib/effects/distortion/bitcrusher.vibe";
+import "stdlib/effects/distortion/bitcrush.vibe";
 
 fx("dist").synth("distortion").param("drive", 0.5).param("mix", 0.6).apply();
-fx("crush").synth("bitcrusher").param("bits", 8.0).param("mix", 0.3).apply();
+fx("crush").synth("bitcrush").param("bits", 8.0).param("mix", 0.3).apply();
 ```
 
 ---
@@ -565,7 +562,7 @@ import "stdlib/drums/kicks/kick_808.vibe";
 import "stdlib/drums/snares/snare_808.vibe";
 import "stdlib/drums/hihats/hihat_808_closed.vibe";
 import "stdlib/bass/sub/sub_deep.vibe";
-import "stdlib/synths/leads/lead_saw.vibe";
+import "stdlib/leads/synth/lead_saw.vibe";
 
 // Import effects
 import "stdlib/effects/reverbs/reverb.vibe";
@@ -687,7 +684,7 @@ import "stdlib/drums/kicks/kick_808.vibe";
 import "stdlib/drums/snares/snare_808.vibe";
 import "stdlib/drums/hihats/hihat_808_closed.vibe";
 import "stdlib/bass/acid/acid_303_classic.vibe";
-import "stdlib/synths/leads/lead_saw.vibe";
+import "stdlib/leads/synth/lead_saw.vibe";
 
 // Import effects
 import "stdlib/effects/reverbs/hall_reverb.vibe";
@@ -973,7 +970,7 @@ import "stdlib/drums/hihats/hihat_909_open.vibe";
 import "stdlib/drums/claps/clap_808.vibe";
 
 // Bass & Synths
-import "stdlib/synths/pads/pad_warm.vibe";
+import "stdlib/pads/ambient/pad_warm.vibe";
 
 // Effects
 import "stdlib/effects/reverbs/room_reverb.vibe";
