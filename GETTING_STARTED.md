@@ -582,15 +582,15 @@ define_group("Drums", || {
     let snare = voice("snare").synth("snare_808").gain(db(-8));
     let hihat = voice("hihat").synth("hihat_808_closed").gain(db(-12));
 
-    // Define multiple pattern variations - use .apply() to register without starting
-    let kick_basic = pattern("kick_basic").on(kick).step("x... x... x... x...").apply();
-    let kick_busy = pattern("kick_busy").on(kick).step("x... x... x.x. x...").apply();
+    // Define multiple pattern variations (don't use .start() - they'll be triggered by the sequence)
+    let kick_basic = pattern("kick_basic").on(kick).step("x... x... x... x...");
+    let kick_busy = pattern("kick_busy").on(kick).step("x... x... x.x. x...");
 
-    let snare_basic = pattern("snare_basic").on(snare).step(".... x... .... x...").apply();
-    let snare_fill = pattern("snare_fill").on(snare).step(".... x... ..x. x.x.").apply();
+    let snare_basic = pattern("snare_basic").on(snare).step(".... x... .... x...");
+    let snare_fill = pattern("snare_fill").on(snare).step(".... x... ..x. x.x.");
 
-    let hihat_basic = pattern("hihat_basic").on(hihat).step(".x .x .x .x").apply();
-    let hihat_busy = pattern("hihat_busy").on(hihat).step("xx xx xx xx").apply();
+    let hihat_basic = pattern("hihat_basic").on(hihat).step(".x .x .x .x");
+    let hihat_busy = pattern("hihat_busy").on(hihat).step("xx xx xx xx");
 
     // Arrange drums with a sequence
     sequence("drum_arrangement")
@@ -617,12 +617,10 @@ define_group("Bass", || {
     let bass = voice("bass").synth("sub_deep").gain(db(-10)).poly(1);
 
     let bass_main = melody("bass_main").on(bass)
-        .notes("C2 . . . | C2 . E2 . | F2 . . . | G2 . F2 E2")
-        .apply();
+        .notes("C2 . . . | C2 . E2 . | F2 . . . | G2 . F2 E2");
 
     let bass_var = melody("bass_var").on(bass)
-        .notes("C2 . C3 . | C2 . E2 . | F2 . F3 . | G2 . . .")
-        .apply();
+        .notes("C2 . C3 . | C2 . E2 . | F2 . F3 . | G2 . . .");
 
     sequence("bass_arrangement")
         .loop_bars(32)
@@ -643,12 +641,10 @@ define_group("Synth", || {
     let lead = voice("lead").synth("lead_saw").gain(db(-14)).poly(4);
 
     let lead_main = melody("lead_main").on(lead)
-        .notes("C4 . E4 . | G4 . E4 . | C4 . E4 G4 | A4 - - .")
-        .apply();
+        .notes("C4 . E4 . | G4 . E4 . | C4 . E4 G4 | A4 - - .");
 
     let lead_var = melody("lead_var").on(lead)
-        .notes("C5 . . . | G4 . E4 . | C4 - - - | . . . .")
-        .apply();
+        .notes("C5 . . . | G4 . E4 . | C4 - - - | . . . .");
 
     sequence("lead_arrangement")
         .loop_bars(32)
@@ -672,10 +668,10 @@ define_group("Synth", || {
 - Multiple clips can overlap (good for layering)
 - If you don't want something playing in a section, just don't add a clip for it
 
-### Important: `.apply()` vs `.start()`
+### Important: Patterns/Melodies in Sequences
 
 - Use `.start()` when you want the pattern/melody to play immediately and loop forever
-- Use `.apply()` when you want to register it for use in sequences (doesn't play until the sequence triggers it)
+- When using sequences, just define patterns/melodies without `.start()` or `.apply()` - pass them directly to `.clip()` which handles registration internally
 
 ---
 
@@ -718,8 +714,7 @@ define_group("Bass", || {
         .set_param("cutoff", 400.0);  // Start with low cutoff
 
     let bass_main = melody("bassline").on(bass)
-        .notes("C2 C2 C2 C2 | C2 C2 E2 E2 | F2 F2 F2 F2 | G2 G2 F2 E2")
-        .apply();
+        .notes("C2 C2 C2 C2 | C2 C2 E2 E2 | F2 F2 F2 F2 | G2 G2 F2 E2");
 
     // Filter sweep automation - sweep cutoff over 8 bars
     let filter_sweep = fade("filter_sweep")
@@ -744,8 +739,7 @@ define_group("Synth", || {
     let lead = voice("lead").synth("lead_saw").gain(db(-14)).poly(4);
 
     let lead_melody = melody("lead_melody").on(lead)
-        .notes("C4 . E4 . | G4 . E4 . | C4 . E4 G4 | A4 - - .")
-        .apply();
+        .notes("C4 . E4 . | G4 . E4 . | C4 . E4 G4 | A4 - - .");
 
     fx("lead_reverb").synth("hall_reverb").param("room", 0.6).param("mix", 0.0).apply();
 
@@ -1040,18 +1034,18 @@ define_group("Drums", || {
     let hat_o = voice("hat_o").synth("hihat_909_open").gain(db(-12));
     let clap = voice("clap").synth("clap_808").gain(db(-8));
 
-    // Pattern variations
-    let kick_main = pattern("kick_main").on(kick).step("x... .... x... ....").apply();
-    let kick_four = pattern("kick_four").on(kick).step("x... x... x... x...").apply();
+    // Pattern variations (don't use .start() - they'll be triggered by the sequence)
+    let kick_main = pattern("kick_main").on(kick).step("x... .... x... ....");
+    let kick_four = pattern("kick_four").on(kick).step("x... x... x... x...");
 
-    let snare_main = pattern("snare_main").on(snare).step(".... x... .... x...").apply();
+    let snare_main = pattern("snare_main").on(snare).step(".... x... .... x...");
 
-    let hat_basic = pattern("hat_basic").on(hat_c).step(".x .x .x .x").apply();
-    let hat_busy = pattern("hat_busy").on(hat_c).step("x.x. x.x. x.x. x.xx").apply();
+    let hat_basic = pattern("hat_basic").on(hat_c).step(".x .x .x .x");
+    let hat_busy = pattern("hat_busy").on(hat_c).step("x.x. x.x. x.x. x.xx");
 
-    let hat_o_accent = pattern("hat_o_accent").on(hat_o).step(".... .... .... ...x").apply();
+    let hat_o_accent = pattern("hat_o_accent").on(hat_o).step(".... .... .... ...x");
 
-    let clap_main = pattern("clap_main").on(clap).step(".... x... .... x...").apply();
+    let clap_main = pattern("clap_main").on(clap).step(".... x... .... x...");
 
     // 64-bar arrangement
     sequence("drums_seq")
@@ -1108,12 +1102,10 @@ define_group("Bass", || {
         .set_param("cutoff", 500.0);
 
     let bass_main = melody("bass_main").on(bass)
-        .notes("E1 . . . | E1 . G1 . | A1 . . . | B1 . A1 G1")
-        .apply();
+        .notes("E1 . . . | E1 . G1 . | A1 . . . | B1 . A1 G1");
 
     let bass_var = melody("bass_var").on(bass)
-        .notes("E1 E2 . . | E1 . G1 G2 | A1 A2 . . | B1 . . .")
-        .apply();
+        .notes("E1 E2 . . | E1 . G1 G2 | A1 A2 . . | B1 . . .");
 
     sequence("bass_seq")
         .loop_bars(64)
@@ -1144,12 +1136,10 @@ define_group("Synth", || {
         .poly(4);
 
     let lead_main = melody("lead_main").on(lead)
-        .notes("E4 . G4 . | B4 . G4 . | E4 . G4 B4 | D5 - - .")
-        .apply();
+        .notes("E4 . G4 . | B4 . G4 . | E4 . G4 B4 | D5 - - .");
 
     let lead_high = melody("lead_high").on(lead)
-        .notes("E5 . . . | D5 . B4 . | G4 - - - | . . . .")
-        .apply();
+        .notes("E5 . . . | D5 . B4 . | G4 - - - | . . . .");
 
     sequence("lead_seq")
         .loop_bars(64)
@@ -1187,14 +1177,14 @@ define_group("Pad", || {
         .poly(8);
 
     // Chord stacks - Em chord
-    let pad_em = melody("pad_em").on(pad).notes("E3 - - - - - - - | - - - - - - - -").apply();
-    let pad_em_3 = melody("pad_em_3").on(pad).notes("G3 - - - - - - - | - - - - - - - -").apply();
-    let pad_em_5 = melody("pad_em_5").on(pad).notes("B3 - - - - - - - | - - - - - - - -").apply();
+    let pad_em = melody("pad_em").on(pad).notes("E3 - - - - - - - | - - - - - - - -");
+    let pad_em_3 = melody("pad_em_3").on(pad).notes("G3 - - - - - - - | - - - - - - - -");
+    let pad_em_5 = melody("pad_em_5").on(pad).notes("B3 - - - - - - - | - - - - - - - -");
 
     // C chord
-    let pad_c = melody("pad_c").on(pad).notes("C3 - - - - - - - | - - - - - - - -").apply();
-    let pad_c_3 = melody("pad_c_3").on(pad).notes("E3 - - - - - - - | - - - - - - - -").apply();
-    let pad_c_5 = melody("pad_c_5").on(pad).notes("G3 - - - - - - - | - - - - - - - -").apply();
+    let pad_c = melody("pad_c").on(pad).notes("C3 - - - - - - - | - - - - - - - -");
+    let pad_c_3 = melody("pad_c_3").on(pad).notes("E3 - - - - - - - | - - - - - - - -");
+    let pad_c_5 = melody("pad_c_5").on(pad).notes("G3 - - - - - - - | - - - - - - - -");
 
     sequence("pad_seq")
         .loop_bars(64)
