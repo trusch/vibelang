@@ -1,6 +1,6 @@
 [package]
 name = "vibelang-core"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "Core types and state management for VibeLang"
 license = "MIT OR Apache-2.0"
@@ -41,7 +41,8 @@ regex = "1.10"
 rhai = { version = "1.17", features = ["sync", "internals"] }
 
 # Audio analysis (BPM detection)
-aubio-rs = { version = "0.2", features = ["builtin"] }
+# Note: "bindgen" feature is required on macOS for compilation
+aubio-rs = { version = "0.2", features = ["builtin", "bindgen"] }
 
 # WAV file reading for BPM analysis
 hound = "3.5"

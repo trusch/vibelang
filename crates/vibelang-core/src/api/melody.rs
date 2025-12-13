@@ -39,11 +39,12 @@ pub struct Melody {
     params: HashMap<String, f64>,
 }
 
-/// A note in a melody.
+/// A note or chord in a melody.
 #[derive(Debug, Clone)]
 struct MelodyNote {
     beat: f64,
-    note: u8,
+    /// MIDI note numbers (single note = 1 element, chord = multiple)
+    notes: Vec<u8>,
     velocity: f64,
     gate: f64,
 }
@@ -112,10 +113,10 @@ impl Melody {
                     // Rest
                     continue;
                 }
-                if let Some(midi) = parse_note(note_str) {
+                if let Some(midi_notes) = parse_note(note_str) {
                     self.notes.push(MelodyNote {
                         beat,
-                        note: midi,
+                        notes: midi_notes,
                         velocity: 1.0,
                         gate: self.gate,
                     });
@@ -124,7 +125,7 @@ impl Melody {
                 if midi > 0 {
                     self.notes.push(MelodyNote {
                         beat,
-                        note: midi as u8,
+                        notes: vec![midi as u8],
                         velocity: 1.0,
                         gate: self.gate,
                     });
@@ -162,7 +163,7 @@ impl Melody {
         self.length = loop_length;
 
         let mut current_beat = 0.0;
-        let mut current_note: Option<u8> = None;
+        let mut current_notes: Option<Vec<u8>> = None;
         let mut note_start_beat: f64 = 0.0;
         let mut note_duration: f64 = 0.0;
 
@@ -181,36 +182,35 @@ impl Melody {
 
                 match token {
                     NoteToken::Tie => {
-                        // Extend current note
-                        if current_note.is_some() {
+                        // Extend current note/chord
+                        if current_notes.is_some() {
                             note_duration += beat_per_token;
                         }
                     }
                     NoteToken::Rest => {
-                        // Rest - commit any pending note
-                        if let Some(midi) = current_note {
+                        // Rest - commit any pending note/chord
+                        if let Some(midi_notes) = current_notes.take() {
                             self.notes.push(MelodyNote {
                                 beat: note_start_beat,
-                                note: midi,
+                                notes: midi_notes,
                                 velocity: 1.0,
                                 gate: note_duration,
                             });
-                            current_note = None;
                         }
                     }
-                    NoteToken::Note(midi) => {
-                        // Commit any pending note
-                        if let Some(prev_midi) = current_note {
+                    NoteToken::Notes(midi_notes) => {
+                        // Commit any pending note/chord
+                        if let Some(prev_notes) = current_notes.take() {
                             self.notes.push(MelodyNote {
                                 beat: note_start_beat,
-                                note: prev_midi,
+                                notes: prev_notes,
                                 velocity: 1.0,
                                 gate: note_duration,
                             });
                         }
 
-                        // Start new note
-                        current_note = Some(*midi);
+                        // Start new note/chord
+                        current_notes = Some(midi_notes.clone());
                         note_start_beat = beat;
                         note_duration = beat_per_token;
                     }
@@ -220,11 +220,11 @@ impl Melody {
             current_beat += beats_per_bar;
         }
 
-        // Commit final note
-        if let Some(midi) = current_note {
+        // Commit final note/chord
+        if let Some(midi_notes) = current_notes {
             self.notes.push(MelodyNote {
                 beat: note_start_beat,
-                note: midi,
+                notes: midi_notes,
                 velocity: 1.0,
                 gate: note_duration,
             });
@@ -251,8 +251,8 @@ impl Melody {
         self.notes.clear();
 
         // Parse the step pattern into tokens
-        // Each token is either a note name or a continuation marker
-        let mut tokens: Vec<Option<u8>> = Vec::new();
+        // Each token is either a note/chord or a continuation marker
+        let mut tokens: Vec<Option<Vec<u8>>> = Vec::new();
         let mut chars = steps.chars().peekable();
 
         while let Some(c) = chars.next() {
@@ -282,9 +282,22 @@ impl Melody {
                         }
                     }
 
-                    // Parse the note to MIDI
-                    if let Some(midi) = parse_note(&note_str) {
-                        tokens.push(Some(midi));
+                    // Check for chord quality suffix (e.g., ":maj7")
+                    if chars.peek() == Some(&':') {
+                        note_str.push(chars.next().unwrap()); // consume ':'
+                        while let Some(&next) = chars.peek() {
+                            match next {
+                                'a'..='z' | 'A'..='Z' | '0'..='9' => {
+                                    note_str.push(chars.next().unwrap());
+                                }
+                                _ => break,
+                            }
+                        }
+                    }
+
+                    // Parse the note/chord to MIDI
+                    if let Some(midi_notes) = parse_note(&note_str) {
+                        tokens.push(Some(midi_notes));
                     } else {
                         // Invalid note, treat as rest
                         tokens.push(None);
@@ -304,7 +317,7 @@ impl Melody {
         let beat_per_token = self.length / tokens.len() as f64;
 
         // Convert tokens to notes
-        let mut current_note: Option<u8> = None;
+        let mut current_notes: Option<Vec<u8>> = None;
         let mut note_start: f64 = 0.0;
         let mut note_duration: f64 = 0.0;
 
@@ -312,35 +325,35 @@ impl Melody {
             let beat = i as f64 * beat_per_token;
 
             match token {
-                Some(midi) => {
-                    // Commit previous note if any
-                    if let Some(prev_midi) = current_note {
+                Some(midi_notes) => {
+                    // Commit previous note/chord if any
+                    if let Some(prev_notes) = current_notes.take() {
                         self.notes.push(MelodyNote {
                             beat: note_start,
-                            note: prev_midi,
+                            notes: prev_notes,
                             velocity: 1.0,
                             gate: note_duration,
                         });
                     }
-                    // Start new note
-                    current_note = Some(*midi);
+                    // Start new note/chord
+                    current_notes = Some(midi_notes.clone());
                     note_start = beat;
                     note_duration = beat_per_token;
                 }
                 None => {
-                    // Extend current note or rest
-                    if current_note.is_some() {
+                    // Extend current note/chord or rest
+                    if current_notes.is_some() {
                         note_duration += beat_per_token;
                     }
                 }
             }
         }
 
-        // Commit final note
-        if let Some(midi) = current_note {
+        // Commit final note/chord
+        if let Some(midi_notes) = current_notes {
             self.notes.push(MelodyNote {
                 beat: note_start,
-                note: midi,
+                notes: midi_notes,
                 velocity: 1.0,
                 gate: note_duration,
             });
@@ -400,21 +413,27 @@ impl Melody {
     pub fn apply(&mut self) {
         let handle = require_handle();
 
-        // Convert notes to events
+        // Capture transpose before the closure to avoid borrow issues
+        let transpose = self.transpose;
+
+        // Convert notes to events (chords generate multiple events at the same beat)
         let events: Vec<BeatEvent> = self
             .notes
             .iter()
-            .map(|n| {
-                let transposed_note = (n.note as i64 + self.transpose).clamp(0, 127) as u8;
-                // Convert MIDI note to frequency: freq = 440 * 2^((note - 69) / 12)
-                let freq = 440.0 * 2.0_f64.powf((transposed_note as f64 - 69.0) / 12.0);
-                // n.gate already contains the actual beat duration from parsing
-                let duration = n.gate;
-                let mut event = BeatEvent::new(n.beat, "melody_note");
-                event.controls.push(("freq".to_string(), freq as f32));
-                event.controls.push(("amp".to_string(), n.velocity as f32));
-                event.controls.push(("gate".to_string(), duration as f32));
-                event
+            .flat_map(|n| {
+                let beat = n.beat;
+                let velocity = n.velocity;
+                let gate = n.gate;
+                n.notes.iter().map(move |&note| {
+                    let transposed_note = (note as i64 + transpose).clamp(0, 127) as u8;
+                    // Convert MIDI note to frequency: freq = 440 * 2^((note - 69) / 12)
+                    let freq = 440.0 * 2.0_f64.powf((transposed_note as f64 - 69.0) / 12.0);
+                    let mut event = BeatEvent::new(beat, "melody_note");
+                    event.controls.push(("freq".to_string(), freq as f32));
+                    event.controls.push(("amp".to_string(), velocity as f32));
+                    event.controls.push(("gate".to_string(), gate as f32));
+                    event
+                })
             })
             .collect();
 
@@ -515,8 +534,8 @@ pub fn melody(name: String) -> Melody {
 /// Token type for bar parsing.
 #[derive(Debug, Clone)]
 enum NoteToken {
-    /// A note with its MIDI number
-    Note(u8),
+    /// A note or chord with MIDI number(s)
+    Notes(Vec<u8>),
     /// Tie/continuation marker (-)
     Tie,
     /// Rest marker (. or _)
@@ -524,7 +543,8 @@ enum NoteToken {
 }
 
 /// Tokenize a bar string into note tokens using character-based parsing.
-/// This is robust to missing whitespace (e.g., "-G2" is parsed as [Tie, Note(43)]).
+/// This is robust to missing whitespace (e.g., "-G2" is parsed as [Tie, Notes([43])]).
+/// Supports chord syntax like "C4:maj7".
 fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
     let mut tokens = Vec::new();
     let mut chars = bar.chars().peekable();
@@ -558,14 +578,28 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
                         '0'..='9' => {
                             note_str.push(chars.next().unwrap());
                         }
-                        // Stop at anything else (whitespace, -, ., another note, etc.)
+                        // Stop at anything else (whitespace, -, ., another note, :, etc.)
                         _ => break,
                     }
                 }
 
-                // Parse the note to MIDI
-                if let Some(midi) = parse_note(&note_str) {
-                    tokens.push(NoteToken::Note(midi));
+                // Check for chord quality suffix (e.g., ":maj7")
+                if chars.peek() == Some(&':') {
+                    note_str.push(chars.next().unwrap()); // consume ':'
+                    // Collect chord quality (letters, numbers, and special chars like 'b' for m7b5)
+                    while let Some(&next) = chars.peek() {
+                        match next {
+                            'a'..='z' | 'A'..='Z' | '0'..='9' => {
+                                note_str.push(chars.next().unwrap());
+                            }
+                            _ => break,
+                        }
+                    }
+                }
+
+                // Parse the note/chord to MIDI
+                if let Some(midi_notes) = parse_note(&note_str) {
+                    tokens.push(NoteToken::Notes(midi_notes));
                 }
                 // Invalid notes are silently ignored
             }
@@ -578,8 +612,84 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
     tokens
 }
 
-/// Parse a note name to MIDI note number.
-fn parse_note(name: &str) -> Option<u8> {
+/// Get chord intervals by quality name.
+/// Returns semitone offsets from root note.
+fn get_chord_intervals(quality: &str) -> Option<Vec<i8>> {
+    match quality.to_lowercase().as_str() {
+        // Triads
+        "maj" | "major" => Some(vec![0, 4, 7]),
+        "min" | "m" | "minor" => Some(vec![0, 3, 7]),
+        "dim" | "diminished" => Some(vec![0, 3, 6]),
+        "aug" | "augmented" => Some(vec![0, 4, 8]),
+        "sus2" => Some(vec![0, 2, 7]),
+        "sus4" => Some(vec![0, 5, 7]),
+
+        // Seventh chords
+        "maj7" | "major7" => Some(vec![0, 4, 7, 11]),
+        "7" | "dom7" => Some(vec![0, 4, 7, 10]),
+        "min7" | "m7" => Some(vec![0, 3, 7, 10]),
+        "dim7" => Some(vec![0, 3, 6, 9]),
+        "m7b5" | "half-dim" => Some(vec![0, 3, 6, 10]),
+        "mmaj7" | "minmaj7" => Some(vec![0, 3, 7, 11]),
+
+        // Extended
+        "9" => Some(vec![0, 4, 7, 10, 14]),
+        "maj9" => Some(vec![0, 4, 7, 11, 14]),
+        "m9" | "min9" => Some(vec![0, 3, 7, 10, 14]),
+        "add9" => Some(vec![0, 4, 7, 14]),
+        "6" => Some(vec![0, 4, 7, 9]),
+        "m6" | "min6" => Some(vec![0, 3, 7, 9]),
+
+        // Power chord
+        "5" | "power" => Some(vec![0, 7]),
+
+        _ => None,
+    }
+}
+
+/// Parse a note or chord to MIDI note number(s).
+/// Supports single notes ("C4") and chords ("C4:maj7").
+fn parse_note(name: &str) -> Option<Vec<u8>> {
+    let name = name.trim();
+    if name.is_empty() {
+        return None;
+    }
+
+    // Check for chord syntax: "C4:maj7" -> split on ":"
+    if let Some(colon_pos) = name.find(':') {
+        let note_part = &name[..colon_pos];
+        let quality = &name[colon_pos + 1..];
+
+        // Parse the root note
+        let root = parse_single_note(note_part)?;
+
+        // Get chord intervals and build note list
+        let intervals = get_chord_intervals(quality)?;
+        let notes: Vec<u8> = intervals
+            .iter()
+            .filter_map(|&interval| {
+                let midi = root as i16 + interval as i16;
+                if (0..=127).contains(&midi) {
+                    Some(midi as u8)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if notes.is_empty() {
+            None
+        } else {
+            Some(notes)
+        }
+    } else {
+        // No colon - single note (backward compatible)
+        parse_single_note(name).map(|n| vec![n])
+    }
+}
+
+/// Parse a single note name to MIDI note number.
+fn parse_single_note(name: &str) -> Option<u8> {
     let name = name.trim();
     if name.is_empty() {
         return None;
