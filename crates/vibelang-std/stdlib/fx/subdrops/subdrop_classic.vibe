@@ -4,19 +4,15 @@ define_synthdef("subdrop_classic", |builder| {
         .param("freq", 50.0)
         .param("amp", 1.0)
         .body(|freq, amp| {
-            let gate = dc_ar(1.0);
-
             // Quick attack, medium decay
             let env = envelope()
                 .perc(0.01, 0.8)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
             // Pitch drop envelope
             let pitch_env = envelope()
                 .perc(0.01, 0.15)
-                .gate(gate)
                 .build();
             let freq_mod = pitch_env * freq * 4.0;
 

@@ -3,12 +3,9 @@ define_synthdef("agogo_high")
     .param("freq", 900.0)
     .param("amp", 0.7)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Metallic ring decay
         let amp_env = envelope()
             .perc(0.001, 0.4)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
@@ -21,7 +18,6 @@ define_synthdef("agogo_high")
         // Stick attack
         let attack_env = envelope()
             .perc(0.0001, 0.002)
-            .gate(gate)
             .build();
         let attack = hpf_ar(white_noise_ar(), 4000.0) * attack_env * 0.2;
 

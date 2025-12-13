@@ -3,12 +3,9 @@ define_synthdef("hihat_short", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Very short envelope
             let env = envelope()
                 .perc(0.0002, 0.025)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

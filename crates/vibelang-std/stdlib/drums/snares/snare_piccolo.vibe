@@ -3,12 +3,9 @@ define_synthdef("snare_piccolo", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Bright, short noise
             let noise_env = envelope()
                 .perc(0.001, 0.08)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
             let noise = white_noise_ar();
@@ -18,14 +15,12 @@ define_synthdef("snare_piccolo", |builder| {
             // High-pitched tone
             let tone_env = envelope()
                 .perc(0.001, 0.06)
-                .gate(gate)
                 .build();
             let tone = sin_osc_ar(280.0) * tone_env * 0.35;
 
             // Crack/stick sound
             let crack_env = envelope()
                 .perc(0.0005, 0.004)
-                .gate(gate)
                 .build();
             let crack = white_noise_ar() * crack_env * 0.3;
 

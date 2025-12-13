@@ -3,12 +3,9 @@ define_synthdef("snare_909", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Noise component - filtered white noise
             let noise_env = envelope()
                 .perc(0.001, 0.18)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
             let noise = white_noise_ar();
@@ -18,7 +15,6 @@ define_synthdef("snare_909", |builder| {
             // Tone components - two frequencies for body
             let tone_env = envelope()
                 .perc(0.001, 0.1)
-                .gate(gate)
                 .build();
             let tone1 = sin_osc_ar(185.0) * 0.3;
             let tone2 = sin_osc_ar(330.0) * 0.2;

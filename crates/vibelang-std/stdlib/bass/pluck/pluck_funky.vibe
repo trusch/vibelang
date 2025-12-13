@@ -18,7 +18,6 @@ define_synthdef("pluck_funky", |builder| {
             // Snappy filter sweep
             let filter_env = envelope()
                 .perc(0.001, 0.08)
-                .gate(gate)
                 .build();
             let mod_cutoff = 800.0 + (filter_env * 2000.0);
 

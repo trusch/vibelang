@@ -3,11 +3,8 @@ define_synthdef("impact_trailer", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             let env = envelope()
                 .perc(0.001, 3.0)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -17,7 +14,6 @@ define_synthdef("impact_trailer", |builder| {
             let sub3 = sin_osc_ar(60.0) * 0.3;
             let sub_e = envelope()
                 .perc(0.001, 2.0)
-                .gate(gate)
                 .build();
             let subs = (sub1 + sub2 + sub3) * sub_e;
 
@@ -26,7 +22,6 @@ define_synthdef("impact_trailer", |builder| {
             let mid_dist = (mid * 3.0).tanh();
             let mid_e = envelope()
                 .perc(0.001, 0.5)
-                .gate(gate)
                 .build();
             let mid_filtered = lpf_ar(mid_dist, 800.0) * mid_e * 0.4;
 
@@ -34,7 +29,6 @@ define_synthdef("impact_trailer", |builder| {
             let crack = white_noise_ar();
             let crack_e = envelope()
                 .perc(0.001, 0.08)
-                .gate(gate)
                 .build();
             let crack_filtered = hpf_ar(crack, 2000.0) * crack_e * 0.5;
 

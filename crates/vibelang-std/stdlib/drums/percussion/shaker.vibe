@@ -3,12 +3,9 @@ define_synthdef("shaker", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Very short, crisp envelope
             let env = envelope()
                 .perc(0.001, 0.05)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

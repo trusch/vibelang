@@ -3,12 +3,9 @@ define_synthdef("foley_cardboard")
     .param("freq", 120.0)
     .param("amp", 0.7)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Cardboard resonance
         let amp_env = envelope()
             .perc(0.001, 0.2)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
@@ -19,7 +16,6 @@ define_synthdef("foley_cardboard")
         // Paper-y attack
         let attack_env = envelope()
             .perc(0.0001, 0.02)
-            .gate(gate)
             .build();
         let attack = lpf_ar(white_noise_ar(), 3000.0) * attack_env * 0.35;
 

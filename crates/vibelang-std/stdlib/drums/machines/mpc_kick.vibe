@@ -3,19 +3,15 @@ define_synthdef("mpc_kick")
     .param("freq", 50.0)
     .param("amp", 1.0)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Clean, tight decay
         let amp_env = envelope()
             .perc(0.001, 0.38)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Pitch envelope
         let pitch_env = envelope()
             .perc(0.001, 0.06)
-            .gate(gate)
             .build();
         let freq_mod = pitch_env * freq * 4.0;
 
@@ -28,7 +24,6 @@ define_synthdef("mpc_kick")
         // Click
         let click_env = envelope()
             .perc(0.0001, 0.008)
-            .gate(gate)
             .build();
         let click = bpf_ar(white_noise_ar(), 2000.0, 0.6) * click_env * 0.15;
 

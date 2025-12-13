@@ -3,12 +3,9 @@ define_synthdef("hihat_909_open", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Medium-long envelope
             let env = envelope()
                 .perc(0.001, 0.3)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

@@ -3,12 +3,9 @@ define_synthdef("transition_reverse", |builder| {
     builder
         .param("amp", 0.5)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Reverse envelope (builds up)
             let env = envelope()
                 .perc(0.9, 0.05)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

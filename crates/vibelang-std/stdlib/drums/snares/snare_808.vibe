@@ -2,12 +2,9 @@
 define_synthdef("snare_808")
     .param("amp", 1.0)
     .body(|amp| {
-        let gate = dc_ar(1.0);
-
         // Noise component - short decay
         let noise_env = envelope()
             .perc(0.001, 0.12)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
         let noise = white_noise_ar();
@@ -17,7 +14,6 @@ define_synthdef("snare_808")
         // Tone component - metallic ring
         let tone_env = envelope()
             .perc(0.001, 0.08)
-            .gate(gate)
             .build();
         let tone = sin_osc_ar(180.0) * tone_env * 0.3;
 

@@ -22,7 +22,6 @@ define_synthdef("tb303_bass", |builder| {
             // Use env_perc with base time of 1.0, then scale by decay parameter
             let filt_env = envelope()
                 .perc(0.003, 1.0)
-                .gate(gate)
                 .time_scale(decay)
                 .build();
 
@@ -57,7 +56,6 @@ define_synthdef("tb303_slide", |builder| {
 
             let filt_env = envelope()
                 .perc(0.001, 0.2)
-                .gate(gate)
                 .build();
 
             let osc = saw_ar(freq);
@@ -86,7 +84,6 @@ define_synthdef("tb303_accent", |builder| {
 
             let filt_env = envelope()
                 .perc(0.001, 0.15)
-                .gate(gate)
                 .build();
 
             let osc = saw_ar(freq);

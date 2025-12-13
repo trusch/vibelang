@@ -3,12 +3,9 @@ define_synthdef("texture_wind", |builder| {
     builder
         .param("amp", 0.4)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Long, sustained envelope
             let env = envelope()
                 .perc(1.0, 8.0)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -18,7 +15,6 @@ define_synthdef("texture_wind", |builder| {
             // Slow filter modulation for movement
             let filter_env = envelope()
                 .perc(2.0, 7.0)
-                .gate(gate)
                 .build();
             let mod_cutoff = 800.0 + (filter_env * 2000.0);
 

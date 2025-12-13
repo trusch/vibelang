@@ -3,12 +3,9 @@ define_synthdef("riser_filtered", |builder| {
     builder
         .param("amp", 0.5)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Rise envelope
             let env = envelope()
                 .perc(0.02, 2.8)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -18,7 +15,6 @@ define_synthdef("riser_filtered", |builder| {
             // Aggressive filter sweep with high resonance
             let filter_env = envelope()
                 .perc(0.4, 2.6)
-                .gate(gate)
                 .build();
             let mod_cutoff = 300.0 + (filter_env * 10000.0);
 

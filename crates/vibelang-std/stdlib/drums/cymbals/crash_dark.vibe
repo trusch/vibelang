@@ -3,12 +3,9 @@ define_synthdef("crash_dark", |builder| {
     builder
         .param("amp", 0.7)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Long, sustained decay
             let env = envelope()
                 .perc(0.003, 3.0)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

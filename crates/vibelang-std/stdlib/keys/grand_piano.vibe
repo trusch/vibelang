@@ -22,7 +22,6 @@ define_synthdef("grand_piano", |builder| {
             let decay_time = 2.0 + (1.0 / (freq / 100.0));  // Lower notes decay longer
             let env = envelope()
                 .perc(0.001, 1.0)
-                .gate(gate)
                 .time_scale(decay_time)
                 .cleanup_on_finish()
                 .build();
@@ -105,7 +104,6 @@ define_synthdef("grand_piano_bright", |builder| {
             let decay_time = 2.5 + (1.0 / (freq / 80.0));
             let env = envelope()
                 .perc(0.001, 1.0)
-                .gate(gate)
                 .time_scale(decay_time)
                 .cleanup_on_finish()
                 .build();
@@ -155,7 +153,6 @@ define_synthdef("grand_piano_warm", |builder| {
             let decay_time = 3.0 + (1.0 / (freq / 60.0));
             let env = envelope()
                 .perc(0.002, 1.0)
-                .gate(gate)
                 .time_scale(decay_time)
                 .cleanup_on_finish()
                 .build();
@@ -199,7 +196,6 @@ define_synthdef("upright_piano", |builder| {
             let decay_time = 1.8 + (1.0 / (freq / 120.0));
             let env = envelope()
                 .perc(0.001, 1.0)
-                .gate(gate)
                 .time_scale(decay_time)
                 .cleanup_on_finish()
                 .build();
@@ -244,7 +240,6 @@ define_synthdef("tack_piano", |builder| {
             let decay_time = 1.2;
             let env = envelope()
                 .perc(0.001, decay_time)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

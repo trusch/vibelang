@@ -3,33 +3,27 @@ define_synthdef("snare_marching")
     .param("freq", 250.0)
     .param("amp", 0.9)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Tight, controlled decay
         let amp_env = envelope()
             .perc(0.001, 0.2)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // High-pitched body
         let pitch_env = envelope()
             .perc(0.001, 0.015)
-            .gate(gate)
             .build();
         let body = sin_osc_ar(freq + pitch_env * freq * 2.0) * 0.35;
 
         // Prominent wire buzz
         let wire_env = envelope()
             .perc(0.001, 0.18)
-            .gate(gate)
             .build();
         let wires = hpf_ar(white_noise_ar(), 4000.0) * wire_env * 0.5;
 
         // Sharp stick attack
         let attack_env = envelope()
             .perc(0.0001, 0.002)
-            .gate(gate)
             .build();
         let attack = white_noise_ar() * attack_env * 0.3;
 

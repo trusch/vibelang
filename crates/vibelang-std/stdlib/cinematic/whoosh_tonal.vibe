@@ -4,12 +4,9 @@ define_synthdef("whoosh_tonal")
     .param("amp", 0.7)
     .param("length", 0.5)
     .body(|freq, amp, length| {
-        let gate = dc_ar(1.0);
-
         // Whoosh envelope
         let amp_env = envelope()
             .perc(0.3, 0.7)
-            .gate(gate)
             .time_scale(length)
             .cleanup_on_finish()
             .build();
@@ -17,7 +14,6 @@ define_synthdef("whoosh_tonal")
         // Pitch sweep
         let pitch_env = envelope()
             .perc(0.01, 1.0)
-            .gate(gate)
             .time_scale(length)
             .build();
         let sweep_freq = freq * 0.5 + pitch_env * freq * 2.0;

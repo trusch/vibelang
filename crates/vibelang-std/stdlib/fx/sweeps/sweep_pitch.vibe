@@ -4,19 +4,15 @@ define_synthdef("sweep_pitch", |builder| {
         .param("start_freq", 220.0)
         .param("amp", 0.5)
         .body(|start_freq, amp| {
-            let gate = dc_ar(1.0);
-
             // Sweep envelope
             let env = envelope()
                 .perc(0.02, 1.5)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
             // Pitch sweep
             let pitch_env = envelope()
                 .perc(0.05, 1.3)
-                .gate(gate)
                 .build();
             let freq = start_freq + (pitch_env * start_freq * 6.0);
 

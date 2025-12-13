@@ -248,7 +248,6 @@ define_synthdef("electric_guitar_funk", |builder| {
             // Short, percussive envelope
             let env = envelope()
                 .perc(0.001, 0.3)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

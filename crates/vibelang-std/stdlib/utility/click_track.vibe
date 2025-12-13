@@ -3,11 +3,8 @@
 // Click high - Downbeat marker
 define_synthdef("click_high")
     .param("amp", 0.6)
-    .body(|amp| {
-        let gate = dc_ar(1.0);
-        let env = envelope()
+    .body(|amp| {        let env = envelope()
             .perc(0.001, 0.03)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
@@ -17,11 +14,8 @@ define_synthdef("click_high")
 // Click low - Off-beat marker
 define_synthdef("click_low")
     .param("amp", 0.5)
-    .body(|amp| {
-        let gate = dc_ar(1.0);
-        let env = envelope()
+    .body(|amp| {        let env = envelope()
             .perc(0.001, 0.025)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
@@ -31,11 +25,8 @@ define_synthdef("click_low")
 // Click wood - Natural sounding click
 define_synthdef("click_wood")
     .param("amp", 0.55)
-    .body(|amp| {
-        let gate = dc_ar(1.0);
-        let env = envelope()
+    .body(|amp| {        let env = envelope()
             .perc(0.001, 0.02)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 

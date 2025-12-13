@@ -4,19 +4,15 @@ define_synthdef("tom_mid", |builder| {
         .param("freq", 140.0)
         .param("amp", 1.0)
         .body(|freq, amp| {
-            let gate = dc_ar(1.0);
-
             // Medium decay
             let amp_env = envelope()
                 .perc(0.003, 0.3)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
             // Pitch envelope
             let pitch_env = envelope()
                 .perc(0.001, 0.1)
-                .gate(gate)
                 .build();
             let freq_mod = pitch_env * freq * 1.6;
 
@@ -30,7 +26,6 @@ define_synthdef("tom_mid", |builder| {
             // Attack
             let attack_env = envelope()
                 .perc(0.001, 0.02)
-                .gate(gate)
                 .build();
             let attack = pink_noise_ar() * attack_env * 0.18;
             let filtered_attack = lpf_ar(attack, 2500.0);

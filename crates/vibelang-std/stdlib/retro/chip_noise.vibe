@@ -3,11 +3,8 @@ define_synthdef("chip_noise")
     .param("freq", 8000.0)
     .param("amp", 0.5)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         let amp_env = envelope()
             .perc(0.001, 0.15)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 

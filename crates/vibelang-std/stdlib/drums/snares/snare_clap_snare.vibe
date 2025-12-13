@@ -3,20 +3,15 @@ define_synthdef("snare_clap_snare", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Clap layer - multiple short bursts
             let clap_env1 = envelope()
                 .perc(0.001, 0.03)
-                .gate(gate)
                 .build();
             let clap_env2 = envelope()
                 .perc(0.015, 0.03)
-                .gate(gate)
                 .build();
             let clap_env3 = envelope()
                 .perc(0.025, 0.03)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -26,14 +21,12 @@ define_synthdef("snare_clap_snare", |builder| {
             // Snare layer
             let snare_env = envelope()
                 .perc(0.001, 0.15)
-                .gate(gate)
                 .build();
             let snare_noise = rlpf_ar(white_noise_ar(), 4000.0, 0.5) * snare_env;
 
             // Tone
             let tone_env = envelope()
                 .perc(0.001, 0.1)
-                .gate(gate)
                 .build();
             let tone = sin_osc_ar(190.0) * tone_env * 0.2;
 

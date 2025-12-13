@@ -4,12 +4,9 @@ define_synthdef("snare_filtered", |builder| {
         .param("amp", 1.0)
         .param("cutoff", 1200.0)
         .body(|amp, cutoff| {
-            let gate = dc_ar(1.0);
-
             // Noise component with heavy filtering
             let noise_env = envelope()
                 .perc(0.002, 0.18)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
             let noise = white_noise_ar();
@@ -20,7 +17,6 @@ define_synthdef("snare_filtered", |builder| {
             // Muted tone
             let tone_env = envelope()
                 .perc(0.001, 0.12)
-                .gate(gate)
                 .build();
             let tone = sin_osc_ar(160.0) * tone_env * 0.3;
 

@@ -3,19 +3,15 @@ define_synthdef("conga_high")
     .param("freq", 350.0)
     .param("amp", 0.8)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Main body envelope
         let amp_env = envelope()
             .perc(0.001, 0.25)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Pitch envelope for that conga "pop"
         let pitch_env = envelope()
             .perc(0.001, 0.03)
-            .gate(gate)
             .build();
         let freq_mod = pitch_env * freq * 2.0;
 
@@ -27,7 +23,6 @@ define_synthdef("conga_high")
         // Attack transient
         let attack_env = envelope()
             .perc(0.0001, 0.008)
-            .gate(gate)
             .build();
         let attack = white_noise_ar() * attack_env * 0.15;
 

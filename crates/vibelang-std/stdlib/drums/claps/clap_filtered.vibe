@@ -4,22 +4,17 @@ define_synthdef("clap_filtered", |builder| {
         .param("amp", 1.0)
         .param("cutoff", 1500.0)
         .body(|amp, cutoff| {
-            let gate = dc_ar(1.0);
-
             // Three bursts
             let burst1_env = envelope()
                 .perc(0.002, 0.028)
-                .gate(gate)
                 .build();
 
             let burst2_env = envelope()
                 .perc(0.015, 0.028)
-                .gate(gate)
                 .build();
 
             let burst3_env = envelope()
                 .perc(0.025, 0.028)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

@@ -4,19 +4,15 @@ define_synthdef("kick_gabber")
     .param("amp", 1.0)
     .param("drive", 4.0)
     .body(|freq, amp, drive| {
-        let gate = dc_ar(1.0);
-
         // Long decay for that gabber punch
         let amp_env = envelope()
             .perc(0.001, 0.5)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Extended pitch envelope
         let pitch_env = envelope()
             .perc(0.001, 0.12)
-            .gate(gate)
             .build();
         let freq_mod = pitch_env * freq * 8.0;
 
@@ -29,7 +25,6 @@ define_synthdef("kick_gabber")
         // Click
         let click_env = envelope()
             .perc(0.0001, 0.01)
-            .gate(gate)
             .build();
         let click = bpf_ar(white_noise_ar(), 3000.0, 0.5) * click_env * 0.3;
 

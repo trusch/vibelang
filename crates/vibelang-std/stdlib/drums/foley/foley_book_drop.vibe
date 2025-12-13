@@ -3,33 +3,27 @@ define_synthdef("foley_book_drop")
     .param("freq", 100.0)
     .param("amp", 0.7)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Soft thump decay
         let amp_env = envelope()
             .perc(0.002, 0.18)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Muffled thud
         let pitch_env = envelope()
             .perc(0.001, 0.03)
-            .gate(gate)
             .build();
         let body = sin_osc_ar(freq + pitch_env * freq * 1.2) * 0.5;
 
         // Paper flutter
         let paper_env = envelope()
             .perc(0.01, 0.1)
-            .gate(gate)
             .build();
         let paper = bpf_ar(pink_noise_ar(), 2000.0, 0.8) * paper_env * 0.2;
 
         // Impact
         let impact_env = envelope()
             .perc(0.001, 0.015)
-            .gate(gate)
             .build();
         let impact = lpf_ar(white_noise_ar(), 1500.0) * impact_env * 0.25;
 

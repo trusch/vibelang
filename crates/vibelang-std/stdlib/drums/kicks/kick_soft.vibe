@@ -4,19 +4,15 @@ define_synthdef("kick_soft", |builder| {
         .param("freq", 75.0)
         .param("amp", 1.0)
         .body(|freq, amp| {
-            let gate = dc_ar(1.0);
-
             // Gentle attack and decay
             let amp_env = envelope()
                 .perc(0.01, 0.45)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
             // Subtle pitch movement
             let pitch_env = envelope()
                 .perc(0.005, 0.06)
-                .gate(gate)
                 .build();
             let freq_mod = pitch_env * freq * 1.2;
 
@@ -29,7 +25,6 @@ define_synthdef("kick_soft", |builder| {
             // Very soft click - barely noticeable
             let click_env = envelope()
                 .perc(0.002, 0.008)
-                .gate(gate)
                 .build();
             let click = pink_noise_ar() * click_env * 0.03;
             let filtered_click = lpf_ar(click, 4000.0);

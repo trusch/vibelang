@@ -4,19 +4,15 @@ define_synthdef("subdrop_distorted", |builder| {
         .param("freq", 45.0)
         .param("amp", 0.9)
         .body(|freq, amp| {
-            let gate = dc_ar(1.0);
-
             // Envelope
             let env = envelope()
                 .perc(0.008, 0.9)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
             // Pitch drop
             let pitch_env = envelope()
                 .perc(0.008, 0.18)
-                .gate(gate)
                 .build();
             let freq_mod = pitch_env * freq * 4.5;
 

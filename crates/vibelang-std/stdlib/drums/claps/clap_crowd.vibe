@@ -3,32 +3,25 @@ define_synthdef("clap_crowd", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Many slightly offset bursts
             let burst1_env = envelope()
                 .perc(0.001, 0.028)
-                .gate(gate)
                 .build();
 
             let burst2_env = envelope()
                 .perc(0.007, 0.028)
-                .gate(gate)
                 .build();
 
             let burst3_env = envelope()
                 .perc(0.013, 0.028)
-                .gate(gate)
                 .build();
 
             let burst4_env = envelope()
                 .perc(0.019, 0.028)
-                .gate(gate)
                 .build();
 
             let burst5_env = envelope()
                 .perc(0.025, 0.028)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

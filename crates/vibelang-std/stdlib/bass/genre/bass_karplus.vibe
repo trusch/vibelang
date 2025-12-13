@@ -4,12 +4,9 @@ define_synthdef("bass_karplus")
     .param("amp", 0.8)
     .param("decay", 0.5)
     .body(|freq, amp, decay| {
-        let gate = dc_ar(1.0);
-
         // Karplus-Strong style using comb filter
         let amp_env = envelope()
             .perc(0.001, 1.0)
-            .gate(gate)
             .time_scale(decay * 2.0)
             .cleanup_on_finish()
             .build();
