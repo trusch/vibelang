@@ -5,10 +5,106 @@
 //! to configure appropriate audio connections.
 
 use anyhow::{anyhow, Result};
+use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Find the scsynth binary path based on the operating system.
+///
+/// On Linux: Uses `scsynth` from PATH
+/// On macOS: Checks SuperCollider.app bundle, then PATH
+/// On Windows: Checks common installation directories, then PATH
+fn find_scsynth() -> Result<PathBuf> {
+    // First, check if scsynth is in PATH
+    let scsynth_name = if cfg!(windows) {
+        "scsynth.exe"
+    } else {
+        "scsynth"
+    };
+
+    // Try PATH first
+    if let Ok(output) = Command::new(if cfg!(windows) { "where" } else { "which" })
+        .arg(scsynth_name)
+        .output()
+    {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if !path.is_empty() {
+                log::info!("Found scsynth in PATH: {}", path);
+                return Ok(PathBuf::from(path));
+            }
+        }
+    }
+
+    // Platform-specific search paths
+    #[cfg(target_os = "macos")]
+    {
+        let mac_paths = [
+            "/Applications/SuperCollider.app/Contents/Resources/scsynth",
+            "/Applications/SuperCollider/SuperCollider.app/Contents/Resources/scsynth",
+        ];
+        for path in &mac_paths {
+            let p = PathBuf::from(path);
+            if p.exists() {
+                log::info!("Found scsynth at: {}", path);
+                return Ok(p);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Check common Windows installation paths
+        let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
+        let program_files_x86 = std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| "C:\\Program Files (x86)".to_string());
+
+        // Look for SuperCollider installations (they often have version numbers)
+        for base in &[&program_files, &program_files_x86] {
+            if let Ok(entries) = std::fs::read_dir(base) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_lowercase();
+                    if name.starts_with("supercollider") {
+                        let scsynth_path = entry.path().join("scsynth.exe");
+                        if scsynth_path.exists() {
+                            log::info!("Found scsynth at: {}", scsynth_path.display());
+                            return Ok(scsynth_path);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also check user's local app data
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let local_path = PathBuf::from(local_app_data).join("Programs");
+            if let Ok(entries) = std::fs::read_dir(&local_path) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_lowercase();
+                    if name.starts_with("supercollider") {
+                        let scsynth_path = entry.path().join("scsynth.exe");
+                        if scsynth_path.exists() {
+                            log::info!("Found scsynth at: {}", scsynth_path.display());
+                            return Ok(scsynth_path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: just return the binary name and hope it's in PATH
+    log::warn!(
+        "Could not find scsynth in common locations. Assuming it's in PATH."
+    );
+    Ok(PathBuf::from(scsynth_name))
+}
 
 /// Manages the scsynth process lifecycle.
 ///
@@ -41,13 +137,20 @@ impl ScsynthProcess {
     pub fn start(port: u16) -> Result<Self> {
         log::info!("Starting scsynth on port {}...", port);
 
-        // Check if JACK is running
+        // Find scsynth binary
+        let scsynth_path = find_scsynth()?;
+
+        // Check if JACK is running (only on Unix-like systems)
+        #[cfg(not(target_os = "windows"))]
         let jack_running = Command::new("jack_lsp")
             .output()
             .is_ok_and(|output| output.status.success());
 
+        #[cfg(target_os = "windows")]
+        let jack_running = false;
+
         // Start scsynth with stereo output
-        let mut child = Command::new("scsynth")
+        let mut child = Command::new(&scsynth_path)
             .arg("-u")
             .arg(port.to_string())
             .arg("-i")
@@ -61,7 +164,8 @@ impl ScsynthProcess {
             .spawn()
             .map_err(|e| {
                 anyhow!(
-                    "Failed to start scsynth: {}. Is SuperCollider installed?",
+                    "Failed to start scsynth at '{}': {}. Is SuperCollider installed?",
+                    scsynth_path.display(),
                     e
                 )
             })?;
