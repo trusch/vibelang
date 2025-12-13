@@ -3,27 +3,21 @@ define_synthdef("clap_layered", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Four bursts for thick character
             let burst1_env = envelope()
                 .perc(0.001, 0.025)
-                .gate(gate)
                 .build();
 
             let burst2_env = envelope()
                 .perc(0.009, 0.025)
-                .gate(gate)
                 .build();
 
             let burst3_env = envelope()
                 .perc(0.016, 0.025)
-                .gate(gate)
                 .build();
 
             let burst4_env = envelope()
                 .perc(0.022, 0.025)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

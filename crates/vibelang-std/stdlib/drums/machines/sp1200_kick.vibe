@@ -3,19 +3,15 @@ define_synthdef("sp1200_kick")
     .param("freq", 48.0)
     .param("amp", 1.0)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Punchy decay
         let amp_env = envelope()
             .perc(0.001, 0.4)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Pitch envelope
         let pitch_env = envelope()
             .perc(0.001, 0.07)
-            .gate(gate)
             .build();
         let freq_mod = pitch_env * freq * 3.5;
 
@@ -29,7 +25,6 @@ define_synthdef("sp1200_kick")
         // Crunchy click
         let click_env = envelope()
             .perc(0.0001, 0.012)
-            .gate(gate)
             .build();
         let click = lpf_ar(white_noise_ar(), 3000.0) * click_env * 0.2;
 

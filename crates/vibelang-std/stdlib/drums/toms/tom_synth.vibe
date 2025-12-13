@@ -3,19 +3,15 @@ define_synthdef("tom_synth")
     .param("freq", 150.0)
     .param("amp", 0.8)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Electronic decay
         let amp_env = envelope()
             .perc(0.001, 0.3)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Dramatic pitch sweep
         let pitch_env = envelope()
             .perc(0.001, 0.1)
-            .gate(gate)
             .build();
         let freq_mod = pitch_env * freq * 3.0;
 
@@ -25,7 +21,6 @@ define_synthdef("tom_synth")
         // Subtle click
         let click_env = envelope()
             .perc(0.0001, 0.005)
-            .gate(gate)
             .build();
         let click = bpf_ar(white_noise_ar(), 2000.0, 0.5) * click_env * 0.15;
 

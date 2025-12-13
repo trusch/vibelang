@@ -3,12 +3,9 @@ define_synthdef("cowbell", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Medium-short decay
             let env = envelope()
                 .perc(0.001, 0.12)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -25,7 +22,6 @@ define_synthdef("cowbell", |builder| {
             // Add attack click
             let click_env = envelope()
                 .perc(0.0001, 0.005)
-                .gate(gate)
                 .build();
             let click = white_noise_ar() * click_env * 0.2;
 

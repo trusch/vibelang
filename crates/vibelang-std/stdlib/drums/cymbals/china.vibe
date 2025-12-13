@@ -3,12 +3,9 @@ define_synthdef("china", |builder| {
     builder
         .param("amp", 0.75)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Medium-long decay
             let env = envelope()
                 .perc(0.001, 1.8)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

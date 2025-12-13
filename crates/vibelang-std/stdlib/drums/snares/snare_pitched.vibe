@@ -4,33 +4,27 @@ define_synthdef("snare_pitched")
     .param("amp", 0.8)
     .param("tone", 0.6)
     .body(|freq, amp, tone| {
-        let gate = dc_ar(1.0);
-
         // Decay
         let amp_env = envelope()
             .perc(0.001, 0.22)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Pitched body with tone control
         let pitch_env = envelope()
             .perc(0.001, 0.02)
-            .gate(gate)
             .build();
         let body = sin_osc_ar(freq + pitch_env * freq * 2.0) * tone * 0.5;
 
         // Noise layer inversely proportional to tone
         let noise_env = envelope()
             .perc(0.001, 0.18)
-            .gate(gate)
             .build();
         let noise = hpf_ar(white_noise_ar(), 2500.0) * noise_env * (1.0 - tone * 0.5) * 0.5;
 
         // Attack
         let attack_env = envelope()
             .perc(0.0001, 0.004)
-            .gate(gate)
             .build();
         let attack = white_noise_ar() * attack_env * 0.15;
 

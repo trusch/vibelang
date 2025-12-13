@@ -3,18 +3,14 @@ define_synthdef("subdrop_cinematic", |builder| {
     builder
         .param("amp", 0.9)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             let env = envelope()
                 .perc(0.02, 3.0)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
             // Deep sub with slow pitch descent
             let pitch_e = envelope()
                 .perc(0.02, 2.0)
-                .gate(gate)
                 .build();
             let freq = 50.0 - pitch_e * 20.0;
             let sub = sin_osc_ar(freq);
@@ -26,7 +22,6 @@ define_synthdef("subdrop_cinematic", |builder| {
             let punch = sin_osc_ar(100.0) + sin_osc_ar(150.0) * 0.5;
             let punch_e = envelope()
                 .perc(0.01, 0.5)
-                .gate(gate)
                 .build();
             let punch_filtered = lpf_ar(punch, 300.0) * punch_e * 0.3;
 

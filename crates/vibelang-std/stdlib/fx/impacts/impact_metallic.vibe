@@ -3,12 +3,9 @@ define_synthdef("impact_metallic", |builder| {
     builder
         .param("amp", 0.8)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Sharp attack, long resonance
             let env = envelope()
                 .perc(0.001, 1.5)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -24,7 +21,6 @@ define_synthdef("impact_metallic", |builder| {
             // Add noise burst
             let noise_env = envelope()
                 .perc(0.001, 0.08)
-                .gate(gate)
                 .build();
             let noise = white_noise_ar() * noise_env * 0.3;
             let filtered_noise = hpf_ar(noise, 3000.0);

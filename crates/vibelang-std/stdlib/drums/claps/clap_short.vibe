@@ -3,17 +3,13 @@ define_synthdef("clap_short", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Two quick bursts for tight character
             let burst1_env = envelope()
                 .perc(0.0005, 0.018)
-                .gate(gate)
                 .build();
 
             let burst2_env = envelope()
                 .perc(0.008, 0.018)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

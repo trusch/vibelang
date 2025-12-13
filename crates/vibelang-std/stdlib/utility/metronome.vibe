@@ -7,12 +7,9 @@ define_synthdef("metronome")
     .param("freq", 1000.0)
     .param("amp", 0.5)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Very short click envelope
         let env = envelope()
             .perc(0.0001, 0.03)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
@@ -22,7 +19,6 @@ define_synthdef("metronome")
         // High frequency transient for clarity
         let tick_env = envelope()
             .perc(0.0001, 0.005)
-            .gate(gate)
             .build();
         let tick = sin_osc_ar(freq * 4.0) * tick_env;
 
@@ -34,12 +30,9 @@ define_synthdef("metronome_accent")
     .param("freq", 1500.0)
     .param("amp", 0.6)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Short click envelope
         let env = envelope()
             .perc(0.0001, 0.04)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 

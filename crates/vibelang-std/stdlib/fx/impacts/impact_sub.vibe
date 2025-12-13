@@ -3,12 +3,9 @@ define_synthdef("impact_sub", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Medium decay
             let env = envelope()
                 .perc(0.002, 1.0)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -19,7 +16,6 @@ define_synthdef("impact_sub", |builder| {
             // Minimal noise for definition
             let noise_env = envelope()
                 .perc(0.001, 0.05)
-                .gate(gate)
                 .build();
             let noise = pink_noise_ar() * noise_env * 0.1;
             let filtered_noise = lpf_ar(noise, 300.0);

@@ -3,11 +3,8 @@ define_synthdef("impact_industrial", |builder| {
     builder
         .param("amp", 0.8)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             let env = envelope()
                 .perc(0.001, 1.0)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -19,7 +16,6 @@ define_synthdef("impact_industrial", |builder| {
             let metal = metal1 + metal2 * 0.7 + metal3 * 0.5 + metal4 * 0.3;
             let metal_e = envelope()
                 .perc(0.001, 0.5)
-                .gate(gate)
                 .build();
 
             // Distorted body
@@ -27,7 +23,6 @@ define_synthdef("impact_industrial", |builder| {
             let body_dist = (body * 5.0).tanh();
             let body_e = envelope()
                 .perc(0.001, 0.4)
-                .gate(gate)
                 .build();
 
             // Noise burst with resonance
@@ -35,7 +30,6 @@ define_synthdef("impact_industrial", |builder| {
             let noise_filtered = rlpf_ar(noise, 2000.0, 0.15);
             let noise_e = envelope()
                 .perc(0.001, 0.1)
-                .gate(gate)
                 .build();
 
             let mix = metal * metal_e * 0.3 + body_dist * body_e * 0.4 + noise_filtered * noise_e * 0.4;

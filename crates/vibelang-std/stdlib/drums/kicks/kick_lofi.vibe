@@ -3,19 +3,15 @@ define_synthdef("kick_lofi")
     .param("freq", 55.0)
     .param("amp", 0.9)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Soft decay
         let amp_env = envelope()
             .perc(0.003, 0.35)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Gentle pitch sweep
         let pitch_env = envelope()
             .perc(0.001, 0.06)
-            .gate(gate)
             .build();
         let freq_mod = pitch_env * freq * 2.0;
 
@@ -26,7 +22,6 @@ define_synthdef("kick_lofi")
         // Soft attack
         let attack_env = envelope()
             .perc(0.001, 0.015)
-            .gate(gate)
             .build();
         let attack = lpf_ar(white_noise_ar(), 1500.0) * attack_env * 0.12;
 

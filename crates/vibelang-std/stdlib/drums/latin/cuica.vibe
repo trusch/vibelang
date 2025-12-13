@@ -4,19 +4,15 @@ define_synthdef("cuica")
     .param("amp", 0.7)
     .param("bend", 200.0)
     .body(|freq, amp, bend| {
-        let gate = dc_ar(1.0);
-
         // Envelope
         let amp_env = envelope()
             .perc(0.01, 0.25)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Pitch bend envelope for characteristic "voice"
         let bend_env = envelope()
             .perc(0.01, 0.2)
-            .gate(gate)
             .build();
         let pitch = freq + (bend_env * bend);
 

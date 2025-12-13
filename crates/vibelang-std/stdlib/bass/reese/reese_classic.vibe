@@ -24,7 +24,6 @@ define_synthdef("reese_classic", |builder| {
             // Filter envelope for movement
             let filter_env = envelope()
                 .perc(0.02, 0.8)
-                .gate(gate)
                 .build();
             let mod_cutoff = 400.0 + (filter_env * 1200.0);
 

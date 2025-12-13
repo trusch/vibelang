@@ -3,19 +3,15 @@ define_synthdef("tom_floor")
     .param("freq", 80.0)
     .param("amp", 0.85)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Deep, resonant decay
         let amp_env = envelope()
             .perc(0.001, 0.5)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Pitch envelope
         let pitch_env = envelope()
             .perc(0.001, 0.05)
-            .gate(gate)
             .build();
         let freq_mod = pitch_env * freq * 1.5;
 
@@ -27,7 +23,6 @@ define_synthdef("tom_floor")
         // Stick attack
         let attack_env = envelope()
             .perc(0.0001, 0.012)
-            .gate(gate)
             .build();
         let attack = bpf_ar(white_noise_ar(), 1500.0, 0.5) * attack_env * 0.2;
 

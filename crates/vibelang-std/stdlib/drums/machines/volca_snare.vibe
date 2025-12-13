@@ -4,26 +4,21 @@ define_synthdef("volca_snare")
     .param("amp", 0.8)
     .param("snappy", 0.6)
     .body(|freq, amp, snappy| {
-        let gate = dc_ar(1.0);
-
         // Decay envelope
         let amp_env = envelope()
             .perc(0.001, 0.22)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Body
         let pitch_env = envelope()
             .perc(0.001, 0.018)
-            .gate(gate)
             .build();
         let body = sin_osc_ar(freq + pitch_env * freq * 1.8) * 0.35;
 
         // Variable snappiness
         let noise_env = envelope()
             .perc(0.001, 1.0)
-            .gate(gate)
             .time_scale(0.15 + snappy * 0.1)
             .build();
         let noise = hpf_ar(white_noise_ar(), 2000.0 + snappy * 2000.0) * noise_env * (0.3 + snappy * 0.3);

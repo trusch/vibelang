@@ -4,12 +4,9 @@ define_synthdef("snare_noise_layer")
     .param("amp", 0.7)
     .param("decay", 0.2)
     .body(|freq, amp, decay| {
-        let gate = dc_ar(1.0);
-
         // Adjustable decay
         let amp_env = envelope()
             .perc(0.001, 1.0)
-            .gate(gate)
             .time_scale(decay)
             .cleanup_on_finish()
             .build();
@@ -20,7 +17,6 @@ define_synthdef("snare_noise_layer")
         // Attack transient
         let attack_env = envelope()
             .perc(0.0001, 0.003)
-            .gate(gate)
             .build();
         let attack = white_noise_ar() * attack_env * 0.2;
 

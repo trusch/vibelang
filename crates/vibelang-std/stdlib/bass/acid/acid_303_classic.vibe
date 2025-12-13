@@ -17,7 +17,6 @@ define_synthdef("acid_303_classic", |builder| {
             // Filter envelope for sweep (triggered on note-on)
             let filter_env = envelope()
                 .perc(0.01, 0.4)
-                .gate(gate)
                 .build();
 
             // Sawtooth oscillator

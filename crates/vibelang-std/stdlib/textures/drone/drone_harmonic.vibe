@@ -4,12 +4,9 @@ define_synthdef("drone_harmonic", |builder| {
         .param("freq", 110.0)
         .param("amp", 0.35)
         .body(|freq, amp| {
-            let gate = dc_ar(1.0);
-
             // Long sustain
             let env = envelope()
                 .perc(2.5, 18.0)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

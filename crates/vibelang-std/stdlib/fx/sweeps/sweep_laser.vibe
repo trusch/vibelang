@@ -4,11 +4,8 @@ define_synthdef("sweep_laser", |builder| {
         .param("amp", 0.5)
         .param("duration", 0.5)
         .body(|amp, duration| {
-            let gate = dc_ar(1.0);
-
             let env = envelope()
                 .perc(0.001, 1.0)
-                .gate(gate)
                 .time_scale(duration)
                 .cleanup_on_finish()
                 .build();

@@ -3,12 +3,9 @@ define_synthdef("snare_tight_electronic", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Short, controlled envelope
             let noise_env = envelope()
                 .perc(0.001, 0.11)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -19,14 +16,12 @@ define_synthdef("snare_tight_electronic", |builder| {
             // Punchy tone
             let tone_env = envelope()
                 .perc(0.0005, 0.07)
-                .gate(gate)
                 .build();
             let tone = sin_osc_ar(220.0) * tone_env * 0.4;
 
             // Attack transient
             let attack_env = envelope()
                 .perc(0.0001, 0.003)
-                .gate(gate)
                 .build();
             let attack = white_noise_ar() * attack_env * 0.4;
 

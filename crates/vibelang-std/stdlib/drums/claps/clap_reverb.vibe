@@ -3,22 +3,17 @@ define_synthdef("clap_reverb", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Multiple bursts
             let burst1_env = envelope()
                 .perc(0.001, 0.022)
-                .gate(gate)
                 .build();
 
             let burst2_env = envelope()
                 .perc(0.010, 0.022)
-                .gate(gate)
                 .build();
 
             let burst3_env = envelope()
                 .perc(0.018, 0.022)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -30,7 +25,6 @@ define_synthdef("clap_reverb", |builder| {
             // Reverb tail envelope
             let reverb_env = envelope()
                 .perc(0.02, 0.35)
-                .gate(gate)
                 .build();
             let reverb = lpf_ar(filtered, 4000.0) * reverb_env * 0.3;
 

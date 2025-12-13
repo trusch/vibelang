@@ -2,12 +2,9 @@
 define_synthdef("hihat_808_closed")
     .param("amp", 1.0)
     .body(|amp| {
-        let gate = dc_ar(1.0);
-
         // Very short envelope
         let env = envelope()
             .perc(0.0005, 0.04)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 

@@ -21,7 +21,6 @@ define_synthdef("crotales", |builder| {
             let decay_time = 3.0;
             let env = envelope()
                 .perc(0.001, decay_time)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -52,7 +51,6 @@ define_synthdef("celesta", |builder| {
             let decay_time = 1.8;
             let env = envelope()
                 .perc(0.001, decay_time)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

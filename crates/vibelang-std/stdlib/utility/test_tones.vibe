@@ -73,19 +73,15 @@ define_synthdef("test_1k", |builder| {
 define_synthdef("test_sweep")
     .param("amp", 0.2)
     .body(|amp| {
-        let gate = dc_ar(1.0);
-
         // 3-second sweep envelope
         let env = envelope()
             .perc(0.001, 3.0)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Sweep from 20Hz to 20kHz
         let sweep_env = envelope()
             .perc(0.001, 3.0)
-            .gate(gate)
             .build();
         let freq = 20.0 + sweep_env * 19980.0;
 

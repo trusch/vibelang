@@ -3,26 +3,21 @@ define_synthdef("cr78_snare")
     .param("freq", 180.0)
     .param("amp", 0.8)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Vintage decay
         let amp_env = envelope()
             .perc(0.001, 0.2)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Body
         let pitch_env = envelope()
             .perc(0.001, 0.015)
-            .gate(gate)
             .build();
         let body = sin_osc_ar(freq + pitch_env * freq * 1.5) * 0.35;
 
         // Filtered noise
         let noise_env = envelope()
             .perc(0.001, 0.18)
-            .gate(gate)
             .build();
         let noise = bpf_ar(white_noise_ar(), 4000.0, 0.4) * noise_env * 0.5;
 

@@ -3,12 +3,9 @@ define_synthdef("crash_bright", |builder| {
     builder
         .param("amp", 0.8)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Long decay for crash
             let env = envelope()
                 .perc(0.002, 2.5)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

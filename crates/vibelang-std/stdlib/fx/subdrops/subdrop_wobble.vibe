@@ -3,18 +3,14 @@ define_synthdef("subdrop_wobble", |builder| {
     builder
         .param("amp", 0.8)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             let env = envelope()
                 .perc(0.001, 1.5)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
             // Pitch drop
             let pitch_e = envelope()
                 .perc(0.001, 0.2)
-                .gate(gate)
                 .build();
             let freq = 100.0 - pitch_e * 60.0;
 
@@ -30,7 +26,6 @@ define_synthdef("subdrop_wobble", |builder| {
             let click = white_noise_ar();
             let click_e = envelope()
                 .perc(0.001, 0.01)
-                .gate(gate)
                 .build();
 
             let mix = sub + h2 + click * click_e * 0.2;

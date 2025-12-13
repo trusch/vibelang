@@ -4,12 +4,9 @@ define_synthdef("wind_chimes")
     .param("amp", 0.4)
     .param("density", 0.5)
     .body(|freq, amp, density| {
-        let gate = dc_ar(1.0);
-
         // Overall envelope
         let amp_env = envelope()
             .perc(0.001, 2.0)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 

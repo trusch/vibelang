@@ -3,12 +3,9 @@ define_synthdef("guiro_short")
     .param("freq", 3500.0)
     .param("amp", 0.6)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Quick scrape
         let amp_env = envelope()
             .perc(0.005, 0.08)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 

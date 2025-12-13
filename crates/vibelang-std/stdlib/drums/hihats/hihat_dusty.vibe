@@ -3,12 +3,9 @@ define_synthdef("hihat_dusty", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Soft attack and medium decay
             let env = envelope()
                 .perc(0.003, 0.12)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

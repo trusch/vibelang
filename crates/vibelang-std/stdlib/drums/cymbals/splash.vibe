@@ -3,12 +3,9 @@ define_synthdef("splash", |builder| {
     builder
         .param("amp", 0.7)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Short decay
             let env = envelope()
                 .perc(0.001, 0.5)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

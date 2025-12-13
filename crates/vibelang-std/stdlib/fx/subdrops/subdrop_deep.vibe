@@ -4,19 +4,15 @@ define_synthdef("subdrop_deep", |builder| {
         .param("freq", 35.0)
         .param("amp", 1.0)
         .body(|freq, amp| {
-            let gate = dc_ar(1.0);
-
             // Longer decay for depth
             let env = envelope()
                 .perc(0.015, 1.2)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
             // Extended pitch drop
             let pitch_env = envelope()
                 .perc(0.015, 0.25)
-                .gate(gate)
                 .build();
             let freq_mod = pitch_env * freq * 5.0;
 

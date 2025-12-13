@@ -3,12 +3,9 @@ define_synthdef("tambourine", |builder| {
     builder
         .param("amp", 1.0)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             // Medium decay for jingle sustain
             let env = envelope()
                 .perc(0.002, 0.18)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

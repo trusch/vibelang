@@ -3,18 +3,14 @@ define_synthdef("subdrop_tight", |builder| {
     builder
         .param("amp", 0.8)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             let env = envelope()
                 .perc(0.001, 0.6)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
             // Fast pitch drop
             let pitch_e = envelope()
                 .perc(0.001, 0.1)
-                .gate(gate)
                 .build();
             let freq = 80.0 - pitch_e * 40.0;
 
@@ -25,7 +21,6 @@ define_synthdef("subdrop_tight", |builder| {
             let click = white_noise_ar();
             let click_e = envelope()
                 .perc(0.001, 0.005)
-                .gate(gate)
                 .build();
             let click_filtered = lpf_ar(click, 8000.0) * click_e * 0.15;
 

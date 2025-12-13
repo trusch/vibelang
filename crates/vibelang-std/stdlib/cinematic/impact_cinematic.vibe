@@ -3,19 +3,15 @@ define_synthdef("impact_cinematic")
     .param("freq", 40.0)
     .param("amp", 1.0)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Impact envelope
         let amp_env = envelope()
             .perc(0.001, 1.5)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Pitch drop
         let pitch_env = envelope()
             .perc(0.001, 0.2)
-            .gate(gate)
             .build();
         let freq_mod = pitch_env * freq * 3.0;
 
@@ -25,7 +21,6 @@ define_synthdef("impact_cinematic")
         // Noise burst
         let noise_env = envelope()
             .perc(0.001, 0.3)
-            .gate(gate)
             .build();
         let noise = lpf_ar(white_noise_ar(), 500.0) * noise_env * 0.4;
 

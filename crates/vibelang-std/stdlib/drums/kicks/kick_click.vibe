@@ -3,19 +3,15 @@ define_synthdef("kick_click")
     .param("freq", 55.0)
     .param("amp", 1.0)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Tight decay
         let amp_env = envelope()
             .perc(0.001, 0.3)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Pitch envelope
         let pitch_env = envelope()
             .perc(0.001, 0.04)
-            .gate(gate)
             .build();
         let freq_mod = pitch_env * freq * 4.0;
 
@@ -25,7 +21,6 @@ define_synthdef("kick_click")
         // Prominent click
         let click_env = envelope()
             .perc(0.0001, 0.015)
-            .gate(gate)
             .build();
         let click = bpf_ar(white_noise_ar(), 4000.0, 0.3) * click_env * 0.4;
 

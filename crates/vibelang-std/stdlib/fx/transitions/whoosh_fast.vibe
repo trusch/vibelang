@@ -3,11 +3,8 @@ define_synthdef("whoosh_fast", |builder| {
     builder
         .param("amp", 0.5)
         .body(|amp| {
-            let gate = dc_ar(1.0);
-
             let env = envelope()
                 .perc(0.01, 0.3)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -17,7 +14,6 @@ define_synthdef("whoosh_fast", |builder| {
             // Sweep from high to low quickly
             let sweep_e = envelope()
                 .perc(0.01, 0.25)
-                .gate(gate)
                 .build();
             let cutoff = 500.0 + sweep_e * 10000.0;
 

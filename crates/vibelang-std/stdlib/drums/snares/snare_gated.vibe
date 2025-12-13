@@ -3,33 +3,27 @@ define_synthdef("snare_gated")
     .param("freq", 190.0)
     .param("amp", 0.9)
     .body(|freq, amp| {
-        let gate = dc_ar(1.0);
-
         // Medium decay with abrupt end (gated feel)
         let amp_env = envelope()
             .perc(0.001, 0.3)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Body with pitch sweep
         let pitch_env = envelope()
             .perc(0.001, 0.025)
-            .gate(gate)
             .build();
         let body = sin_osc_ar(freq + pitch_env * freq * 1.8) * 0.4;
 
         // Sustained noise layer
         let noise_env = envelope()
             .perc(0.001, 0.28)
-            .gate(gate)
             .build();
         let noise = bpf_ar(white_noise_ar(), 3000.0, 0.5) * noise_env * 0.5;
 
         // Attack
         let attack_env = envelope()
             .perc(0.0001, 0.005)
-            .gate(gate)
             .build();
         let attack = white_noise_ar() * attack_env * 0.2;
 

@@ -2,12 +2,9 @@
 define_synthdef("hihat_808_open")
     .param("amp", 1.0)
     .body(|amp| {
-        let gate = dc_ar(1.0);
-
         // Longer envelope for open character
         let env = envelope()
             .perc(0.001, 0.25)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 

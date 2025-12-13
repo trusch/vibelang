@@ -21,7 +21,6 @@ define_synthdef("upright_bass", |builder| {
             let decay_time = 1.2 + (1.0 / (freq / 40.0));
             let env = envelope()
                 .perc(0.001, 1.0)
-                .gate(gate)
                 .time_scale(decay_time)
                 .cleanup_on_finish()
                 .build();
@@ -281,7 +280,6 @@ define_synthdef("slap_bass", |builder| {
             let decay_time = 0.8;
             let env = envelope()
                 .perc(0.001, decay_time)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
@@ -375,7 +373,6 @@ define_synthdef("acid_bass", |builder| {
         .body(|freq, amp, gate, cutoff, resonance, env_mod, accent| {
             let env = envelope()
                 .perc(0.001, 0.2)
-                .gate(gate)
                 .cleanup_on_finish()
                 .build();
 

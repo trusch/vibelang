@@ -4,19 +4,15 @@ define_synthdef("tempest_kick")
     .param("amp", 1.0)
     .param("punch", 0.7)
     .body(|freq, amp, punch| {
-        let gate = dc_ar(1.0);
-
         // Deep decay
         let amp_env = envelope()
             .perc(0.001, 0.45)
-            .gate(gate)
             .cleanup_on_finish()
             .build();
 
         // Aggressive pitch envelope
         let pitch_env = envelope()
             .perc(0.001, 1.0)
-            .gate(gate)
             .time_scale(0.04 + punch * 0.03)
             .build();
         let freq_mod = pitch_env * freq * (3.0 + punch * 3.0);
@@ -28,7 +24,6 @@ define_synthdef("tempest_kick")
         // Punch click
         let click_env = envelope()
             .perc(0.0001, 0.006)
-            .gate(gate)
             .build();
         let click = bpf_ar(white_noise_ar(), 2500.0, 0.4) * click_env * punch * 0.3;
 
