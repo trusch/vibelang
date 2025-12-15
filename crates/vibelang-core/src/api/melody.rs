@@ -198,6 +198,24 @@ impl Melody {
                             });
                         }
                     }
+                    NoteToken::ScaleDegree(degree, chord_quality) => {
+                        // Commit any pending note/chord
+                        if let Some(prev_notes) = current_notes.take() {
+                            self.notes.push(MelodyNote {
+                                beat: note_start_beat,
+                                notes: prev_notes,
+                                velocity: 1.0,
+                                gate: note_duration,
+                            });
+                        }
+
+                        // Resolve scale degree (and optional chord) to MIDI notes
+                        let midi_notes =
+                            resolve_scale_degree(*degree, chord_quality, &self.scale, &self.root);
+                        current_notes = Some(midi_notes);
+                        note_start_beat = beat;
+                        note_duration = beat_per_token;
+                    }
                     NoteToken::Notes(midi_notes) => {
                         // Commit any pending note/chord
                         if let Some(prev_notes) = current_notes.take() {
@@ -536,6 +554,8 @@ pub fn melody(name: String) -> Melody {
 enum NoteToken {
     /// A note or chord with MIDI number(s)
     Notes(Vec<u8>),
+    /// A scale degree (1-7) with optional chord quality to be resolved later with scale/root context
+    ScaleDegree(u8, Option<String>),
     /// Tie/continuation marker (-)
     Tie,
     /// Rest marker (. or _)
@@ -562,6 +582,35 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
             // Rest markers
             '.' | '_' => {
                 tokens.push(NoteToken::Rest);
+            }
+
+            // Scale degree (1-7), optionally with chord quality (e.g., "1:maj")
+            '1'..='7' => {
+                let degree = c as u8 - b'0';
+
+                // Check for chord quality suffix (e.g., ":maj7")
+                let chord_quality = if chars.peek() == Some(&':') {
+                    chars.next(); // consume ':'
+                    let mut quality = String::new();
+                    // Collect chord quality (letters, numbers)
+                    while let Some(&next) = chars.peek() {
+                        match next {
+                            'a'..='z' | 'A'..='Z' | '0'..='9' => {
+                                quality.push(chars.next().unwrap());
+                            }
+                            _ => break,
+                        }
+                    }
+                    if quality.is_empty() {
+                        None
+                    } else {
+                        Some(quality)
+                    }
+                } else {
+                    None
+                };
+
+                tokens.push(NoteToken::ScaleDegree(degree, chord_quality));
             }
 
             // Start of a note name
@@ -610,6 +659,132 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
     }
 
     tokens
+}
+
+/// Get scale intervals by name.
+/// Returns semitone offsets from root for each scale degree (1-7).
+fn get_scale_intervals(scale_name: &str) -> Vec<i8> {
+    match scale_name.to_lowercase().as_str() {
+        "major" | "ionian" => vec![0, 2, 4, 5, 7, 9, 11],
+        "minor" | "natural_minor" | "aeolian" => vec![0, 2, 3, 5, 7, 8, 10],
+        "dorian" => vec![0, 2, 3, 5, 7, 9, 10],
+        "phrygian" => vec![0, 1, 3, 5, 7, 8, 10],
+        "lydian" => vec![0, 2, 4, 6, 7, 9, 11],
+        "mixolydian" => vec![0, 2, 4, 5, 7, 9, 10],
+        "locrian" => vec![0, 1, 3, 5, 6, 8, 10],
+        "harmonic_minor" => vec![0, 2, 3, 5, 7, 8, 11],
+        "melodic_minor" => vec![0, 2, 3, 5, 7, 9, 11],
+        "pentatonic" | "major_pentatonic" => vec![0, 2, 4, 7, 9, 12, 14], // Extended to 7 degrees
+        "minor_pentatonic" => vec![0, 3, 5, 7, 10, 12, 15],
+        "blues" => vec![0, 3, 5, 6, 7, 10, 12],
+        _ => vec![0, 2, 4, 5, 7, 9, 11], // Default to major
+    }
+}
+
+/// Parse a root note name to MIDI note number.
+/// Supports formats like "D", "D4", "F#", "F#3", etc.
+/// Returns the MIDI note number (defaults to octave 4 if not specified).
+fn parse_root_note(root: &str) -> u8 {
+    let root = root.trim();
+    if root.is_empty() {
+        return 60; // Default to C4
+    }
+
+    let mut chars = root.chars().peekable();
+
+    // Parse note letter
+    let base: i16 = match chars.next().unwrap_or('C').to_ascii_uppercase() {
+        'C' => 0,
+        'D' => 2,
+        'E' => 4,
+        'F' => 5,
+        'G' => 7,
+        'A' => 9,
+        'B' => 11,
+        _ => 0,
+    };
+
+    // Parse accidental
+    let mut accidental: i16 = 0;
+    while let Some(&c) = chars.peek() {
+        match c {
+            '#' | '♯' => {
+                accidental += 1;
+                chars.next();
+            }
+            'b' | '♭' => {
+                accidental -= 1;
+                chars.next();
+            }
+            _ => break,
+        }
+    }
+
+    // Parse octave (default to 4 if not specified)
+    let octave_str: String = {
+        let mut result = String::new();
+        // Optional leading minus for negative octaves (e.g., "C-1")
+        if chars.peek() == Some(&'-') {
+            result.push(chars.next().unwrap());
+        }
+        // Collect digits
+        while chars.peek().map_or(false, |c| c.is_ascii_digit()) {
+            result.push(chars.next().unwrap());
+        }
+        result
+    };
+    let octave: i16 = if octave_str.is_empty() {
+        4 // Default octave
+    } else {
+        octave_str.parse().unwrap_or(4)
+    };
+
+    // Calculate MIDI note: (octave + 1) * 12 + base + accidental
+    let midi = (octave + 1) * 12 + base + accidental;
+    midi.clamp(0, 127) as u8
+}
+
+/// Resolve a scale degree to MIDI note(s).
+/// If chord_quality is provided, returns multiple notes forming a chord.
+fn resolve_scale_degree(
+    degree: u8,
+    chord_quality: &Option<String>,
+    scale: &Option<String>,
+    root: &Option<String>,
+) -> Vec<u8> {
+    let scale_intervals = scale
+        .as_ref()
+        .map(|s| get_scale_intervals(s))
+        .unwrap_or_else(|| vec![0, 2, 4, 5, 7, 9, 11]); // Default to major
+
+    // parse_root_note returns full MIDI note (e.g., "D4" -> 62, "D" -> 62, "D2" -> 38)
+    let base_midi = root.as_ref().map(|r| parse_root_note(r)).unwrap_or(60) as i16;
+
+    // degree is 1-indexed, so subtract 1 for array access
+    let degree_idx = (degree.saturating_sub(1) as usize) % scale_intervals.len();
+    let interval = scale_intervals[degree_idx] as i16;
+
+    let root_note = (base_midi + interval).clamp(0, 127) as u8;
+
+    // If chord quality is specified, build the chord
+    if let Some(quality) = chord_quality {
+        if let Some(chord_intervals) = get_chord_intervals(quality) {
+            return chord_intervals
+                .iter()
+                .filter_map(|&offset| {
+                    let midi = root_note as i16 + offset as i16;
+                    if (0..=127).contains(&midi) {
+                        Some(midi as u8)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+        }
+    }
+
+    // Single note
+    vec![root_note]
 }
 
 /// Get chord intervals by quality name.

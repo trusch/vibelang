@@ -157,13 +157,20 @@ impl Pattern {
         self.apply();
         let handle = require_handle();
 
+        // Calculate loop length from pattern if available, otherwise use explicit length
+        let loop_length = if let Some(ref steps) = self.steps {
+            calculate_loop_length_from_pattern(steps)
+        } else {
+            self.length
+        };
+
         // Create an implicit sequence for this pattern
         let seq_name = format!("_seq_{}", self.name);
         let seq_def = SequenceDefinition::new(seq_name.clone())
-            .with_loop_beats(self.length)
+            .with_loop_beats(loop_length)
             .with_clip(SequenceClip::new(
                 0.0,
-                self.length,
+                loop_length,
                 ClipSource::Pattern(self.name.clone()),
                 ClipMode::Loop,
             ));
