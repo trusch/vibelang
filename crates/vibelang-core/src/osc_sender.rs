@@ -177,7 +177,7 @@ impl OscSender {
 
         // Send to scsynth
         let encoded = rosc::encoder::encode(&packet)?;
-        self.sc.osc.sock.send_to(&encoded, &self.sc.osc.addr)?;
+        self.sc.osc.send_raw(&encoded)?;
         Ok(())
     }
 

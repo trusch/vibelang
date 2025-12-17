@@ -5,7 +5,34 @@
 use crate::state::StateMessage;
 use rhai::{CustomType, Engine, FnPtr, NativeCallContext, TypeBuilder};
 
-use super::{context, require_handle};
+use super::context::{self, SourceLocation};
+use super::require_handle;
+
+/// Extract line and position from Rhai error message text.
+/// Rhai errors often contain "(line X, position Y)" in the message.
+fn extract_position_from_error(error_msg: &str) -> Option<(Option<u32>, Option<u32>)> {
+    // Look for pattern: (line N, position M)
+    let line_marker = "(line ";
+    if let Some(start) = error_msg.find(line_marker) {
+        let rest = &error_msg[start + line_marker.len()..];
+        // Find the line number
+        if let Some(comma_pos) = rest.find(',') {
+            if let Ok(line) = rest[..comma_pos].trim().parse::<u32>() {
+                // Find position number
+                let pos_marker = "position ";
+                if let Some(pos_start) = rest.find(pos_marker) {
+                    let pos_rest = &rest[pos_start + pos_marker.len()..];
+                    // Find the end (either ')' or end of string)
+                    let end = pos_rest.find(')').unwrap_or(pos_rest.len());
+                    if let Ok(col) = pos_rest[..end].trim().parse::<u32>() {
+                        return Some((Some(line), Some(col)));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
 
 /// Handle to a defined group.
 #[derive(Debug, Clone, CustomType)]
@@ -143,6 +170,7 @@ impl GroupHandle {
             params: param_map,
             bus_in: 0,
             bus_out: 0,
+            source_location: SourceLocation::default(),
         });
     }
 
@@ -379,6 +407,14 @@ impl SequenceTime {
 pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> GroupHandle {
     let handle = require_handle();
 
+    // Capture source location from call context
+    let pos = ctx.call_position();
+    let source_location = SourceLocation::new(
+        context::get_current_script_file(),
+        if pos.is_none() { None } else { pos.line().map(|l| l as u32) },
+        if pos.is_none() { None } else { pos.position().map(|c| c as u32) },
+    );
+
     // Build the full path
     let parent_path = context::current_group_path();
     let full_path = if parent_path == "main" {
@@ -397,6 +433,7 @@ pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> Gro
         path: full_path.clone(),
         parent_path: Some(parent_path.clone()),
         node_id,
+        source_location,
     });
 
     // Wait for the group to be registered in state before executing the closure.
@@ -425,6 +462,24 @@ pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> Gro
     // Execute closure
     if let Err(e) = closure.call_within_context::<()>(&ctx, ()) {
         log::error!("Error in define_group '{}': {}", name, e);
+        // Record the error for validation
+        // Try to extract line/position from the error message since nested errors
+        // often have the actual location in the message text like "(line 23, position 18)"
+        let error_str = e.to_string();
+        let (line, column) = extract_position_from_error(&error_str)
+            .unwrap_or_else(|| {
+                let pos = e.position();
+                (
+                    if pos.is_none() { None } else { pos.line().map(|l| l as u32) },
+                    if pos.is_none() { None } else { pos.position().map(|c| c as u32) },
+                )
+            });
+        context::push_callback_error(context::CallbackError {
+            message: format!("Error in define_group '{}': {}", name, e),
+            context: name.clone(),
+            line,
+            column,
+        });
     }
 
     // Pop group context
@@ -479,6 +534,7 @@ pub fn create_main_group() {
         path: "main".to_string(),
         parent_path: None,
         node_id: MAIN_GROUP_NODE_ID,
+        source_location: SourceLocation::default(),
     });
 }
 

@@ -1,0 +1,125 @@
+[
+  {
+    "name": "MouseX",
+    "description": "Mouse horizontal position. Tracks the X position of the mouse cursor.",
+    "rates": ["kr"],
+    "inputs": [
+      {"name": "minval", "type": "float", "default": 0.0, "description": "Value when mouse is at left edge"},
+      {"name": "maxval", "type": "float", "default": 1.0, "description": "Value when mouse is at right edge"},
+      {"name": "warp", "type": "float", "default": 0.0, "description": "Mapping curve (0=linear, 1=exponential)"},
+      {"name": "lag", "type": "float", "default": 0.2, "description": "Lag time for smoothing in seconds"}
+    ],
+    "outputs": 1,
+    "category": "Control"
+  },
+  {
+    "name": "MouseY",
+    "description": "Mouse vertical position. Tracks the Y position of the mouse cursor.",
+    "rates": ["kr"],
+    "inputs": [
+      {"name": "minval", "type": "float", "default": 0.0, "description": "Value when mouse is at bottom edge"},
+      {"name": "maxval", "type": "float", "default": 1.0, "description": "Value when mouse is at top edge"},
+      {"name": "warp", "type": "float", "default": 0.0, "description": "Mapping curve (0=linear, 1=exponential)"},
+      {"name": "lag", "type": "float", "default": 0.2, "description": "Lag time for smoothing in seconds"}
+    ],
+    "outputs": 1,
+    "category": "Control"
+  },
+  {
+    "name": "MouseButton",
+    "description": "Mouse button state. Outputs 1 when button is pressed, 0 when released.",
+    "rates": ["kr"],
+    "inputs": [
+      {"name": "minval", "type": "float", "default": 0.0, "description": "Value when button is up"},
+      {"name": "maxval", "type": "float", "default": 1.0, "description": "Value when button is down"},
+      {"name": "lag", "type": "float", "default": 0.2, "description": "Lag time for smoothing"}
+    ],
+    "outputs": 1,
+    "category": "Control"
+  },
+  {
+    "name": "KeyState",
+    "description": "Computer keyboard key state tracker. Outputs 1 when specified key is pressed.",
+    "rates": ["kr"],
+    "inputs": [
+      {"name": "keycode", "type": "float", "default": 0.0, "description": "Key code to track"},
+      {"name": "minval", "type": "float", "default": 0.0, "description": "Value when key is up"},
+      {"name": "maxval", "type": "float", "default": 1.0, "description": "Value when key is down"},
+      {"name": "lag", "type": "float", "default": 0.2, "description": "Lag time for smoothing"}
+    ],
+    "outputs": 1,
+    "category": "Control"
+  },
+  {
+    "name": "Phasor",
+    "description": "Resettable linear ramp between two levels. Like a sawtooth but with DC output.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger to reset phase"},
+      {"name": "rate", "type": "float", "default": 1.0, "description": "Rate of change per sample/block"},
+      {"name": "start", "type": "float", "default": 0.0, "description": "Start value"},
+      {"name": "end", "type": "float", "default": 1.0, "description": "End value. Wraps back to start when reached"},
+      {"name": "resetPos", "type": "float", "default": 0.0, "description": "Value to jump to upon reset"}
+    ],
+    "outputs": 1,
+    "category": "Control"
+  },
+  {
+    "name": "Sweep",
+    "description": "Triggered linear ramp. Ramps up from zero at a given rate when triggered.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger to reset to zero"},
+      {"name": "rate", "type": "float", "default": 1.0, "description": "Rate of increase per second"}
+    ],
+    "outputs": 1,
+    "category": "Control"
+  },
+  {
+    "name": "Select",
+    "description": "Select one of many inputs. Outputs one signal from an array based on index.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "which", "type": "float", "default": 0.0, "description": "Index of signal to output (0-based, rounded)"},
+      {"name": "array", "type": "signal", "default": 0.0, "description": "Array of signals to choose from"}
+    ],
+    "outputs": 1,
+    "category": "Control"
+  },
+  {
+    "name": "SelectX",
+    "description": "Crossfade between multiple inputs. Like Select but with smooth crossfading.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "which", "type": "float", "default": 0.0, "description": "Crossfade position (0 to N-1)"},
+      {"name": "array", "type": "signal", "default": 0.0, "description": "Array of signals to crossfade between"}
+    ],
+    "outputs": 1,
+    "category": "Control"
+  },
+  {
+    "name": "Timer",
+    "description": "Counts time between triggers. Measures time elapsed since last trigger.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger to reset timer to zero"}
+    ],
+    "outputs": 1,
+    "category": "Control"
+  },
+  {
+    "name": "LFGauss",
+    "description": "Gaussian function oscillator. Generates a repeated Gaussian (bell curve) shape.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "duration", "type": "float", "default": 1.0, "description": "Duration of one Gaussian cycle in seconds"},
+      {"name": "width", "type": "float", "default": 0.1, "description": "Width of the bell curve (smaller=narrower)"},
+      {"name": "iphase", "type": "float", "default": 0.0, "description": "Initial phase (0 to 1)"},
+      {"name": "loop", "type": "float", "default": 1.0, "description": "Whether to loop (1) or oneshot (0)"},
+      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Done action when oneshot completes"}
+    ],
+    "outputs": 1,
+    "category": "Control"
+  }
+]
+

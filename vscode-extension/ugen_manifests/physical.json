@@ -1,0 +1,55 @@
+[
+  {
+    "name": "Pluck",
+    "description": "Karplus-Strong plucked string physical model. Classic string synthesis algorithm.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Excitation signal (typically a burst of noise)"},
+      {"name": "trig", "type": "signal", "default": 1.0, "description": "Trigger resets the string"},
+      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time. Sets buffer size"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds. Inversely related to pitch"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for sound to decay by 60dB"},
+      {"name": "coef", "type": "float", "default": 0.5, "description": "Filter coefficient for the loop filter"}
+    ],
+    "outputs": 1,
+    "category": "Physical"
+  },
+  {
+    "name": "Spring",
+    "description": "Physical model of a resonating spring. Useful for metallic sounds.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Excitation/driving signal"},
+      {"name": "spring", "type": "float", "default": 1.0, "description": "Spring constant"},
+      {"name": "damp", "type": "float", "default": 0.0, "description": "Damping factor"}
+    ],
+    "outputs": 1,
+    "category": "Physical"
+  },
+  {
+    "name": "Ball",
+    "description": "Physical model of a bouncing ball. Models a ball bouncing in a box.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Modulates the force applied to the ball"},
+      {"name": "g", "type": "float", "default": 1.0, "description": "Gravity. 1.0 = standard gravity"},
+      {"name": "damp", "type": "float", "default": 0.0, "description": "Damping factor (energy loss on bounce)"},
+      {"name": "friction", "type": "float", "default": 0.01, "description": "Friction factor"}
+    ],
+    "outputs": 1,
+    "category": "Physical"
+  },
+  {
+    "name": "TBall",
+    "description": "Triggered bouncing ball physical model. Like Ball but with trigger control.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Trigger input to drop the ball"},
+      {"name": "g", "type": "float", "default": 10.0, "description": "Gravity constant"},
+      {"name": "damp", "type": "float", "default": 0.0, "description": "Damping factor"},
+      {"name": "friction", "type": "float", "default": 0.01, "description": "Friction factor"}
+    ],
+    "outputs": 1,
+    "category": "Physical"
+  }
+]

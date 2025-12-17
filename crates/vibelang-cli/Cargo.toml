@@ -36,7 +36,7 @@ log = "0.4"
 env_logger = "0.11"
 
 # Signal handling
-ctrlc = "3.4"
+signal-hook = "0.3"
 
 # TUI
 ratatui = "0.28"
@@ -55,3 +55,19 @@ tempfile = "3.10"
 which = "7"
 rosc = "0.11"
 tar = "0.4"
+
+# HTTP REST API server
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-std"] }
+tower-http = { version = "0.6", features = ["cors"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+futures = "0.3"
+uuid = { version = "1.0", features = ["v4"] }
+
+# LSP server
+tower-lsp = "0.20"
+async-trait = "0.1"
+ropey = "1.6"
+dashmap = "6"
+regex = "1"

@@ -15,6 +15,8 @@
 //! - `vibe run <file>` - Run a .vibe file interactively (default)
 //! - `vibe render <file>` - Render a .vibe file to audio
 
+mod http_server;
+mod lsp;
 mod render;
 mod tui;
 
@@ -25,6 +27,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use rhai::AST;
+use vibelang_core::api::context;
 use vibelang_core::state::StateMessage;
 use vibelang_core::RuntimeHandle;
 
@@ -52,6 +55,14 @@ struct Cli {
     /// Additional import directories
     #[arg(short = 'I', long = "import-path", value_name = "PATH", global = true)]
     import_paths: Vec<PathBuf>,
+
+    /// Enable HTTP REST API server (can run without a file)
+    #[arg(long, global = true)]
+    api: bool,
+
+    /// HTTP API server port (default: 1606)
+    #[arg(long, value_name = "PORT", default_value = "1606", global = true)]
+    api_port: u16,
 }
 
 #[derive(Subcommand, Debug)]
@@ -61,13 +72,16 @@ enum Commands {
 
     /// Render a .vibe file to an audio file (offline)
     Render(RenderArgs),
+
+    /// Start the Language Server Protocol (LSP) server
+    Lsp,
 }
 
 #[derive(Args, Debug)]
 struct RunArgs {
-    /// Path to the .vibe file to execute
+    /// Path to the .vibe file to execute (optional when using --api)
     #[arg(value_name = "FILE")]
-    file: PathBuf,
+    file: Option<PathBuf>,
 
     /// Disable watch mode (watching is enabled by default)
     #[arg(long)]
@@ -89,6 +103,14 @@ struct RunArgs {
     /// Exit automatically when the specified sequence completes (useful with --record)
     #[arg(long, value_name = "NAME")]
     exit_after_sequence: Option<String>,
+
+    /// Enable HTTP REST API server
+    #[arg(long)]
+    api: bool,
+
+    /// HTTP API server port (default: 1606)
+    #[arg(long, value_name = "PORT", default_value = "1606")]
+    api_port: u16,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -124,21 +146,36 @@ fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Run(args)) => {
             let watch = !args.no_watch;
-            run_vibe_file(args.file, watch, args.tui, args.import_paths, args.record, args.exit_after_sequence)
+            // Validate: file is required unless --api is specified
+            if args.file.is_none() && !args.api {
+                anyhow::bail!(
+                    "Missing required argument: FILE\n\n\
+                    Usage: vibe run <FILE> [OPTIONS]\n\
+                           vibe run --api           (API-only mode, no file needed)\n\n\
+                    For more information, try '--help'"
+                );
+            }
+            run_vibe_file(args.file, watch, args.tui, args.import_paths, args.record, args.exit_after_sequence, args.api, args.api_port)
         }
         Some(Commands::Render(args)) => {
             render::render(args)
         }
+        Some(Commands::Lsp) => {
+            // Run the LSP server
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(lsp::run_lsp_server())
+        }
         None => {
-            // No subcommand - check if a file was provided directly
-            if let Some(file) = cli.file {
+            // No subcommand - check if a file was provided directly or if --api is enabled
+            if cli.file.is_some() || cli.api {
                 let watch = !cli.no_watch;
-                run_vibe_file(file, watch, cli.tui, cli.import_paths, None, None)
+                run_vibe_file(cli.file, watch, cli.tui, cli.import_paths, None, None, cli.api, cli.api_port)
             } else {
                 anyhow::bail!(
                     "Missing required argument: FILE\n\n\
                     Usage: vibe <FILE> [OPTIONS]\n\
                            vibe run <FILE> [OPTIONS]\n\
+                           vibe --api               (API-only mode, no file needed)\n\
                            vibe render <SCORE_FILE> [OPTIONS]\n\n\
                     For more information, try '--help'"
                 )
@@ -148,12 +185,14 @@ fn main() -> Result<()> {
 }
 
 fn run_vibe_file(
-    file: PathBuf,
+    file: Option<PathBuf>,
     watch: bool,
     tui_mode: bool,
     import_paths: Vec<PathBuf>,
     record: Option<PathBuf>,
     exit_after_sequence: Option<String>,
+    api_enabled: bool,
+    api_port: u16,
 ) -> Result<()> {
     use vibelang_core::JackMidiOutput;
 
@@ -181,23 +220,35 @@ fn run_vibe_file(
         None
     };
 
-    // Validate the file exists
-    if !file.exists() {
-        anyhow::bail!("File not found: {}", file.display());
-    }
+    // Validate the file exists (if provided)
+    if let Some(ref f) = file {
+        if !f.exists() {
+            anyhow::bail!("File not found: {}", f.display());
+        }
 
-    // Check file extension
-    if file.extension().and_then(|s| s.to_str()) != Some("vibe") {
-        log::warn!("File doesn't have .vibe extension");
-    }
+        // Check file extension
+        if f.extension().and_then(|s| s.to_str()) != Some("vibe") {
+            log::warn!("File doesn't have .vibe extension");
+        }
 
-    if !tui_mode {
-        println!("🎵 VibeLang - SuperCollider Live Coding");
-        println!("=======================================\n");
-        println!("📄 Loading: {}\n", file.display());
+        if !tui_mode {
+            println!("🎵 VibeLang - SuperCollider Live Coding");
+            println!("=======================================\n");
+            println!("📄 Loading: {}\n", f.display());
+        } else {
+            log::info!("🎵 VibeLang - SuperCollider Live Coding");
+            log::info!("📄 Loading: {}", f.display());
+        }
     } else {
-        log::info!("🎵 VibeLang - SuperCollider Live Coding");
-        log::info!("📄 Loading: {}", file.display());
+        // API-only mode
+        if !tui_mode {
+            println!("🎵 VibeLang - SuperCollider Live Coding");
+            println!("=======================================\n");
+            println!("🌐 API-only mode (no script file)\n");
+        } else {
+            log::info!("🎵 VibeLang - SuperCollider Live Coding");
+            log::info!("🌐 API-only mode (no script file)");
+        }
     }
 
     // 1-3. Start runtime (includes scsynth process, connection, and runtime thread)
@@ -236,9 +287,10 @@ fn run_vibe_file(
     // 6. Create Rhai engine
     log::info!("6. Initializing Rhai engine...");
     let base_path = file
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("Could not determine parent directory of file"))?
-        .to_path_buf();
+        .as_ref()
+        .and_then(|f| f.parent())
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
     // Create engine with import paths
     let mut all_import_paths = import_paths.clone();
@@ -287,29 +339,40 @@ fn run_vibe_file(
         handle.send(StateMessage::EnableScoreCapture { path: score_capture_path.clone() })?;
     }
 
-    // 7. Read and compile the script
-    log::info!("7. Compiling .vibe file...");
-    let script = fs::read_to_string(&file)
-        .with_context(|| format!("Failed to read file: {}", file.display()))?;
-
     // Clear any existing callbacks and MIDI devices from previous runs
     vibelang_core::api::clear_callbacks();
     vibelang_core::api::clear_midi_devices();
 
-    // Compile the script to AST (we need the AST for callback execution)
-    let mut current_ast: Option<AST> = match engine.compile(&script) {
-        Ok(ast) => {
-            log::info!("   ✓ Script compiled successfully");
-            Some(ast)
+    // 7. Read and compile the script (if a file was provided)
+    let mut current_ast: Option<AST> = if let Some(ref f) = file {
+        log::info!("7. Compiling .vibe file...");
+        let script = fs::read_to_string(f)
+            .with_context(|| format!("Failed to read file: {}", f.display()))?;
+
+        // Compile the script to AST (we need the AST for callback execution)
+        match engine.compile(&script) {
+            Ok(ast) => {
+                log::info!("   ✓ Script compiled successfully");
+                Some(ast)
+            }
+            Err(e) => {
+                log::error!("Compile error: {}", e);
+                None
+            }
         }
-        Err(e) => {
-            log::error!("Compile error: {}", e);
-            None
-        }
+    } else {
+        log::info!("7. No script file - API-only mode");
+        None
     };
 
     // Execute the compiled AST
     if let Some(ref ast) = current_ast {
+        // Set the current script file for source location tracking
+        if let Some(ref f) = file {
+            let abs_path = f.canonicalize().unwrap_or_else(|_| f.clone());
+            context::set_current_script_file(Some(abs_path.to_string_lossy().to_string()));
+        }
+
         match engine.run_ast(ast) {
             Ok(_) => {
                 log::info!("   ✓ Script executed successfully");
@@ -331,62 +394,52 @@ fn run_vibe_file(
     handle.send(StateMessage::FinalizeGroups)?;
     std::thread::sleep(std::time::Duration::from_millis(200));
 
+    // Create eval channel for the HTTP server to send code evaluation requests
+    let (eval_tx, eval_rx) = std::sync::mpsc::channel::<http_server::EvalJob>();
+
+    // Start HTTP API server if enabled
+    if api_enabled {
+        let api_handle = handle.clone();
+        let eval_sender = eval_tx.clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+            rt.block_on(async {
+                http_server::start_server(api_handle, api_port, Some(eval_sender)).await;
+            });
+        });
+        log::info!("   ✓ HTTP API server started on port {}", api_port);
+    }
+
     // Keep the process running
     if tui_mode {
         // TUI mode - run the TUI event loop
-        run_tui_loop(&file, engine, handle.clone(), watch, &import_paths, current_ast, jack_keyboard)?;
+        run_tui_loop(file.as_ref(), engine, handle.clone(), watch, &import_paths, current_ast, jack_keyboard)?;
     } else {
-        // Set up Ctrl-C handler with record support
-        let ctrlc_handle = handle.clone();
-        let is_recording = record.is_some();
-        let ctrlc_score_path = score_capture_path.clone();
-        let ctrlc_render_path = render_output_path.clone();
-        ctrlc::set_handler(move || {
-            log::info!("\n\n⚠️  Interrupted by user (Ctrl+C)");
-            // Disable score capture to flush and save the file
-            if is_recording {
-                log::info!("📼 Stopping recording and saving score file...");
-                let _ = ctrlc_handle.send(StateMessage::DisableScoreCapture);
-                // Give time for the message to be processed
-                std::thread::sleep(std::time::Duration::from_millis(500));
+        // Set up signal handlers for graceful shutdown (SIGINT and SIGTERM)
+        let shutdown = Arc::new(AtomicBool::new(false));
 
-                // Auto-render if output is an audio format
-                if let Some(ref output_path) = ctrlc_render_path {
-                    log::info!("🎬 Rendering audio...");
-                    let render_args = crate::RenderArgs {
-                        score_file: ctrlc_score_path.clone(),
-                        output: output_path.clone(),
-                        format: None,
-                        sample_rate: 48000,
-                        bit_depth: 24,
-                        tail: 2.0,
-                    };
-                    if let Err(e) = crate::render::render_score(render_args) {
-                        log::error!("Render failed: {}", e);
-                    } else {
-                        // Clean up temp score file
-                        let _ = std::fs::remove_file(&ctrlc_score_path);
-                    }
-                }
-            }
-            log::info!("👋 Exiting...");
-            std::process::exit(0);
-        })
-        .expect("Error setting Ctrl-C handler");
+        // Register SIGINT (Ctrl+C) and SIGTERM handlers
+        for sig in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+            signal_hook::flag::register(sig, Arc::clone(&shutdown))
+                .expect("Failed to register signal handler");
+        }
 
         // Log status message
         if let Some(ref seq_name) = exit_after_sequence {
             log::info!("\n8. Waiting for sequence '{}' to complete...", seq_name);
-        } else if watch {
+        } else if watch && file.is_some() {
             log::info!("\n8. Watch mode enabled - monitoring file for changes...");
+            log::info!("   (Press Ctrl+C to exit)\n");
+        } else if api_enabled {
+            log::info!("\n8. API server running on http://localhost:{}", api_port);
             log::info!("   (Press Ctrl+C to exit)\n");
         } else {
             log::info!("\n8. Script running... (Press Ctrl+C to exit)");
         }
 
-        // Simple watch loop - poll file modification time
-        let mut last_modified = fs::metadata(&file)
-            .ok()
+        // Simple watch loop - poll file modification time (only if file provided)
+        let mut last_modified = file.as_ref()
+            .and_then(|f| fs::metadata(f).ok())
             .and_then(|m| m.modified().ok());
 
         // Create a scope for callback execution
@@ -394,6 +447,56 @@ fn run_vibe_file(
 
         loop {
             std::thread::sleep(std::time::Duration::from_millis(100));
+
+            // Check for shutdown signal (SIGINT/Ctrl+C or SIGTERM)
+            if shutdown.load(Ordering::Relaxed) {
+                log::info!("\n\n⚠️  Shutdown signal received");
+                // Disable score capture to flush and save the file
+                if record.is_some() {
+                    log::info!("📼 Stopping recording and saving score file...");
+                    let _ = handle.send(StateMessage::DisableScoreCapture);
+                    // Give time for the message to be processed
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+
+                    // Auto-render if output is an audio format
+                    if let Some(ref output_path) = render_output_path {
+                        log::info!("🎬 Rendering audio...");
+                        let render_args = crate::RenderArgs {
+                            score_file: score_capture_path.clone(),
+                            output: output_path.clone(),
+                            format: None,
+                            sample_rate: 48000,
+                            bit_depth: 24,
+                            tail: 2.0,
+                        };
+                        if let Err(e) = crate::render::render_score(render_args) {
+                            log::error!("Render failed: {}", e);
+                        } else {
+                            // Clean up temp score file
+                            let _ = std::fs::remove_file(&score_capture_path);
+                        }
+                    }
+                }
+                log::info!("👋 Exiting gracefully...");
+                break;
+            }
+
+            // Process any pending eval requests from the HTTP server
+            while let Ok(job) = eval_rx.try_recv() {
+                let result = match engine.eval::<rhai::Dynamic>(&job.code) {
+                    Ok(val) => http_server::EvalResult {
+                        success: true,
+                        result: if val.is_unit() { None } else { Some(format!("{:?}", val)) },
+                        error: None,
+                    },
+                    Err(e) => http_server::EvalResult {
+                        success: false,
+                        result: None,
+                        error: Some(e.to_string()),
+                    },
+                };
+                let _ = job.response_tx.send(result);
+            }
 
             // Execute any pending MIDI callbacks
             if let Some(ref ast) = current_ast {
@@ -441,66 +544,78 @@ fn run_vibe_file(
                 }
             }
 
-            // Check for file changes if watch mode is enabled
+            // Check for file changes if watch mode is enabled and a file was provided
             if watch {
-                let current_modified = fs::metadata(&file)
-                    .ok()
-                    .and_then(|m| m.modified().ok());
+                if let Some(ref f) = file {
+                    let current_modified = fs::metadata(f)
+                        .ok()
+                        .and_then(|m| m.modified().ok());
 
-                if current_modified != last_modified {
-                    last_modified = current_modified;
-                    log::info!("\n🔄 File changed, reloading...");
+                    if current_modified != last_modified {
+                        last_modified = current_modified;
+                        log::info!("\n🔄 File changed, reloading...");
 
-                    // Signal reload
-                    if let Some(h) = vibelang_core::get_handle() {
-                        let _ = h.send(StateMessage::BeginReload);
-                    }
+                        // Signal reload
+                        if let Some(h) = vibelang_core::get_handle() {
+                            let _ = h.send(StateMessage::BeginReload);
+                        }
 
-                    // Clear existing callbacks and MIDI devices before reload
-                    vibelang_core::api::clear_callbacks();
-                    vibelang_core::api::clear_midi_devices();
+                        // Clear existing callbacks and MIDI devices before reload
+                        vibelang_core::api::clear_callbacks();
+                        vibelang_core::api::clear_midi_devices();
 
-                    // Re-read, compile, and execute
-                    match fs::read_to_string(&file) {
-                        Ok(new_script) => {
-                            match engine.compile(&new_script) {
-                                Ok(ast) => {
-                                    match engine.run_ast(&ast) {
-                                        Ok(_) => {
-                                            log::info!("   ✓ Reload successful");
-                                            // Update the current AST for callback execution
-                                            current_ast = Some(ast);
-                                        }
-                                        Err(e) => {
-                                            log::error!("   Reload failed: {}", e);
+                        // Re-read, compile, and execute
+                        match fs::read_to_string(f) {
+                            Ok(new_script) => {
+                                match engine.compile(&new_script) {
+                                    Ok(ast) => {
+                                        // Set the current script file for source location tracking
+                                        let abs_path = f.canonicalize().unwrap_or_else(|_| f.clone());
+                                        context::set_current_script_file(Some(abs_path.to_string_lossy().to_string()));
+
+                                        match engine.run_ast(&ast) {
+                                            Ok(_) => {
+                                                log::info!("   ✓ Reload successful");
+                                                // Update the current AST for callback execution
+                                                current_ast = Some(ast);
+                                            }
+                                            Err(e) => {
+                                                log::error!("   Reload failed: {}", e);
+                                            }
                                         }
                                     }
-                                }
-                                Err(e) => {
-                                    log::error!("   Compile failed: {}", e);
+                                    Err(e) => {
+                                        log::error!("   Compile failed: {}", e);
+                                    }
                                 }
                             }
+                            Err(e) => {
+                                log::error!("   Failed to read file: {}", e);
+                            }
                         }
-                        Err(e) => {
-                            log::error!("   Failed to read file: {}", e);
-                        }
-                    }
 
-                    // Finalize groups after reload
-                    if let Some(h) = vibelang_core::get_handle() {
-                        let _ = h.send(StateMessage::FinalizeGroups);
+                        // Finalize groups after reload
+                        if let Some(h) = vibelang_core::get_handle() {
+                            let _ = h.send(StateMessage::FinalizeGroups);
+                        }
                     }
                 }
             }
         }
     }
 
+    // Explicitly shutdown the runtime to ensure scsynth is killed
+    // This triggers Runtime::drop() which kills the scsynth child process
+    log::info!("🔌 Shutting down runtime...");
+    drop(runtime);
+    log::info!("   ✓ Runtime shutdown complete");
+
     Ok(())
 }
 
 /// Run the TUI event loop
 fn run_tui_loop(
-    vibe_file: &PathBuf,
+    vibe_file: Option<&PathBuf>,
     engine: rhai::Engine,
     handle: RuntimeHandle,
     watch: bool,
@@ -519,8 +634,8 @@ fn run_tui_loop(
     let tui_thread = std::thread::spawn(move || run_tui_render_thread(shutdown_clone, tui_handle, jack_keyboard));
 
     // Main thread handles file watching, reloading, and callback execution
-    let mut last_modified = fs::metadata(vibe_file)
-        .ok()
+    let mut last_modified = vibe_file
+        .and_then(|f| fs::metadata(f).ok())
         .and_then(|m| m.modified().ok());
 
     // Track current AST for callback execution
@@ -545,37 +660,42 @@ fn run_tui_loop(
             }
         }
 
-        // Check for file changes if watch mode is enabled
+        // Check for file changes if watch mode is enabled and file provided
         if watch {
-            let current_modified = fs::metadata(vibe_file)
-                .ok()
-                .and_then(|m| m.modified().ok());
+            if let Some(vibe_file) = vibe_file {
+                let current_modified = fs::metadata(vibe_file)
+                    .ok()
+                    .and_then(|m| m.modified().ok());
 
-            if current_modified != last_modified {
-                last_modified = current_modified;
-                log::info!("🔄 File changed, reloading...");
+                if current_modified != last_modified {
+                    last_modified = current_modified;
+                    log::info!("🔄 File changed, reloading...");
 
-                // Signal reload
-                let _ = handle.send(StateMessage::BeginReload);
+                    // Signal reload
+                    let _ = handle.send(StateMessage::BeginReload);
 
-                // Clear existing callbacks and MIDI devices before reload
-                vibelang_core::api::clear_callbacks();
-                vibelang_core::api::clear_midi_devices();
+                    // Clear existing callbacks and MIDI devices before reload
+                    vibelang_core::api::clear_callbacks();
+                    vibelang_core::api::clear_midi_devices();
 
-                // Re-read, compile, and execute
-                match fs::read_to_string(vibe_file) {
-                    Ok(new_script) => {
-                        match engine.compile(&new_script) {
-                            Ok(ast) => {
-                                match engine.run_ast(&ast) {
-                                    Ok(_) => {
-                                        log::info!("✅ Reload successful");
-                                        // Update the current AST for callback execution
-                                        current_ast = Some(ast);
-                                    }
-                                    Err(e) => {
-                                        log::error!("Reload failed: {}", e);
-                                    }
+                    // Re-read, compile, and execute
+                    match fs::read_to_string(vibe_file) {
+                        Ok(new_script) => {
+                            match engine.compile(&new_script) {
+                                Ok(ast) => {
+                                    // Set the current script file for source location tracking
+                                    let abs_path = vibe_file.canonicalize().unwrap_or_else(|_| vibe_file.to_path_buf());
+                                    context::set_current_script_file(Some(abs_path.to_string_lossy().to_string()));
+
+                                    match engine.run_ast(&ast) {
+                                        Ok(_) => {
+                                            log::info!("✅ Reload successful");
+                                            // Update the current AST for callback execution
+                                            current_ast = Some(ast);
+                                        }
+                                        Err(e) => {
+                                            log::error!("Reload failed: {}", e);
+                                        }
                                 }
                             }
                             Err(e) => {
@@ -590,6 +710,7 @@ fn run_tui_loop(
 
                 // Finalize groups after reload
                 let _ = handle.send(StateMessage::FinalizeGroups);
+                }
             }
         }
 

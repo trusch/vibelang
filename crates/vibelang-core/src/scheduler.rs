@@ -45,6 +45,9 @@ pub struct LoopSnapshot {
 pub struct EventScheduler {
     /// Last scheduled beat per loop (prevents duplicate scheduling).
     loop_last_scheduled: HashMap<String, BeatTime>,
+    /// Beat position to use as default for new loops (prevents event burst on restart).
+    /// Set to current beat minus epsilon on reset to allow scheduling from beat 0.
+    default_last_scheduled: BeatTime,
 }
 
 impl Default for EventScheduler {
@@ -58,19 +61,43 @@ impl EventScheduler {
     pub fn new() -> Self {
         Self {
             loop_last_scheduled: HashMap::new(),
+            // Default to -1.0 for initial state, will be updated on reset
+            default_last_scheduled: BeatTime::from_float(-1.0),
         }
     }
 
     /// Reset all loop tracking state.
     ///
     /// Call this when the transport is stopped or rewound.
-    pub fn reset(&mut self) {
+    /// The `target_beat` parameter sets the starting point for scheduling -
+    /// events at or after this beat will be scheduled on the next tick.
+    pub fn reset_to_beat(&mut self, target_beat: f64) {
         self.loop_last_scheduled.clear();
+        // Set default to just before target beat so events at target_beat are scheduled,
+        // but we won't burst through events before target_beat
+        self.default_last_scheduled = BeatTime::from_float(target_beat - 0.001);
+    }
+
+    /// Reset all loop tracking state to beat 0.
+    ///
+    /// Call this when the transport is stopped or rewound to the beginning.
+    pub fn reset(&mut self) {
+        self.reset_to_beat(0.0);
     }
 
     /// Reset tracking for a specific loop.
     pub fn reset_loop(&mut self, name: &str) {
         self.loop_last_scheduled.remove(name);
+    }
+
+    /// Sync all last_scheduled positions to a specific beat without clearing loop tracking.
+    /// Use this for pause/resume to prevent event bursts.
+    pub fn sync_to_beat(&mut self, beat: f64) {
+        let beat_time = BeatTime::from_float(beat);
+        for last_scheduled in self.loop_last_scheduled.values_mut() {
+            *last_scheduled = beat_time;
+        }
+        self.default_last_scheduled = beat_time;
     }
 
     /// Collect all events that are due within the lookahead window.
@@ -106,11 +133,12 @@ impl EventScheduler {
             }
 
             // Get the last scheduled beat for this specific loop
+            // Use default_last_scheduled instead of -1.0 to prevent event burst on restart
             let loop_last_scheduled = self
                 .loop_last_scheduled
                 .get(&snapshot.name)
                 .copied()
-                .unwrap_or(BeatTime::from_float(-1.0));
+                .unwrap_or(self.default_last_scheduled);
 
             let mut max_beat_for_this_loop = loop_last_scheduled;
 

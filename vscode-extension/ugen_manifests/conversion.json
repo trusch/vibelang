@@ -1,0 +1,63 @@
+[
+  {
+    "name": "K2A",
+    "description": "Control rate to audio rate converter. Converts a control rate signal to audio rate.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Control rate input signal"}
+    ],
+    "outputs": 1,
+    "category": "Conversion"
+  },
+  {
+    "name": "A2K",
+    "description": "Audio rate to control rate converter. Decimates audio rate signal to control rate.",
+    "rates": ["kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Audio rate input signal"}
+    ],
+    "outputs": 1,
+    "category": "Conversion"
+  },
+  {
+    "name": "DC",
+    "description": "DC offset generator. Generates a constant signal at audio or control rate.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "float", "default": 0.0, "description": "Constant value to output"}
+    ],
+    "outputs": 1,
+    "category": "Conversion"
+  },
+  {
+    "name": "T2A",
+    "description": "Trigger to audio rate converter. Converts control rate triggers to audio rate impulses.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Control or audio rate trigger input"},
+      {"name": "offset", "type": "float", "default": 0.0, "description": "Sample offset within the control period"}
+    ],
+    "outputs": 1,
+    "category": "Conversion"
+  },
+  {
+    "name": "T2K",
+    "description": "Trigger to control rate converter. Converts audio rate triggers to control rate.",
+    "rates": ["kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Audio rate trigger input"}
+    ],
+    "outputs": 1,
+    "category": "Conversion"
+  },
+  {
+    "name": "Silence",
+    "description": "Silent audio bus. Outputs silence on a specified number of channels.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 1.0, "description": "Number of channels of silence to generate"}
+    ],
+    "outputs": 1,
+    "category": "Conversion"
+  }
+]

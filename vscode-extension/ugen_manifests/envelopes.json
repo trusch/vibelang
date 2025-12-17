@@ -1,0 +1,116 @@
+[
+  {
+    "name": "EnvGen",
+    "description": "Envelope generator. Plays back break-point envelopes specified by arrays of levels and times.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "gate", "type": "float", "default": 1.0, "description": "Trigger signal. When gate goes from <=0 to >0, envelope is triggered"},
+      {"name": "levelScale", "type": "float", "default": 1.0, "description": "Scales all levels"},
+      {"name": "levelBias", "type": "float", "default": 0.0, "description": "Offset added to all levels"},
+      {"name": "timeScale", "type": "float", "default": 1.0, "description": "Scales all time values"},
+      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Action to perform when envelope finishes (0=none, 2=free synth)"}
+    ],
+    "outputs": 1,
+    "category": "Envelopes"
+  },
+  {
+    "name": "Line",
+    "description": "Line generator. Generates a line from start value to end value over a specified duration.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "start", "type": "float", "default": 0.0, "description": "Starting value"},
+      {"name": "end", "type": "float", "default": 1.0, "description": "Ending value"},
+      {"name": "dur", "type": "float", "default": 1.0, "description": "Duration in seconds"},
+      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Action when line completes"}
+    ],
+    "outputs": 1,
+    "category": "Envelopes"
+  },
+  {
+    "name": "XLine",
+    "description": "Exponential line generator. Generates an exponential curve from start to end value.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "start", "type": "float", "default": 1.0, "description": "Starting value (must be non-zero)"},
+      {"name": "end", "type": "float", "default": 2.0, "description": "Ending value (must be non-zero and same sign as start)"},
+      {"name": "dur", "type": "float", "default": 1.0, "description": "Duration in seconds"},
+      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Action when line completes"}
+    ],
+    "outputs": 1,
+    "category": "Envelopes"
+  },
+  {
+    "name": "Lag",
+    "description": "Exponential lag. Smooths a signal with exponential lag, like an RC filter.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "lagTime", "type": "float", "default": 0.1, "description": "60dB lag time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "Envelopes"
+  },
+  {
+    "name": "LagUD",
+    "description": "Exponential lag with different lag times for up and down movement.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "lagTimeU", "type": "float", "default": 0.1, "description": "Lag time for upward movement"},
+      {"name": "lagTimeD", "type": "float", "default": 0.1, "description": "Lag time for downward movement"}
+    ],
+    "outputs": 1,
+    "category": "Envelopes"
+  },
+  {
+    "name": "VarLag",
+    "description": "Variable lag with different interpolation curves. Allows for exponential, linear, or custom curves.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "time", "type": "float", "default": 0.1, "description": "Lag time in seconds"},
+      {"name": "curvature", "type": "float", "default": 0.0, "description": "Curvature of lag. 0=linear, positive=exponential, negative=logarithmic"},
+      {"name": "warp", "type": "float", "default": 5.0, "description": "Warp factor for shaping the curve"},
+      {"name": "start", "type": "float", "default": 0.0, "description": "Initial value"}
+    ],
+    "outputs": 1,
+    "category": "Envelopes"
+  },
+  {
+    "name": "Decay",
+    "description": "Triggerable exponential decay. When triggered, jumps to 1 and decays to 0.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Trigger signal. Positive values trigger the decay"},
+      {"name": "decayTime", "type": "float", "default": 1.0, "description": "60dB decay time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "Envelopes"
+  },
+  {
+    "name": "Decay2",
+    "description": "Triggerable exponential attack and decay envelope. Attack goes to 1, then decays to 0.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Trigger signal"},
+      {"name": "attackTime", "type": "float", "default": 0.01, "description": "Attack time in seconds"},
+      {"name": "decayTime", "type": "float", "default": 1.0, "description": "Decay time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "Envelopes"
+  },
+  {
+    "name": "Linen",
+    "description": "Simple linear attack, sustain, release envelope generator.",
+    "rates": ["kr"],
+    "inputs": [
+      {"name": "gate", "type": "float", "default": 1.0, "description": "Gate signal. Envelope starts on positive transition, releases on negative"},
+      {"name": "attackTime", "type": "float", "default": 0.01, "description": "Attack time in seconds"},
+      {"name": "susLevel", "type": "float", "default": 1.0, "description": "Sustain level (0 to 1)"},
+      {"name": "releaseTime", "type": "float", "default": 1.0, "description": "Release time in seconds"},
+      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Action when envelope completes"}
+    ],
+    "outputs": 1,
+    "category": "Envelopes"
+  }
+]

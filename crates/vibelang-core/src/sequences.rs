@@ -16,6 +16,7 @@
 //!     ));
 //! ```
 
+use crate::api::context::SourceLocation;
 use crate::events::FadeTargetType;
 
 /// Source that can be placed into a [`SequenceClip`].
@@ -131,6 +132,8 @@ pub struct SequenceDefinition {
     pub generation: u64,
     /// If true, sequence stops after one iteration instead of looping.
     pub play_once: bool,
+    /// Source location where this sequence was defined.
+    pub source_location: SourceLocation,
 }
 
 impl SequenceDefinition {
@@ -142,7 +145,14 @@ impl SequenceDefinition {
             clips: Vec::new(),
             generation: 0,
             play_once: false,
+            source_location: SourceLocation::default(),
         }
+    }
+
+    /// Set source location for this sequence.
+    pub fn with_source_location(mut self, source_location: SourceLocation) -> Self {
+        self.source_location = source_location;
+        self
     }
 
     /// Set the loop length in beats.

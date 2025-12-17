@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { DataLoader, UGenDefinition, RhaiFunction } from '../utils/dataLoader';
+import { DataLoader, UGenDefinition, RhaiFunction, StdlibItem } from '../utils/dataLoader';
 
 export class VibelangHoverProvider implements vscode.HoverProvider {
     private extensionPath: string;
@@ -51,6 +51,33 @@ export class VibelangHoverProvider implements vscode.HoverProvider {
              });
              markdown.appendMarkdown(`\n**Outputs:** ${matchedUGen.outputs}`);
              return new vscode.Hover(markdown);
+        }
+
+        // 3. Check Standard Library (instruments, effects, utilities)
+        // Check both with and without quotes since user might hover over string content
+        const cleanWord = word.replace(/^["']|["']$/g, ''); // Remove surrounding quotes if any
+        const stdlib = DataLoader.loadStdlib(this.extensionPath);
+        const matchedStdlib = stdlib.find(s => s.name === word || s.name === cleanWord);
+
+        if (matchedStdlib) {
+            const markdown = new vscode.MarkdownString();
+            const typeIcon = matchedStdlib.type === 'instrument' ? '🎹' :
+                            matchedStdlib.type === 'effect' ? '🎛️' : '🔧';
+            markdown.appendMarkdown(`${typeIcon} **${matchedStdlib.name}** (${matchedStdlib.category})\n\n`);
+            markdown.appendMarkdown(`${matchedStdlib.description}\n\n`);
+
+            if (matchedStdlib.parameters && matchedStdlib.parameters.length > 0) {
+                markdown.appendMarkdown(`**Parameters:**\n`);
+                matchedStdlib.parameters.forEach(param => {
+                    markdown.appendMarkdown(`- \`${param.name}\` (${param.type}): ${param.description} (default: ${param.default})\n`);
+                });
+                markdown.appendMarkdown('\n');
+            }
+
+            if (matchedStdlib.example) {
+                markdown.appendMarkdown(`**Example:**\n\`\`\`vibe\n${matchedStdlib.example}\n\`\`\``);
+            }
+            return new vscode.Hover(markdown);
         }
 
         return null;

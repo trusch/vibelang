@@ -33,6 +33,7 @@ pub mod scsynth_process;
 pub mod sequences;
 pub mod state;
 pub mod timing;
+pub mod validation;
 
 // Re-export main types for convenience
 pub use events::{ActiveFade, BeatEvent, FadeClip, FadeTargetType, Pattern};
@@ -42,7 +43,7 @@ pub use scheduler::{EventScheduler, LoopKind, LoopSnapshot};
 pub use scsynth::{AddAction, BufNum, NodeId, Scsynth, Target};
 pub use scsynth_process::ScsynthProcess;
 pub use runtime::{Runtime, RuntimeHandle};
-pub use score::{ScoreWriter, ScoredEvent, beats_to_seconds, seconds_to_osc_time};
+pub use score::{ScoreWriter, ScoredEvent, beats_to_seconds, seconds_to_osc_time, extract_synthdef_name};
 pub use sequences::{ClipMode, ClipSource, FadeDefinition, SequenceClip, SequenceDefinition};
 pub use state::{
     ActiveFadeJob, ActiveSequence, ActiveSynth, EffectState, GroupState,
@@ -62,6 +63,9 @@ pub use midi::{
 
 // Re-export API module
 pub use api::{init_api, get_handle, require_handle, register_api, create_engine, create_engine_with_paths};
+
+// Re-export validation module
+pub use validation::{validate_script, ValidationResult, ValidationError, SynthdefReference};
 
 #[cfg(test)]
 mod tests {

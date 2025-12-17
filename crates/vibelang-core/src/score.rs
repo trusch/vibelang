@@ -340,7 +340,7 @@ fn rewrite_sample_paths(packet: &OscPacket, path_map: &std::collections::HashMap
 /// - 4 bytes: file version
 /// - 2 bytes: number of synthdefs
 /// - pstring: 1 byte length + name bytes
-fn extract_synthdef_name(bytes: &[u8]) -> Option<String> {
+pub fn extract_synthdef_name(bytes: &[u8]) -> Option<String> {
     if bytes.len() < 12 {
         return None;
     }

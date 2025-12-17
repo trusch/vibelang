@@ -5,10 +5,11 @@
 
 use crate::sequences::{ClipMode, ClipSource, FadeDefinition, SequenceClip, SequenceDefinition};
 use crate::state::StateMessage;
-use rhai::{CustomType, Dynamic, Engine, EvalAltResult, Position, TypeBuilder};
+use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::ops::Range;
 
-use super::{context, require_handle};
+use super::context::{self, SourceLocation};
+use super::require_handle;
 
 /// A Sequence builder for creating timeline arrangements.
 #[derive(Debug, Clone, CustomType)]
@@ -21,16 +22,25 @@ pub struct Sequence {
     clips: Vec<(f64, f64, ClipSource, ClipMode)>,
     /// Group path.
     group_path: String,
+    /// Source location where this sequence was defined.
+    source_location: SourceLocation,
 }
 
 impl Sequence {
-    /// Create a new sequence with the given name.
-    pub fn new(name: String) -> Self {
+    /// Create a new sequence with the given name and source location from NativeCallContext.
+    pub fn new(ctx: NativeCallContext, name: String) -> Self {
+        let pos = ctx.call_position();
+        let source_location = SourceLocation::new(
+            context::get_current_script_file(),
+            if pos.is_none() { None } else { pos.line().map(|l| l as u32) },
+            if pos.is_none() { None } else { pos.position().map(|c| c as u32) },
+        );
         Self {
             name,
             loop_beats: 16.0,
             clips: Vec::new(),
             group_path: context::current_group_path(),
+            source_location,
         }
     }
 
@@ -176,6 +186,7 @@ impl Sequence {
             clips,
             generation: 0,
             play_once: false,
+            source_location: self.source_location.clone(),
         };
 
         let _ = handle.send(StateMessage::CreateSequence {
@@ -361,16 +372,25 @@ pub struct Fx {
     params: std::collections::HashMap<String, f64>,
     /// Group path.
     group_path: String,
+    /// Source location where this effect was defined.
+    source_location: SourceLocation,
 }
 
 impl Fx {
-    /// Create a new effect with the given ID.
-    pub fn new(id: String) -> Self {
+    /// Create a new effect with the given ID and source location from NativeCallContext.
+    pub fn new(ctx: NativeCallContext, id: String) -> Self {
+        let pos = ctx.call_position();
+        let source_location = SourceLocation::new(
+            context::get_current_script_file(),
+            if pos.is_none() { None } else { pos.line().map(|l| l as u32) },
+            if pos.is_none() { None } else { pos.position().map(|c| c as u32) },
+        );
         Self {
             id,
             synth_name: None,
             params: std::collections::HashMap::new(),
             group_path: context::current_group_path(),
+            source_location,
         }
     }
 
@@ -407,13 +427,14 @@ impl Fx {
             params,
             bus_in: 0,
             bus_out: 0,
+            source_location: self.source_location.clone(),
         });
     }
 }
 
-/// Create a new sequence builder.
-pub fn sequence(name: String) -> Sequence {
-    Sequence::new(name)
+/// Create a new sequence builder with source location tracking.
+pub fn sequence(ctx: NativeCallContext, name: String) -> Sequence {
+    Sequence::new(ctx, name)
 }
 
 /// Create a new fade builder.
@@ -421,9 +442,9 @@ pub fn fade(name: String) -> Fade {
     Fade::new(name)
 }
 
-/// Create a new fx builder.
-pub fn fx(id: String) -> Fx {
-    Fx::new(id)
+/// Create a new fx builder with source location tracking.
+pub fn fx(ctx: NativeCallContext, id: String) -> Fx {
+    Fx::new(ctx, id)
 }
 
 /// Register sequence, fade, and fx API with the Rhai engine.

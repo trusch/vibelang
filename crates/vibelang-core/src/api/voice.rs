@@ -3,11 +3,12 @@
 //! Voices are the basic sound-producing units in VibeLang.
 
 use crate::state::StateMessage;
-use rhai::{CustomType, Dynamic, Engine, EvalAltResult, Position, TypeBuilder};
+use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::collections::HashMap;
 use vibelang_sfz::SfzInstrumentHandle;
 
-use super::{context, require_handle};
+use super::context::{self, SourceLocation};
+use super::require_handle;
 
 /// A Voice builder for creating and configuring voices.
 #[derive(Debug, Clone, CustomType)]
@@ -30,11 +31,19 @@ pub struct Voice {
     soloed: bool,
     /// SFZ instrument ID (if using SFZ).
     sfz_instrument: Option<String>,
+    /// Source location where this voice was defined.
+    source_location: SourceLocation,
 }
 
 impl Voice {
-    /// Create a new voice with the given name.
-    pub fn new(name: String) -> Self {
+    /// Create a new voice with the given name and source location from NativeCallContext.
+    pub fn new(ctx: NativeCallContext, name: String) -> Self {
+        let pos = ctx.call_position();
+        let source_location = SourceLocation::new(
+            context::get_current_script_file(),
+            if pos.is_none() { None } else { pos.line().map(|l| l as u32) },
+            if pos.is_none() { None } else { pos.position().map(|c| c as u32) },
+        );
         Self {
             name,
             synth_name: None,
@@ -45,6 +54,7 @@ impl Voice {
             muted: false,
             soloed: false,
             sfz_instrument: None,
+            source_location,
         }
     }
 
@@ -308,6 +318,7 @@ impl Voice {
             params,
             sfz_instrument: self.sfz_instrument.clone(),
             vst_instrument: None,
+            source_location: self.source_location.clone(),
         });
     }
 
@@ -336,15 +347,16 @@ impl Voice {
             params,
             sfz_instrument: self.sfz_instrument.clone(),
             vst_instrument: None,
+            source_location: self.source_location.clone(),
         });
 
         self
     }
 }
 
-/// Create a new voice builder.
-pub fn voice(name: String) -> Voice {
-    Voice::new(name)
+/// Create a new voice builder with source location tracking.
+pub fn voice(ctx: NativeCallContext, name: String) -> Voice {
+    Voice::new(ctx, name)
 }
 
 /// Trigger a voice with parameters.
