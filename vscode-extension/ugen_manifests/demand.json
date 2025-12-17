@@ -1,0 +1,121 @@
+[
+  {
+    "name": "Demand",
+    "description": "Demand rate UGen sequencer. Polls demand rate UGens when triggered.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger signal to demand next value"},
+      {"name": "reset", "type": "signal", "default": 0.0, "description": "Resets the demand rate UGens"},
+      {"name": "demandUGens", "type": "signal", "default": 0.0, "description": "Demand rate UGens to poll"}
+    ],
+    "outputs": 1,
+    "category": "Demand"
+  },
+  {
+    "name": "TDuty",
+    "description": "Demand rate trigger generator. Generates triggers with inter-onset times from a demand UGen.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "dur", "type": "signal", "default": 1.0, "description": "Demand UGen providing duration between triggers"},
+      {"name": "reset", "type": "signal", "default": 0.0, "description": "Reset signal"},
+      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Action when sequence completes"},
+      {"name": "level", "type": "signal", "default": 1.0, "description": "Level of output trigger"},
+      {"name": "gapFirst", "type": "float", "default": 0.0, "description": "If 1, waits first duration before first trigger"}
+    ],
+    "outputs": 1,
+    "category": "Demand"
+  },
+  {
+    "name": "Dseq",
+    "description": "Demand rate sequence. Outputs values from an array in sequence.",
+    "rates": ["demand"],
+    "inputs": [
+      {"name": "array", "type": "signal", "default": 0.0, "description": "Array of values to sequence through"},
+      {"name": "repeats", "type": "float", "default": 1.0, "description": "Number of times to repeat the entire sequence"}
+    ],
+    "outputs": 1,
+    "category": "Demand"
+  },
+  {
+    "name": "Dser",
+    "description": "Demand rate series. Outputs values from an array, repeating each value.",
+    "rates": ["demand"],
+    "inputs": [
+      {"name": "array", "type": "signal", "default": 0.0, "description": "Array of values"},
+      {"name": "repeats", "type": "float", "default": 1.0, "description": "Total number of values to output"}
+    ],
+    "outputs": 1,
+    "category": "Demand"
+  },
+  {
+    "name": "Drand",
+    "description": "Demand rate random selection. Randomly selects values from an array.",
+    "rates": ["demand"],
+    "inputs": [
+      {"name": "array", "type": "signal", "default": 0.0, "description": "Array of values to choose from"},
+      {"name": "repeats", "type": "float", "default": 1.0, "description": "Number of values to output"}
+    ],
+    "outputs": 1,
+    "category": "Demand"
+  },
+  {
+    "name": "Dxrand",
+    "description": "Demand rate random without immediate repetition. Like Drand but never repeats the previous value.",
+    "rates": ["demand"],
+    "inputs": [
+      {"name": "array", "type": "signal", "default": 0.0, "description": "Array of values to choose from"},
+      {"name": "repeats", "type": "float", "default": 1.0, "description": "Number of values to output"}
+    ],
+    "outputs": 1,
+    "category": "Demand"
+  },
+  {
+    "name": "Dseries",
+    "description": "Demand rate arithmetic series. Generates start, start+step, start+2*step, etc.",
+    "rates": ["demand"],
+    "inputs": [
+      {"name": "start", "type": "float", "default": 1.0, "description": "Starting value"},
+      {"name": "step", "type": "float", "default": 1.0, "description": "Step size to add each time"},
+      {"name": "length", "type": "float", "default": 100000000.0, "description": "Number of values to generate"}
+    ],
+    "outputs": 1,
+    "category": "Demand"
+  },
+  {
+    "name": "Dgeom",
+    "description": "Demand rate geometric series. Generates start, start*grow, start*grow^2, etc.",
+    "rates": ["demand"],
+    "inputs": [
+      {"name": "start", "type": "float", "default": 1.0, "description": "Starting value"},
+      {"name": "grow", "type": "float", "default": 2.0, "description": "Multiplication factor"},
+      {"name": "length", "type": "float", "default": 100000000.0, "description": "Number of values to generate"}
+    ],
+    "outputs": 1,
+    "category": "Demand"
+  },
+  {
+    "name": "Dbrown",
+    "description": "Demand rate brownian motion. Random walk with specified step size bounds.",
+    "rates": ["demand"],
+    "inputs": [
+      {"name": "lo", "type": "float", "default": 0.0, "description": "Minimum value"},
+      {"name": "hi", "type": "float", "default": 1.0, "description": "Maximum value"},
+      {"name": "step", "type": "float", "default": 0.01, "description": "Maximum step size per iteration"},
+      {"name": "length", "type": "float", "default": 100000000.0, "description": "Number of values to generate"}
+    ],
+    "outputs": 1,
+    "category": "Demand"
+  },
+  {
+    "name": "Dwhite",
+    "description": "Demand rate white noise. Generates random values uniformly distributed between lo and hi.",
+    "rates": ["demand"],
+    "inputs": [
+      {"name": "lo", "type": "float", "default": 0.0, "description": "Minimum value"},
+      {"name": "hi", "type": "float", "default": 1.0, "description": "Maximum value"},
+      {"name": "length", "type": "float", "default": 100000000.0, "description": "Number of values to generate"}
+    ],
+    "outputs": 1,
+    "category": "Demand"
+  }
+]

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "PitchShift",
+    "description": "Time-domain pitch shifter. Changes pitch without changing duration using granular techniques.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to pitch shift"},
+      {"name": "windowSize", "type": "float", "default": 0.2, "description": "Window size in seconds. Larger = better quality for lower pitches"},
+      {"name": "pitchRatio", "type": "float", "default": 1.0, "description": "Pitch ratio. 1.0 = no shift, 2.0 = up one octave, 0.5 = down one octave"},
+      {"name": "pitchDispersion", "type": "float", "default": 0.0, "description": "Amount of random pitch variation (0 to 1)"},
+      {"name": "timeDispersion", "type": "float", "default": 0.0, "description": "Amount of random time variation (0 to 1)"}
+    ],
+    "outputs": 1,
+    "category": "PitchTime"
+  }
+]

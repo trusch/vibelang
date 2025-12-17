@@ -11,8 +11,8 @@ use std::sync::Arc;
 /// UDP-based OSC client for sending messages to scsynth.
 #[derive(Clone)]
 pub struct OscClient {
-    /// The underlying UDP socket.
-    pub sock: Arc<UdpSocket>,
+    /// The underlying UDP socket (None in noop mode).
+    sock: Option<Arc<UdpSocket>>,
     /// Target address in "host:port" format.
     pub addr: String,
 }
@@ -28,9 +28,25 @@ impl OscClient {
     pub fn new<A: Into<String>>(addr: A) -> Result<Self> {
         let sock = UdpSocket::bind("0.0.0.0:0")?;
         Ok(Self {
-            sock: Arc::new(sock),
+            sock: Some(Arc::new(sock)),
             addr: addr.into(),
         })
+    }
+
+    /// Create a no-op OSC client for validation mode.
+    ///
+    /// All send operations will succeed but do nothing.
+    /// Receive operations will return `Ok(None)`.
+    pub fn noop() -> Self {
+        Self {
+            sock: None,
+            addr: "noop".to_string(),
+        }
+    }
+
+    /// Check if this client is in noop mode.
+    pub fn is_noop(&self) -> bool {
+        self.sock.is_none()
     }
 
     /// Send an OSC message with the given path and arguments.
@@ -39,13 +55,17 @@ impl OscClient {
     /// * `path` - The OSC address pattern (e.g., "/s_new", "/n_set")
     /// * `args` - The message arguments
     pub fn send_msg(&self, path: &str, args: Vec<OscType>) -> Result<()> {
+        let sock = match &self.sock {
+            Some(s) => s,
+            None => return Ok(()), // noop mode
+        };
         let msg = OscMessage {
             addr: path.into(),
             args,
         };
         let packet = OscPacket::Message(msg);
         let buf = encoder::encode(&packet)?;
-        self.sock.send_to(&buf, &self.addr)?;
+        sock.send_to(&buf, &self.addr)?;
         Ok(())
     }
 
@@ -55,12 +75,16 @@ impl OscClient {
     /// * `timetag` - Optional NTP timestamp for scheduling (None = immediately)
     /// * `packets` - The messages/bundles to include
     pub fn send_bundle(&self, timetag: Option<OscTime>, packets: Vec<OscPacket>) -> Result<()> {
+        let sock = match &self.sock {
+            Some(s) => s,
+            None => return Ok(()), // noop mode
+        };
         let bundle = OscBundle {
             timetag: timetag.unwrap_or_else(|| OscTime::from((1, 0))),
             content: packets,
         };
         let buf = encoder::encode(&OscPacket::Bundle(bundle))?;
-        self.sock.send_to(&buf, &self.addr)?;
+        sock.send_to(&buf, &self.addr)?;
         Ok(())
     }
 
@@ -72,13 +96,30 @@ impl OscClient {
         })
     }
 
+    /// Send raw encoded bytes directly.
+    ///
+    /// This is useful when you need to send pre-encoded packets.
+    pub fn send_raw(&self, bytes: &[u8]) -> Result<()> {
+        let sock = match &self.sock {
+            Some(s) => s,
+            None => return Ok(()), // noop mode
+        };
+        sock.send_to(bytes, &self.addr)?;
+        Ok(())
+    }
+
     /// Receive an OSC message (blocking).
     ///
     /// # Returns
     /// The decoded OSC packet, or an error.
+    /// In noop mode, this will return an error.
     pub fn recv_msg(&self) -> Result<OscPacket> {
+        let sock = match &self.sock {
+            Some(s) => s,
+            None => return Err(anyhow::anyhow!("Cannot receive in noop mode")),
+        };
         let mut buf = [0u8; 65536];
-        let (size, _) = self.sock.recv_from(&mut buf)?;
+        let (size, _) = sock.recv_from(&mut buf)?;
         let (_, packet) = rosc::decoder::decode_udp(&buf[..size])?;
         Ok(packet)
     }
@@ -87,12 +128,16 @@ impl OscClient {
     ///
     /// # Returns
     /// `Ok(Some(packet))` if a message is available,
-    /// `Ok(None)` if no message is available,
+    /// `Ok(None)` if no message is available (or in noop mode),
     /// or an error if receiving/parsing fails.
     pub fn try_recv_msg(&self) -> Result<Option<OscPacket>> {
-        self.sock.set_nonblocking(true)?;
+        let sock = match &self.sock {
+            Some(s) => s,
+            None => return Ok(None), // noop mode - nothing to receive
+        };
+        sock.set_nonblocking(true)?;
         let mut buf = [0u8; 65536];
-        let result = match self.sock.recv_from(&mut buf) {
+        let result = match sock.recv_from(&mut buf) {
             Ok((size, _)) => match rosc::decoder::decode_udp(&buf[..size]) {
                 Ok((_, packet)) => Ok(Some(packet)),
                 Err(e) => Err(anyhow::anyhow!("Failed to decode OSC packet: {}", e)),
@@ -105,7 +150,7 @@ impl OscClient {
                 }
             }
         };
-        let _ = self.sock.set_nonblocking(false);
+        let _ = sock.set_nonblocking(false);
         result
     }
 }

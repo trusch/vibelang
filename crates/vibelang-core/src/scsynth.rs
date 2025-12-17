@@ -175,6 +175,21 @@ impl Scsynth {
         Ok(Self { osc })
     }
 
+    /// Create a no-op Scsynth for validation mode.
+    ///
+    /// All operations will succeed but do nothing.
+    /// This is useful for validating scripts without a running SuperCollider server.
+    pub fn noop() -> Self {
+        Self {
+            osc: OscClient::noop(),
+        }
+    }
+
+    /// Check if this client is in noop mode.
+    pub fn is_noop(&self) -> bool {
+        self.osc.is_noop()
+    }
+
     /// Load a SynthDef from raw bytes.
     pub fn d_recv_bytes(&self, bytes: Vec<u8>) -> Result<()> {
         self.osc.send_msg("/d_recv", vec![OscType::Blob(bytes)])?;

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { DataLoader, UGenDefinition, RhaiFunction } from '../utils/dataLoader';
+import { DataLoader, UGenDefinition, RhaiFunction, StdlibItem } from '../utils/dataLoader';
 
 export class VibelangCompletionItemProvider implements vscode.CompletionItemProvider {
     private extensionPath: string;
@@ -52,7 +52,46 @@ export class VibelangCompletionItemProvider implements vscode.CompletionItemProv
             items.push(item);
         }
 
+        // 3. Standard Library Completions (instruments, effects, utilities)
+        const stdlib = DataLoader.loadStdlib(this.extensionPath);
+        for (const stdItem of stdlib) {
+            const item = new vscode.CompletionItem(stdItem.name, this.getStdlibItemKind(stdItem.type));
+            item.detail = `${this.capitalizeFirst(stdItem.type)} - ${stdItem.category}`;
+            item.documentation = new vscode.MarkdownString(this.formatStdlibDocs(stdItem));
+            // Insert as string for use with .on() or .synth()
+            item.insertText = `"${stdItem.name}"`;
+            items.push(item);
+        }
+
         return items;
+    }
+
+    private getStdlibItemKind(type: string): vscode.CompletionItemKind {
+        switch (type) {
+            case 'instrument': return vscode.CompletionItemKind.Value;
+            case 'effect': return vscode.CompletionItemKind.Module;
+            case 'utility': return vscode.CompletionItemKind.Constant;
+            default: return vscode.CompletionItemKind.Text;
+        }
+    }
+
+    private capitalizeFirst(str: string): string {
+        return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    private formatStdlibDocs(item: StdlibItem): string {
+        let docs = `**${item.name}**\n\n${item.description}\n\n`;
+        if (item.parameters && item.parameters.length > 0) {
+            docs += `*Parameters:*\n`;
+            for (const param of item.parameters) {
+                docs += `- \`${param.name}\` (${param.type}): ${param.description} (default: ${param.default})\n`;
+            }
+            docs += '\n';
+        }
+        if (item.example) {
+            docs += `*Example:*\n\`\`\`vibe\n${item.example}\n\`\`\``;
+        }
+        return docs;
     }
 
     private toSnakeCase(str: string): string {

@@ -5,6 +5,47 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 
+/// Source location information for an entity definition.
+#[derive(Clone, Debug, Default)]
+pub struct SourceLocation {
+    /// The script file path where this entity was defined.
+    pub file: Option<String>,
+    /// Line number (1-based).
+    pub line: Option<u32>,
+    /// Column number (1-based).
+    pub column: Option<u32>,
+}
+
+impl SourceLocation {
+    /// Create a new source location.
+    pub fn new(file: Option<String>, line: Option<u32>, column: Option<u32>) -> Self {
+        Self { file, line, column }
+    }
+
+    /// Create an unknown source location (no file, line, or column info).
+    pub fn unknown() -> Self {
+        Self::default()
+    }
+
+    /// Check if this source location has any information.
+    pub fn is_empty(&self) -> bool {
+        self.file.is_none() && self.line.is_none()
+    }
+}
+
+/// A callback error captured during script execution.
+#[derive(Clone, Debug)]
+pub struct CallbackError {
+    /// Error message.
+    pub message: String,
+    /// Context name (e.g., group name for define_group).
+    pub context: String,
+    /// Line number (1-based).
+    pub line: Option<u32>,
+    /// Column number (1-based).
+    pub column: Option<u32>,
+}
+
 thread_local! {
     /// Current group path stack for nested group definitions.
     static GROUP_STACK: RefCell<Vec<String>> = RefCell::new(vec!["main".to_string()]);
@@ -14,6 +55,12 @@ thread_local! {
 
     /// Additional import paths for file resolution.
     static IMPORT_PATHS: RefCell<Vec<PathBuf>> = RefCell::new(Vec::new());
+
+    /// Current script file path (for source location tracking).
+    static CURRENT_SCRIPT_FILE: RefCell<Option<String>> = RefCell::new(None);
+
+    /// Callback errors collected during script execution.
+    static CALLBACK_ERRORS: RefCell<Vec<CallbackError>> = RefCell::new(Vec::new());
 }
 
 /// Push a group onto the context stack.
@@ -80,6 +127,45 @@ pub fn reset() {
     GROUP_STACK.with(|stack| {
         *stack.borrow_mut() = vec!["main".to_string()];
     });
+    CURRENT_SCRIPT_FILE.with(|f| {
+        *f.borrow_mut() = None;
+    });
+    CALLBACK_ERRORS.with(|e| {
+        e.borrow_mut().clear();
+    });
+}
+
+/// Record a callback error.
+pub fn push_callback_error(error: CallbackError) {
+    CALLBACK_ERRORS.with(|e| {
+        e.borrow_mut().push(error);
+    });
+}
+
+/// Get all callback errors and clear them.
+pub fn take_callback_errors() -> Vec<CallbackError> {
+    CALLBACK_ERRORS.with(|e| {
+        std::mem::take(&mut *e.borrow_mut())
+    })
+}
+
+/// Get callback errors without clearing them.
+pub fn get_callback_errors() -> Vec<CallbackError> {
+    CALLBACK_ERRORS.with(|e| e.borrow().clone())
+}
+
+// === Source Location Tracking ===
+
+/// Set the current script file path.
+pub fn set_current_script_file(file: Option<String>) {
+    CURRENT_SCRIPT_FILE.with(|f| {
+        *f.borrow_mut() = file;
+    });
+}
+
+/// Get the current script file path.
+pub fn get_current_script_file() -> Option<String> {
+    CURRENT_SCRIPT_FILE.with(|f| f.borrow().clone())
 }
 
 /// Resolve a file path by checking multiple locations.

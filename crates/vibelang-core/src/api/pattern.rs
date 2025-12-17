@@ -5,10 +5,11 @@
 use crate::events::{BeatEvent, Pattern as PatternData};
 use crate::sequences::{ClipMode, ClipSource, SequenceClip, SequenceDefinition};
 use crate::state::{LoopStatus, StateMessage};
-use rhai::{CustomType, Dynamic, Engine, EvalAltResult, Position, TypeBuilder};
+use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::collections::HashMap;
 
-use super::{context, require_handle};
+use super::context::{self, SourceLocation};
+use super::require_handle;
 
 /// A Pattern builder for creating rhythmic patterns.
 #[derive(Debug, Clone, CustomType)]
@@ -29,11 +30,19 @@ pub struct Pattern {
     group_path: String,
     /// Parameters to pass to voice.
     params: HashMap<String, f64>,
+    /// Source location where this pattern was defined.
+    source_location: SourceLocation,
 }
 
 impl Pattern {
-    /// Create a new pattern with the given name.
-    pub fn new(name: String) -> Self {
+    /// Create a new pattern with the given name and source location from NativeCallContext.
+    pub fn new(ctx: NativeCallContext, name: String) -> Self {
+        let pos = ctx.call_position();
+        let source_location = SourceLocation::new(
+            context::get_current_script_file(),
+            if pos.is_none() { None } else { pos.line().map(|l| l as u32) },
+            if pos.is_none() { None } else { pos.position().map(|c| c as u32) },
+        );
         Self {
             name,
             voice_name: None,
@@ -43,6 +52,7 @@ impl Pattern {
             quantize: 0.0,
             group_path: context::current_group_path(),
             params: HashMap::new(),
+            source_location,
         }
     }
 
@@ -146,6 +156,8 @@ impl Pattern {
             group_path: self.group_path.clone(),
             voice_name: self.voice_name.clone(),
             pattern: loop_pattern,
+            source_location: self.source_location.clone(),
+            step_pattern: self.steps.clone(),
         });
     }
 
@@ -231,9 +243,9 @@ impl PatternLaneBuilder {
     }
 }
 
-/// Create a new pattern builder.
-pub fn pattern(name: String) -> Pattern {
-    Pattern::new(name)
+/// Create a new pattern builder with source location tracking.
+pub fn pattern(ctx: NativeCallContext, name: String) -> Pattern {
+    Pattern::new(ctx, name)
 }
 
 /// Parse a step pattern string into beat events.

@@ -991,5 +991,150 @@
     "description": "[MelodyGen] Set the base amplitude for generated notes.",
     "signature": ".base_amp(amp: float) -> MelodyGen",
     "example": "melody_gen(16).tonality(\"E\", \"minor\").base_amp(0.8).render();"
+  },
+
+  {
+    "name": "jump_to_start",
+    "description": "Jump the transport to beat 0 (start of the sequence). Useful for resetting playback position.",
+    "signature": "jump_to_start()",
+    "example": "jump_to_start();  // Reset to beginning"
+  },
+  {
+    "name": "start_once",
+    "description": "[Sequence] Start the sequence to play once without looping. After completion, the sequence stops.",
+    "signature": ".start_once() -> Sequence",
+    "example": "sequence(\"intro\")\n    .loop_bars(8)\n    .clip(0..bars(8), intro_pattern)\n    .start_once();  // Play once, no repeat"
+  },
+  {
+    "name": "load_sample",
+    "description": "Load an audio sample from a file. Alias for sample(). Returns a SampleHandle that can be used with voice().on().",
+    "signature": "load_sample(name: string, path: string) -> SampleHandle",
+    "example": "let kick = load_sample(\"kick\", \"samples/kick.wav\");\nvoice(\"kick_voice\").on(kick);"
+  },
+  {
+    "name": "load_synthdef_bytes",
+    "description": "Load a pre-compiled synthdef from bytes. Used for loading binary synthdef data directly.",
+    "signature": "load_synthdef_bytes(bytes: Blob)",
+    "example": "// Load pre-compiled synthdef\nload_synthdef_bytes(synthdef_bytes);"
+  },
+  {
+    "name": "run",
+    "description": "[Voice] Run the voice continuously without triggering. Used for voices that should produce sound immediately and indefinitely.",
+    "signature": ".run() -> Voice",
+    "example": "voice(\"drone\").on(\"pad_warm\").gain(db(-12)).run();"
+  },
+  {
+    "name": "apply",
+    "description": "[Voice] Register and apply the voice without running it. Sets up the voice for later use with patterns or melodies.",
+    "signature": ".apply() -> Voice",
+    "example": "let kick = voice(\"kick\").on(\"kick_808\").gain(db(-6)).apply();\npattern(\"kick_pat\").on(kick).step(\"x...\").start();"
+  },
+  {
+    "name": "group",
+    "description": "[Voice] Set the voice's mixer group. The voice's audio will be routed through this group.",
+    "signature": ".group(group_name: string) -> Voice",
+    "example": "voice(\"kick\").on(\"kick_808\").group(\"Drums\").apply();"
+  },
+  {
+    "name": "duration",
+    "description": "[SampleHandle] Get the duration of the sample in seconds.",
+    "signature": ".duration() -> float",
+    "example": "let dur = my_sample.duration();\nprint(\"Sample length: \" + dur + \"s\");"
+  },
+  {
+    "name": "sample_rate",
+    "description": "[SampleHandle] Get the sample rate of the loaded sample.",
+    "signature": ".sample_rate() -> float",
+    "example": "let sr = my_sample.sample_rate();  // e.g., 44100.0"
+  },
+  {
+    "name": "num_channels",
+    "description": "[SampleHandle] Get the number of channels in the sample (1=mono, 2=stereo).",
+    "signature": ".num_channels() -> int",
+    "example": "let ch = my_sample.num_channels();  // 1 or 2"
+  },
+  {
+    "name": "detected_bpm",
+    "description": "[SampleHandle] Get the detected BPM of the sample after calling analyze_bpm().",
+    "signature": ".detected_bpm() -> float",
+    "example": "let loop = sample(\"break\", \"amen.wav\").analyze_bpm();\nlet bpm = loop.detected_bpm();"
+  },
+  {
+    "name": "attack",
+    "description": "[SampleHandle] Set the attack time in seconds for the sample's amplitude envelope.",
+    "signature": ".attack(seconds: float) -> SampleHandle",
+    "example": "sample(\"pad\", \"pad.wav\").attack(0.5);  // Slow fade in"
+  },
+  {
+    "name": "release",
+    "description": "[SampleHandle] Set the release time in seconds for the sample's amplitude envelope.",
+    "signature": ".release(seconds: float) -> SampleHandle",
+    "example": "sample(\"pad\", \"pad.wav\").release(2.0);  // Slow fade out"
+  },
+  {
+    "name": "offset",
+    "description": "[SampleHandle] Set the start offset in seconds. Playback begins at this position.",
+    "signature": ".offset(seconds: float) -> SampleHandle",
+    "example": "sample(\"loop\", \"break.wav\").offset(0.5);  // Start 0.5s into sample"
+  },
+  {
+    "name": "length",
+    "description": "[SampleHandle] Set the playback length in seconds. Only this portion of the sample plays.",
+    "signature": ".length(seconds: float) -> SampleHandle",
+    "example": "sample(\"hit\", \"long_sample.wav\").length(0.25);  // Only play first 0.25s"
+  },
+  {
+    "name": "rate",
+    "description": "[SampleHandle] Set the playback rate multiplier. 2.0 = double speed, 0.5 = half speed.",
+    "signature": ".rate(rate: float) -> SampleHandle",
+    "example": "sample(\"vocal\", \"vocal.wav\").rate(0.75);  // Slow down 25%"
+  },
+  {
+    "name": "loop_mode",
+    "description": "[SampleHandle] Enable or disable looping for the sample.",
+    "signature": ".loop_mode(enabled: bool) -> SampleHandle",
+    "example": "sample(\"loop\", \"break.wav\").loop_mode(true);"
+  },
+  {
+    "name": "amp",
+    "description": "[SampleHandle] Set the amplitude/volume of the sample.",
+    "signature": ".amp(amp: float) -> SampleHandle",
+    "example": "sample(\"kick\", \"kick.wav\").amp(0.8);"
+  },
+  {
+    "name": "warp",
+    "description": "[SampleHandle] Enable or disable time-stretching/pitch-shifting (warp) mode.",
+    "signature": ".warp(enabled: bool) -> SampleHandle",
+    "example": "sample(\"loop\", \"break.wav\").warp(true).warp_to_bpm(128.0);"
+  },
+  {
+    "name": "set_speed",
+    "description": "[SampleHandle] Set playback speed independent of pitch (requires warp mode).",
+    "signature": ".set_speed(speed: float) -> SampleHandle",
+    "example": "sample(\"vocal\", \"vocal.wav\").warp(true).set_speed(0.8);  // 80% speed, same pitch"
+  },
+  {
+    "name": "set_pitch",
+    "description": "[SampleHandle] Set pitch multiplier independent of speed (requires warp mode).",
+    "signature": ".set_pitch(pitch: float) -> SampleHandle",
+    "example": "sample(\"vocal\", \"vocal.wav\").warp(true).set_pitch(1.2);  // Higher pitch, same speed"
+  },
+  {
+    "name": "semitones",
+    "description": "[SampleHandle] Shift pitch by semitones (requires warp mode). 12 = one octave up.",
+    "signature": ".semitones(semitones: float) -> SampleHandle",
+    "example": "sample(\"vocal\", \"vocal.wav\").warp(true).semitones(-5);  // Down 5 semitones"
+  },
+  {
+    "name": "window_size",
+    "description": "[SampleHandle] Set the granular window size for time-stretching (affects quality).",
+    "signature": ".window_size(size: float) -> SampleHandle",
+    "example": "sample(\"pad\", \"pad.wav\").warp(true).window_size(0.1);"
+  },
+  {
+    "name": "overlaps",
+    "description": "[SampleHandle] Set the number of grain overlaps for time-stretching.",
+    "signature": ".overlaps(overlaps: float) -> SampleHandle",
+    "example": "sample(\"pad\", \"pad.wav\").warp(true).overlaps(8.0);"
   }
 ]

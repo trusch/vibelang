@@ -3,6 +3,7 @@
 //! These types represent the complete state of a VibeLang session,
 //! including groups, voices, patterns, melodies, effects, and samples.
 
+use crate::api::context::SourceLocation;
 use crate::events::{BeatEvent, FadeTargetType, Pattern};
 use crate::midi::{MidiBackend, MidiDeviceInfo, MidiRouting};
 use crate::sequences::SequenceDefinition;
@@ -578,6 +579,27 @@ pub struct ScriptState {
     pub next_midi_callback_id: u64,
     /// MIDI recording state for pattern/melody export.
     pub midi_recording: MidiRecordingState,
+    /// Audio meter levels by group path.
+    pub meter_levels: HashMap<String, MeterLevel>,
+}
+
+// ============================================================================
+// Audio Metering
+// ============================================================================
+
+/// Audio meter level for a group (stereo).
+#[derive(Clone, Debug, Default)]
+pub struct MeterLevel {
+    /// Peak level for left channel (0.0 to 1.0+, can exceed 1.0 for clipping).
+    pub peak_left: f32,
+    /// Peak level for right channel (0.0 to 1.0+).
+    pub peak_right: f32,
+    /// RMS level for left channel (0.0 to 1.0+).
+    pub rms_left: f32,
+    /// RMS level for right channel (0.0 to 1.0+).
+    pub rms_right: f32,
+    /// Time of last update.
+    pub last_update: Option<Instant>,
 }
 
 impl Default for ScriptState {
@@ -624,6 +646,7 @@ impl ScriptState {
             next_midi_device_id: 1,
             next_midi_callback_id: 1,
             midi_recording: MidiRecordingState::new(),
+            meter_levels: HashMap::new(),
         }
     }
 
@@ -700,6 +723,8 @@ pub struct GroupState {
     pub synth_node_ids: Vec<i32>,
     /// Reload generation.
     pub generation: u64,
+    /// Source location where this group was defined.
+    pub source_location: SourceLocation,
 }
 
 impl GroupState {
@@ -723,7 +748,14 @@ impl GroupState {
             soloed: false,
             synth_node_ids: Vec::new(),
             generation: 0,
+            source_location: SourceLocation::default(),
         }
+    }
+
+    /// Create a new group state with source location.
+    pub fn with_source_location(mut self, source_location: SourceLocation) -> Self {
+        self.source_location = source_location;
+        self
     }
 }
 
@@ -766,6 +798,8 @@ pub struct VoiceState {
     pub running: bool,
     /// Node ID of the running synth (if running).
     pub running_node_id: Option<i32>,
+    /// Source location where this voice was defined.
+    pub source_location: SourceLocation,
 }
 
 impl VoiceState {
@@ -790,7 +824,14 @@ impl VoiceState {
             generation: 0,
             running: false,
             running_node_id: None,
+            source_location: SourceLocation::default(),
         }
+    }
+
+    /// Create a new voice state with source location.
+    pub fn with_source_location(mut self, source_location: SourceLocation) -> Self {
+        self.source_location = source_location;
+        self
     }
 }
 
@@ -868,6 +909,10 @@ pub struct PatternState {
     pub is_looping: bool,
     /// Reload generation.
     pub generation: u64,
+    /// Source location where this pattern was defined.
+    pub source_location: SourceLocation,
+    /// Original step pattern string (e.g., "x..x..x.|x.x.x.x.") for visual editing.
+    pub step_pattern: Option<String>,
 }
 
 impl PatternState {
@@ -882,7 +927,15 @@ impl PatternState {
             status: LoopStatus::Stopped,
             is_looping: true,
             generation: 0,
+            source_location: SourceLocation::default(),
+            step_pattern: None,
         }
+    }
+
+    /// Create a new pattern state with source location.
+    pub fn with_source_location(mut self, source_location: SourceLocation) -> Self {
+        self.source_location = source_location;
+        self
     }
 }
 
@@ -905,6 +958,10 @@ pub struct MelodyState {
     pub is_looping: bool,
     /// Reload generation.
     pub generation: u64,
+    /// Source location where this melody was defined.
+    pub source_location: SourceLocation,
+    /// Original notes pattern string for visual editing.
+    pub notes_pattern: Option<String>,
 }
 
 impl MelodyState {
@@ -919,7 +976,15 @@ impl MelodyState {
             status: LoopStatus::Stopped,
             is_looping: true,
             generation: 0,
+            source_location: SourceLocation::default(),
+            notes_pattern: None,
         }
+    }
+
+    /// Create a new melody state with source location.
+    pub fn with_source_location(mut self, source_location: SourceLocation) -> Self {
+        self.source_location = source_location;
+        self
     }
 }
 
@@ -1070,6 +1135,8 @@ pub struct EffectState {
     pub position: usize,
     /// VST plugin key if using VST.
     pub vst_plugin: Option<String>,
+    /// Source location where this effect was defined.
+    pub source_location: SourceLocation,
 }
 
 

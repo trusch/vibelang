@@ -18,9 +18,9 @@ pub use manager::StateManager;
 pub use messages::StateMessage;
 pub use model::{
     ActiveFadeJob, ActiveSequence, ActiveSynth, EffectState, GroupState, LoopStatus, MelodyState,
-    MidiCallbackInfo, MidiCallbackType, MidiConfiguration, MidiDeviceState, MidiRecordingState,
-    PatternState, RecordedMidiNote, SampleInfo, SampleSlice, ScheduledEvent, ScheduledNoteOff,
-    ScriptState, SequenceRunLog, VoiceState, VstInstrumentInfo,
+    MeterLevel, MidiCallbackInfo, MidiCallbackType, MidiConfiguration, MidiDeviceState,
+    MidiRecordingState, PatternState, RecordedMidiNote, SampleInfo, SampleSlice, ScheduledEvent,
+    ScheduledNoteOff, ScriptState, SequenceRunLog, VoiceState, VstInstrumentInfo,
 };
 
 // Re-export scheduler types that are closely tied to state

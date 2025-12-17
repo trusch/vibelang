@@ -1,22 +1,43 @@
 {
   "name": "vibelang-vscode",
-  "displayName": "Vibelang",
-  "description": "VS Code support for Vibelang music programming language",
-  "version": "0.0.1",
+  "displayName": "VibeLang",
+  "description": "VS Code support for VibeLang music programming language with DAW-style studio interface",
+  "version": "0.1.0",
+  "publisher": "vibelang",
   "engines": {
     "vscode": "^1.85.0"
   },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "categories": [
     "Programming Languages",
-    "Formatters"
+    "Formatters",
+    "Visualization"
   ],
+  "keywords": [
+    "music",
+    "audio",
+    "daw",
+    "live coding",
+    "supercollider"
+  ],
+  "icon": "images/icon.png",
   "main": "./out/extension.js",
+  "files": [
+    "out/**/*",
+    "ugen_manifests/**/*",
+    "src/data/**/*",
+    "syntaxes/**/*",
+    "language-configuration.json",
+    "images/**/*"
+  ],
   "contributes": {
     "languages": [
       {
         "id": "vibe",
         "aliases": [
-          "Vibelang",
+          "VibeLang",
           "vibe"
         ],
         "extensions": [
@@ -32,17 +53,302 @@
         "path": "./syntaxes/vibe.tmLanguage.json"
       }
     ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "vibelangMixer",
+          "title": "Mixer",
+          "icon": "$(dashboard)"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "vibelang.sessionExplorer",
+          "name": "VibeLang Session",
+          "icon": "$(pulse)",
+          "contextualTitle": "VibeLang Session Explorer"
+        }
+      ],
+      "vibelangMixer": [
+        {
+          "type": "webview",
+          "id": "vibelang.mixerView",
+          "name": "Mixer"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "vibelang.sessionExplorer",
+        "contents": "No VibeLang runtime connected.\n\n[Connect to Runtime](command:vibelang.toggleConnection)\n\nStart a VibeLang session with `vibe run -w your-file.vibe` to see the session structure here."
+      }
+    ],
     "commands": [
       {
+        "command": "vibelang.restartLsp",
+        "title": "Restart Language Server",
+        "category": "VibeLang"
+      },
+      {
+        "command": "vibelang.toggleConnection",
+        "title": "Toggle Runtime Connection",
+        "category": "VibeLang",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "vibelang.configureConnection",
+        "title": "Configure Runtime Connection",
+        "category": "VibeLang"
+      },
+      {
+        "command": "vibelang.toggleTransport",
+        "title": "Play/Stop",
+        "category": "VibeLang",
+        "icon": "$(play)"
+      },
+      {
+        "command": "vibelang.startTransport",
+        "title": "Start Transport",
+        "category": "VibeLang",
+        "icon": "$(play)"
+      },
+      {
+        "command": "vibelang.stopTransport",
+        "title": "Stop Transport",
+        "category": "VibeLang",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "vibelang.setBpm",
+        "title": "Set BPM",
+        "category": "VibeLang"
+      },
+      {
+        "command": "vibelang.seekBeat",
+        "title": "Seek to Beat",
+        "category": "VibeLang"
+      },
+      {
+        "command": "vibelang.openInspector",
+        "title": "Open Inspector Panel",
+        "category": "VibeLang",
+        "icon": "$(info)"
+      },
+      {
+        "command": "vibelang.openMixer",
+        "title": "Open Mixer Panel",
+        "category": "VibeLang",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "vibelang.openArrangement",
+        "title": "Open Arrangement Timeline",
+        "category": "VibeLang",
+        "icon": "$(timeline)"
+      },
+      {
         "command": "vibelang.openSliders",
-        "title": "Vibelang: Open Parameter Sliders"
+        "title": "Open Parameter Sliders",
+        "category": "VibeLang"
       },
       {
         "command": "vibelang.formatDocument",
-        "title": "Vibelang: Format Document"
+        "title": "Format Document",
+        "category": "VibeLang"
+      },
+      {
+        "command": "vibelang.refreshSession",
+        "title": "Refresh Session",
+        "category": "VibeLang",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "vibelang.goToSource",
+        "title": "Go to Source",
+        "category": "VibeLang"
+      },
+      {
+        "command": "vibelang.selectEntity",
+        "title": "Select Entity",
+        "category": "VibeLang"
+      },
+      {
+        "command": "vibelang.startPattern",
+        "title": "Start Pattern",
+        "category": "VibeLang",
+        "icon": "$(play)"
+      },
+      {
+        "command": "vibelang.stopPattern",
+        "title": "Stop Pattern",
+        "category": "VibeLang",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "vibelang.startMelody",
+        "title": "Start Melody",
+        "category": "VibeLang",
+        "icon": "$(play)"
+      },
+      {
+        "command": "vibelang.stopMelody",
+        "title": "Stop Melody",
+        "category": "VibeLang",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "vibelang.startSequence",
+        "title": "Start Sequence",
+        "category": "VibeLang",
+        "icon": "$(play)"
+      },
+      {
+        "command": "vibelang.stopSequence",
+        "title": "Stop Sequence",
+        "category": "VibeLang",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "vibelang.muteGroup",
+        "title": "Toggle Mute",
+        "category": "VibeLang"
+      },
+      {
+        "command": "vibelang.soloGroup",
+        "title": "Toggle Solo",
+        "category": "VibeLang"
+      },
+      {
+        "command": "vibelang.openSoundDesigner",
+        "title": "Open Sound Designer",
+        "category": "VibeLang",
+        "icon": "$(waveform)"
+      },
+      {
+        "command": "vibelang.openPatternEditor",
+        "title": "Open Pattern Editor",
+        "category": "VibeLang",
+        "icon": "$(symbol-array)"
+      },
+      {
+        "command": "vibelang.openMelodyEditor",
+        "title": "Open Melody Editor (Piano Roll)",
+        "category": "VibeLang",
+        "icon": "$(piano)"
+      },
+      {
+        "command": "vibelang.openSampleBrowser",
+        "title": "Open Sample Browser",
+        "category": "VibeLang",
+        "icon": "$(folder-library)"
+      },
+      {
+        "command": "vibelang.openEffectRack",
+        "title": "Open Effect Rack",
+        "category": "VibeLang",
+        "icon": "$(circuit-board)"
+      },
+      {
+        "command": "vibelang.bootRuntime",
+        "title": "Start VibeLang Runtime",
+        "category": "VibeLang",
+        "icon": "$(run)"
+      },
+      {
+        "command": "vibelang.killRuntime",
+        "title": "Stop VibeLang Runtime",
+        "category": "VibeLang",
+        "icon": "$(stop)"
+      },
+      {
+        "command": "vibelang.restartRuntime",
+        "title": "Restart VibeLang Runtime",
+        "category": "VibeLang",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "vibelang.refreshSession",
+          "when": "view == vibelang.sessionExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "vibelang.openMixer",
+          "when": "view == vibelang.sessionExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "vibelang.openInspector",
+          "when": "view == vibelang.sessionExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "vibelang.openArrangement",
+          "when": "view == vibelang.sessionExplorer",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "vibelang.startPattern",
+          "when": "view == vibelang.sessionExplorer && viewItem == pattern",
+          "group": "inline"
+        },
+        {
+          "command": "vibelang.stopPattern",
+          "when": "view == vibelang.sessionExplorer && viewItem == pattern",
+          "group": "inline"
+        },
+        {
+          "command": "vibelang.openPatternEditor",
+          "when": "view == vibelang.sessionExplorer && viewItem == pattern",
+          "group": "0_edit"
+        },
+        {
+          "command": "vibelang.startMelody",
+          "when": "view == vibelang.sessionExplorer && viewItem == melody",
+          "group": "inline"
+        },
+        {
+          "command": "vibelang.stopMelody",
+          "when": "view == vibelang.sessionExplorer && viewItem == melody",
+          "group": "inline"
+        },
+        {
+          "command": "vibelang.openMelodyEditor",
+          "when": "view == vibelang.sessionExplorer && viewItem == melody",
+          "group": "0_edit"
+        },
+        {
+          "command": "vibelang.startSequence",
+          "when": "view == vibelang.sessionExplorer && viewItem == sequence",
+          "group": "inline"
+        },
+        {
+          "command": "vibelang.stopSequence",
+          "when": "view == vibelang.sessionExplorer && viewItem == sequence",
+          "group": "inline"
+        },
+        {
+          "command": "vibelang.muteGroup",
+          "when": "view == vibelang.sessionExplorer && viewItem == group",
+          "group": "1_state"
+        },
+        {
+          "command": "vibelang.soloGroup",
+          "when": "view == vibelang.sessionExplorer && viewItem == group",
+          "group": "1_state"
+        },
+        {
+          "command": "vibelang.goToSource",
+          "when": "view == vibelang.sessionExplorer",
+          "group": "2_navigation"
+        }
+      ],
       "editor/title": [
         {
           "command": "vibelang.openSliders",
@@ -56,28 +362,167 @@
           "when": "resourceLangId == vibe",
           "group": "1_modification"
         }
+      ],
+      "commandPalette": [
+        {
+          "command": "vibelang.toggleConnection",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.toggleTransport",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.openInspector",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.openMixer",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.openArrangement",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.openSoundDesigner",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.openPatternEditor",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.openMelodyEditor",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.openSampleBrowser",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.openEffectRack",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.bootRuntime",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.killRuntime",
+          "when": "true"
+        },
+        {
+          "command": "vibelang.restartRuntime",
+          "when": "true"
+        }
       ]
     },
     "configuration": {
-      "title": "Vibelang",
+      "title": "VibeLang",
       "properties": {
+        "vibelang.runtime.host": {
+          "type": "string",
+          "default": "localhost",
+          "description": "VibeLang runtime host"
+        },
+        "vibelang.runtime.port": {
+          "type": "number",
+          "default": 1606,
+          "description": "VibeLang runtime port"
+        },
+        "vibelang.runtime.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically connect to VibeLang runtime on startup"
+        },
         "vibelang.format.enable": {
           "type": "boolean",
           "default": true,
-          "description": "Enable/disable the Vibelang formatter"
+          "description": "Enable/disable the VibeLang formatter"
         },
         "vibelang.format.indentSize": {
           "type": "number",
           "default": 4,
           "description": "Number of spaces for indentation"
+        },
+        "vibelang.runtime.binaryPath": {
+          "type": "string",
+          "default": "vibe",
+          "description": "Path to the VibeLang binary (vibe command)"
+        },
+        "vibelang.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the built-in Language Server for diagnostics, completion, and hover"
+        },
+        "vibelang.lsp.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the VibeLang language server"
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "vibelang.toggleTransport",
+        "key": "ctrl+shift+space",
+        "mac": "cmd+shift+space",
+        "when": "resourceLangId == vibe"
+      },
+      {
+        "command": "vibelang.openInspector",
+        "key": "ctrl+shift+i",
+        "mac": "cmd+shift+i",
+        "when": "resourceLangId == vibe"
+      },
+      {
+        "command": "vibelang.openMixer",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m",
+        "when": "resourceLangId == vibe"
+      },
+      {
+        "command": "vibelang.openArrangement",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "resourceLangId == vibe"
+      },
+      {
+        "command": "vibelang.openSoundDesigner",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d",
+        "when": "resourceLangId == vibe"
+      },
+      {
+        "command": "vibelang.openPatternEditor",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "resourceLangId == vibe"
+      },
+      {
+        "command": "vibelang.openMelodyEditor",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "resourceLangId == vibe"
+      },
+      {
+        "command": "vibelang.openSampleBrowser",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "resourceLangId == vibe"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "generate-stdlib": "node scripts/generate-stdlib-metadata.js",
+    "compile": "npm run generate-stdlib && tsc -p ./",
     "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",

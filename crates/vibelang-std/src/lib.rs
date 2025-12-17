@@ -49,6 +49,8 @@ static STDLIB_PATH: OnceLock<PathBuf> = OnceLock::new();
 /// - Linux: `~/.local/share/vibelang/stdlib/`
 /// - macOS: `~/Library/Application Support/vibelang/stdlib/`
 /// - Windows: `C:\Users\<User>\AppData\Roaming\vibelang\stdlib\`
+///
+/// If the data directory is unavailable, falls back to `~/vibelang/stdlib/`.
 pub fn stdlib_path() -> &'static str {
     STDLIB_PATH
         .get_or_init(|| {
@@ -63,12 +65,12 @@ pub fn stdlib_path() -> &'static str {
 /// Get the installation path for the stdlib.
 fn get_stdlib_install_path() -> PathBuf {
     dirs::data_dir()
-        .unwrap_or_else(|| {
+        .or_else(|| {
             // Fallback to home directory if data_dir is not available
+            // (avoids hardcoding platform-specific paths like .local/share)
             dirs::home_dir()
-                .map(|h| h.join(".local/share"))
-                .unwrap_or_else(|| PathBuf::from("."))
         })
+        .unwrap_or_else(|| PathBuf::from("."))
         .join("vibelang")
         .join("stdlib")
 }

@@ -1,0 +1,136 @@
+[
+  {
+    "name": "Delay1",
+    "description": "One sample delay. Delays the input signal by exactly one sample.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"}
+    ],
+    "outputs": 1,
+    "category": "Delays"
+  },
+  {
+    "name": "Delay2",
+    "description": "Two sample delay. Delays the input signal by exactly two samples.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"}
+    ],
+    "outputs": 1,
+    "category": "Delays"
+  },
+  {
+    "name": "DelayN",
+    "description": "Simple delay line with no interpolation. Most efficient but can cause aliasing.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds. Sets buffer size, cannot be modulated"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds. Can be modulated"}
+    ],
+    "outputs": 1,
+    "category": "Delays"
+  },
+  {
+    "name": "DelayL",
+    "description": "Delay line with linear interpolation. Smoother than DelayN when delay time is modulated.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "Delays"
+  },
+  {
+    "name": "DelayC",
+    "description": "Delay line with cubic interpolation. Highest quality, best for pitch shifting delays.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "Delays"
+  },
+  {
+    "name": "CombN",
+    "description": "Comb delay line with no interpolation. Creates resonances at harmonics of 1/delay time.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "Delays"
+  },
+  {
+    "name": "CombL",
+    "description": "Comb delay line with linear interpolation. Smoother comb filtering than CombN.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "Delays"
+  },
+  {
+    "name": "CombC",
+    "description": "Comb delay line with cubic interpolation. Highest quality comb filtering.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "Delays"
+  },
+  {
+    "name": "AllpassN",
+    "description": "All pass delay line with no interpolation. Passes all frequencies but changes phase.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "Delays"
+  },
+  {
+    "name": "AllpassL",
+    "description": "All pass delay line with linear interpolation. Smoother phase response than AllpassN.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "Delays"
+  },
+  {
+    "name": "AllpassC",
+    "description": "All pass delay line with cubic interpolation. Highest quality all pass filtering.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "Delays"
+  }
+]

@@ -166,6 +166,33 @@ impl RuntimeHandle {
     pub fn midi_sender(&self) -> Sender<MidiMessage> {
         self.midi_tx.clone()
     }
+
+    /// Create a RuntimeHandle for validation mode (no runtime thread).
+    ///
+    /// This is used by the validation engine to execute scripts without
+    /// starting a full runtime. The handle can receive messages but
+    /// they won't be processed by a runtime thread.
+    ///
+    /// # Arguments
+    /// * `message_tx` - Sender for state messages (will be received by caller)
+    /// * `state_manager` - State manager for read/write access
+    /// * `scsynth` - SuperCollider client (use `Scsynth::noop()` for validation)
+    /// * `midi_tx` - Sender for MIDI messages (can be unused)
+    pub fn new_validation(
+        message_tx: Sender<StateMessage>,
+        state_manager: StateManager,
+        scsynth: Scsynth,
+        midi_tx: Sender<MidiMessage>,
+    ) -> Self {
+        Self {
+            message_tx,
+            state_manager,
+            scsynth,
+            shutdown: Arc::new(AtomicBool::new(false)),
+            completion_rx: None,
+            midi_tx,
+        }
+    }
 }
 
 /// The VibeLang runtime.
@@ -906,6 +933,21 @@ impl RuntimeThread {
                         // fades try to update synths that have already finished playing
                         log::trace!("[OSC] scsynth failure: {:?}", msg.args);
                     }
+                    "/tr" => {
+                        // /tr node_id trig_id value
+                        // Handle meter data from link synths (SendTrig)
+                        // Trig IDs: 0=peak_left, 1=peak_right, 2=rms_left, 3=rms_right
+                        if msg.args.len() >= 3 {
+                            if let (
+                                Some(rosc::OscType::Int(node_id)),
+                                Some(rosc::OscType::Int(trig_id)),
+                                Some(rosc::OscType::Float(value)),
+                            ) = (msg.args.first(), msg.args.get(1), msg.args.get(2))
+                            {
+                                self.handle_meter_trigger(*node_id, *trig_id, *value);
+                            }
+                        }
+                    }
                     _ => {
                         // Ignore other messages
                     }
@@ -914,6 +956,51 @@ impl RuntimeThread {
             rosc::OscPacket::Bundle(_) => {
                 // Ignore bundles for now
             }
+        }
+    }
+
+    /// Handle meter trigger data from link synths.
+    /// Called when we receive /tr messages from SendTrig UGens.
+    /// Trig IDs: 0=peak_left, 1=peak_right, 2=rms_left, 3=rms_right
+    fn handle_meter_trigger(&mut self, node_id: i32, trig_id: i32, value: f32) {
+        // Find the group path that has this node_id as its link_synth_node_id
+        let group_path = self.shared.with_state_read(|state| {
+            state
+                .groups
+                .iter()
+                .find(|(_, g)| g.link_synth_node_id == Some(node_id))
+                .map(|(path, _)| path.clone())
+        });
+
+        if let Some(path) = group_path {
+            self.shared.with_state_write(|state| {
+                let meter = state.meter_levels.entry(path).or_insert_with(|| {
+                    crate::state::MeterLevel::default()
+                });
+
+                // All 4 triggers fire on the same Impulse, representing one meter update cycle.
+                // Store L/R values separately for stereo meter display.
+                match trig_id {
+                    0 => {
+                        // peak_left
+                        meter.peak_left = value;
+                    }
+                    1 => {
+                        // peak_right
+                        meter.peak_right = value;
+                    }
+                    2 => {
+                        // rms_left
+                        meter.rms_left = value;
+                    }
+                    3 => {
+                        // rms_right - this completes the cycle
+                        meter.rms_right = value;
+                        meter.last_update = Some(std::time::Instant::now());
+                    }
+                    _ => {}
+                }
+            });
         }
     }
 
@@ -956,27 +1043,83 @@ impl RuntimeThread {
             StateMessage::StartScheduler => {
                 let now = Instant::now();
                 self.transport.start(now);
-                self.scheduler.reset();
+                // Don't reset scheduler here - seek handles that
                 self.shared.with_state_write(|state| {
                     state.transport_running = true;
-                    state.current_beat = 0.0;
                     state.bump_version();
                 });
             }
             StateMessage::StopScheduler => {
-                self.transport.stop(Instant::now());
+                let now = Instant::now();
+                let current_beat = self.transport.beat_at(now).to_float();
+
+                // Stop transport and prevent new events
+                self.transport.stop(now);
+                self.scheduler.sync_to_beat(current_beat);
                 self.shared.with_state_write(|state| {
                     state.transport_running = false;
                     state.bump_version();
                 });
+
+                // Collect all nodes that need gate=0 (active notes + pending)
+                let nodes_to_release: Vec<i32> = self.shared.with_state_write(|state| {
+                    use std::collections::HashSet;
+                    let mut nodes: HashSet<i32> = HashSet::new();
+
+                    // All active notes
+                    for voice in state.voices.values_mut() {
+                        for node_ids in voice.active_notes.values() {
+                            nodes.extend(node_ids.iter().copied());
+                        }
+                        voice.active_notes.clear();
+                    }
+
+                    // All active synths
+                    for &node_id in state.active_synths.keys() {
+                        nodes.insert(node_id);
+                    }
+
+                    // All pending nodes (scheduled but may not have started yet)
+                    for &node_id in state.pending_nodes.keys() {
+                        nodes.insert(node_id);
+                    }
+
+                    // Clear scheduled note-offs since we're releasing everything
+                    state.scheduled_note_offs.clear();
+
+                    nodes.into_iter().collect()
+                });
+
+                // Send gate=0 to release all notes
+                log::debug!(
+                    "[STOP] Pausing at beat {}, sending gate=0 to {} nodes",
+                    current_beat,
+                    nodes_to_release.len()
+                );
+                for node_id in nodes_to_release {
+                    let _ = self.osc_sender.n_set(
+                        OscTiming::Now,
+                        NodeId::new(node_id),
+                        &[("gate", 0.0f32)],
+                        current_beat,
+                    );
+                }
             }
             StateMessage::SeekTransport { beat } => {
                 let now = Instant::now();
                 let target_beat = beat.max(0.0);
                 self.transport.seek(BeatTime::from_float(target_beat), now);
-                self.scheduler.reset();
+                // Reset scheduler to target beat to prevent event burst
+                self.scheduler.reset_to_beat(target_beat);
                 self.shared.with_state_write(|state| {
                     state.current_beat = target_beat;
+                    // Reset sequence anchors so they restart cleanly from target beat
+                    for active in state.active_sequences.values_mut() {
+                        active.anchor_beat = target_beat;
+                        active.triggered_clips.clear();
+                        active.last_iteration = 0;
+                        active.completed = false;
+                    }
                     state.bump_version();
                 });
             }
@@ -1038,8 +1181,9 @@ impl RuntimeThread {
                 path,
                 parent_path,
                 node_id,
+                source_location,
             } => {
-                self.handle_register_group(name, path, parent_path, node_id);
+                self.handle_register_group(name, path, parent_path, node_id, source_location);
             }
             StateMessage::UnregisterGroup { path } => {
                 self.shared.with_state_write(|state| {
@@ -1082,6 +1226,7 @@ impl RuntimeThread {
                 params,
                 sfz_instrument,
                 vst_instrument,
+                source_location,
             } => {
                 let generation = self.shared.with_state_read(|s| s.reload_generation);
                 self.shared.with_state_write(|state| {
@@ -1100,6 +1245,7 @@ impl RuntimeThread {
                     voice.sfz_instrument = sfz_instrument;
                     voice.vst_instrument = vst_instrument;
                     voice.generation = generation;
+                    voice.source_location = source_location;
                     state.bump_version();
                 });
             }
@@ -1113,6 +1259,22 @@ impl RuntimeThread {
                 self.shared.with_state_write(|state| {
                     if let Some(voice) = state.voices.get_mut(&name) {
                         voice.params.insert(param, value);
+                        state.bump_version();
+                    }
+                });
+            }
+            StateMessage::MuteVoice { name } => {
+                self.shared.with_state_write(|state| {
+                    if let Some(voice) = state.voices.get_mut(&name) {
+                        voice.muted = true;
+                        state.bump_version();
+                    }
+                });
+            }
+            StateMessage::UnmuteVoice { name } => {
+                self.shared.with_state_write(|state| {
+                    if let Some(voice) = state.voices.get_mut(&name) {
+                        voice.muted = false;
                         state.bump_version();
                     }
                 });
@@ -1143,6 +1305,8 @@ impl RuntimeThread {
                 group_path,
                 voice_name,
                 pattern,
+                source_location,
+                step_pattern,
             } => {
                 let generation = self.shared.with_state_read(|s| s.reload_generation);
                 self.shared.with_state_write(|state| {
@@ -1153,6 +1317,8 @@ impl RuntimeThread {
                     ps.generation = generation;
                     ps.group_path = group_path;
                     ps.voice_name = voice_name;
+                    ps.source_location = source_location;
+                    ps.step_pattern = step_pattern;
                     state.bump_version();
                 });
             }
@@ -1183,6 +1349,8 @@ impl RuntimeThread {
                 group_path,
                 voice_name,
                 pattern,
+                source_location,
+                notes_pattern,
             } => {
                 let generation = self.shared.with_state_read(|s| s.reload_generation);
                 self.shared.with_state_write(|state| {
@@ -1193,6 +1361,8 @@ impl RuntimeThread {
                     ms.generation = generation;
                     ms.group_path = group_path;
                     ms.voice_name = voice_name;
+                    ms.source_location = source_location;
+                    ms.notes_pattern = notes_pattern;
                     state.bump_version();
                 });
             }
@@ -1368,6 +1538,22 @@ impl RuntimeThread {
                 log::debug!("Fade automation not yet implemented");
             }
 
+            StateMessage::CancelFade { target_type, target_name, param_name } => {
+                self.shared.with_state_write(|state| {
+                    let before_count = state.fades.len();
+                    state.fades.retain(|fade| {
+                        !(fade.target_type == target_type &&
+                          fade.target_name == target_name &&
+                          fade.param_name == param_name)
+                    });
+                    let removed = before_count - state.fades.len();
+                    if removed > 0 {
+                        log::debug!("Cancelled {} fade(s) on {}.{}", removed, target_name, param_name);
+                        state.bump_version();
+                    }
+                });
+            }
+
             // === Effects ===
             StateMessage::AddEffect {
                 id,
@@ -1376,8 +1562,9 @@ impl RuntimeThread {
                 params,
                 bus_in: _,
                 bus_out: _,
+                source_location,
             } => {
-                self.handle_add_effect(id, synthdef, group_path, params);
+                self.handle_add_effect(id, synthdef, group_path, params, source_location);
             }
             StateMessage::RemoveEffect { id } => {
                 let node_to_free = self.shared.with_state_write(|state| {
@@ -2875,6 +3062,7 @@ impl RuntimeThread {
         path: String,
         parent_path: Option<String>,
         mut node_id: i32,
+        source_location: crate::api::context::SourceLocation,
     ) {
         let generation = self.shared.with_state_read(|s| s.reload_generation);
 
@@ -2884,13 +3072,14 @@ impl RuntimeThread {
             .with_state_read(|state| state.groups.contains_key(&path));
 
         if already_exists {
-            // Update generation even if group exists
+            // Update generation and source_location even if group exists
             self.shared.with_state_write(|state| {
                 if let Some(group) = state.groups.get_mut(&path) {
                     group.generation = generation;
+                    group.source_location = source_location;
                 }
             });
-            log::debug!("Group '{}' already exists, updated generation", path);
+            log::debug!("Group '{}' already exists, updated generation and source_location", path);
             return;
         }
 
@@ -2952,6 +3141,7 @@ impl RuntimeThread {
             let mut group = GroupState::new(name, path.clone(), parent_path, audio_bus);
             group.node_id = Some(node_id);
             group.generation = generation;
+            group.source_location = source_location;
             state.groups.insert(path, group);
             state.bump_version();
         });
@@ -2985,10 +3175,30 @@ impl RuntimeThread {
         match &actual_path {
             Some(path) => {
                 log::trace!("[GROUP PARAM] Set {}:{}={}", path, param, value);
-                // Note: We only update state, not running synths.
+
+                // For amp parameter, also update the link synth in real-time
+                // This allows the mixer fader to have immediate effect on audio output
+                if param == "amp" {
+                    let link_node_id = self.shared.with_state_read(|state| {
+                        state.groups.get(path).and_then(|g| g.link_synth_node_id)
+                    });
+
+                    if let Some(node_id) = link_node_id {
+                        // Send n_set to update the link synth's amp parameter
+                        let current_beat = self.transport.beat_at(Instant::now()).to_float();
+                        let _ = self.osc_sender.n_set(
+                            OscTiming::Now,
+                            NodeId::new(node_id),
+                            &[("amp", value)],
+                            current_beat,
+                        );
+                        log::trace!("[GROUP PARAM] Updated link synth {} amp={}", node_id, value);
+                    }
+                }
+
+                // Note: For other params, we only update state, not running synths.
                 // Group params affect NEW synths - the final amp is calculated as:
                 // event_amp × voice_gain × group_amp × voice_amp
-                // So the fade affects subsequent notes, not already-playing ones.
             }
             None => {
                 log::trace!("[GROUP PARAM] Group '{}' not found when setting {}={}", path_or_name, param, value);
@@ -3008,6 +3218,189 @@ impl RuntimeThread {
         if let Some(node_id) = node_to_set {
             let current_beat = self.transport.beat_at(Instant::now()).to_float();
             let _ = self.osc_sender.n_run(OscTiming::Now, NodeId::new(node_id), running, current_beat);
+        }
+    }
+
+    /// Recreate effect synths that have been freed (node_id = None).
+    /// This is called after transport stop to restore effects.
+    fn recreate_effects(&mut self) {
+        // Collect effects that need to be recreated
+        let effects_to_create: Vec<(String, String, String, std::collections::HashMap<String, f32>, i32)> =
+            self.shared.with_state_read(|state| {
+                state
+                    .effects
+                    .values()
+                    .filter(|e| e.node_id.is_none())
+                    .map(|e| {
+                        (
+                            e.id.clone(),
+                            e.synthdef_name.clone(),
+                            e.group_path.clone(),
+                            e.params.clone(),
+                            e.bus_in,
+                        )
+                    })
+                    .collect()
+            });
+
+        if effects_to_create.is_empty() {
+            return;
+        }
+
+        log::info!("[RECREATE] Recreating {} effects", effects_to_create.len());
+
+        for (id, synthdef, group_path, params, bus_in) in effects_to_create {
+            // Get group's node ID
+            let group_node_id = self.shared.with_state_read(|state| {
+                state.groups.get(&group_path).and_then(|g| g.node_id)
+            });
+
+            let Some(target_node_id) = group_node_id else {
+                log::warn!("[RECREATE] Cannot recreate effect '{}': group '{}' not found", id, group_path);
+                continue;
+            };
+
+            // Find last effect node in this group (for ordering)
+            let last_effect_node = self.shared.with_state_read(|state| {
+                let mut group_effects: Vec<_> = state
+                    .effects
+                    .values()
+                    .filter(|e| e.group_path == group_path && e.id != id && e.node_id.is_some())
+                    .collect();
+                group_effects.sort_by_key(|e| e.position);
+                group_effects.last().and_then(|e| e.node_id)
+            });
+
+            // Allocate node ID
+            let node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
+
+            // Build controls
+            let mut controls: Vec<(String, f32)> = vec![
+                ("__fx_bus_in".to_string(), bus_in as f32),
+                ("__fx_bus_out".to_string(), bus_in as f32), // Effects process in-place
+            ];
+            controls.extend(params.iter().map(|(k, v)| (k.clone(), *v)));
+
+            // Determine add action (after last effect or at tail)
+            let (add_action, target) = if let Some(last_node) = last_effect_node {
+                (AddAction::AddAfter, Target::from(last_node))
+            } else {
+                (AddAction::AddToTail, Target::from(target_node_id))
+            };
+
+            // Create synth
+            if let Err(e) = self.osc_sender.s_new(
+                OscTiming::Now,
+                &synthdef,
+                NodeId::new(node_id),
+                add_action,
+                target,
+                &controls,
+                0.0,
+            ) {
+                log::error!("[RECREATE] Failed to recreate effect '{}': {}", id, e);
+                continue;
+            }
+
+            // Update state
+            self.shared.with_state_write(|state| {
+                if let Some(effect) = state.effects.get_mut(&id) {
+                    effect.node_id = Some(node_id);
+                }
+                state.bump_version();
+            });
+
+            log::info!("[RECREATE] Recreated effect '{}' (node {})", id, node_id);
+        }
+    }
+
+    /// Recreate link synths that have been freed (link_synth_node_id = None).
+    /// This is a simpler version of finalize_groups without the reload diffing.
+    fn recreate_link_synths(&mut self) {
+        // Collect groups that need link synths
+        let mut groups: Vec<(String, i32, Option<String>, i32, Option<i32>)> =
+            self.shared.with_state_read(|state| {
+                state
+                    .groups
+                    .values()
+                    .filter(|g| g.link_synth_node_id.is_none() && g.node_id.is_some())
+                    .map(|g| {
+                        // Find last effect node for this group
+                        let mut group_effects: Vec<_> = state
+                            .effects
+                            .values()
+                            .filter(|e| e.group_path == g.path)
+                            .collect();
+                        group_effects.sort_by_key(|e| e.position);
+                        let last_effect_node = group_effects.last().and_then(|e| e.node_id);
+
+                        (
+                            g.path.clone(),
+                            g.audio_bus,
+                            g.parent_path.clone(),
+                            g.node_id.unwrap(),
+                            last_effect_node,
+                        )
+                    })
+                    .collect()
+            });
+
+        if groups.is_empty() {
+            return;
+        }
+
+        log::info!("[RECREATE] Recreating {} link synths", groups.len());
+
+        // Sort by depth (children before parents)
+        groups.sort_by(|a, b| {
+            let depth_a = a.0.matches('/').count();
+            let depth_b = b.0.matches('/').count();
+            depth_b.cmp(&depth_a)
+        });
+
+        for (path, in_bus, parent_path, group_node_id, last_effect_node) in groups {
+            // Determine output bus
+            let out_bus = parent_path
+                .as_ref()
+                .and_then(|pp| {
+                    self.shared
+                        .with_state_read(|state| state.groups.get(pp).map(|g| g.audio_bus))
+                })
+                .unwrap_or(0);
+
+            // Allocate node ID
+            let link_node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
+
+            // Determine placement (after last effect or at tail)
+            let (add_action, target) = if let Some(last_node) = last_effect_node {
+                (AddAction::AddAfter, Target::from(last_node))
+            } else {
+                (AddAction::AddToTail, Target::from(group_node_id))
+            };
+
+            // Create synth using Now timing (not Setup)
+            if let Err(e) = self.osc_sender.s_new(
+                OscTiming::Now,
+                "system_link_audio",
+                NodeId::new(link_node_id),
+                add_action,
+                target,
+                &[("inbus", in_bus as f32), ("outbus", out_bus as f32)],
+                0.0,
+            ) {
+                log::error!("[RECREATE] Failed to create link synth for '{}': {}", path, e);
+                continue;
+            }
+
+            // Store link synth ID
+            self.shared.with_state_write(|state| {
+                if let Some(group) = state.groups.get_mut(&path) {
+                    group.link_synth_node_id = Some(link_node_id);
+                }
+                state.bump_version();
+            });
+
+            log::info!("[RECREATE] Recreated link synth for '{}' (node {})", path, link_node_id);
         }
     }
 
@@ -3547,28 +3940,28 @@ impl RuntimeThread {
             return;
         }
 
-        // Otherwise, release all synths for this voice (legacy behavior for voices that don't track individual notes)
+        // Look up nodes for this specific note from active_notes tracking
         let nodes_to_release: Vec<i32> = self.shared.with_state_write(|state| {
-            let nodes: Vec<i32> = state
-                .active_synths
-                .iter()
-                .filter(|(_, s)| s.voice_names.contains(&voice_name.to_string()))
-                .map(|(id, _)| *id)
-                .collect();
-
-            // Remove all these nodes from tracking
-            for &node_id in &nodes {
-                state.active_synths.remove(&node_id);
-                state.pending_nodes.remove(&node_id);
-            }
             if let Some(voice) = state.voices.get_mut(voice_name) {
-                voice.active_notes.clear();
+                // Get nodes for this specific note
+                if let Some(node_ids) = voice.active_notes.remove(&note) {
+                    // Remove these nodes from active_synths tracking
+                    for &node_id in &node_ids {
+                        state.active_synths.remove(&node_id);
+                        state.pending_nodes.remove(&node_id);
+                    }
+                    return node_ids;
+                }
             }
-
-            nodes
+            vec![]
         });
 
-        log::debug!("[NOTE_OFF] Releasing {} nodes for voice '{}'", nodes_to_release.len(), voice_name);
+        if nodes_to_release.is_empty() {
+            log::debug!("[NOTE_OFF] No active nodes found for voice '{}' note {}", voice_name, note);
+            return;
+        }
+
+        log::debug!("[NOTE_OFF] Releasing {} node(s) for voice '{}' note {}", nodes_to_release.len(), voice_name, note);
         let current_beat = self.transport.beat_at(Instant::now()).to_float();
         for node_id in nodes_to_release {
             let _ = self.osc_sender.n_set(OscTiming::Now, NodeId::new(node_id), &[("gate", 0.0f32)], current_beat);
@@ -3585,6 +3978,7 @@ impl RuntimeThread {
         synthdef: String,
         group_path: String,
         params: std::collections::HashMap<String, f32>,
+        source_location: crate::api::context::SourceLocation,
     ) {
         // Check if effect already exists with the same synthdef
         let existing_effect = self.shared.with_state_read(|state| {
@@ -3761,6 +4155,7 @@ impl RuntimeThread {
                 generation,
                 position: next_position,
                 vst_plugin: None,
+                source_location: source_location.clone(),
             };
             state.effects.insert(id.clone(), effect);
             state.bump_version();
@@ -4374,7 +4769,17 @@ struct WavMetadata {
 
 /// Create the system_link_audio synthdef bytes.
 ///
-/// This synthdef routes audio from a group bus to the main output.
+/// This synthdef routes audio from a group bus to the main output with:
+/// - amp parameter for gain control
+/// - Metering via SendTrig (peak and RMS for L/R channels)
+///
+/// Signal flow:
+///   In.ar(inbus) → × amp → Out.ar(outbus)
+///                     ↓
+///              Peak + Amplitude → SendTrig (at 20Hz)
+///
+/// SendTrig IDs:
+///   0: peak_left, 1: peak_right, 2: rms_left, 3: rms_right
 fn create_system_link_audio_bytes() -> Result<Vec<u8>> {
     // Build the synthdef manually without depending on vibelang-dsp
     // Format: SuperCollider synthdef file format v2
@@ -4392,16 +4797,31 @@ fn create_system_link_audio_bytes() -> Result<Vec<u8>> {
     buf.push(name.len() as u8);
     buf.write_all(name)?;
 
-    // Constants: none
-    buf.write_all(&0i32.to_be_bytes())?;
+    // Constants (7 total)
+    // 0: 0.0 (SendTrig ID 0 for peak_left)
+    // 1: 1.0 (SendTrig ID 1 for peak_right)
+    // 2: 2.0 (SendTrig ID 2 for rms_left)
+    // 3: 3.0 (SendTrig ID 3 for rms_right)
+    // 4: 20.0 (Impulse frequency - 20Hz for meter updates)
+    // 5: 0.01 (Amplitude attack time)
+    // 6: 0.1 (Amplitude release time)
+    buf.write_all(&7i32.to_be_bytes())?; // num constants
+    buf.write_all(&0.0f32.to_be_bytes())?; // constant 0
+    buf.write_all(&1.0f32.to_be_bytes())?; // constant 1
+    buf.write_all(&2.0f32.to_be_bytes())?; // constant 2
+    buf.write_all(&3.0f32.to_be_bytes())?; // constant 3
+    buf.write_all(&20.0f32.to_be_bytes())?; // constant 4
+    buf.write_all(&0.01f32.to_be_bytes())?; // constant 5
+    buf.write_all(&0.1f32.to_be_bytes())?; // constant 6
 
-    // Parameters: inbus=0, outbus=0
-    buf.write_all(&2i32.to_be_bytes())?; // num params
+    // Parameters: inbus=0, outbus=0, amp=1.0
+    buf.write_all(&3i32.to_be_bytes())?; // num params
     buf.write_all(&0.0f32.to_be_bytes())?; // inbus default = 0
     buf.write_all(&0.0f32.to_be_bytes())?; // outbus default = 0
+    buf.write_all(&1.0f32.to_be_bytes())?; // amp default = 1.0
 
     // Param names
-    buf.write_all(&2i32.to_be_bytes())?; // num param names
+    buf.write_all(&3i32.to_be_bytes())?; // num param names
     // inbus
     let inbus_name = b"inbus";
     buf.push(inbus_name.len() as u8);
@@ -4412,23 +4832,42 @@ fn create_system_link_audio_bytes() -> Result<Vec<u8>> {
     buf.push(outbus_name.len() as u8);
     buf.write_all(outbus_name)?;
     buf.write_all(&1i32.to_be_bytes())?; // index 1
+    // amp
+    let amp_name = b"amp";
+    buf.push(amp_name.len() as u8);
+    buf.write_all(amp_name)?;
+    buf.write_all(&2i32.to_be_bytes())?; // index 2
 
-    // UGens: Control, In.ar, Out.ar
-    buf.write_all(&3i32.to_be_bytes())?; // num ugens
+    // UGens (14 total)
+    buf.write_all(&14i32.to_be_bytes())?; // num ugens
 
-    // UGen 0: Control (control rate, 2 outputs)
+    // Helper to write a constant input reference
+    fn write_const_input(buf: &mut Vec<u8>, const_idx: i32) -> std::io::Result<()> {
+        buf.write_all(&(-1i32).to_be_bytes())?; // -1 means constant
+        buf.write_all(&const_idx.to_be_bytes())?;
+        Ok(())
+    }
+
+    // Helper to write a UGen input reference
+    fn write_ugen_input(buf: &mut Vec<u8>, ugen_idx: i32, output_idx: i32) -> std::io::Result<()> {
+        buf.write_all(&ugen_idx.to_be_bytes())?;
+        buf.write_all(&output_idx.to_be_bytes())?;
+        Ok(())
+    }
+
+    // UGen 0: Control (control rate, 3 outputs: inbus, outbus, amp)
     let control_name = b"Control";
     buf.push(control_name.len() as u8);
     buf.write_all(control_name)?;
     buf.push(1); // rate: control
     buf.write_all(&0i32.to_be_bytes())?; // num inputs
-    buf.write_all(&2i32.to_be_bytes())?; // num outputs
+    buf.write_all(&3i32.to_be_bytes())?; // num outputs
     buf.write_all(&0i16.to_be_bytes())?; // special index
-    // Output rates
-    buf.push(1); // output 0 rate: control
-    buf.push(1); // output 1 rate: control
+    buf.push(1); // output 0 rate: control (inbus)
+    buf.push(1); // output 1 rate: control (outbus)
+    buf.push(1); // output 2 rate: control (amp)
 
-    // UGen 1: In.ar (audio rate, 2 outputs)
+    // UGen 1: In.ar (audio rate, 2 outputs: left, right)
     let in_name = b"In";
     buf.push(in_name.len() as u8);
     buf.write_all(in_name)?;
@@ -4436,14 +4875,34 @@ fn create_system_link_audio_bytes() -> Result<Vec<u8>> {
     buf.write_all(&1i32.to_be_bytes())?; // num inputs
     buf.write_all(&2i32.to_be_bytes())?; // num outputs
     buf.write_all(&0i16.to_be_bytes())?; // special index
-    // Input 0: from Control output 0 (inbus)
-    buf.write_all(&0i32.to_be_bytes())?; // ugen index
-    buf.write_all(&0i32.to_be_bytes())?; // output index
-    // Output rates
-    buf.push(2); // output 0 rate: audio
-    buf.push(2); // output 1 rate: audio
+    write_ugen_input(&mut buf, 0, 0)?; // input: Control output 0 (inbus)
+    buf.push(2); // output 0 rate: audio (left)
+    buf.push(2); // output 1 rate: audio (right)
 
-    // UGen 2: Out.ar (audio rate, 0 outputs)
+    // UGen 2: BinaryOpUGen * (left × amp) - audio rate
+    let binop_name = b"BinaryOpUGen";
+    buf.push(binop_name.len() as u8);
+    buf.write_all(binop_name)?;
+    buf.push(2); // rate: audio
+    buf.write_all(&2i32.to_be_bytes())?; // num inputs
+    buf.write_all(&1i32.to_be_bytes())?; // num outputs
+    buf.write_all(&2i16.to_be_bytes())?; // special index: 2 = multiplication
+    write_ugen_input(&mut buf, 1, 0)?; // input 0: In output 0 (left)
+    write_ugen_input(&mut buf, 0, 2)?; // input 1: Control output 2 (amp)
+    buf.push(2); // output rate: audio
+
+    // UGen 3: BinaryOpUGen * (right × amp) - audio rate
+    buf.push(binop_name.len() as u8);
+    buf.write_all(binop_name)?;
+    buf.push(2); // rate: audio
+    buf.write_all(&2i32.to_be_bytes())?; // num inputs
+    buf.write_all(&1i32.to_be_bytes())?; // num outputs
+    buf.write_all(&2i16.to_be_bytes())?; // special index: 2 = multiplication
+    write_ugen_input(&mut buf, 1, 1)?; // input 0: In output 1 (right)
+    write_ugen_input(&mut buf, 0, 2)?; // input 1: Control output 2 (amp)
+    buf.push(2); // output rate: audio
+
+    // UGen 4: Out.ar (outputs scaled audio to outbus)
     let out_name = b"Out";
     buf.push(out_name.len() as u8);
     buf.write_all(out_name)?;
@@ -4451,15 +4910,114 @@ fn create_system_link_audio_bytes() -> Result<Vec<u8>> {
     buf.write_all(&3i32.to_be_bytes())?; // num inputs
     buf.write_all(&0i32.to_be_bytes())?; // num outputs
     buf.write_all(&0i16.to_be_bytes())?; // special index
-    // Input 0: from Control output 1 (outbus)
-    buf.write_all(&0i32.to_be_bytes())?; // ugen index
-    buf.write_all(&1i32.to_be_bytes())?; // output index
-    // Input 1: from In output 0 (left)
-    buf.write_all(&1i32.to_be_bytes())?; // ugen index
-    buf.write_all(&0i32.to_be_bytes())?; // output index
-    // Input 2: from In output 1 (right)
-    buf.write_all(&1i32.to_be_bytes())?; // ugen index
-    buf.write_all(&1i32.to_be_bytes())?; // output index
+    write_ugen_input(&mut buf, 0, 1)?; // input 0: Control output 1 (outbus)
+    write_ugen_input(&mut buf, 2, 0)?; // input 1: BinaryOpUGen#2 (scaled_left)
+    write_ugen_input(&mut buf, 3, 0)?; // input 2: BinaryOpUGen#3 (scaled_right)
+
+    // UGen 5: Impulse.kr (20Hz trigger for meter updates)
+    let impulse_name = b"Impulse";
+    buf.push(impulse_name.len() as u8);
+    buf.write_all(impulse_name)?;
+    buf.push(1); // rate: control
+    buf.write_all(&2i32.to_be_bytes())?; // num inputs (freq, phase)
+    buf.write_all(&1i32.to_be_bytes())?; // num outputs
+    buf.write_all(&0i16.to_be_bytes())?; // special index
+    write_const_input(&mut buf, 4)?; // input 0: constant 4 (20.0 Hz)
+    write_const_input(&mut buf, 0)?; // input 1: constant 0 (0.0 phase)
+    buf.push(1); // output rate: control
+
+    // UGen 6: Peak.kr (left channel peak, reset by Impulse)
+    let peak_name = b"Peak";
+    buf.push(peak_name.len() as u8);
+    buf.write_all(peak_name)?;
+    buf.push(1); // rate: control
+    buf.write_all(&2i32.to_be_bytes())?; // num inputs
+    buf.write_all(&1i32.to_be_bytes())?; // num outputs
+    buf.write_all(&0i16.to_be_bytes())?; // special index
+    write_ugen_input(&mut buf, 2, 0)?; // input 0: BinaryOpUGen#2 (scaled_left)
+    write_ugen_input(&mut buf, 5, 0)?; // input 1: Impulse#5 (reset trigger)
+    buf.push(1); // output rate: control
+
+    // UGen 7: Peak.kr (right channel peak, reset by Impulse)
+    buf.push(peak_name.len() as u8);
+    buf.write_all(peak_name)?;
+    buf.push(1); // rate: control
+    buf.write_all(&2i32.to_be_bytes())?; // num inputs
+    buf.write_all(&1i32.to_be_bytes())?; // num outputs
+    buf.write_all(&0i16.to_be_bytes())?; // special index
+    write_ugen_input(&mut buf, 3, 0)?; // input 0: BinaryOpUGen#3 (scaled_right)
+    write_ugen_input(&mut buf, 5, 0)?; // input 1: Impulse#5 (reset trigger)
+    buf.push(1); // output rate: control
+
+    // UGen 8: Amplitude.kr (left channel RMS-like)
+    let amplitude_name = b"Amplitude";
+    buf.push(amplitude_name.len() as u8);
+    buf.write_all(amplitude_name)?;
+    buf.push(1); // rate: control
+    buf.write_all(&3i32.to_be_bytes())?; // num inputs
+    buf.write_all(&1i32.to_be_bytes())?; // num outputs
+    buf.write_all(&0i16.to_be_bytes())?; // special index
+    write_ugen_input(&mut buf, 2, 0)?; // input 0: BinaryOpUGen#2 (scaled_left)
+    write_const_input(&mut buf, 5)?; // input 1: constant 5 (0.01 attack)
+    write_const_input(&mut buf, 6)?; // input 2: constant 6 (0.1 release)
+    buf.push(1); // output rate: control
+
+    // UGen 9: Amplitude.kr (right channel RMS-like)
+    buf.push(amplitude_name.len() as u8);
+    buf.write_all(amplitude_name)?;
+    buf.push(1); // rate: control
+    buf.write_all(&3i32.to_be_bytes())?; // num inputs
+    buf.write_all(&1i32.to_be_bytes())?; // num outputs
+    buf.write_all(&0i16.to_be_bytes())?; // special index
+    write_ugen_input(&mut buf, 3, 0)?; // input 0: BinaryOpUGen#3 (scaled_right)
+    write_const_input(&mut buf, 5)?; // input 1: constant 5 (0.01 attack)
+    write_const_input(&mut buf, 6)?; // input 2: constant 6 (0.1 release)
+    buf.push(1); // output rate: control
+
+    // UGen 10: SendTrig.kr (send peak_left)
+    let sendtrig_name = b"SendTrig";
+    buf.push(sendtrig_name.len() as u8);
+    buf.write_all(sendtrig_name)?;
+    buf.push(1); // rate: control
+    buf.write_all(&3i32.to_be_bytes())?; // num inputs
+    buf.write_all(&0i32.to_be_bytes())?; // num outputs
+    buf.write_all(&0i16.to_be_bytes())?; // special index
+    write_ugen_input(&mut buf, 5, 0)?; // input 0: Impulse#5 (trigger)
+    write_const_input(&mut buf, 0)?; // input 1: constant 0 (ID = 0 for peak_left)
+    write_ugen_input(&mut buf, 6, 0)?; // input 2: Peak#6 (peak_left value)
+
+    // UGen 11: SendTrig.kr (send peak_right)
+    buf.push(sendtrig_name.len() as u8);
+    buf.write_all(sendtrig_name)?;
+    buf.push(1); // rate: control
+    buf.write_all(&3i32.to_be_bytes())?; // num inputs
+    buf.write_all(&0i32.to_be_bytes())?; // num outputs
+    buf.write_all(&0i16.to_be_bytes())?; // special index
+    write_ugen_input(&mut buf, 5, 0)?; // input 0: Impulse#5 (trigger)
+    write_const_input(&mut buf, 1)?; // input 1: constant 1 (ID = 1 for peak_right)
+    write_ugen_input(&mut buf, 7, 0)?; // input 2: Peak#7 (peak_right value)
+
+    // UGen 12: SendTrig.kr (send rms_left)
+    buf.push(sendtrig_name.len() as u8);
+    buf.write_all(sendtrig_name)?;
+    buf.push(1); // rate: control
+    buf.write_all(&3i32.to_be_bytes())?; // num inputs
+    buf.write_all(&0i32.to_be_bytes())?; // num outputs
+    buf.write_all(&0i16.to_be_bytes())?; // special index
+    write_ugen_input(&mut buf, 5, 0)?; // input 0: Impulse#5 (trigger)
+    write_const_input(&mut buf, 2)?; // input 1: constant 2 (ID = 2 for rms_left)
+    write_ugen_input(&mut buf, 8, 0)?; // input 2: Amplitude#8 (rms_left value)
+
+    // UGen 13: SendTrig.kr (send rms_right)
+    buf.push(sendtrig_name.len() as u8);
+    buf.write_all(sendtrig_name)?;
+    buf.push(1); // rate: control
+    buf.write_all(&3i32.to_be_bytes())?; // num inputs
+    buf.write_all(&0i32.to_be_bytes())?; // num outputs
+    buf.write_all(&0i16.to_be_bytes())?; // special index
+    write_ugen_input(&mut buf, 5, 0)?; // input 0: Impulse#5 (trigger)
+    write_const_input(&mut buf, 3)?; // input 1: constant 3 (ID = 3 for rms_right)
+    write_ugen_input(&mut buf, 9, 0)?; // input 2: Amplitude#9 (rms_right value)
 
     // Variants: none
     buf.write_all(&0i16.to_be_bytes())?;

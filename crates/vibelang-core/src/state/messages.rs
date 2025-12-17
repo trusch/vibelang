@@ -4,6 +4,7 @@
 //! This enum is the single point of truth for all possible changes
 //! to the audio state.
 
+use crate::api::context::SourceLocation;
 use crate::events::{BeatEvent, Pattern};
 use crate::midi::{CcRoute, KeyboardRoute, MidiBackend, MidiDeviceInfo, NoteRoute};
 use crate::sequences::{FadeDefinition, SequenceDefinition};
@@ -103,6 +104,7 @@ pub enum StateMessage {
         path: String,
         parent_path: Option<String>,
         node_id: i32,
+        source_location: SourceLocation,
     },
 
     /// Unregister a group.
@@ -152,6 +154,7 @@ pub enum StateMessage {
         params: HashMap<String, f32>,
         sfz_instrument: Option<String>,
         vst_instrument: Option<String>,
+        source_location: SourceLocation,
     },
 
     /// Delete a voice.
@@ -173,6 +176,12 @@ pub enum StateMessage {
         delay: Option<String>,
         quantize: Option<String>,
     },
+
+    /// Mute a voice.
+    MuteVoice { name: String },
+
+    /// Unmute a voice.
+    UnmuteVoice { name: String },
 
     /// Trigger a voice (create a synth).
     TriggerVoice {
@@ -214,6 +223,9 @@ pub enum StateMessage {
         group_path: String,
         voice_name: Option<String>,
         pattern: Pattern,
+        source_location: SourceLocation,
+        /// Original step pattern string for visual editing.
+        step_pattern: Option<String>,
     },
 
     /// Delete a pattern.
@@ -249,6 +261,9 @@ pub enum StateMessage {
         group_path: String,
         voice_name: Option<String>,
         pattern: Pattern,
+        source_location: SourceLocation,
+        /// Original notes pattern string for visual editing.
+        notes_pattern: Option<String>,
     },
 
     /// Delete a melody.
@@ -322,6 +337,7 @@ pub enum StateMessage {
         params: HashMap<String, f32>,
         bus_in: i32,
         bus_out: i32,
+        source_location: SourceLocation,
     },
 
     /// Remove an effect.
@@ -342,6 +358,13 @@ pub enum StateMessage {
         duration: String,
         delay: Option<String>,
         quantize: Option<String>,
+    },
+
+    /// Cancel an active fade on a target parameter.
+    CancelFade {
+        target_type: crate::FadeTargetType,
+        target_name: String,
+        param_name: String,
     },
 
     // === MIDI Device Management ===
@@ -473,6 +496,8 @@ impl StateMessage {
             StateMessage::DeleteVoice { .. } => "DeleteVoice",
             StateMessage::SetVoiceParam { .. } => "SetVoiceParam",
             StateMessage::FadeVoiceParam { .. } => "FadeVoiceParam",
+            StateMessage::MuteVoice { .. } => "MuteVoice",
+            StateMessage::UnmuteVoice { .. } => "UnmuteVoice",
             StateMessage::TriggerVoice { .. } => "TriggerVoice",
             StateMessage::StopVoice { .. } => "StopVoice",
             StateMessage::RunVoice { .. } => "RunVoice",
@@ -506,6 +531,7 @@ impl StateMessage {
             StateMessage::RemoveEffect { .. } => "RemoveEffect",
             StateMessage::SetEffectParam { .. } => "SetEffectParam",
             StateMessage::FadeEffectParam { .. } => "FadeEffectParam",
+            StateMessage::CancelFade { .. } => "CancelFade",
             StateMessage::MidiOpenDevice { .. } => "MidiOpenDevice",
             StateMessage::MidiCloseDevice { .. } => "MidiCloseDevice",
             StateMessage::MidiCloseAllDevices => "MidiCloseAllDevices",

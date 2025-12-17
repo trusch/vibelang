@@ -1,0 +1,116 @@
+[
+  {
+    "name": "BufDelayN",
+    "description": "Buffer-based delay line with no interpolation. Uses a shared buffer for delay storage.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "buf", "type": "float", "default": 0.0, "description": "Buffer number to use for delay line"},
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "BufDelays"
+  },
+  {
+    "name": "BufDelayL",
+    "description": "Buffer-based delay line with linear interpolation. Uses a shared buffer.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "buf", "type": "float", "default": 0.0, "description": "Buffer number to use for delay line"},
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "BufDelays"
+  },
+  {
+    "name": "BufDelayC",
+    "description": "Buffer-based delay line with cubic interpolation. Uses a shared buffer for highest quality.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "buf", "type": "float", "default": 0.0, "description": "Buffer number to use for delay line"},
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "BufDelays"
+  },
+  {
+    "name": "BufCombN",
+    "description": "Buffer-based comb delay with no interpolation. Uses shared buffer for comb filtering.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "buf", "type": "float", "default": 0.0, "description": "Buffer number to use for delay line"},
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "BufDelays"
+  },
+  {
+    "name": "BufCombL",
+    "description": "Buffer-based comb delay with linear interpolation. Shared buffer comb filter.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "buf", "type": "float", "default": 0.0, "description": "Buffer number to use for delay line"},
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "BufDelays"
+  },
+  {
+    "name": "BufCombC",
+    "description": "Buffer-based comb delay with cubic interpolation. Highest quality shared buffer comb.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "buf", "type": "float", "default": 0.0, "description": "Buffer number to use for delay line"},
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "BufDelays"
+  },
+  {
+    "name": "BufAllpassN",
+    "description": "Buffer-based allpass delay with no interpolation. Shared buffer allpass filter.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "buf", "type": "float", "default": 0.0, "description": "Buffer number to use for delay line"},
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "BufDelays"
+  },
+  {
+    "name": "BufAllpassL",
+    "description": "Buffer-based allpass delay with linear interpolation. Shared buffer allpass.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "buf", "type": "float", "default": 0.0, "description": "Buffer number to use for delay line"},
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "BufDelays"
+  },
+  {
+    "name": "BufAllpassC",
+    "description": "Buffer-based allpass delay with cubic interpolation. Highest quality shared buffer allpass.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "buf", "type": "float", "default": 0.0, "description": "Buffer number to use for delay line"},
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
+      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+    ],
+    "outputs": 1,
+    "category": "BufDelays"
+  }
+]

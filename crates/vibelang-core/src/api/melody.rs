@@ -5,10 +5,11 @@
 use crate::events::{BeatEvent, Pattern as PatternData};
 use crate::sequences::{ClipMode, ClipSource, SequenceClip, SequenceDefinition};
 use crate::state::{LoopStatus, StateMessage};
-use rhai::{CustomType, Dynamic, Engine, EvalAltResult, Position, TypeBuilder};
+use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::collections::HashMap;
 
-use super::{context, require_handle};
+use super::context::{self, SourceLocation};
+use super::require_handle;
 
 /// A Melody builder for creating melodic patterns.
 #[derive(Debug, Clone, CustomType)]
@@ -19,8 +20,10 @@ pub struct Melody {
     voice_name: Option<String>,
     /// Notes in the melody.
     notes: Vec<MelodyNote>,
-    /// Step pattern string.
+    /// Step pattern string (from .step() method).
     steps: Option<String>,
+    /// Notes pattern string (from .notes() method).
+    notes_string: Option<String>,
     /// Loop length in beats.
     length: f64,
     /// Default gate (note duration as fraction of step).
@@ -37,6 +40,8 @@ pub struct Melody {
     group_path: String,
     /// Parameters.
     params: HashMap<String, f64>,
+    /// Source location where this melody was defined.
+    source_location: SourceLocation,
 }
 
 /// A note or chord in a melody.
@@ -50,13 +55,20 @@ struct MelodyNote {
 }
 
 impl Melody {
-    /// Create a new melody with the given name.
-    pub fn new(name: String) -> Self {
+    /// Create a new melody with the given name and source location from NativeCallContext.
+    pub fn new(ctx: NativeCallContext, name: String) -> Self {
+        let pos = ctx.call_position();
+        let source_location = SourceLocation::new(
+            context::get_current_script_file(),
+            if pos.is_none() { None } else { pos.line().map(|l| l as u32) },
+            if pos.is_none() { None } else { pos.position().map(|c| c as u32) },
+        );
         Self {
             name,
             voice_name: None,
             notes: Vec::new(),
             steps: None,
+            notes_string: None,
             length: 4.0,
             gate: 0.5,
             transpose: 0,
@@ -65,6 +77,7 @@ impl Melody {
             root: None,
             group_path: context::current_group_path(),
             params: HashMap::new(),
+            source_location,
         }
     }
 
@@ -248,6 +261,8 @@ impl Melody {
             });
         }
 
+        // Store the original notes string for visual editing
+        self.notes_string = Some(notes_str);
         self
     }
 
@@ -462,11 +477,16 @@ impl Melody {
             phase_offset: 0.0,
         };
 
+        // Use notes_string from .notes() method, or steps from .step() method
+        let notes_pattern = self.notes_string.clone().or(self.steps.clone());
+
         let _ = handle.send(StateMessage::CreateMelody {
             name: self.name.clone(),
             group_path: self.group_path.clone(),
             voice_name: self.voice_name.clone(),
             pattern: loop_pattern,
+            source_location: self.source_location.clone(),
+            notes_pattern,
         });
     }
 
@@ -544,9 +564,9 @@ impl MelodyLaneBuilder {
     }
 }
 
-/// Create a new melody builder.
-pub fn melody(name: String) -> Melody {
-    Melody::new(name)
+/// Create a new melody builder with source location tracking.
+pub fn melody(ctx: NativeCallContext, name: String) -> Melody {
+    Melody::new(ctx, name)
 }
 
 /// Token type for bar parsing.

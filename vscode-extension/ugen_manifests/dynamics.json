@@ -1,0 +1,54 @@
+[
+  {
+    "name": "Compander",
+    "description": "General purpose compressor, expander, limiter, gate, ducker. Adjusts amplitude based on a control signal.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to be processed"},
+      {"name": "control", "type": "signal", "default": 0.0, "description": "Control signal for amplitude detection"},
+      {"name": "thresh", "type": "float", "default": 0.5, "description": "Control signal amplitude threshold"},
+      {"name": "slopeBelow", "type": "float", "default": 1.0, "description": "Slope when control < thresh. <1 = expansion, >1 = compression"},
+      {"name": "slopeAbove", "type": "float", "default": 1.0, "description": "Slope when control > thresh. <1 = compression, >1 = expansion"},
+      {"name": "clampTime", "type": "float", "default": 0.01, "description": "Attack time in seconds"},
+      {"name": "relaxTime", "type": "float", "default": 0.1, "description": "Release time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "Dynamics"
+  },
+  {
+    "name": "Limiter",
+    "description": "Peak limiter. Limits the input amplitude to a specified level with very fast attack.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "level", "type": "float", "default": 1.0, "description": "Maximum allowed amplitude"},
+      {"name": "dur", "type": "float", "default": 0.01, "description": "Lookahead time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "Dynamics"
+  },
+  {
+    "name": "Normalizer",
+    "description": "Amplitude normalizer. Adjusts amplitude to maintain a specified level with lookahead.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "level", "type": "float", "default": 1.0, "description": "Target amplitude level"},
+      {"name": "dur", "type": "float", "default": 0.01, "description": "Lookahead time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "Dynamics"
+  },
+  {
+    "name": "Amplitude",
+    "description": "Amplitude follower. Tracks the amplitude envelope of a signal.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
+      {"name": "attackTime", "type": "float", "default": 0.01, "description": "Attack time in seconds"},
+      {"name": "releaseTime", "type": "float", "default": 0.01, "description": "Release time in seconds"}
+    ],
+    "outputs": 1,
+    "category": "Dynamics"
+  }
+]
