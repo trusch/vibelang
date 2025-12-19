@@ -1,0 +1,202 @@
+// Lo-fi Hip Hop - Dusty chill beat with vinyl crackle
+set_tempo(85);
+
+import "stdlib/drums/hihats/hihat_dusty.vibe";
+import "stdlib/drums/kicks/kick_lofi.vibe";
+import "stdlib/drums/snares/snare_lofi.vibe";
+import "stdlib/effects/delay.vibe";
+import "stdlib/effects/reverbs/gverb.vibe";
+import "stdlib/modern/lofi.vibe";
+import "stdlib/synths/arp.vibe";
+
+import "./instruments.vibe";
+
+
+let drums = define_group("Drums", || {
+    let kick = voice("kick").synth("kick_lofi").gain(db(-20));
+    let snare = voice("snare").synth("snare_lofi").gain(db(-15));
+    let hat = voice("hat").synth("hihat_dusty").gain(db(-15));
+
+    pattern("kick")
+        .on(kick)
+        .step("x... ..x. x... .... | x... ..x. ..x. ....")
+        .apply();
+
+    pattern("hat")
+        .on(hat)
+        .step("..x. ..x. ..x. ..x. | ..x. ..x. ..x. ..x.")
+        .apply();
+
+    pattern("snare")
+        .on(snare)
+        .step(".... x... .... x... | .... x... .... x...")
+        .apply();
+
+    sequence("drums_intro")
+        .loop_bars(8)
+        .clip(0..bars(8), pattern("hat"))
+        .apply();
+
+    sequence("drums_verse")
+        .loop_bars(8)
+        .clip(0..bars(8), pattern("kick"))
+        .clip(0..bars(8), pattern("snare"))
+        .clip(0..bars(8), pattern("hat"))
+        .apply();
+
+    sequence("drums_chorus")
+        .loop_bars(8)
+        .clip(0..bars(8), pattern("kick"))
+        .clip(0..bars(8), pattern("snare"))
+        .clip(0..bars(8), pattern("hat"))
+        .apply();
+
+});
+
+let keys = define_group("Keys", || {
+    let target_gain = db(-35);
+    let rhodes = voice("rhodes").synth("lofi_keys").set_param("amp", target_gain);
+
+    melody("chords_1").on(rhodes)
+        .notes(`
+            D3:m7--- | ---- |
+            A3:m7--- | ---- |
+            G3:m7--- | ---- |
+            A3:m7--- | ----
+        `)
+        .apply();
+
+    melody("chords_2").on(rhodes)
+        .notes(`
+            D3:m7--- ---- ---- ---- | D3:m7- D3:m7- ---- ---- ---- |
+            A3:m7--- ---- ---- ---- | A3:m7- A3:m7- ---- ---- ---- |
+            G3:m7--- ---- ---- ---- | G3:m7- G3:m7- ---- ---- ---- |
+            A3:m7--- ---- ---- ---- | A3:m7- A3:m7- ---- ---- ----
+        `)
+        .apply();
+
+    fade("keys_fade_in")
+        .on_voice("rhodes")
+        .param("amp")
+        .from(target_gain/2.)
+        .to(target_gain)
+        .over_bars(4)
+        .apply();
+
+    fade("keys_fade_out")
+        .on_voice("rhodes")
+        .param("amp")
+        .from(target_gain)
+        .to(0.0)
+        .over_bars(4)
+        .apply();
+
+    fx("keys_reverb")
+        .synth("gverb")
+        .param("roomsize", 50.0)
+        .param("revtime", 2.0)
+        .param("damping", 0.5)
+        .param("spread", 15.0)
+        .param("drylevel", 0.3)
+        .param("earlylevel", 0.4)
+        .param("taillevel", 0.5)
+});
+
+let bass = define_group("Bass", || {
+    let default_gain = db(-25);
+
+    let bass = voice("bass").synth("lofi_bass").set_param("amp", default_gain);
+
+    let bass_line_one = "1--- --1- 5--- 3--- | 1--- ---- 7-1- --5-";
+    let bass_line_two = "1--- --1- 5--- 7--- | 1--- ---- 7-1- 3---";
+    let bass_line_three = "1--- --1- 5--- 7--- | 1--- ---- 7--- 1-3-";
+
+    let roots = ["D2", "A1", "G1"];
+    let lines = [bass_line_one, bass_line_two, bass_line_three];
+    for root in roots {
+        for (line, idx) in lines {
+            melody(`bass_${root}_${idx}`)
+                .on(bass)
+                .root(root)
+                .scale("minor")
+                .notes(line)
+                .apply();
+        }
+    }
+
+    fade("bass_fade_in")
+        .on_voice("bass")
+        .param("amp")
+        .from(0.0)
+        .to(default_gain)
+        .over_bars(4)
+        .apply();
+
+    fade("bass_fade_out")
+        .on_voice("bass")
+        .param("amp")
+        .to(0.0)
+        .over_bars(4)
+        .apply();
+
+    sequence("bass_variation_one")
+        .loop_bars(8)
+        .clip(bars(0)..bars(2), melody("bass_D2_0"))
+        .clip(bars(2)..bars(4), melody("bass_A1_1"))
+        .clip(bars(4)..bars(6), melody("bass_G1_0"))
+        .clip(bars(6)..bars(8), melody("bass_A1_2"))
+        .apply();
+
+    sequence("bass_variation_two")
+        .loop_bars(8)
+        .clip(bars(0)..bars(2), melody("bass_D2_1"))
+        .clip(bars(2)..bars(4), melody("bass_A1_2"))
+        .clip(bars(4)..bars(6), melody("bass_G1_0"))
+        .clip(bars(6)..bars(8), melody("bass_A1_1"))
+        .apply();
+
+    sequence("bass_variation_three")
+        .loop_bars(8)
+        .clip(bars(0)..bars(2), melody("bass_D2_2"))
+        .clip(bars(2)..bars(4), melody("bass_A1_0"))
+        .clip(bars(4)..bars(6), melody("bass_G1_1"))
+        .clip(bars(6)..bars(8), melody("bass_A1_2"))
+        .apply();
+
+});
+
+let texture = define_group("Texture", || {
+    fx("vinyl").synth("lofi_crackle").param("amp", 0.15).apply();
+
+    fade("vinyl_fade_in")
+        .on_effect("vinyl")
+        .param("amp")
+        .from(0.5)
+        .to(0.15)
+        .over_bars(8)
+        .apply();
+});
+
+let main_seq = sequence("main_seq")
+    .loop_bars(32)
+    .clip(bars(0)..bars(8), fade("vinyl_fade_in"))
+
+    .clip(bars(0)..bars(8), sequence("drums_intro"))
+    .clip(bars(8)..bars(16), sequence("drums_verse"))
+    .clip(bars(16)..bars(24), sequence("drums_chorus"))
+    .clip(bars(24)..bars(32), sequence("drums_intro"))
+
+    .clip(bars(8)..bars(12), fade("keys_fade_in"))
+    .clip(bars(8)..bars(16), melody("chords_1"))
+    .clip(bars(16)..bars(24), melody("chords_2"))
+    .clip(bars(24)..bars(32), melody("chords_1"))
+    .clip(bars(28)..bars(32), fade("keys_fade_out"))
+
+    .clip(bars(0)..bars(4), fade("bass_fade_in"))
+    .clip(bars(0)..bars(8), sequence("bass_variation_one"))
+    .clip(bars(8)..bars(16), sequence("bass_variation_two"))
+    .clip(bars(16)..bars(24), sequence("bass_variation_three"))
+    .clip(bars(24)..bars(32), sequence("bass_variation_one"))
+    .clip(bars(28)..bars(32), fade("bass_fade_out"))
+
+    .start();
