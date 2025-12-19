@@ -1,0 +1,41 @@
+
+// Warm Rhodes-style keys with gentle filtering
+define_synthdef("lofi_keys")
+    .param("freq", 440.0).param("amp", 0.4).param("gate", 1.0)
+    .body(|freq, amp, gate| {
+    let env = envelope()
+        .adsr(0.02, 0.3, 0.5, 0.4)
+        .gate(gate)
+        .cleanup_on_finish()
+        .build();
+    let osc = sin_osc_ar(freq) + sin_osc_ar(freq * 2.0) * 0.3 + sin_osc_ar(freq * 3.0) * 0.1;
+    let wobble = sin_osc_kr(0.3) * 0.002 + 1.0;
+    let filtered = lpf_ar(osc * wobble, 2000.0);
+    filtered * env * amp
+});
+
+define_synthdef("lofi_bass")
+    .param("freq", 220.0).param("amp", 0.4).param("gate", 1.0)
+    .body(|freq, amp, gate| {
+    let env = envelope()
+        .adsr(0.02, 0.3, 0.5, 0.4)
+        .gate(gate)
+        .cleanup_on_finish()
+        .build();
+    let osc = sin_osc_ar(freq) + sin_osc_ar(freq * 2.0) * 0.3 + sin_osc_ar(freq * 3.0) * 0.1;
+    let wobble = sin_osc_kr(0.3) * 0.002 + 1.0;
+    let filtered = lpf_ar(osc * wobble, 2000.0);
+    filtered * env * amp
+});
+
+// Vinyl crackle texture
+define_fx("vinyl")
+    .param("amp", 0.04)
+    .param("gate", 1.0)
+    .body(|input, amp, gate| {
+    let noise = white_noise_ar();
+    let crackle = dust_ar(12.0) * 0.5;
+    let filtered = hpf_ar(noise * 0.1 + crackle, 2000.0);
+    filtered = lpf_ar(filtered, 8000.0) * amp;
+    [input[0] + filtered, input[1] + filtered]
+});
