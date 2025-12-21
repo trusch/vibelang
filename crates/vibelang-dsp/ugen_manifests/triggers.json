@@ -2,205 +2,544 @@
   {
     "name": "Trig",
     "description": "Timed trigger. When triggered, outputs the trigger value for a specified duration.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Trigger input signal"},
-      {"name": "dur", "type": "float", "default": 0.1, "description": "Duration to hold trigger value in seconds"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger input signal"
+      },
+      {
+        "name": "dur",
+        "type": "float",
+        "default": 0.1,
+        "description": "Duration to hold trigger value in seconds"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "trig_ar",
+      "trig_kr"
+    ]
   },
   {
     "name": "Trig1",
     "description": "Timed trigger that outputs 1. When triggered, outputs 1.0 for a specified duration.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Trigger input signal"},
-      {"name": "dur", "type": "float", "default": 0.1, "description": "Duration in seconds"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger input signal"
+      },
+      {
+        "name": "dur",
+        "type": "float",
+        "default": 0.1,
+        "description": "Duration in seconds"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "trig1_ar",
+      "trig1_kr"
+    ]
   },
   {
     "name": "SendTrig",
     "description": "Send a trigger message to the client. Sends OSC message when triggered.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Trigger input signal"},
-      {"name": "id", "type": "float", "default": 0.0, "description": "Trigger ID number"},
-      {"name": "value", "type": "float", "default": 0.0, "description": "Value to send with trigger message"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger input signal"
+      },
+      {
+        "name": "id",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger ID number"
+      },
+      {
+        "name": "value",
+        "type": "float",
+        "default": 0,
+        "description": "Value to send with trigger message"
+      }
     ],
     "outputs": 0,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "send_trig_ar",
+      "send_trig_kr"
+    ]
   },
   {
     "name": "SendReply",
     "description": "Send an array of values to the client. Like SendTrig but can send multiple values.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger input signal"},
-      {"name": "cmdName", "type": "float", "default": 0.0, "description": "Command name identifier"},
-      {"name": "values", "type": "signal", "default": 0.0, "description": "Array of values to send"},
-      {"name": "replyID", "type": "float", "default": -1.0, "description": "Reply ID number"}
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger input signal"
+      },
+      {
+        "name": "cmdName",
+        "type": "float",
+        "default": 0,
+        "description": "Command name identifier"
+      },
+      {
+        "name": "values",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of values to send"
+      },
+      {
+        "name": "replyID",
+        "type": "float",
+        "default": -1,
+        "description": "Reply ID number"
+      }
     ],
     "outputs": 0,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "send_reply_ar",
+      "send_reply_kr"
+    ]
   },
   {
     "name": "Latch",
     "description": "Sample and hold. Samples the input value when triggered and holds it.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to sample"},
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger signal"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to sample"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger signal"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "latch_ar",
+      "latch_kr"
+    ]
   },
   {
     "name": "Gate",
     "description": "Gate signal pass through. Passes input when gate is positive, holds last value when negative.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Gate signal (positive = pass, negative/zero = hold)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Gate signal (positive = pass, negative/zero = hold)"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "gate_ar",
+      "gate_kr"
+    ]
   },
   {
     "name": "PulseDivider",
     "description": "Pulse divider. Outputs a trigger every Nth input trigger.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger input"},
-      {"name": "div", "type": "float", "default": 2.0, "description": "Division factor (outputs every Nth trigger)"},
-      {"name": "start", "type": "float", "default": 0.0, "description": "Starting count value"}
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger input"
+      },
+      {
+        "name": "div",
+        "type": "float",
+        "default": 2,
+        "description": "Division factor (outputs every Nth trigger)"
+      },
+      {
+        "name": "start",
+        "type": "float",
+        "default": 0,
+        "description": "Starting count value"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "pulse_divider_ar",
+      "pulse_divider_kr"
+    ]
   },
   {
     "name": "PulseCount",
     "description": "Pulse counter. Counts triggers and outputs the count.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger input to count"},
-      {"name": "reset", "type": "signal", "default": 0.0, "description": "Reset counter to zero"}
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger input to count"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset counter to zero"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "pulse_count_ar",
+      "pulse_count_kr"
+    ]
   },
   {
     "name": "Peak",
     "description": "Track peak signal value. Outputs the maximum value seen since last reset.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Reset trigger"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset trigger"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "peak_ar",
+      "peak_kr"
+    ]
   },
   {
     "name": "Schmidt",
     "description": "Schmitt trigger. Outputs 1 when input > hi, 0 when input < lo (hysteresis).",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "lo", "type": "float", "default": 0.0, "description": "Lower threshold"},
-      {"name": "hi", "type": "float", "default": 1.0, "description": "Upper threshold"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Lower threshold"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Upper threshold"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "schmidt_ar",
+      "schmidt_kr"
+    ]
   },
   {
     "name": "SetResetFF",
     "description": "Set-reset flip flop. Set input sets output to 1, reset input sets output to 0.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Set trigger (sets output to 1)"},
-      {"name": "reset", "type": "signal", "default": 0.0, "description": "Reset trigger (sets output to 0)"}
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Set trigger (sets output to 1)"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset trigger (sets output to 0)"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "set_reset_ff_ar",
+      "set_reset_ff_kr"
+    ]
   },
   {
     "name": "ToggleFF",
     "description": "Toggle flip flop. Each trigger toggles the output between 0 and 1.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger input to toggle state"}
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger input to toggle state"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "toggle_ff_ar",
+      "toggle_ff_kr"
+    ]
   },
   {
     "name": "Stepper",
     "description": "Step through values. Counts up/down through a range with trigger and reset.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger to advance one step"},
-      {"name": "reset", "type": "signal", "default": 0.0, "description": "Reset to resetval"},
-      {"name": "min", "type": "float", "default": 0.0, "description": "Minimum value"},
-      {"name": "max", "type": "float", "default": 7.0, "description": "Maximum value"},
-      {"name": "step", "type": "float", "default": 1.0, "description": "Step size (can be negative)"},
-      {"name": "resetval", "type": "float", "default": 0.0, "description": "Value to reset to"}
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger to advance one step"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset to resetval"
+      },
+      {
+        "name": "min",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum value"
+      },
+      {
+        "name": "max",
+        "type": "float",
+        "default": 7,
+        "description": "Maximum value"
+      },
+      {
+        "name": "step",
+        "type": "float",
+        "default": 1,
+        "description": "Step size (can be negative)"
+      },
+      {
+        "name": "resetval",
+        "type": "float",
+        "default": 0,
+        "description": "Value to reset to"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "stepper_ar",
+      "stepper_kr"
+    ]
   },
   {
     "name": "TrigControl",
     "description": "Trigger rate control input. Used for control-rate trigger inputs in SynthDefs.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "trig_control_kr"
+    ]
   },
   {
     "name": "InRange",
     "description": "Test if signal is within range. Outputs 1 if lo <= in <= hi, otherwise 0.",
-    "rates": ["ar", "kr", "ir"],
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to test"},
-      {"name": "lo", "type": "float", "default": 0.0, "description": "Lower bound (inclusive)"},
-      {"name": "hi", "type": "float", "default": 1.0, "description": "Upper bound (inclusive)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to test"
+      },
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Lower bound (inclusive)"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Upper bound (inclusive)"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "in_range_ar",
+      "in_range_kr"
+    ]
   },
   {
     "name": "InRect",
     "description": "Test if point is within rectangle. Outputs 1 if (x,y) is inside rectangle.",
-    "rates": ["ar", "kr", "ir"],
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
     "inputs": [
-      {"name": "x", "type": "signal", "default": 0.0, "description": "X coordinate"},
-      {"name": "y", "type": "signal", "default": 0.0, "description": "Y coordinate"},
-      {"name": "rect", "type": "signal", "default": 0.0, "description": "Rectangle bounds [left, top, right, bottom]"}
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "X coordinate"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "Y coordinate"
+      },
+      {
+        "name": "rect",
+        "type": "signal",
+        "default": 0,
+        "description": "Rectangle bounds [left, top, right, bottom]"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "in_rect_ar",
+      "in_rect_kr"
+    ]
   },
   {
     "name": "Changed",
     "description": "Trigger when input changes. Outputs a trigger when the input value changes.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to monitor"},
-      {"name": "threshold", "type": "float", "default": 0.0, "description": "Minimum change to trigger (0 = any change)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to monitor"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum change to trigger (0 = any change)"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "changed_ar",
+      "changed_kr"
+    ]
   },
   {
     "name": "Done",
     "description": "Detect when a UGen has finished. Outputs a trigger when the input finishes.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "src", "type": "signal", "default": 0.0, "description": "UGen to monitor for done signal"}
+      {
+        "name": "src",
+        "type": "signal",
+        "default": 0,
+        "description": "UGen to monitor for done signal"
+      }
     ],
     "outputs": 1,
-    "category": "Triggers"
+    "category": "Triggers",
+    "functions": [
+      "done_kr"
+    ]
   }
 ]

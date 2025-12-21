@@ -9,7 +9,7 @@ use std::sync::Arc;
 use vibelang_core::api::context::SourceLocation;
 use vibelang_core::state::StateMessage;
 
-use crate::http_server::{
+use crate::{
     models::{Effect, EffectCreate, EffectUpdate, ErrorResponse, ParamSet, SourceLocation as ApiSourceLocation},
     AppState,
 };
@@ -217,17 +217,15 @@ pub async fn set_effect_param(
                 Json(ErrorResponse::internal(&format!("Failed to fade param: {}", e))),
             ));
         }
-    } else {
-        if let Err(e) = state.handle.send(StateMessage::SetEffectParam {
-            id: id.clone(),
-            param: param.clone(),
-            value: req.value,
-        }) {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::internal(&format!("Failed to set param: {}", e))),
-            ));
-        }
+    } else if let Err(e) = state.handle.send(StateMessage::SetEffectParam {
+        id: id.clone(),
+        param: param.clone(),
+        value: req.value,
+    }) {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::internal(&format!("Failed to set param: {}", e))),
+        ));
     }
 
     Ok(StatusCode::OK)

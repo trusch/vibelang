@@ -31,6 +31,9 @@ pub struct TransportState {
     /// The current beat position within the loop (current_beat % loop_beats).
     /// None if no loop is active.
     pub loop_beat: Option<f64>,
+    /// Server timestamp when this state was captured (milliseconds since Unix epoch).
+    /// Clients can use this to compensate for network latency.
+    pub server_time_ms: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -261,8 +264,9 @@ pub struct Melody {
     pub status: LoopStatus,
     pub is_looping: bool,
     pub source_location: Option<SourceLocation>,
-    /// Original notes pattern string for visual editing
-    pub notes_pattern: Option<String>,
+    /// Original notes pattern strings for visual editing (one per lane).
+    /// Multiple lanes support polyphonic melodies.
+    pub notes_patterns: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -285,7 +289,10 @@ pub struct MelodyCreate {
     pub loop_beats: f64,
     #[serde(default)]
     pub events: Vec<MelodyEvent>,
+    /// Single melody string (backward compatible).
     pub melody_string: Option<String>,
+    /// Multiple lanes for polyphonic melodies.
+    pub lanes: Option<Vec<String>>,
     #[serde(default)]
     pub params: HashMap<String, f32>,
 }
@@ -293,7 +300,11 @@ pub struct MelodyCreate {
 #[derive(Debug, Deserialize)]
 pub struct MelodyUpdate {
     pub events: Option<Vec<MelodyEvent>>,
+    /// Single melody string (backward compatible, adds to lanes).
     pub melody_string: Option<String>,
+    /// Multiple lanes for polyphonic melodies.
+    /// If provided, replaces all existing lanes.
+    pub lanes: Option<Vec<String>>,
     pub loop_beats: Option<f64>,
     #[serde(default)]
     pub params: HashMap<String, f32>,

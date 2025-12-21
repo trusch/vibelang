@@ -72,9 +72,7 @@ impl Sequence {
     }
 
     /// Add a clip from a Pattern.
-    pub fn clip_pattern(mut self, range: Range<f64>, mut pattern: super::pattern::Pattern) -> Self {
-        // Apply the pattern to register it
-        pattern.apply();
+    pub fn clip_pattern(mut self, range: Range<f64>, pattern: super::pattern::Pattern) -> Self {
         self.clips.push((
             range.start,
             range.end,
@@ -85,9 +83,7 @@ impl Sequence {
     }
 
     /// Add a clip from a Melody.
-    pub fn clip_melody(mut self, range: Range<f64>, mut melody: super::melody::Melody) -> Self {
-        // Apply the melody to register it
-        melody.apply();
+    pub fn clip_melody(mut self, range: Range<f64>, melody: super::melody::Melody) -> Self {
         self.clips.push((
             range.start,
             range.end,
@@ -98,9 +94,7 @@ impl Sequence {
     }
 
     /// Add a clip from a Fade.
-    pub fn clip_fade(mut self, range: Range<f64>, mut fade: Fade) -> Self {
-        // First register the fade
-        fade.apply();
+    pub fn clip_fade(mut self, range: Range<f64>, fade: Fade) -> Self {
         self.clips.push((
             range.start,
             range.end,
@@ -151,15 +145,12 @@ impl Sequence {
             return self;
         };
 
-        // Detect source type
-        if let Some(mut p) = source.clone().try_cast::<super::pattern::Pattern>() {
-            p.apply();
+        // Detect source type - just store the name, runtime resolves from global state
+        if let Some(p) = source.clone().try_cast::<super::pattern::Pattern>() {
             self.clips.push((start, end, ClipSource::Pattern(p.name.clone()), ClipMode::Loop));
-        } else if let Some(mut m) = source.clone().try_cast::<super::melody::Melody>() {
-            m.apply();
+        } else if let Some(m) = source.clone().try_cast::<super::melody::Melody>() {
             self.clips.push((start, end, ClipSource::Melody(m.name.clone()), ClipMode::Loop));
-        } else if let Some(mut f) = source.clone().try_cast::<Fade>() {
-            f.apply();
+        } else if let Some(f) = source.clone().try_cast::<Fade>() {
             self.clips.push((start, end, ClipSource::Fade(f.name.clone()), ClipMode::Once));
         } else if let Some(s) = source.clone().try_cast::<Sequence>() {
             self.clips.push((start, end, ClipSource::Sequence(s.name.clone()), ClipMode::Loop));
@@ -329,8 +320,8 @@ impl Fade {
 
     // === Actions ===
 
-    /// Register and apply the fade definition.
-    pub fn apply(&mut self) {
+    /// Register and apply the fade definition (chainable).
+    pub fn apply(self) -> Self {
         let handle = require_handle();
 
         let target_type = match self.target_type {
@@ -351,13 +342,16 @@ impl Fade {
         let _ = handle.send(StateMessage::CreateFadeDefinition {
             fade: def,
         });
+
+        self
     }
 
-    /// Start the fade immediately.
-    pub fn start(&mut self) {
-        self.apply();
+    /// Start the fade immediately (chainable).
+    pub fn start(self) -> Self {
+        let applied = self.apply();
         // For now, starting is handled by sequences that include this fade
         // Immediate fades could use a different mechanism
+        applied
     }
 }
 

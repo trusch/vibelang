@@ -2,105 +2,329 @@
   {
     "name": "Clip",
     "description": "Clip signal to a range. Limits output between low and high values.",
-    "rates": ["ar", "kr", "ir"],
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "lo", "type": "float", "default": 0.0, "description": "Minimum output value"},
-      {"name": "hi", "type": "float", "default": 1.0, "description": "Maximum output value"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum output value"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum output value"
+      }
     ],
     "outputs": 1,
-    "category": "Math"
+    "category": "Math",
+    "functions": [
+      "clip_ar",
+      "clip_kr"
+    ]
   },
   {
     "name": "Fold",
     "description": "Fold signal into a range. Values outside range are folded back into range.",
-    "rates": ["ar", "kr", "ir"],
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "lo", "type": "float", "default": 0.0, "description": "Minimum range value"},
-      {"name": "hi", "type": "float", "default": 1.0, "description": "Maximum range value"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum range value"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum range value"
+      }
     ],
     "outputs": 1,
-    "category": "Math"
+    "category": "Math",
+    "functions": [
+      "fold_ar",
+      "fold_kr"
+    ]
   },
   {
     "name": "Wrap",
     "description": "Wrap signal into a range. Values outside range wrap around cyclically.",
-    "rates": ["ar", "kr", "ir"],
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "lo", "type": "float", "default": 0.0, "description": "Minimum range value"},
-      {"name": "hi", "type": "float", "default": 1.0, "description": "Maximum range value"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum range value"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum range value"
+      }
     ],
     "outputs": 1,
-    "category": "Math"
+    "category": "Math",
+    "functions": [
+      "wrap_ar",
+      "wrap_kr"
+    ]
   },
   {
     "name": "MulAdd",
     "description": "Multiply and add. Efficiently computes (in * mul) + add.",
-    "rates": ["ar", "kr", "ir"],
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "mul", "type": "float", "default": 1.0, "description": "Multiplication factor"},
-      {"name": "add", "type": "float", "default": 0.0, "description": "Value to add after multiplication"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "mul",
+        "type": "float",
+        "default": 1,
+        "description": "Multiplication factor"
+      },
+      {
+        "name": "add",
+        "type": "float",
+        "default": 0,
+        "description": "Value to add after multiplication"
+      }
     ],
     "outputs": 1,
-    "category": "Math"
+    "category": "Math",
+    "functions": [
+      "mul_add_ar",
+      "mul_add_kr"
+    ]
   },
   {
     "name": "LinExp",
     "description": "Map linear range to exponential range. Useful for frequency mapping.",
-    "rates": ["ar", "kr", "ir"],
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "srclo", "type": "float", "default": 0.0, "description": "Lower bound of input range"},
-      {"name": "srchi", "type": "float", "default": 1.0, "description": "Upper bound of input range"},
-      {"name": "dstlo", "type": "float", "default": 1.0, "description": "Lower bound of output range (must be positive)"},
-      {"name": "dsthi", "type": "float", "default": 2.0, "description": "Upper bound of output range (must be positive)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "srclo",
+        "type": "float",
+        "default": 0,
+        "description": "Lower bound of input range"
+      },
+      {
+        "name": "srchi",
+        "type": "float",
+        "default": 1,
+        "description": "Upper bound of input range"
+      },
+      {
+        "name": "dstlo",
+        "type": "float",
+        "default": 1,
+        "description": "Lower bound of output range (must be positive)"
+      },
+      {
+        "name": "dsthi",
+        "type": "float",
+        "default": 2,
+        "description": "Upper bound of output range (must be positive)"
+      }
     ],
     "outputs": 1,
-    "category": "Math"
+    "category": "Math",
+    "functions": [
+      "lin_exp_ar",
+      "lin_exp_kr"
+    ]
   },
   {
     "name": "ExpLin",
     "description": "Map exponential range to linear range. Inverse of LinExp.",
-    "rates": ["ar", "kr", "ir"],
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 1.0, "description": "Input signal"},
-      {"name": "srclo", "type": "float", "default": 0.01, "description": "Lower bound of input range (must be positive)"},
-      {"name": "srchi", "type": "float", "default": 1.0, "description": "Upper bound of input range (must be positive)"},
-      {"name": "dstlo", "type": "float", "default": 0.0, "description": "Lower bound of output range"},
-      {"name": "dsthi", "type": "float", "default": 1.0, "description": "Upper bound of output range"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 1,
+        "description": "Input signal"
+      },
+      {
+        "name": "srclo",
+        "type": "float",
+        "default": 0.01,
+        "description": "Lower bound of input range (must be positive)"
+      },
+      {
+        "name": "srchi",
+        "type": "float",
+        "default": 1,
+        "description": "Upper bound of input range (must be positive)"
+      },
+      {
+        "name": "dstlo",
+        "type": "float",
+        "default": 0,
+        "description": "Lower bound of output range"
+      },
+      {
+        "name": "dsthi",
+        "type": "float",
+        "default": 1,
+        "description": "Upper bound of output range"
+      }
     ],
     "outputs": 1,
-    "category": "Math"
+    "category": "Math",
+    "functions": [
+      "exp_lin_ar",
+      "exp_lin_kr"
+    ]
   },
   {
     "name": "LinLin",
     "description": "Map linear range to linear range. Simple linear scaling and offset.",
-    "rates": ["ar", "kr", "ir"],
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "srclo", "type": "float", "default": 0.0, "description": "Lower bound of input range"},
-      {"name": "srchi", "type": "float", "default": 1.0, "description": "Upper bound of input range"},
-      {"name": "dstlo", "type": "float", "default": 1.0, "description": "Lower bound of output range"},
-      {"name": "dsthi", "type": "float", "default": 2.0, "description": "Upper bound of output range"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "srclo",
+        "type": "float",
+        "default": 0,
+        "description": "Lower bound of input range"
+      },
+      {
+        "name": "srchi",
+        "type": "float",
+        "default": 1,
+        "description": "Upper bound of input range"
+      },
+      {
+        "name": "dstlo",
+        "type": "float",
+        "default": 1,
+        "description": "Lower bound of output range"
+      },
+      {
+        "name": "dsthi",
+        "type": "float",
+        "default": 2,
+        "description": "Upper bound of output range"
+      }
     ],
     "outputs": 1,
-    "category": "Math"
+    "category": "Math",
+    "functions": [
+      "lin_lin_ar",
+      "lin_lin_kr"
+    ]
   },
   {
     "name": "ExpExp",
     "description": "Map exponential range to exponential range. Double exponential mapping.",
-    "rates": ["ar", "kr", "ir"],
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 1.0, "description": "Input signal"},
-      {"name": "srclo", "type": "float", "default": 0.01, "description": "Lower bound of input range (must be positive)"},
-      {"name": "srchi", "type": "float", "default": 1.0, "description": "Upper bound of input range (must be positive)"},
-      {"name": "dstlo", "type": "float", "default": 0.01, "description": "Lower bound of output range (must be positive)"},
-      {"name": "dsthi", "type": "float", "default": 1.0, "description": "Upper bound of output range (must be positive)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 1,
+        "description": "Input signal"
+      },
+      {
+        "name": "srclo",
+        "type": "float",
+        "default": 0.01,
+        "description": "Lower bound of input range (must be positive)"
+      },
+      {
+        "name": "srchi",
+        "type": "float",
+        "default": 1,
+        "description": "Upper bound of input range (must be positive)"
+      },
+      {
+        "name": "dstlo",
+        "type": "float",
+        "default": 0.01,
+        "description": "Lower bound of output range (must be positive)"
+      },
+      {
+        "name": "dsthi",
+        "type": "float",
+        "default": 1,
+        "description": "Upper bound of output range (must be positive)"
+      }
     ],
     "outputs": 1,
-    "category": "Math"
+    "category": "Math",
+    "functions": [
+      "exp_exp_ar",
+      "exp_exp_kr"
+    ]
   }
 ]

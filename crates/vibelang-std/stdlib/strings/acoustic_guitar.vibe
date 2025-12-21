@@ -28,7 +28,7 @@ define_synthdef("acoustic_guitar", |builder| {
             // Pluck excitation - filtered noise burst
             let excite_env = envelope()
                 .perc(0.0003, 1.0)
-                .time_scale(0.003 + (1.0 - pluck_hard)
+                .time_scale(0.003 + ((1.0 - pluck_hard) * 0.004))
                 .build();
             let excite_noise = white_noise_ar() * excite_env;
 

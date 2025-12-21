@@ -8,7 +8,7 @@ use axum::{
 use std::sync::Arc;
 use vibelang_core::state::StateMessage;
 
-use crate::http_server::{
+use crate::{
     models::{ErrorResponse, Sample, SampleLoad, SampleSlice},
     AppState,
 };

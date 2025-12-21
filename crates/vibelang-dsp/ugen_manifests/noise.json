@@ -2,151 +2,318 @@
   {
     "name": "WhiteNoise",
     "description": "White noise generator. Generates random values at full sample rate with equal distribution across all frequencies.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "white_noise_ar",
+      "white_noise_kr"
+    ]
   },
   {
     "name": "PinkNoise",
     "description": "Pink noise generator. Generates noise with equal energy per octave (1/f spectrum).",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "pink_noise_ar",
+      "pink_noise_kr"
+    ]
   },
   {
     "name": "BrownNoise",
     "description": "Brown noise generator. Generates noise with a 1/f² spectrum, also called red or Brownian noise.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "brown_noise_ar",
+      "brown_noise_kr"
+    ]
   },
   {
     "name": "GrayNoise",
     "description": "Gray noise generator. Generates noise that sounds equally loud at all frequencies to the human ear.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "gray_noise_ar",
+      "gray_noise_kr"
+    ]
   },
   {
     "name": "Dust",
     "description": "Random impulse generator. Generates random impulses from 0 to +1 at a rate determined by the density argument.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "density", "type": "float", "default": 0.0, "description": "Average number of impulses per second"}
+      {
+        "name": "density",
+        "type": "float",
+        "default": 0,
+        "description": "Average number of impulses per second"
+      }
     ],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "dust_ar",
+      "dust_kr"
+    ]
   },
   {
     "name": "LFNoise0",
     "description": "Step noise generator. Generates random levels at a rate given by freq. Holds each value for 1/freq seconds.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "freq", "type": "float", "default": 500.0, "description": "Approximate rate at which to generate random values"}
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 500,
+        "description": "Approximate rate at which to generate random values"
+      }
     ],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "lf_noise0_ar",
+      "lf_noise0_kr"
+    ]
   },
   {
     "name": "LFNoise1",
     "description": "Linear interpolated noise generator. Generates random levels that are linearly interpolated.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "freq", "type": "float", "default": 500.0, "description": "Approximate rate at which to generate random values"}
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 500,
+        "description": "Approximate rate at which to generate random values"
+      }
     ],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "lf_noise1_ar",
+      "lf_noise1_kr"
+    ]
   },
   {
     "name": "LFNoise2",
     "description": "Quadratic noise generator. Generates random levels with quadratic interpolation between them.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "freq", "type": "float", "default": 500.0, "description": "Approximate rate at which to generate random values"}
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 500,
+        "description": "Approximate rate at which to generate random values"
+      }
     ],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "lf_noise2_ar",
+      "lf_noise2_kr"
+    ]
   },
   {
     "name": "Dust2",
     "description": "Bipolar random impulse generator. Generates random impulses from -1 to +1.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "density", "type": "float", "default": 0.0, "description": "Average number of impulses per second"}
+      {
+        "name": "density",
+        "type": "float",
+        "default": 0,
+        "description": "Average number of impulses per second"
+      }
     ],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "dust2_ar",
+      "dust2_kr"
+    ]
   },
   {
     "name": "ClipNoise",
     "description": "Clip noise generator. Generates noise with only two values: -1 and +1.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "clip_noise_ar",
+      "clip_noise_kr"
+    ]
   },
   {
     "name": "Crackle",
     "description": "Chaotic noise generator. A noise generator based on a chaotic function with parameter control.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "chaosParam", "type": "float", "default": 1.5, "description": "Chaos parameter from 1.0 to 2.0. Values from 1.5 to 1.9 produce interesting sounds"}
+      {
+        "name": "chaosParam",
+        "type": "float",
+        "default": 1.5,
+        "description": "Chaos parameter from 1.0 to 2.0. Values from 1.5 to 1.9 produce interesting sounds"
+      }
     ],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "crackle_ar",
+      "crackle_kr"
+    ]
   },
   {
     "name": "LFClipNoise",
     "description": "Dynamic clip noise generator. Generates noise that switches between -1 and +1 at a given frequency.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "freq", "type": "float", "default": 500.0, "description": "Approximate rate at which to generate random values"}
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 500,
+        "description": "Approximate rate at which to generate random values"
+      }
     ],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "lf_clip_noise_ar",
+      "lf_clip_noise_kr"
+    ]
   },
   {
     "name": "LFDNoise0",
     "description": "Dynamic step noise generator. Like LFNoise0 but can have frequency modulation.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "freq", "type": "float", "default": 500.0, "description": "Approximate rate at which to generate random values"}
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 500,
+        "description": "Approximate rate at which to generate random values"
+      }
     ],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "lfd_noise0_ar",
+      "lfd_noise0_kr"
+    ]
   },
   {
     "name": "LFDNoise1",
     "description": "Dynamic linear interpolated noise. Like LFNoise1 but with frequency modulation support.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "freq", "type": "float", "default": 500.0, "description": "Approximate rate at which to generate random values"}
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 500,
+        "description": "Approximate rate at which to generate random values"
+      }
     ],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "lfd_noise1_ar",
+      "lfd_noise1_kr"
+    ]
   },
   {
     "name": "LFDNoise3",
     "description": "Dynamic cubic interpolated noise. Generates random levels with cubic interpolation and frequency modulation support.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "freq", "type": "float", "default": 500.0, "description": "Approximate rate at which to generate random values"}
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 500,
+        "description": "Approximate rate at which to generate random values"
+      }
     ],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "lfd_noise3_ar",
+      "lfd_noise3_kr"
+    ]
   },
   {
     "name": "Hasher",
     "description": "Hash function random generator. Returns a number from 0 to 1 based on a hash of the input value.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to hash"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to hash"
+      }
     ],
     "outputs": 1,
-    "category": "Noise"
+    "category": "Noise",
+    "functions": [
+      "hasher_ar",
+      "hasher_kr"
+    ]
   }
 ]

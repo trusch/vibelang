@@ -925,13 +925,13 @@ fn midi_device_pitch_bend(_device: &mut MidiDevice) -> PitchBendRouteBuilder {
 
 /// Parse a note from string or number.
 fn parse_note(value: &Dynamic) -> Result<u8, Box<EvalAltResult>> {
-    if let Some(n) = value.as_int().ok() {
+    if let Ok(n) = value.as_int() {
         return Ok(n.clamp(0, 127) as u8);
     }
-    if let Some(n) = value.as_float().ok() {
+    if let Ok(n) = value.as_float() {
         return Ok((n as i64).clamp(0, 127) as u8);
     }
-    if let Some(s) = value.clone().into_string().ok() {
+    if let Ok(s) = value.clone().into_string() {
         return crate::api::helpers::parse_note_name(&s)
             .ok_or_else(|| Box::new(EvalAltResult::from(format!("Invalid note: {}", s))) as Box<EvalAltResult>);
     }
@@ -948,14 +948,14 @@ fn get_voice_name(voice: &Dynamic) -> Result<String, Box<EvalAltResult>> {
     // Try to get the name from a Map (legacy support)
     if let Some(map) = voice.read_lock::<Map>() {
         if let Some(name) = map.get("name") {
-            if let Some(s) = name.clone().into_string().ok() {
+            if let Ok(s) = name.clone().into_string() {
                 return Ok(s);
             }
         }
     }
 
     // Try as a string (voice name directly)
-    if let Some(s) = voice.clone().into_string().ok() {
+    if let Ok(s) = voice.clone().into_string() {
         return Ok(s);
     }
 

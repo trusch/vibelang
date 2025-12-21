@@ -9,7 +9,7 @@ use std::sync::Arc;
 use vibelang_core::api::context::SourceLocation;
 use vibelang_core::state::{StateMessage, VoiceState};
 
-use crate::http_server::{
+use crate::{
     models::{ErrorResponse, NoteOffRequest, NoteOnRequest, ParamSet, SourceLocation as ApiSourceLocation, TriggerRequest, Voice, VoiceCreate, VoiceUpdate},
     AppState,
 };
@@ -76,7 +76,7 @@ pub async fn create_voice(
     }
 
     // Get group name from path
-    let group_name = req.group_path.split('/').last().unwrap_or("main").to_string();
+    let group_name = req.group_path.split('/').next_back().unwrap_or("main").to_string();
 
     log::debug!("Creating voice '{}' with synth '{:?}' in group '{}'", req.name, req.synth_name, req.group_path);
 
@@ -328,17 +328,15 @@ pub async fn set_voice_param(
                 Json(ErrorResponse::internal(&format!("Failed to fade param: {}", e))),
             ));
         }
-    } else {
-        if let Err(e) = state.handle.send(StateMessage::SetVoiceParam {
-            name: name.clone(),
-            param: param.clone(),
-            value: req.value,
-        }) {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::internal(&format!("Failed to set param: {}", e))),
-            ));
-        }
+    } else if let Err(e) = state.handle.send(StateMessage::SetVoiceParam {
+        name: name.clone(),
+        param: param.clone(),
+        value: req.value,
+    }) {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::internal(&format!("Failed to set param: {}", e))),
+        ));
     }
 
     Ok(StatusCode::OK)

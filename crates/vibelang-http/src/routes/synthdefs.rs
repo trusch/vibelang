@@ -7,7 +7,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::http_server::{
+use crate::{
     models::{ErrorResponse, SynthDef, SynthDefParam},
     AppState,
 };

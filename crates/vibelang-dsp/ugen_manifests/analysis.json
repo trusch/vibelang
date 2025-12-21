@@ -2,84 +2,231 @@
   {
     "name": "RunningSum",
     "description": "Running sum over a window. Calculates a running sum over the last N samples.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "numsamp", "type": "float", "default": 40.0, "description": "Number of samples in the running sum window"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "numsamp",
+        "type": "float",
+        "default": 40,
+        "description": "Number of samples in the running sum window"
+      }
     ],
     "outputs": 1,
-    "category": "Analysis"
+    "category": "Analysis",
+    "functions": [
+      "running_sum_ar",
+      "running_sum_kr"
+    ]
   },
   {
     "name": "RunningMin",
     "description": "Running minimum over a window. Tracks the minimum value over the last N samples.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "numsamp", "type": "float", "default": 40.0, "description": "Number of samples in the window"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "numsamp",
+        "type": "float",
+        "default": 40,
+        "description": "Number of samples in the window"
+      }
     ],
     "outputs": 1,
-    "category": "Analysis"
+    "category": "Analysis",
+    "functions": [
+      "running_min_ar",
+      "running_min_kr"
+    ]
   },
   {
     "name": "RunningMax",
     "description": "Running maximum over a window. Tracks the maximum value over the last N samples.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "numsamp", "type": "float", "default": 40.0, "description": "Number of samples in the window"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "numsamp",
+        "type": "float",
+        "default": 40,
+        "description": "Number of samples in the window"
+      }
     ],
     "outputs": 1,
-    "category": "Analysis"
+    "category": "Analysis",
+    "functions": [
+      "running_max_ar",
+      "running_max_kr"
+    ]
   },
   {
     "name": "PeakFollower",
     "description": "Peak tracking envelope follower. Follows the peak amplitude of a signal.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "decay", "type": "float", "default": 0.999, "description": "Decay coefficient per sample (0 to 1). Values close to 1 = slower decay"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "decay",
+        "type": "float",
+        "default": 0.999,
+        "description": "Decay coefficient per sample (0 to 1). Values close to 1 = slower decay"
+      }
     ],
     "outputs": 1,
-    "category": "Analysis"
+    "category": "Analysis",
+    "functions": [
+      "peak_follower_ar",
+      "peak_follower_kr"
+    ]
   },
   {
     "name": "Slope",
     "description": "Measures the rate of change (slope/derivative) of a signal per sample.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
     ],
     "outputs": 1,
-    "category": "Analysis"
+    "category": "Analysis",
+    "functions": [
+      "slope_ar",
+      "slope_kr"
+    ]
   },
   {
     "name": "ZeroCrossing",
     "description": "Zero crossing frequency. Estimates frequency by counting zero crossings.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
     ],
     "outputs": 1,
-    "category": "Analysis"
+    "category": "Analysis",
+    "functions": [
+      "zero_crossing_ar",
+      "zero_crossing_kr"
+    ]
   },
   {
     "name": "Pitch",
     "description": "Pitch tracking and analysis. Autocorrelation-based pitch detector.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to analyze"},
-      {"name": "initFreq", "type": "float", "default": 440.0, "description": "Initial frequency guess in Hz"},
-      {"name": "minFreq", "type": "float", "default": 60.0, "description": "Minimum frequency to detect in Hz"},
-      {"name": "maxFreq", "type": "float", "default": 4000.0, "description": "Maximum frequency to detect in Hz"},
-      {"name": "execFreq", "type": "float", "default": 100.0, "description": "Analysis rate in Hz"},
-      {"name": "maxBinsPerOctave", "type": "float", "default": 16.0, "description": "Granularity of pitch detection"},
-      {"name": "median", "type": "float", "default": 1.0, "description": "Median filter length (0=no filter)"},
-      {"name": "ampThreshold", "type": "float", "default": 0.01, "description": "Amplitude threshold below which frequency = 0"},
-      {"name": "peakThreshold", "type": "float", "default": 0.5, "description": "Peak threshold for autocorrelation (0 to 1)"},
-      {"name": "downSample", "type": "float", "default": 1.0, "description": "Downsampling factor"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to analyze"
+      },
+      {
+        "name": "initFreq",
+        "type": "float",
+        "default": 440,
+        "description": "Initial frequency guess in Hz"
+      },
+      {
+        "name": "minFreq",
+        "type": "float",
+        "default": 60,
+        "description": "Minimum frequency to detect in Hz"
+      },
+      {
+        "name": "maxFreq",
+        "type": "float",
+        "default": 4000,
+        "description": "Maximum frequency to detect in Hz"
+      },
+      {
+        "name": "execFreq",
+        "type": "float",
+        "default": 100,
+        "description": "Analysis rate in Hz"
+      },
+      {
+        "name": "maxBinsPerOctave",
+        "type": "float",
+        "default": 16,
+        "description": "Granularity of pitch detection"
+      },
+      {
+        "name": "median",
+        "type": "float",
+        "default": 1,
+        "description": "Median filter length (0=no filter)"
+      },
+      {
+        "name": "ampThreshold",
+        "type": "float",
+        "default": 0.01,
+        "description": "Amplitude threshold below which frequency = 0"
+      },
+      {
+        "name": "peakThreshold",
+        "type": "float",
+        "default": 0.5,
+        "description": "Peak threshold for autocorrelation (0 to 1)"
+      },
+      {
+        "name": "downSample",
+        "type": "float",
+        "default": 1,
+        "description": "Downsampling factor"
+      }
     ],
     "outputs": 2,
-    "category": "Analysis"
+    "category": "Analysis",
+    "functions": [
+      "pitch_kr"
+    ]
   }
 ]

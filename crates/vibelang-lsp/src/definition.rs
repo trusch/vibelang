@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use tower_lsp::lsp_types::{GotoDefinitionResponse, Location, Position, Range, Url};
 
-use super::analysis::{ImportInfo, VariableDef};
+use crate::analysis::{ImportInfo, VariableDef};
 
 /// Get definition location for an import.
 pub fn get_import_definition(

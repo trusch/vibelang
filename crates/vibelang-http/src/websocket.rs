@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use vibelang_core::RuntimeHandle;
 
-use crate::http_server::AppState;
+use crate::AppState;
 
 /// WebSocket event sent to clients.
 #[derive(Debug, Clone, Serialize)]

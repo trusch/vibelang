@@ -490,7 +490,7 @@ fn format_melody_with_bars(tokens: &[String], steps_per_bar: usize) -> String {
         .map(|bar| {
             // Format each bar with sub-groupings
             bar.chunks(subgroup_size)
-                .map(|group| format_melody_group(group))
+                .map(format_melody_group)
                 .collect::<Vec<_>>()
                 .join(" ")
         })
@@ -798,6 +798,8 @@ pub struct VoiceState {
     pub running: bool,
     /// Node ID of the running synth (if running).
     pub running_node_id: Option<i32>,
+    /// Generation when .run() was last called (for cleanup of stale running voices).
+    pub run_generation: u64,
     /// Source location where this voice was defined.
     pub source_location: SourceLocation,
 }
@@ -824,6 +826,7 @@ impl VoiceState {
             generation: 0,
             running: false,
             running_node_id: None,
+            run_generation: 0,
             source_location: SourceLocation::default(),
         }
     }
@@ -960,8 +963,9 @@ pub struct MelodyState {
     pub generation: u64,
     /// Source location where this melody was defined.
     pub source_location: SourceLocation,
-    /// Original notes pattern string for visual editing.
-    pub notes_pattern: Option<String>,
+    /// Original notes pattern strings for visual editing (one per lane).
+    /// Multiple lanes support polyphonic melodies.
+    pub notes_patterns: Vec<String>,
 }
 
 impl MelodyState {
@@ -977,7 +981,7 @@ impl MelodyState {
             is_looping: true,
             generation: 0,
             source_location: SourceLocation::default(),
-            notes_pattern: None,
+            notes_patterns: Vec::new(),
         }
     }
 

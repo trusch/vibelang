@@ -8,6 +8,7 @@ use crate::state::{LoopStatus, StateMessage};
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::collections::HashMap;
 
+use super::bar_utils::split_into_bars;
 use super::context::{self, SourceLocation};
 use super::require_handle;
 
@@ -18,12 +19,11 @@ pub struct Melody {
     pub name: String,
     /// Voice name to trigger.
     voice_name: Option<String>,
-    /// Notes in the melody.
+    /// Notes in the melody (flat list from all lanes for event generation).
     notes: Vec<MelodyNote>,
-    /// Step pattern string (from .step() method).
-    steps: Option<String>,
-    /// Notes pattern string (from .notes() method).
-    notes_string: Option<String>,
+    /// Notes pattern strings (one per lane, from .notes() calls).
+    /// Multiple .notes() calls create polyphonic melodies with multiple lanes.
+    notes_strings: Vec<String>,
     /// Loop length in beats.
     length: f64,
     /// Default gate (note duration as fraction of step).
@@ -67,8 +67,7 @@ impl Melody {
             name,
             voice_name: None,
             notes: Vec::new(),
-            steps: None,
-            notes_string: None,
+            notes_strings: Vec::new(),
             length: 4.0,
             gate: 0.5,
             transpose: 0,
@@ -151,9 +150,21 @@ impl Melody {
 
     /// Set notes from a string pattern.
     ///
+    /// Multiple calls to `.notes()` create polyphonic melodies with multiple lanes.
+    /// Each lane is independent and can overlap with other lanes.
+    ///
     /// # Example
     /// ```rhai
-    /// melody("bass").notes("E1 - - - | G1 - - -")
+    /// // Monophonic (single lane)
+    /// melody("bass").notes("E1 - - - | G1 - - -").start();
+    ///
+    /// // Polyphonic (multiple lanes that overlap)
+    /// melody("harmony")
+    ///     .on(voice)
+    ///     .notes("C4 E4 G4 | C4 - - .")   // Lane 0
+    ///     .notes("E4 G4 C5 | E4 - - .")   // Lane 1
+    ///     .notes("G4 C5 E5 | G4 - - .")   // Lane 2
+    ///     .start();
     /// ```
     ///
     /// Format:
@@ -162,18 +173,20 @@ impl Melody {
     /// - `.` is a rest
     /// - `|` separates bars (each bar is 4 beats in 4/4 time)
     /// - Whitespace is optional (for readability)
+    /// - Leading/trailing `|` are ignored
+    /// - Consecutive `||` are collapsed to single bar separator
     pub fn notes(mut self, notes_str: String) -> Self {
-        self.notes.clear();
-
-        // Split by bar separator
-        let bars: Vec<&str> = notes_str.split('|').collect();
-        let num_bars = bars.len();
+        // Use unified bar splitting (handles leading/trailing/consecutive pipes)
+        let bars = split_into_bars(&notes_str);
+        let num_bars = bars.len().max(1); // At least 1 bar
         let beats_per_bar = 4.0; // Standard 4/4 time
 
-        // Calculate loop length from pattern if not explicitly set via .len()
-        // Use the number of bars * 4 beats per bar
+        // Calculate loop length from pattern
+        // Use the maximum length across all lanes
         let loop_length = num_bars as f64 * beats_per_bar;
-        self.length = loop_length;
+        if loop_length > self.length {
+            self.length = loop_length;
+        }
 
         let mut current_beat = 0.0;
         let mut current_notes: Option<Vec<u8>> = None;
@@ -182,7 +195,7 @@ impl Melody {
 
         for bar in bars {
             // Tokenize this bar using character-based parsing (robust to missing whitespace)
-            let tokens = tokenize_bar(bar);
+            let tokens = tokenize_bar(&bar);
             if tokens.is_empty() {
                 current_beat += beats_per_bar;
                 continue;
@@ -261,138 +274,8 @@ impl Melody {
             });
         }
 
-        // Store the original notes string for visual editing
-        self.notes_string = Some(notes_str);
-        self
-    }
-
-    /// Set the step pattern (for rhythm).
-    ///
-    /// # Format
-    ///
-    /// The step pattern is a string where:
-    /// - Note names (like `C2`, `E3`, `G#4`) start a new note
-    /// - `.` extends the previous note (tie) or is a rest if no note is active
-    /// - The pattern length is determined by character count
-    ///
-    /// # Example
-    /// ```rhai
-    /// melody("bass").step("C2...E2...G2...A2...").len(4.0)
-    /// ```
-    /// This creates a 4-beat melody with 4 notes (C2, E2, G2, A2), each lasting 1 beat.
-    pub fn step(mut self, steps: String) -> Self {
-        self.notes.clear();
-
-        // Parse the step pattern into tokens
-        // Each token is either a note/chord or a continuation marker
-        let mut tokens: Vec<Option<Vec<u8>>> = Vec::new();
-        let mut chars = steps.chars().peekable();
-
-        while let Some(c) = chars.next() {
-            match c {
-                '.' | '-' | '_' => {
-                    // Rest/continuation marker
-                    tokens.push(None);
-                }
-                ' ' | '|' => {
-                    // Whitespace and bar separators are ignored
-                }
-                'A'..='G' | 'a'..='g' => {
-                    // Start of a note name - collect the full note
-                    let mut note_str = String::new();
-                    note_str.push(c.to_ascii_uppercase());
-
-                    // Collect accidentals and octave
-                    while let Some(&next) = chars.peek() {
-                        match next {
-                            '#' | 'b' | '♯' | '♭' => {
-                                note_str.push(chars.next().unwrap());
-                            }
-                            '0'..='9' => {
-                                note_str.push(chars.next().unwrap());
-                            }
-                            _ => break,
-                        }
-                    }
-
-                    // Check for chord quality suffix (e.g., ":maj7")
-                    if chars.peek() == Some(&':') {
-                        note_str.push(chars.next().unwrap()); // consume ':'
-                        while let Some(&next) = chars.peek() {
-                            match next {
-                                'a'..='z' | 'A'..='Z' | '0'..='9' => {
-                                    note_str.push(chars.next().unwrap());
-                                }
-                                _ => break,
-                            }
-                        }
-                    }
-
-                    // Parse the note/chord to MIDI
-                    if let Some(midi_notes) = parse_note(&note_str) {
-                        tokens.push(Some(midi_notes));
-                    } else {
-                        // Invalid note, treat as rest
-                        tokens.push(None);
-                    }
-                }
-                _ => {
-                    // Unknown character, skip
-                }
-            }
-        }
-
-        if tokens.is_empty() {
-            return self;
-        }
-
-        // Calculate beat duration per token
-        let beat_per_token = self.length / tokens.len() as f64;
-
-        // Convert tokens to notes
-        let mut current_notes: Option<Vec<u8>> = None;
-        let mut note_start: f64 = 0.0;
-        let mut note_duration: f64 = 0.0;
-
-        for (i, token) in tokens.iter().enumerate() {
-            let beat = i as f64 * beat_per_token;
-
-            match token {
-                Some(midi_notes) => {
-                    // Commit previous note/chord if any
-                    if let Some(prev_notes) = current_notes.take() {
-                        self.notes.push(MelodyNote {
-                            beat: note_start,
-                            notes: prev_notes,
-                            velocity: 1.0,
-                            gate: note_duration,
-                        });
-                    }
-                    // Start new note/chord
-                    current_notes = Some(midi_notes.clone());
-                    note_start = beat;
-                    note_duration = beat_per_token;
-                }
-                None => {
-                    // Extend current note/chord or rest
-                    if current_notes.is_some() {
-                        note_duration += beat_per_token;
-                    }
-                }
-            }
-        }
-
-        // Commit final note/chord
-        if let Some(midi_notes) = current_notes {
-            self.notes.push(MelodyNote {
-                beat: note_start,
-                notes: midi_notes,
-                velocity: 1.0,
-                gate: note_duration,
-            });
-        }
-
-        self.steps = Some(steps);
+        // Store the original notes string as a new lane for visual editing
+        self.notes_strings.push(notes_str);
         self
     }
 
@@ -442,8 +325,14 @@ impl Melody {
 
     // === Actions ===
 
-    /// Register and apply the melody.
-    pub fn apply(&mut self) {
+    /// Register and apply the melody (chainable, returns self for use in sequences).
+    pub fn apply(self) -> Self {
+        self.do_apply();
+        self
+    }
+
+    /// Internal apply implementation.
+    fn do_apply(&self) {
         let handle = require_handle();
 
         // Capture transpose before the closure to avoid borrow issues
@@ -477,8 +366,8 @@ impl Melody {
             phase_offset: 0.0,
         };
 
-        // Use notes_string from .notes() method, or steps from .step() method
-        let notes_pattern = self.notes_string.clone().or(self.steps.clone());
+        // Use notes_strings from .notes() calls for visual editing (supports multiple lanes)
+        let notes_patterns = self.notes_strings.clone();
 
         let _ = handle.send(StateMessage::CreateMelody {
             name: self.name.clone(),
@@ -486,7 +375,7 @@ impl Melody {
             voice_name: self.voice_name.clone(),
             pattern: loop_pattern,
             source_location: self.source_location.clone(),
-            notes_pattern,
+            notes_patterns,
         });
     }
 
@@ -494,8 +383,8 @@ impl Melody {
     ///
     /// This creates an implicit sequence containing the melody as a looping clip,
     /// then starts that sequence.
-    pub fn start(mut self) -> Self {
-        self.apply();
+    pub fn start(self) -> Self {
+        self.do_apply();
         let handle = require_handle();
 
         // Create an implicit sequence for this melody
@@ -748,7 +637,7 @@ fn parse_root_note(root: &str) -> u8 {
             result.push(chars.next().unwrap());
         }
         // Collect digits
-        while chars.peek().map_or(false, |c| c.is_ascii_digit()) {
+        while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
             result.push(chars.next().unwrap());
         }
         result
@@ -936,7 +825,7 @@ fn parse_single_note(name: &str) -> Option<u8> {
             result.push(chars.next().unwrap());
         }
         // Collect digits only
-        while chars.peek().map_or(false, |c| c.is_ascii_digit()) {
+        while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
             result.push(chars.next().unwrap());
         }
         result
@@ -969,7 +858,6 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("root", Melody::root);
     engine.register_fn("notes", Melody::notes);
     engine.register_fn("notes", Melody::notes_array);
-    engine.register_fn("step", Melody::step);
     engine.register_fn("len", Melody::len);
     engine.register_fn("gate", Melody::gate);
     engine.register_fn("transpose", Melody::transpose);

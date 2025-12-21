@@ -9,6 +9,7 @@
 //! 2. Register all functions with a Rhai engine using `register_api()`
 //! 3. Execute scripts that call the registered functions
 
+pub mod bar_utils;
 pub mod global;
 pub mod voice;
 pub mod pattern;
@@ -22,6 +23,9 @@ pub mod sfz;
 pub mod sample;
 pub mod midi;
 
+// Re-export bar utilities for external use
+pub use bar_utils::{count_bars, normalize_bars, split_into_bars};
+
 // Re-export MIDI callback functions for use by CLI
 pub use midi::{clear_callbacks, clear_midi_devices, execute_pending_callbacks, get_callback_fnptr};
 
@@ -32,7 +36,7 @@ use std::cell::RefCell;
 // Thread-local storage for the runtime handle.
 // This allows Rhai functions to access the runtime without passing it explicitly.
 thread_local! {
-    static RUNTIME_HANDLE: RefCell<Option<RuntimeHandle>> = RefCell::new(None);
+    static RUNTIME_HANDLE: RefCell<Option<RuntimeHandle>> = const { RefCell::new(None) };
 }
 
 /// Initialize the API with a RuntimeHandle.

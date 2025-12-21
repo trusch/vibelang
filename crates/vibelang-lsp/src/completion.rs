@@ -15,7 +15,7 @@ use tower_lsp::lsp_types::{
     InsertTextFormat, MarkupContent, MarkupKind,
 };
 
-use super::analysis::CompletionContext;
+use crate::analysis::CompletionContext;
 
 /// API function documentation.
 #[derive(Debug, Clone)]
@@ -230,7 +230,6 @@ fn get_param_completions(synthdef: Option<&str>) -> Vec<CompletionItem> {
     ];
 
     // TODO: Get actual parameters from synthdef registry
-    // For now, return common parameters
     let _ = synthdef; // Suppress unused warning
 
     common_params
@@ -338,7 +337,7 @@ fn get_method_completions(object_type: Option<&str>) -> Vec<CompletionItem> {
 fn get_voice_methods() -> Vec<CompletionItem> {
     vec![
         method_item("synth", "(name: string)", "Set the synthdef to use"),
-        method_item("on", "(source)", "Set the sound source (synthdef, sample, or SFZ)"),
+        method_item("on", "(source)", "Set the sound source"),
         method_item("poly", "(count: int)", "Set polyphony"),
         method_item("gain", "(level: float)", "Set gain level"),
         method_item("param", "(name: string, value: float)", "Set a parameter"),
@@ -351,7 +350,7 @@ fn get_voice_methods() -> Vec<CompletionItem> {
 fn get_pattern_methods() -> Vec<CompletionItem> {
     vec![
         method_item("on", "(voice)", "Set the voice to trigger"),
-        method_item("step", "(pattern: string)", "Set step pattern (x, ., -, |)"),
+        method_item("step", "(pattern: string)", "Set step pattern"),
         method_item("euclid", "(hits: int, steps: int)", "Generate Euclidean rhythm"),
         method_item("length", "(bars: float)", "Set pattern length in bars"),
         method_item("swing", "(amount: float)", "Set swing amount (0-1)"),
@@ -366,7 +365,7 @@ fn get_melody_methods() -> Vec<CompletionItem> {
     vec![
         method_item("on", "(voice)", "Set the voice to play"),
         method_item("notes", "(notes: string)", "Set note sequence"),
-        method_item("scale", "(name: string)", "Set scale (major, minor, etc.)"),
+        method_item("scale", "(name: string)", "Set scale"),
         method_item("root", "(note: string)", "Set root note"),
         method_item("gate", "(duration: float)", "Set gate duration"),
         method_item("transpose", "(semitones: int)", "Transpose notes"),
@@ -418,7 +417,7 @@ fn get_fade_methods() -> Vec<CompletionItem> {
         method_item("from", "(value: float)", "Starting value"),
         method_item("to", "(value: float)", "Ending value"),
         method_item("over_bars", "(bars: float)", "Duration in bars"),
-        method_item("over", "(duration: string)", "Duration string (e.g., \"4bar\")"),
+        method_item("over", "(duration: string)", "Duration string"),
         method_item("curve", "(type: string)", "Fade curve type"),
         method_item("start", "()", "Start the fade"),
     ]
@@ -458,7 +457,7 @@ fn get_api_functions() -> Vec<ApiFunctionDoc> {
         ApiFunctionDoc {
             name: "set_quantization",
             signature: "(grid: string)",
-            description: "Set the global quantization grid. Valid: \"bar\", \"beat\", \"1/2\", \"1/4\", etc.",
+            description: "Set the global quantization grid.",
             example: "set_quantization(\"bar\");",
         },
         ApiFunctionDoc {

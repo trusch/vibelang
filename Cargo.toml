@@ -6,6 +6,8 @@ members = [
     "crates/vibelang-std",
     "crates/vibelang-cli",
     "crates/vibelang-keys",
+    "crates/vibelang-lsp",
+    "crates/vibelang-http",
 ]
 default-members = ["crates/vibelang-cli"]
 resolver = "2"
@@ -16,3 +18,5 @@ vibelang-core = { path = "crates/vibelang-core" }
 vibelang-dsp = { path = "crates/vibelang-dsp" }
 vibelang-sfz = { path = "crates/vibelang-sfz" }
 vibelang-std = { path = "crates/vibelang-std" }
+vibelang-lsp = { path = "crates/vibelang-lsp" }
+vibelang-http = { path = "crates/vibelang-http" }

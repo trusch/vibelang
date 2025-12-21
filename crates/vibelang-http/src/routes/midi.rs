@@ -8,7 +8,7 @@ use axum::{
 use std::sync::Arc;
 use vibelang_core::state::StateMessage;
 
-use crate::http_server::{
+use crate::{
     models::{
         CcRoute, ErrorResponse, ExportQuery, KeyboardRoute, MidiCallback, MidiConnectRequest,
         MidiDeviceInfo, MidiDeviceState, MidiDevicesResponse, MidiRecordingState,
@@ -69,7 +69,7 @@ pub async fn connect_device(
     let info = vibelang_core::midi::MidiDeviceInfo {
         name: format!("Device {}", id),
         port_index: id as usize,
-        backend: midi_backend.clone(),
+        backend: midi_backend,
     };
 
     // Send connect message

@@ -2,396 +2,1117 @@
   {
     "name": "LPF",
     "description": "Second order Butterworth low pass filter. Attenuates frequencies above the cutoff frequency.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to be filtered"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Cutoff frequency in Hertz"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Cutoff frequency in Hertz"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "lpf_ar",
+      "lpf_kr"
+    ]
   },
   {
     "name": "HPF",
     "description": "Second order Butterworth high pass filter. Attenuates frequencies below the cutoff frequency.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to be filtered"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Cutoff frequency in Hertz"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Cutoff frequency in Hertz"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "hpf_ar",
+      "hpf_kr"
+    ]
   },
   {
     "name": "BPF",
     "description": "Second order Butterworth band pass filter. Passes frequencies in a band around the center frequency.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to be filtered"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Center frequency in Hertz"},
-      {"name": "rq", "type": "float", "default": 1.0, "description": "Reciprocal of Q. Bandwidth / cutoff frequency"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Center frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q. Bandwidth / cutoff frequency"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "bpf_ar",
+      "bpf_kr"
+    ]
   },
   {
     "name": "BRF",
     "description": "Second order Butterworth band reject filter (notch filter). Rejects frequencies in a band around the center frequency.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to be filtered"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Center frequency in Hertz"},
-      {"name": "rq", "type": "float", "default": 1.0, "description": "Reciprocal of Q. Bandwidth / cutoff frequency"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Center frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q. Bandwidth / cutoff frequency"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "brf_ar",
+      "brf_kr"
+    ]
   },
   {
     "name": "RLPF",
     "description": "Resonant low pass filter. A low pass filter with resonance at the cutoff frequency.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to be filtered"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Cutoff frequency in Hertz"},
-      {"name": "rq", "type": "float", "default": 1.0, "description": "Reciprocal of Q. Bandwidth / cutoff frequency. Lower values = more resonance"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q. Bandwidth / cutoff frequency. Lower values = more resonance"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "rlpf_ar",
+      "rlpf_kr"
+    ]
   },
   {
     "name": "RHPF",
     "description": "Resonant high pass filter. A high pass filter with resonance at the cutoff frequency.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to be filtered"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Cutoff frequency in Hertz"},
-      {"name": "rq", "type": "float", "default": 1.0, "description": "Reciprocal of Q. Bandwidth / cutoff frequency. Lower values = more resonance"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q. Bandwidth / cutoff frequency. Lower values = more resonance"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "rhpf_ar",
+      "rhpf_kr"
+    ]
   },
   {
     "name": "MoogFF",
     "description": "Moog VCF style filter. A 24db/oct resonant low pass filter based on the Moog ladder filter design.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to be filtered"},
-      {"name": "freq", "type": "float", "default": 100.0, "description": "Cutoff frequency in Hertz"},
-      {"name": "gain", "type": "float", "default": 2.0, "description": "Filter resonance gain (0 to 4). Values above 1 can cause self-oscillation"},
-      {"name": "reset", "type": "float", "default": 0.0, "description": "Reset the filter state when > 0"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 100,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 2,
+        "description": "Filter resonance gain (0 to 4). Values above 1 can cause self-oscillation"
+      },
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Reset the filter state when > 0"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "moog_ff_ar",
+      "moog_ff_kr"
+    ]
   },
   {
     "name": "Resonz",
     "description": "Resonant filter. A two pole resonant filter with constant skirt gain.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to be filtered"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Resonant frequency in Hertz"},
-      {"name": "bwr", "type": "float", "default": 1.0, "description": "Bandwidth ratio = bandwidth / cutoff frequency"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Resonant frequency in Hertz"
+      },
+      {
+        "name": "bwr",
+        "type": "float",
+        "default": 1,
+        "description": "Bandwidth ratio = bandwidth / cutoff frequency"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "resonz_ar",
+      "resonz_kr"
+    ]
   },
   {
     "name": "Formlet",
     "description": "Formant filter. A FOF-like filter with separate control over attack and decay times.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to be filtered"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Formant frequency in Hertz"},
-      {"name": "attacktime", "type": "float", "default": 1.0, "description": "Attack time in seconds (60dB)"},
-      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Decay time in seconds (60dB)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Formant frequency in Hertz"
+      },
+      {
+        "name": "attacktime",
+        "type": "float",
+        "default": 1,
+        "description": "Attack time in seconds (60dB)"
+      },
+      {
+        "name": "decaytime",
+        "type": "float",
+        "default": 1,
+        "description": "Decay time in seconds (60dB)"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "formlet_ar",
+      "formlet_kr"
+    ]
   },
   {
     "name": "Ringz",
     "description": "Ringing filter. A resonant filter with instant attack and exponential decay.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal to be filtered"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Resonant frequency in Hertz"},
-      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Decay time in seconds for 60dB ring decay"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Resonant frequency in Hertz"
+      },
+      {
+        "name": "decaytime",
+        "type": "float",
+        "default": 1,
+        "description": "Decay time in seconds for 60dB ring decay"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "ringz_ar",
+      "ringz_kr"
+    ]
   },
   {
     "name": "Integrator",
     "description": "Leaky integrator. A filter that integrates the input with a leaky factor.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "coef", "type": "float", "default": 1.0, "description": "Leak coefficient (0 to 1). 1 = perfect integration, 0 = no integration"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "coef",
+        "type": "float",
+        "default": 1,
+        "description": "Leak coefficient (0 to 1). 1 = perfect integration, 0 = no integration"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "integrator_ar",
+      "integrator_kr"
+    ]
   },
   {
     "name": "LeakDC",
     "description": "DC blocker filter. Removes DC offset from a signal using a leaky integrator.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "coef", "type": "float", "default": 0.995, "description": "Leak coefficient. Values closer to 1 remove more bass"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "coef",
+        "type": "float",
+        "default": 0.995,
+        "description": "Leak coefficient. Values closer to 1 remove more bass"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "leak_dc_ar",
+      "leak_dc_kr"
+    ]
   },
   {
     "name": "Median",
     "description": "Median filter. Calculates the median value in a sliding window, useful for removing impulses.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "length", "type": "float", "default": 3.0, "description": "Number of samples in the median window (must be odd)"},
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"}
+      {
+        "name": "length",
+        "type": "float",
+        "default": 3,
+        "description": "Number of samples in the median window (must be odd)"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "median_ar",
+      "median_kr"
+    ]
   },
   {
     "name": "OnePole",
     "description": "One pole filter. A simple first order low pass or high pass filter.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "coef", "type": "float", "default": 0.5, "description": "Filter coefficient (-1 to 1). Positive = low pass, negative = high pass"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "coef",
+        "type": "float",
+        "default": 0.5,
+        "description": "Filter coefficient (-1 to 1). Positive = low pass, negative = high pass"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "one_pole_ar",
+      "one_pole_kr"
+    ]
   },
   {
     "name": "OneZero",
     "description": "One zero filter. A simple first order filter with a zero instead of a pole.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "coef", "type": "float", "default": 0.5, "description": "Filter coefficient (-1 to 1)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "coef",
+        "type": "float",
+        "default": 0.5,
+        "description": "Filter coefficient (-1 to 1)"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "one_zero_ar",
+      "one_zero_kr"
+    ]
   },
   {
     "name": "TwoPole",
     "description": "Two pole filter. A second order resonant filter with variable frequency and radius.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Resonant frequency in Hertz"},
-      {"name": "radius", "type": "float", "default": 0.8, "description": "Pole radius (0 to 1). Values closer to 1 = more resonance"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Resonant frequency in Hertz"
+      },
+      {
+        "name": "radius",
+        "type": "float",
+        "default": 0.8,
+        "description": "Pole radius (0 to 1). Values closer to 1 = more resonance"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "two_pole_ar",
+      "two_pole_kr"
+    ]
   },
   {
     "name": "TwoZero",
     "description": "Two zero filter. A second order notch filter.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Notch frequency in Hertz"},
-      {"name": "radius", "type": "float", "default": 0.8, "description": "Zero radius (0 to 1). Values closer to 1 = narrower notch"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Notch frequency in Hertz"
+      },
+      {
+        "name": "radius",
+        "type": "float",
+        "default": 0.8,
+        "description": "Zero radius (0 to 1). Values closer to 1 = narrower notch"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "two_zero_ar",
+      "two_zero_kr"
+    ]
   },
   {
     "name": "Slew",
     "description": "Slew rate limiter. Limits the rate of change of a signal separately for up and down movement.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "up", "type": "float", "default": 1.0, "description": "Maximum upward change per second"},
-      {"name": "dn", "type": "float", "default": 1.0, "description": "Maximum downward change per second"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "up",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum upward change per second"
+      },
+      {
+        "name": "dn",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum downward change per second"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "slew_ar",
+      "slew_kr"
+    ]
   },
   {
     "name": "Ramp",
     "description": "Break point linear envelope follower. Smooths a signal with a lag time like Lag but follows the input more precisely.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "lagTime", "type": "float", "default": 0.1, "description": "Lag time in seconds for 60dB decay"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lagTime",
+        "type": "float",
+        "default": 0.1,
+        "description": "Lag time in seconds for 60dB decay"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "ramp_ar",
+      "ramp_kr"
+    ]
   },
   {
     "name": "Lag2",
     "description": "Second order lag. Cascaded exponential lag with two passes for smoother response.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "lagTime", "type": "float", "default": 0.1, "description": "Lag time in seconds"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lagTime",
+        "type": "float",
+        "default": 0.1,
+        "description": "Lag time in seconds"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "lag2_ar",
+      "lag2_kr"
+    ]
   },
   {
     "name": "Lag3",
     "description": "Third order lag. Cascaded exponential lag with three passes for very smooth response.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "lagTime", "type": "float", "default": 0.1, "description": "Lag time in seconds"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lagTime",
+        "type": "float",
+        "default": 0.1,
+        "description": "Lag time in seconds"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "lag3_ar",
+      "lag3_kr"
+    ]
   },
   {
     "name": "FOS",
     "description": "First Order Section filter. A general purpose one-pole, one-zero filter.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "a0", "type": "float", "default": 0.0, "description": "Feedforward coefficient for current sample"},
-      {"name": "a1", "type": "float", "default": 0.0, "description": "Feedforward coefficient for previous sample"},
-      {"name": "b1", "type": "float", "default": 0.0, "description": "Feedback coefficient"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "a0",
+        "type": "float",
+        "default": 0,
+        "description": "Feedforward coefficient for current sample"
+      },
+      {
+        "name": "a1",
+        "type": "float",
+        "default": 0,
+        "description": "Feedforward coefficient for previous sample"
+      },
+      {
+        "name": "b1",
+        "type": "float",
+        "default": 0,
+        "description": "Feedback coefficient"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "fos_ar",
+      "fos_kr"
+    ]
   },
   {
     "name": "SOS",
     "description": "Second Order Section filter. A general purpose biquad filter (two poles, two zeros).",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "a0", "type": "float", "default": 0.0, "description": "Feedforward coefficient for current sample"},
-      {"name": "a1", "type": "float", "default": 0.0, "description": "Feedforward coefficient for 1 sample ago"},
-      {"name": "a2", "type": "float", "default": 0.0, "description": "Feedforward coefficient for 2 samples ago"},
-      {"name": "b1", "type": "float", "default": 0.0, "description": "Feedback coefficient for 1 sample ago"},
-      {"name": "b2", "type": "float", "default": 0.0, "description": "Feedback coefficient for 2 samples ago"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "a0",
+        "type": "float",
+        "default": 0,
+        "description": "Feedforward coefficient for current sample"
+      },
+      {
+        "name": "a1",
+        "type": "float",
+        "default": 0,
+        "description": "Feedforward coefficient for 1 sample ago"
+      },
+      {
+        "name": "a2",
+        "type": "float",
+        "default": 0,
+        "description": "Feedforward coefficient for 2 samples ago"
+      },
+      {
+        "name": "b1",
+        "type": "float",
+        "default": 0,
+        "description": "Feedback coefficient for 1 sample ago"
+      },
+      {
+        "name": "b2",
+        "type": "float",
+        "default": 0,
+        "description": "Feedback coefficient for 2 samples ago"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "sos_ar",
+      "sos_kr"
+    ]
   },
   {
     "name": "APF",
     "description": "All pass filter. Passes all frequencies but changes their phase relationships.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 440.0, "description": "Center frequency in Hertz"},
-      {"name": "radius", "type": "float", "default": 0.8, "description": "Radius of pole and zero (0 to 1)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Center frequency in Hertz"
+      },
+      {
+        "name": "radius",
+        "type": "float",
+        "default": 0.8,
+        "description": "Radius of pole and zero (0 to 1)"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "apf_ar",
+      "apf_kr"
+    ]
   },
   {
     "name": "BLowPass",
     "description": "Butterworth low pass filter. Higher quality than LPF with less ripple in the pass band.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 1200.0, "description": "Cutoff frequency in Hertz"},
-      {"name": "rq", "type": "float", "default": 1.0, "description": "Reciprocal of Q (bandwidth / cutoff)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q (bandwidth / cutoff)"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "b_low_pass_ar",
+      "b_low_pass_kr"
+    ]
   },
   {
     "name": "BHiPass",
     "description": "Butterworth high pass filter. Higher quality than HPF with less ripple in the pass band.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 1200.0, "description": "Cutoff frequency in Hertz"},
-      {"name": "rq", "type": "float", "default": 1.0, "description": "Reciprocal of Q (bandwidth / cutoff)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q (bandwidth / cutoff)"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "b_hi_pass_ar",
+      "b_hi_pass_kr"
+    ]
   },
   {
     "name": "BBandPass",
     "description": "Butterworth band pass filter. High quality band pass with flat pass band response.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 1200.0, "description": "Center frequency in Hertz"},
-      {"name": "bw", "type": "float", "default": 1.0, "description": "Bandwidth in octaves"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200,
+        "description": "Center frequency in Hertz"
+      },
+      {
+        "name": "bw",
+        "type": "float",
+        "default": 1,
+        "description": "Bandwidth in octaves"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "b_band_pass_ar",
+      "b_band_pass_kr"
+    ]
   },
   {
     "name": "BBandStop",
     "description": "Butterworth band stop (notch) filter. High quality band reject filter.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 1200.0, "description": "Center frequency in Hertz"},
-      {"name": "bw", "type": "float", "default": 1.0, "description": "Bandwidth in octaves"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200,
+        "description": "Center frequency in Hertz"
+      },
+      {
+        "name": "bw",
+        "type": "float",
+        "default": 1,
+        "description": "Bandwidth in octaves"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "b_band_stop_ar",
+      "b_band_stop_kr"
+    ]
   },
   {
     "name": "BPeakEQ",
     "description": "Parametric equalizer. Boosts or cuts a frequency band around a center frequency.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 1200.0, "description": "Center frequency in Hertz"},
-      {"name": "rq", "type": "float", "default": 1.0, "description": "Reciprocal of Q (bandwidth / cutoff)"},
-      {"name": "db", "type": "float", "default": 0.0, "description": "Boost or cut in decibels. Positive = boost, negative = cut"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200,
+        "description": "Center frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q (bandwidth / cutoff)"
+      },
+      {
+        "name": "db",
+        "type": "float",
+        "default": 0,
+        "description": "Boost or cut in decibels. Positive = boost, negative = cut"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "b_peak_eq_ar",
+      "b_peak_eq_kr"
+    ]
   },
   {
     "name": "BLowShelf",
     "description": "Low shelf equalizer. Boosts or cuts all frequencies below the center frequency.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 1200.0, "description": "Transition frequency in Hertz"},
-      {"name": "rs", "type": "float", "default": 1.0, "description": "Reciprocal of shelf slope (S)"},
-      {"name": "db", "type": "float", "default": 0.0, "description": "Boost or cut in decibels"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200,
+        "description": "Transition frequency in Hertz"
+      },
+      {
+        "name": "rs",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of shelf slope (S)"
+      },
+      {
+        "name": "db",
+        "type": "float",
+        "default": 0,
+        "description": "Boost or cut in decibels"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "b_low_shelf_ar",
+      "b_low_shelf_kr"
+    ]
   },
   {
     "name": "BHiShelf",
     "description": "High shelf equalizer. Boosts or cuts all frequencies above the center frequency.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 1200.0, "description": "Transition frequency in Hertz"},
-      {"name": "rs", "type": "float", "default": 1.0, "description": "Reciprocal of shelf slope (S)"},
-      {"name": "db", "type": "float", "default": 0.0, "description": "Boost or cut in decibels"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200,
+        "description": "Transition frequency in Hertz"
+      },
+      {
+        "name": "rs",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of shelf slope (S)"
+      },
+      {
+        "name": "db",
+        "type": "float",
+        "default": 0,
+        "description": "Boost or cut in decibels"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "b_hi_shelf_ar",
+      "b_hi_shelf_kr"
+    ]
   },
   {
     "name": "BLowPass4",
     "description": "Fourth order Butterworth low pass filter. 24dB/octave rolloff for steep filtering.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 1200.0, "description": "Cutoff frequency in Hertz"},
-      {"name": "rq", "type": "float", "default": 1.0, "description": "Reciprocal of Q"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "b_low_pass4_ar",
+      "b_low_pass4_kr"
+    ]
   },
   {
     "name": "BHiPass4",
     "description": "Fourth order Butterworth high pass filter. 24dB/octave rolloff for steep filtering.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "freq", "type": "float", "default": 1200.0, "description": "Cutoff frequency in Hertz"},
-      {"name": "rq", "type": "float", "default": 1.0, "description": "Reciprocal of Q"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q"
+      }
     ],
     "outputs": 1,
-    "category": "Filters"
+    "category": "Filters",
+    "functions": [
+      "b_hi_pass4_ar",
+      "b_hi_pass4_kr"
+    ]
   }
 ]

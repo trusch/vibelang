@@ -15,8 +15,6 @@
 //! - `vibe run <file>` - Run a .vibe file interactively (default)
 //! - `vibe render <file>` - Render a .vibe file to audio
 
-mod http_server;
-mod lsp;
 mod render;
 mod tui;
 
@@ -163,7 +161,7 @@ fn main() -> Result<()> {
         Some(Commands::Lsp) => {
             // Run the LSP server
             let rt = tokio::runtime::Runtime::new()?;
-            rt.block_on(lsp::run_lsp_server())
+            rt.block_on(vibelang_lsp::run_lsp_server())
         }
         None => {
             // No subcommand - check if a file was provided directly or if --api is enabled
@@ -395,7 +393,7 @@ fn run_vibe_file(
     std::thread::sleep(std::time::Duration::from_millis(200));
 
     // Create eval channel for the HTTP server to send code evaluation requests
-    let (eval_tx, eval_rx) = std::sync::mpsc::channel::<http_server::EvalJob>();
+    let (eval_tx, eval_rx) = std::sync::mpsc::channel::<vibelang_http::EvalJob>();
 
     // Start HTTP API server if enabled
     if api_enabled {
@@ -404,7 +402,7 @@ fn run_vibe_file(
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
             rt.block_on(async {
-                http_server::start_server(api_handle, api_port, Some(eval_sender)).await;
+                vibelang_http::start_server(api_handle, api_port, Some(eval_sender)).await;
             });
         });
         log::info!("   ✓ HTTP API server started on port {}", api_port);
@@ -484,12 +482,12 @@ fn run_vibe_file(
             // Process any pending eval requests from the HTTP server
             while let Ok(job) = eval_rx.try_recv() {
                 let result = match engine.eval::<rhai::Dynamic>(&job.code) {
-                    Ok(val) => http_server::EvalResult {
+                    Ok(val) => vibelang_http::EvalResult {
                         success: true,
                         result: if val.is_unit() { None } else { Some(format!("{:?}", val)) },
                         error: None,
                     },
-                    Err(e) => http_server::EvalResult {
+                    Err(e) => vibelang_http::EvalResult {
                         success: false,
                         result: None,
                         error: Some(e.to_string()),

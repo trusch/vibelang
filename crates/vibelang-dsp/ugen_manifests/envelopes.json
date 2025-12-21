@@ -2,139 +2,445 @@
   {
     "name": "envelope",
     "description": "Fluent envelope builder. Creates ADSR, ASR, or percussive envelopes with an intuitive chainable API. Defaults to a constant gate of 1.0 if no gate is specified. Times can be specified as numbers (seconds) or humantime strings like \"5ms\", \"1s\", \"500ms\".",
-    "rates": ["builder"],
+    "rates": [
+      "builder"
+    ],
     "inputs": [
-      {"name": ".attack(time)", "type": "method", "default": null, "description": "Set the attack time. Accepts seconds (0.01) or humantime strings (\"10ms\")."},
-      {"name": ".decay(time)", "type": "method", "default": null, "description": "Set the decay time. Accepts seconds or humantime strings."},
-      {"name": ".sustain(level)", "type": "method", "default": null, "description": "Set the sustain level (0.0 to 1.0). Setting this creates an ASR or ADSR envelope."},
-      {"name": ".release(time)", "type": "method", "default": null, "description": "Set the release time. Accepts seconds or humantime strings."},
-      {"name": ".perc(attack, release)", "type": "method", "default": null, "description": "Shorthand for percussive envelope - quick attack, natural decay. Clears sustain. Ideal for drums, plucks, piano."},
-      {"name": ".asr(attack, sustain, release)", "type": "method", "default": null, "description": "Shorthand for attack-sustain-release envelope. Sustain is the level (0-1), not time. Ideal for pads, brass."},
-      {"name": ".adsr(attack, decay, sustain, release)", "type": "method", "default": null, "description": "Shorthand for full ADSR envelope. Sustain is the level (0-1). Most versatile envelope shape."},
-      {"name": ".triangle(duration)", "type": "method", "default": null, "description": "Create symmetric triangle envelope - fades in for half duration, fades out for half duration."},
-      {"name": ".gate(signal)", "type": "method", "default": "dc_ar(1.0)", "description": "Set the gate signal that controls envelope triggering. Defaults to constant 1.0 (always on) if not specified."},
-      {"name": ".time_scale(factor)", "type": "method", "default": "1.0", "description": "Multiply all envelope times by this factor. Use for pitch-dependent decay (lower notes decay longer) or tempo sync."},
-      {"name": ".level_scale(factor)", "type": "method", "default": "1.0", "description": "Multiply envelope output by this factor. Useful for velocity sensitivity."},
-      {"name": ".level_bias(offset)", "type": "method", "default": "0.0", "description": "Add DC offset to envelope output."},
-      {"name": ".cleanup_on_finish()", "type": "method", "default": null, "description": "Free the synth when envelope completes (sets done_action=2). Essential for one-shot sounds."},
-      {"name": ".done_action(value)", "type": "method", "default": "0", "description": "Set custom done_action. 0=none, 2=free synth. Use cleanup_on_finish() for common case."},
-      {"name": ".build()", "type": "method", "default": null, "description": "Build and return the envelope signal. Call this at the end of the chain."}
+      {
+        "name": ".attack(time)",
+        "type": "method",
+        "default": null,
+        "description": "Set the attack time. Accepts seconds (0.01) or humantime strings (\"10ms\")."
+      },
+      {
+        "name": ".decay(time)",
+        "type": "method",
+        "default": null,
+        "description": "Set the decay time. Accepts seconds or humantime strings."
+      },
+      {
+        "name": ".sustain(level)",
+        "type": "method",
+        "default": null,
+        "description": "Set the sustain level (0.0 to 1.0). Setting this creates an ASR or ADSR envelope."
+      },
+      {
+        "name": ".release(time)",
+        "type": "method",
+        "default": null,
+        "description": "Set the release time. Accepts seconds or humantime strings."
+      },
+      {
+        "name": ".perc(attack, release)",
+        "type": "method",
+        "default": null,
+        "description": "Shorthand for percussive envelope - quick attack, natural decay. Clears sustain. Ideal for drums, plucks, piano."
+      },
+      {
+        "name": ".asr(attack, sustain, release)",
+        "type": "method",
+        "default": null,
+        "description": "Shorthand for attack-sustain-release envelope. Sustain is the level (0-1), not time. Ideal for pads, brass."
+      },
+      {
+        "name": ".adsr(attack, decay, sustain, release)",
+        "type": "method",
+        "default": null,
+        "description": "Shorthand for full ADSR envelope. Sustain is the level (0-1). Most versatile envelope shape."
+      },
+      {
+        "name": ".triangle(duration)",
+        "type": "method",
+        "default": null,
+        "description": "Create symmetric triangle envelope - fades in for half duration, fades out for half duration."
+      },
+      {
+        "name": ".gate(signal)",
+        "type": "method",
+        "default": "dc_ar(1.0)",
+        "description": "Set the gate signal that controls envelope triggering. Defaults to constant 1.0 (always on) if not specified."
+      },
+      {
+        "name": ".time_scale(factor)",
+        "type": "method",
+        "default": "1.0",
+        "description": "Multiply all envelope times by this factor. Use for pitch-dependent decay (lower notes decay longer) or tempo sync."
+      },
+      {
+        "name": ".level_scale(factor)",
+        "type": "method",
+        "default": "1.0",
+        "description": "Multiply envelope output by this factor. Useful for velocity sensitivity."
+      },
+      {
+        "name": ".level_bias(offset)",
+        "type": "method",
+        "default": "0.0",
+        "description": "Add DC offset to envelope output."
+      },
+      {
+        "name": ".cleanup_on_finish()",
+        "type": "method",
+        "default": null,
+        "description": "Free the synth when envelope completes (sets done_action=2). Essential for one-shot sounds."
+      },
+      {
+        "name": ".done_action(value)",
+        "type": "method",
+        "default": "0",
+        "description": "Set custom done_action. 0=none, 2=free synth. Use cleanup_on_finish() for common case."
+      },
+      {
+        "name": ".build()",
+        "type": "method",
+        "default": null,
+        "description": "Build and return the envelope signal. Call this at the end of the chain."
+      }
     ],
     "outputs": 1,
-    "category": "Envelopes"
+    "category": "Envelopes",
+    "functions": [
+      "envelope"
+    ]
   },
   {
     "name": "EnvGen",
     "description": "Low-level envelope generator. Plays back break-point envelopes specified by arrays of levels and times. For most use cases, prefer the envelope() fluent builder instead.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "gate", "type": "float", "default": 1.0, "description": "Trigger signal. When gate goes from <=0 to >0, envelope is triggered"},
-      {"name": "levelScale", "type": "float", "default": 1.0, "description": "Scales all levels"},
-      {"name": "levelBias", "type": "float", "default": 0.0, "description": "Offset added to all levels"},
-      {"name": "timeScale", "type": "float", "default": 1.0, "description": "Scales all time values"},
-      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Action to perform when envelope finishes (0=none, 2=free synth)"}
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 1,
+        "description": "Trigger signal. When gate goes from <=0 to >0, envelope is triggered"
+      },
+      {
+        "name": "levelScale",
+        "type": "float",
+        "default": 1,
+        "description": "Scales all levels"
+      },
+      {
+        "name": "levelBias",
+        "type": "float",
+        "default": 0,
+        "description": "Offset added to all levels"
+      },
+      {
+        "name": "timeScale",
+        "type": "float",
+        "default": 1,
+        "description": "Scales all time values"
+      },
+      {
+        "name": "doneAction",
+        "type": "float",
+        "default": 0,
+        "description": "Action to perform when envelope finishes (0=none, 2=free synth)"
+      }
     ],
     "outputs": 1,
-    "category": "Envelopes"
+    "category": "Envelopes",
+    "functions": [
+      "env_gen_ar",
+      "env_gen_kr"
+    ]
   },
   {
     "name": "Line",
     "description": "Line generator. Generates a line from start value to end value over a specified duration.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "start", "type": "float", "default": 0.0, "description": "Starting value"},
-      {"name": "end", "type": "float", "default": 1.0, "description": "Ending value"},
-      {"name": "dur", "type": "float", "default": 1.0, "description": "Duration in seconds"},
-      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Action when line completes"}
+      {
+        "name": "start",
+        "type": "float",
+        "default": 0,
+        "description": "Starting value"
+      },
+      {
+        "name": "end",
+        "type": "float",
+        "default": 1,
+        "description": "Ending value"
+      },
+      {
+        "name": "dur",
+        "type": "float",
+        "default": 1,
+        "description": "Duration in seconds"
+      },
+      {
+        "name": "doneAction",
+        "type": "float",
+        "default": 0,
+        "description": "Action when line completes"
+      }
     ],
     "outputs": 1,
-    "category": "Envelopes"
+    "category": "Envelopes",
+    "functions": [
+      "line_ar",
+      "line_kr"
+    ]
   },
   {
     "name": "XLine",
     "description": "Exponential line generator. Generates an exponential curve from start to end value.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "start", "type": "float", "default": 1.0, "description": "Starting value (must be non-zero)"},
-      {"name": "end", "type": "float", "default": 2.0, "description": "Ending value (must be non-zero and same sign as start)"},
-      {"name": "dur", "type": "float", "default": 1.0, "description": "Duration in seconds"},
-      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Action when line completes"}
+      {
+        "name": "start",
+        "type": "float",
+        "default": 1,
+        "description": "Starting value (must be non-zero)"
+      },
+      {
+        "name": "end",
+        "type": "float",
+        "default": 2,
+        "description": "Ending value (must be non-zero and same sign as start)"
+      },
+      {
+        "name": "dur",
+        "type": "float",
+        "default": 1,
+        "description": "Duration in seconds"
+      },
+      {
+        "name": "doneAction",
+        "type": "float",
+        "default": 0,
+        "description": "Action when line completes"
+      }
     ],
     "outputs": 1,
-    "category": "Envelopes"
+    "category": "Envelopes",
+    "functions": [
+      "x_line_ar",
+      "x_line_kr"
+    ]
   },
   {
     "name": "Lag",
     "description": "Exponential lag. Smooths a signal with exponential lag, like an RC filter.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "lagTime", "type": "float", "default": 0.1, "description": "60dB lag time in seconds"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lagTime",
+        "type": "float",
+        "default": 0.1,
+        "description": "60dB lag time in seconds"
+      }
     ],
     "outputs": 1,
-    "category": "Envelopes"
+    "category": "Envelopes",
+    "functions": [
+      "lag_ar",
+      "lag_kr"
+    ]
   },
   {
     "name": "LagUD",
     "description": "Exponential lag with different lag times for up and down movement.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "lagTimeU", "type": "float", "default": 0.1, "description": "Lag time for upward movement"},
-      {"name": "lagTimeD", "type": "float", "default": 0.1, "description": "Lag time for downward movement"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lagTimeU",
+        "type": "float",
+        "default": 0.1,
+        "description": "Lag time for upward movement"
+      },
+      {
+        "name": "lagTimeD",
+        "type": "float",
+        "default": 0.1,
+        "description": "Lag time for downward movement"
+      }
     ],
     "outputs": 1,
-    "category": "Envelopes"
+    "category": "Envelopes",
+    "functions": [
+      "lag_ud_ar",
+      "lag_ud_kr"
+    ]
   },
   {
     "name": "VarLag",
     "description": "Variable lag with different interpolation curves. Allows for exponential, linear, or custom curves.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "time", "type": "float", "default": 0.1, "description": "Lag time in seconds"},
-      {"name": "curvature", "type": "float", "default": 0.0, "description": "Curvature of lag. 0=linear, positive=exponential, negative=logarithmic"},
-      {"name": "warp", "type": "float", "default": 5.0, "description": "Warp factor for shaping the curve"},
-      {"name": "start", "type": "float", "default": 0.0, "description": "Initial value"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "time",
+        "type": "float",
+        "default": 0.1,
+        "description": "Lag time in seconds"
+      },
+      {
+        "name": "curvature",
+        "type": "float",
+        "default": 0,
+        "description": "Curvature of lag. 0=linear, positive=exponential, negative=logarithmic"
+      },
+      {
+        "name": "warp",
+        "type": "float",
+        "default": 5,
+        "description": "Warp factor for shaping the curve"
+      },
+      {
+        "name": "start",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value"
+      }
     ],
     "outputs": 1,
-    "category": "Envelopes"
+    "category": "Envelopes",
+    "functions": [
+      "var_lag_ar",
+      "var_lag_kr"
+    ]
   },
   {
     "name": "Decay",
     "description": "Triggerable exponential decay. When triggered, jumps to 1 and decays to 0.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Trigger signal. Positive values trigger the decay"},
-      {"name": "decayTime", "type": "float", "default": 1.0, "description": "60dB decay time in seconds"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger signal. Positive values trigger the decay"
+      },
+      {
+        "name": "decayTime",
+        "type": "float",
+        "default": 1,
+        "description": "60dB decay time in seconds"
+      }
     ],
     "outputs": 1,
-    "category": "Envelopes"
+    "category": "Envelopes",
+    "functions": [
+      "decay_ar",
+      "decay_kr"
+    ]
   },
   {
     "name": "Decay2",
     "description": "Triggerable exponential attack and decay envelope. Attack goes to 1, then decays to 0.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Trigger signal"},
-      {"name": "attackTime", "type": "float", "default": 0.01, "description": "Attack time in seconds"},
-      {"name": "decayTime", "type": "float", "default": 1.0, "description": "Decay time in seconds"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger signal"
+      },
+      {
+        "name": "attackTime",
+        "type": "float",
+        "default": 0.01,
+        "description": "Attack time in seconds"
+      },
+      {
+        "name": "decayTime",
+        "type": "float",
+        "default": 1,
+        "description": "Decay time in seconds"
+      }
     ],
     "outputs": 1,
-    "category": "Envelopes"
+    "category": "Envelopes",
+    "functions": [
+      "decay2_ar",
+      "decay2_kr"
+    ]
   },
   {
     "name": "Linen",
     "description": "Simple linear attack, sustain, release envelope generator.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "gate", "type": "float", "default": 1.0, "description": "Gate signal. Envelope starts on positive transition, releases on negative"},
-      {"name": "attackTime", "type": "float", "default": 0.01, "description": "Attack time in seconds"},
-      {"name": "susLevel", "type": "float", "default": 1.0, "description": "Sustain level (0 to 1)"},
-      {"name": "releaseTime", "type": "float", "default": 1.0, "description": "Release time in seconds"},
-      {"name": "doneAction", "type": "float", "default": 0.0, "description": "Action when envelope completes"}
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 1,
+        "description": "Gate signal. Envelope starts on positive transition, releases on negative"
+      },
+      {
+        "name": "attackTime",
+        "type": "float",
+        "default": 0.01,
+        "description": "Attack time in seconds"
+      },
+      {
+        "name": "susLevel",
+        "type": "float",
+        "default": 1,
+        "description": "Sustain level (0 to 1)"
+      },
+      {
+        "name": "releaseTime",
+        "type": "float",
+        "default": 1,
+        "description": "Release time in seconds"
+      },
+      {
+        "name": "doneAction",
+        "type": "float",
+        "default": 0,
+        "description": "Action when envelope completes"
+      }
     ],
     "outputs": 1,
-    "category": "Envelopes"
+    "category": "Envelopes",
+    "functions": [
+      "linen_kr"
+    ]
   }
 ]

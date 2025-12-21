@@ -53,7 +53,7 @@ pub fn load_ugen_manifests(manifest_dir: &Path) -> HashMap<String, UGenDefinitio
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().map_or(false, |e| e == "json") {
+        if path.extension().is_some_and(|e| e == "json") {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(defs) = serde_json::from_str::<Vec<UGenDefinition>>(&content) {
                     for def in defs {
@@ -195,11 +195,7 @@ fn get_ugen_hover(name: &str) -> Option<MarkupContent> {
         content.push_str(&format!(
             "### UGen: `{}` ({})\n\n",
             ugen.name,
-            if r == "ar" {
-                "audio rate"
-            } else {
-                "control rate"
-            }
+            if r == "ar" { "audio rate" } else { "control rate" }
         ));
     } else {
         content.push_str(&format!("### UGen: `{}`\n\n", ugen.name));
@@ -226,7 +222,7 @@ fn get_ugen_hover(name: &str) -> Option<MarkupContent> {
         content.push_str("**Parameters:**\n\n");
         for input in &ugen.inputs {
             content.push_str(&format!(
-                "- `{}` ({}) — {} (default: {})\n",
+                "- `{}` ({}) - {} (default: {})\n",
                 input.name, input.input_type, input.description, input.default
             ));
         }
@@ -281,10 +277,7 @@ fn format_synthdef_hover(info: &SynthdefInfo) -> MarkupContent {
     if !info.parameters.is_empty() {
         content.push_str("**Parameters:**\n\n");
         for param in &info.parameters {
-            content.push_str(&format!(
-                "- `{}` (default: {})",
-                param.name, param.default
-            ));
+            content.push_str(&format!("- `{}` (default: {})", param.name, param.default));
             if let Some(ref desc) = param.description {
                 content.push_str(&format!(" - {}", desc));
             }
@@ -314,10 +307,7 @@ fn format_effect_hover(info: &SynthdefInfo) -> MarkupContent {
     if !info.parameters.is_empty() {
         content.push_str("**Parameters:**\n\n");
         for param in &info.parameters {
-            content.push_str(&format!(
-                "- `{}` (default: {})",
-                param.name, param.default
-            ));
+            content.push_str(&format!("- `{}` (default: {})", param.name, param.default));
             if let Some(ref desc) = param.description {
                 content.push_str(&format!(" - {}", desc));
             }
@@ -442,31 +432,6 @@ fn get_api_function_hover(name: &str) -> Option<MarkupContent> {
             "note(numerator: int, denominator: int) -> float",
             "```rhai\nnote(1, 4)   // Quarter note = 0.25 beats\nnote(1, 16)  // Sixteenth note\nnote(3, 8)   // Dotted eighth\n```",
         ),
-        // Method functions
-        (
-            "loop_bars",
-            "[Sequence] Set the loop length in bars (4 beats per bar in 4/4).",
-            ".loop_bars(bars: float) -> Sequence",
-            "```rhai\nsequence(\"verse\").loop_bars(16).clip(...).start();\n```",
-        ),
-        (
-            "loop_beats",
-            "[Sequence] Set the loop length in beats.",
-            ".loop_beats(beats: float) -> Sequence",
-            "```rhai\nsequence(\"fill\").loop_beats(4).clip(...).start();\n```",
-        ),
-        (
-            "clip",
-            "[Sequence] Add a clip that loops within the time range. Use with bars() for ranges.",
-            ".clip(range: Range, source: Pattern|Melody|Fade) -> Sequence",
-            "```rhai\nsequence(\"main\").loop_bars(16)\n    .clip(0..bars(8), kick_pattern)\n    .clip(bars(4)..bars(16), bass_melody)\n    .start();\n```",
-        ),
-        (
-            "clip_once",
-            "[Sequence] Add a clip that plays once (no loop) within the time range.",
-            ".clip_once(range: Range, source) -> Sequence",
-            "```rhai\nsequence(\"intro\").loop_bars(8)\n    .clip_once(bars(6)..bars(8), fill_pattern)\n    .start();\n```",
-        ),
         (
             "start",
             "[Pattern/Melody/Sequence] Start playback immediately.",
@@ -484,192 +449,6 @@ fn get_api_function_hover(name: &str) -> Option<MarkupContent> {
             "[Pattern/Melody/Fx] Register without starting. Required before use in sequences.",
             ".apply() -> Self",
             "```rhai\nlet kick_pat = pattern(\"kick\").on(kick).step(\"x...\").apply();\nsequence(\"main\").clip(0..bars(4), kick_pat).start();\n```",
-        ),
-        (
-            "on",
-            "[Voice/Pattern/Melody] Set the voice/synthdef/sample to use.",
-            ".on(source) -> Self",
-            "```rhai\npattern(\"kick\").on(kick_voice).step(\"x...\").start();\nmelody(\"bass\").on(bass_voice).notes(\"C2 E2\").start();\n```",
-        ),
-        (
-            "synth",
-            "[Voice/Fx] Set the synthdef to use by name.",
-            ".synth(name: string) -> Self",
-            "```rhai\nvoice(\"kick\").synth(\"kick_909\").gain(db(-6));\nfx(\"reverb\").synth(\"reverb\").param(\"room\", 0.5).apply();\n```",
-        ),
-        (
-            "gain",
-            "[Voice/GroupHandle] Set the volume/gain. Use db() for decibels.",
-            ".gain(value: float) -> Self",
-            "```rhai\nvoice(\"kick\").synth(\"kick\").gain(db(-6));\ngroup(\"Drums\").gain(db(-3));\n```",
-        ),
-        (
-            "poly",
-            "[Voice] Set the polyphony (number of simultaneous voices).",
-            ".poly(count: int) -> Voice",
-            "```rhai\nvoice(\"piano\").on(piano).poly(8);  // 8-voice polyphony\n```",
-        ),
-        (
-            "step",
-            "[Pattern] Set the step pattern string with x (hit), . (rest), - (sustain).",
-            ".step(pattern: string) -> Pattern",
-            "```rhai\npattern(\"kick\").on(kick).step(\"x...x...x...x...\");\npattern(\"hat\").on(hat).step(\"x.x.x.x. | X.x.X.x.\");\n```",
-        ),
-        (
-            "euclid",
-            "[Pattern] Generate a Euclidean rhythm with hits distributed over steps.",
-            ".euclid(hits: int, steps: int) -> Pattern",
-            "```rhai\npattern(\"perc\").on(perc).euclid(5, 8).start();  // 5 hits in 8 steps\n```",
-        ),
-        (
-            "notes",
-            "[Melody] Set the notes to play. Accepts string with | separators or array.",
-            ".notes(notes: string | Array) -> Melody",
-            "```rhai\nmelody(\"bass\").on(bass).notes(\"E1 - - - | G1 - - -\").start();\nmelody(\"arp\").on(synth).notes([\"C4\", \"E4\", \"G4\"]).start();\n```",
-        ),
-        (
-            "scale",
-            "[Melody] Set the scale for note quantization (major, minor, pentatonic, etc).",
-            ".scale(name: string) -> Melody",
-            "```rhai\nmelody(\"solo\").on(synth).scale(\"minor\").notes(...).start();\n```",
-        ),
-        (
-            "root",
-            "[Melody] Set the root note for the scale.",
-            ".root(note: string) -> Melody",
-            "```rhai\nmelody(\"solo\").on(synth).scale(\"minor\").root(\"E\").notes(...).start();\n```",
-        ),
-        (
-            "gate",
-            "[Melody] Set the gate duration for all notes (0.0-1.0).",
-            ".gate(duration: float) -> Melody",
-            "```rhai\nmelody(\"staccato\").on(synth).notes(\"C4 E4\").gate(0.3).start();\n```",
-        ),
-        (
-            "transpose",
-            "[Melody] Transpose all notes by semitones.",
-            ".transpose(semitones: int) -> Melody",
-            "```rhai\nmelody(\"bass\").on(bass).notes(\"C2 E2\").transpose(12).start();  // Up octave\n```",
-        ),
-        (
-            "len",
-            "[Pattern/Melody] Set the loop length in beats.",
-            ".len(beats: float) -> Self",
-            "```rhai\npattern(\"kick\").on(kick).step(\"x...\").len(4.0).start();\n```",
-        ),
-        (
-            "swing",
-            "[Pattern/Melody] Add swing timing (0.0-1.0).",
-            ".swing(amount: float) -> Self",
-            "```rhai\npattern(\"hat\").on(hat).step(\"x.x.x.x.\").swing(0.3).start();\n```",
-        ),
-        (
-            "mute",
-            "[Voice/GroupHandle] Mute the voice or group.",
-            ".mute() -> MuteBuilder",
-            "```rhai\ngroup(\"Drums\").mute().now();\ngroup(\"Bass\").mute().after(\"4bar\");\n```",
-        ),
-        (
-            "unmute",
-            "[GroupHandle] Unmute the group.",
-            ".unmute() -> UnmuteBuilder",
-            "```rhai\ngroup(\"Drums\").unmute().now();\n```",
-        ),
-        (
-            "now",
-            "[MuteBuilder/UnmuteBuilder] Execute the action immediately.",
-            ".now()",
-            "```rhai\ngroup(\"Drums\").mute().now();\ngroup(\"Bass\").unmute().now();\n```",
-        ),
-        (
-            "after",
-            "[MuteBuilder/UnmuteBuilder] Execute after a delay.",
-            ".after(time: string)",
-            "```rhai\ngroup(\"Drums\").mute().after(\"4bar\");\n```",
-        ),
-        (
-            "param",
-            "[Fx/FadeBuilder] Set a parameter value.",
-            ".param(name: string, value?: float) -> Self",
-            "```rhai\nfx(\"reverb\").synth(\"reverb\").param(\"room\", 0.6).apply();\nfade(\"intro\").on_group(\"Drums\").param(\"amp\").from(0).to(1).start();\n```",
-        ),
-        (
-            "from",
-            "[FadeBuilder] Set the starting value for the fade.",
-            ".from(value: float) -> FadeBuilder",
-            "```rhai\nfade(\"intro\").on_group(\"Drums\").param(\"amp\").from(db(-20)).to(db(0)).start();\n```",
-        ),
-        (
-            "to",
-            "[FadeBuilder] Set the target value for the fade.",
-            ".to(value: float) -> FadeBuilder",
-            "```rhai\nfade(\"outro\").on_group(\"All\").param(\"amp\").to(db(-40)).over_bars(8).start();\n```",
-        ),
-        (
-            "over",
-            "[FadeBuilder] Set the duration of the fade.",
-            ".over(duration: float | string) -> FadeBuilder",
-            "```rhai\nfade(\"slow\").on_group(\"Pad\").param(\"amp\").to(1).over(16.0).start();\nfade(\"fast\").over(\"2bar\").start();\n```",
-        ),
-        (
-            "over_bars",
-            "[FadeBuilder] Set the duration in bars.",
-            ".over_bars(bars: float) -> FadeBuilder",
-            "```rhai\nfade(\"intro\").on_group(\"Drums\").param(\"amp\").from(0).to(1).over_bars(8).start();\n```",
-        ),
-        (
-            "on_group",
-            "[FadeBuilder] Target a group for the fade.",
-            ".on_group(name: string) -> FadeBuilder",
-            "```rhai\nfade(\"intro\").on_group(\"Drums\").param(\"amp\").from(0).to(1).over_bars(8).start();\n```",
-        ),
-        (
-            "on_voice",
-            "[FadeBuilder] Target a voice for the fade.",
-            ".on_voice(name: string) -> FadeBuilder",
-            "```rhai\nfade(\"swell\").on_voice(\"pad\").param(\"amp\").from(0).to(1).over_bars(4).start();\n```",
-        ),
-        (
-            "on_effect",
-            "[FadeBuilder] Target an effect for the fade.",
-            ".on_effect(name: string) -> FadeBuilder",
-            "```rhai\nfade(\"sweep\").on_effect(\"moog\").param(\"cutoff\").from(200).to(8000).over_bars(4).start();\n```",
-        ),
-        (
-            "trigger",
-            "[Voice] Trigger the voice immediately.",
-            ".trigger(params?: Map) -> Voice",
-            "```rhai\nkick_voice.trigger();\nsnare_voice.trigger(#{\"amp\": 0.8});\n```",
-        ),
-        (
-            "note_on",
-            "[Voice] Send a MIDI-style note-on message.",
-            ".note_on(note: int, velocity?: float) -> Voice",
-            "```rhai\npiano.note_on(60, 100);  // Middle C\n```",
-        ),
-        (
-            "note_off",
-            "[Voice] Send a MIDI-style note-off message.",
-            ".note_off(note: int) -> Voice",
-            "```rhai\npiano.note_off(60);  // Release middle C\n```",
-        ),
-        (
-            "bypass",
-            "[Fx/Effect] Bypass the effect.",
-            ".bypass(enabled: bool) -> Self",
-            "```rhai\nfx(\"reverb\").synth(\"reverb\").bypass(true).apply();\n```",
-        ),
-        (
-            "lane",
-            "[Pattern/Melody] Create a parameter lane for per-step values.",
-            ".lane(param: string) -> LaneBuilder",
-            "```rhai\npattern(\"hat\").on(hat).step(\"x.x.x.x.\")\n    .lane(\"amp\").values([1.0, 0.5, 0.8, 0.5])\n    .start();\n```",
-        ),
-        (
-            "values",
-            "[LaneBuilder] Set the values for the parameter lane.",
-            ".values(values: Array) -> Pattern | Melody",
-            "```rhai\n.lane(\"amp\").values([1.0, 0.5, 0.8, 0.5])\n```",
         ),
     ]
     .into_iter()

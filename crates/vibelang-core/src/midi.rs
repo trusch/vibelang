@@ -177,9 +177,10 @@ impl MidiMessage {
 }
 
 /// Velocity curve for mapping MIDI velocity to amplitude.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum VelocityCurve {
     /// Linear mapping (default)
+    #[default]
     Linear,
     /// Fixed velocity (ignores input)
     Fixed(f32),
@@ -187,12 +188,6 @@ pub enum VelocityCurve {
     Exponential,
     /// Compressed curve (softer dynamics)
     Compressed,
-}
-
-impl Default for VelocityCurve {
-    fn default() -> Self {
-        VelocityCurve::Linear
-    }
 }
 
 impl VelocityCurve {
@@ -210,20 +205,15 @@ impl VelocityCurve {
 }
 
 /// Parameter curve for CC-to-parameter mapping.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum ParameterCurve {
     /// Linear interpolation (default)
+    #[default]
     Linear,
     /// Logarithmic (good for frequency)
     Logarithmic,
     /// Exponential (good for volume)
     Exponential,
-}
-
-impl Default for ParameterCurve {
-    fn default() -> Self {
-        ParameterCurve::Linear
-    }
 }
 
 impl ParameterCurve {
@@ -806,7 +796,7 @@ impl MidiInputManager {
 
         // Auto-connect if requested
         if let Some(source_port) = auto_connect {
-            let dest_port = format!("vibelang:midi_in");
+            let dest_port = "vibelang:midi_in".to_string();
             if let Err(e) = connect_jack_midi("vibelang-connect", source_port, &dest_port) {
                 log::warn!("Failed to auto-connect JACK MIDI: {}", e);
             }
