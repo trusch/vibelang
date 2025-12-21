@@ -1,10 +1,32 @@
-# VibeLang
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="landing-page/assets/logo.svg">
+    <source media="(prefers-color-scheme: light)" srcset="landing-page/assets/logo_dark.svg">
+    <img src="landing-page/assets/logo_dark.svg" alt="VibeLang" width="340" height="80" />
+  </picture>
+</p>
 
-**Make music with code. Make code with vibes.**
+<h3 align="center">Make music with code.</h3>
 
-VibeLang is a musical programming language that turns your text editor into a synthesizer. Write patterns, melodies, and entire arrangements in a clean scripting syntax—then hit save and hear your changes instantly.
+<p align="center">
+  <a href="https://crates.io/crates/vibelang-cli"><img src="https://img.shields.io/crates/v/vibelang-cli?style=flat-square&logo=rust&logoColor=white&label=crates.io&color=%23f74c00" alt="Crates.io"></a>
+  <a href="https://docs.rs/vibelang-core"><img src="https://img.shields.io/docsrs/vibelang-core?style=flat-square&logo=docs.rs&logoColor=white&label=docs.rs" alt="docs.rs"></a>
+  <a href="https://crates.io/crates/vibelang-cli"><img src="https://img.shields.io/crates/l/vibelang-cli?style=flat-square" alt="License"></a>
+  <a href="https://github.com/trusch/vibelang/stargazers"><img src="https://img.shields.io/github/stars/trusch/vibelang?style=flat-square&logo=github&color=%23181717" alt="GitHub Stars"></a>
+</p>
 
-```rhai
+<p align="center">
+  <a href="https://vibelang.org">Website</a> •
+  <a href="https://vibelang.org/#docs">Documentation</a> •
+  <a href="https://vibelang.org/#demo">Examples</a> •
+  <a href="https://github.com/trusch/vibelang/issues">Issues</a>
+</p>
+
+---
+
+VibeLang is a programming language for making music. Write beats, melodies, and full tracks in code — then edit, save, and **hear it change instantly**.
+
+```ts
 set_tempo(120);
 
 import "stdlib/drums/kicks/kick_808.vibe";
@@ -17,32 +39,40 @@ pattern("groove").on(kick).step("x... x... x..x ....").start();
 melody("line").on(bass).notes("C3 - - - | C3 - G2 -").start();
 ```
 
-That's a whole beat. Just run it and edit while it plays—watching is on by default.
+That's a whole beat. Just run it and edit while it plays.
 
-## Quick Start
+<br>
+
+## ✨ Features
+
+| | |
+|---|---|
+| **580+ Built-in Sounds** | Drums, bass, leads, pads, keys, world instruments, effects — all as editable `.vibe` files |
+| **~1ms Hot Reload** | Edit your code, save, hear it change. No restart needed. Errors don't kill the audio. |
+| **Git-Friendly** | Your music is plain text. Diff it, branch it, collaborate on it. |
+| **SuperCollider Powered** | Professional-grade audio engine under the hood |
+| **Zero Config** | `cargo install vibelang-cli` and you're ready to make music |
+
+<br>
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- [SuperCollider](https://supercollider.github.io/) (the audio engine, scsynth)
+- [SuperCollider](https://supercollider.github.io/) — the audio engine
 - [JACK Audio](https://jackaudio.org/) (Linux/Mac) or your system audio
 
 ### Install
 
 ```bash
-# Clone and build
-git clone https://github.com/yourusername/vibelang.git
-cd vibelang
-cargo build --release
-
-# Run your first beat (watching is on by default)
-./target/release/vibe examples/minimal_techno/main.vibe
+cargo install vibelang-cli
 ```
 
-### First Song
+### Your First Beat
 
 Create `hello.vibe`:
 
-```rhai
+```ts
 set_tempo(110);
 
 import "stdlib/drums/kicks/kick_808.vibe";
@@ -56,161 +86,68 @@ pattern("four_on_floor")
 ```
 
 Run it:
+
 ```bash
 vibe hello.vibe
 ```
 
-Edit the pattern. Save. Hear it change. That's the vibe.
+Edit the pattern. Save. Hear it change. **That's the vibe.**
 
----
+<br>
 
-## Language Primitives
+## 📖 Language Overview
 
-### Tempo & Time
+### Patterns — Step Sequencing
 
-```rhai
-set_tempo(128);                    // BPM
-set_time_signature(4, 4);          // 4/4 time
-
-db(-6)                             // Convert dB to amplitude
-note(1, 16)                        // Note duration (1/16th = 0.25 beats)
-bars(4)                            // 4 bars = 16 beats
-```
-
-### Voices
-
-Voices are your instruments. Assign a synth, set gain, control polyphony:
-
-```rhai
-let lead = voice("lead")
-    .synth("lead_bright")           // Use a synthdef
-    .gain(db(-6))                   // Output level in dB
-    .poly(4)                        // 4-voice polyphony
-    .set_param("cutoff", 2000.0);   // Synth parameters
-```
-
-### Patterns (Rhythm)
-
-Step sequencer for drums and rhythmic parts:
-
-```rhai
-// x = hit, . = rest
-pattern("hihat")
-    .on(hat_voice)
-    .step("x.x.x.x.x.x.x.x.")
-    .start();
-
-// Velocity levels: 0-9 (9 = loudest)
-pattern("ghost_snare")
-    .on(snare)
-    .step("..3.x.3...3.x...")
+```ts
+// x = hit, . = rest, 0-9 = velocity levels
+pattern("drums")
+    .on(kick_voice)
+    .step("x...x...x..x....")
     .start();
 
 // Euclidean rhythms
 pattern("afro").on(perc).euclid(5, 8).start();
 ```
 
-### Melodies (Pitch)
+### Melodies — Note Sequences
 
-Note sequences with sustain and rests:
-
-```rhai
+```ts
 melody("bassline")
     .on(bass_voice)
     .notes("C2 - - . | E2 - G2 . | A2 - - - | G2 . E2 .")
-    .gate(0.8)                      // Note length (0-1)
     .start();
 
-// Note syntax:
-// C4, A#3, Bb2 = pitches
-// - = hold previous note
-// . = rest
-// | = visual separator (ignored)
+// C4, A#3, Bb2 = pitches  |  - = hold  |  . = rest
 ```
 
-### Sequences (Arrangement)
+### Voices & Synths
 
-Clip-based timeline for song structure:
-
-```rhai
-let verse = melody("verse").on(lead).notes("E3 - - . | G3 - - . | A3 - - . | G3 - - .");
-let chorus = melody("chorus").on(lead).notes("C4 - - . | E4 - - . | G4 - - . | E4 - - .");
-
-sequence("song")
-    .loop_bars(64)
-    .clip(0..bars(16), verse)
-    .clip(bars(16)..bars(32), chorus)
-    .clip(bars(32)..bars(48), verse)
-    .clip(bars(48)..bars(64), chorus)
-    .start();
+```ts
+let lead = voice("lead")
+    .synth("lead_bright")
+    .gain(db(-6))
+    .poly(4)
+    .set_param("cutoff", 2000.0);
 ```
 
-### Fades (Automation)
+### Groups & Effects
 
-Parameter changes over time:
-
-```rhai
-fade("filter_sweep")
-    .on_voice("bass")              // Target a voice by name
-    .param("cutoff")
-    .from(200.0)
-    .to(5000.0)
-    .over_bars(8);
-
-// Fades can also target groups or effects:
-fade("group_swell")
-    .on_group("Synth")
-    .param("amp")
-    .from(db(-20.0))
-    .to(db(0.0))
-    .over_bars(4);
-```
-
-### Groups (Mixing)
-
-Organize voices with shared effects:
-
-```rhai
+```ts
 let drums = define_group("Drums", || {
-    let kick = voice("kick").synth("kick_808").gain(db(-6));
-    let snare = voice("snare").synth("snare_808").gain(db(-8));
+    let kick = voice("kick").synth("kick_808");
+    let snare = voice("snare").synth("snare_808");
 
-    pattern("kick").on(kick).step("x...x...x...x...").start();
-    pattern("snare").on(snare).step("....x.......x...").start();
+    pattern("kick").on(kick).step("x...x...").start();
+    pattern("snare").on(snare).step("....x...").start();
 
-    // Add effects to the group
-    fx("drum_verb")
-        .synth("reverb")
-        .param("room", 0.3)
-        .param("mix", 0.15)
-        .apply();
+    fx("verb").synth("reverb").param("room", 0.3).apply();
 });
 ```
 
-### Effects
+### Custom Sound Design
 
-Add processing inside groups:
-
-```rhai
-fx("room")
-    .synth("reverb")
-    .param("room", 0.6)
-    .param("mix", 0.3)
-    .apply();
-
-fx("tape_delay")
-    .synth("delay")
-    .param("delay_time", 0.375)
-    .param("feedback", 0.4)
-    .param("mix", 0.25)
-    .apply();
-```
-
-### SynthDefs (Sound Design)
-
-Create custom synths using SuperCollider UGens:
-
-```rhai
+```ts
 define_synthdef("my_bass")
     .param("freq", 110.0)
     .param("amp", 0.5)
@@ -218,175 +155,67 @@ define_synthdef("my_bass")
     .body(|freq, amp, gate| {
         let osc = saw_ar(freq) + saw_ar(freq * 1.01);
         let filt = rlpf_ar(osc, 800.0, 0.3);
-
         let env = env_adsr(0.01, 0.1, 0.5, 0.2);
         let env = NewEnvGenBuilder(env, gate).with_done_action(2.0).build();
-
         filt * env * amp
     });
 ```
 
-### Samples
+<br>
 
-Load audio samples:
+## 🎹 Standard Library
 
-```rhai
-let hit = sample("hit", "samples/hit.wav");
-let hit_voice = voice("hit").on(hit).gain(db(-6));
+VibeLang comes with **580+ ready-to-use sounds**:
 
-pattern("hit_pattern").on(hit_voice).step("x...x...").start();
-```
+| Category | Examples |
+|----------|----------|
+| **Drums** (125) | kick_808, snare_909, hihat_closed, clap, toms, percussion |
+| **Bass** (75) | sub_deep, acid_303, reese, moog, upright |
+| **Leads** (50) | supersaw, pluck, brass, strings |
+| **Pads** (41) | warm, shimmer, analog, cinematic |
+| **Keys** (19) | grand_piano, rhodes, wurlitzer, hammond |
+| **World** (24) | sitar, tabla, kalimba, koto, erhu |
+| **Effects** (66) | reverb, delay, chorus, distortion, compressor |
 
----
+All sounds are plain `.vibe` files — read them, tweak them, learn from them.
 
-## Standard Library
+<br>
 
-VibeLang includes 180+ ready-to-use sounds:
+## 📚 Learn More
 
-| Category | Sounds |
-|----------|--------|
-| **Drums** | kick_808, kick_909, snare_808, hihat_closed, clap_reverb, ... |
-| **Bass** | sub_deep, acid_303, reese_classic, wobble_deep, pluck_funky, ... |
-| **Leads** | lead_saw, lead_supersaw, pluck_bell, stab_brass, ... |
-| **Pads** | pad_warm, pad_shimmer, pad_dark, pad_evolving, ... |
-| **Effects** | reverb, delay, distortion, chorus, compressor, ... |
+- **[vibelang.org](https://vibelang.org)** — Full documentation, tutorials, and examples
+- **[API Reference](https://docs.rs/vibelang-core)** — Rust API documentation
+- **[Examples](https://github.com/trusch/vibelang/tree/main/examples)** — Sample projects and tracks
 
-```rhai
-import "stdlib/drums/kicks/kick_808.vibe";
-import "stdlib/bass/acid/acid_303_classic.vibe";
-import "stdlib/effects/reverb.vibe";
-```
+<br>
 
-All sounds are plain `.vibe` files—read them, tweak them, learn from them.
+## 🛠️ Development Status
 
----
+VibeLang is in **alpha**. Core features work well, but expect changes.
 
-## Watch Mode (Live Coding)
+**Working great:** Patterns, melodies, sequences, hot reload, synthdefs, groups, effects, SFZ instruments
 
-Watching is on by default—just run your file:
+**Experimental:** VST plugins, MIDI input, complex automation
 
-```bash
-vibe my_song.vibe
-```
+Found a bug? Have an idea? [Open an issue](https://github.com/trusch/vibelang/issues).
 
-Edit your file. Save. Changes apply instantly. No restart needed. Script errors don't kill the audio—you'll see the error and keep jamming.
+<br>
 
----
-
-## Project Structure
-
-```
-my_project/
-├── main.vibe              # Your song
-├── synths/                # Custom synthdefs
-│   └── my_bass.vibe
-├── patterns/              # Pattern definitions
-│   └── drums.vibe
-└── samples/               # Audio files
-    └── vocal.wav
-```
-
-Use imports to organize:
-
-```rhai
-import "synths/my_bass.vibe";
-import "patterns/drums.vibe";
-```
-
----
-
-## Example: Full Track
-
-```rhai
-set_tempo(122);
-
-import "stdlib/drums/kicks/kick_808.vibe";
-import "stdlib/drums/snares/snare_808.vibe";
-import "stdlib/bass/sub/sub_deep.vibe";
-import "stdlib/effects/reverb.vibe";
-
-// Define a custom lead synth
-define_synthdef("lead_bright")
-    .param("freq", 440.0)
-    .param("amp", 0.3)
-    .param("gate", 1.0)
-    .body(|freq, amp, gate| {
-        let env = env_adsr(0.01, 0.2, 0.5, 0.3);
-        let env = NewEnvGenBuilder(env, gate).with_done_action(2.0).build();
-        let osc = saw_ar(freq) + pulse_ar(freq * 2.0, 0.3) * 0.5;
-        let filt = rlpf_ar(osc, 2000.0, 0.4);
-        filt * env * amp
-    });
-
-let drums = define_group("Drums", || {
-    let kick = voice("kick").synth("kick_808").gain(db(-6));
-    let snare = voice("snare").synth("snare_808").gain(db(-8));
-
-    pattern("kick").on(kick).step("x...x...x..x....").start();
-    pattern("snare").on(snare).step("....x.......x...").start();
-});
-
-let bass = define_group("Bass", || {
-    let sub = voice("sub").synth("sub_deep").gain(db(-10)).poly(1);
-
-    melody("bassline")
-        .on(sub)
-        .notes("D2 - - . | D2 - . . | F2 - - . | D2 . A1 .")
-        .start();
-});
-
-let lead = define_group("Lead", || {
-    let synth = voice("lead").synth("lead_bright").gain(db(-12)).poly(4);
-
-    melody("melody")
-        .on(synth)
-        .notes("D4 - - . | . . F4 - | . . D4 - | . . . .")
-        .start();
-
-    fx("space").synth("reverb").param("room", 0.5).param("mix", 0.3).apply();
-});
-```
-
----
-
-## Alpha Status
-
-This is an alpha release. Things work, things break, things will change.
-
-**Working well:**
-- Patterns, melodies, sequences
-- Watch mode with hot reload
-- SynthDef creation and caching
-- Group-based mixing with effects
-- SFZ instrument loading
-- Standard library sounds
-
-**Experimental:**
-- VST plugin support
-- MIDI input mapping
-- Complex automation curves
-
-**Known quirks:**
-- SFZ instruments need manual note-off in some cases
-- Some stdlib synths may need tuning
-
-Found a bug? Have an idea? [Open an issue](https://github.com/yourusername/vibelang/issues).
-
----
-
-## Why VibeLang?
+## 💡 Why VibeLang?
 
 - **Text is powerful.** Copy, paste, diff, git, grep. Your music is code.
 - **Instant feedback.** Edit-save-hear in milliseconds.
-- **Transparent.** Every sound is a readable `.vibe` file. No black boxes.
-- **Deep when you need it.** From 4-line beats to full album productions.
+- **Transparent.** Every sound is a readable file. No black boxes.
+- **Deep when you need it.** From 4-line beats to full productions.
 
----
+<br>
 
-## License
+## 📄 License
 
 MIT
 
 ---
 
-*Made with love and loud bass.*
+<p align="center">
+  <i>Made with 🎵 and loud bass.</i>
+</p>
