@@ -41,8 +41,11 @@ define_synthdef("stab")
     .param("cutoff", 1200.0)
     .param("gate", 1.0)
     .body(|freq, amp, cutoff, gate| {
-    let env = env_adsr(0.01, 0.3, 0.2, 0.1);
-    let env = NewEnvGenBuilder(env, gate).with_done_action(2.0).build();
+    let env = envelope()
+        .adsr(0.01, 0.3, 0.2, 0.1)
+        .gate(gate)
+        .cleanup_on_finish()
+        .build();
 
     let osc1 = saw_ar(freq);
     let osc2 = saw_ar(freq * 1.5);
@@ -59,8 +62,12 @@ define_synthdef("pad")
     .param("cutoff", 800.0)
     .param("gate", 1.0)
     .body(|freq, amp, cutoff, gate| {
-    let env = env_adsr(0.5, 0.3, 0.7, 2.0);
-    let env = NewEnvGenBuilder(env, gate).with_done_action(2.0).build();
+
+    let env = envelope()
+        .adsr(0.5, 0.3, 0.7, 2.0)
+        .gate(gate)
+        .cleanup_on_finish()
+        .build();
 
     let osc1 = saw_ar(freq);
     let osc2 = saw_ar(freq * 1.002);
@@ -77,8 +84,11 @@ define_synthdef("riser")
     .param("res", 0.5)
     .param("gate", 1.0)
     .body(|amp, cutoff, res, gate| {
-    let env = env_adsr(0.01, 0.1, 1.0, 0.3);
-    let env = NewEnvGenBuilder(env, gate).with_done_action(2.0).build();
+    let env = envelope()
+        .adsr(0.01, 0.1, 1.0, 0.3)
+        .gate(gate)
+        .cleanup_on_finish()
+        .build();
     let noise = white_noise_ar();
     let filt = rhpf_ar(noise, cutoff, res);
     filt * env * amp
