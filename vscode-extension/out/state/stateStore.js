@@ -25,7 +25,15 @@ class StateStore {
         this.onTransportUpdate = this._onTransportUpdate.event;
         this.onGroupsUpdate = this._onGroupsUpdate.event;
         this.onFullUpdate = this._onFullUpdate.event;
-        this._runtime = new runtimeManager_1.RuntimeManager({ autoConnect: true });
+        // Read config options
+        const config = vscode.workspace.getConfiguration('vibelang');
+        const connectionTimeout = config.get('runtime.connectionTimeout', 5000);
+        const reconnectOnDisconnect = config.get('runtime.reconnectOnDisconnect', true);
+        this._runtime = new runtimeManager_1.RuntimeManager({
+            autoConnect: true,
+            connectionTimeout,
+            reconnectOnDisconnect,
+        });
         this.onStatusChange = this._runtime.onStatusChange;
         this.onError = this._runtime.onError;
         // Subscribe to state updates from runtime

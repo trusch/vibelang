@@ -24,6 +24,8 @@ export interface TransportState {
     loop_beats?: number;
     /** Current beat position within the loop (current_beat % loop_beats) */
     loop_beat?: number;
+    /** Server timestamp when this state was captured (ms since Unix epoch) */
+    server_time_ms?: number;
 }
 
 export interface TransportUpdate {
@@ -184,6 +186,8 @@ export interface Melody {
     status: LoopStatus;
     is_looping: boolean;
     source_location?: SourceLocation;
+    /** Notes pattern strings for visual editing (one per lane). */
+    notes_patterns?: string[];
 }
 
 export interface MelodyCreate {
@@ -192,13 +196,19 @@ export interface MelodyCreate {
     group_path?: string;
     loop_beats?: number;
     events?: MelodyEvent[];
+    /** Single melody string (backward compatible). */
     melody_string?: string;
+    /** Multiple lanes for polyphonic melodies. */
+    lanes?: string[];
     params?: Record<string, number>;
 }
 
 export interface MelodyUpdate {
     events?: MelodyEvent[];
+    /** Single melody string (backward compatible). */
     melody_string?: string;
+    /** Multiple lanes for polyphonic melodies. */
+    lanes?: string[];
     loop_beats?: number;
     params?: Record<string, number>;
 }

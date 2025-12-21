@@ -5,6 +5,15 @@ const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
 class DataLoader {
+    /**
+     * Clear all cached data. Call this when you need to reload data.
+     */
+    static clearCache() {
+        this._ugens = [];
+        this._rhaiApi = [];
+        this._stdlib = [];
+        this._initialized = false;
+    }
     static async loadUGens(extensionPath) {
         if (this._ugens.length > 0)
             return this._ugens;
@@ -95,7 +104,14 @@ class DataLoader {
         if (finalPath) {
             try {
                 const content = fs.readFileSync(finalPath, 'utf-8');
-                this._stdlib = JSON.parse(content);
+                const data = JSON.parse(content);
+                // Handle both old format (array) and new format ({ synthdefs: [...] })
+                if (Array.isArray(data)) {
+                    this._stdlib = data;
+                }
+                else if (data.synthdefs && Array.isArray(data.synthdefs)) {
+                    this._stdlib = data.synthdefs;
+                }
             }
             catch (e) {
                 console.error('Error loading stdlib:', e);
@@ -106,9 +122,23 @@ class DataLoader {
         }
         return this._stdlib;
     }
+    /**
+     * Get a map of synthdef names to their import paths
+     */
+    static getImportMap(extensionPath) {
+        const stdlib = this.loadStdlib(extensionPath);
+        const map = new Map();
+        for (const item of stdlib) {
+            if (item.importPath) {
+                map.set(item.name, item.importPath);
+            }
+        }
+        return map;
+    }
 }
 exports.DataLoader = DataLoader;
 DataLoader._ugens = [];
 DataLoader._rhaiApi = [];
 DataLoader._stdlib = [];
+DataLoader._initialized = false;
 //# sourceMappingURL=dataLoader.js.map

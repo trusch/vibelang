@@ -13,11 +13,13 @@ import {
     LanguageClient,
     LanguageClientOptions,
     ServerOptions,
+    Middleware,
 } from 'vscode-languageclient/node';
 
 // Language features (fallback when LSP is disabled)
 import { VibelangCompletionItemProvider } from './features/completion';
 import { VibelangHoverProvider } from './features/hover';
+import { DataLoader } from './utils/dataLoader';
 import { ParameterSlidersPanel } from './features/sliders';
 import {
     VibelangDocumentFormattingEditProvider,
@@ -64,10 +66,17 @@ export function activate(context: vscode.ExtensionContext) {
     const config = vscode.workspace.getConfiguration('vibelang');
     const lspEnabled = config.get<boolean>('lsp.enabled', true);
 
+    // Diagnostic debounce state
+    let diagnosticDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
+
     // Function to start the LSP client
     async function startLanguageClient() {
         const currentConfig = vscode.workspace.getConfiguration('vibelang');
         const binaryPath = currentConfig.get<string>('runtime.binaryPath', 'vibe');
+        const diagnosticDelay = currentConfig.get<number>('lsp.diagnostics.delay', 300);
+        const diagnosticsEnabled = currentConfig.get<boolean>('lsp.diagnostics.enabled', true);
+        const diagnosticsOnType = currentConfig.get<boolean>('lsp.diagnostics.onType', true);
+        const traceLevel = currentConfig.get<string>('lsp.trace.server', 'off');
 
         const serverOptions: ServerOptions = {
             command: binaryPath,
@@ -77,12 +86,53 @@ export function activate(context: vscode.ExtensionContext) {
             }
         };
 
+        // Create middleware for diagnostic debouncing
+        const middleware: Middleware = {
+            handleDiagnostics: (uri, diagnostics, next) => {
+                if (!diagnosticsEnabled) {
+                    // Clear diagnostics if disabled
+                    next(uri, []);
+                    return;
+                }
+
+                const uriString = uri.toString();
+
+                // Clear any existing debounce timer for this document
+                const existingTimer = diagnosticDebounceTimers.get(uriString);
+                if (existingTimer) {
+                    clearTimeout(existingTimer);
+                }
+
+                // If delay is 0, publish immediately
+                if (diagnosticDelay === 0) {
+                    next(uri, diagnostics);
+                    return;
+                }
+
+                // Debounce: wait for delay before publishing diagnostics
+                const timer = setTimeout(() => {
+                    diagnosticDebounceTimers.delete(uriString);
+                    next(uri, diagnostics);
+                }, diagnosticDelay);
+
+                diagnosticDebounceTimers.set(uriString, timer);
+            }
+        };
+
         const clientOptions: LanguageClientOptions = {
             documentSelector: [{ scheme: 'file', language: 'vibe' }],
             synchronize: {
-                fileEvents: vscode.workspace.createFileSystemWatcher('**/*.vibe')
+                fileEvents: vscode.workspace.createFileSystemWatcher('**/*.vibe'),
+                // Re-read config when settings change
+                configurationSection: 'vibelang'
             },
             outputChannelName: 'VibeLang Language Server',
+            middleware,
+            initializationOptions: {
+                diagnosticsEnabled,
+                diagnosticsOnType,
+                diagnosticDelay
+            }
         };
 
         languageClient = new LanguageClient(
@@ -92,6 +142,11 @@ export function activate(context: vscode.ExtensionContext) {
             clientOptions
         );
 
+        // Set trace level
+        if (traceLevel !== 'off') {
+            languageClient.setTrace(traceLevel === 'verbose' ? 2 : 1);
+        }
+
         try {
             await languageClient.start();
             console.log('VibeLang Language Server started');
@@ -100,10 +155,8 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.window.showWarningMessage(
                 `Failed to start VibeLang Language Server: ${err.message}. ` +
                 `Make sure the 'vibe' command is available in PATH or configure vibelang.runtime.binaryPath. ` +
-                `Falling back to built-in providers.`
+                `Built-in providers will still provide basic language features.`
             );
-            // Register fallback providers
-            registerFallbackLanguageProviders(context);
         }
     }
 
@@ -123,32 +176,57 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('vibelang.restartLsp', restartLanguageClient)
     );
 
+    // Watch for configuration changes that require LSP restart
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(async (e) => {
+            if (e.affectsConfiguration('vibelang.lsp')) {
+                const action = await vscode.window.showInformationMessage(
+                    'VibeLang LSP settings changed. Restart Language Server to apply?',
+                    'Restart',
+                    'Later'
+                );
+                if (action === 'Restart') {
+                    await restartLanguageClient();
+                }
+            }
+        })
+    );
+
     if (lspEnabled) {
         // Start the Language Server
         startLanguageClient();
 
         context.subscriptions.push({
             dispose: () => {
+                // Clear all debounce timers
+                for (const timer of diagnosticDebounceTimers.values()) {
+                    clearTimeout(timer);
+                }
+                diagnosticDebounceTimers.clear();
+
                 if (languageClient) {
                     languageClient.stop();
                 }
             }
         });
     } else {
-        // LSP disabled, use fallback providers
-        registerFallbackLanguageProviders(context);
+        console.log('VibeLang LSP disabled by configuration');
     }
+
+    // Always register hover and completion providers - they supplement the LSP
+    // (or work standalone if LSP is disabled/fails)
+    registerBuiltInLanguageProviders(context);
 
     // Document Formatting Providers (not provided by LSP yet)
     const formattingProvider = vscode.languages.registerDocumentFormattingEditProvider(
         'vibe',
-        new VibelangDocumentFormattingEditProvider()
+        new VibelangDocumentFormattingEditProvider(context.extensionPath)
     );
     context.subscriptions.push(formattingProvider);
 
     const rangeFormattingProvider = vscode.languages.registerDocumentRangeFormattingEditProvider(
         'vibe',
-        new VibelangDocumentRangeFormattingEditProvider()
+        new VibelangDocumentRangeFormattingEditProvider(context.extensionPath)
     );
     context.subscriptions.push(rangeFormattingProvider);
 
@@ -322,7 +400,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('vibelang.openSampleBrowser', () => {
             if (stateStore) {
-                SampleBrowser.createOrShow(stateStore, context.extensionPath);
+                SampleBrowser.createOrShow(stateStore, context);
             }
         })
     );
@@ -332,7 +410,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.registerWebviewPanelSerializer(SampleBrowser.viewType, {
             async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel) {
                 if (stateStore) {
-                    SampleBrowser.revive(webviewPanel, stateStore, context.extensionPath);
+                    SampleBrowser.revive(webviewPanel, stateStore, context);
                 }
             }
         });
@@ -486,12 +564,23 @@ export function activate(context: vscode.ExtensionContext) {
 
                 vscode.window.showInformationMessage('VibeLang runtime started. Connecting...');
 
-                // Auto-connect after a short delay
-                setTimeout(() => {
+                // Auto-connect with retries - the RuntimeManager handles timing
+                // Give the process a brief moment to start, then begin connection attempts
+                setTimeout(async () => {
                     if (stateStore && stateStore.status !== 'connected') {
-                        vscode.commands.executeCommand('vibelang.toggleConnection');
+                        // Use tryConnect directly which has built-in retry logic
+                        const connected = await stateStore.connect();
+                        if (!connected) {
+                            const action = await vscode.window.showErrorMessage(
+                                'Could not connect to VibeLang runtime after multiple attempts',
+                                'Retry', 'Cancel'
+                            );
+                            if (action === 'Retry') {
+                                stateStore.connect();
+                            }
+                        }
                     }
-                }, 1500);
+                }, 500);
 
             } catch (err: any) {
                 vscode.window.showErrorMessage(`Failed to start VibeLang runtime: ${err.message}`);
@@ -609,9 +698,15 @@ export function deactivate(): Thenable<void> | undefined {
 }
 
 /**
- * Register fallback language providers (used when LSP is disabled or fails to start)
+ * Register built-in language providers for hover and completion.
+ * These providers use the UGen manifests and Rhai API documentation
+ * to provide tooltips and autocompletion for all built-in functions.
+ * They work alongside the LSP (if running) or standalone.
  */
-function registerFallbackLanguageProviders(context: vscode.ExtensionContext) {
+function registerBuiltInLanguageProviders(context: vscode.ExtensionContext) {
+    // Clear cached data to ensure fresh data is loaded
+    DataLoader.clearCache();
+
     // Completion Provider
     const completionProvider = vscode.languages.registerCompletionItemProvider(
         'vibe',

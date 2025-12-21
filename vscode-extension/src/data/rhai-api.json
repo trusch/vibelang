@@ -1136,5 +1136,314 @@
     "description": "[SampleHandle] Set the number of grain overlaps for time-stretching.",
     "signature": ".overlaps(overlaps: float) -> SampleHandle",
     "example": "sample(\"pad\", \"pad.wav\").warp(true).overlaps(8.0);"
+  },
+
+  {
+    "name": "mix",
+    "description": "[DSP Helper] Mix/sum an array of signals into a single signal. Useful for combining multiple oscillators or effects.",
+    "signature": "mix(signals: Array) -> NodeRef",
+    "example": "let mixed = mix([osc1, osc2, osc3]);\nlet chord = mix([sin_ar(261.63), sin_ar(329.63), sin_ar(392.0)]);"
+  },
+  {
+    "name": "sum",
+    "description": "[DSP Helper] Alias for mix(). Sum an array of signals into a single signal.",
+    "signature": "sum(signals: Array) -> NodeRef",
+    "example": "let summed = sum([osc1, osc2]);"
+  },
+  {
+    "name": "dup",
+    "description": "[DSP Helper] Duplicate a mono signal into an array. Useful for creating stereo from mono or spreading to multiple channels.",
+    "signature": "dup(signal: NodeRef, count: int) -> Array",
+    "example": "let stereo = dup(mono_signal, 2);  // [mono, mono]\nlet quad = dup(osc, 4);  // 4 copies"
+  },
+  {
+    "name": "channels",
+    "description": "[DSP Helper] Expand a signal to multiple channels with the same value. Similar to dup but explicitly for channel count.",
+    "signature": "channels(signal: NodeRef, count: int) -> Array",
+    "example": "let stereo = channels(mono, 2);"
+  },
+  {
+    "name": "channel",
+    "description": "[DSP Helper] Extract a single channel from a multi-channel signal array.",
+    "signature": "channel(signal: NodeRef, index: int) -> NodeRef",
+    "example": "let left = channel(stereo, 0);\nlet right = channel(stereo, 1);"
+  },
+  {
+    "name": "sound_in",
+    "description": "[DSP Helper] Read audio from hardware inputs (e.g., microphone, line-in). Channel indices start at 0.",
+    "signature": "sound_in(num_channels: int) -> Array",
+    "example": "let input = sound_in(2);  // Stereo input\nlet mic = sound_in(1)[0];  // Mono mic"
+  },
+  {
+    "name": "sound_in_channel",
+    "description": "[DSP Helper] Read a single channel from hardware audio input.",
+    "signature": "sound_in_channel(channel: int) -> NodeRef",
+    "example": "let mic = sound_in_channel(0);  // First input channel"
+  },
+  {
+    "name": "detune_spread",
+    "description": "[DSP Helper] Generate an array of detuning values for creating thick unison sounds. Values spread evenly around 1.0.",
+    "signature": "detune_spread(voices: int, amount: float) -> Array",
+    "example": "let spread = detune_spread(5, 0.01);  // 5 voices, 1% detune\n// Use to create supersaw: spread.map(|d| saw_ar(freq * d))"
+  },
+  {
+    "name": "env_perc",
+    "description": "[DSP Helper] Create a percussive envelope specification. Quick attack, natural decay. Ideal for drums, plucks.",
+    "signature": "env_perc(attack: float, release: float) -> Env",
+    "example": "let env = env_perc(0.01, 0.3);  // 10ms attack, 300ms decay"
+  },
+  {
+    "name": "env_adsr",
+    "description": "[DSP Helper] Create an ADSR envelope specification. Most versatile envelope shape.",
+    "signature": "env_adsr(attack: float, decay: float, sustain: float, release: float) -> Env",
+    "example": "let env = env_adsr(0.01, 0.1, 0.7, 0.5);  // Classic synth envelope"
+  },
+  {
+    "name": "env_asr",
+    "description": "[DSP Helper] Create an ASR (attack-sustain-release) envelope specification. No decay stage.",
+    "signature": "env_asr(attack: float, sustain: float, release: float) -> Env",
+    "example": "let env = env_asr(0.3, 1.0, 0.5);  // Pad-style envelope"
+  },
+  {
+    "name": "env_triangle",
+    "description": "[DSP Helper] Create a symmetric triangle envelope. Fades in for half duration, fades out for half.",
+    "signature": "env_triangle(duration: float) -> Env",
+    "example": "let env = env_triangle(2.0);  // 1s fade in, 1s fade out"
+  },
+  {
+    "name": "Env",
+    "description": "[DSP Helper] Create a custom envelope specification with explicit levels, times, and curve.",
+    "signature": "Env(levels: Array, times: Array, curve: float) -> Env",
+    "example": "let custom = Env([0.0, 1.0, 0.5, 0.0], [0.01, 0.1, 0.5], -4.0);"
+  },
+  {
+    "name": "db_to_amp",
+    "description": "[DSP Helper] Convert decibels to linear amplitude. Similar to db() but works with any value.",
+    "signature": "db_to_amp(db: float) -> float",
+    "example": "let amp = db_to_amp(-6.0);  // 0.5 (half amplitude)"
+  },
+  {
+    "name": "amp_to_db",
+    "description": "[DSP Helper] Convert linear amplitude to decibels.",
+    "signature": "amp_to_db(amp: float) -> float",
+    "example": "let db = amp_to_db(0.5);  // -6.02 dB"
+  },
+
+  {
+    "name": "asr",
+    "description": "[Envelope Builder] Shorthand for attack-sustain-release envelope shape. Chain method on envelope() builder. Sustain is the level (0-1), not time. Ideal for pads, brass, sustained sounds.",
+    "signature": ".asr(attack: float, sustain: float, release: float) -> EnvelopeBuilder",
+    "example": "let env = envelope().asr(0.3, 1.0, 0.5).gate(gate).build();\n// or with humantime\nlet env = envelope().asr(\"100ms\", 0.8, \"1s\").build();"
+  },
+  {
+    "name": "perc",
+    "description": "[Envelope Builder] Shorthand for percussive envelope shape. Chain method on envelope() builder. Quick attack, natural decay - no sustain. Ideal for drums, plucks, piano.",
+    "signature": ".perc(attack: float, release: float) -> EnvelopeBuilder",
+    "example": "let env = envelope().perc(0.01, 0.3).build();\n// or with humantime\nlet env = envelope().perc(\"5ms\", \"200ms\").build();"
+  },
+  {
+    "name": "adsr",
+    "description": "[Envelope Builder] Shorthand for full ADSR envelope shape. Chain method on envelope() builder. Sustain is the level (0-1). Most versatile envelope shape.",
+    "signature": ".adsr(attack: float, decay: float, sustain: float, release: float) -> EnvelopeBuilder",
+    "example": "let env = envelope().adsr(0.01, 0.1, 0.7, 0.5).gate(gate).build();\n// Classic synth envelope with gate control"
+  },
+  {
+    "name": "attack",
+    "description": "[Envelope Builder] Set the attack time. Chain method on envelope() builder. Accepts seconds (0.01) or humantime strings (\"10ms\").",
+    "signature": ".attack(time: float | string) -> EnvelopeBuilder",
+    "example": "let env = envelope().attack(0.01).decay(0.1).sustain(0.7).release(0.5).build();"
+  },
+  {
+    "name": "decay",
+    "description": "[Envelope Builder] Set the decay time. Chain method on envelope() builder. Accepts seconds or humantime strings.",
+    "signature": ".decay(time: float | string) -> EnvelopeBuilder",
+    "example": "let env = envelope().attack(0.01).decay(\"100ms\").sustain(0.7).release(0.5).build();"
+  },
+  {
+    "name": "sustain",
+    "description": "[Envelope Builder] Set the sustain level (0.0 to 1.0). Chain method on envelope() builder. Setting this creates an ASR or ADSR envelope.",
+    "signature": ".sustain(level: float) -> EnvelopeBuilder",
+    "example": "let env = envelope().attack(0.1).sustain(0.8).release(1.0).build();  // ASR envelope"
+  },
+  {
+    "name": "release",
+    "description": "[Envelope Builder] Set the release time. Chain method on envelope() builder. Accepts seconds or humantime strings.",
+    "signature": ".release(time: float | string) -> EnvelopeBuilder",
+    "example": "let env = envelope().perc(0.01, 0.3).release(\"500ms\").build();"
+  },
+  {
+    "name": "triangle",
+    "description": "[Envelope Builder] Create symmetric triangle envelope. Chain method on envelope() builder. Fades in for half duration, fades out for half duration.",
+    "signature": ".triangle(duration: float | string) -> EnvelopeBuilder",
+    "example": "let env = envelope().triangle(2.0).build();  // 1s fade in, 1s fade out"
+  },
+  {
+    "name": "gate",
+    "description": "[Envelope Builder] Set the gate signal that controls envelope triggering. Chain method on envelope() builder. Defaults to constant 1.0 (always on) if not specified.",
+    "signature": ".gate(signal: NodeRef | float) -> EnvelopeBuilder",
+    "example": "let env = envelope().adsr(0.01, 0.1, 0.7, 0.5).gate(gate_param).build();"
+  },
+  {
+    "name": "time_scale",
+    "description": "[Envelope Builder] Multiply all envelope times by this factor. Chain method on envelope() builder. Use for pitch-dependent decay or tempo sync.",
+    "signature": ".time_scale(factor: float | NodeRef) -> EnvelopeBuilder",
+    "example": "let env = envelope().adsr(0.01, 0.1, 0.7, 0.5).time_scale(440.0 / freq).build();"
+  },
+  {
+    "name": "level_scale",
+    "description": "[Envelope Builder] Multiply envelope output by this factor. Chain method on envelope() builder. Useful for velocity sensitivity.",
+    "signature": ".level_scale(factor: float | NodeRef) -> EnvelopeBuilder",
+    "example": "let env = envelope().adsr(0.01, 0.1, 0.7, 0.5).level_scale(velocity).build();"
+  },
+  {
+    "name": "cleanup_on_finish",
+    "description": "[Envelope Builder] Free the synth when envelope completes (sets doneAction=2). Chain method on envelope() builder. Essential for one-shot sounds to prevent voice exhaustion.",
+    "signature": ".cleanup_on_finish() -> EnvelopeBuilder",
+    "example": "let env = envelope().perc(0.01, 0.3).cleanup_on_finish().build();\n// Synth will be freed when envelope finishes"
+  },
+  {
+    "name": "build",
+    "description": "[Envelope Builder] Build and return the envelope signal. Call this at the end of the envelope builder chain to get the actual envelope signal.",
+    "signature": ".build() -> NodeRef",
+    "example": "let env = envelope().adsr(0.01, 0.1, 0.7, 0.5).gate(gate).build();\nsin_ar(freq) * env"
+  },
+
+  {
+    "name": "tanh",
+    "description": "[Signal Math] Apply hyperbolic tangent to a signal. Provides soft saturation/distortion.",
+    "signature": "tanh(signal: NodeRef) -> NodeRef",
+    "example": "let saturated = tanh(osc * 2.0);  // Soft clip"
+  },
+  {
+    "name": "abs",
+    "description": "[Signal Math] Absolute value of a signal. Useful for rectification and envelope following.",
+    "signature": "abs(signal: NodeRef) -> NodeRef",
+    "example": "let rectified = abs(osc);"
+  },
+  {
+    "name": "sign",
+    "description": "[Signal Math] Sign of a signal (-1, 0, or 1). Creates hard clipping/square wave effect.",
+    "signature": "sign(signal: NodeRef) -> NodeRef",
+    "example": "let squared = sign(sin_ar(440.0));  // Harsh square wave"
+  },
+  {
+    "name": "squared",
+    "description": "[Signal Math] Square a signal (x * x). Useful for power calculations and wave shaping.",
+    "signature": "squared(signal: NodeRef) -> NodeRef",
+    "example": "let sq = squared(osc);"
+  },
+  {
+    "name": "cubed",
+    "description": "[Signal Math] Cube a signal (x * x * x). Wave shaping with odd harmonics.",
+    "signature": "cubed(signal: NodeRef) -> NodeRef",
+    "example": "let cubed_wave = cubed(sin_ar(440.0));"
+  },
+  {
+    "name": "sqrt",
+    "description": "[Signal Math] Square root of a signal. Use with positive signals only.",
+    "signature": "sqrt(signal: NodeRef) -> NodeRef",
+    "example": "let root = sqrt(abs(osc));"
+  },
+  {
+    "name": "exp",
+    "description": "[Signal Math] Exponential (e^x) of a signal. Useful for exponential curves.",
+    "signature": "exp(signal: NodeRef) -> NodeRef",
+    "example": "let exponential = exp(env);"
+  },
+  {
+    "name": "ln",
+    "description": "[Signal Math] Natural logarithm of a signal. Use with positive signals only.",
+    "signature": "ln(signal: NodeRef) -> NodeRef",
+    "example": "let logarithmic = ln(signal + 1.0);"
+  },
+  {
+    "name": "distort",
+    "description": "[Signal Math] Apply distortion to a signal using x / (1 + |x|) transfer function.",
+    "signature": "distort(signal: NodeRef) -> NodeRef",
+    "example": "let distorted = distort(osc * 4.0);"
+  },
+  {
+    "name": "softclip",
+    "description": "[Signal Math] Soft clip a signal. Gentler than hard clipping, preserves more harmonics.",
+    "signature": "softclip(signal: NodeRef) -> NodeRef",
+    "example": "let clipped = softclip(osc * 2.0);"
+  },
+  {
+    "name": "floor",
+    "description": "[Signal Math] Floor (round down) a signal to integers. Useful for sample-and-hold effects.",
+    "signature": "floor(signal: NodeRef) -> NodeRef",
+    "example": "let quantized = floor(lfo * 8.0) / 8.0;  // Quantize to 8 steps"
+  },
+  {
+    "name": "ceil",
+    "description": "[Signal Math] Ceiling (round up) a signal to integers.",
+    "signature": "ceil(signal: NodeRef) -> NodeRef",
+    "example": "let rounded_up = ceil(lfo * 4.0) / 4.0;"
+  },
+  {
+    "name": "round",
+    "description": "[Signal Math] Round a signal to nearest integer.",
+    "signature": "round(signal: NodeRef) -> NodeRef",
+    "example": "let rounded = round(lfo * 12.0) / 12.0;  // Quantize to semitones"
+  },
+  {
+    "name": "clip",
+    "description": "[Signal Math] Clip a signal to a range. Hard limits the signal between lo and hi.",
+    "signature": "clip(signal: NodeRef, lo: float, hi: float) -> NodeRef",
+    "example": "let limited = clip(osc, -0.5, 0.5);  // Hard limit to ±0.5"
+  },
+  {
+    "name": "wrap",
+    "description": "[Signal Math] Wrap a signal within a range. Values outside wrap around (like modulo).",
+    "signature": "wrap(signal: NodeRef, lo: float, hi: float) -> NodeRef",
+    "example": "let wrapped = wrap(phasor, 0.0, 1.0);"
+  },
+  {
+    "name": "fold",
+    "description": "[Signal Math] Fold a signal within a range. Values outside fold back (mirror). Creates wave folding distortion.",
+    "signature": "fold(signal: NodeRef, lo: float, hi: float) -> NodeRef",
+    "example": "let folded = fold(osc * 2.0, -1.0, 1.0);  // Wave folder"
+  },
+  {
+    "name": "min",
+    "description": "[Signal Math] Minimum of two signals or signal and value.",
+    "signature": "min(a: NodeRef, b: NodeRef | float) -> NodeRef",
+    "example": "let capped = min(env, 0.8);  // Cap envelope at 0.8"
+  },
+  {
+    "name": "max",
+    "description": "[Signal Math] Maximum of two signals or signal and value.",
+    "signature": "max(a: NodeRef, b: NodeRef | float) -> NodeRef",
+    "example": "let floored = max(env, 0.1);  // Keep minimum of 0.1"
+  },
+  {
+    "name": "pow",
+    "description": "[Signal Math] Raise a signal to a power. Useful for exponential curves.",
+    "signature": "pow(signal: NodeRef, exponent: float | NodeRef) -> NodeRef",
+    "example": "let curved = pow(env, 2.0);  // Square the envelope"
+  },
+  {
+    "name": "modulo",
+    "description": "[Signal Math] Modulo operation on a signal. Remainder after division.",
+    "signature": "modulo(signal: NodeRef, divisor: float) -> NodeRef",
+    "example": "let mod = modulo(phasor, 0.5);  // Double frequency phasor"
+  },
+  {
+    "name": "round_to",
+    "description": "[Signal Math] Round a signal to multiples of a value.",
+    "signature": "round_to(signal: NodeRef, multiple: float) -> NodeRef",
+    "example": "let quantized = round_to(freq, 100.0);  // Round to nearest 100Hz"
+  },
+  {
+    "name": "lerp",
+    "description": "[Signal Math] Linear interpolation between two signals. t=0 gives a, t=1 gives b.",
+    "signature": "lerp(a: NodeRef, b: NodeRef, t: NodeRef) -> NodeRef",
+    "example": "let morphed = lerp(osc1, osc2, lfo);  // Crossfade between oscillators"
+  },
+  {
+    "name": "zip",
+    "description": "[Array Helper] Combine two arrays into an array of pairs. Pairs elements at the same index from both arrays. The resulting array length equals the shorter input array.",
+    "signature": "zip(arr1: Array, arr2: Array) -> Array | arr1.zip(arr2) -> Array",
+    "example": "let harmonics = [1.0, 2.0, 3.0];\nlet rates = [0.03, 0.05, 0.07];\nlet pairs = harmonics.zip(rates);  // [[1.0, 0.03], [2.0, 0.05], [3.0, 0.07]]\n// Access pair elements:\npairs.map(|pair| pair[0] * pair[1])"
   }
 ]

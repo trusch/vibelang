@@ -7,16 +7,20 @@
  *
  * Melody Formats:
  * 1. Note pattern: "C4 - - . | E4 - - ." (bar-based, - ties, . is rest)
- * 2. Step pattern: "C4...E4...G4..." (dots continue previous note)
- * 3. Note array: ["C4", "E4", "G4"] (handled differently, not parsed here)
- * 4. Scale degrees: "1 2 3 4" or "1:maj 2:min" (requires scale context)
- * 5. Chords: "C4:maj7" or "1:maj7"
+ * 2. Note array: ["C4", "E4", "G4"] (handled differently, not parsed here)
+ * 3. Scale degrees: "1 2 3 4" or "1:maj 2:min" (requires scale context)
+ * 4. Chords: "C4:maj7" or "1:maj7"
+ *
+ * Bar separator handling:
+ * - Leading/trailing `|` are ignored
+ * - Consecutive `||` are collapsed to single bar separator
  *
  * Piano Roll Representation:
  * - Each note has: startBeat, duration, midiNote, velocity
  * - Chords have multiple notes at the same beat
  */
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.detectChordFromMidiNotes = detectChordFromMidiNotes;
 exports.parseNoteToMidi = parseNoteToMidi;
 exports.midiToNoteName = midiToNoteName;
 exports.parseMelodyString = parseMelodyString;
@@ -30,6 +34,11 @@ exports.quantizeBeat = quantizeBeat;
 exports.transpose = transpose;
 exports.shiftTime = shiftTime;
 exports.getMelodyStats = getMelodyStats;
+exports.splitIntoLanes = splitIntoLanes;
+exports.generateMultiLaneMelodyStrings = generateMultiLaneMelodyStrings;
+exports.parseMultiLaneMelodyStrings = parseMultiLaneMelodyStrings;
+exports.countLanes = countLanes;
+const barUtils_1 = require("./barUtils");
 // Note name to MIDI mapping (C4 = 60)
 const NOTE_BASES = {
     'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11
@@ -83,6 +92,80 @@ const CHORDS = {
     '5': [0, 7],
     'power': [0, 7],
 };
+/**
+ * Detect a chord quality from a set of MIDI notes.
+ * Returns the chord root (as MIDI) and quality string, or null if not a recognized chord.
+ *
+ * The function tries all possible roots (each note in the set) and finds the best match.
+ * Priority: longer chords (7ths) over shorter (triads), exact matches over partial.
+ */
+function detectChordFromMidiNotes(midiNotes) {
+    if (midiNotes.length < 2)
+        return null;
+    // Sort notes ascending
+    const sorted = [...midiNotes].sort((a, b) => a - b);
+    const lowestNote = sorted[0];
+    // Calculate intervals relative to the lowest note
+    const intervals = sorted.map(n => n - lowestNote);
+    // Try to match against known chord types
+    // Prefer longer matches (7th chords over triads)
+    const chordTypes = [
+        // 7th chords first (prefer more specific chords)
+        { name: 'maj7', intervals: [0, 4, 7, 11] },
+        { name: '7', intervals: [0, 4, 7, 10] },
+        { name: 'm7', intervals: [0, 3, 7, 10] },
+        { name: 'dim7', intervals: [0, 3, 6, 9] },
+        { name: 'm7b5', intervals: [0, 3, 6, 10] },
+        { name: 'mmaj7', intervals: [0, 3, 7, 11] },
+        { name: 'add9', intervals: [0, 4, 7, 14] },
+        { name: '6', intervals: [0, 4, 7, 9] },
+        { name: 'm6', intervals: [0, 3, 7, 9] },
+        // Triads
+        { name: 'maj', intervals: [0, 4, 7] },
+        { name: 'min', intervals: [0, 3, 7] },
+        { name: 'dim', intervals: [0, 3, 6] },
+        { name: 'aug', intervals: [0, 4, 8] },
+        { name: 'sus2', intervals: [0, 2, 7] },
+        { name: 'sus4', intervals: [0, 5, 7] },
+        // Dyads
+        { name: '5', intervals: [0, 7] },
+    ];
+    // Normalize intervals to within an octave (for inversions)
+    const normalizedIntervals = intervals.map(i => i % 12);
+    const uniqueNormalized = [...new Set(normalizedIntervals)].sort((a, b) => a - b);
+    // Try to match with the lowest note as root
+    for (const chord of chordTypes) {
+        const chordNormalized = chord.intervals.map(i => i % 12);
+        const uniqueChordNormalized = [...new Set(chordNormalized)].sort((a, b) => a - b);
+        // Check if all chord tones are present
+        if (uniqueChordNormalized.length === uniqueNormalized.length &&
+            uniqueChordNormalized.every((v, i) => v === uniqueNormalized[i])) {
+            return { root: lowestNote, quality: chord.name };
+        }
+    }
+    // Try inversions - each note could be the root
+    for (let i = 1; i < sorted.length; i++) {
+        const potentialRoot = sorted[i];
+        const rootClass = potentialRoot % 12;
+        // Calculate intervals as if this note were the root
+        const intervalsFromRoot = sorted.map(n => {
+            const interval = (n % 12) - rootClass;
+            return interval < 0 ? interval + 12 : interval;
+        }).sort((a, b) => a - b);
+        const uniqueFromRoot = [...new Set(intervalsFromRoot)];
+        for (const chord of chordTypes) {
+            const chordNormalized = chord.intervals.map(i => i % 12);
+            const uniqueChordNormalized = [...new Set(chordNormalized)].sort((a, b) => a - b);
+            if (uniqueChordNormalized.length === uniqueFromRoot.length &&
+                uniqueChordNormalized.every((v, i) => v === uniqueFromRoot[i])) {
+                // Found a match - return the actual root note (in the original octave range)
+                const rootInLowestOctave = (lowestNote - (lowestNote % 12)) + rootClass;
+                return { root: rootInLowestOctave, quality: chord.name };
+            }
+        }
+    }
+    return null; // No chord match found
+}
 /**
  * Parse a single note name to MIDI number
  * Supports: C4, C#4, Db4, C, C#, etc.
@@ -301,9 +384,13 @@ function parseMelodyString(melody, config) {
     const beatsPerBar = config?.beatsPerBar ?? 4;
     const scale = config?.scale;
     const root = config?.root;
-    // Split by bar separator
-    const bars = melody.split('|');
+    // Use unified bar splitting (handles leading/trailing/consecutive pipes)
+    const bars = (0, barUtils_1.parseBars)(melody);
     const numBars = bars.length;
+    // Handle empty input
+    if (numBars === 0) {
+        return createEmptyMelodyGrid({ numBars: 1, beatsPerBar, scale, root });
+    }
     const totalBeats = numBars * beatsPerBar;
     const notes = [];
     let currentBeat = 0;
@@ -398,14 +485,24 @@ function generateMelodyString(grid, stepsPerBar = 4) {
             const sustainedNotes = sortedNotes.filter(n => n.startBeat < stepBeat && (n.startBeat + n.duration) > stepBeat);
             if (startingNotes.length > 0) {
                 // New note(s) start here
-                // Group by same start time (chords)
-                const chordNotes = startingNotes.filter(n => Math.abs(n.startBeat - startingNotes[0].startBeat) < 0.01);
+                // Group by same start time and duration (chords)
+                const firstNote = startingNotes[0];
+                const chordNotes = startingNotes.filter(n => Math.abs(n.startBeat - firstNote.startBeat) < 0.01 &&
+                    Math.abs(n.duration - firstNote.duration) < 0.01);
                 if (chordNotes.length > 1) {
-                    // Chord - use the root note with chord detection
-                    // For simplicity, just use the first note for now
-                    const rootMidi = Math.min(...chordNotes.map(n => n.midiNote));
-                    const noteName = midiToNoteName(rootMidi);
-                    steps.push(noteName);
+                    // Try to detect chord quality from the MIDI notes
+                    const midiNotes = chordNotes.map(n => n.midiNote);
+                    const detected = detectChordFromMidiNotes(midiNotes);
+                    if (detected) {
+                        // Use chord notation (e.g., "C4:maj7")
+                        const rootName = midiToNoteName(detected.root);
+                        steps.push(`${rootName}:${detected.quality}`);
+                    }
+                    else {
+                        // Unrecognized chord - just use the root note
+                        const rootMidi = Math.min(...midiNotes);
+                        steps.push(midiToNoteName(rootMidi));
+                    }
                 }
                 else {
                     steps.push(midiToNoteName(chordNotes[0].midiNote));
@@ -521,5 +618,126 @@ function getMelodyStats(grid) {
         highestName: midiToNoteName(highest),
         range: highest - lowest,
     };
+}
+/**
+ * Split notes into non-overlapping lanes for polyphonic melodies.
+ *
+ * Uses a greedy algorithm to minimize the number of lanes:
+ * 1. Sort notes by startBeat, then by midiNote (for determinism)
+ * 2. For each note, find the first lane where it doesn't overlap
+ * 3. If no lane available, create a new lane
+ *
+ * @param notes - Array of melody notes
+ * @returns Array of lanes, each containing non-overlapping notes
+ */
+function splitIntoLanes(notes) {
+    if (notes.length === 0)
+        return [[]];
+    // Sort by start beat, then by pitch (for determinism)
+    const sorted = [...notes].sort((a, b) => a.startBeat - b.startBeat || a.midiNote - b.midiNote);
+    const lanes = [];
+    for (const note of sorted) {
+        const noteEnd = note.startBeat + note.duration;
+        // Find first lane where note doesn't overlap
+        let placed = false;
+        for (let i = 0; i < lanes.length; i++) {
+            const lane = lanes[i];
+            if (lane.length === 0) {
+                lane.push({ ...note, laneIndex: i });
+                placed = true;
+                break;
+            }
+            const lastNote = lane[lane.length - 1];
+            const lastEnd = lastNote.startBeat + lastNote.duration;
+            // Check if note starts after last note ends (no overlap)
+            // Use small epsilon for floating point comparison
+            if (note.startBeat >= lastEnd - 0.001) {
+                lane.push({ ...note, laneIndex: i });
+                placed = true;
+                break;
+            }
+        }
+        // No suitable lane found, create new one
+        if (!placed) {
+            const newIndex = lanes.length;
+            lanes.push([{ ...note, laneIndex: newIndex }]);
+        }
+    }
+    // Ensure at least one (possibly empty) lane
+    if (lanes.length === 0) {
+        lanes.push([]);
+    }
+    return lanes;
+}
+/**
+ * Generate multiple melody strings for polyphonic melodies.
+ * Each lane becomes a separate .notes() call.
+ *
+ * @param grid - The melody grid
+ * @param stepsPerBar - Steps per bar (default 4)
+ * @returns Array of melody strings, one per lane
+ */
+function generateMultiLaneMelodyStrings(grid, stepsPerBar = 4) {
+    const lanes = splitIntoLanes(grid.notes);
+    // Generate a melody string for each lane
+    return lanes.map(laneNotes => {
+        // Create a temporary grid with just this lane's notes
+        const laneGrid = {
+            ...grid,
+            notes: laneNotes.map(n => ({
+                startBeat: n.startBeat,
+                duration: n.duration,
+                midiNote: n.midiNote,
+                velocity: n.velocity,
+                isChordTone: n.isChordTone,
+            })),
+        };
+        return generateMelodyString(laneGrid, stepsPerBar);
+    });
+}
+/**
+ * Parse multiple melody strings (lanes) into a single MelodyGrid.
+ * All notes from all lanes are merged into a flat array.
+ *
+ * @param lanes - Array of melody strings
+ * @param config - Melody configuration
+ * @returns Combined MelodyGrid with all notes
+ */
+function parseMultiLaneMelodyStrings(lanes, config) {
+    if (lanes.length === 0) {
+        return createEmptyMelodyGrid({
+            numBars: config?.numBars ?? 1,
+            beatsPerBar: config?.beatsPerBar ?? 4,
+            scale: config?.scale,
+            root: config?.root,
+        });
+    }
+    // Parse each lane
+    const grids = lanes.map(lane => parseMelodyString(lane, config));
+    // Combine all notes
+    const allNotes = [];
+    for (const grid of grids) {
+        allNotes.push(...grid.notes);
+    }
+    // Use the maximum dimensions
+    const maxBars = Math.max(...grids.map(g => g.numBars));
+    const beatsPerBar = grids[0]?.beatsPerBar ?? 4;
+    return {
+        notes: allNotes,
+        totalBeats: maxBars * beatsPerBar,
+        numBars: maxBars,
+        beatsPerBar,
+        scale: config?.scale,
+        root: config?.root,
+    };
+}
+/**
+ * Count the number of lanes needed for a melody.
+ *
+ * @param notes - Array of melody notes
+ * @returns Number of lanes needed
+ */
+function countLanes(notes) {
+    return splitIntoLanes(notes).length;
 }
 //# sourceMappingURL=melodyParser.js.map

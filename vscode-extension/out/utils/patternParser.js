@@ -11,6 +11,8 @@
  * - `1-9` = velocity levels (0.1 to 1.0)
  * - `.`, `_`, `0`, `-` = rest/hold
  * - `|` = bar separator (each bar = 4 beats)
+ * - Leading/trailing `|` are ignored
+ * - Consecutive `||` are collapsed to single bar separator
  *
  * Grid Representation:
  * - Each row is a voice/lane
@@ -32,6 +34,7 @@ exports.invertPattern = invertPattern;
 exports.stepToBeat = stepToBeat;
 exports.beatToStep = beatToStep;
 exports.getGridDurationBeats = getGridDurationBeats;
+const barUtils_1 = require("./barUtils");
 /**
  * Parse a single character into a PatternStep
  */
@@ -67,9 +70,14 @@ function parseStepChar(ch) {
  */
 function parsePatternString(pattern, config) {
     const beatsPerBar = config?.beatsPerBar ?? 4;
-    // Split by bar separator
-    const bars = pattern.split('|').map(bar => bar.split('').filter(ch => !/\s/.test(ch)));
+    // Use unified bar splitting (handles leading/trailing/consecutive pipes)
+    const barStrings = (0, barUtils_1.parseBars)(pattern);
+    const bars = barStrings.map(bar => bar.split('').filter(ch => !/\s/.test(ch)));
     const numBars = bars.length;
+    // Handle empty input
+    if (numBars === 0) {
+        return createEmptyGrid({ stepsPerBar: config?.stepsPerBar ?? 16, numBars: 1, beatsPerBar });
+    }
     // Determine steps per bar from the first non-empty bar, or use config
     let stepsPerBar = config?.stepsPerBar ?? 0;
     if (stepsPerBar === 0) {
@@ -120,32 +128,42 @@ function parsePatternString(pattern, config) {
 }
 /**
  * Generate a pattern string from a PatternGrid
+ * Formats output with spaces between groups of 4 steps and around bar separators
+ * e.g., "x... ..x. x... .... | x... ..x. ..x. ...."
  */
 function generatePatternString(grid) {
     const bars = [];
+    const GROUP_SIZE = 4; // Group steps in chunks of 4 for readability
     for (let barIndex = 0; barIndex < grid.numBars; barIndex++) {
-        let barStr = '';
+        const groups = [];
         const startStep = barIndex * grid.stepsPerBar;
-        for (let stepIndex = 0; stepIndex < grid.stepsPerBar; stepIndex++) {
-            const step = grid.steps[startStep + stepIndex];
-            if (!step || step.velocity === 0) {
-                barStr += '.';
+        for (let groupStart = 0; groupStart < grid.stepsPerBar; groupStart += GROUP_SIZE) {
+            let groupStr = '';
+            const groupEnd = Math.min(groupStart + GROUP_SIZE, grid.stepsPerBar);
+            for (let stepIndex = groupStart; stepIndex < groupEnd; stepIndex++) {
+                const step = grid.steps[startStep + stepIndex];
+                if (!step || step.velocity === 0) {
+                    groupStr += '.';
+                }
+                else if (step.accent) {
+                    groupStr += 'X';
+                }
+                else if (step.velocity >= 0.95) {
+                    groupStr += 'x';
+                }
+                else {
+                    // Map velocity to 1-9
+                    const digit = Math.round((step.velocity - 0.1) / 0.9 * 9);
+                    groupStr += Math.max(1, Math.min(9, digit)).toString();
+                }
             }
-            else if (step.accent) {
-                barStr += 'X';
-            }
-            else if (step.velocity >= 0.95) {
-                barStr += 'x';
-            }
-            else {
-                // Map velocity to 1-9
-                const digit = Math.round((step.velocity - 0.1) / 0.9 * 9);
-                barStr += Math.max(1, Math.min(9, digit)).toString();
-            }
+            groups.push(groupStr);
         }
-        bars.push(barStr);
+        // Join groups within a bar with spaces
+        bars.push(groups.join(' '));
     }
-    return bars.join('|');
+    // Join bars with ' | ' for readability
+    return bars.join(' | ');
 }
 /**
  * Create an empty pattern grid

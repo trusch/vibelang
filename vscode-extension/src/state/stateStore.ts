@@ -45,7 +45,16 @@ export class StateStore {
     public readonly onError: vscode.Event<string>;
 
     constructor() {
-        this._runtime = new RuntimeManager({ autoConnect: true });
+        // Read config options
+        const config = vscode.workspace.getConfiguration('vibelang');
+        const connectionTimeout = config.get<number>('runtime.connectionTimeout', 5000);
+        const reconnectOnDisconnect = config.get<boolean>('runtime.reconnectOnDisconnect', true);
+
+        this._runtime = new RuntimeManager({
+            autoConnect: true,
+            connectionTimeout,
+            reconnectOnDisconnect,
+        });
 
         this.onStatusChange = this._runtime.onStatusChange;
         this.onError = this._runtime.onError;
