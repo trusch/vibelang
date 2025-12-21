@@ -2788,32 +2788,48 @@ export class ArrangementTimeline {
         function updateBeatAnchor() {
             const serverBeat = state.transport?.current_beat ?? 0;
             const running = state.transport?.running ?? false;
+            const bpm = state.transport?.bpm || 120;
+
+            // Calculate latency-compensated beat using server timestamp
+            // The server_time_ms tells us when the beat was measured
+            // We advance the beat by the time elapsed since then
+            let compensatedBeat = serverBeat;
+            const serverTimeMs = state.transport?.server_time_ms;
+            if (serverTimeMs && running) {
+                const clientTimeMs = Date.now();
+                const latencyMs = clientTimeMs - serverTimeMs;
+                // Only compensate for reasonable latency (0-500ms)
+                if (latencyMs > 0 && latencyMs < 500) {
+                    const latencyBeats = (latencyMs / 60000) * bpm;
+                    compensatedBeat = serverBeat + latencyBeats;
+                }
+            }
 
             if (running && !wasRunning) {
-                // Transport just started - set anchor
+                // Transport just started - set anchor with latency compensation
                 transportStartTime = performance.now();
-                transportStartBeat = serverBeat;
-                displayBeat = serverBeat;
+                transportStartBeat = compensatedBeat;
+                displayBeat = compensatedBeat;
             } else if (running) {
                 // Transport running - check for drift and correct smoothly
                 const calculatedBeat = calculateCurrentBeat();
-                const drift = Math.abs(serverBeat - calculatedBeat);
+                const drift = Math.abs(compensatedBeat - calculatedBeat);
 
                 if (drift > 0.5) {
                     // Large drift - resync immediately (e.g., after seek)
                     transportStartTime = performance.now();
-                    transportStartBeat = serverBeat;
-                    displayBeat = serverBeat;
+                    transportStartBeat = compensatedBeat;
+                    displayBeat = compensatedBeat;
                 } else if (drift > 0.05) {
-                    // Small drift - adjust anchor slightly to correct over time
-                    transportStartBeat = serverBeat - (calculatedBeat - transportStartBeat);
+                    // Small drift - adjust anchor to correct over time
+                    transportStartBeat = compensatedBeat - (calculatedBeat - transportStartBeat);
                 }
             } else {
                 // Transport stopped
                 displayBeat = serverBeat;
             }
 
-            targetBeat = serverBeat;
+            targetBeat = compensatedBeat;
             wasRunning = running;
         }
 

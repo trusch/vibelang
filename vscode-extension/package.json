@@ -421,46 +421,263 @@
     "configuration": {
       "title": "VibeLang",
       "properties": {
-        "vibelang.runtime.host": {
-          "type": "string",
-          "default": "localhost",
-          "description": "VibeLang runtime host"
-        },
-        "vibelang.runtime.port": {
-          "type": "number",
-          "default": 1606,
-          "description": "VibeLang runtime port"
-        },
-        "vibelang.runtime.autoConnect": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically connect to VibeLang runtime on startup"
-        },
-        "vibelang.format.enable": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable/disable the VibeLang formatter"
-        },
-        "vibelang.format.indentSize": {
-          "type": "number",
-          "default": 4,
-          "description": "Number of spaces for indentation"
-        },
-        "vibelang.runtime.binaryPath": {
-          "type": "string",
-          "default": "vibe",
-          "description": "Path to the VibeLang binary (vibe command)"
-        },
         "vibelang.lsp.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable the built-in Language Server for diagnostics, completion, and hover"
+          "description": "Enable the built-in Language Server for diagnostics, completion, and hover",
+          "order": 1
+        },
+        "vibelang.lsp.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Enable real-time diagnostics (errors, warnings, hints)",
+          "order": 2
+        },
+        "vibelang.lsp.diagnostics.delay": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "maximum": 5000,
+          "markdownDescription": "Delay in milliseconds before diagnostics are computed after typing stops. Lower values = faster feedback, higher values = less CPU usage. Set to `0` for instant diagnostics.",
+          "order": 3
+        },
+        "vibelang.lsp.diagnostics.onType": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Compute diagnostics while typing. When disabled, diagnostics only update on save.",
+          "order": 4
+        },
+        "vibelang.lsp.completion.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable code completion suggestions",
+          "order": 5
+        },
+        "vibelang.lsp.hover.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable hover information (documentation on mouse hover)",
+          "order": 6
+        },
+        "vibelang.lsp.gotoDefinition.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Go to Definition (Ctrl/Cmd+Click)",
+          "order": 7
         },
         "vibelang.lsp.trace.server": {
           "type": "string",
           "enum": ["off", "messages", "verbose"],
           "default": "off",
-          "description": "Traces the communication between VS Code and the VibeLang language server"
+          "markdownDescription": "Traces communication between VS Code and the language server. Useful for debugging LSP issues. Output appears in `Output > VibeLang Language Server`.",
+          "order": 8
+        },
+        "vibelang.linting.unknownSynthdef": {
+          "type": "string",
+          "enum": ["error", "warning", "hint", "off"],
+          "default": "warning",
+          "description": "Severity level for unknown synthdef references",
+          "order": 10
+        },
+        "vibelang.linting.unknownEffect": {
+          "type": "string",
+          "enum": ["error", "warning", "hint", "off"],
+          "default": "warning",
+          "description": "Severity level for unknown effect references",
+          "order": 11
+        },
+        "vibelang.linting.unresolvedImport": {
+          "type": "string",
+          "enum": ["error", "warning", "hint", "off"],
+          "default": "error",
+          "description": "Severity level for unresolved imports",
+          "order": 12
+        },
+        "vibelang.linting.patternSyntax": {
+          "type": "string",
+          "enum": ["error", "warning", "hint", "off"],
+          "default": "error",
+          "description": "Severity level for invalid pattern syntax (step sequences)",
+          "order": 13
+        },
+        "vibelang.linting.melodySyntax": {
+          "type": "string",
+          "enum": ["error", "warning", "hint", "off"],
+          "default": "error",
+          "description": "Severity level for invalid melody syntax (note sequences)",
+          "order": 14
+        },
+        "vibelang.linting.unusedVariable": {
+          "type": "string",
+          "enum": ["error", "warning", "hint", "off"],
+          "default": "hint",
+          "description": "Severity level for unused variable warnings",
+          "order": 15
+        },
+        "vibelang.runtime.binaryPath": {
+          "type": "string",
+          "default": "vibe",
+          "markdownDescription": "Path to the VibeLang binary (`vibe` command). Can be an absolute path or a command name in PATH.",
+          "order": 20
+        },
+        "vibelang.runtime.host": {
+          "type": "string",
+          "default": "localhost",
+          "description": "VibeLang runtime HTTP API host",
+          "order": 21
+        },
+        "vibelang.runtime.port": {
+          "type": "number",
+          "default": 1606,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "VibeLang runtime HTTP API port",
+          "order": 22
+        },
+        "vibelang.runtime.autoConnect": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically connect to VibeLang runtime when extension activates",
+          "order": 23
+        },
+        "vibelang.runtime.reconnectOnDisconnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically attempt to reconnect if connection to runtime is lost",
+          "order": 24
+        },
+        "vibelang.runtime.connectionTimeout": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 1000,
+          "maximum": 30000,
+          "description": "Connection timeout in milliseconds when connecting to runtime",
+          "order": 25
+        },
+        "vibelang.runtime.pollingInterval": {
+          "type": "number",
+          "default": 100,
+          "minimum": 50,
+          "maximum": 1000,
+          "markdownDescription": "Interval in milliseconds for polling runtime state (transport position, levels). Lower = smoother UI updates, higher = less network traffic.",
+          "order": 26
+        },
+        "vibelang.format.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable the VibeLang code formatter",
+          "order": 30
+        },
+        "vibelang.format.indentSize": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Number of spaces for indentation",
+          "order": 31
+        },
+        "vibelang.format.insertFinalNewline": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ensure file ends with a newline",
+          "order": 32
+        },
+        "vibelang.format.trimTrailingWhitespace": {
+          "type": "boolean",
+          "default": true,
+          "description": "Remove trailing whitespace from lines",
+          "order": 33
+        },
+        "vibelang.format.patternSpacing": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Automatically add spaces to pattern strings for readability (groups of 4 steps). Example: `\"x...x...x...x...\"` → `\"x... x... x... x...\"`",
+          "order": 34
+        },
+        "vibelang.format.patternGroupSize": {
+          "type": "number",
+          "default": 4,
+          "minimum": 2,
+          "maximum": 16,
+          "markdownDescription": "Number of steps per group when formatting patterns. Only applies when `#vibelang.format.patternSpacing#` is enabled.",
+          "order": 35
+        },
+        "vibelang.format.autoImport": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Automatically add missing imports for stdlib synthdefs when formatting",
+          "order": 36
+        },
+        "vibelang.format.sortImports": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Sort import statements alphabetically when formatting",
+          "order": 37
+        },
+        "vibelang.editor.parameterHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show parameter hints when typing function calls",
+          "order": 40
+        },
+        "vibelang.editor.inlayHints.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show inlay hints for parameter names and types",
+          "order": 41
+        },
+        "vibelang.editor.codeLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show CodeLens above patterns, melodies, and sequences with play/stop controls",
+          "order": 42
+        },
+        "vibelang.studio.mixer.autoOpen": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically open the Mixer panel when connecting to runtime",
+          "order": 50
+        },
+        "vibelang.studio.transportBar.showBeatCounter": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show beat counter in the transport status bar",
+          "order": 51
+        },
+        "vibelang.studio.transportBar.showBpm": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show BPM in the transport status bar",
+          "order": 52
+        },
+        "vibelang.studio.sessionExplorer.showSourceLocations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show source file locations in the Session Explorer tree",
+          "order": 53
+        },
+        "vibelang.studio.mixer.meterRefreshRate": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 120,
+          "description": "Level meter refresh rate in frames per second",
+          "order": 54
+        },
+        "vibelang.samples.searchPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Additional directories to search for audio samples. These paths will be shown in the Sample Browser.",
+          "order": 60
+        },
+        "vibelang.samples.previewOnSelect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically preview samples when selected in the Sample Browser",
+          "order": 61
         }
       }
     },
@@ -518,6 +735,7 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "generate-stdlib": "node scripts/generate-stdlib-metadata.js",
+    "generate-ugen-functions": "node scripts/add-snake-case-names.js",
     "compile": "npm run generate-stdlib && tsc -p ./",
     "watch": "tsc -watch -p ./"
   },

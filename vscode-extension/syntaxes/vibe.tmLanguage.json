@@ -26,7 +26,7 @@
       "patterns": [
         {
           "name": "keyword.control.vibe",
-          "match": "\\b(if|else|loop|while|return|break|continue)\\b"
+          "match": "\\b(if|else|for|in|loop|while|do|until|return|break|continue|import)\\b"
         },
         {
           "name": "storage.type.vibe",
@@ -39,13 +39,38 @@
       ]
     },
     "strings": {
-      "name": "string.quoted.double.vibe",
-      "begin": "\"",
-      "end": "\"",
       "patterns": [
         {
-          "name": "constant.character.escape.vibe",
-          "match": "\\\\."
+          "name": "string.quoted.double.vibe",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.vibe",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "begin": "`",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.vibe" }
+          },
+          "end": "`",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.vibe" }
+          },
+          "name": "string.template.vibe",
+          "patterns": [
+            {
+              "match": "\\\\`",
+              "name": "constant.character.escape.vibe"
+            },
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.vibe"
+            }
+          ]
         }
       ]
     },
@@ -90,7 +115,7 @@
       "patterns": [
         {
           "name": "support.function.vibe",
-          "match": "\\b(define_synthdef|define_group|pattern|melody|voice|sample|sin_ar|saw_ar|pulse_ar|lpf_ar|hpf_ar|env_perc|db|note|bars)\\b"
+          "match": "\\b(define_synthdef|define_fx|define_group|pattern|melody|sequence|voice|sample|load_sfz|group|fx|fade|set_tempo|set_quantization|set_time_signature|sin_ar|saw_ar|pulse_ar|tri_ar|noise_ar|lpf_ar|hpf_ar|bpf_ar|env_perc|env_adsr|db|note|bars)\\b"
         },
         {
           "name": "support.type.vibe",

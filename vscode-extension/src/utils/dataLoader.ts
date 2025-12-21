@@ -16,6 +16,7 @@ export interface UGenDefinition {
     inputs: UGenInput[];
     outputs: number;
     category: string;
+    functions?: string[];  // Snake-case function names (e.g., ["hpf_ar", "hpf_kr"])
 }
 
 export interface RhaiFunction {
@@ -29,8 +30,12 @@ export interface StdlibItem {
     name: string;
     description: string;
     category: string;
+    subcategory?: string;
     type: 'instrument' | 'effect' | 'utility';
+    importPath: string;
+    sourcePath?: string;
     parameters?: { name: string; type: string; default: string; description: string }[];
+    params?: { name: string; default?: number | string }[];
     example?: string;
 }
 
@@ -38,6 +43,17 @@ export class DataLoader {
     private static _ugens: UGenDefinition[] = [];
     private static _rhaiApi: RhaiFunction[] = [];
     private static _stdlib: StdlibItem[] = [];
+    private static _initialized = false;
+
+    /**
+     * Clear all cached data. Call this when you need to reload data.
+     */
+    public static clearCache(): void {
+        this._ugens = [];
+        this._rhaiApi = [];
+        this._stdlib = [];
+        this._initialized = false;
+    }
 
     public static async loadUGens(extensionPath: string): Promise<UGenDefinition[]> {
         if (this._ugens.length > 0) return this._ugens;
@@ -140,7 +156,13 @@ export class DataLoader {
         if (finalPath) {
             try {
                 const content = fs.readFileSync(finalPath, 'utf-8');
-                this._stdlib = JSON.parse(content);
+                const data = JSON.parse(content);
+                // Handle both old format (array) and new format ({ synthdefs: [...] })
+                if (Array.isArray(data)) {
+                    this._stdlib = data;
+                } else if (data.synthdefs && Array.isArray(data.synthdefs)) {
+                    this._stdlib = data.synthdefs;
+                }
             } catch (e) {
                 console.error('Error loading stdlib:', e);
             }
@@ -149,5 +171,19 @@ export class DataLoader {
         }
 
         return this._stdlib;
+    }
+
+    /**
+     * Get a map of synthdef names to their import paths
+     */
+    public static getImportMap(extensionPath: string): Map<string, string> {
+        const stdlib = this.loadStdlib(extensionPath);
+        const map = new Map<string, string>();
+        for (const item of stdlib) {
+            if (item.importPath) {
+                map.set(item.name, item.importPath);
+            }
+        }
+        return map;
     }
 }

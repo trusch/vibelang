@@ -11,12 +11,17 @@ const vscode = require("vscode");
 const DEFAULT_PORT = 1606;
 const DEFAULT_HOST = 'localhost';
 const POLL_INTERVAL = 500; // ms between state polls
-const CONNECTION_TIMEOUT = 2000; // ms
+const DEFAULT_CONNECTION_TIMEOUT = 2000; // ms
+const DEFAULT_MAX_RETRIES = 10;
+const DEFAULT_RETRY_DELAY = 300; // ms - initial retry delay
+const MAX_RETRY_DELAY = 5000; // ms - cap for exponential backoff
 class RuntimeManager {
     constructor(options = {}) {
         this._status = 'disconnected';
         this._pollTimer = null;
         this._lastError = null;
+        this._reconnectTimer = null;
+        this._isReconnecting = false;
         // Event emitters
         this._onStatusChange = new vscode.EventEmitter();
         this._onStateUpdate = new vscode.EventEmitter();
@@ -28,6 +33,9 @@ class RuntimeManager {
         this._state = null;
         this._host = options.host ?? DEFAULT_HOST;
         this._port = options.port ?? DEFAULT_PORT;
+        this._connectionTimeout = options.connectionTimeout ?? DEFAULT_CONNECTION_TIMEOUT;
+        this._maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+        this._reconnectOnDisconnect = options.reconnectOnDisconnect ?? true;
         if (options.autoConnect !== false) {
             this.tryConnect();
         }
@@ -53,26 +61,67 @@ class RuntimeManager {
             this._onStatusChange.fire(status);
         }
     }
-    async tryConnect() {
+    /**
+     * Attempt to connect to the runtime with retry logic.
+     * Uses exponential backoff between retries.
+     * @param maxRetries Override the default max retries (use 0 for single attempt)
+     */
+    async tryConnect(maxRetries) {
+        const retries = maxRetries ?? this._maxRetries;
         this.setStatus('connecting');
-        try {
-            const transport = await this.getTransport();
-            if (transport) {
-                this.setStatus('connected');
-                this.startPolling();
-                return true;
+        this._isReconnecting = false;
+        let delay = DEFAULT_RETRY_DELAY;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                const transport = await this.getTransport();
+                if (transport) {
+                    this.setStatus('connected');
+                    this.startPolling();
+                    return true;
+                }
             }
-        }
-        catch (e) {
-            this._lastError = e instanceof Error ? e.message : String(e);
+            catch (e) {
+                this._lastError = e instanceof Error ? e.message : String(e);
+            }
+            // Don't delay after the last attempt
+            if (attempt < retries) {
+                await this.sleep(delay);
+                // Exponential backoff with cap
+                delay = Math.min(delay * 1.5, MAX_RETRY_DELAY);
+            }
         }
         this.setStatus('disconnected');
         return false;
     }
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
     disconnect() {
         this.stopPolling();
+        this.cancelReconnect();
+        this._isReconnecting = false;
         this.setStatus('disconnected');
         this._state = null;
+    }
+    cancelReconnect() {
+        if (this._reconnectTimer) {
+            clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = null;
+        }
+    }
+    scheduleReconnect() {
+        if (!this._reconnectOnDisconnect || this._isReconnecting) {
+            return;
+        }
+        this._isReconnecting = true;
+        this.cancelReconnect();
+        // Wait a bit before attempting to reconnect
+        this._reconnectTimer = setTimeout(async () => {
+            if (this._status !== 'connected' && this._isReconnecting) {
+                await this.tryConnect();
+            }
+            this._isReconnecting = false;
+        }, DEFAULT_RETRY_DELAY);
     }
     setConnection(host, port) {
         this.disconnect();
@@ -102,8 +151,11 @@ class RuntimeManager {
         }
         catch (e) {
             this._lastError = e instanceof Error ? e.message : String(e);
+            this.stopPolling();
             this.setStatus('error');
             this._onError.fire(this._lastError);
+            // Trigger automatic reconnection
+            this.scheduleReconnect();
         }
     }
     // ==========================================================================
@@ -112,7 +164,7 @@ class RuntimeManager {
     async fetch(path, options = {}) {
         const url = `${this.baseUrl}${path}`;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), CONNECTION_TIMEOUT);
+        const timeoutId = setTimeout(() => controller.abort(), this._connectionTimeout);
         try {
             const response = await fetch(url, {
                 ...options,
@@ -130,6 +182,28 @@ class RuntimeManager {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             if (response.status === 204) {
+                return null;
+            }
+            // Check if response has content before parsing JSON
+            const contentLength = response.headers.get('content-length');
+            const contentType = response.headers.get('content-type');
+            // If no content-length or it's 0, or no JSON content-type, return null
+            if (contentLength === '0' || contentLength === null) {
+                // Try to read body - if empty, return null
+                const text = await response.text();
+                if (!text || text.trim() === '') {
+                    return null;
+                }
+                // If there is text, try to parse it as JSON
+                try {
+                    return JSON.parse(text);
+                }
+                catch {
+                    return null;
+                }
+            }
+            // If content-type isn't JSON, return null
+            if (contentType && !contentType.includes('application/json')) {
                 return null;
             }
             return await response.json();
@@ -305,7 +379,10 @@ class RuntimeManager {
         return this.get(`/patterns/${encodeURIComponent(name)}`);
     }
     async updatePattern(name, update) {
-        return this.patch(`/patterns/${encodeURIComponent(name)}`, update);
+        console.log(`[RuntimeManager] PATCH /patterns/${name}:`, JSON.stringify(update));
+        const result = await this.patch(`/patterns/${encodeURIComponent(name)}`, update);
+        console.log(`[RuntimeManager] Response:`, result ? JSON.stringify(result) : 'null');
+        return result;
     }
     async startPattern(name, quantizeBeats) {
         return this.post(`/patterns/${encodeURIComponent(name)}/start`, {
@@ -439,6 +516,7 @@ class RuntimeManager {
     // ==========================================================================
     dispose() {
         this.stopPolling();
+        this.cancelReconnect();
         this._onStatusChange.dispose();
         this._onStateUpdate.dispose();
         this._onError.dispose();
