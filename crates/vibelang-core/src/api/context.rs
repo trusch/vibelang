@@ -51,16 +51,16 @@ thread_local! {
     static GROUP_STACK: RefCell<Vec<String>> = RefCell::new(vec!["main".to_string()]);
 
     /// Script directory for resolving relative paths.
-    static SCRIPT_DIR: RefCell<Option<PathBuf>> = RefCell::new(None);
+    static SCRIPT_DIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 
     /// Additional import paths for file resolution.
-    static IMPORT_PATHS: RefCell<Vec<PathBuf>> = RefCell::new(Vec::new());
+    static IMPORT_PATHS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
 
     /// Current script file path (for source location tracking).
-    static CURRENT_SCRIPT_FILE: RefCell<Option<String>> = RefCell::new(None);
+    static CURRENT_SCRIPT_FILE: RefCell<Option<String>> = const { RefCell::new(None) };
 
     /// Callback errors collected during script execution.
-    static CALLBACK_ERRORS: RefCell<Vec<CallbackError>> = RefCell::new(Vec::new());
+    static CALLBACK_ERRORS: RefCell<Vec<CallbackError>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Push a group onto the context stack.

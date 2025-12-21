@@ -262,8 +262,9 @@ pub enum StateMessage {
         voice_name: Option<String>,
         pattern: Pattern,
         source_location: SourceLocation,
-        /// Original notes pattern string for visual editing.
-        notes_pattern: Option<String>,
+        /// Original notes pattern strings for visual editing (one per lane).
+        /// Multiple lanes support polyphonic melodies.
+        notes_patterns: Vec<String>,
     },
 
     /// Delete a melody.

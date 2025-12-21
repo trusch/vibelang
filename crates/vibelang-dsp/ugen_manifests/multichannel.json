@@ -2,25 +2,69 @@
   {
     "name": "Mix",
     "description": "Mix an array of channels down to a single channel. Sums multiple inputs.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "array", "type": "signal", "default": 0.0, "description": "Array of signals to mix together"}
+      {
+        "name": "array",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of signals to mix together"
+      }
     ],
     "outputs": 1,
-    "category": "Multichannel"
+    "category": "Multichannel",
+    "functions": [
+      "mix_ar",
+      "mix_kr"
+    ]
   },
   {
     "name": "Splay",
     "description": "Spread an array of channels across the stereo field. Creates stereo from multiple mono sources.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "inArray", "type": "signal", "default": 0.0, "description": "Array of input signals"},
-      {"name": "spread", "type": "float", "default": 1.0, "description": "Stereo spread amount (0=center, 1=full spread)"},
-      {"name": "level", "type": "float", "default": 1.0, "description": "Output level"},
-      {"name": "center", "type": "float", "default": 0.0, "description": "Center position in stereo field (-1 to 1)"},
-      {"name": "levelComp", "type": "float", "default": 1.0, "description": "Level compensation (1=compensate for number of channels)"}
+      {
+        "name": "inArray",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of input signals"
+      },
+      {
+        "name": "spread",
+        "type": "float",
+        "default": 1,
+        "description": "Stereo spread amount (0=center, 1=full spread)"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Output level"
+      },
+      {
+        "name": "center",
+        "type": "float",
+        "default": 0,
+        "description": "Center position in stereo field (-1 to 1)"
+      },
+      {
+        "name": "levelComp",
+        "type": "float",
+        "default": 1,
+        "description": "Level compensation (1=compensate for number of channels)"
+      }
     ],
     "outputs": 2,
-    "category": "Multichannel"
+    "category": "Multichannel",
+    "functions": [
+      "splay_ar",
+      "splay_kr"
+    ]
   }
 ]

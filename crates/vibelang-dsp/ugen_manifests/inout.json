@@ -2,98 +2,235 @@
   {
     "name": "In",
     "description": "Read from an audio or control bus. Reads signals from a specified bus.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "bus", "type": "float", "default": 0.0, "description": "Bus number to read from"},
-      {"name": "numChannels", "type": "float", "default": 1.0, "description": "Number of channels to read"}
+      {
+        "name": "bus",
+        "type": "float",
+        "default": 0,
+        "description": "Bus number to read from"
+      },
+      {
+        "name": "numChannels",
+        "type": "float",
+        "default": 1,
+        "description": "Number of channels to read"
+      }
     ],
     "outputs": 1,
-    "category": "InOut"
+    "category": "InOut",
+    "functions": [
+      "in_ar",
+      "in_kr"
+    ]
   },
   {
     "name": "Out",
     "description": "Write to an audio or control bus. Writes signals to a specified bus.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "bus", "type": "float", "default": 0.0, "description": "Bus number to write to"},
-      {"name": "channelsArray", "type": "signal", "default": 0.0, "description": "Signal(s) to write to the bus"}
+      {
+        "name": "bus",
+        "type": "float",
+        "default": 0,
+        "description": "Bus number to write to"
+      },
+      {
+        "name": "channelsArray",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal(s) to write to the bus"
+      }
     ],
     "outputs": 0,
-    "category": "InOut"
+    "category": "InOut",
+    "functions": [
+      "out_ar",
+      "out_kr"
+    ]
   },
   {
     "name": "ReplaceOut",
     "description": "Replace bus contents. Replaces instead of mixing with existing bus contents.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "bus", "type": "float", "default": 0.0, "description": "Bus number to write to"},
-      {"name": "channelsArray", "type": "signal", "default": 0.0, "description": "Signal(s) to write"}
+      {
+        "name": "bus",
+        "type": "float",
+        "default": 0,
+        "description": "Bus number to write to"
+      },
+      {
+        "name": "channelsArray",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal(s) to write"
+      }
     ],
     "outputs": 0,
-    "category": "InOut"
+    "category": "InOut",
+    "functions": [
+      "replace_out_ar",
+      "replace_out_kr"
+    ]
   },
   {
     "name": "OffsetOut",
     "description": "Write to a bus with sample accurate timing. Like Out but with sub-sample timing precision.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "bus", "type": "float", "default": 0.0, "description": "Bus number to write to"},
-      {"name": "channelsArray", "type": "signal", "default": 0.0, "description": "Signal(s) to write"}
+      {
+        "name": "bus",
+        "type": "float",
+        "default": 0,
+        "description": "Bus number to write to"
+      },
+      {
+        "name": "channelsArray",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal(s) to write"
+      }
     ],
     "outputs": 0,
-    "category": "InOut"
+    "category": "InOut",
+    "functions": [
+      "offset_out_ar"
+    ]
   },
   {
     "name": "LocalIn",
     "description": "Read from the previous cycle of a local bus. Creates a feedback loop within a synth.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "numChannels", "type": "float", "default": 1.0, "description": "Number of channels"}
+      {
+        "name": "numChannels",
+        "type": "float",
+        "default": 1,
+        "description": "Number of channels"
+      }
     ],
     "outputs": 1,
-    "category": "InOut"
+    "category": "InOut",
+    "functions": [
+      "local_in_ar",
+      "local_in_kr"
+    ]
   },
   {
     "name": "LocalOut",
     "description": "Write to local bus for use in the next cycle. Used with LocalIn for feedback loops.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "channelsArray", "type": "signal", "default": 0.0, "description": "Signal(s) to write to local bus"}
+      {
+        "name": "channelsArray",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal(s) to write to local bus"
+      }
     ],
     "outputs": 0,
-    "category": "InOut"
+    "category": "InOut",
+    "functions": [
+      "local_out_ar",
+      "local_out_kr"
+    ]
   },
   {
     "name": "InFeedback",
     "description": "Read from a bus with a one block delay. Like In but reads from the previous calculation block.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "bus", "type": "float", "default": 0.0, "description": "Bus number to read from"},
-      {"name": "numChannels", "type": "float", "default": 1.0, "description": "Number of channels"}
+      {
+        "name": "bus",
+        "type": "float",
+        "default": 0,
+        "description": "Bus number to read from"
+      },
+      {
+        "name": "numChannels",
+        "type": "float",
+        "default": 1,
+        "description": "Number of channels"
+      }
     ],
     "outputs": 1,
-    "category": "InOut"
+    "category": "InOut",
+    "functions": [
+      "in_feedback_ar"
+    ]
   },
   {
     "name": "XOut",
     "description": "Crossfading bus output. Crossfades between existing bus contents and new signal.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "bus", "type": "float", "default": 0.0, "description": "Bus number to write to"},
-      {"name": "xfade", "type": "float", "default": 0.0, "description": "Crossfade amount (0=leave bus unchanged, 1=replace with new signal)"},
-      {"name": "channelsArray", "type": "signal", "default": 0.0, "description": "New signal(s) to crossfade in"}
+      {
+        "name": "bus",
+        "type": "float",
+        "default": 0,
+        "description": "Bus number to write to"
+      },
+      {
+        "name": "xfade",
+        "type": "float",
+        "default": 0,
+        "description": "Crossfade amount (0=leave bus unchanged, 1=replace with new signal)"
+      },
+      {
+        "name": "channelsArray",
+        "type": "signal",
+        "default": 0,
+        "description": "New signal(s) to crossfade in"
+      }
     ],
     "outputs": 0,
-    "category": "InOut"
+    "category": "InOut",
+    "functions": [
+      "x_out_ar",
+      "x_out_kr"
+    ]
   },
   {
     "name": "SoundIn",
     "description": "Read from hardware audio input. Convenient wrapper around In for reading from sound card inputs.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "channel", "type": "float", "default": 0.0, "description": "Hardware input channel number"}
+      {
+        "name": "channel",
+        "type": "float",
+        "default": 0,
+        "description": "Hardware input channel number"
+      }
     ],
     "outputs": 1,
-    "category": "InOut"
+    "category": "InOut",
+    "functions": [
+      "sound_in_ar"
+    ]
   }
 ]

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use vibelang_core::state::StateMessage;
 use vibelang_core::FadeTargetType;
 
-use crate::http_server::{
+use crate::{
     models::{ActiveFade, ErrorResponse, FadeCreate},
     AppState,
 };
@@ -17,7 +17,7 @@ use crate::http_server::{
 /// Convert internal ActiveFadeJob to API ActiveFade model
 fn fade_to_api(id: &str, fo: &vibelang_core::state::ActiveFadeJob, tempo: f64) -> ActiveFade {
     // Convert duration from seconds to beats using the current tempo
-    let duration_beats = (fo.duration_seconds * tempo / 60.0) as f64;
+    let duration_beats = fo.duration_seconds * tempo / 60.0;
     // Calculate progress based on elapsed time
     let elapsed = fo.start_time.elapsed().as_secs_f64();
     let progress = if fo.duration_seconds > 0.0 {

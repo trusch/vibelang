@@ -2,7 +2,7 @@
 //!
 //! Utility functions for common operations like dB conversion, note parsing, etc.
 
-use rhai::Engine;
+use rhai::{Array, Dynamic, Engine};
 
 /// Register helper functions with the Rhai engine.
 pub fn register(engine: &mut Engine) {
@@ -29,6 +29,10 @@ pub fn register(engine: &mut Engine) {
     // Exit
     engine.register_fn("exit", exit);
     engine.register_fn("exit_with_code", exit_with_code);
+
+    // Array utilities
+    // zip(a, b) or a.zip(b) - both work because Rhai converts method calls to function calls
+    engine.register_fn("zip", array_zip);
 }
 
 /// Convert decibels to linear amplitude.
@@ -107,6 +111,21 @@ pub fn exit() {
 /// Exit with a specific code.
 pub fn exit_with_code(code: i64) {
     std::process::exit(code as i32);
+}
+
+/// Zip two arrays together into an array of pairs.
+///
+/// # Example
+/// ```rhai
+/// let a = [1, 2, 3];
+/// let b = [4, 5, 6];
+/// let zipped = zip(a, b);  // [[1, 4], [2, 5], [3, 6]]
+/// ```
+pub fn array_zip(arr1: Array, arr2: Array) -> Array {
+    arr1.into_iter()
+        .zip(arr2)
+        .map(|(a, b)| Dynamic::from(vec![a, b]))
+        .collect()
 }
 
 /// Parse a note name to MIDI note number.

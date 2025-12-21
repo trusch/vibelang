@@ -6,10 +6,11 @@ use axum::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use vibelang_core::state::LoopStatus as InternalLoopStatus;
 use vibelang_core::FadeTargetType;
 
-use crate::http_server::{
+use crate::{
     models::{
         ActiveFade, ActiveSequence, ActiveSynth, LiveState, LoopStatus, MeterLevel, TimeSignature,
         TransportState,
@@ -67,6 +68,12 @@ pub async fn get_live_state(
             }
         });
 
+        // Get server timestamp for client-side latency compensation
+        let server_time_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
         // Transport
         let transport = TransportState {
             bpm: s.tempo as f32,
@@ -79,6 +86,7 @@ pub async fn get_live_state(
             quantization_beats: s.quantization_beats,
             loop_beats,
             loop_beat,
+            server_time_ms,
         };
 
         // Active synths
@@ -250,7 +258,7 @@ pub async fn get_meters(
     let meters = state.handle.with_state(|s| {
         let mut levels: HashMap<String, MeterLevel> = HashMap::new();
 
-        for (path, _group) in &s.groups {
+        for path in s.groups.keys() {
             // Use real meter levels from SuperCollider if available
             if let Some(stored) = s.meter_levels.get(path) {
                 // Check if data is stale (older than 200ms = ~4 missed updates at 20Hz)

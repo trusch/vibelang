@@ -459,8 +459,10 @@ pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> Gro
     // Push group context
     context::push_group(&name);
 
-    // Execute closure
-    if let Err(e) = closure.call_within_context::<()>(&ctx, ()) {
+    // Execute closure - use Dynamic to accept any return type since Rhai
+    // automatically returns the last expression and users shouldn't need to
+    // explicitly return () at the end of their group body
+    if let Err(e) = closure.call_within_context::<rhai::Dynamic>(&ctx, ()) {
         log::error!("Error in define_group '{}': {}", name, e);
         // Record the error for validation
         // Try to extract line/position from the error message since nested errors

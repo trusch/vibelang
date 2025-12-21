@@ -8,6 +8,7 @@ use crate::state::{LoopStatus, StateMessage};
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::collections::HashMap;
 
+use super::bar_utils::{count_bars, split_into_bars};
 use super::context::{self, SourceLocation};
 use super::require_handle;
 
@@ -126,8 +127,8 @@ impl Pattern {
 
     // === Actions ===
 
-    /// Register and apply the pattern.
-    pub fn apply(&mut self) {
+    /// Register and apply the pattern (chainable).
+    pub fn apply(self) -> Self {
         let handle = require_handle();
 
         // Calculate loop length from pattern if available, otherwise use explicit length
@@ -159,31 +160,33 @@ impl Pattern {
             source_location: self.source_location.clone(),
             step_pattern: self.steps.clone(),
         });
+
+        self
     }
 
     /// Start the pattern playing (chainable).
     ///
     /// This creates an implicit sequence containing the pattern as a looping clip,
     /// then starts that sequence.
-    pub fn start(mut self) -> Self {
-        self.apply();
+    pub fn start(self) -> Self {
+        let applied = self.apply();
         let handle = require_handle();
 
         // Calculate loop length from pattern if available, otherwise use explicit length
-        let loop_length = if let Some(ref steps) = self.steps {
+        let loop_length = if let Some(ref steps) = applied.steps {
             calculate_loop_length_from_pattern(steps)
         } else {
-            self.length
+            applied.length
         };
 
         // Create an implicit sequence for this pattern
-        let seq_name = format!("_seq_{}", self.name);
+        let seq_name = format!("_seq_{}", applied.name);
         let seq_def = SequenceDefinition::new(seq_name.clone())
             .with_loop_beats(loop_length)
             .with_clip(SequenceClip::new(
                 0.0,
                 loop_length,
-                ClipSource::Pattern(self.name.clone()),
+                ClipSource::Pattern(applied.name.clone()),
                 ClipMode::Loop,
             ));
 
@@ -191,7 +194,7 @@ impl Pattern {
         let _ = handle.send(StateMessage::CreateSequence { sequence: seq_def });
         let _ = handle.send(StateMessage::StartSequence { name: seq_name });
 
-        self
+        applied
     }
 
     /// Stop the pattern.
@@ -250,11 +253,12 @@ pub fn pattern(ctx: NativeCallContext, name: String) -> Pattern {
 
 /// Parse a step pattern string into beat events.
 /// Uses bar-aware parsing: each bar separated by `|` is 4 beats.
+/// Supports leading/trailing pipes and consecutive pipes via split_into_bars.
 fn parse_pattern_steps(steps: &str, _length: f64, swing: f64) -> Vec<BeatEvent> {
     let mut events = Vec::new();
 
-    // Split by bar separator
-    let bars: Vec<&str> = steps.split('|').collect();
+    // Use unified bar splitting (handles leading/trailing/consecutive pipes)
+    let bars = split_into_bars(steps);
     let beats_per_bar = 4.0; // Standard 4/4 time
 
     let mut current_beat = 0.0;
@@ -262,7 +266,7 @@ fn parse_pattern_steps(steps: &str, _length: f64, swing: f64) -> Vec<BeatEvent> 
 
     for bar in bars {
         // Tokenize the bar - always split each character since compact notation is used
-        let bar_tokens: Vec<char> = tokenize_bar_chars(bar);
+        let bar_tokens: Vec<char> = tokenize_bar_chars(&bar);
 
         if bar_tokens.is_empty() {
             current_beat += beats_per_bar;
@@ -315,10 +319,13 @@ fn tokenize_bar_chars(bar: &str) -> Vec<char> {
 }
 
 /// Calculate loop length from pattern: number of bars × 4 beats
+/// Uses count_bars to handle leading/trailing/consecutive pipes.
 fn calculate_loop_length_from_pattern(pattern: &str) -> f64 {
-    let num_bars = pattern.split('|').count();
+    let num_bars = count_bars(pattern);
     let beats_per_bar = 4.0;
-    num_bars as f64 * beats_per_bar
+    // Ensure at least 1 bar for empty patterns
+    let effective_bars = if num_bars == 0 { 1 } else { num_bars };
+    effective_bars as f64 * beats_per_bar
 }
 
 /// Generate a Euclidean rhythm pattern.

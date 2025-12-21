@@ -9,7 +9,7 @@
 use std::collections::HashSet;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
 
-use super::analysis::AnalysisResult;
+use crate::analysis::AnalysisResult;
 
 /// Known built-in synthdefs that are always available.
 fn builtin_synthdefs() -> HashSet<&'static str> {
@@ -43,10 +43,11 @@ pub fn generate_semantic_diagnostics(
     for synth_ref in &analysis.synthdef_refs {
         let name = &synth_ref.name;
 
-        // Check if it's a known synthdef, effect, or builtin
+        // Check if it's a known synthdef, effect, builtin, or locally-defined synthdef
         if !known_synthdefs.contains(name)
             && !known_effects.contains(name)
             && !builtins.contains(name.as_str())
+            && !analysis.local_synthdefs.contains(name)
         {
             diagnostics.push(Diagnostic {
                 range: synth_ref.range,
@@ -69,10 +70,15 @@ pub fn generate_semantic_diagnostics(
     }
 
     // Check effect references
+    // Note: fx().synth() can use regular synthdefs too, not just define_fx() effects
     for effect_ref in &analysis.effect_refs {
         let name = &effect_ref.name;
 
-        if !known_effects.contains(name) && !builtins.contains(name.as_str()) {
+        if !known_effects.contains(name)
+            && !known_synthdefs.contains(name)
+            && !builtins.contains(name.as_str())
+            && !analysis.local_synthdefs.contains(name)
+        {
             diagnostics.push(Diagnostic {
                 range: effect_ref.range,
                 severity: Some(DiagnosticSeverity::WARNING),
@@ -124,7 +130,11 @@ pub fn all_diagnostics(
 ) -> Vec<Diagnostic> {
     let mut all = analysis.syntax_errors.clone();
     all.extend(analysis.semantic_diagnostics.clone());
-    all.extend(generate_semantic_diagnostics(analysis, known_synthdefs, known_effects));
+    all.extend(generate_semantic_diagnostics(
+        analysis,
+        known_synthdefs,
+        known_effects,
+    ));
     all.extend(analysis.lint_diagnostics.clone());
     all
 }

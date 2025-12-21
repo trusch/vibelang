@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 
-use crate::http_server::AppState;
+use crate::AppState;
 
 /// Request body for code evaluation
 #[derive(Debug, Deserialize)]

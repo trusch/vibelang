@@ -6,9 +6,10 @@ use axum::{
     Json,
 };
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use vibelang_core::state::StateMessage;
 
-use crate::http_server::{
+use crate::{
     models::{ErrorResponse, SeekRequest, TimeSignature, TransportState, TransportUpdate},
     AppState,
 };
@@ -37,6 +38,12 @@ pub async fn get_transport(
             }
         });
 
+        // Get server timestamp for client-side latency compensation
+        let server_time_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
         TransportState {
             bpm: s.tempo as f32,
             time_signature: TimeSignature {
@@ -48,6 +55,7 @@ pub async fn get_transport(
             quantization_beats: s.quantization_beats,
             loop_beats,
             loop_beat,
+            server_time_ms,
         }
     });
 

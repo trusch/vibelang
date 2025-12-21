@@ -270,7 +270,7 @@ impl ScoreWriter {
         }
 
         // Write samples to samples/ directory
-        for (_buffer_id, original_path) in &self.samples {
+        for original_path in self.samples.values() {
             if let Some(archive_path) = sample_path_map.get(original_path) {
                 // Read the sample file
                 match std::fs::read(original_path) {

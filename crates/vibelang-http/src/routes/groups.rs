@@ -10,7 +10,7 @@ use std::sync::Arc;
 use vibelang_core::api::context::SourceLocation;
 use vibelang_core::state::StateMessage;
 
-use crate::http_server::{
+use crate::{
     models::{ErrorResponse, Group, GroupCreate, GroupUpdate, ParamSet, SourceLocation as ApiSourceLocation},
     AppState,
 };
@@ -354,17 +354,15 @@ pub async fn set_group_param(
                 Json(ErrorResponse::internal(&format!("Failed to fade param: {}", e))),
             ));
         }
-    } else {
-        if let Err(e) = state.handle.send(StateMessage::SetGroupParam {
-            path: path.clone(),
-            param: param.clone(),
-            value: req.value,
-        }) {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::internal(&format!("Failed to set param: {}", e))),
-            ));
-        }
+    } else if let Err(e) = state.handle.send(StateMessage::SetGroupParam {
+        path: path.clone(),
+        param: param.clone(),
+        value: req.value,
+    }) {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::internal(&format!("Failed to set param: {}", e))),
+        ));
     }
 
     Ok(StatusCode::OK)

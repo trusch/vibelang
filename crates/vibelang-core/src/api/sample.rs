@@ -703,10 +703,8 @@ impl SampleHandle {
         if let Some(length) = self.length_seconds {
             let sample_rate = self.sample_rate() as f32;
             self.get_start_frame() + (length * sample_rate as f64) as i32
-        } else if let Some(end) = self.end_frame {
-            end
         } else {
-            -1
+            self.end_frame.unwrap_or(-1)
         }
     }
 }

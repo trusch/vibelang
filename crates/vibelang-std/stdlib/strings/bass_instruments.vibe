@@ -133,7 +133,7 @@ define_synthdef("electric_bass", |builder| {
             // Attack transient
             let attack_env = envelope()
                 .perc(0.0003, 1.0)
-                .time_scale(0.004 + ((1.0 - attack_style)
+                .time_scale(0.004 + ((1.0 - attack_style) * 0.006))
                 .build();
             let attack_cutoff = 2000.0 + (attack_style * 3000.0);
             let attack = lpf_ar(white_noise_ar() * attack_env, attack_cutoff) * 0.25;

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use vibelang_core::api::context::SourceLocation;
 use vibelang_core::state::{LoopStatus as InternalLoopStatus, StateMessage};
 
-use crate::http_server::{
+use crate::{
     models::{ErrorResponse, LoopStatus, Melody, MelodyCreate, MelodyEvent, MelodyUpdate, SourceLocation as ApiSourceLocation, StartRequest, StopRequest},
     AppState,
 };
@@ -67,7 +67,7 @@ fn melody_to_api(ms: &vibelang_core::state::MelodyState) -> Melody {
 
             MelodyEvent {
                 beat: e.beat,
-                note: freq.map(|f| freq_to_note_name(f)).unwrap_or_default(),
+                note: freq.map(freq_to_note_name).unwrap_or_default(),
                 frequency: freq,
                 duration,
                 velocity: None,
@@ -89,7 +89,7 @@ fn melody_to_api(ms: &vibelang_core::state::MelodyState) -> Melody {
         status: loop_status_to_api(&ms.status),
         is_looping: ms.is_looping,
         source_location: source_location_to_api(&ms.source_location),
-        notes_pattern: ms.notes_pattern.clone(),
+        notes_patterns: ms.notes_patterns.clone(),
     }
 }
 
@@ -97,7 +97,7 @@ fn melody_to_api(ms: &vibelang_core::state::MelodyState) -> Melody {
 fn freq_to_note_name(freq: f32) -> String {
     let notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     let midi_note = (12.0 * (freq / 440.0).log2() + 69.0).round() as i32;
-    if midi_note < 0 || midi_note > 127 {
+    if !(0..=127).contains(&midi_note) {
         return format!("{:.1}Hz", freq);
     }
     let octave = (midi_note / 12) - 1;
@@ -130,27 +130,38 @@ pub async fn create_melody(
         ));
     }
 
-    // Check if voice exists
-    let voice_exists = state.handle.with_state(|s| s.voices.contains_key(&req.voice_name));
-    if !voice_exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("Voice '{}' not found", req.voice_name))),
-        ));
-    }
+    // Check if voice exists and get its synthdef name
+    let voice_info = state.handle.with_state(|s| {
+        s.voices.get(&req.voice_name).map(|v| (v.group_path.clone(), v.synth_name.clone()))
+    });
+    let (voice_group_path, voice_synth_name) = match voice_info {
+        Some((gp, sn)) => (gp, sn.unwrap_or_default()),
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse::not_found(&format!("Voice '{}' not found", req.voice_name))),
+            ));
+        }
+    };
 
     // Get group path from voice if not specified
-    let group_path = req.group_path.unwrap_or_else(|| {
-        state.handle.with_state(|s| {
-            s.voices.get(&req.voice_name)
-                .map(|v| v.group_path.clone())
-                .unwrap_or_else(|| "main".to_string())
-        })
-    });
+    let group_path = req.group_path.unwrap_or(voice_group_path);
 
-    // Build events from either events array or melody_string
-    let beat_events: Vec<vibelang_core::events::BeatEvent> = if let Some(melody_str) = &req.melody_string {
-        parse_melody_string(melody_str, req.loop_beats)
+    // Determine notes_patterns from lanes or melody_string
+    let notes_patterns: Vec<String> = if let Some(lanes) = &req.lanes {
+        lanes.clone()
+    } else if let Some(melody_str) = &req.melody_string {
+        vec![melody_str.clone()]
+    } else {
+        vec![]
+    };
+
+    // Build events from either events array or lanes/melody_string
+    let beat_events: Vec<vibelang_core::events::BeatEvent> = if !notes_patterns.is_empty() {
+        // Parse all lanes and combine events
+        notes_patterns.iter()
+            .flat_map(|lane| parse_melody_string(lane, req.loop_beats, &voice_synth_name))
+            .collect()
     } else {
         req.events.iter().map(|e| {
             let mut controls: Vec<(String, f32)> = e.params.iter()
@@ -162,7 +173,7 @@ pub async fn create_melody(
             if let Some(d) = e.duration {
                 controls.push(("gate".to_string(), d as f32));
             }
-            let mut evt = vibelang_core::events::BeatEvent::new(e.beat, "");
+            let mut evt = vibelang_core::events::BeatEvent::new(e.beat, &voice_synth_name);
             evt.controls = controls;
             evt
         }).collect()
@@ -183,7 +194,7 @@ pub async fn create_melody(
         voice_name: Some(req.voice_name.clone()),
         pattern,
         source_location: SourceLocation::new(None, None, None),
-        notes_pattern: req.melody_string.clone(),
+        notes_patterns,
     }) {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -213,7 +224,7 @@ pub async fn create_melody(
 }
 
 /// Parse a simple melody string like "C4 D4 E4 F4"
-fn parse_melody_string(melody: &str, loop_beats: f64) -> Vec<vibelang_core::events::BeatEvent> {
+fn parse_melody_string(melody: &str, loop_beats: f64, synth_def: &str) -> Vec<vibelang_core::events::BeatEvent> {
     let notes: Vec<&str> = melody.split_whitespace().collect();
     if notes.is_empty() {
         return vec![];
@@ -226,7 +237,7 @@ fn parse_melody_string(melody: &str, loop_beats: f64) -> Vec<vibelang_core::even
                 return None;
             }
             let freq = note_name_to_freq(note)?;
-            let mut evt = vibelang_core::events::BeatEvent::new(i as f64 * beat_per_note, "");
+            let mut evt = vibelang_core::events::BeatEvent::new(i as f64 * beat_per_note, synth_def);
             evt.controls = vec![
                 ("freq".to_string(), freq),
                 ("gate".to_string(), beat_per_note as f32 * 0.9),
@@ -309,13 +320,43 @@ pub async fn update_melody(
         }
     };
 
+    // Get the voice's synthdef name, falling back to the existing events' synthdef
+    let voice_synth_name = if let Some(ref voice_name) = current.voice_name {
+        state.handle.with_state(|s| {
+            s.voices.get(voice_name)
+                .and_then(|v| v.synth_name.clone())
+        })
+    } else {
+        None
+    };
+
+    // If voice lookup failed, try to get synthdef from existing events
+    let synth_def = voice_synth_name.unwrap_or_else(|| {
+        current.loop_pattern.as_ref()
+            .and_then(|lp| lp.events.first())
+            .map(|e| e.synth_def.clone())
+            .unwrap_or_default()
+    });
+
     // Get current loop_length_beats from loop_pattern
     let current_loop_beats = current.loop_pattern.as_ref().map(|lp| lp.loop_length_beats).unwrap_or(4.0);
     let loop_beats = update.loop_beats.unwrap_or(current_loop_beats);
 
+    // Determine notes_patterns from lanes, melody_string, or existing
+    let notes_patterns: Vec<String> = if let Some(lanes) = &update.lanes {
+        lanes.clone()
+    } else if let Some(melody_str) = &update.melody_string {
+        vec![melody_str.clone()]
+    } else {
+        current.notes_patterns.clone()
+    };
+
     // Build new events
-    let beat_events: Vec<vibelang_core::events::BeatEvent> = if let Some(melody_str) = &update.melody_string {
-        parse_melody_string(melody_str, loop_beats)
+    let beat_events: Vec<vibelang_core::events::BeatEvent> = if update.lanes.is_some() || update.melody_string.is_some() {
+        // Parse all lanes and combine events
+        notes_patterns.iter()
+            .flat_map(|lane| parse_melody_string(lane, loop_beats, &synth_def))
+            .collect()
     } else if let Some(evts) = &update.events {
         evts.iter().map(|e| {
             let mut controls: Vec<(String, f32)> = e.params.iter()
@@ -327,7 +368,7 @@ pub async fn update_melody(
             if let Some(d) = e.duration {
                 controls.push(("gate".to_string(), d as f32));
             }
-            let mut evt = vibelang_core::events::BeatEvent::new(e.beat, "");
+            let mut evt = vibelang_core::events::BeatEvent::new(e.beat, &synth_def);
             evt.controls = controls;
             evt
         }).collect()
@@ -354,7 +395,7 @@ pub async fn update_melody(
         voice_name: current.voice_name,
         pattern,
         source_location: SourceLocation::new(None, None, None),
-        notes_pattern: update.melody_string.clone().or(current.notes_pattern),
+        notes_patterns,
     }) {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,

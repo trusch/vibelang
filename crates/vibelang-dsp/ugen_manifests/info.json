@@ -2,89 +2,124 @@
   {
     "name": "SampleRate",
     "description": "Server sample rate. Returns the current sample rate of the server.",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Info"
+    "category": "Info",
+    "functions": []
   },
   {
     "name": "SampleDur",
     "description": "Sample duration. Returns 1 / SampleRate (duration of one sample in seconds).",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Info"
+    "category": "Info",
+    "functions": []
   },
   {
     "name": "ControlRate",
     "description": "Server control rate. Returns the current control rate of the server.",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Info"
+    "category": "Info",
+    "functions": []
   },
   {
     "name": "ControlDur",
     "description": "Control period duration. Returns 1 / ControlRate (duration of one control block).",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Info"
+    "category": "Info",
+    "functions": []
   },
   {
     "name": "RadiansPerSample",
     "description": "Radians per sample. Returns 2π / SampleRate, useful for oscillator calculations.",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Info"
+    "category": "Info",
+    "functions": []
   },
   {
     "name": "NumOutputBuses",
     "description": "Number of output buses. Returns the number of audio output buses on the server.",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Info"
+    "category": "Info",
+    "functions": []
   },
   {
     "name": "NumInputBuses",
     "description": "Number of input buses. Returns the number of audio input buses on the server.",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Info"
+    "category": "Info",
+    "functions": []
   },
   {
     "name": "NumAudioBuses",
     "description": "Total number of audio buses. Returns the number of audio buses allocated on the server.",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Info"
+    "category": "Info",
+    "functions": []
   },
   {
     "name": "NumControlBuses",
     "description": "Number of control buses. Returns the number of control buses allocated on the server.",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Info"
+    "category": "Info",
+    "functions": []
   },
   {
     "name": "NumBuffers",
     "description": "Number of buffers. Returns the number of buffers allocated on the server.",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Info"
+    "category": "Info",
+    "functions": []
   },
   {
     "name": "NumRunningSynths",
     "description": "Number of running synths. Returns the current number of synths running on the server.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [],
     "outputs": 1,
-    "category": "Info"
+    "category": "Info",
+    "functions": [
+      "num_running_synths_kr"
+    ]
   }
 ]

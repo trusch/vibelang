@@ -1,23 +1,35 @@
 //! Language Server Protocol implementation for VibeLang.
 //!
-//! This module provides a full-featured LSP server that can be used by
+//! This crate provides a full-featured LSP server that can be used by
 //! any editor supporting the Language Server Protocol.
 //!
-//! Features:
+//! # Features
+//!
 //! - Syntax error diagnostics (via Rhai compilation)
 //! - Unknown synthdef/effect validation
 //! - Auto-completion for API functions, synthdefs, and stdlib imports
 //! - Hover documentation
 //! - Go-to-definition for imports
 //! - Auto-import suggestions
+//!
+//! # Usage
+//!
+//! ```ignore
+//! use vibelang_lsp::run_lsp_server;
+//!
+//! #[tokio::main]
+//! async fn main() -> anyhow::Result<()> {
+//!     run_lsp_server().await
+//! }
+//! ```
 
+mod analysis;
 mod backend;
 mod completion;
+mod definition;
 mod diagnostics;
 mod document;
 mod hover;
-mod definition;
-mod analysis;
 
 pub use backend::VibeLangServer;
 

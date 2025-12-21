@@ -2,135 +2,387 @@
   {
     "name": "Delay1",
     "description": "One sample delay. Delays the input signal by exactly one sample.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
     ],
     "outputs": 1,
-    "category": "Delays"
+    "category": "Delays",
+    "functions": [
+      "delay1_ar",
+      "delay1_kr"
+    ]
   },
   {
     "name": "Delay2",
     "description": "Two sample delay. Delays the input signal by exactly two samples.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
     ],
     "outputs": 1,
-    "category": "Delays"
+    "category": "Delays",
+    "functions": [
+      "delay2_ar",
+      "delay2_kr"
+    ]
   },
   {
     "name": "DelayN",
     "description": "Simple delay line with no interpolation. Most efficient but can cause aliasing.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds. Sets buffer size, cannot be modulated"},
-      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds. Can be modulated"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "maxdelaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Maximum delay time in seconds. Sets buffer size, cannot be modulated"
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Delay time in seconds. Can be modulated"
+      }
     ],
     "outputs": 1,
-    "category": "Delays"
+    "category": "Delays",
+    "functions": [
+      "delay_n_ar",
+      "delay_n_kr"
+    ]
   },
   {
     "name": "DelayL",
     "description": "Delay line with linear interpolation. Smoother than DelayN when delay time is modulated.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
-      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "maxdelaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Maximum delay time in seconds"
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Delay time in seconds"
+      }
     ],
     "outputs": 1,
-    "category": "Delays"
+    "category": "Delays",
+    "functions": [
+      "delay_l_ar",
+      "delay_l_kr"
+    ]
   },
   {
     "name": "DelayC",
     "description": "Delay line with cubic interpolation. Highest quality, best for pitch shifting delays.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
-      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "maxdelaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Maximum delay time in seconds"
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Delay time in seconds"
+      }
     ],
     "outputs": 1,
-    "category": "Delays"
+    "category": "Delays",
+    "functions": [
+      "delay_c_ar",
+      "delay_c_kr"
+    ]
   },
   {
     "name": "CombN",
     "description": "Comb delay line with no interpolation. Creates resonances at harmonics of 1/delay time.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
-      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
-      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "maxdelaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Maximum delay time in seconds"
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Delay time in seconds"
+      },
+      {
+        "name": "decaytime",
+        "type": "float",
+        "default": 1,
+        "description": "Time for echoes to decay by 60dB"
+      }
     ],
     "outputs": 1,
-    "category": "Delays"
+    "category": "Delays",
+    "functions": [
+      "comb_n_ar",
+      "comb_n_kr"
+    ]
   },
   {
     "name": "CombL",
     "description": "Comb delay line with linear interpolation. Smoother comb filtering than CombN.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
-      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
-      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "maxdelaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Maximum delay time in seconds"
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Delay time in seconds"
+      },
+      {
+        "name": "decaytime",
+        "type": "float",
+        "default": 1,
+        "description": "Time for echoes to decay by 60dB"
+      }
     ],
     "outputs": 1,
-    "category": "Delays"
+    "category": "Delays",
+    "functions": [
+      "comb_l_ar",
+      "comb_l_kr"
+    ]
   },
   {
     "name": "CombC",
     "description": "Comb delay line with cubic interpolation. Highest quality comb filtering.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
-      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
-      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "maxdelaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Maximum delay time in seconds"
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Delay time in seconds"
+      },
+      {
+        "name": "decaytime",
+        "type": "float",
+        "default": 1,
+        "description": "Time for echoes to decay by 60dB"
+      }
     ],
     "outputs": 1,
-    "category": "Delays"
+    "category": "Delays",
+    "functions": [
+      "comb_c_ar",
+      "comb_c_kr"
+    ]
   },
   {
     "name": "AllpassN",
     "description": "All pass delay line with no interpolation. Passes all frequencies but changes phase.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
-      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
-      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "maxdelaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Maximum delay time in seconds"
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Delay time in seconds"
+      },
+      {
+        "name": "decaytime",
+        "type": "float",
+        "default": 1,
+        "description": "Time for echoes to decay by 60dB"
+      }
     ],
     "outputs": 1,
-    "category": "Delays"
+    "category": "Delays",
+    "functions": [
+      "allpass_n_ar",
+      "allpass_n_kr"
+    ]
   },
   {
     "name": "AllpassL",
     "description": "All pass delay line with linear interpolation. Smoother phase response than AllpassN.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
-      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
-      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "maxdelaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Maximum delay time in seconds"
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Delay time in seconds"
+      },
+      {
+        "name": "decaytime",
+        "type": "float",
+        "default": 1,
+        "description": "Time for echoes to decay by 60dB"
+      }
     ],
     "outputs": 1,
-    "category": "Delays"
+    "category": "Delays",
+    "functions": [
+      "allpass_l_ar",
+      "allpass_l_kr"
+    ]
   },
   {
     "name": "AllpassC",
     "description": "All pass delay line with cubic interpolation. Highest quality all pass filtering.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds"},
-      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Delay time in seconds"},
-      {"name": "decaytime", "type": "float", "default": 1.0, "description": "Time for echoes to decay by 60dB"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "maxdelaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Maximum delay time in seconds"
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Delay time in seconds"
+      },
+      {
+        "name": "decaytime",
+        "type": "float",
+        "default": 1,
+        "description": "Time for echoes to decay by 60dB"
+      }
     ],
     "outputs": 1,
-    "category": "Delays"
+    "category": "Delays",
+    "functions": [
+      "allpass_c_ar",
+      "allpass_c_kr"
+    ]
   }
 ]

@@ -2,95 +2,249 @@
   {
     "name": "Rand",
     "description": "Single random value generator. Generates one random value when the SynthDef is created.",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [
-      {"name": "lo", "type": "float", "default": 0.0, "description": "Minimum value"},
-      {"name": "hi", "type": "float", "default": 1.0, "description": "Maximum value"}
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum value"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum value"
+      }
     ],
     "outputs": 1,
-    "category": "Random"
+    "category": "Random",
+    "functions": []
   },
   {
     "name": "IRand",
     "description": "Single random integer generator. Generates one random integer when the SynthDef is created.",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [
-      {"name": "lo", "type": "float", "default": 0.0, "description": "Minimum value (inclusive)"},
-      {"name": "hi", "type": "float", "default": 127.0, "description": "Maximum value (inclusive)"}
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum value (inclusive)"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 127,
+        "description": "Maximum value (inclusive)"
+      }
     ],
     "outputs": 1,
-    "category": "Random"
+    "category": "Random",
+    "functions": []
   },
   {
     "name": "TRand",
     "description": "Triggered random value generator. Generates a new random value when triggered.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "lo", "type": "float", "default": 0.0, "description": "Minimum value"},
-      {"name": "hi", "type": "float", "default": 1.0, "description": "Maximum value"},
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger signal. Generates new value on positive transition"}
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum value"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum value"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger signal. Generates new value on positive transition"
+      }
     ],
     "outputs": 1,
-    "category": "Random"
+    "category": "Random",
+    "functions": [
+      "t_rand_ar",
+      "t_rand_kr"
+    ]
   },
   {
     "name": "TIRand",
     "description": "Triggered random integer generator. Generates a new random integer when triggered.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "lo", "type": "float", "default": 0.0, "description": "Minimum value (inclusive)"},
-      {"name": "hi", "type": "float", "default": 127.0, "description": "Maximum value (inclusive)"},
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger signal"}
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum value (inclusive)"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 127,
+        "description": "Maximum value (inclusive)"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger signal"
+      }
     ],
     "outputs": 1,
-    "category": "Random"
+    "category": "Random",
+    "functions": [
+      "ti_rand_ar",
+      "ti_rand_kr"
+    ]
   },
   {
     "name": "TExpRand",
     "description": "Triggered exponential random generator. Generates exponentially distributed random values.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "lo", "type": "float", "default": 0.01, "description": "Minimum value (must be positive)"},
-      {"name": "hi", "type": "float", "default": 1.0, "description": "Maximum value (must be positive)"},
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger signal"}
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0.01,
+        "description": "Minimum value (must be positive)"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum value (must be positive)"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger signal"
+      }
     ],
     "outputs": 1,
-    "category": "Random"
+    "category": "Random",
+    "functions": [
+      "t_exp_rand_ar",
+      "t_exp_rand_kr"
+    ]
   },
   {
     "name": "LinRand",
     "description": "Linearly distributed random value. Skewed random distribution (init time only).",
-    "rates": ["ir"],
+    "rates": [
+      "ir"
+    ],
     "inputs": [
-      {"name": "lo", "type": "float", "default": 0.0, "description": "Minimum value"},
-      {"name": "hi", "type": "float", "default": 1.0, "description": "Maximum value"},
-      {"name": "minmax", "type": "float", "default": 0.0, "description": "Skew towards min (<0) or max (>0)"}
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum value"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum value"
+      },
+      {
+        "name": "minmax",
+        "type": "float",
+        "default": 0,
+        "description": "Skew towards min (<0) or max (>0)"
+      }
     ],
     "outputs": 1,
-    "category": "Random"
+    "category": "Random",
+    "functions": []
   },
   {
     "name": "CoinGate",
     "description": "Random gate/coin toss. Randomly passes or blocks triggers based on probability.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "prob", "type": "float", "default": 0.5, "description": "Probability of passing trigger (0 to 1)"},
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Trigger input"}
+      {
+        "name": "prob",
+        "type": "float",
+        "default": 0.5,
+        "description": "Probability of passing trigger (0 to 1)"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger input"
+      }
     ],
     "outputs": 1,
-    "category": "Random"
+    "category": "Random",
+    "functions": [
+      "coin_gate_ar",
+      "coin_gate_kr"
+    ]
   },
   {
     "name": "TWChoose",
     "description": "Triggered weighted choice from array. Randomly selects from array using probability weights.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "trig", "type": "signal", "default": 0.0, "description": "Trigger signal"},
-      {"name": "array", "type": "signal", "default": 0.0, "description": "Array of values to choose from"},
-      {"name": "weights", "type": "signal", "default": 0.0, "description": "Array of weights for each choice"},
-      {"name": "normalize", "type": "float", "default": 0.0, "description": "Whether to normalize weights (1=yes, 0=no)"}
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger signal"
+      },
+      {
+        "name": "array",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of values to choose from"
+      },
+      {
+        "name": "weights",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of weights for each choice"
+      },
+      {
+        "name": "normalize",
+        "type": "float",
+        "default": 0,
+        "description": "Whether to normalize weights (1=yes, 0=no)"
+      }
     ],
     "outputs": 1,
-    "category": "Random"
+    "category": "Random",
+    "functions": [
+      "tw_choose_ar",
+      "tw_choose_kr"
+    ]
   }
 ]

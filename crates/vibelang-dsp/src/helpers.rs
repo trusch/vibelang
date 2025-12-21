@@ -149,6 +149,14 @@ pub fn dup(signal: NodeRef, count: i64) -> Result<Array> {
     Ok(result)
 }
 
+/// Zip two arrays together into an array of pairs.
+pub fn array_zip(arr1: Array, arr2: Array) -> Array {
+    arr1.into_iter()
+        .zip(arr2)
+        .map(|(a, b)| Dynamic::from(vec![a, b]))
+        .collect()
+}
+
 /// Envelope specification (like SuperCollider's Env class).
 #[derive(Clone, Debug)]
 pub struct Env {
@@ -804,9 +812,7 @@ pub fn sound_in(num_channels: f64) -> Result<Array> {
             let inputs = vec![Input::Constant(0.0)];
             builder.add_node("SoundIn".to_string(), Rate::Audio, inputs, 1, 0)
         })?;
-        let mut result = Array::new();
-        result.push(Dynamic::from(node_ref));
-        Ok(result)
+        Ok(vec![Dynamic::from(node_ref)])
     } else {
         // Multiple channels - use In.ar reading from NumOutputBusChannels
         // SoundIn internally does: In.ar(NumOutputBusChannels.ir + bus, numChannels)
@@ -955,6 +961,9 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
     engine.register_fn("channels", |sig: NodeRef, count: i64| channels(sig, count).unwrap());
     engine.register_fn("channel", |sig: NodeRef, index: i64| channel(sig, index).unwrap());
     engine.register_fn("detune_spread", |voices: i64, amount: f64| detune_spread(voices, amount).unwrap());
+
+    // Array utilities
+    engine.register_fn("zip", array_zip);
 
     // Envelopes
     engine.register_fn("env_gen", |gate: NodeRef, done: i64| env_gen(gate, done).unwrap());

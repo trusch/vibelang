@@ -8,7 +8,7 @@ use axum::{
 use std::sync::Arc;
 use vibelang_core::state::StateMessage;
 
-use crate::http_server::{
+use crate::{
     models::{ErrorResponse, Sequence, SequenceClip, SequenceCreate, SequenceStartRequest, SequenceUpdate, SourceLocation as ApiSourceLocation},
     AppState,
 };
@@ -67,8 +67,8 @@ fn parse_clip_mode(mode: &str) -> vibelang_core::sequences::ClipMode {
         vibelang_core::sequences::ClipMode::Loop
     } else if mode == "once" {
         vibelang_core::sequences::ClipMode::Once
-    } else if mode.starts_with("loop:") {
-        let count = mode[5..].parse().unwrap_or(1);
+    } else if let Some(count_str) = mode.strip_prefix("loop:") {
+        let count = count_str.parse().unwrap_or(1);
         vibelang_core::sequences::ClipMode::LoopCount(count)
     } else {
         vibelang_core::sequences::ClipMode::Once

@@ -1229,6 +1229,16 @@ impl RuntimeThread {
                 source_location,
             } => {
                 let generation = self.shared.with_state_read(|s| s.reload_generation);
+                // Check if gain changed and get running node if any
+                let (gain_changed, running_node) = self.shared.with_state_read(|state| {
+                    if let Some(voice) = state.voices.get(&name) {
+                        let changed = (voice.gain - gain).abs() > 0.0001;
+                        (changed, voice.running_node_id)
+                    } else {
+                        (false, None)
+                    }
+                });
+
                 self.shared.with_state_write(|state| {
                     let voice = state.voices.entry(name.clone()).or_insert_with(|| {
                         VoiceState::new(name.clone(), group_path.clone())
@@ -1248,6 +1258,20 @@ impl RuntimeThread {
                     voice.source_location = source_location;
                     state.bump_version();
                 });
+
+                // If gain changed and voice has a running synth, update it
+                if gain_changed {
+                    if let Some(node_id) = running_node {
+                        let current_beat = self.transport.beat_at(Instant::now()).to_float();
+                        let _ = self.osc_sender.n_set(
+                            OscTiming::Now,
+                            NodeId::new(node_id),
+                            &[("amp", gain as f32)],
+                            current_beat,
+                        );
+                        log::debug!("[VOICE] Updated running node {} gain to {}", node_id, gain);
+                    }
+                }
             }
             StateMessage::DeleteVoice { name } => {
                 self.shared.with_state_write(|state| {
@@ -1323,6 +1347,8 @@ impl RuntimeThread {
                 });
             }
             StateMessage::DeletePattern { name } => {
+                // Reset scheduler tracking to prevent ghost events when pattern is recreated
+                self.scheduler.reset_loop(&name);
                 self.shared.with_state_write(|state| {
                     state.patterns.remove(&name);
                     state.bump_version();
@@ -1350,7 +1376,7 @@ impl RuntimeThread {
                 voice_name,
                 pattern,
                 source_location,
-                notes_pattern,
+                notes_patterns,
             } => {
                 let generation = self.shared.with_state_read(|s| s.reload_generation);
                 self.shared.with_state_write(|state| {
@@ -1362,7 +1388,7 @@ impl RuntimeThread {
                     ms.group_path = group_path;
                     ms.voice_name = voice_name;
                     ms.source_location = source_location;
-                    ms.notes_pattern = notes_pattern;
+                    ms.notes_patterns = notes_patterns;
                     state.bump_version();
                 });
             }
@@ -1579,10 +1605,10 @@ impl RuntimeThread {
             }
             StateMessage::SetEffectParam { id, param, value } => {
                 let node_to_update = self.shared.with_state_write(|state| {
-                    let node_id = state.effects.get_mut(&id).map(|effect| {
+                    let node_id = state.effects.get_mut(&id).and_then(|effect| {
                         effect.params.insert(param.clone(), value);
                         effect.node_id
-                    }).flatten();
+                    });
                     state.bump_version();
                     node_id
                 });
@@ -2089,6 +2115,18 @@ impl RuntimeThread {
         // Collect loops that need event expansion
         let loops = self.collect_active_loops();
 
+        // Log active patterns for debugging (only every ~100 ticks to reduce spam)
+        static TICK_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let tick = TICK_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if tick % 100 == 0 {
+            for lp in &loops {
+                if matches!(lp.kind, LoopKind::Pattern) {
+                    log::debug!("[TICK] Active pattern '{}' start_beat={:.3} loop_length={:.3} events={}",
+                        lp.name, lp.start_beat, lp.pattern.loop_length_beats, lp.pattern.events.len());
+                }
+            }
+        }
+
         // Collect scheduled events from state
         let scheduled_events: Vec<(BeatEvent, BeatTime)> = self.shared.with_state_read(|state| {
             state
@@ -2106,6 +2144,18 @@ impl RuntimeThread {
             &scheduled_events,
             LOOKAHEAD_MS,
         );
+
+        // Log all due events for debugging
+        for (beat_time, events) in &due_events {
+            for event in events {
+                if event.fade.is_none() {
+                    log::debug!("[SCHEDULER] Due event at beat {:.3}: pattern={:?} synth={}",
+                        beat_time.to_float(),
+                        event.pattern_name,
+                        event.synth_def);
+                }
+            }
+        }
 
         // Fire due events using timed OSC bundles for precise scheduling
         for (beat_time, events) in due_events {
@@ -2618,9 +2668,9 @@ impl RuntimeThread {
     /// Fire multiple events at a specific beat using a timed OSC bundle.
     /// This ensures sample-accurate timing by scheduling with scsynth's timestamp mechanism.
     fn fire_events_bundled(&mut self, beat_time: BeatTime, events: Vec<BeatEvent>, now: Instant) {
-        log::info!("[FIRE_EVENTS] Processing {} events at beat {:.2}", events.len(), beat_time.to_float());
+        log::debug!("[FIRE_EVENTS] Processing {} events at beat {:.2}", events.len(), beat_time.to_float());
         for event in &events {
-            log::info!("[FIRE_EVENTS]   synth_def='{}' voice={:?} group={:?}",
+            log::debug!("[FIRE_EVENTS]   synth_def='{}' voice={:?} group={:?}",
                 event.synth_def, event.voice_name, event.group_path);
         }
 
@@ -3096,12 +3146,11 @@ impl RuntimeThread {
             // Get parent's node_id and link_synth_node_id
             let (parent_id, parent_link_synth) = parent_path
                 .as_ref()
-                .map(|pp| {
+                .and_then(|pp| {
                     self.shared.with_state_read(|state| {
                         state.groups.get(pp).map(|g| (g.node_id, g.link_synth_node_id))
                     })
                 })
-                .flatten()
                 .unwrap_or((Some(0), None));
 
             let parent_node_id = parent_id.unwrap_or(0);
@@ -3208,199 +3257,16 @@ impl RuntimeThread {
 
     fn set_group_run_state(&mut self, path: &str, running: bool) {
         let node_to_set = self.shared.with_state_write(|state| {
-            let node_id = state.groups.get_mut(path).map(|group| {
+            let node_id = state.groups.get_mut(path).and_then(|group| {
                 group.muted = !running;
                 group.node_id
-            }).flatten();
+            });
             state.bump_version();
             node_id
         });
         if let Some(node_id) = node_to_set {
             let current_beat = self.transport.beat_at(Instant::now()).to_float();
             let _ = self.osc_sender.n_run(OscTiming::Now, NodeId::new(node_id), running, current_beat);
-        }
-    }
-
-    /// Recreate effect synths that have been freed (node_id = None).
-    /// This is called after transport stop to restore effects.
-    fn recreate_effects(&mut self) {
-        // Collect effects that need to be recreated
-        let effects_to_create: Vec<(String, String, String, std::collections::HashMap<String, f32>, i32)> =
-            self.shared.with_state_read(|state| {
-                state
-                    .effects
-                    .values()
-                    .filter(|e| e.node_id.is_none())
-                    .map(|e| {
-                        (
-                            e.id.clone(),
-                            e.synthdef_name.clone(),
-                            e.group_path.clone(),
-                            e.params.clone(),
-                            e.bus_in,
-                        )
-                    })
-                    .collect()
-            });
-
-        if effects_to_create.is_empty() {
-            return;
-        }
-
-        log::info!("[RECREATE] Recreating {} effects", effects_to_create.len());
-
-        for (id, synthdef, group_path, params, bus_in) in effects_to_create {
-            // Get group's node ID
-            let group_node_id = self.shared.with_state_read(|state| {
-                state.groups.get(&group_path).and_then(|g| g.node_id)
-            });
-
-            let Some(target_node_id) = group_node_id else {
-                log::warn!("[RECREATE] Cannot recreate effect '{}': group '{}' not found", id, group_path);
-                continue;
-            };
-
-            // Find last effect node in this group (for ordering)
-            let last_effect_node = self.shared.with_state_read(|state| {
-                let mut group_effects: Vec<_> = state
-                    .effects
-                    .values()
-                    .filter(|e| e.group_path == group_path && e.id != id && e.node_id.is_some())
-                    .collect();
-                group_effects.sort_by_key(|e| e.position);
-                group_effects.last().and_then(|e| e.node_id)
-            });
-
-            // Allocate node ID
-            let node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
-
-            // Build controls
-            let mut controls: Vec<(String, f32)> = vec![
-                ("__fx_bus_in".to_string(), bus_in as f32),
-                ("__fx_bus_out".to_string(), bus_in as f32), // Effects process in-place
-            ];
-            controls.extend(params.iter().map(|(k, v)| (k.clone(), *v)));
-
-            // Determine add action (after last effect or at tail)
-            let (add_action, target) = if let Some(last_node) = last_effect_node {
-                (AddAction::AddAfter, Target::from(last_node))
-            } else {
-                (AddAction::AddToTail, Target::from(target_node_id))
-            };
-
-            // Create synth
-            if let Err(e) = self.osc_sender.s_new(
-                OscTiming::Now,
-                &synthdef,
-                NodeId::new(node_id),
-                add_action,
-                target,
-                &controls,
-                0.0,
-            ) {
-                log::error!("[RECREATE] Failed to recreate effect '{}': {}", id, e);
-                continue;
-            }
-
-            // Update state
-            self.shared.with_state_write(|state| {
-                if let Some(effect) = state.effects.get_mut(&id) {
-                    effect.node_id = Some(node_id);
-                }
-                state.bump_version();
-            });
-
-            log::info!("[RECREATE] Recreated effect '{}' (node {})", id, node_id);
-        }
-    }
-
-    /// Recreate link synths that have been freed (link_synth_node_id = None).
-    /// This is a simpler version of finalize_groups without the reload diffing.
-    fn recreate_link_synths(&mut self) {
-        // Collect groups that need link synths
-        let mut groups: Vec<(String, i32, Option<String>, i32, Option<i32>)> =
-            self.shared.with_state_read(|state| {
-                state
-                    .groups
-                    .values()
-                    .filter(|g| g.link_synth_node_id.is_none() && g.node_id.is_some())
-                    .map(|g| {
-                        // Find last effect node for this group
-                        let mut group_effects: Vec<_> = state
-                            .effects
-                            .values()
-                            .filter(|e| e.group_path == g.path)
-                            .collect();
-                        group_effects.sort_by_key(|e| e.position);
-                        let last_effect_node = group_effects.last().and_then(|e| e.node_id);
-
-                        (
-                            g.path.clone(),
-                            g.audio_bus,
-                            g.parent_path.clone(),
-                            g.node_id.unwrap(),
-                            last_effect_node,
-                        )
-                    })
-                    .collect()
-            });
-
-        if groups.is_empty() {
-            return;
-        }
-
-        log::info!("[RECREATE] Recreating {} link synths", groups.len());
-
-        // Sort by depth (children before parents)
-        groups.sort_by(|a, b| {
-            let depth_a = a.0.matches('/').count();
-            let depth_b = b.0.matches('/').count();
-            depth_b.cmp(&depth_a)
-        });
-
-        for (path, in_bus, parent_path, group_node_id, last_effect_node) in groups {
-            // Determine output bus
-            let out_bus = parent_path
-                .as_ref()
-                .and_then(|pp| {
-                    self.shared
-                        .with_state_read(|state| state.groups.get(pp).map(|g| g.audio_bus))
-                })
-                .unwrap_or(0);
-
-            // Allocate node ID
-            let link_node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
-
-            // Determine placement (after last effect or at tail)
-            let (add_action, target) = if let Some(last_node) = last_effect_node {
-                (AddAction::AddAfter, Target::from(last_node))
-            } else {
-                (AddAction::AddToTail, Target::from(group_node_id))
-            };
-
-            // Create synth using Now timing (not Setup)
-            if let Err(e) = self.osc_sender.s_new(
-                OscTiming::Now,
-                "system_link_audio",
-                NodeId::new(link_node_id),
-                add_action,
-                target,
-                &[("inbus", in_bus as f32), ("outbus", out_bus as f32)],
-                0.0,
-            ) {
-                log::error!("[RECREATE] Failed to create link synth for '{}': {}", path, e);
-                continue;
-            }
-
-            // Store link synth ID
-            self.shared.with_state_write(|state| {
-                if let Some(group) = state.groups.get_mut(&path) {
-                    group.link_synth_node_id = Some(link_node_id);
-                }
-                state.bump_version();
-            });
-
-            log::info!("[RECREATE] Recreated link synth for '{}' (node {})", path, link_node_id);
         }
     }
 
@@ -3532,42 +3398,42 @@ impl RuntimeThread {
             // Snapshot groups - root groups (no parent) are always included to protect them
             for (path, group) in &state.groups {
                 let is_root = group.parent_path.is_none();
-                if is_root || filter_generation.map_or(true, |gen| group.generation == gen) {
+                if is_root || filter_generation.is_none_or(|gen| group.generation == gen) {
                     snapshot.add(EntityKind::Group, path.clone(), group.content_hash());
                 }
             }
 
             // Snapshot voices (filter by generation if specified)
             for (name, voice) in &state.voices {
-                if filter_generation.map_or(true, |gen| voice.generation == gen) {
+                if filter_generation.is_none_or(|gen| voice.generation == gen) {
                     snapshot.add(EntityKind::Voice, name.clone(), voice.content_hash());
                 }
             }
 
             // Snapshot patterns (filter by generation if specified)
             for (name, pattern) in &state.patterns {
-                if filter_generation.map_or(true, |gen| pattern.generation == gen) {
+                if filter_generation.is_none_or(|gen| pattern.generation == gen) {
                     snapshot.add(EntityKind::Pattern, name.clone(), pattern.content_hash());
                 }
             }
 
             // Snapshot melodies (filter by generation if specified)
             for (name, melody) in &state.melodies {
-                if filter_generation.map_or(true, |gen| melody.generation == gen) {
+                if filter_generation.is_none_or(|gen| melody.generation == gen) {
                     snapshot.add(EntityKind::Melody, name.clone(), melody.content_hash());
                 }
             }
 
             // Snapshot sequences (filter by generation if specified)
             for (name, seq) in &state.sequences {
-                if filter_generation.map_or(true, |gen| seq.generation == gen) {
+                if filter_generation.is_none_or(|gen| seq.generation == gen) {
                     snapshot.add(EntityKind::Sequence, name.clone(), seq.content_hash());
                 }
             }
 
             // Snapshot effects (filter by generation if specified)
             for (id, effect) in &state.effects {
-                if filter_generation.map_or(true, |gen| effect.generation == gen) {
+                if filter_generation.is_none_or(|gen| effect.generation == gen) {
                     snapshot.add(EntityKind::Effect, id.clone(), effect.content_hash());
                 }
             }
@@ -3622,6 +3488,33 @@ impl RuntimeThread {
                     }
                 }
             }
+        }
+
+        // Stop running voices that didn't get .run() called this generation
+        let stale_running_voices: Vec<(String, i32)> = self.shared.with_state_read(|state| {
+            state.voices.iter()
+                .filter(|(_, v)| v.running && v.run_generation != current_generation && v.running_node_id.is_some())
+                .map(|(name, v)| (name.clone(), v.running_node_id.unwrap()))
+                .collect()
+        });
+
+        if !stale_running_voices.is_empty() {
+            let current_beat = self.transport.beat_at(Instant::now()).to_float();
+            for (name, node_id) in &stale_running_voices {
+                log::info!("[RELOAD] Stopping stale running voice '{}' (node {})", name, node_id);
+                let _ = self.osc_sender.n_free(OscTiming::Now, NodeId::new(*node_id), current_beat);
+            }
+
+            // Update voice state to mark them as no longer running
+            self.shared.with_state_write(|state| {
+                for (name, _) in &stale_running_voices {
+                    if let Some(voice) = state.voices.get_mut(name) {
+                        voice.running = false;
+                        voice.running_node_id = None;
+                    }
+                }
+                state.bump_version();
+            });
         }
 
         // NOTE: Old generation-based cleanup is disabled. We now use diff-based cleanup
@@ -4672,10 +4565,12 @@ impl RuntimeThread {
                 // Update gain
                 let _ = self.osc_sender.n_set(OscTiming::Now, NodeId::new(node_id), &[("amp", gain as f32)], current_beat);
             }
-            // Mark voice as still running
+            // Mark voice as still running and update run_generation
+            let generation = self.shared.with_state_read(|s| s.reload_generation);
             self.shared.with_state_write(|state| {
                 if let Some(voice) = state.voices.get_mut(&name) {
                     voice.running = true;
+                    voice.run_generation = generation;
                 }
                 state.bump_version();
             });
@@ -4708,7 +4603,7 @@ impl RuntimeThread {
 
         // Create the synth in the group (or root if no group)
         let target = group_node_id
-            .map(|gid| Target::new(gid))
+            .map(Target::new)
             .unwrap_or_else(Target::root);
 
         let current_beat = self.transport.beat_at(Instant::now()).to_float();
@@ -4726,10 +4621,12 @@ impl RuntimeThread {
         }
 
         // Update voice state
+        let generation = self.shared.with_state_read(|s| s.reload_generation);
         self.shared.with_state_write(|state| {
             if let Some(voice) = state.voices.get_mut(&name) {
                 voice.running = true;
                 voice.running_node_id = Some(node_id);
+                voice.run_generation = generation;
             }
             state.bump_version();
         });

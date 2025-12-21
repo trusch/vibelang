@@ -2,13 +2,34 @@
 //!
 //! Provides a REST API and WebSocket endpoint for querying and controlling
 //! a running VibeLang session.
+//!
+//! # Features
+//!
+//! - Full CRUD operations for voices, patterns, melodies, sequences
+//! - Transport control (play, stop, seek, tempo)
+//! - Effect and sample management
+//! - MIDI routing and recording
+//! - Real-time WebSocket events
+//! - Live state queries (active synths, meters)
+//!
+//! # Usage
+//!
+//! ```ignore
+//! use vibelang_http::{start_server, EvalJob, EvalSender};
+//! use vibelang_core::RuntimeHandle;
+//!
+//! let (eval_tx, eval_rx) = std::sync::mpsc::channel();
+//! tokio::spawn(async move {
+//!     start_server(handle, 1606, Some(eval_tx)).await;
+//! });
+//! ```
 
 mod models;
 mod routes;
 mod websocket;
 
 use axum::{
-    routing::{get, post, patch, delete, put},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 use std::net::SocketAddr;
@@ -17,10 +38,11 @@ use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use vibelang_core::RuntimeHandle;
 
-pub use websocket::WebSocketEvent;
+pub use models::*;
 pub use routes::eval::{EvalJob, EvalResult};
+pub use websocket::WebSocketEvent;
 
-/// Sender type for eval requests
+/// Sender type for eval requests.
 pub type EvalSender = std::sync::mpsc::Sender<EvalJob>;
 
 /// Shared application state for HTTP handlers.
@@ -34,6 +56,22 @@ pub struct AppState {
 }
 
 /// Start the HTTP server on the specified port.
+///
+/// # Arguments
+///
+/// * `handle` - The VibeLang runtime handle for accessing state
+/// * `port` - The port to listen on
+/// * `eval_tx` - Optional channel to send code evaluation requests to the main thread
+///
+/// # Example
+///
+/// ```ignore
+/// let handle = runtime.handle();
+/// let (eval_tx, eval_rx) = std::sync::mpsc::channel();
+/// tokio::spawn(async move {
+///     start_server(handle, 1606, Some(eval_tx)).await;
+/// });
+/// ```
 pub async fn start_server(handle: RuntimeHandle, port: u16, eval_tx: Option<EvalSender>) {
     // Create broadcast channel for WebSocket events
     let (ws_tx, _) = broadcast::channel::<WebSocketEvent>(1024);
@@ -59,8 +97,7 @@ pub async fn start_server(handle: RuntimeHandle, port: u16, eval_tx: Option<Eval
         .route("/transport/start", post(routes::transport::start_transport))
         .route("/transport/stop", post(routes::transport::stop_transport))
         .route("/transport/seek", post(routes::transport::seek_transport))
-
-        // Groups - use :path parameter (group paths use / as separator, e.g., "main/drums/kick")
+        // Groups
         .route("/groups", get(routes::groups::list_groups))
         .route("/groups", post(routes::groups::create_group))
         .route("/groups/:path", get(routes::groups::get_group))
@@ -70,8 +107,10 @@ pub async fn start_server(handle: RuntimeHandle, port: u16, eval_tx: Option<Eval
         .route("/groups/:path/unmute", post(routes::groups::unmute_group))
         .route("/groups/:path/solo", post(routes::groups::solo_group))
         .route("/groups/:path/unsolo", post(routes::groups::unsolo_group))
-        .route("/groups/:path/params/:param", put(routes::groups::set_group_param))
-
+        .route(
+            "/groups/:path/params/:param",
+            put(routes::groups::set_group_param),
+        )
         // Voices
         .route("/voices", get(routes::voices::list_voices))
         .route("/voices", post(routes::voices::create_voice))
@@ -82,10 +121,12 @@ pub async fn start_server(handle: RuntimeHandle, port: u16, eval_tx: Option<Eval
         .route("/voices/:name/stop", post(routes::voices::stop_voice))
         .route("/voices/:name/note-on", post(routes::voices::note_on))
         .route("/voices/:name/note-off", post(routes::voices::note_off))
-        .route("/voices/:name/params/:param", put(routes::voices::set_voice_param))
+        .route(
+            "/voices/:name/params/:param",
+            put(routes::voices::set_voice_param),
+        )
         .route("/voices/:name/mute", post(routes::voices::mute_voice))
         .route("/voices/:name/unmute", post(routes::voices::unmute_voice))
-
         // Patterns
         .route("/patterns", get(routes::patterns::list_patterns))
         .route("/patterns", post(routes::patterns::create_pattern))
@@ -94,7 +135,6 @@ pub async fn start_server(handle: RuntimeHandle, port: u16, eval_tx: Option<Eval
         .route("/patterns/:name", delete(routes::patterns::delete_pattern))
         .route("/patterns/:name/start", post(routes::patterns::start_pattern))
         .route("/patterns/:name/stop", post(routes::patterns::stop_pattern))
-
         // Melodies
         .route("/melodies", get(routes::melodies::list_melodies))
         .route("/melodies", post(routes::melodies::create_melody))
@@ -103,43 +143,48 @@ pub async fn start_server(handle: RuntimeHandle, port: u16, eval_tx: Option<Eval
         .route("/melodies/:name", delete(routes::melodies::delete_melody))
         .route("/melodies/:name/start", post(routes::melodies::start_melody))
         .route("/melodies/:name/stop", post(routes::melodies::stop_melody))
-
         // Sequences
         .route("/sequences", get(routes::sequences::list_sequences))
         .route("/sequences", post(routes::sequences::create_sequence))
         .route("/sequences/:name", get(routes::sequences::get_sequence))
         .route("/sequences/:name", patch(routes::sequences::update_sequence))
         .route("/sequences/:name", delete(routes::sequences::delete_sequence))
-        .route("/sequences/:name/start", post(routes::sequences::start_sequence))
-        .route("/sequences/:name/stop", post(routes::sequences::stop_sequence))
-        .route("/sequences/:name/pause", post(routes::sequences::pause_sequence))
-
+        .route(
+            "/sequences/:name/start",
+            post(routes::sequences::start_sequence),
+        )
+        .route(
+            "/sequences/:name/stop",
+            post(routes::sequences::stop_sequence),
+        )
+        .route(
+            "/sequences/:name/pause",
+            post(routes::sequences::pause_sequence),
+        )
         // Effects
         .route("/effects", get(routes::effects::list_effects))
         .route("/effects", post(routes::effects::create_effect))
         .route("/effects/:id", get(routes::effects::get_effect))
         .route("/effects/:id", patch(routes::effects::update_effect))
         .route("/effects/:id", delete(routes::effects::delete_effect))
-        .route("/effects/:id/params/:param", put(routes::effects::set_effect_param))
-
+        .route(
+            "/effects/:id/params/:param",
+            put(routes::effects::set_effect_param),
+        )
         // Samples
         .route("/samples", get(routes::samples::list_samples))
         .route("/samples", post(routes::samples::load_sample))
         .route("/samples/:id", get(routes::samples::get_sample))
         .route("/samples/:id", delete(routes::samples::free_sample))
-
         // SynthDefs
         .route("/synthdefs", get(routes::synthdefs::list_synthdefs))
         .route("/synthdefs/:name", get(routes::synthdefs::get_synthdef))
-
         // Eval
         .route("/eval", post(routes::eval::eval_code))
-
         // Fades
         .route("/fades", get(routes::fades::list_fades))
         .route("/fades", post(routes::fades::create_fade))
         .route("/fades/:id", delete(routes::fades::cancel_fade))
-
         // MIDI
         .route("/midi/devices", get(routes::midi::list_devices))
         .route("/midi/devices/:id", post(routes::midi::connect_device))
@@ -157,30 +202,30 @@ pub async fn start_server(handle: RuntimeHandle, port: u16, eval_tx: Option<Eval
         .route("/midi/recording/notes", get(routes::midi::get_recorded_notes))
         .route("/midi/recording/export", get(routes::midi::export_recording))
         .route("/midi/monitor", post(routes::midi::set_monitor))
-
         // Live state
         .route("/live", get(routes::live::get_live_state))
         .route("/live/synths", get(routes::live::get_active_synths))
         .route("/live/sequences", get(routes::live::get_active_sequences))
         .route("/live/notes", get(routes::live::get_active_notes))
         .route("/live/meters", get(routes::live::get_meters))
-
         // WebSocket
         .route("/ws", get(websocket::ws_handler))
-
         // Add shared state
         .with_state(state)
-
         // Add CORS middleware
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
                 .allow_methods(Any)
-                .allow_headers(Any)
+                .allow_headers(Any),
         );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    log::info!("HTTP API server starting on http://{}:{}", addr.ip(), addr.port());
+    log::info!(
+        "HTTP API server starting on http://{}:{}",
+        addr.ip(),
+        addr.port()
+    );
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

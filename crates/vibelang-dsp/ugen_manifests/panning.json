@@ -2,121 +2,379 @@
   {
     "name": "Pan2",
     "description": "Two channel equal power panner. Pans a mono signal to stereo with equal power distribution.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Mono input signal"},
-      {"name": "pos", "type": "float", "default": 0.0, "description": "Pan position (-1=left, 0=center, 1=right)"},
-      {"name": "level", "type": "float", "default": 1.0, "description": "Output level"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal"
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0,
+        "description": "Pan position (-1=left, 0=center, 1=right)"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Output level"
+      }
     ],
     "outputs": 2,
-    "category": "Panning"
+    "category": "Panning",
+    "functions": [
+      "pan2_ar",
+      "pan2_kr"
+    ]
   },
   {
     "name": "Balance2",
     "description": "Balance control for stereo signal. Adjusts the left/right balance of a stereo signal.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "left", "type": "signal", "default": 0.0, "description": "Left channel input"},
-      {"name": "right", "type": "signal", "default": 0.0, "description": "Right channel input"},
-      {"name": "pos", "type": "float", "default": 0.0, "description": "Balance position (-1=left only, 0=center, 1=right only)"},
-      {"name": "level", "type": "float", "default": 1.0, "description": "Output level"}
+      {
+        "name": "left",
+        "type": "signal",
+        "default": 0,
+        "description": "Left channel input"
+      },
+      {
+        "name": "right",
+        "type": "signal",
+        "default": 0,
+        "description": "Right channel input"
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0,
+        "description": "Balance position (-1=left only, 0=center, 1=right only)"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Output level"
+      }
     ],
     "outputs": 2,
-    "category": "Panning"
+    "category": "Panning",
+    "functions": [
+      "balance2_ar",
+      "balance2_kr"
+    ]
   },
   {
     "name": "LinPan2",
     "description": "Two channel linear panner. Pans with linear amplitude distribution (not equal power).",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Mono input signal"},
-      {"name": "pos", "type": "float", "default": 0.0, "description": "Pan position (-1=left, 0=center, 1=right)"},
-      {"name": "level", "type": "float", "default": 1.0, "description": "Output level"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal"
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0,
+        "description": "Pan position (-1=left, 0=center, 1=right)"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Output level"
+      }
     ],
     "outputs": 2,
-    "category": "Panning"
+    "category": "Panning",
+    "functions": [
+      "lin_pan2_ar",
+      "lin_pan2_kr"
+    ]
   },
   {
     "name": "Pan4",
     "description": "Four channel equal power panner. Pans a signal to quad speakers.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Mono input signal"},
-      {"name": "xpos", "type": "float", "default": 0.0, "description": "X position (-1 to 1, left to right)"},
-      {"name": "ypos", "type": "float", "default": 0.0, "description": "Y position (-1 to 1, back to front)"},
-      {"name": "level", "type": "float", "default": 1.0, "description": "Output level"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal"
+      },
+      {
+        "name": "xpos",
+        "type": "float",
+        "default": 0,
+        "description": "X position (-1 to 1, left to right)"
+      },
+      {
+        "name": "ypos",
+        "type": "float",
+        "default": 0,
+        "description": "Y position (-1 to 1, back to front)"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Output level"
+      }
     ],
     "outputs": 4,
-    "category": "Panning"
+    "category": "Panning",
+    "functions": [
+      "pan4_ar",
+      "pan4_kr"
+    ]
   },
   {
     "name": "Rotate2",
     "description": "Rotate a stereo signal in the stereo field. Equal power rotation.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "x", "type": "signal", "default": 0.0, "description": "X input signal"},
-      {"name": "y", "type": "signal", "default": 0.0, "description": "Y input signal"},
-      {"name": "pos", "type": "float", "default": 0.0, "description": "Rotation position (-1 to 1)"}
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "X input signal"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "Y input signal"
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0,
+        "description": "Rotation position (-1 to 1)"
+      }
     ],
     "outputs": 2,
-    "category": "Panning"
+    "category": "Panning",
+    "functions": [
+      "rotate2_ar",
+      "rotate2_kr"
+    ]
   },
   {
     "name": "XFade2",
     "description": "Equal power crossfade between two signals. Smooth crossfade using equal power curve.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "inA", "type": "signal", "default": 0.0, "description": "First input signal"},
-      {"name": "inB", "type": "signal", "default": 0.0, "description": "Second input signal"},
-      {"name": "pan", "type": "float", "default": 0.0, "description": "Crossfade position (-1=A only, 0=equal, 1=B only)"},
-      {"name": "level", "type": "float", "default": 1.0, "description": "Output level"}
+      {
+        "name": "inA",
+        "type": "signal",
+        "default": 0,
+        "description": "First input signal"
+      },
+      {
+        "name": "inB",
+        "type": "signal",
+        "default": 0,
+        "description": "Second input signal"
+      },
+      {
+        "name": "pan",
+        "type": "float",
+        "default": 0,
+        "description": "Crossfade position (-1=A only, 0=equal, 1=B only)"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Output level"
+      }
     ],
     "outputs": 1,
-    "category": "Panning"
+    "category": "Panning",
+    "functions": [
+      "x_fade2_ar",
+      "x_fade2_kr"
+    ]
   },
   {
     "name": "LinXFade2",
     "description": "Linear crossfade between two signals. Linear amplitude crossfade.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "inA", "type": "signal", "default": 0.0, "description": "First input signal"},
-      {"name": "inB", "type": "signal", "default": 0.0, "description": "Second input signal"},
-      {"name": "pan", "type": "float", "default": 0.0, "description": "Crossfade position (-1=A only, 0=equal, 1=B only)"},
-      {"name": "level", "type": "float", "default": 1.0, "description": "Output level"}
+      {
+        "name": "inA",
+        "type": "signal",
+        "default": 0,
+        "description": "First input signal"
+      },
+      {
+        "name": "inB",
+        "type": "signal",
+        "default": 0,
+        "description": "Second input signal"
+      },
+      {
+        "name": "pan",
+        "type": "float",
+        "default": 0,
+        "description": "Crossfade position (-1=A only, 0=equal, 1=B only)"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Output level"
+      }
     ],
     "outputs": 1,
-    "category": "Panning"
+    "category": "Panning",
+    "functions": [
+      "lin_x_fade2_ar",
+      "lin_x_fade2_kr"
+    ]
   },
   {
     "name": "PanAz",
     "description": "Azimuth panner for multiple speakers. Equal power panning to N speakers arranged in a circle.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "numChans", "type": "float", "default": 4.0, "description": "Number of output channels"},
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Mono input signal"},
-      {"name": "pos", "type": "float", "default": 0.0, "description": "Pan position (0 to 1=full rotation, 0=channel 0)"},
-      {"name": "level", "type": "float", "default": 1.0, "description": "Output level"},
-      {"name": "width", "type": "float", "default": 2.0, "description": "Width of panning envelope (1 to numChans)"},
-      {"name": "orientation", "type": "float", "default": 0.5, "description": "Speaker arrangement orientation"}
+      {
+        "name": "numChans",
+        "type": "float",
+        "default": 4,
+        "description": "Number of output channels"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal"
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0,
+        "description": "Pan position (0 to 1=full rotation, 0=channel 0)"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Output level"
+      },
+      {
+        "name": "width",
+        "type": "float",
+        "default": 2,
+        "description": "Width of panning envelope (1 to numChans)"
+      },
+      {
+        "name": "orientation",
+        "type": "float",
+        "default": 0.5,
+        "description": "Speaker arrangement orientation"
+      }
     ],
     "outputs": 4,
-    "category": "Panning"
+    "category": "Panning",
+    "functions": [
+      "pan_az_ar",
+      "pan_az_kr"
+    ]
   },
   {
     "name": "SplayAz",
     "description": "Spread array of channels over multiple speakers in azimuth. Like Splay but for surround.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "numChans", "type": "float", "default": 4.0, "description": "Number of output channels"},
-      {"name": "inArray", "type": "signal", "default": 0.0, "description": "Array of input signals"},
-      {"name": "spread", "type": "float", "default": 1.0, "description": "Spread amount (0=all center, 1=full spread)"},
-      {"name": "level", "type": "float", "default": 1.0, "description": "Output level"},
-      {"name": "width", "type": "float", "default": 2.0, "description": "Width of panning envelope"},
-      {"name": "center", "type": "float", "default": 0.0, "description": "Center position in circular space"},
-      {"name": "orientation", "type": "float", "default": 0.5, "description": "Speaker arrangement orientation"},
-      {"name": "levelComp", "type": "float", "default": 1.0, "description": "Level compensation"}
+      {
+        "name": "numChans",
+        "type": "float",
+        "default": 4,
+        "description": "Number of output channels"
+      },
+      {
+        "name": "inArray",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of input signals"
+      },
+      {
+        "name": "spread",
+        "type": "float",
+        "default": 1,
+        "description": "Spread amount (0=all center, 1=full spread)"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Output level"
+      },
+      {
+        "name": "width",
+        "type": "float",
+        "default": 2,
+        "description": "Width of panning envelope"
+      },
+      {
+        "name": "center",
+        "type": "float",
+        "default": 0,
+        "description": "Center position in circular space"
+      },
+      {
+        "name": "orientation",
+        "type": "float",
+        "default": 0.5,
+        "description": "Speaker arrangement orientation"
+      },
+      {
+        "name": "levelComp",
+        "type": "float",
+        "default": 1,
+        "description": "Level compensation"
+      }
     ],
     "outputs": 4,
-    "category": "Panning"
+    "category": "Panning",
+    "functions": [
+      "splay_az_ar",
+      "splay_az_kr"
+    ]
   }
 ]
