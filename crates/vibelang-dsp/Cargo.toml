@@ -1,6 +1,6 @@
 [package]
 name = "vibelang-dsp"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "SynthDef generation and UGen DSL for VibeLang"
 license = "MIT OR Apache-2.0"
