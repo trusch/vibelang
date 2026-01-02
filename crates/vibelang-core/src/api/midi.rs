@@ -1,17 +1,19 @@
 //! MIDI API for VibeLang Rhai scripts.
 //!
-//! This module provides the Rhai bindings for MIDI input support:
-//! - Device discovery and opening
-//! - Keyboard-to-voice routing
-//! - Drum pad mapping
-//! - CC/fader mapping
-//! - Callbacks for custom logic
+//! This module provides the unified Rhai bindings for MIDI support:
+//! - Device discovery and opening (both input and output)
+//! - Keyboard-to-voice routing (input)
+//! - Drum pad mapping (input)
+//! - CC/fader mapping (input)
+//! - Callbacks for custom logic (input)
+//! - Sending MIDI notes, CCs, pitch bend (output)
+//! - MIDI clock output
 
 use crate::api::require_handle;
 use crate::api::voice::Voice;
 use crate::midi::{
-    CcRoute, CcTarget, KeyboardRoute, MidiDeviceInfo, MidiInputManager,
-    NoteRoute, ParameterCurve, VelocityCurve,
+    CcRoute, CcTarget, KeyboardRoute, MidiBackend, MidiDeviceInfo, MidiInputManager,
+    MidiOutputHandle, MidiOutputManager, NoteRoute, ParameterCurve, VelocityCurve,
 };
 use crate::state::StateMessage;
 use rhai::{Array, Dynamic, Engine, EvalAltResult, FnPtr, Map};
@@ -31,28 +33,39 @@ static CALLBACK_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 // === Active MIDI Device Storage ===
 
-/// Global storage for active MIDI devices, keyed by device name.
+/// Global storage for active MIDI devices, keyed by device name + direction.
 /// This keeps MidiDevice handles alive across script reloads,
 /// allowing smart reloading without disconnecting MIDI devices.
 static ACTIVE_MIDI_DEVICES: std::sync::LazyLock<RwLock<HashMap<String, MidiDevice>>> =
     std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
+
+/// Global MIDI output manager (shared across all output devices).
+static MIDI_OUTPUT_MANAGER: std::sync::LazyLock<Mutex<MidiOutputManager>> =
+    std::sync::LazyLock::new(|| Mutex::new(MidiOutputManager::new()));
 
 /// Store a MIDI device to keep it alive, keyed by name for reuse.
 fn store_active_device(device: MidiDevice) {
     ACTIVE_MIDI_DEVICES
         .write()
         .unwrap()
-        .insert(device.info.name.clone(), device);
+        .insert(device.name.clone(), device);
 }
 
 /// Get an existing device by name if it's already connected.
 fn get_existing_device(name: &str) -> Option<MidiDevice> {
-    ACTIVE_MIDI_DEVICES.read().unwrap().get(name).cloned()
+    let name_lower = name.to_lowercase();
+    ACTIVE_MIDI_DEVICES
+        .read()
+        .unwrap()
+        .values()
+        .find(|d| d.name.to_lowercase().contains(&name_lower))
+        .cloned()
 }
 
 /// Clear all active MIDI devices (only called on full shutdown, not reload).
 pub fn clear_midi_devices() {
     ACTIVE_MIDI_DEVICES.write().unwrap().clear();
+    MIDI_OUTPUT_MANAGER.lock().unwrap().close_all();
 }
 
 /// Register a callback and return its ID.
@@ -122,31 +135,120 @@ pub fn execute_pending_callbacks(
     executed
 }
 
-/// A MIDI device handle for Rhai scripts.
+/// A unified MIDI device handle for Rhai scripts.
+///
+/// This type supports both input and output operations. When you call
+/// `midi_open("device")`, it will open the device for both input (receiving MIDI)
+/// and output (sending MIDI) if both are available.
 #[derive(Clone)]
 pub struct MidiDevice {
-    /// Device info
-    pub info: MidiDeviceInfo,
+    /// Device name (for display and matching)
+    pub name: String,
+    /// Device info (for input devices)
+    pub info: Option<MidiDeviceInfo>,
     /// The MIDI input manager (wrapped in Arc<Mutex> for thread safety).
-    /// Kept alive to maintain the MIDI connection.
+    /// Kept alive to maintain the MIDI input connection.
     #[allow(dead_code)]
-    manager: Arc<Mutex<MidiInputManager>>,
+    input_manager: Option<Arc<Mutex<MidiInputManager>>>,
+    /// The MIDI output handle for sending events.
+    output_handle: Option<MidiOutputHandle>,
+    /// Output device ID (for state registration)
+    pub output_device_id: Option<u32>,
 }
 
 impl MidiDevice {
     /// Get the device name.
     pub fn name(&mut self) -> String {
-        self.info.name.clone()
+        self.name.clone()
     }
 
-    /// Get the port index.
+    /// Get the port index (for input devices).
     pub fn port_index(&mut self) -> i64 {
-        self.info.port_index as i64
+        self.info.as_ref().map(|i| i.port_index as i64).unwrap_or(-1)
     }
 
     /// Check if the device is connected.
     pub fn is_open(&mut self) -> bool {
         true // If we have a MidiDevice, it's open
+    }
+
+    /// Check if this device supports input (receiving MIDI).
+    pub fn has_input(&mut self) -> bool {
+        self.input_manager.is_some()
+    }
+
+    /// Check if this device supports output (sending MIDI).
+    pub fn has_output(&mut self) -> bool {
+        self.output_handle.is_some()
+    }
+
+    /// Get the output device ID (if available).
+    pub fn id(&mut self) -> i64 {
+        self.output_device_id.map(|id| id as i64).unwrap_or(-1)
+    }
+
+    // === Output methods ===
+
+    /// Send a note-on event.
+    /// Channel is 1-16, note is 0-127, velocity is 0-127.
+    pub fn note_on(&mut self, channel: i64, note: i64, velocity: i64) -> Result<(), Box<EvalAltResult>> {
+        let handle = self.output_handle.as_ref().ok_or_else(|| {
+            Box::new(EvalAltResult::from("This MIDI device was not opened for output"))
+        })?;
+        handle
+            .note_on(
+                (channel.clamp(1, 16) - 1) as u8, // Convert 1-16 to 0-15
+                note.clamp(0, 127) as u8,
+                velocity.clamp(0, 127) as u8,
+            )
+            .map_err(|e| Box::new(EvalAltResult::ErrorSystem("MIDI output error".into(), e.into())))
+    }
+
+    /// Send a note-off event.
+    /// Channel is 1-16, note is 0-127.
+    pub fn note_off(&mut self, channel: i64, note: i64) -> Result<(), Box<EvalAltResult>> {
+        let handle = self.output_handle.as_ref().ok_or_else(|| {
+            Box::new(EvalAltResult::from("This MIDI device was not opened for output"))
+        })?;
+        handle
+            .note_off(
+                (channel.clamp(1, 16) - 1) as u8,
+                note.clamp(0, 127) as u8,
+            )
+            .map_err(|e| Box::new(EvalAltResult::ErrorSystem("MIDI output error".into(), e.into())))
+    }
+
+    /// Send a control change event.
+    /// Channel is 1-16, controller is 0-127, value is 0-127.
+    pub fn send_cc(&mut self, channel: i64, controller: i64, value: i64) -> Result<(), Box<EvalAltResult>> {
+        let handle = self.output_handle.as_ref().ok_or_else(|| {
+            Box::new(EvalAltResult::from("This MIDI device was not opened for output"))
+        })?;
+        handle
+            .control_change(
+                (channel.clamp(1, 16) - 1) as u8,
+                controller.clamp(0, 127) as u8,
+                value.clamp(0, 127) as u8,
+            )
+            .map_err(|e| Box::new(EvalAltResult::ErrorSystem("MIDI output error".into(), e.into())))
+    }
+
+    /// Send a pitch bend event.
+    /// Channel is 1-16, value is 0.0-1.0 (0.5 = center).
+    pub fn send_pitch_bend(&mut self, channel: i64, value: f64) -> Result<(), Box<EvalAltResult>> {
+        let handle = self.output_handle.as_ref().ok_or_else(|| {
+            Box::new(EvalAltResult::from("This MIDI device was not opened for output"))
+        })?;
+        // Convert 0.0-1.0 to -8192 to +8191
+        let bend_value = ((value.clamp(0.0, 1.0) - 0.5) * 16383.0) as i16;
+        handle
+            .pitch_bend((channel.clamp(1, 16) - 1) as u8, bend_value)
+            .map_err(|e| Box::new(EvalAltResult::ErrorSystem("MIDI output error".into(), e.into())))
+    }
+
+    /// Get the output handle for use by Voice routing.
+    pub fn get_output_handle(&self) -> Option<&MidiOutputHandle> {
+        self.output_handle.as_ref()
     }
 }
 
@@ -715,18 +817,58 @@ fn midi_device_on_cc(_device: &mut MidiDevice, cc: i64) -> CcCallbackBuilder {
 
 // === Global functions ===
 
-/// List available MIDI input devices (both ALSA and JACK).
+/// List all available MIDI devices with their capabilities.
+///
+/// Returns an array of maps with:
+/// - `name`: Device name
+/// - `index`: Index for opening by number
+/// - `input`: Boolean - device supports input (receiving MIDI)
+/// - `output`: Boolean - device supports output (sending MIDI)
+/// - `backend`: "ALSA" or "JACK"
 fn midi_devices() -> Array {
-    let devices = crate::midi::list_all_midi_devices();
+    // Get input devices
+    let input_devices = crate::midi::list_all_midi_devices();
+
+    // Get output devices
+    let output_devices = MidiOutputManager::list_devices().unwrap_or_default();
+
+    // Build a unified list - devices may appear in both lists
+    let mut device_map: HashMap<String, (bool, bool, String)> = HashMap::new();
+
+    for d in &input_devices {
+        let backend = match d.backend {
+            MidiBackend::Alsa => "ALSA".to_string(),
+            MidiBackend::Jack => "JACK".to_string(),
+        };
+        device_map.insert(d.name.clone(), (true, false, backend));
+    }
+
+    for d in &output_devices {
+        let backend = match d.backend {
+            MidiBackend::Alsa => "ALSA".to_string(),
+            MidiBackend::Jack => "JACK".to_string(),
+        };
+        if let Some(entry) = device_map.get_mut(&d.name) {
+            entry.1 = true; // Mark as also having output
+        } else {
+            device_map.insert(d.name.clone(), (false, true, backend));
+        }
+    }
+
+    // Convert to array sorted by name
+    let mut devices: Vec<_> = device_map.into_iter().collect();
+    devices.sort_by(|a, b| a.0.cmp(&b.0));
 
     devices
         .into_iter()
         .enumerate()
-        .map(|(index, d)| {
+        .map(|(index, (name, (has_input, has_output, backend)))| {
             let mut map = Map::new();
-            map.insert("name".into(), Dynamic::from(d.name));
-            // Use the position in the combined list as the user-facing index
+            map.insert("name".into(), Dynamic::from(name));
             map.insert("index".into(), Dynamic::from(index as i64));
+            map.insert("input".into(), Dynamic::from(has_input));
+            map.insert("output".into(), Dynamic::from(has_output));
+            map.insert("backend".into(), Dynamic::from(backend));
             Dynamic::from(map)
         })
         .collect()
@@ -734,76 +876,119 @@ fn midi_devices() -> Array {
 
 /// Open a MIDI device by name (partial match, case-insensitive).
 ///
-/// Searches through all available MIDI devices (ALSA and JACK) and opens
-/// the first one whose name contains the search string.
-/// If the device is already connected (from a previous reload), reuses the existing connection.
+/// Opens the device for both input AND output if both are available.
+/// If only input or only output is available, opens what's available.
 fn midi_open_by_name(name: &str) -> Result<MidiDevice, Box<EvalAltResult>> {
-    let handle = require_handle();
+    let runtime_handle = require_handle();
     let name_lower = name.to_lowercase();
 
-    // Get all available devices to find the full device name
-    let devices = crate::midi::list_all_midi_devices();
-
-    // Find a matching device
-    let device_info = devices
-        .iter()
-        .find(|d| d.name.to_lowercase().contains(&name_lower))
-        .ok_or_else(|| {
-            Box::new(EvalAltResult::from(format!(
-                "No MIDI device found matching '{}'. Available devices: {}",
-                name,
-                devices.iter().map(|d| d.name.as_str()).collect::<Vec<_>>().join(", ")
-            ))) as Box<EvalAltResult>
-        })?;
-
-    // Check if device is already connected (smart reload)
-    if let Some(existing_device) = get_existing_device(&device_info.name) {
-        log::info!(
-            "[MIDI] Reusing existing connection to '{}'",
-            device_info.name
-        );
-        return Ok(existing_device);
+    // Check if device is already connected
+    if let Some(existing) = get_existing_device(name) {
+        log::info!("[MIDI] Reusing existing connection to '{}'", existing.name);
+        return Ok(existing);
     }
 
-    // Device not connected, open it
-    let midi_tx = handle.midi_sender();
-    let (mut manager, rx) = MidiInputManager::new();
+    // Get all available devices
+    let input_devices = crate::midi::list_all_midi_devices();
+    let output_devices = MidiOutputManager::list_devices().unwrap_or_default();
 
-    // Open using the unified method
-    let info = manager
-        .open_device(device_info)
-        .map_err(|e| Box::new(EvalAltResult::from(e)) as Box<EvalAltResult>)?;
+    // Find matching input device
+    let input_device_info = input_devices
+        .iter()
+        .find(|d| d.name.to_lowercase().contains(&name_lower));
 
-    // Spawn a thread to forward messages to the runtime
-    std::thread::spawn(move || {
-        log::info!("[MIDI] Forwarding thread started");
-        while let Ok(msg) = rx.recv() {
-            log::debug!("[MIDI FORWARD] {:?}", msg);
-            let _ = midi_tx.send(msg);
+    // Find matching output device
+    let output_device_info = output_devices
+        .iter()
+        .find(|d| d.name.to_lowercase().contains(&name_lower));
+
+    // Must have at least one
+    if input_device_info.is_none() && output_device_info.is_none() {
+        let mut all_devices: Vec<_> = input_devices.iter().map(|d| d.name.as_str()).collect();
+        for d in &output_devices {
+            if !all_devices.contains(&d.name.as_str()) {
+                all_devices.push(&d.name);
+            }
         }
-        log::warn!("[MIDI] Forwarding thread ended");
-    });
+        return Err(Box::new(EvalAltResult::from(format!(
+            "No MIDI device found matching '{}'. Available: {}",
+            name, all_devices.join(", ")
+        ))));
+    }
 
-    let device = MidiDevice {
-        info,
-        manager: Arc::new(Mutex::new(manager)),
+    let device_name = input_device_info
+        .map(|d| d.name.clone())
+        .or_else(|| output_device_info.map(|d| d.name.clone()))
+        .unwrap_or_else(|| name.to_string());
+
+    // Open input if available
+    let (input_manager, input_info) = if let Some(device_info) = input_device_info {
+        let midi_tx = runtime_handle.midi_sender();
+        let (mut manager, rx) = MidiInputManager::new();
+
+        let info = manager
+            .open_device(device_info)
+            .map_err(|e| Box::new(EvalAltResult::from(e)) as Box<EvalAltResult>)?;
+
+        // Spawn a thread to forward messages to the runtime
+        std::thread::spawn(move || {
+            log::info!("[MIDI] Input forwarding thread started");
+            while let Ok(msg) = rx.recv() {
+                log::debug!("[MIDI FORWARD] {:?}", msg);
+                let _ = midi_tx.send(msg);
+            }
+            log::warn!("[MIDI] Input forwarding thread ended");
+        });
+
+        log::info!("[MIDI] Opened input: {}", info.name);
+        (Some(Arc::new(Mutex::new(manager))), Some(info))
+    } else {
+        (None, None)
     };
 
-    // Store a clone to keep the connection alive after script variables go out of scope
+    // Open output if available
+    let (output_handle, output_device_id) = if output_device_info.is_some() {
+        let mut manager = MIDI_OUTPUT_MANAGER.lock().unwrap();
+        match manager.open_by_name(name) {
+            Ok(handle) => {
+                let device_id = handle.device_id;
+
+                // Register the output device in state
+                let _ = runtime_handle.send(StateMessage::MidiOutputOpenDevice {
+                    device_id,
+                    info: handle.info.clone(),
+                    event_tx: handle.event_tx().clone(),
+                });
+
+                log::info!("[MIDI] Opened output: {}", handle.info.name);
+                (Some(handle), Some(device_id))
+            }
+            Err(e) => {
+                log::warn!("[MIDI] Could not open output: {}", e);
+                (None, None)
+            }
+        }
+    } else {
+        (None, None)
+    };
+
+    let device = MidiDevice {
+        name: device_name,
+        info: input_info,
+        input_manager,
+        output_handle,
+        output_device_id,
+    };
+
+    // Store a clone to keep the connection alive
     store_active_device(device.clone());
 
     Ok(device)
 }
 
 /// Open a MIDI device by index in the combined device list.
-///
-/// The index corresponds to the position in the list returned by `midi_devices()`.
-/// If the device is already connected (from a previous reload), reuses the existing connection.
 fn midi_open_by_index(index: i64) -> Result<MidiDevice, Box<EvalAltResult>> {
-    let handle = require_handle();
-
-    // Get all available devices
-    let devices = crate::midi::list_all_midi_devices();
+    let devices = midi_devices();
 
     let idx = index as usize;
     if idx >= devices.len() {
@@ -814,50 +999,41 @@ fn midi_open_by_index(index: i64) -> Result<MidiDevice, Box<EvalAltResult>> {
         ))));
     }
 
-    let device_info = &devices[idx];
+    let device_map = devices[idx].clone().cast::<Map>();
+    let name = device_map.get("name")
+        .and_then(|v| v.clone().into_string().ok())
+        .ok_or_else(|| Box::new(EvalAltResult::from("Invalid device at index")))?;
 
-    // Check if device is already connected (smart reload)
-    if let Some(existing_device) = get_existing_device(&device_info.name) {
-        log::info!(
-            "[MIDI] Reusing existing connection to '{}'",
-            device_info.name
-        );
-        return Ok(existing_device);
-    }
-
-    // Device not connected, open it
-    let midi_tx = handle.midi_sender();
-    let (mut manager, rx) = MidiInputManager::new();
-
-    // Open using the unified method
-    let info = manager
-        .open_device(device_info)
-        .map_err(|e| Box::new(EvalAltResult::from(e)) as Box<EvalAltResult>)?;
-
-    // Spawn a thread to forward messages
-    std::thread::spawn(move || {
-        log::info!("[MIDI] Forwarding thread started");
-        while let Ok(msg) = rx.recv() {
-            log::debug!("[MIDI FORWARD] {:?}", msg);
-            let _ = midi_tx.send(msg);
-        }
-        log::warn!("[MIDI] Forwarding thread ended");
-    });
-
-    let device = MidiDevice {
-        info,
-        manager: Arc::new(Mutex::new(manager)),
-    };
-
-    // Store a clone to keep the connection alive after script variables go out of scope
-    store_active_device(device.clone());
-
-    Ok(device)
+    midi_open_by_name(&name)
 }
 
 /// Open the first available MIDI device.
 fn midi_open_first() -> Result<MidiDevice, Box<EvalAltResult>> {
     midi_open_by_index(0)
+}
+
+// === MIDI Clock functions ===
+
+/// Enable MIDI clock output on a device.
+fn midi_clock_enable(device: &mut MidiDevice) -> Result<(), Box<EvalAltResult>> {
+    let device_id = device.output_device_id.ok_or_else(|| {
+        Box::new(EvalAltResult::from("This MIDI device was not opened for output"))
+    })?;
+
+    let handle = require_handle();
+    let _ = handle.send(StateMessage::MidiOutputSetClockEnabled { enabled: true });
+    let _ = handle.send(StateMessage::MidiOutputSetClockDevice {
+        device_id: Some(device_id),
+    });
+    log::info!("[MIDI] Clock output enabled on device {}", device.name);
+    Ok(())
+}
+
+/// Disable MIDI clock output.
+fn midi_clock_disable() {
+    let handle = require_handle();
+    let _ = handle.send(StateMessage::MidiOutputSetClockEnabled { enabled: false });
+    log::info!("[MIDI] Clock output disabled");
 }
 
 /// Enable or disable MIDI monitoring.
@@ -975,18 +1151,29 @@ pub fn register(engine: &mut Engine) {
     engine.register_type_with_name::<NoteCallbackBuilder>("NoteCallbackBuilder");
     engine.register_type_with_name::<CcCallbackBuilder>("CcCallbackBuilder");
 
-    // Global functions
+    // Global functions - device listing
     engine.register_fn("midi_devices", midi_devices);
-    engine.register_fn("midi_open", midi_open_by_name);
-    engine.register_fn("midi_open", midi_open_by_index);
-    engine.register_fn("midi_open", midi_open_first);
+
+    // Global functions - device opening (opens for both input AND output)
+    engine.register_fn("midi_open", midi_open_by_name);   // midi_open("name")
+    engine.register_fn("midi_open", midi_open_by_index);  // midi_open(0)
+    engine.register_fn("midi_open", midi_open_first);     // midi_open()
+
+    // Global functions - monitoring and control
     engine.register_fn("midi_monitor", midi_monitor);
     engine.register_fn("midi_clear", midi_clear);
+    engine.register_fn("midi_clock_enable", midi_clock_enable);
+    engine.register_fn("midi_clock_disable", midi_clock_disable);
 
-    // MidiDevice methods
+    // MidiDevice info methods
     engine.register_fn("name", MidiDevice::name);
     engine.register_fn("port_index", MidiDevice::port_index);
     engine.register_fn("is_open", MidiDevice::is_open);
+    engine.register_fn("has_input", MidiDevice::has_input);
+    engine.register_fn("has_output", MidiDevice::has_output);
+    engine.register_fn("id", MidiDevice::id);
+
+    // MidiDevice INPUT methods (routing)
     engine.register_fn("keyboard", midi_device_keyboard);
     engine.register_fn("channel", midi_device_channel);
     engine.register_fn("range", midi_device_range);
@@ -996,6 +1183,12 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("pitch_bend", midi_device_pitch_bend);
     engine.register_fn("on_note", midi_device_on_note);
     engine.register_fn("on_cc", midi_device_on_cc);
+
+    // MidiDevice OUTPUT methods (sending)
+    engine.register_fn("note_on", MidiDevice::note_on);
+    engine.register_fn("note_off", MidiDevice::note_off);
+    engine.register_fn("send_cc", MidiDevice::send_cc);
+    engine.register_fn("send_pitch_bend", MidiDevice::send_pitch_bend);
 
     // KeyboardRouteBuilder methods
     engine.register_fn("channel", KeyboardRouteBuilder::channel);

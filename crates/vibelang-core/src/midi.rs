@@ -9,7 +9,7 @@
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use jack::{Client, ClientOptions, MidiIn, Port, ProcessScope};
-use midir::{MidiInput, MidiInputConnection};
+use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
@@ -1039,6 +1039,44 @@ impl QueuedMidiEvent {
             bytes: vec![0xB0 | (channel & 0x0F), controller & 0x7F, value & 0x7F],
         }
     }
+
+    /// Create a pitch bend event
+    /// Value is in the range -8192 to +8191, centered at 0.
+    pub fn pitch_bend(channel: u8, value: i16) -> Self {
+        let centered = (value.clamp(-8192, 8191) + 8192) as u16;
+        let lsb = (centered & 0x7F) as u8;
+        let msb = ((centered >> 7) & 0x7F) as u8;
+        Self {
+            bytes: vec![0xE0 | (channel & 0x0F), lsb, msb],
+        }
+    }
+
+    /// Create a MIDI clock tick message (sent 24 times per quarter note)
+    pub fn clock() -> Self {
+        Self { bytes: vec![0xF8] }
+    }
+
+    /// Create a MIDI start message (start playback from beginning)
+    pub fn start() -> Self {
+        Self { bytes: vec![0xFA] }
+    }
+
+    /// Create a MIDI stop message (stop playback)
+    pub fn stop() -> Self {
+        Self { bytes: vec![0xFC] }
+    }
+
+    /// Create a MIDI continue message (resume playback from current position)
+    pub fn continue_msg() -> Self {
+        Self { bytes: vec![0xFB] }
+    }
+
+    /// Create a program change event
+    pub fn program_change(channel: u8, program: u8) -> Self {
+        Self {
+            bytes: vec![0xC0 | (channel & 0x0F), program & 0x7F],
+        }
+    }
 }
 
 /// JACK MIDI output client for the virtual keyboard.
@@ -1220,6 +1258,401 @@ impl Default for SharedMidiState {
         Self::new()
     }
 }
+
+// ============================================================================
+// MIDI Output Support
+// ============================================================================
+
+/// Information about a MIDI output device.
+#[derive(Debug, Clone)]
+pub struct MidiOutputDeviceInfo {
+    /// Device name (as reported by the system)
+    pub name: String,
+    /// Port index (for opening ALSA devices)
+    pub port_index: usize,
+    /// MIDI backend (ALSA or JACK)
+    pub backend: MidiBackend,
+}
+
+/// Handle to an open MIDI output device.
+///
+/// This handle can be cloned and shared between voices.
+/// All clones share the same underlying connection.
+///
+/// Note: MIDI timing is now managed by SuperCollider via SendTrig-based
+/// MIDI trigger synths. This handle is only used for immediate MIDI output.
+#[derive(Clone)]
+pub struct MidiOutputHandle {
+    /// Unique device ID
+    pub device_id: u32,
+    /// Device info
+    pub info: MidiOutputDeviceInfo,
+    /// Sender for queuing MIDI events (immediate delivery)
+    event_tx: Sender<QueuedMidiEvent>,
+}
+
+impl MidiOutputHandle {
+    /// Create a new MIDI output handle.
+    pub fn new(
+        device_id: u32,
+        info: MidiOutputDeviceInfo,
+        event_tx: Sender<QueuedMidiEvent>,
+    ) -> Self {
+        Self {
+            device_id,
+            info,
+            event_tx,
+        }
+    }
+
+    /// Get the device name.
+    pub fn name(&self) -> &str {
+        &self.info.name
+    }
+
+    /// Get the device ID.
+    pub fn device_id(&self) -> u32 {
+        self.device_id
+    }
+
+    /// Send a MIDI event to the output device.
+    pub fn send(&self, event: QueuedMidiEvent) -> Result<(), String> {
+        self.event_tx
+            .send(event)
+            .map_err(|e| format!("Failed to queue MIDI event: {}", e))
+    }
+
+    /// Send a note-on event.
+    pub fn note_on(&self, channel: u8, note: u8, velocity: u8) -> Result<(), String> {
+        self.send(QueuedMidiEvent::note_on(channel, note, velocity))
+    }
+
+    /// Send a note-off event.
+    pub fn note_off(&self, channel: u8, note: u8) -> Result<(), String> {
+        self.send(QueuedMidiEvent::note_off(channel, note))
+    }
+
+    /// Send a control change event.
+    pub fn control_change(&self, channel: u8, controller: u8, value: u8) -> Result<(), String> {
+        self.send(QueuedMidiEvent::control_change(channel, controller, value))
+    }
+
+    /// Send a pitch bend event (value: -8192 to +8191).
+    pub fn pitch_bend(&self, channel: u8, value: i16) -> Result<(), String> {
+        self.send(QueuedMidiEvent::pitch_bend(channel, value))
+    }
+
+    /// Send a MIDI clock tick.
+    pub fn clock(&self) -> Result<(), String> {
+        self.send(QueuedMidiEvent::clock())
+    }
+
+    /// Send a MIDI start message.
+    pub fn start(&self) -> Result<(), String> {
+        self.send(QueuedMidiEvent::start())
+    }
+
+    /// Send a MIDI stop message.
+    pub fn stop(&self) -> Result<(), String> {
+        self.send(QueuedMidiEvent::stop())
+    }
+
+    /// Get the event sender for this handle (immediate delivery).
+    pub fn event_tx(&self) -> &Sender<QueuedMidiEvent> {
+        &self.event_tx
+    }
+}
+
+impl std::fmt::Debug for MidiOutputHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MidiOutputHandle")
+            .field("device_id", &self.device_id)
+            .field("info", &self.info)
+            .finish()
+    }
+}
+
+/// ALSA MIDI output connection wrapper that runs in a separate thread.
+struct AlsaMidiOutputRunner {
+    /// Receiver for MIDI events to send
+    event_rx: Receiver<QueuedMidiEvent>,
+    /// The MIDI output connection
+    connection: MidiOutputConnection,
+}
+
+impl AlsaMidiOutputRunner {
+    /// Run the output loop (call this in a dedicated thread).
+    fn run(mut self) {
+        loop {
+            match self.event_rx.recv() {
+                Ok(event) => {
+                    if let Err(e) = self.connection.send(&event.bytes) {
+                        log::error!("Failed to send MIDI event: {}", e);
+                    }
+                }
+                Err(_) => {
+                    // Channel closed, exit thread
+                    log::debug!("ALSA MIDI output channel closed");
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// MIDI output manager.
+///
+/// Handles device discovery, connection, and message sending.
+/// Supports both ALSA (via midir) and JACK MIDI backends.
+///
+/// Note: MIDI timing is now managed by SuperCollider via SendTrig-based
+/// MIDI trigger synths. This manager only handles immediate MIDI output.
+pub struct MidiOutputManager {
+    /// Active ALSA output thread handles (kept alive)
+    alsa_threads: Vec<std::thread::JoinHandle<()>>,
+    /// Active JACK MIDI output clients
+    jack_outputs: Vec<JackMidiOutput>,
+    /// Connected device handles: device_id -> handle
+    connected_devices: HashMap<u32, MidiOutputHandle>,
+    /// Next device ID to allocate
+    next_device_id: u32,
+}
+
+impl MidiOutputManager {
+    /// Create a new MIDI output manager.
+    pub fn new() -> Self {
+        Self {
+            alsa_threads: Vec::new(),
+            jack_outputs: Vec::new(),
+            connected_devices: HashMap::new(),
+            next_device_id: 1,
+        }
+    }
+
+    /// List available MIDI output devices.
+    pub fn list_devices() -> Result<Vec<MidiOutputDeviceInfo>, String> {
+        let midi_out = MidiOutput::new("vibelang-probe")
+            .map_err(|e| format!("Failed to create MIDI output: {}", e))?;
+
+        let ports = midi_out.ports();
+        let mut devices = Vec::new();
+
+        for (index, port) in ports.iter().enumerate() {
+            let name = midi_out
+                .port_name(port)
+                .unwrap_or_else(|_| format!("Unknown Device {}", index));
+            devices.push(MidiOutputDeviceInfo {
+                name,
+                port_index: index,
+                backend: MidiBackend::Alsa,
+            });
+        }
+
+        // Also list JACK MIDI input ports (these accept MIDI from us)
+        if is_jack_running() {
+            if let Ok(jack_ports) = list_jack_midi_inputs() {
+                devices.extend(jack_ports);
+            }
+        }
+
+        Ok(devices)
+    }
+
+    /// Open a MIDI output device by name (partial match, case-insensitive).
+    pub fn open_by_name(&mut self, name: &str) -> Result<MidiOutputHandle, String> {
+        let devices = Self::list_devices()?;
+        let name_lower = name.to_lowercase();
+
+        let device = devices
+            .into_iter()
+            .find(|d| d.name.to_lowercase().contains(&name_lower))
+            .ok_or_else(|| format!("No MIDI output device found matching '{}'", name))?;
+
+        match device.backend {
+            MidiBackend::Alsa => self.open_alsa(device.port_index),
+            MidiBackend::Jack => self.open_jack(&device.name),
+        }
+    }
+
+    /// Open an ALSA MIDI output device by port index.
+    pub fn open_alsa(&mut self, port_index: usize) -> Result<MidiOutputHandle, String> {
+        let midi_out = MidiOutput::new("vibelang")
+            .map_err(|e| format!("Failed to create MIDI output: {}", e))?;
+
+        let ports = midi_out.ports();
+        let port = ports
+            .get(port_index)
+            .ok_or_else(|| format!("Invalid MIDI output port index: {}", port_index))?;
+
+        let name = midi_out
+            .port_name(port)
+            .unwrap_or_else(|_| format!("Unknown Device {}", port_index));
+
+        let connection = midi_out
+            .connect(port, "vibelang-output")
+            .map_err(|e| format!("Failed to connect to MIDI output device: {}", e))?;
+
+        // Create channel for sending events (immediate delivery)
+        let (event_tx, event_rx) = unbounded();
+
+        // Spawn a thread to handle sending
+        let runner = AlsaMidiOutputRunner {
+            event_rx,
+            connection,
+        };
+        let thread = std::thread::Builder::new()
+            .name(format!("midi-output-{}", name))
+            .spawn(move || runner.run())
+            .map_err(|e| format!("Failed to spawn MIDI output thread: {}", e))?;
+
+        self.alsa_threads.push(thread);
+
+        let device_id = self.next_device_id;
+        self.next_device_id += 1;
+
+        let handle = MidiOutputHandle {
+            device_id,
+            info: MidiOutputDeviceInfo {
+                name: name.clone(),
+                port_index,
+                backend: MidiBackend::Alsa,
+            },
+            event_tx,
+        };
+
+        self.connected_devices.insert(device_id, handle.clone());
+
+        log::info!(
+            "Connected to ALSA MIDI output device: {} (port {}, id {})",
+            name,
+            port_index,
+            device_id
+        );
+
+        Ok(handle)
+    }
+
+    /// Open a JACK MIDI output (creates a new JACK port).
+    pub fn open_jack(&mut self, target_port: &str) -> Result<MidiOutputHandle, String> {
+        let device_id = self.next_device_id;
+        self.next_device_id += 1;
+
+        let client_name = format!("vibelang-midiout-{}", device_id);
+        let port_name = "midi_out";
+
+        let jack_output = JackMidiOutput::new(&client_name, port_name)?;
+        let full_port_name = jack_output.port_name.clone();
+
+        // Auto-connect to the target port if specified
+        if !target_port.is_empty() {
+            if let Err(e) = connect_jack_midi_output(&client_name, &full_port_name, target_port) {
+                log::warn!("Failed to auto-connect JACK MIDI output: {}", e);
+            }
+        }
+
+        let event_tx = jack_output.event_tx.clone();
+        self.jack_outputs.push(jack_output);
+
+        let handle = MidiOutputHandle {
+            device_id,
+            info: MidiOutputDeviceInfo {
+                name: target_port.to_string(),
+                port_index: 0,
+                backend: MidiBackend::Jack,
+            },
+            event_tx,
+        };
+
+        self.connected_devices.insert(device_id, handle.clone());
+
+        log::info!(
+            "Created JACK MIDI output: {} -> {} (id {})",
+            full_port_name,
+            target_port,
+            device_id
+        );
+
+        Ok(handle)
+    }
+
+    /// Get a handle to a connected device by ID.
+    pub fn get_handle(&self, device_id: u32) -> Option<MidiOutputHandle> {
+        self.connected_devices.get(&device_id).cloned()
+    }
+
+    /// Get all connected device handles.
+    pub fn connected_devices(&self) -> Vec<MidiOutputHandle> {
+        self.connected_devices.values().cloned().collect()
+    }
+
+    /// Close all connections.
+    pub fn close_all(&mut self) {
+        self.connected_devices.clear();
+        self.jack_outputs.clear();
+        // Note: ALSA threads will exit when their channels are dropped
+    }
+}
+
+impl Default for MidiOutputManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// List available JACK MIDI input ports (these accept MIDI from our output).
+pub fn list_jack_midi_inputs() -> Result<Vec<MidiOutputDeviceInfo>, String> {
+    let (client, _status) = Client::new("vibelang-probe-out", ClientOptions::NO_START_SERVER)
+        .map_err(|e| format!("Failed to create JACK client for probing: {}", e))?;
+
+    let mut devices = Vec::new();
+
+    // Get all MIDI input ports (we connect our output to these)
+    let port_names = client.ports(
+        None,
+        Some("8 bit raw midi"),
+        jack::PortFlags::IS_INPUT,
+    );
+
+    for (index, name) in port_names.iter().enumerate() {
+        devices.push(MidiOutputDeviceInfo {
+            name: name.clone(),
+            port_index: index,
+            backend: MidiBackend::Jack,
+        });
+    }
+
+    Ok(devices)
+}
+
+/// List all available MIDI output devices (both ALSA and JACK).
+pub fn list_all_midi_output_devices() -> Vec<MidiOutputDeviceInfo> {
+    let mut all_devices = Vec::new();
+
+    // Get ALSA output devices
+    if let Ok(alsa_devices) = MidiOutputManager::list_devices() {
+        all_devices.extend(alsa_devices);
+    }
+
+    all_devices
+}
+
+/// Connect a JACK MIDI output port to an input port.
+pub fn connect_jack_midi_output(
+    client_name: &str,
+    source_port: &str,
+    dest_port: &str,
+) -> Result<(), String> {
+    let (client, _status) = Client::new(client_name, ClientOptions::NO_START_SERVER)
+        .map_err(|e| format!("Failed to create JACK client: {}", e))?;
+
+    client
+        .connect_ports_by_name(source_port, dest_port)
+        .map_err(|e| format!("Failed to connect JACK MIDI ports: {}", e))?;
+
+    log::info!("Connected JACK MIDI output: {} -> {}", source_port, dest_port);
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {

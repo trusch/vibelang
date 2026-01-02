@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use vibelang_sfz::SfzInstrumentHandle;
 
 use super::context::{self, SourceLocation};
+use super::midi::MidiDevice;
 use super::require_handle;
 
 /// A Voice builder for creating and configuring voices.
@@ -33,6 +34,12 @@ pub struct Voice {
     sfz_instrument: Option<String>,
     /// Source location where this voice was defined.
     source_location: SourceLocation,
+    /// MIDI output device ID (if routing to external MIDI hardware).
+    midi_output_device_id: Option<u32>,
+    /// MIDI channel for output (1-16, converted to 0-15 internally).
+    midi_channel: Option<u8>,
+    /// CC mappings: parameter_name -> CC number.
+    cc_mappings: HashMap<String, u8>,
 }
 
 impl Voice {
@@ -55,6 +62,9 @@ impl Voice {
             soloed: false,
             sfz_instrument: None,
             source_location,
+            midi_output_device_id: None,
+            midi_channel: None,
+            cc_mappings: HashMap::new(),
         }
     }
 
@@ -232,6 +242,72 @@ impl Voice {
         self
     }
 
+    /// Set the sound source to a MIDI output device.
+    ///
+    /// When a voice is routed to a MIDI output device, note and parameter
+    /// events will be sent as MIDI messages instead of SuperCollider commands.
+    ///
+    /// # Example
+    /// ```rhai
+    /// let midi_out = midi_open("Model 15", "output");
+    /// let lead = voice("lead")
+    ///     .on(midi_out)
+    ///     .channel(1)
+    ///     .cc(74, "filter")
+    ///     .apply();
+    /// ```
+    pub fn on_midi(mut self, device: MidiDevice) -> Result<Self, Box<EvalAltResult>> {
+        let device_id = device.output_device_id.ok_or_else(|| {
+            Box::new(EvalAltResult::from(
+                "MIDI device was not opened for output. Use midi_open(\"name\", \"output\") or midi_open(\"name\", \"both\")"
+            ))
+        })?;
+        self.midi_output_device_id = Some(device_id);
+        // Clear synth_name since we're routing to MIDI, not SuperCollider
+        self.synth_name = None;
+        self.sfz_instrument = None;
+        log::info!(
+            "[VOICE] Routing voice '{}' to MIDI output device '{}'",
+            self.name,
+            device.name
+        );
+        self.sync_state();
+        Ok(self)
+    }
+
+    /// Set the MIDI channel for this voice (1-16).
+    ///
+    /// Must be used with `.on(midi_output)` for MIDI output routing.
+    pub fn channel(mut self, ch: i64) -> Self {
+        // Convert 1-16 to 0-15 internally
+        self.midi_channel = Some((ch.clamp(1, 16) - 1) as u8);
+        self.sync_state();
+        self
+    }
+
+    /// Map a CC number to a parameter name for MIDI output.
+    ///
+    /// When `.set("param_name", value)` is called on a MIDI voice,
+    /// the mapped CC message will be sent instead of a SuperCollider command.
+    ///
+    /// # Example
+    /// ```rhai
+    /// let lead = voice("lead")
+    ///     .on(midi_out)
+    ///     .channel(1)
+    ///     .cc(74, "filter")      // Map CC#74 to "filter" param
+    ///     .cc(71, "resonance")   // Map CC#71 to "resonance" param
+    ///     .apply();
+    ///
+    /// lead.set("filter", 0.5);     // Sends CC#74 with value 64
+    /// lead.set("resonance", 0.8);  // Sends CC#71 with value 102
+    /// ```
+    pub fn cc(mut self, cc_num: i64, param_name: String) -> Self {
+        self.cc_mappings.insert(param_name, cc_num.clamp(0, 127) as u8);
+        self.sync_state();
+        self
+    }
+
     /// Set the polyphony.
     pub fn poly(mut self, count: i64) -> Self {
         self.polyphony = count;
@@ -319,6 +395,9 @@ impl Voice {
             sfz_instrument: self.sfz_instrument.clone(),
             vst_instrument: None,
             source_location: self.source_location.clone(),
+            midi_output_device_id: self.midi_output_device_id,
+            midi_channel: self.midi_channel,
+            cc_mappings: self.cc_mappings.clone(),
         });
     }
 
@@ -348,6 +427,9 @@ impl Voice {
             sfz_instrument: self.sfz_instrument.clone(),
             vst_instrument: None,
             source_location: self.source_location.clone(),
+            midi_output_device_id: self.midi_output_device_id,
+            midi_channel: self.midi_channel,
+            cc_mappings: self.cc_mappings.clone(),
         });
 
         self
@@ -499,6 +581,9 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("on", Voice::on);
     engine.register_fn("on", Voice::on_sfz);     // SFZ overload
     engine.register_fn("on", Voice::on_sample);  // Sample overload
+    engine.register_fn("on", Voice::on_midi);    // MIDI output overload
+    engine.register_fn("channel", Voice::channel);
+    engine.register_fn("cc", Voice::cc);
     engine.register_fn("poly", Voice::poly);
     engine.register_fn("gain", Voice::gain);
     engine.register_fn("set_param", Voice::set_param);

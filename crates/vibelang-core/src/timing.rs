@@ -7,6 +7,7 @@
 //! - [`TransportClock`] - Transport-aware clock for beat/time conversion
 //! - [`LatencyCompensation`] - Configurable latency for network/audio compensation
 
+#[cfg(feature = "native")]
 use rosc::OscTime;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -278,14 +279,16 @@ impl TransportClock {
         self.anchor_beat.to_float()
     }
 
-    /// Convert a beat position to an OSC timestamp for scheduling.
+    /// Convert a beat position to an OSC timestamp for scheduling (native only).
+    #[cfg(feature = "native")]
     pub fn beat_to_timestamp(&self, beat: BeatTime, now: Instant) -> OscTime {
         let (_, osc_time) = self.beat_to_timestamp_and_instant(beat, now);
         osc_time
     }
 
-    /// Convert a beat position to both an OSC timestamp and an Instant.
+    /// Convert a beat position to both an OSC timestamp and an Instant (native only).
     /// The Instant represents when the synth will be "live" on scsynth.
+    #[cfg(feature = "native")]
     pub fn beat_to_timestamp_and_instant(&self, beat: BeatTime, now: Instant) -> (Instant, OscTime) {
         let current = self.beat_at(now);
         let beats_until_target = beat.to_float() - current.to_float();
@@ -302,6 +305,22 @@ impl TransportClock {
         (target_instant, self.system_time_to_ntp(target_system))
     }
 
+    /// Convert a beat position to seconds from now.
+    pub fn beat_to_seconds(&self, beat: BeatTime, now: Instant) -> f64 {
+        let current = self.beat_at(now);
+        let beats_until_target = beat.to_float() - current.to_float();
+        let beats_per_second = self.bpm / 60.0;
+        let mut seconds_until_target = beats_until_target / beats_per_second;
+        seconds_until_target += self.latency.total_seconds();
+
+        if seconds_until_target < 0.0 {
+            seconds_until_target = self.latency.total_seconds().max(0.01);
+        }
+
+        seconds_until_target
+    }
+
+    #[cfg(feature = "native")]
     fn system_time_to_ntp(&self, time: SystemTime) -> OscTime {
         let elapsed = time
             .duration_since(UNIX_EPOCH)

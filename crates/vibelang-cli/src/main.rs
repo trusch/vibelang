@@ -27,7 +27,7 @@ use std::sync::Arc;
 use rhai::AST;
 use vibelang_core::api::context;
 use vibelang_core::state::StateMessage;
-use vibelang_core::RuntimeHandle;
+use vibelang_core::{AudioConfig, RuntimeHandle};
 
 /// VibeLang - SuperCollider Live Coding
 #[derive(Parser, Debug)]
@@ -73,6 +73,9 @@ enum Commands {
 
     /// Start the Language Server Protocol (LSP) server
     Lsp,
+
+    /// List available audio devices
+    Devices,
 }
 
 #[derive(Args, Debug)]
@@ -109,6 +112,26 @@ struct RunArgs {
     /// HTTP API server port (default: 1606)
     #[arg(long, value_name = "PORT", default_value = "1606")]
     api_port: u16,
+
+    /// Audio input device name
+    #[arg(long, value_name = "DEVICE")]
+    input_device: Option<String>,
+
+    /// Audio output device name
+    #[arg(long, value_name = "DEVICE")]
+    output_device: Option<String>,
+
+    /// Number of input channels (default: 2)
+    #[arg(long, default_value = "2")]
+    input_channels: u32,
+
+    /// Number of output channels (default: 2)
+    #[arg(long, default_value = "2")]
+    output_channels: u32,
+
+    /// Sample rate in Hz (e.g., 44100, 48000, 96000)
+    #[arg(long, value_name = "RATE")]
+    sample_rate: Option<u32>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -153,7 +176,14 @@ fn main() -> Result<()> {
                     For more information, try '--help'"
                 );
             }
-            run_vibe_file(args.file, watch, args.tui, args.import_paths, args.record, args.exit_after_sequence, args.api, args.api_port)
+            // Build audio configuration from CLI args
+            let audio_config = AudioConfig::new()
+                .with_input_device(args.input_device)
+                .with_output_device(args.output_device)
+                .with_input_channels(args.input_channels)
+                .with_output_channels(args.output_channels)
+                .with_sample_rate(args.sample_rate);
+            run_vibe_file(args.file, watch, args.tui, args.import_paths, args.record, args.exit_after_sequence, args.api, args.api_port, audio_config)
         }
         Some(Commands::Render(args)) => {
             render::render(args)
@@ -163,17 +193,22 @@ fn main() -> Result<()> {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(vibelang_lsp::run_lsp_server())
         }
+        Some(Commands::Devices) => {
+            // List available audio devices
+            vibelang_core::print_audio_devices()
+        }
         None => {
             // No subcommand - check if a file was provided directly or if --api is enabled
             if cli.file.is_some() || cli.api {
                 let watch = !cli.no_watch;
-                run_vibe_file(cli.file, watch, cli.tui, cli.import_paths, None, None, cli.api, cli.api_port)
+                run_vibe_file(cli.file, watch, cli.tui, cli.import_paths, None, None, cli.api, cli.api_port, AudioConfig::default())
             } else {
                 anyhow::bail!(
                     "Missing required argument: FILE\n\n\
                     Usage: vibe <FILE> [OPTIONS]\n\
                            vibe run <FILE> [OPTIONS]\n\
                            vibe --api               (API-only mode, no file needed)\n\
+                           vibe devices             (list available audio devices)\n\
                            vibe render <SCORE_FILE> [OPTIONS]\n\n\
                     For more information, try '--help'"
                 )
@@ -191,6 +226,7 @@ fn run_vibe_file(
     exit_after_sequence: Option<String>,
     api_enabled: bool,
     api_port: u16,
+    audio_config: AudioConfig,
 ) -> Result<()> {
     use vibelang_core::JackMidiOutput;
 
@@ -251,7 +287,7 @@ fn run_vibe_file(
 
     // 1-3. Start runtime (includes scsynth process, connection, and runtime thread)
     log::info!("Starting runtime...");
-    let runtime = vibelang_core::Runtime::start_default()
+    let runtime = vibelang_core::Runtime::start_with_audio_config(audio_config)
         .context("Failed to start runtime")?;
     let handle = runtime.handle();
 

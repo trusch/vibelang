@@ -16,11 +16,19 @@ mod model;
 
 pub use manager::StateManager;
 pub use messages::StateMessage;
+
+// Platform-independent types
 pub use model::{
     ActiveFadeJob, ActiveSequence, ActiveSynth, EffectState, GroupState, LoopStatus, MelodyState,
-    MeterLevel, MidiCallbackInfo, MidiCallbackType, MidiConfiguration, MidiDeviceState,
-    MidiRecordingState, PatternState, RecordedMidiNote, SampleInfo, SampleSlice, ScheduledEvent,
+    MeterLevel, PatternState, SampleInfo, SampleSlice, ScheduledEvent,
     ScheduledNoteOff, ScriptState, SequenceRunLog, VoiceState, VstInstrumentInfo,
+};
+
+// Native-only MIDI types
+#[cfg(feature = "native")]
+pub use model::{
+    MidiCallbackInfo, MidiCallbackType, MidiConfiguration, MidiDeviceState,
+    MidiOutputConfiguration, MidiOutputDeviceState, MidiRecordingState, RecordedMidiNote,
 };
 
 // Re-export scheduler types that are closely tied to state

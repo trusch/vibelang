@@ -5,15 +5,23 @@
 //! to detect errors like undefined synthdefs.
 
 use std::collections::HashSet;
+#[cfg(feature = "native")]
 use std::path::{Path, PathBuf};
+#[cfg(feature = "native")]
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "native")]
 use crossbeam_channel::{unbounded, Receiver};
 
+#[cfg(feature = "native")]
 use crate::api::{create_engine_with_paths, init_api};
+#[cfg(feature = "native")]
 use crate::runtime::RuntimeHandle;
+#[cfg(feature = "native")]
 use crate::score::extract_synthdef_name;
+#[cfg(feature = "native")]
 use crate::scsynth::Scsynth;
+#[cfg(feature = "native")]
 use crate::state::{StateManager, StateMessage};
 
 /// Result of script validation.
@@ -151,6 +159,7 @@ fn builtin_synthdefs() -> HashSet<String> {
 ///
 /// # Returns
 /// A `ValidationResult` containing any errors found.
+#[cfg(feature = "native")]
 pub fn validate_script(
     content: &str,
     file_path: Option<&Path>,
@@ -248,13 +257,15 @@ pub fn validate_script(
     result
 }
 
-/// Collected data from state messages.
+/// Collected data from state messages (native only).
+#[cfg(feature = "native")]
 struct CollectedData {
     synthdef_refs: Vec<SynthdefReference>,
     voice_names: HashSet<String>,
 }
 
-/// Collect synthdef references and voice names from state messages.
+/// Collect synthdef references and voice names from state messages (native only).
+#[cfg(feature = "native")]
 fn collect_from_messages(rx: &Receiver<StateMessage>) -> CollectedData {
     let mut data = CollectedData {
         synthdef_refs: Vec::new(),
@@ -287,7 +298,7 @@ fn collect_from_messages(rx: &Receiver<StateMessage>) -> CollectedData {
     data
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 mod tests {
     use super::*;
 

@@ -4,12 +4,15 @@
 //! It automatically detects the audio backend (JACK, ALSA, PulseAudio) and attempts
 //! to configure appropriate audio connections.
 
+use crate::audio_device::AudioConfig;
 use anyhow::{anyhow, Result};
+use rosc::{OscPacket, OscType};
+use std::net::UdpSocket;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Find the scsynth binary path based on the operating system.
 ///
@@ -123,19 +126,154 @@ pub struct ScsynthProcess {
     running: Arc<AtomicBool>,
 }
 
+/// Wait for scsynth to be ready by polling `/status` until we get a response.
+///
+/// This function sends OSC `/status` messages to scsynth and waits for `/status.reply`.
+/// It uses exponential backoff starting at 50ms, up to a maximum total timeout.
+///
+/// # Arguments
+/// * `port` - The UDP port scsynth is listening on
+/// * `timeout` - Maximum time to wait for scsynth to become ready
+///
+/// # Returns
+/// `Ok(())` if scsynth responded, or an error if the timeout was exceeded.
+pub fn wait_for_scsynth_ready(port: u16, timeout: Duration) -> Result<()> {
+    use rosc::{encoder, OscMessage};
+
+    let start = Instant::now();
+    let addr = format!("127.0.0.1:{}", port);
+
+    // Create a socket for sending/receiving status
+    let sock = UdpSocket::bind("0.0.0.0:0")?;
+    // Set a short timeout for receiving so we can retry
+    sock.set_read_timeout(Some(Duration::from_millis(100)))?;
+
+    // Build the /status message
+    let status_msg = OscMessage {
+        addr: "/status".to_string(),
+        args: vec![],
+    };
+    let status_packet = OscPacket::Message(status_msg);
+    let status_bytes = encoder::encode(&status_packet)?;
+
+    let mut attempt = 0;
+    let mut delay = Duration::from_millis(50);
+    let max_delay = Duration::from_millis(1000);
+
+    log::info!("Waiting for scsynth to become ready on port {}...", port);
+
+    loop {
+        // Check if we've exceeded the timeout
+        if start.elapsed() > timeout {
+            return Err(anyhow!(
+                "Timeout waiting for scsynth to start ({}s). \
+                 SuperCollider may not be installed correctly, or the audio device may be unavailable.",
+                timeout.as_secs()
+            ));
+        }
+
+        attempt += 1;
+        log::debug!("Sending /status to scsynth (attempt {})", attempt);
+
+        // Send status request
+        if let Err(e) = sock.send_to(&status_bytes, &addr) {
+            log::debug!("Failed to send /status: {}", e);
+            std::thread::sleep(delay);
+            delay = std::cmp::min(delay * 2, max_delay);
+            continue;
+        }
+
+        // Try to receive a response
+        let mut buf = [0u8; 4096];
+        match sock.recv_from(&mut buf) {
+            Ok((size, _)) => {
+                // Try to decode the response
+                if let Ok((_, packet)) = rosc::decoder::decode_udp(&buf[..size]) {
+                    if let OscPacket::Message(msg) = packet {
+                        if msg.addr == "/status.reply" {
+                            log::info!(
+                                "scsynth is ready (responded after {} attempts, {:.1}s)",
+                                attempt,
+                                start.elapsed().as_secs_f32()
+                            );
+                            // Log some server info if available
+                            if msg.args.len() >= 7 {
+                                if let (
+                                    Some(OscType::Int(_unused)),
+                                    Some(OscType::Int(ugens)),
+                                    Some(OscType::Int(synths)),
+                                    Some(OscType::Int(groups)),
+                                    Some(OscType::Int(synthdefs)),
+                                ) = (
+                                    msg.args.get(0),
+                                    msg.args.get(1),
+                                    msg.args.get(2),
+                                    msg.args.get(3),
+                                    msg.args.get(4),
+                                ) {
+                                    log::debug!(
+                                        "Server status: {} UGens, {} synths, {} groups, {} synthdefs",
+                                        ugens, synths, groups, synthdefs
+                                    );
+                                }
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::WouldBlock
+                    && e.kind() != std::io::ErrorKind::TimedOut
+                {
+                    log::debug!("Error receiving from scsynth: {}", e);
+                }
+            }
+        }
+
+        // Wait before next attempt with exponential backoff
+        std::thread::sleep(delay);
+        delay = std::cmp::min(delay * 2, max_delay);
+    }
+}
+
 impl ScsynthProcess {
-    /// Start scsynth on the specified UDP port.
+    /// Start scsynth on the specified UDP port with default audio configuration.
     ///
-    /// This function will:
-    /// 1. Spawn the scsynth process
-    /// 2. Detect and configure the audio backend (JACK, ALSA, or PulseAudio)
-    /// 3. Attempt to auto-connect JACK ports if JACK is running
+    /// This is a convenience wrapper around [`start_with_config`] that uses default
+    /// stereo (2 in, 2 out) audio settings.
     ///
     /// # Errors
     ///
     /// Returns an error if scsynth cannot be started or exits immediately.
     pub fn start(port: u16) -> Result<Self> {
+        Self::start_with_config(port, &AudioConfig::default())
+    }
+
+    /// Start scsynth on the specified UDP port with custom audio configuration.
+    ///
+    /// This function will:
+    /// 1. Spawn the scsynth process with the specified audio device and channel settings
+    /// 2. Detect and configure the audio backend (JACK, ALSA, or PulseAudio)
+    /// 3. Attempt to auto-connect JACK ports if JACK is running
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - UDP port for OSC communication
+    /// * `config` - Audio configuration (devices, channels, sample rate)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scsynth cannot be started or exits immediately.
+    pub fn start_with_config(port: u16, config: &AudioConfig) -> Result<Self> {
         log::info!("Starting scsynth on port {}...", port);
+        log::info!(
+            "Audio config: {} inputs, {} outputs{}{}",
+            config.input_channels,
+            config.output_channels,
+            config.output_device.as_ref().map(|d| format!(", device: {}", d)).unwrap_or_default(),
+            config.sample_rate.map(|r| format!(", sample rate: {}", r)).unwrap_or_default()
+        );
 
         // Find scsynth binary
         let scsynth_path = find_scsynth()?;
@@ -149,26 +287,40 @@ impl ScsynthProcess {
         #[cfg(target_os = "windows")]
         let jack_running = false;
 
-        // Start scsynth with stereo output
-        let mut child = Command::new(&scsynth_path)
-            .arg("-u")
-            .arg(port.to_string())
-            .arg("-i")
-            .arg("2") // Input channels (stereo)
-            .arg("-o")
-            .arg("2") // Output channels
-            .env("SC_JACK_DEFAULT_INPUTS", "system")
-            .env("SC_JACK_DEFAULT_OUTPUTS", "system")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                anyhow!(
-                    "Failed to start scsynth at '{}': {}. Is SuperCollider installed?",
-                    scsynth_path.display(),
-                    e
-                )
-            })?;
+        // Build scsynth command
+        let mut cmd = Command::new(&scsynth_path);
+        cmd.arg("-u").arg(port.to_string());
+
+        // Device selection (use output device as the main device for scsynth)
+        // scsynth's -H flag selects the audio device
+        if let Some(ref device) = config.output_device {
+            cmd.arg("-H").arg(device);
+        }
+
+        // Channel configuration
+        cmd.arg("-i").arg(config.input_channels.to_string());
+        cmd.arg("-o").arg(config.output_channels.to_string());
+
+        // Sample rate
+        if let Some(rate) = config.sample_rate {
+            cmd.arg("-S").arg(rate.to_string());
+        }
+
+        // Set JACK connection hints
+        cmd.env("SC_JACK_DEFAULT_INPUTS", "system");
+        cmd.env("SC_JACK_DEFAULT_OUTPUTS", "system");
+
+        // Capture output
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        let mut child = cmd.spawn().map_err(|e| {
+            anyhow!(
+                "Failed to start scsynth at '{}': {}. Is SuperCollider installed?",
+                scsynth_path.display(),
+                e
+            )
+        })?;
 
         // Spawn threads to capture and log scsynth output
         if let Some(stdout) = child.stdout.take() {
@@ -191,8 +343,11 @@ impl ScsynthProcess {
             });
         }
 
-        // Give scsynth a moment to start
-        std::thread::sleep(Duration::from_millis(200));
+        // Give scsynth a brief moment to start the process before polling
+        std::thread::sleep(Duration::from_millis(100));
+
+        // Wait for scsynth to be ready (up to 30 seconds for slow machines)
+        wait_for_scsynth_ready(port, Duration::from_secs(30))?;
 
         // Auto-connect JACK ports if JACK is running
         if jack_running {

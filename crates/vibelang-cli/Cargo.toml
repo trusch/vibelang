@@ -45,8 +45,8 @@ env_logger = "0.11"
 signal-hook = "0.3"
 
 # TUI
-ratatui = "0.28"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = "0.29"
 chrono = "0.4"
 crossbeam-channel = "0.5"
 
@@ -58,7 +58,7 @@ rdev = "0.5"
 
 # Render command
 tempfile = "3.10"
-which = "7"
+which = "8"
 rosc = "0.11"
 tar = "0.4"
 

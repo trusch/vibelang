@@ -5,20 +5,24 @@
 
 use crate::api::context::SourceLocation;
 use crate::events::{BeatEvent, FadeTargetType, Pattern};
-use crate::midi::{MidiBackend, MidiDeviceInfo, MidiRouting};
+#[cfg(feature = "native")]
+use crate::midi::{MidiBackend, MidiDeviceInfo, MidiOutputDeviceInfo, MidiRouting, QueuedMidiEvent};
+#[cfg(feature = "native")]
+use crossbeam_channel::Sender;
 use crate::sequences::SequenceDefinition;
 use crate::timing::TimeSignature;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Instant;
 
 // ============================================================================
-// MIDI State Structures
+// MIDI State Structures (native only)
 // ============================================================================
 
 /// Central MIDI configuration stored in state.
 ///
 /// This contains all MIDI routing configuration and device connections,
 /// making MIDI a first-class citizen in the state management system.
+#[cfg(feature = "native")]
 #[derive(Clone, Debug, Default)]
 pub struct MidiConfiguration {
     /// Connected MIDI devices: device_id -> device state
@@ -31,6 +35,7 @@ pub struct MidiConfiguration {
     pub monitor_enabled: bool,
 }
 
+#[cfg(feature = "native")]
 impl MidiConfiguration {
     /// Create a new empty MIDI configuration.
     pub fn new() -> Self {
@@ -45,6 +50,7 @@ impl MidiConfiguration {
 }
 
 /// State for a connected MIDI device.
+#[cfg(feature = "native")]
 #[derive(Clone, Debug)]
 pub struct MidiDeviceState {
     /// Unique device ID (allocated by state)
@@ -57,6 +63,7 @@ pub struct MidiDeviceState {
     pub generation: u64,
 }
 
+#[cfg(feature = "native")]
 impl MidiDeviceState {
     /// Create a new MIDI device state.
     pub fn new(id: u32, info: MidiDeviceInfo, backend: MidiBackend) -> Self {
@@ -70,6 +77,7 @@ impl MidiDeviceState {
 }
 
 /// Metadata for a registered MIDI callback.
+#[cfg(feature = "native")]
 #[derive(Clone, Debug)]
 pub struct MidiCallbackInfo {
     /// Unique callback ID
@@ -81,6 +89,7 @@ pub struct MidiCallbackInfo {
 }
 
 /// Type of MIDI callback.
+#[cfg(feature = "native")]
 #[derive(Clone, Debug)]
 pub enum MidiCallbackType {
     /// Note callback (channel, note, on_note_on, on_note_off)
@@ -100,10 +109,73 @@ pub enum MidiCallbackType {
 }
 
 // ============================================================================
-// MIDI Recording State
+// MIDI Output Configuration (native only)
+// ============================================================================
+
+/// Configuration for MIDI output devices.
+///
+/// This stores the connected MIDI output devices and clock settings.
+#[cfg(feature = "native")]
+#[derive(Clone, Debug, Default)]
+pub struct MidiOutputConfiguration {
+    /// Connected MIDI output devices: device_id -> device state
+    pub devices: HashMap<u32, MidiOutputDeviceState>,
+    /// Whether MIDI clock output is enabled
+    pub clock_output_enabled: bool,
+    /// Device to send clock to (None = all devices)
+    pub clock_device_id: Option<u32>,
+    /// Send start/stop/continue messages on transport changes
+    pub send_transport_messages: bool,
+}
+
+#[cfg(feature = "native")]
+impl MidiOutputConfiguration {
+    /// Create a new empty MIDI output configuration.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+/// State for a connected MIDI output device.
+///
+/// Note: MIDI timing is now managed by SuperCollider via SendTrig-based
+/// MIDI trigger synths. This state only tracks the immediate output sender.
+#[cfg(feature = "native")]
+#[derive(Clone, Debug)]
+pub struct MidiOutputDeviceState {
+    /// Unique device ID (allocated by state)
+    pub id: u32,
+    /// Device info (name, port, backend)
+    pub info: MidiOutputDeviceInfo,
+    /// Sender for queuing MIDI events (immediate delivery)
+    pub event_tx: Sender<QueuedMidiEvent>,
+    /// Reload generation when this device was last seen
+    pub generation: u64,
+}
+
+#[cfg(feature = "native")]
+impl MidiOutputDeviceState {
+    /// Create a new MIDI output device state.
+    pub fn new(
+        id: u32,
+        info: MidiOutputDeviceInfo,
+        event_tx: Sender<QueuedMidiEvent>,
+    ) -> Self {
+        Self {
+            id,
+            info,
+            event_tx,
+            generation: 0,
+        }
+    }
+}
+
+// ============================================================================
+// MIDI Recording State (native only)
 // ============================================================================
 
 /// A single recorded MIDI note with timing information.
+#[cfg(feature = "native")]
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecordedMidiNote {
     /// Absolute beat position (quantized).
@@ -126,6 +198,7 @@ pub struct RecordedMidiNote {
 ///
 /// Records incoming MIDI notes with quantization for later export
 /// as pattern or melody syntax.
+#[cfg(feature = "native")]
 #[derive(Debug, Clone)]
 pub struct MidiRecordingState {
     /// Ring buffer of recorded notes (oldest first).
@@ -147,6 +220,7 @@ pub struct MidiRecordingState {
     pub oldest_beat: f64,
 }
 
+#[cfg(feature = "native")]
 impl Default for MidiRecordingState {
     fn default() -> Self {
         Self {
@@ -160,6 +234,7 @@ impl Default for MidiRecordingState {
     }
 }
 
+#[cfg(feature = "native")]
 impl MidiRecordingState {
     /// Create a new MIDI recording state with default settings.
     pub fn new() -> Self {
@@ -423,6 +498,7 @@ impl MidiRecordingState {
 }
 
 /// Map MIDI velocity (0-127) to step character.
+#[cfg(feature = "native")]
 fn velocity_to_step_char(velocity: u8) -> char {
     match velocity {
         0..=12 => '1',
@@ -440,6 +516,7 @@ fn velocity_to_step_char(velocity: u8) -> char {
 }
 
 /// Convert MIDI note number to note name (e.g., 60 -> "C4").
+#[cfg(feature = "native")]
 fn midi_note_to_name(note: u8) -> String {
     const NOTES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     let octave = (note / 12) as i8 - 1;
@@ -449,6 +526,7 @@ fn midi_note_to_name(note: u8) -> String {
 
 /// Determine the sub-group size for formatting within a bar.
 /// Returns a group size that divides the bar into 2-4 readable chunks.
+#[cfg(feature = "native")]
 fn get_subgroup_size(steps_per_bar: usize) -> usize {
     match steps_per_bar {
         1..=4 => steps_per_bar, // No sub-grouping for small bars
@@ -460,6 +538,7 @@ fn get_subgroup_size(steps_per_bar: usize) -> usize {
 }
 
 /// Format pattern with bar separators and sub-groupings.
+#[cfg(feature = "native")]
 fn format_pattern_with_bars(pattern: &[char], steps_per_bar: usize) -> String {
     let subgroup_size = get_subgroup_size(steps_per_bar);
 
@@ -477,11 +556,13 @@ fn format_pattern_with_bars(pattern: &[char], steps_per_bar: usize) -> String {
 }
 
 /// Format a group of melody tokens compactly (no spaces within groups).
+#[cfg(feature = "native")]
 fn format_melody_group(tokens: &[String]) -> String {
     tokens.concat()
 }
 
 /// Format melody tokens with bar separators and sub-groupings.
+#[cfg(feature = "native")]
 fn format_melody_with_bars(tokens: &[String], steps_per_bar: usize) -> String {
     let subgroup_size = get_subgroup_size(steps_per_bar);
 
@@ -571,16 +652,26 @@ pub struct ScriptState {
     pub reload_generation: u64,
     /// Global scrub mute flag.
     pub scrub_muted: bool,
-    /// MIDI configuration (devices, routing, callbacks).
+    /// MIDI configuration (devices, routing, callbacks) - native only.
+    #[cfg(feature = "native")]
     pub midi_config: MidiConfiguration,
-    /// Next available MIDI device ID.
+    /// Next available MIDI device ID - native only.
+    #[cfg(feature = "native")]
     pub next_midi_device_id: u32,
-    /// Next available MIDI callback ID.
+    /// Next available MIDI callback ID - native only.
+    #[cfg(feature = "native")]
     pub next_midi_callback_id: u64,
-    /// MIDI recording state for pattern/melody export.
+    /// MIDI recording state for pattern/melody export - native only.
+    #[cfg(feature = "native")]
     pub midi_recording: MidiRecordingState,
     /// Audio meter levels by group path.
     pub meter_levels: HashMap<String, MeterLevel>,
+    /// MIDI output configuration (devices, clock settings) - native only.
+    #[cfg(feature = "native")]
+    pub midi_output_config: MidiOutputConfiguration,
+    /// Next available MIDI output device ID - native only.
+    #[cfg(feature = "native")]
+    pub next_midi_output_device_id: u32,
 }
 
 // ============================================================================
@@ -647,6 +738,8 @@ impl ScriptState {
             next_midi_callback_id: 1,
             midi_recording: MidiRecordingState::new(),
             meter_levels: HashMap::new(),
+            midi_output_config: MidiOutputConfiguration::new(),
+            next_midi_output_device_id: 1,
         }
     }
 
@@ -683,14 +776,16 @@ impl ScriptState {
         id
     }
 
-    /// Allocate a new MIDI device ID.
+    /// Allocate a new MIDI device ID (native only).
+    #[cfg(feature = "native")]
     pub fn allocate_midi_device_id(&mut self) -> u32 {
         let id = self.next_midi_device_id;
         self.next_midi_device_id += 1;
         id
     }
 
-    /// Allocate a new MIDI callback ID.
+    /// Allocate a new MIDI callback ID (native only).
+    #[cfg(feature = "native")]
     pub fn allocate_midi_callback_id(&mut self) -> u64 {
         let id = self.next_midi_callback_id;
         self.next_midi_callback_id += 1;
@@ -802,6 +897,12 @@ pub struct VoiceState {
     pub run_generation: u64,
     /// Source location where this voice was defined.
     pub source_location: SourceLocation,
+    /// MIDI output device ID (if routing to external MIDI hardware).
+    pub midi_output_device_id: Option<u32>,
+    /// MIDI channel for output (0-15).
+    pub midi_channel: Option<u8>,
+    /// CC mappings: parameter_name -> CC number.
+    pub cc_mappings: HashMap<String, u8>,
 }
 
 impl VoiceState {
@@ -828,6 +929,9 @@ impl VoiceState {
             running_node_id: None,
             run_generation: 0,
             source_location: SourceLocation::default(),
+            midi_output_device_id: None,
+            midi_channel: None,
+            cc_mappings: HashMap::new(),
         }
     }
 

@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://vibelang.org">Website</a> •
-  <a href="https://vibelang.org/#docs">Documentation</a> •
+  <a href="https://vibelang.org/#/docs">Documentation</a> •
   <a href="https://vibelang.org/#demo">Examples</a> •
   <a href="https://github.com/trusch/vibelang/issues">Issues</a>
 </p>

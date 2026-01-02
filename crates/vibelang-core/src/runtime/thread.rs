@@ -6,6 +6,7 @@
 //! - Processes state messages
 //! - Communicates with SuperCollider
 
+use crate::audio_device::AudioConfig;
 use crate::events::{BeatEvent, FadeTargetType};
 use crate::midi::{MidiMessage, MidiRouting};
 use crate::osc_sender::{OscSender, OscTiming};
@@ -16,8 +17,8 @@ use crate::scsynth_process::ScsynthProcess;
 use rosc::{OscMessage, OscPacket, OscType};
 use crate::state::{
     ActiveFadeJob, ActiveSequence, ActiveSynth, EffectState, GroupState, LoopStatus,
-    MelodyState, PatternState, SampleInfo, ScheduledEvent, ScheduledNoteOff, ScriptState,
-    SequenceRunLog, StateManager, StateMessage, VoiceState,
+    MelodyState, PatternState, SampleInfo, ScheduledEvent, ScheduledNoteOff,
+    ScriptState, SequenceRunLog, StateManager, StateMessage, VoiceState,
 };
 use crate::timing::{BeatTime, TimeSignature, TransportClock};
 use anyhow::Result;
@@ -210,14 +211,25 @@ pub struct Runtime {
 impl Runtime {
     /// Start the VibeLang runtime with default settings.
     ///
-    /// Uses port 57110 and generates system synthdefs automatically.
+    /// Uses port 57110, default audio configuration, and generates system synthdefs automatically.
     pub fn start_default() -> Result<Self> {
-        // Generate system_link_audio synthdef bytes
-        let system_synthdef_bytes = create_system_link_audio_bytes()?;
-        Self::start(57110, &system_synthdef_bytes)
+        Self::start_with_audio_config(AudioConfig::default())
     }
 
-    /// Start the VibeLang runtime.
+    /// Start the VibeLang runtime with custom audio configuration.
+    ///
+    /// Uses port 57110 and generates system synthdefs automatically.
+    ///
+    /// # Arguments
+    ///
+    /// * `audio_config` - Audio device and channel configuration
+    pub fn start_with_audio_config(audio_config: AudioConfig) -> Result<Self> {
+        // Generate system_link_audio synthdef bytes
+        let system_synthdef_bytes = create_system_link_audio_bytes()?;
+        Self::start_full(57110, &system_synthdef_bytes, audio_config)
+    }
+
+    /// Start the VibeLang runtime with default audio configuration.
     ///
     /// This will:
     /// 1. Start the scsynth process
@@ -230,14 +242,29 @@ impl Runtime {
     /// * `port` - UDP port for scsynth (default: 57110)
     /// * `system_synthdef_bytes` - Pre-compiled bytes for system_link_audio synthdef
     pub fn start(port: u16, system_synthdef_bytes: &[u8]) -> Result<Self> {
-        // Start scsynth
+        Self::start_full(port, system_synthdef_bytes, AudioConfig::default())
+    }
+
+    /// Start the VibeLang runtime with full configuration options.
+    ///
+    /// This will:
+    /// 1. Start the scsynth process with the specified audio configuration
+    /// 2. Connect to scsynth via OSC
+    /// 3. Load system synthdefs
+    /// 4. Start the runtime thread
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - UDP port for scsynth (default: 57110)
+    /// * `system_synthdef_bytes` - Pre-compiled bytes for system_link_audio synthdef
+    /// * `audio_config` - Audio device and channel configuration
+    pub fn start_full(port: u16, system_synthdef_bytes: &[u8], audio_config: AudioConfig) -> Result<Self> {
+        // Start scsynth with audio configuration
+        // This now waits for scsynth to be ready by polling /status
         log::info!("1. Starting scsynth server...");
-        let process = ScsynthProcess::start(port)?;
+        let process = ScsynthProcess::start_with_config(port, &audio_config)?;
 
-        // Wait for scsynth to initialize
-        std::thread::sleep(Duration::from_millis(1000));
-
-        // Connect to scsynth
+        // Connect to scsynth (no additional sleep needed - start_with_config waits for readiness)
         log::info!("2. Connecting to scsynth...");
         let addr = format!("127.0.0.1:{}", port);
         let scsynth = Scsynth::new(&addr)?;
@@ -259,6 +286,13 @@ impl Runtime {
 
         // Load sample voice synthdefs (PlayBuf and Warp1 based)
         for (name, bytes) in crate::sample_synthdef::create_sample_synthdefs() {
+            scsynth.d_recv_bytes(bytes.clone())?;
+            system_synthdefs.push((name.clone(), bytes));
+            log::info!("   Loaded {} synthdef", name);
+        }
+
+        // Load MIDI trigger synthdefs (for SC-managed MIDI output)
+        for (name, bytes) in crate::midi_synthdefs::create_midi_synthdefs() {
             scsynth.d_recv_bytes(bytes.clone())?;
             system_synthdefs.push((name.clone(), bytes));
             log::info!("   Loaded {} synthdef", name);
@@ -385,6 +419,10 @@ struct RuntimeThread {
     completion_tx: Option<crossbeam_channel::Sender<String>>,
     /// MIDI message receiver.
     midi_rx: Receiver<MidiMessage>,
+    /// Handler for MIDI triggers from scsynth SendTrig messages.
+    midi_osc_handler: crate::midi_osc_handler::MidiOscHandler,
+    /// Node ID for the SC-managed MIDI clock synth (None = not running).
+    sc_midi_clock_node_id: Option<i32>,
 }
 
 impl RuntimeThread {
@@ -407,6 +445,8 @@ impl RuntimeThread {
             reload_manager: ReloadManager::new(),
             completion_tx: Some(completion_tx),
             midi_rx,
+            midi_osc_handler: crate::midi_osc_handler::MidiOscHandler::new(),
+            sc_midi_clock_node_id: None,
         }
     }
 
@@ -432,6 +472,99 @@ impl RuntimeThread {
         // Process all available MIDI messages
         while let Ok(msg) = self.midi_rx.try_recv() {
             self.process_midi_message(&routing, msg);
+        }
+    }
+
+    /// Send a MIDI message to all or a specific MIDI output device.
+    fn send_midi_clock_message(&self, event: crate::midi::QueuedMidiEvent) {
+        self.shared.with_state_read(|state| {
+            let config = &state.midi_output_config;
+            if let Some(target_id) = config.clock_device_id {
+                // Send to specific device
+                if let Some(device) = config.devices.get(&target_id) {
+                    let _ = device.event_tx.send(event.clone());
+                }
+            } else {
+                // Send to all devices
+                for device in config.devices.values() {
+                    let _ = device.event_tx.send(event.clone());
+                }
+            }
+        });
+    }
+
+    /// Start the SC-managed MIDI clock synth.
+    ///
+    /// The clock synth uses Impulse at the clock frequency to send clock pulses
+    /// at 24 PPQN (Pulses Per Quarter Note).
+    fn start_sc_midi_clock(&mut self, device_id: u32, bpm: f64) {
+        // Stop existing clock synth if running
+        self.stop_sc_midi_clock();
+
+        // Calculate clock frequency: BPM / 60 * 24 = Hz
+        let clock_freq = bpm / 60.0 * 24.0;
+
+        // Allocate node ID for the clock synth
+        let node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
+
+        log::info!(
+            "[SC-MIDI CLOCK] Starting clock synth: node={} device={} bpm={} freq={}Hz",
+            node_id, device_id, bpm, clock_freq
+        );
+
+        // Create the clock synth
+        if let Err(e) = self.osc_sender.s_new(
+            OscTiming::Now,
+            "vibelang_midi_clock",
+            NodeId::new(node_id),
+            AddAction::AddToTail,
+            Target::new(0),
+            &[
+                ("device_id", device_id as f32),
+                ("freq", clock_freq as f32),
+            ],
+            self.transport.beat_at(Instant::now()).to_float(),
+        ) {
+            log::error!("[SC-MIDI CLOCK] Failed to create clock synth: {}", e);
+            return;
+        }
+
+        self.sc_midi_clock_node_id = Some(node_id);
+    }
+
+    /// Stop the SC-managed MIDI clock synth.
+    fn stop_sc_midi_clock(&mut self) {
+        if let Some(node_id) = self.sc_midi_clock_node_id.take() {
+            log::info!("[SC-MIDI CLOCK] Stopping clock synth: node={}", node_id);
+
+            if let Err(e) = self.osc_sender.n_free(
+                OscTiming::Now,
+                NodeId::new(node_id),
+                self.transport.beat_at(Instant::now()).to_float(),
+            ) {
+                log::error!("[SC-MIDI CLOCK] Failed to free clock synth: {}", e);
+            }
+        }
+    }
+
+    /// Update the SC-managed MIDI clock synth tempo.
+    fn update_sc_midi_clock_tempo(&mut self, bpm: f64) {
+        if let Some(node_id) = self.sc_midi_clock_node_id {
+            let clock_freq = bpm / 60.0 * 24.0;
+
+            log::debug!(
+                "[SC-MIDI CLOCK] Updating clock tempo: node={} bpm={} freq={}Hz",
+                node_id, bpm, clock_freq
+            );
+
+            if let Err(e) = self.osc_sender.n_set(
+                OscTiming::Now,
+                NodeId::new(node_id),
+                &[("freq", clock_freq as f32)],
+                self.transport.beat_at(Instant::now()).to_float(),
+            ) {
+                log::error!("[SC-MIDI CLOCK] Failed to update clock tempo: {}", e);
+            }
         }
     }
 
@@ -929,21 +1062,35 @@ impl RuntimeThread {
                         }
                     }
                     "/fail" => {
-                        // Log failures at trace level - "node not found" is expected when
-                        // fades try to update synths that have already finished playing
-                        log::trace!("[OSC] scsynth failure: {:?}", msg.args);
+                        // Log failures - temporarily at debug level to diagnose MIDI issues
+                        log::debug!("[OSC] scsynth failure: {:?}", msg.args);
                     }
                     "/tr" => {
                         // /tr node_id trig_id value
-                        // Handle meter data from link synths (SendTrig)
-                        // Trig IDs: 0=peak_left, 1=peak_right, 2=rms_left, 3=rms_right
+                        // Handle both meter data and MIDI triggers from SendTrig
+                        // Meter Trig IDs: 0=peak_left, 1=peak_right, 2=rms_left, 3=rms_right
+                        // MIDI Trig IDs: 100+ (see midi_synthdefs::trigger_ids)
                         if msg.args.len() >= 3 {
+                            // Log all incoming triggers at debug level for debugging
                             if let (
+                                Some(rosc::OscType::Int(node_id)),
+                                Some(rosc::OscType::Int(trig_id)),
+                                Some(rosc::OscType::Float(value)),
+                            ) = (msg.args.first(), msg.args.get(1), msg.args.get(2)) {
+                                if *trig_id >= 100 {
+                                    log::debug!("[/tr] MIDI trigger: node={} trig_id={} value={}", node_id, trig_id, value);
+                                }
+                            }
+                            // First try to handle as MIDI trigger
+                            if self.midi_osc_handler.handle_osc(&msg.addr, &msg.args) {
+                                // Was a MIDI trigger, already handled
+                            } else if let (
                                 Some(rosc::OscType::Int(node_id)),
                                 Some(rosc::OscType::Int(trig_id)),
                                 Some(rosc::OscType::Float(value)),
                             ) = (msg.args.first(), msg.args.get(1), msg.args.get(2))
                             {
+                                // Not a MIDI trigger, try meter trigger
                                 self.handle_meter_trigger(*node_id, *trig_id, *value);
                             }
                         }
@@ -1022,6 +1169,9 @@ impl RuntimeThread {
                 });
                 // Also update OscSender's tempo for score capture timing
                 self.osc_sender.set_tempo(bpm);
+
+                // Update SC-managed MIDI clock synth tempo if running
+                self.update_sc_midi_clock_tempo(bpm);
             }
             StateMessage::SetQuantization { beats } => {
                 self.shared.with_state_write(|state| {
@@ -1048,10 +1198,28 @@ impl RuntimeThread {
                     state.transport_running = true;
                     state.bump_version();
                 });
+
+                // Send MIDI start message if clock output is enabled
+                let clock_enabled = self.shared.with_state_read(|state| {
+                    state.midi_output_config.clock_output_enabled
+                });
+                if clock_enabled {
+                    self.send_midi_clock_message(crate::midi::QueuedMidiEvent::start());
+                    log::info!("[MIDI CLOCK] Sent START message");
+                }
             }
             StateMessage::StopScheduler => {
                 let now = Instant::now();
                 let current_beat = self.transport.beat_at(now).to_float();
+
+                // Send MIDI stop message if clock output is enabled
+                let clock_enabled = self.shared.with_state_read(|state| {
+                    state.midi_output_config.clock_output_enabled
+                });
+                if clock_enabled {
+                    self.send_midi_clock_message(crate::midi::QueuedMidiEvent::stop());
+                    log::info!("[MIDI CLOCK] Sent STOP message");
+                }
 
                 // Stop transport and prevent new events
                 self.transport.stop(now);
@@ -1227,6 +1395,9 @@ impl RuntimeThread {
                 sfz_instrument,
                 vst_instrument,
                 source_location,
+                midi_output_device_id,
+                midi_channel,
+                cc_mappings,
             } => {
                 let generation = self.shared.with_state_read(|s| s.reload_generation);
                 // Check if gain changed and get running node if any
@@ -1256,6 +1427,9 @@ impl RuntimeThread {
                     voice.vst_instrument = vst_instrument;
                     voice.generation = generation;
                     voice.source_location = source_location;
+                    voice.midi_output_device_id = midi_output_device_id;
+                    voice.midi_channel = midi_channel;
+                    voice.cc_mappings = cc_mappings;
                     state.bump_version();
                 });
 
@@ -1280,6 +1454,32 @@ impl RuntimeThread {
                 });
             }
             StateMessage::SetVoiceParam { name, param, value } => {
+                // Check if this voice has MIDI CC mapping for this param
+                let midi_cc_info = self.shared.with_state_read(|state| {
+                    if let Some(voice) = state.voices.get(&name) {
+                        if let Some(device_id) = voice.midi_output_device_id {
+                            if let Some(&cc_num) = voice.cc_mappings.get(&param) {
+                                let channel = voice.midi_channel.unwrap_or(0);
+                                if let Some(device) = state.midi_output_config.devices.get(&device_id) {
+                                    return Some((device.event_tx.clone(), channel, cc_num));
+                                }
+                            }
+                        }
+                    }
+                    None
+                });
+
+                // Send MIDI CC if mapped
+                if let Some((event_tx, channel, cc_num)) = midi_cc_info {
+                    // Convert 0.0-1.0 to 0-127
+                    let cc_value = (value.clamp(0.0, 1.0) * 127.0) as u8;
+                    let midi_event = crate::midi::QueuedMidiEvent::control_change(channel, cc_num, cc_value);
+                    let _ = event_tx.send(midi_event);
+                    log::debug!("[MIDI_OUT] Voice '{}' CC: {}={} (param='{}', ch={})",
+                        name, cc_num, cc_value, param, channel + 1);
+                }
+
+                // Always update the local state too
                 self.shared.with_state_write(|state| {
                     if let Some(voice) = state.voices.get_mut(&name) {
                         voice.params.insert(param, value);
@@ -1921,6 +2121,128 @@ impl RuntimeThread {
                 log::info!("[MIDI] Recording history cleared");
             }
 
+            // === MIDI Output ===
+            StateMessage::MidiOutputOpenDevice { device_id, info, event_tx } => {
+                // Create a MidiOutputHandle for the OSC handler
+                // The OSC handler uses event_tx for immediate delivery when SC triggers fire
+                let handle = crate::midi::MidiOutputHandle::new(
+                    device_id,
+                    info.clone(),
+                    event_tx.clone(),
+                );
+
+                // Register with the MIDI OSC handler for SC-managed MIDI
+                self.midi_osc_handler.register_device(device_id, handle);
+
+                self.shared.with_state_write(|state| {
+                    let device_state = crate::state::MidiOutputDeviceState::new(
+                        device_id,
+                        info,
+                        event_tx,
+                    );
+                    state.midi_output_config.devices.insert(device_id, device_state);
+                    state.bump_version();
+                });
+                log::info!("[MIDI OUTPUT] Opened device {} (registered with SC-managed MIDI)", device_id);
+            }
+
+            StateMessage::MidiOutputCloseDevice { device_id } => {
+                // Unregister from MIDI OSC handler
+                self.midi_osc_handler.unregister_device(device_id);
+
+                self.shared.with_state_write(|state| {
+                    state.midi_output_config.devices.remove(&device_id);
+                    state.bump_version();
+                });
+                log::info!("[MIDI OUTPUT] Closed device {}", device_id);
+            }
+
+            StateMessage::MidiOutputCloseAllDevices => {
+                self.shared.with_state_write(|state| {
+                    state.midi_output_config.devices.clear();
+                    state.bump_version();
+                });
+                log::info!("[MIDI OUTPUT] Closed all devices");
+            }
+
+            StateMessage::MidiOutputNoteOn { device_id, channel, note, velocity } => {
+                if let Some(device) = self.shared.with_state_read(|state| {
+                    state.midi_output_config.devices.get(&device_id).cloned()
+                }) {
+                    let _ = device.event_tx.send(crate::midi::QueuedMidiEvent::note_on(channel, note, velocity));
+                }
+            }
+
+            StateMessage::MidiOutputNoteOff { device_id, channel, note } => {
+                if let Some(device) = self.shared.with_state_read(|state| {
+                    state.midi_output_config.devices.get(&device_id).cloned()
+                }) {
+                    let _ = device.event_tx.send(crate::midi::QueuedMidiEvent::note_off(channel, note));
+                }
+            }
+
+            StateMessage::MidiOutputControlChange { device_id, channel, controller, value } => {
+                if let Some(device) = self.shared.with_state_read(|state| {
+                    state.midi_output_config.devices.get(&device_id).cloned()
+                }) {
+                    let _ = device.event_tx.send(crate::midi::QueuedMidiEvent::control_change(channel, controller, value));
+                }
+            }
+
+            StateMessage::MidiOutputPitchBend { device_id, channel, value } => {
+                if let Some(device) = self.shared.with_state_read(|state| {
+                    state.midi_output_config.devices.get(&device_id).cloned()
+                }) {
+                    let _ = device.event_tx.send(crate::midi::QueuedMidiEvent::pitch_bend(channel, value));
+                }
+            }
+
+            StateMessage::MidiOutputSetClockEnabled { enabled } => {
+                // Get clock device ID and tempo before updating state
+                let (device_id, bpm) = self.shared.with_state_read(|state| {
+                    let device_id = state.midi_output_config.clock_device_id
+                        .or_else(|| state.midi_output_config.devices.keys().next().copied());
+                    (device_id, state.tempo)
+                });
+
+                self.shared.with_state_write(|state| {
+                    state.midi_output_config.clock_output_enabled = enabled;
+                    state.bump_version();
+                });
+
+                // Start or stop the SC-managed MIDI clock synth
+                if enabled {
+                    if let Some(device_id) = device_id {
+                        self.start_sc_midi_clock(device_id, bpm);
+                    } else {
+                        log::warn!("[SC-MIDI CLOCK] No MIDI output device available for clock");
+                    }
+                } else {
+                    self.stop_sc_midi_clock();
+                }
+
+                log::info!("[MIDI OUTPUT] Clock output {} (SC-managed)", if enabled { "enabled" } else { "disabled" });
+            }
+
+            StateMessage::MidiOutputSetClockDevice { device_id } => {
+                self.shared.with_state_write(|state| {
+                    state.midi_output_config.clock_device_id = device_id;
+                    state.bump_version();
+                });
+            }
+
+            StateMessage::MidiOutputSendStart => {
+                self.send_midi_clock_message(crate::midi::QueuedMidiEvent::start());
+            }
+
+            StateMessage::MidiOutputSendStop => {
+                self.send_midi_clock_message(crate::midi::QueuedMidiEvent::stop());
+            }
+
+            StateMessage::MidiOutputSendContinue => {
+                self.send_midi_clock_message(crate::midi::QueuedMidiEvent::continue_msg());
+            }
+
             // === OSC Feedback ===
             StateMessage::NodeCreated { .. } => {}
             StateMessage::NodeDestroyed { node_id } => {
@@ -2105,6 +2427,8 @@ impl RuntimeThread {
         self.shared.with_state_write(|state| {
             state.current_beat = current_beat;
         });
+
+        // Note: MIDI clock is now managed by SC via the clock synth (start_sc_midi_clock)
 
         // Process active sequences - start/stop patterns based on current beat
         self.process_active_sequences(current_beat);
@@ -2687,6 +3011,220 @@ impl RuntimeThread {
         let mut note_offs_to_schedule: Vec<(String, u8, i32, f32)> = Vec::new(); // (voice_name, note, node_id, duration)
 
         for event in events {
+            // Check if this event's voice is routed to MIDI output
+            let midi_output_info = event.voice_name.as_ref().and_then(|voice_name| {
+                self.shared.with_state_read(|state| {
+                    if let Some(voice) = state.voices.get(voice_name) {
+                        if let Some(device_id) = voice.midi_output_device_id {
+                            let channel = voice.midi_channel.unwrap_or(0);
+                            // Check device exists in the midi_osc_handler's registered devices
+                            if state.midi_output_config.devices.contains_key(&device_id) {
+                                return Some((device_id, channel, voice_name.clone()));
+                            }
+                        }
+                    }
+                    None
+                })
+            });
+
+            // If this is a MIDI voice, create SC-managed MIDI trigger synths
+            // These synths use SendTrig to fire OSC messages at sample-accurate times
+            if let Some((device_id, channel, voice_name)) = midi_output_info {
+                // Extract note and velocity from event controls
+                let freq = event.controls.iter()
+                    .find(|(k, _)| k == "freq")
+                    .map(|(_, v)| *v as f64)
+                    .unwrap_or(440.0);
+                let note = (69.0 + 12.0 * (freq / 440.0).log2()).round() as u8;
+                let velocity = event.controls.iter()
+                    .find(|(k, _)| k == "amp")
+                    .map(|(_, v)| (*v * 127.0).clamp(0.0, 127.0) as u8)
+                    .unwrap_or(100);
+
+                // Get duration for note-off scheduling
+                let duration = event.controls.iter()
+                    .find(|(k, _)| k == "gate")
+                    .map(|(_, v)| *v)
+                    .unwrap_or(0.25);
+
+                let off_beat = BeatTime::from_float(beat_time.to_float() + duration as f64);
+
+                log::info!(
+                    "[SC-MIDI] Creating MIDI trigger synths: voice='{}' ch={} note={} vel={} on_beat={:.2} off_beat={:.2}",
+                    voice_name, channel + 1, note, velocity,
+                    beat_time.to_float(), off_beat.to_float()
+                );
+
+                // Check polyphony limit and steal oldest voice if needed
+                let voice_to_steal = self.shared.with_state_read(|state| {
+                    if let Some(voice) = state.voices.get(&voice_name) {
+                        let active_count: usize = voice.active_notes.values().map(|v| v.len()).sum();
+                        if voice.polyphony > 0 && active_count >= voice.polyphony as usize {
+                            // Find oldest note to steal
+                            let oldest = voice.active_notes.iter()
+                                .flat_map(|(n, ids)| ids.iter().map(move |id| (*n, *id)))
+                                .next();
+                            if let Some((steal_note, _)) = oldest {
+                                log::debug!(
+                                    "[SC-MIDI-STEAL] Voice '{}' at polyphony limit ({}), will steal note {}",
+                                    voice_name, voice.polyphony, steal_note
+                                );
+                                return Some(steal_note);
+                            }
+                        }
+                    }
+                    None
+                });
+
+                // If we need to steal a voice, create note-off packet FIRST (in same bundle, before note-on)
+                if let Some(steal_note) = voice_to_steal {
+                    // Pack format: (device << 14) | (channel << 7) | note
+                    let packed_steal = ((device_id as u32) << 14)
+                        | ((channel as u32) << 7)
+                        | (steal_note as u32);
+
+                    let steal_node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
+                    let steal_packet = rosc::OscPacket::Message(rosc::OscMessage {
+                        addr: "/s_new".to_string(),
+                        args: vec![
+                            rosc::OscType::String("vibelang_midi_note_off".to_string()),
+                            rosc::OscType::Int(steal_node_id),
+                            rosc::OscType::Int(0), // addToHead
+                            rosc::OscType::Int(0), // default group
+                            rosc::OscType::String("packed_data".to_string()),
+                            rosc::OscType::Float(packed_steal as f32),
+                        ],
+                    });
+                    log::debug!("[SC-MIDI-STEAL] Adding stolen note_off packet: note={} packed={}", steal_note, packed_steal);
+                    packets.push(steal_packet);
+
+                    // Remove from active notes (specifically look for -2 marker for SC-managed MIDI)
+                    // AND cancel any orphaned scheduled note-off for this note
+                    self.shared.with_state_write(|state| {
+                        if let Some(voice) = state.voices.get_mut(&voice_name) {
+                            if let Some(notes) = voice.active_notes.get_mut(&steal_note) {
+                                // Remove one -2 marker (SC-managed MIDI)
+                                if let Some(pos) = notes.iter().position(|&id| id == -2) {
+                                    notes.remove(pos);
+                                } else {
+                                    // Fallback: pop any marker
+                                    notes.pop();
+                                }
+                                if notes.is_empty() {
+                                    voice.active_notes.remove(&steal_note);
+                                }
+                            }
+                        }
+                        // Cancel the orphaned scheduled note-off for the stolen note
+                        // This prevents duplicate note-offs when the scheduled time arrives
+                        let stolen_voice_name = voice_name.clone();
+                        state.scheduled_note_offs.retain(|entry| {
+                            let should_remove = entry.voice_name == stolen_voice_name
+                                && entry.note == steal_note
+                                && entry.node_id == Some(-2);
+                            if should_remove {
+                                log::debug!(
+                                    "[SC-MIDI-STEAL] Canceling orphaned scheduled note-off: voice='{}' note={} beat={:.2}",
+                                    entry.voice_name, entry.note, entry.beat
+                                );
+                            }
+                            !should_remove
+                        });
+                    });
+                }
+
+                // Create note-on trigger synth packet with packed MIDI data
+                // Pack format: (device << 21) | (channel << 14) | (note << 7) | velocity
+                // This allows all data to be sent in a single SendTrig, avoiding accumulator issues
+                let packed_note_on = ((device_id as u32) << 21)
+                    | ((channel as u32) << 14)
+                    | ((note as u32) << 7)
+                    | (velocity as u32);
+
+                let note_on_node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
+                let note_on_packet = rosc::OscPacket::Message(rosc::OscMessage {
+                    addr: "/s_new".to_string(),
+                    args: vec![
+                        rosc::OscType::String("vibelang_midi_note_on".to_string()),
+                        rosc::OscType::Int(note_on_node_id),
+                        rosc::OscType::Int(0), // addToHead
+                        rosc::OscType::Int(0), // default group
+                        rosc::OscType::String("packed_data".to_string()),
+                        rosc::OscType::Float(packed_note_on as f32),
+                    ],
+                });
+                log::debug!("[SC-MIDI] Adding note_on packet to bundle: node_id={} packed={} (device={} ch={} note={} vel={})",
+                    note_on_node_id, packed_note_on, device_id, channel, note, velocity);
+                packets.push(note_on_packet);
+
+                // Track active note for voice stealing
+                // Use -2 as marker for SC-managed MIDI notes (the synth handles note-off via OSC)
+                // This is different from -1 which is used by the direct MIDI path (handle_note_on)
+                self.shared.with_state_write(|state| {
+                    if let Some(voice) = state.voices.get_mut(&voice_name) {
+                        voice.active_notes.entry(note).or_default().push(-2); // -2 marker for SC-managed MIDI
+                    }
+                });
+
+                // Schedule note-off as a separate bundle at off_beat with packed MIDI data
+                // Pack format: (device << 14) | (channel << 7) | note
+                let packed_note_off = ((device_id as u32) << 14)
+                    | ((channel as u32) << 7)
+                    | (note as u32);
+
+                let note_off_node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
+                let note_off_packet = rosc::OscPacket::Message(rosc::OscMessage {
+                    addr: "/s_new".to_string(),
+                    args: vec![
+                        rosc::OscType::String("vibelang_midi_note_off".to_string()),
+                        rosc::OscType::Int(note_off_node_id),
+                        rosc::OscType::Int(0), // addToHead
+                        rosc::OscType::Int(0), // default group
+                        rosc::OscType::String("packed_data".to_string()),
+                        rosc::OscType::Float(packed_note_off as f32),
+                    ],
+                });
+
+                // Send note-off bundle slightly before off_beat to ensure proper re-triggering.
+                // When the same note is repeated (e.g., "1 1" in a melody), the note-off for
+                // the previous note and note-on for the next note have the same beat time.
+                // We subtract an offset (0.01 beats ≈ 5ms at 120 BPM, 10ms at 60 BPM) to ensure
+                // the note-off fires before the note-on, allowing the synth to re-trigger properly.
+                // This margin accounts for network jitter in the OSC round-trip.
+                let note_off_beat = BeatTime::from_float((off_beat.to_float() - 0.01).max(0.0));
+                log::debug!("[SC-MIDI] Sending note-off bundle at beat {:?} (off_beat={:?})", note_off_beat, off_beat);
+                if let Err(e) = self.osc_sender.send_bundle_at_beat(
+                    note_off_beat,
+                    vec![note_off_packet],
+                    &self.transport,
+                    now
+                ) {
+                    log::error!("[SC-MIDI] Failed to send note-off bundle: {}", e);
+                }
+
+                // Schedule cleanup of active_notes at off_beat (slightly before to match note-off timing)
+                // Use -2 marker to indicate SC-managed MIDI (synth handles the actual MIDI note-off)
+                {
+                    let voice_name_clone = voice_name.clone();
+                    let note_to_schedule = note; // Capture note value explicitly
+                    let scheduled_beat = note_off_beat.to_float();
+                    log::debug!(
+                        "[NOTE_LIFECYCLE] voice='{}' event='SCHEDULED_OFF' note={} marker=-2 beat={:.2}",
+                        voice_name, note_to_schedule, scheduled_beat
+                    );
+                    self.shared.with_state_write(|state| {
+                        state.scheduled_note_offs.push(ScheduledNoteOff {
+                            beat: scheduled_beat,
+                            voice_name: voice_name_clone,
+                            note: note_to_schedule,
+                            node_id: Some(-2), // -2 marker for SC-managed MIDI (don't send MIDI in handle_note_off)
+                        });
+                    });
+                }
+
+                continue; // Skip regular synth packet building for this event
+            }
+
             if let Some((packet, note_off_info)) = self.build_synth_packet(&event, live_instant) {
                 packets.push(packet);
                 if let Some((voice_name, note, node_id, duration)) = note_off_info {
@@ -2697,7 +3235,17 @@ impl RuntimeThread {
 
         // Send bundle with timetag (via OscSender for centralized handling)
         if !packets.is_empty() {
-            log::trace!("[BUNDLE] Sending timed bundle with {} packets at beat {:?}", packets.len(), beat_time);
+            log::debug!("[BUNDLE] About to send bundle with {} packets at beat {:?}", packets.len(), beat_time);
+            // Debug: Log what packets we're sending
+            for packet in &packets {
+                if let rosc::OscPacket::Message(msg) = packet {
+                    if msg.addr == "/s_new" {
+                        if let Some(rosc::OscType::String(name)) = msg.args.first() {
+                            log::debug!("[BUNDLE] Sending /s_new for '{}' at beat {:?}", name, beat_time);
+                        }
+                    }
+                }
+            }
 
             // OscSender handles both capturing to score and sending to scsynth
             if let Err(e) = self.osc_sender.send_bundle_at_beat(beat_time, packets, &self.transport, now) {
@@ -3050,13 +3598,13 @@ impl RuntimeThread {
         // Allocate node ID
         let node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
 
-        // Create synth
+        // Create synth - use AddToHead so voices execute BEFORE effects in the group
         let current_beat = self.transport.beat_at(Instant::now()).to_float();
         if let Err(e) = self.osc_sender.s_new(
             OscTiming::Now,
             &synth_def,
             NodeId::new(node_id),
-            AddAction::AddToTail,
+            AddAction::AddToHead,
             Target::from(group_id),
             &controls,
             current_beat,
@@ -3333,6 +3881,16 @@ impl RuntimeThread {
                     })
                 })
                 .unwrap_or(0);
+
+            // Skip if in_bus == out_bus (e.g., main group with audio_bus=0 and no parent)
+            // Creating a link synth that reads from and writes to the same bus would just double the audio
+            if in_bus == out_bus {
+                log::debug!(
+                    "[LINK] Skipping link synth for '{}': in_bus == out_bus == {}",
+                    path, in_bus
+                );
+                continue;
+            }
 
             // Allocate link synth node
             let link_node_id = self.shared.with_state_write(|state| state.allocate_synth_node());
@@ -3677,6 +4235,23 @@ impl RuntimeThread {
         group_path: Option<String>,
         params: Vec<(String, f32)>,
     ) -> Option<i32> {
+        // Check if voice is routed to MIDI output - if so, don't create SuperCollider synth
+        let is_midi_voice = self.shared.with_state_read(|state| {
+            state
+                .voices
+                .get(name)
+                .map(|v| v.midi_output_device_id.is_some())
+                .unwrap_or(false)
+        });
+
+        if is_midi_voice {
+            log::debug!(
+                "[TRIGGER] Voice '{}' is routed to MIDI output, skipping synth creation",
+                name
+            );
+            return None; // MIDI voices don't need SuperCollider synths
+        }
+
         let voice_info = self.shared.with_state_read(|state| {
             state.voices.get(name).map(|v| {
                 (
@@ -3745,6 +4320,113 @@ impl RuntimeThread {
     }
 
     fn handle_note_on(&mut self, voice_name: &str, note: u8, velocity: u8, duration: Option<f64>) {
+        // Check if voice is routed to MIDI output
+        let midi_output_info = self.shared.with_state_read(|state| {
+            if let Some(voice) = state.voices.get(voice_name) {
+                if let Some(device_id) = voice.midi_output_device_id {
+                    // Default to channel 0 if not specified
+                    let channel = voice.midi_channel.unwrap_or(0);
+                    // Get the device's event_tx
+                    if let Some(device) = state.midi_output_config.devices.get(&device_id) {
+                        return Some((device.event_tx.clone(), channel));
+                    }
+                }
+            }
+            None
+        });
+
+        // If this voice is routed to MIDI output, send MIDI message instead
+        if let Some((event_tx, channel)) = midi_output_info {
+            // Check polyphony limit and steal oldest voice if needed (for MIDI output)
+            let voice_to_steal = self.shared.with_state_read(|state| {
+                if let Some(voice) = state.voices.get(voice_name) {
+                    // Count total active notes
+                    let active_count: usize = voice.active_notes.values().map(|v| v.len()).sum();
+
+                    if voice.polyphony > 0 && active_count >= voice.polyphony as usize {
+                        // Find the oldest note to steal (use first entry)
+                        let oldest = voice.active_notes.iter()
+                            .flat_map(|(n, ids)| ids.iter().map(move |id| (*n, *id)))
+                            .next(); // Just get the first one for MIDI
+
+                        if let Some((steal_note, _)) = oldest {
+                            log::debug!(
+                                "[MIDI_VOICE_STEAL] Voice '{}' at polyphony limit ({}), stealing note {}",
+                                voice_name, voice.polyphony, steal_note
+                            );
+                            return Some(steal_note);
+                        }
+                    }
+                }
+                None
+            });
+
+            // Send Note OFF for stolen voice before new Note ON
+            if let Some(steal_note) = voice_to_steal {
+                let midi_off = crate::midi::QueuedMidiEvent::note_off(channel, steal_note);
+                let _ = event_tx.send(midi_off);
+                log::debug!("[MIDI_OUT] Voice '{}' note_off (stolen): note={}, ch={}", voice_name, steal_note, channel + 1);
+
+                // Remove from active notes AND cancel orphaned scheduled note-off
+                let voice_name_owned = voice_name.to_string();
+                self.shared.with_state_write(|state| {
+                    if let Some(voice) = state.voices.get_mut(voice_name) {
+                        if let Some(notes) = voice.active_notes.get_mut(&steal_note) {
+                            // Look for -1 marker (direct MIDI path)
+                            if let Some(pos) = notes.iter().position(|&id| id == -1) {
+                                notes.remove(pos);
+                            } else {
+                                notes.pop(); // Fallback: remove any instance
+                            }
+                            if notes.is_empty() {
+                                voice.active_notes.remove(&steal_note);
+                            }
+                        }
+                    }
+                    // Cancel the orphaned scheduled note-off for the stolen note
+                    state.scheduled_note_offs.retain(|entry| {
+                        let should_remove = entry.voice_name == voice_name_owned
+                            && entry.note == steal_note
+                            && entry.node_id == Some(-1);
+                        if should_remove {
+                            log::debug!(
+                                "[MIDI_VOICE_STEAL] Canceling orphaned scheduled note-off: voice='{}' note={} beat={:.2}",
+                                entry.voice_name, entry.note, entry.beat
+                            );
+                        }
+                        !should_remove
+                    });
+                });
+            }
+
+            let midi_event = crate::midi::QueuedMidiEvent::note_on(channel, note, velocity);
+            let _ = event_tx.send(midi_event);
+            log::debug!("[MIDI_OUT] Voice '{}' note_on: note={}, vel={}, ch={}", voice_name, note, velocity, channel + 1);
+
+            // Track active MIDI notes for note-off (using negative "node_id" as marker)
+            self.shared.with_state_write(|state| {
+                if let Some(voice) = state.voices.get_mut(voice_name) {
+                    // Use -1 as a marker for MIDI notes (no actual SuperCollider node)
+                    voice.active_notes.entry(note).or_default().push(-1);
+                }
+            });
+
+            // Schedule note-off if duration specified
+            if let Some(dur) = duration {
+                let current_beat = self.transport.beat_at(Instant::now()).to_float();
+                let off_beat = current_beat + dur;
+                self.shared.with_state_write(|state| {
+                    state.scheduled_note_offs.push(ScheduledNoteOff {
+                        beat: off_beat,
+                        voice_name: voice_name.to_string(),
+                        note,
+                        node_id: Some(-1), // Marker for MIDI note
+                    });
+                });
+            }
+            return;
+        }
+
         // Check polyphony limit and steal oldest voice if needed
         let voice_to_steal = self.shared.with_state_read(|state| {
             if let Some(voice) = state.voices.get(voice_name) {
@@ -3809,11 +4491,82 @@ impl RuntimeThread {
     }
 
     fn handle_note_off(&mut self, voice_name: &str, note: u8, specific_node_id: Option<i32>) {
+        // Check if this is a MIDI note (node_id == -1 or -2) or voice is routed to MIDI output
+        // -1 = direct MIDI path (from handle_note_on) - we need to send MIDI note-off
+        // -2 = SC-managed MIDI path (from fire_events_bundled) - synth already sends MIDI via OSC
+        let midi_output_info = self.shared.with_state_read(|state| {
+            if let Some(voice) = state.voices.get(voice_name) {
+                if let Some(device_id) = voice.midi_output_device_id {
+                    let channel = voice.midi_channel.unwrap_or(0);
+                    if let Some(device) = state.midi_output_config.devices.get(&device_id) {
+                        return Some((device.event_tx.clone(), channel));
+                    }
+                }
+            }
+            None
+        });
+
+        // Handle MIDI note-off
+        if let Some((event_tx, channel)) = midi_output_info {
+            // For SC-managed MIDI notes (-2), only clean up tracking - the synth already sent note-off
+            if specific_node_id == Some(-2) {
+                log::debug!("[MIDI OUTPUT] Cleanup only (SC-managed): voice='{}' ch={} note={}", voice_name, channel + 1, note);
+                // Just clean up active_notes, don't send MIDI (synth handles it via OSC)
+                self.shared.with_state_write(|state| {
+                    if let Some(voice) = state.voices.get_mut(voice_name) {
+                        if let Some(node_ids) = voice.active_notes.get_mut(&note) {
+                            if let Some(pos) = node_ids.iter().position(|&id| id == -2) {
+                                node_ids.remove(pos);
+                            }
+                            if node_ids.is_empty() {
+                                voice.active_notes.remove(&note);
+                            }
+                        }
+                    }
+                });
+                return;
+            }
+
+            // For direct MIDI notes (-1), send note-off and clean up
+            if specific_node_id == Some(-1) || specific_node_id.is_none() {
+                let midi_event = crate::midi::QueuedMidiEvent::note_off(channel, note);
+                let _ = event_tx.send(midi_event);
+                log::info!("[MIDI OUTPUT] note_off: voice='{}' ch={} note={}", voice_name, channel + 1, note);
+
+                // Remove from tracking
+                self.shared.with_state_write(|state| {
+                    if let Some(voice) = state.voices.get_mut(voice_name) {
+                        if let Some(node_ids) = voice.active_notes.get_mut(&note) {
+                            // Remove one -1 marker (or all if no specific node)
+                            if specific_node_id == Some(-1) {
+                                if let Some(pos) = node_ids.iter().position(|&id| id == -1) {
+                                    node_ids.remove(pos);
+                                }
+                            } else {
+                                node_ids.retain(|&id| id != -1);
+                            }
+                            if node_ids.is_empty() {
+                                voice.active_notes.remove(&note);
+                            }
+                        }
+                    }
+                });
+            }
+            return;
+        }
+
         // If we have a specific node ID, just release that node
         if let Some(node_id) = specific_node_id {
+            // Skip negative markers - they're handled above
+            if node_id < 0 {
+                return;
+            }
+
             log::debug!("[NOTE_OFF] Releasing specific node {} for voice '{}'", node_id, voice_name);
 
             // Remove from tracking BEFORE sending gate=0, so fades don't try to update it
+            // Also cancel any scheduled note-off for this specific node
+            let voice_name_owned = voice_name.to_string();
             self.shared.with_state_write(|state| {
                 state.active_synths.remove(&node_id);
                 state.pending_nodes.remove(&node_id);
@@ -3826,6 +4579,19 @@ impl RuntimeThread {
                         }
                     }
                 }
+                // Cancel any scheduled note-off for this specific node (prevents orphaned note-offs)
+                state.scheduled_note_offs.retain(|entry| {
+                    let should_remove = entry.voice_name == voice_name_owned
+                        && entry.note == note
+                        && entry.node_id == Some(node_id);
+                    if should_remove {
+                        log::debug!(
+                            "[NOTE_OFF] Canceling scheduled note-off: voice='{}' note={} node={} beat={:.2}",
+                            entry.voice_name, entry.note, node_id, entry.beat
+                        );
+                    }
+                    !should_remove
+                });
             });
 
             let current_beat = self.transport.beat_at(Instant::now()).to_float();
@@ -3857,7 +4623,10 @@ impl RuntimeThread {
         log::debug!("[NOTE_OFF] Releasing {} node(s) for voice '{}' note {}", nodes_to_release.len(), voice_name, note);
         let current_beat = self.transport.beat_at(Instant::now()).to_float();
         for node_id in nodes_to_release {
-            let _ = self.osc_sender.n_set(OscTiming::Now, NodeId::new(node_id), &[("gate", 0.0f32)], current_beat);
+            // Skip -1 markers (used for MIDI notes, not real SC nodes)
+            if node_id >= 0 {
+                let _ = self.osc_sender.n_set(OscTiming::Now, NodeId::new(node_id), &[("gate", 0.0f32)], current_beat);
+            }
         }
     }
 
@@ -4360,14 +5129,22 @@ impl RuntimeThread {
         });
 
         for note_off in due_offs {
+            log::debug!(
+                "[NOTE_LIFECYCLE] voice='{}' event='PROCESSING_OFF' note={} marker={:?} scheduled_beat={:.2} current_beat={:.2}",
+                note_off.voice_name, note_off.note, note_off.node_id, note_off.beat, current_beat
+            );
+
             // Capture note-off to score at the scheduled beat time (OscSender handles capture)
+            // Skip n_set for MIDI notes (node_id == -1 or -2 is a marker, not a real SC node)
             if let Some(node_id) = note_off.node_id {
-                let _ = self.osc_sender.n_set(
-                    OscTiming::AtBeat(BeatTime::from_float(note_off.beat)),
-                    NodeId::new(node_id),
-                    &[("gate".to_string(), 0.0f32)],
-                    note_off.beat, // current_beat param for fallback
-                );
+                if node_id >= 0 {
+                    let _ = self.osc_sender.n_set(
+                        OscTiming::AtBeat(BeatTime::from_float(note_off.beat)),
+                        NodeId::new(node_id),
+                        &[("gate".to_string(), 0.0f32)],
+                        note_off.beat, // current_beat param for fallback
+                    );
+                }
             }
 
             self.handle_note_off(&note_off.voice_name, note_off.note, note_off.node_id);
@@ -4611,7 +5388,7 @@ impl RuntimeThread {
             OscTiming::Now,
             &synthdef,
             NodeId::new(node_id),
-            AddAction::AddToTail,
+            AddAction::AddToHead,  // Voices go to head so they execute before effects
             target,
             &controls.iter().map(|(k, v)| (k.as_str(), *v)).collect::<Vec<_>>(),
             current_beat,

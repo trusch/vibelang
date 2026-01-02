@@ -10,6 +10,8 @@
 //! 3. Execute scripts that call the registered functions
 
 pub mod bar_utils;
+pub mod helpers;
+pub mod context;
 pub mod global;
 pub mod voice;
 pub mod pattern;
@@ -17,10 +19,9 @@ pub mod melody;
 pub mod sequence;
 pub mod group;
 pub mod synthdef;
-pub mod helpers;
-pub mod context;
 pub mod sfz;
 pub mod sample;
+pub mod audio_device;
 pub mod midi;
 
 // Re-export bar utilities for external use
@@ -28,6 +29,9 @@ pub use bar_utils::{count_bars, normalize_bars, split_into_bars};
 
 // Re-export MIDI callback functions for use by CLI
 pub use midi::{clear_callbacks, clear_midi_devices, execute_pending_callbacks, get_callback_fnptr};
+
+// Re-export sample types
+pub use sample::{SampleHandle, BpmAnalysis, detect_bpm, detect_bpm_from_file};
 
 use crate::runtime::RuntimeHandle;
 use rhai::Engine;
@@ -104,8 +108,11 @@ pub fn register_api(engine: &mut Engine) {
     // Register sample API
     sample::register(engine);
 
-    // Register MIDI API
+    // Register unified MIDI API (includes both input and output)
     midi::register(engine);
+
+    // Register audio device API
+    audio_device::register(engine);
 }
 
 /// Create a Rhai engine with all VibeLang API registered.
