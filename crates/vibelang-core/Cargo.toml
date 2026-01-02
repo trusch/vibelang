@@ -1,6 +1,6 @@
 [package]
 name = "vibelang-core"
-version = "0.1.6"
+version = "0.2.0"
 edition = "2021"
 description = "Core types and state management for VibeLang"
 license = "MIT OR Apache-2.0"
@@ -14,10 +14,10 @@ native = ["rosc", "jack", "midir", "cpal", "aubio-rs"]
 
 [dependencies]
 # SFZ support
-vibelang-sfz = "0.1"
+vibelang-sfz = "0.1.1"
 
 # DSP/Synthdef generation
-vibelang-dsp = "0.1.2"
+vibelang-dsp = "0.1.3"
 
 # Error handling
 anyhow = "1.0"

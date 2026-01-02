@@ -1,6 +1,6 @@
 [package]
 name = "vibelang-sfz"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "SFZ instrument support for VibeLang"
 license = "MIT OR Apache-2.0"
@@ -13,7 +13,7 @@ categories = ["multimedia::audio"]
 nom = "7.1"
 
 # DSP/Synthdef generation
-vibelang-dsp = "0.1"
+vibelang-dsp = "0.1.3"
 
 # Error handling
 anyhow = "1.0"

@@ -1,6 +1,6 @@
 [package]
 name = "vibelang-cli"
-version = "0.1.8"
+version = "0.2.0"
 edition = "2021"
 description = "CLI binary for VibeLang - the vibe command"
 license = "MIT OR Apache-2.0"
@@ -14,19 +14,19 @@ path = "src/main.rs"
 
 [dependencies]
 # Core runtime (state management, scheduling, OSC, Rhai API)
-vibelang-core = "0.1.6"
+vibelang-core = "0.2.0"
 
 # DSP layer (UGen generation, define_synthdef)
-vibelang-dsp = "0.1.2"
+vibelang-dsp = "0.1.3"
 
 # Standard library
-vibelang-std = "0.1.4"
+vibelang-std = "0.1.5"
 
 # LSP server
-vibelang-lsp = "0.1.0"
+vibelang-lsp = "0.1.1"
 
 # HTTP REST API server
-vibelang-http = "0.1.0"
+vibelang-http = "0.1.1"
 
 # Rhai scripting engine
 rhai = { version = "1.17", features = ["sync", "internals"] }
