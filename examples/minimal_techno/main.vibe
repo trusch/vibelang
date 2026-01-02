@@ -103,31 +103,34 @@ let drums = define_group("Drums", || {
     let rim = voice("rim").synth("rim").gain(db(-16));
 
     // Patterns
-    let kick_main = pattern("kick_main").on(kick).step("x... x... x... x...");
-    let kick_var = pattern("kick_var").on(kick).step("x... x... x... x.x.");
-    let kick_half = pattern("kick_half").on(kick).step("x... .... x... ....");
+    let kick_main = pattern("kick_main").on(kick).step("x... x... x... x...").apply();
+    let kick_var = pattern("kick_var").on(kick).step("x... x... x... x.x.").apply();
+    let kick_half = pattern("kick_half").on(kick).step("x... .... x... ....").apply();
     let kick_build = pattern("kick_build")
         .on(kick)
-        .step("x... x... x.x. x.x.");
+        .step("x... x... x.x. x.x.")
+        .apply();
 
-    let hat_off = pattern("hat_off").on(hat_c).step(".x.x .x.x");
-    let hat_var = pattern("hat_var").on(hat_c).step(".x.x .xxx");
-    let hat_busy = pattern("hat_busy").on(hat_c).step("x.xx x.xx");
-    let hat_16th = pattern("hat_16th").on(hat_c).step("xxxx xxxx");
-    let hat_open = pattern("hat_open").on(hat_o).step(".... .... x... ....");
+    let hat_off = pattern("hat_off").on(hat_c).step(".x.x .x.x").apply();
+    let hat_var = pattern("hat_var").on(hat_c).step(".x.x .xxx").apply();
+    let hat_busy = pattern("hat_busy").on(hat_c).step("x.xx x.xx").apply();
+    let hat_16th = pattern("hat_16th").on(hat_c).step("xxxx xxxx").apply();
+    let hat_open = pattern("hat_open").on(hat_o).step(".... .... x... ....").apply();
     let hat_open_var = pattern("hat_open_var")
         .on(hat_o)
-        .step(".... x... .... x...");
+        .step(".... x... .... x...")
+        .apply();
 
-    let clap_back = pattern("clap_back").on(clap).step(".... x... .... x...");
-    let clap_var = pattern("clap_var").on(clap).step(".... x... .... x..x");
+    let clap_back = pattern("clap_back").on(clap).step(".... x... .... x...").apply();
+    let clap_var = pattern("clap_var").on(clap).step(".... x... .... x..x").apply();
     let clap_build = pattern("clap_build")
         .on(clap)
-        .step(".... x... x... x.x.");
+        .step(".... x... x... x.x.")
+        .apply();
 
-    let rim_pattern = pattern("rim").on(rim).step("..x. ..x. ..x. ....");
-    let rim_var = pattern("rim_var").on(rim).step("..x. .... x.x. ....");
-    let rim_sparse = pattern("rim_sparse").on(rim).step("..x. .... .... ....");
+    let rim_pattern = pattern("rim").on(rim).step("..x. ..x. ..x. ....").apply();
+    let rim_var = pattern("rim_var").on(rim).step("..x. .... x.x. ....").apply();
+    let rim_sparse = pattern("rim_sparse").on(rim).step("..x. .... .... ....").apply();
 
     // Fades
     let fade_intro = fade("drums_intro")
@@ -135,13 +138,15 @@ let drums = define_group("Drums", || {
         .param("amp")
         .from(db(-20.0))
         .to(db(0.0))
-        .over_bars(8);
+        .over_bars(8)
+        .apply();
     let fade_outro = fade("drums_outro")
         .on_group("Drums")
         .param("amp")
         .from(db(0.0))
         .to(db(-40.0))
-        .over_bars(8);
+        .over_bars(8)
+        .apply();
 
     // Section sequences (8 bars each) - must .apply() to register for nesting
     let intro = sequence("drums_intro_seq").loop_bars(8)
@@ -261,32 +266,38 @@ let drums = define_group("Drums", || {
 // === BASS ===
 let bass = define_group("Bass", || {
     let sub = voice("sub")
-        .synth("pluck_bright")
+        .synth("bass_pluck_bright")
         .set_param("amp", db(-23.60))
         .poly(1);
 
     let bass_pulse = melody("bass_pulse")
         .on(sub)
-        .notes("E1 - - - | G1 - - - | E1 - - - | E1 - E1 -");
+        .notes("E1 - - - | G1 - - - | E1 - - - | E1 - E1 -")
+        .apply();
     let bass_var = melody("bass_var")
         .on(sub)
-        .notes("E1 - - - | E1 - G1 - | E1 - - - | D1 - E1 -");
+        .notes("E1 - - - | E1 - G1 - | E1 - - - | D1 - E1 -")
+        .apply();
     let bass_drive = melody("bass_drive")
         .on(sub)
-        .notes("E1 - E1 - | G1 - E1 - | E1 - E1 - | D1 - E1 -");
+        .notes("E1 - E1 - | G1 - E1 - | E1 - E1 - | D1 - E1 -")
+        .apply();
     let bass_minimal = melody("bass_minimal")
         .on(sub)
-        .notes("E1 - - - | - - - - | E1 - - - | - - - -");
+        .notes("E1 - - - | - - - - | E1 - - - | - - - -")
+        .apply();
     let bass_build = melody("bass_build")
         .on(sub)
-        .notes("E1 - - - | E1 - - - | E1 - E1 - | E1 E1 E1 E1");
+        .notes("E1 - - - | E1 - - - | E1 - E1 - | E1 E1 E1 E1")
+        .apply();
 
     let fade_outro = fade("bass_outro")
         .on_group("Bass")
         .param("amp")
         .from(db(0.0))
         .to(db(-40.0))
-        .over_bars(8);
+        .over_bars(8)
+        .apply();
 
     // Section sequences - must .apply() to register for nesting
     let drop1 = sequence("bass_drop1")
@@ -348,30 +359,40 @@ let synth = define_group("Synth", || {
 
     // Chicago-inspired signature melody and variations
     let chicago = melody("chicago").on(stab)
-        .notes("E3 . . E3 . . E3 . G3 . . G3 . . E3 . | E3 . . E3 . . G3 . E3 . . . . . . .");
+        .notes("E3 . . E3 . . E3 . G3 . . G3 . . E3 . | E3 . . E3 . . G3 . E3 . . . . . . .")
+        .apply();
     let chicago_high = melody("chicago_high").on(stab)
-        .notes("E3 . . E3 . . E3 . G3 . . B3 . . E3 . | E3 . . G3 . . B3 . E3 . . . . . . .");
+        .notes("E3 . . E3 . . E3 . G3 . . B3 . . E3 . | E3 . . G3 . . B3 . E3 . . . . . . .")
+        .apply();
     let chicago_minimal = melody("chicago_minimal").on(stab)
-        .notes("E3 . . E3 . . E3 . . . . . . . E3 . | E3 . . E3 . . . . E3 . . . . . . .");
+        .notes("E3 . . E3 . . E3 . . . . . . . E3 . | E3 . . E3 . . . . E3 . . . . . . .")
+        .apply();
     let chicago_busy = melody("chicago_busy").on(stab)
-        .notes("E3 . E3 E3 . . E3 . G3 . G3 G3 . . E3 . | E3 . E3 E3 . . G3 . E3 . E3 . . . . .");
+        .notes("E3 . E3 E3 . . E3 . G3 . G3 G3 . . E3 . | E3 . E3 E3 . . G3 . E3 . E3 . . . . .")
+        .apply();
     let chicago_offbeat = melody("chicago_offbeat").on(stab)
-        .notes(". E3 . . E3 . . E3 . G3 . . G3 . . E3 | . E3 . . E3 . . G3 . E3 . . . . . .");
+        .notes(". E3 . . E3 . . E3 . G3 . . G3 . . E3 | . E3 . . E3 . . G3 . E3 . . . . . .")
+        .apply();
     let chicago_octave = melody("chicago_octave").on(stab)
-        .notes("E4 . . E4 . . E4 . G4 . . G4 . . E4 . | E4 . . E4 . . G4 . E4 . . . . . . .");
+        .notes("E4 . . E4 . . E4 . G4 . . G4 . . E4 . | E4 . . E4 . . G4 . E4 . . . . . . .")
+        .apply();
     let chicago_held = melody("chicago_held").on(stab)
-        .notes("E3 - - - - - E3 - G3 - - - - - E3 - | E3 - - - - - G3 - E3 - - - - - - -");
+        .notes("E3 - - - - - E3 - G3 - - - - - E3 - | E3 - - - - - G3 - E3 - - - - - - -")
+        .apply();
     let chicago_build = melody("chicago_build").on(stab)
-        .notes("E3 . . . . . E3 . . . . . E3 . . . | E3 . . E3 . . E3 . E3 . E3 E3 E3 E3 E3");
+        .notes("E3 . . . . . E3 . . . . . E3 . . . | E3 . . E3 . . E3 . E3 . E3 E3 E3 E3 E3")
+        .apply();
     let chicago_sparse = melody("chicago_sparse").on(stab)
-        .notes("E3 - - - - - - - - - - - - - - - | . . . . . . . . G3 - - - - - - -");
+        .notes("E3 - - - - - - - - - - - - - - - | . . . . . . . . G3 - - - - - - -")
+        .apply();
 
     let fade_outro = fade("synth_outro")
         .on_group("Synth")
         .param("amp")
         .from(db(0.0))
         .to(db(-40.0))
-        .over_bars(8);
+        .over_bars(8)
+        .apply();
 
     // Effect fades
     let phaser_sweep = fade("phaser_sweep")
@@ -379,49 +400,57 @@ let synth = define_group("Synth", || {
         .param("rate")
         .from(0.2)
         .to(2.5)
-        .over_bars(4);
+        .over_bars(4)
+        .apply();
     let phaser_return = fade("phaser_return")
         .on_effect("stab_phaser")
         .param("rate")
         .from(2.5)
         .to(0.2)
-        .over_bars(2);
+        .over_bars(2)
+        .apply();
     let filter_open = fade("filter_open")
         .on_effect("stab_moog")
         .param("cutoff")
         .from(800.0)
         .to(6000.0)
-        .over_bars(4);
+        .over_bars(4)
+        .apply();
     let filter_close = fade("filter_close")
         .on_effect("stab_moog")
         .param("cutoff")
         .from(6000.0)
         .to(800.0)
-        .over_bars(2);
+        .over_bars(2)
+        .apply();
     let filter_big_open = fade("filter_big_open")
         .on_effect("stab_moog")
         .param("cutoff")
         .from(600.0)
         .to(8000.0)
-        .over_bars(8);
+        .over_bars(8)
+        .apply();
     let filter_big_close = fade("filter_big_close")
         .on_effect("stab_moog")
         .param("cutoff")
         .from(8000.0)
         .to(600.0)
-        .over_bars(2);
+        .over_bars(2)
+        .apply();
     let verb_swell = fade("verb_swell")
         .on_effect("stab_verb")
         .param("mix")
         .from(0.2)
         .to(0.7)
-        .over_bars(4);
+        .over_bars(4)
+        .apply();
     let verb_return = fade("verb_return")
         .on_effect("stab_verb")
         .param("mix")
         .from(0.7)
         .to(0.2)
-        .over_bars(2);
+        .over_bars(2)
+        .apply();
 
     // Section sequences - must .apply() to register for nesting
     let groove = sequence("synth_groove")
@@ -513,36 +542,43 @@ let atmosphere = define_group("Atmosphere", || {
     let pad = voice("pad").synth("pad").gain(db(-18)).poly(4);
 
     let pad_drone = melody("pad_drone").on(pad)
-        .notes("E3 - - - - - - - | - - - - - - - - | B2 - - - - - - - | - - - - - - - -");
+        .notes("E3 - - - - - - - | - - - - - - - - | B2 - - - - - - - | - - - - - - - -")
+        .apply();
     let pad_move = melody("pad_move").on(pad)
-        .notes("E3 - - - - - - - | - - - - - - - - | G3 - - - - - - - | - - - - - - - -");
+        .notes("E3 - - - - - - - | - - - - - - - - | G3 - - - - - - - | - - - - - - - -")
+        .apply();
     let pad_tension = melody("pad_tension").on(pad)
-        .notes("B2 - - - - - - - | - - - - - - - - | E3 - - - - - - - | - - - - - - - -");
+        .notes("B2 - - - - - - - | - - - - - - - - | E3 - - - - - - - | - - - - - - - -")
+        .apply();
 
     let fade_intro = fade("atmos_intro")
         .on_group("Atmosphere")
         .param("amp")
         .from(db(-25.0))
         .to(db(0.0))
-        .over_bars(8);
+        .over_bars(8)
+        .apply();
     let fade_outro = fade("atmos_outro")
         .on_group("Atmosphere")
         .param("amp")
         .from(db(0.0))
         .to(db(-40.0))
-        .over_bars(6);
+        .over_bars(6)
+        .apply();
     let verb_open = fade("pad_verb_open")
         .on_effect("pad_verb")
         .param("room")
         .from(0.6)
         .to(0.95)
-        .over_bars(4);
+        .over_bars(4)
+        .apply();
     let verb_close = fade("pad_verb_close")
         .on_effect("pad_verb")
         .param("room")
         .from(0.95)
         .to(0.6)
-        .over_bars(2);
+        .over_bars(2)
+        .apply();
 
     let intro = sequence("pad_intro").loop_bars(32)
         .clip(0..bars(8), fade_intro)
@@ -581,32 +617,37 @@ let risers = define_group("Risers", || {
     let riser = voice("riser").synth("riser").gain(db(-55)).poly(1);
 
     // Note durations must match fade durations for the fades to sweep while note is playing
-    let rise_tiny = melody("rise_tiny").on(riser).notes("C1 - - - - - - -"); // 1 bar
+    let rise_tiny = melody("rise_tiny").on(riser).notes("C1 - - - - - - -").apply(); // 1 bar
     let rise_short = melody("rise_short")
         .on(riser)
-        .notes("C1 - - - - - - - | - - - - - - - -"); // 2 bars
+        .notes("C1 - - - - - - - | - - - - - - - -")
+        .apply(); // 2 bars
     let rise_big = melody("rise_big")
         .on(riser)
-        .notes("C1 - - - - - - - | - - - - - - - - | - - - - - - - - | - - - - - - - - | - - - - - - - - | - - - - - - - -"); // 6 bars
+        .notes("C1 - - - - - - - | - - - - - - - - | - - - - - - - - | - - - - - - - - | - - - - - - - - | - - - - - - - -")
+        .apply(); // 6 bars
 
     let sweep_tiny = fade("sweep_tiny")
         .on_voice("riser")
         .param("cutoff")
         .from(300.0)
         .to(2500.0)
-        .over_bars(1);
+        .over_bars(1)
+        .apply();
     let sweep_short = fade("sweep_short")
         .on_voice("riser")
         .param("cutoff")
         .from(200.0)
         .to(3000.0)
-        .over_bars(2);
+        .over_bars(2)
+        .apply();
     let sweep_big = fade("sweep_big")
         .on_voice("riser")
         .param("cutoff")
         .from(150.0)
         .to(5000.0)
-        .over_bars(6);
+        .over_bars(6)
+        .apply();
 
     // Amp fades are MULTIPLIERS applied to voice_gain
     // final_amp = event_amp × voice_gain × fade_amp
@@ -615,19 +656,22 @@ let risers = define_group("Risers", || {
         .param("amp")
         .from(0.3)
         .to(1.0)
-        .over_bars(1);
+        .over_bars(1)
+        .apply();
     let amp_short = fade("amp_short")
         .on_voice("riser")
         .param("amp")
         .from(0.2)
         .to(1.0)
-        .over_bars(2);
+        .over_bars(2)
+        .apply();
     let amp_big = fade("amp_big")
         .on_voice("riser")
         .param("amp")
         .from(0.15)
         .to(1.0)
-        .over_bars(6);
+        .over_bars(6)
+        .apply();
 
     // Riser sequences - must .apply() to register for nesting
     let tiny_riser = sequence("tiny_riser").loop_bars(1)
@@ -671,11 +715,11 @@ let vocals = define_group("Vocals", || {
     let louder_voice = voice("louder").on(louder).gain(db(-20));
 
     // Pattern variations - different rhythmic feels with just "louder"
-    let hit = pattern("louder_hit").on(louder_voice).step("x... .... .... ....");
-    let offbeat = pattern("louder_offbeat").on(louder_voice).step(".... x... .... ....");
-    let louder_call = pattern("louder_call").on(louder_voice).step("x... .... x... ....");
-    let answer = pattern("louder_answer").on(louder_voice).step(".... x... .... x...");
-    let build = pattern("louder_build").on(louder_voice).step("x... x... x.x. x.x.");
+    let hit = pattern("louder_hit").on(louder_voice).step("x... .... .... ....").apply();
+    let offbeat = pattern("louder_offbeat").on(louder_voice).step(".... x... .... ....").apply();
+    let louder_call = pattern("louder_call").on(louder_voice).step("x... .... x... ....").apply();
+    let answer = pattern("louder_answer").on(louder_voice).step(".... x... .... x...").apply();
+    let build = pattern("louder_build").on(louder_voice).step("x... x... x.x. x.x.").apply();
 
     // Effect automation for movement
     let verb_swell = fade("vox_verb_swell")
@@ -683,13 +727,15 @@ let vocals = define_group("Vocals", || {
         .param("mix")
         .from(0.2)
         .to(0.7)
-        .over_bars(4);
+        .over_bars(4)
+        .apply();
     let verb_return = fade("vox_verb_return")
         .on_effect("vocals_verb")
         .param("mix")
         .from(0.7)
         .to(0.2)
-        .over_bars(2);
+        .over_bars(2)
+        .apply();
 
     // Section sequences
 

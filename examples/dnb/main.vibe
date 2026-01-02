@@ -24,37 +24,44 @@ let drums = define_group("Drums", ||{
     // Classic two-step kick pattern (1 bar)
     let kick_main = pattern("kick_main")
         .on(kick)
-        .step("x.....x.........");
+        .step("x.....x.........")
+        .apply();
 
     // Variation with extra hits (1 bar)
     let kick_var = pattern("kick_var")
         .on(kick)
-        .step("x.....x.....x...");
+        .step("x.....x.....x...")
+        .apply();
 
     // Snare on 2 and 4 - the backbone (1 bar)
     let snare_main = pattern("snare_main")
         .on(snare)
-        .step("....x.......x...");
+        .step("....x.......x...")
+        .apply();
 
     // Snare with ghost notes - rolling feel (1 bar)
     let snare_roll = pattern("snare_roll")
         .on(snare)
-        .step("..3.x.3.2.3.x.3.");
+        .step("..3.x.3.2.3.x.3.")
+        .apply();
 
     // Fast 16th hats (half bar)
     let hat_16 = pattern("hat_16")
         .on(hat)
-        .step("x.x.x.x.x.x.x.x.");
+        .step("x.x.x.x.x.x.x.x.")
+        .apply();
 
     // Breakbeat-style hat pattern (half bar)
     let hat_break = pattern("hat_break")
         .on(hat)
-        .step("x.x.x.x.x.x.x.x");
+        .step("x.x.x.x.x.x.x.x")
+        .apply();
 
     // Crash on the 1 of new sections (1 bar)
     let crash_hit = pattern("crash")
         .on(crash)
-        .step("x...............");
+        .step("x...............")
+        .apply();
 
     sequence("drums_seq")
         .loop_bars(16)
@@ -85,17 +92,20 @@ let bass = define_group("Bass", ||{
     // Reese bass - growling mid
     let reese_main = melody("reese_main")
         .on(reese)
-        .notes("E2 - - - | E2 - G2 - | E2 - - - | D2 - E2 -");
+        .notes("E2 - - - | E2 - G2 - | E2 - - - | D2 - E2 -")
+        .apply();
 
     // Sub bass - low end foundation
     let sub_main = melody("sub_main")
         .on(sub)
-        .notes("E1 - - - | E1 - - - | E1 - - - | D1 - E1 -");
+        .notes("E1 - - - | E1 - - - | E1 - - - | D1 - E1 -")
+        .apply();
 
     // Variation with movement
     let reese_var = melody("reese_var")
         .on(reese)
-        .notes("E2 - E2 - | G2 - E2 - | D2 - E2 - | G2 - A2 -");
+        .notes("E2 - E2 - | G2 - E2 - | D2 - E2 - | G2 - A2 -")
+        .apply();
 
     sequence("bass_seq")
         .loop_bars(16)
@@ -119,7 +129,8 @@ let atmos = define_group("Atmos", ||{
     let pad_main = melody("pad_main")
         .on(pad)
         .gate(0.95)
-        .notes("E4 - - - | - - - - | G4 - - - | - - - - | B4 - - - | - - - - | A4 - - - | - - - -");
+        .notes("E4 - - - | - - - - | G4 - - - | - - - - | B4 - - - | - - - - | A4 - - - | - - - -")
+        .apply();
 
     sequence("atmos_seq")
         .loop_bars(16)
@@ -155,11 +166,13 @@ let lead = define_group("Lead", ||{
     // Energetic stab pattern
     let stab_main = melody("stab_main")
         .on(stab)
-        .notes("E4 - - - | . . E4 - | G4 - - - | . . . .");
+        .notes("E4 - - - | . . E4 - | G4 - - - | . . . .")
+        .apply();
 
     let stab_var = melody("stab_var")
         .on(stab)
-        .notes("E4 - E4 - | . . G4 - | A4 - G4 - | E4 - - -");
+        .notes("E4 - E4 - | . . G4 - | A4 - G4 - | E4 - - -")
+        .apply();
 
     sequence("lead_seq")
         .loop_bars(16)
