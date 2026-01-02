@@ -11,7 +11,7 @@ use super::context;
 use super::require_handle;
 
 // =============================================================================
-// BPM Detection
+// BPM Detection (requires aubio)
 // =============================================================================
 
 /// Result of BPM analysis.

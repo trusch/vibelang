@@ -17,33 +17,46 @@
 //! flow through the [`StateMessage`] enum. The [`StateManager`] maintains
 //! the single source of truth, while the [`EventScheduler`] handles
 //! beat-accurate event timing.
+//!
+//! # Feature Flags
+//!
+//! - `native` (default) - Full native support with UDP OSC, JACK/ALSA MIDI, cpal audio
 
 pub mod api;
 pub mod events;
-pub mod midi;
-pub mod osc;
-pub mod osc_sender;
 pub mod reload;
-pub mod runtime;
 pub mod sample_synthdef;
 pub mod scheduler;
-pub mod score;
-pub mod scsynth;
-pub mod scsynth_process;
 pub mod sequences;
 pub mod state;
 pub mod timing;
 pub mod validation;
 
-// Re-export main types for convenience
+// Native-only modules (require system dependencies)
+#[cfg(feature = "native")]
+pub mod audio_device;
+#[cfg(feature = "native")]
+pub mod midi;
+#[cfg(feature = "native")]
+pub mod midi_osc_handler;
+#[cfg(feature = "native")]
+pub mod midi_synthdefs;
+#[cfg(feature = "native")]
+pub mod osc;
+#[cfg(feature = "native")]
+pub mod osc_sender;
+#[cfg(feature = "native")]
+pub mod runtime;
+#[cfg(feature = "native")]
+pub mod score;
+#[cfg(feature = "native")]
+pub mod scsynth;
+#[cfg(feature = "native")]
+pub mod scsynth_process;
+
+// Re-export main types for convenience (platform-independent)
 pub use events::{ActiveFade, BeatEvent, FadeClip, FadeTargetType, Pattern};
-pub use osc::OscClient;
-pub use osc_sender::{OscSender, OscTiming, ScoreCaptureState};
 pub use scheduler::{EventScheduler, LoopKind, LoopSnapshot};
-pub use scsynth::{AddAction, BufNum, NodeId, Scsynth, Target};
-pub use scsynth_process::ScsynthProcess;
-pub use runtime::{Runtime, RuntimeHandle};
-pub use score::{ScoreWriter, ScoredEvent, beats_to_seconds, seconds_to_osc_time, extract_synthdef_name};
 pub use sequences::{ClipMode, ClipSource, FadeDefinition, SequenceClip, SequenceDefinition};
 pub use state::{
     ActiveFadeJob, ActiveSequence, ActiveSynth, EffectState, GroupState,
@@ -54,6 +67,23 @@ pub use state::{
 pub use timing::{
     Bars, BeatTime, Beats, LatencyCompensation, TimeSignature, TransportClock,
 };
+
+// Native-only re-exports
+#[cfg(feature = "native")]
+pub use audio_device::{AudioConfig, AudioDeviceInfo, list_audio_devices, get_default_devices, print_audio_devices};
+#[cfg(feature = "native")]
+pub use osc::OscClient;
+#[cfg(feature = "native")]
+pub use osc_sender::{OscSender, OscTiming, ScoreCaptureState};
+#[cfg(feature = "native")]
+pub use scsynth::{AddAction, BufNum, NodeId, Scsynth, Target};
+#[cfg(feature = "native")]
+pub use scsynth_process::ScsynthProcess;
+#[cfg(feature = "native")]
+pub use runtime::{Runtime, RuntimeHandle};
+#[cfg(feature = "native")]
+pub use score::{ScoreWriter, ScoredEvent, beats_to_seconds, seconds_to_osc_time, extract_synthdef_name};
+#[cfg(feature = "native")]
 pub use midi::{
     CcCallback, CcRoute, CcTarget, JackMidiClient, JackMidiOutput, KeyboardRoute, MidiBackend,
     MidiDeviceInfo, MidiInputManager, MidiMessage, MidiRouting, NoteCallback, NoteRoute,
@@ -61,11 +91,19 @@ pub use midi::{
     is_jack_running, list_all_midi_devices, list_jack_midi_sources,
 };
 
-// Re-export API module
-pub use api::{init_api, get_handle, require_handle, register_api, create_engine, create_engine_with_paths};
+// Re-export API module (platform-independent parts)
+pub use api::{init_api, get_handle, register_api, create_engine};
+#[cfg(feature = "native")]
+pub use api::create_engine_with_paths;
 
-// Re-export validation module
-pub use validation::{validate_script, ValidationResult, ValidationError, SynthdefReference};
+// Native-only API re-exports
+#[cfg(feature = "native")]
+pub use api::require_handle;
+
+// Re-export validation module (types are platform-independent, validate_script is native-only)
+pub use validation::{ValidationResult, ValidationError, SynthdefReference};
+#[cfg(feature = "native")]
+pub use validation::validate_script;
 
 #[cfg(test)]
 mod tests {

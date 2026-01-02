@@ -65,7 +65,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                         Ok(event) => {
                             if is_subscribed(&event.event_type, &subscriptions) {
                                 let msg = serde_json::to_string(&event).unwrap_or_default();
-                                if sender.send(Message::Text(msg)).await.is_err() {
+                                if sender.send(Message::Text(msg.into())).await.is_err() {
                                     break;
                                 }
                             }

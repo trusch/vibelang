@@ -463,8 +463,8 @@ pub fn melody(ctx: NativeCallContext, name: String) -> Melody {
 enum NoteToken {
     /// A note or chord with MIDI number(s)
     Notes(Vec<u8>),
-    /// A scale degree (1-7) with optional chord quality to be resolved later with scale/root context
-    ScaleDegree(u8, Option<String>),
+    /// A scale degree (0 = root, positive = up the scale, negative = below root) with optional chord quality
+    ScaleDegree(i8, Option<String>),
     /// Tie/continuation marker (-)
     Tie,
     /// Rest marker (. or _)
@@ -483,9 +483,41 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
             // Whitespace is ignored (just for visual separation)
             ' ' | '\t' | '\n' | '\r' => {}
 
-            // Tie/continuation marker
+            // Tie/continuation marker OR negative scale degree
+            // If '-' is directly followed by a digit, it's a negative scale degree
             '-' => {
-                tokens.push(NoteToken::Tie);
+                if let Some(&next) = chars.peek() {
+                    if next.is_ascii_digit() {
+                        // Negative scale degree (e.g., "-1", "-2")
+                        let digit = chars.next().unwrap();
+                        let degree = -((digit as u8 - b'0') as i8);
+
+                        // Check for chord quality suffix (e.g., "-1:maj7")
+                        let chord_quality = if chars.peek() == Some(&':') {
+                            chars.next(); // consume ':'
+                            let mut quality = String::new();
+                            while let Some(&next) = chars.peek() {
+                                match next {
+                                    'a'..='z' | 'A'..='Z' | '0'..='9' => {
+                                        quality.push(chars.next().unwrap());
+                                    }
+                                    _ => break,
+                                }
+                            }
+                            if quality.is_empty() { None } else { Some(quality) }
+                        } else {
+                            None
+                        };
+
+                        tokens.push(NoteToken::ScaleDegree(degree, chord_quality));
+                    } else {
+                        // Not followed by digit - it's a tie
+                        tokens.push(NoteToken::Tie);
+                    }
+                } else {
+                    // End of string - it's a tie
+                    tokens.push(NoteToken::Tie);
+                }
             }
 
             // Rest markers
@@ -493,9 +525,10 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
                 tokens.push(NoteToken::Rest);
             }
 
-            // Scale degree (1-7), optionally with chord quality (e.g., "1:maj")
-            '1'..='7' => {
-                let degree = c as u8 - b'0';
+            // Scale degree (0-7), optionally with chord quality (e.g., "1:maj")
+            // 0 = root, 1-7 = scale degrees above root
+            '0'..='7' => {
+                let degree = (c as u8 - b'0') as i8;
 
                 // Check for chord quality suffix (e.g., ":maj7")
                 let chord_quality = if chars.peek() == Some(&':') {
@@ -654,9 +687,10 @@ fn parse_root_note(root: &str) -> u8 {
 }
 
 /// Resolve a scale degree to MIDI note(s).
+/// Degree 0 = root, positive = up the scale, negative = below root (staying in scale).
 /// If chord_quality is provided, returns multiple notes forming a chord.
 fn resolve_scale_degree(
-    degree: u8,
+    degree: i8,
     chord_quality: &Option<String>,
     scale: &Option<String>,
     root: &Option<String>,
@@ -669,11 +703,17 @@ fn resolve_scale_degree(
     // parse_root_note returns full MIDI note (e.g., "D4" -> 62, "D" -> 62, "D2" -> 38)
     let base_midi = root.as_ref().map(|r| parse_root_note(r)).unwrap_or(60) as i16;
 
-    // degree is 1-indexed, so subtract 1 for array access
-    let degree_idx = (degree.saturating_sub(1) as usize) % scale_intervals.len();
+    let scale_len = scale_intervals.len() as i16;
+    let degree_i16 = degree as i16;
+
+    // Use euclidean division for proper handling of negative degrees
+    // degree 0 = root, 1 = second, ..., 6 = seventh
+    // degree -1 = seventh one octave down, -2 = sixth one octave down, etc.
+    let octave_offset = degree_i16.div_euclid(scale_len);
+    let degree_idx = degree_i16.rem_euclid(scale_len) as usize;
     let interval = scale_intervals[degree_idx] as i16;
 
-    let root_note = (base_midi + interval).clamp(0, 127) as u8;
+    let root_note = (base_midi + octave_offset * 12 + interval).clamp(0, 127) as u8;
 
     // If chord quality is specified, build the chord
     if let Some(quality) = chord_quality {

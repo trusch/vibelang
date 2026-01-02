@@ -6,7 +6,10 @@
 
 use crate::api::context::SourceLocation;
 use crate::events::{BeatEvent, Pattern};
-use crate::midi::{CcRoute, KeyboardRoute, MidiBackend, MidiDeviceInfo, NoteRoute};
+#[cfg(feature = "native")]
+use crate::midi::{CcRoute, KeyboardRoute, MidiBackend, MidiDeviceInfo, MidiOutputDeviceInfo, NoteRoute, QueuedMidiEvent};
+#[cfg(feature = "native")]
+use crossbeam_channel::Sender;
 use crate::sequences::{FadeDefinition, SequenceDefinition};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -155,6 +158,12 @@ pub enum StateMessage {
         sfz_instrument: Option<String>,
         vst_instrument: Option<String>,
         source_location: SourceLocation,
+        /// MIDI output device ID (if routing to external MIDI hardware).
+        midi_output_device_id: Option<u32>,
+        /// MIDI channel for output (0-15).
+        midi_channel: Option<u8>,
+        /// CC mappings: parameter_name -> CC number.
+        cc_mappings: HashMap<String, u8>,
     },
 
     /// Delete a voice.
@@ -368,7 +377,8 @@ pub enum StateMessage {
         param_name: String,
     },
 
-    // === MIDI Device Management ===
+    // === MIDI Device Management (native only) ===
+    #[cfg(feature = "native")]
     /// Open a MIDI device and register it in state.
     /// The device_id is pre-allocated by the API layer.
     MidiOpenDevice {
@@ -377,16 +387,20 @@ pub enum StateMessage {
         backend: MidiBackend,
     },
 
+    #[cfg(feature = "native")]
     /// Close a specific MIDI device.
     MidiCloseDevice { device_id: u32 },
 
+    #[cfg(feature = "native")]
     /// Close all MIDI devices.
     MidiCloseAllDevices,
 
-    // === MIDI Routing ===
+    // === MIDI Routing (native only) ===
+    #[cfg(feature = "native")]
     /// Add a keyboard route (notes to voice).
     MidiAddKeyboardRoute { route: KeyboardRoute },
 
+    #[cfg(feature = "native")]
     /// Add a note-specific route (for drum pads).
     MidiAddNoteRoute {
         channel: Option<u8>,
@@ -394,6 +408,7 @@ pub enum StateMessage {
         route: NoteRoute,
     },
 
+    #[cfg(feature = "native")]
     /// Add a CC route.
     MidiAddCcRoute {
         channel: Option<u8>,
@@ -401,16 +416,19 @@ pub enum StateMessage {
         route: CcRoute,
     },
 
+    #[cfg(feature = "native")]
     /// Add a pitch bend route.
     MidiAddPitchBendRoute {
         channel: Option<u8>,
         route: CcRoute,
     },
 
+    #[cfg(feature = "native")]
     /// Clear all MIDI routing (keeps devices connected).
     MidiClearRouting,
 
-    // === MIDI Callbacks ===
+    // === MIDI Callbacks (native only) ===
+    #[cfg(feature = "native")]
     /// Register a note callback.
     MidiRegisterNoteCallback {
         callback_id: u64,
@@ -420,6 +438,7 @@ pub enum StateMessage {
         on_note_off: bool,
     },
 
+    #[cfg(feature = "native")]
     /// Register a CC callback.
     MidiRegisterCcCallback {
         callback_id: u64,
@@ -429,18 +448,96 @@ pub enum StateMessage {
         above_threshold: bool,
     },
 
+    #[cfg(feature = "native")]
     /// Set MIDI monitoring on/off.
     MidiSetMonitoring { enabled: bool },
 
-    // === MIDI Recording ===
+    // === MIDI Recording (native only) ===
+    #[cfg(feature = "native")]
     /// Set MIDI recording quantization (4, 8, 16, 32, 64 positions per bar).
     MidiSetRecordingQuantization { positions_per_bar: u8 },
 
+    #[cfg(feature = "native")]
     /// Enable/disable MIDI recording.
     MidiSetRecordingEnabled { enabled: bool },
 
+    #[cfg(feature = "native")]
     /// Clear all recorded MIDI notes.
     MidiClearRecording,
+
+    // === MIDI Output (native only) ===
+    #[cfg(feature = "native")]
+    /// Open a MIDI output device.
+    ///
+    /// Note: MIDI timing is now managed by SuperCollider via SendTrig-based
+    /// MIDI trigger synths, so only the immediate event sender is needed.
+    MidiOutputOpenDevice {
+        device_id: u32,
+        info: MidiOutputDeviceInfo,
+        event_tx: Sender<QueuedMidiEvent>,
+    },
+
+    #[cfg(feature = "native")]
+    /// Close a MIDI output device.
+    MidiOutputCloseDevice { device_id: u32 },
+
+    #[cfg(feature = "native")]
+    /// Close all MIDI output devices.
+    MidiOutputCloseAllDevices,
+
+    #[cfg(feature = "native")]
+    /// Send a note-on to MIDI output.
+    MidiOutputNoteOn {
+        device_id: u32,
+        channel: u8,
+        note: u8,
+        velocity: u8,
+    },
+
+    #[cfg(feature = "native")]
+    /// Send a note-off to MIDI output.
+    MidiOutputNoteOff {
+        device_id: u32,
+        channel: u8,
+        note: u8,
+    },
+
+    #[cfg(feature = "native")]
+    /// Send a control change to MIDI output.
+    MidiOutputControlChange {
+        device_id: u32,
+        channel: u8,
+        controller: u8,
+        value: u8,
+    },
+
+    #[cfg(feature = "native")]
+    /// Send a pitch bend to MIDI output.
+    MidiOutputPitchBend {
+        device_id: u32,
+        channel: u8,
+        value: i16,
+    },
+
+    #[cfg(feature = "native")]
+    /// Enable/disable MIDI clock output.
+    MidiOutputSetClockEnabled { enabled: bool },
+
+    #[cfg(feature = "native")]
+    /// Set the device to send MIDI clock to (None = all devices).
+    MidiOutputSetClockDevice { device_id: Option<u32> },
+
+    #[cfg(feature = "native")]
+    /// Send MIDI start message.
+    MidiOutputSendStart,
+
+    #[cfg(feature = "native")]
+    /// Send MIDI stop message.
+    MidiOutputSendStop,
+
+    #[cfg(feature = "native")]
+    /// Send MIDI continue message.
+    MidiOutputSendContinue,
 
     // === OSC Feedback ===
     /// Node created notification from scsynth.
@@ -533,20 +630,59 @@ impl StateMessage {
             StateMessage::SetEffectParam { .. } => "SetEffectParam",
             StateMessage::FadeEffectParam { .. } => "FadeEffectParam",
             StateMessage::CancelFade { .. } => "CancelFade",
+            // MIDI variants (native only)
+            #[cfg(feature = "native")]
             StateMessage::MidiOpenDevice { .. } => "MidiOpenDevice",
+            #[cfg(feature = "native")]
             StateMessage::MidiCloseDevice { .. } => "MidiCloseDevice",
+            #[cfg(feature = "native")]
             StateMessage::MidiCloseAllDevices => "MidiCloseAllDevices",
+            #[cfg(feature = "native")]
             StateMessage::MidiAddKeyboardRoute { .. } => "MidiAddKeyboardRoute",
+            #[cfg(feature = "native")]
             StateMessage::MidiAddNoteRoute { .. } => "MidiAddNoteRoute",
+            #[cfg(feature = "native")]
             StateMessage::MidiAddCcRoute { .. } => "MidiAddCcRoute",
+            #[cfg(feature = "native")]
             StateMessage::MidiAddPitchBendRoute { .. } => "MidiAddPitchBendRoute",
+            #[cfg(feature = "native")]
             StateMessage::MidiClearRouting => "MidiClearRouting",
+            #[cfg(feature = "native")]
             StateMessage::MidiRegisterNoteCallback { .. } => "MidiRegisterNoteCallback",
+            #[cfg(feature = "native")]
             StateMessage::MidiRegisterCcCallback { .. } => "MidiRegisterCcCallback",
+            #[cfg(feature = "native")]
             StateMessage::MidiSetMonitoring { .. } => "MidiSetMonitoring",
+            #[cfg(feature = "native")]
             StateMessage::MidiSetRecordingQuantization { .. } => "MidiSetRecordingQuantization",
+            #[cfg(feature = "native")]
             StateMessage::MidiSetRecordingEnabled { .. } => "MidiSetRecordingEnabled",
+            #[cfg(feature = "native")]
             StateMessage::MidiClearRecording => "MidiClearRecording",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputOpenDevice { .. } => "MidiOutputOpenDevice",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputCloseDevice { .. } => "MidiOutputCloseDevice",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputCloseAllDevices => "MidiOutputCloseAllDevices",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputNoteOn { .. } => "MidiOutputNoteOn",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputNoteOff { .. } => "MidiOutputNoteOff",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputControlChange { .. } => "MidiOutputControlChange",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputPitchBend { .. } => "MidiOutputPitchBend",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputSetClockEnabled { .. } => "MidiOutputSetClockEnabled",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputSetClockDevice { .. } => "MidiOutputSetClockDevice",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputSendStart => "MidiOutputSendStart",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputSendStop => "MidiOutputSendStop",
+            #[cfg(feature = "native")]
+            StateMessage::MidiOutputSendContinue => "MidiOutputSendContinue",
             StateMessage::NodeCreated { .. } => "NodeCreated",
             StateMessage::NodeDestroyed { .. } => "NodeDestroyed",
             StateMessage::BufferLoaded { .. } => "BufferLoaded",

@@ -8,6 +8,10 @@ repository = "https://github.com/trusch/vibelang"
 keywords = ["music", "audio", "supercollider", "livecoding"]
 categories = ["multimedia::audio"]
 
+[features]
+default = ["native"]
+native = ["rosc", "jack", "midir", "cpal", "aubio-rs"]
+
 [dependencies]
 # SFZ support
 vibelang-sfz = "0.1"
@@ -17,16 +21,16 @@ vibelang-dsp = "0.1.2"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Concurrency
 crossbeam-channel = "0.5"
 
-# OSC for SuperCollider communication
-rosc = "0.11"
+# OSC for SuperCollider communication (native only)
+rosc = { version = "0.11", optional = true }
 
 # Randomness for patterns
-rand = { version = "0.8", features = ["std", "std_rng"] }
+rand = { version = "0.9", features = ["std", "std_rng"] }
 
 # Logging
 log = "0.4"
@@ -38,11 +42,11 @@ humantime = "2.1"
 regex = "1.10"
 
 # Scripting engine
-rhai = { version = "1.17", features = ["sync", "internals"] }
+rhai = { version = "1.17", default-features = false, features = ["std", "sync", "internals"] }
 
-# Audio analysis (BPM detection)
+# Audio analysis (BPM detection) - native only
 # Note: "bindgen" feature is required on macOS for compilation
-aubio-rs = { version = "0.2", features = ["builtin", "bindgen"] }
+aubio-rs = { version = "0.2", features = ["builtin", "bindgen"], optional = true }
 
 # WAV file reading for BPM analysis
 hound = "3.5"
@@ -50,11 +54,14 @@ hound = "3.5"
 # Tar archive for .vibescore format
 tar = "0.4"
 
-# MIDI input support
-midir = "0.10"
+# MIDI input support (native only)
+midir = { version = "0.10", optional = true }
 
-# JACK audio/MIDI support
-jack = "0.13"
+# JACK audio/MIDI support (native only)
+jack = { version = "0.13", optional = true }
+
+# Audio device enumeration (native only)
+cpal = { version = "0.17", optional = true }
 
 [dev-dependencies]
 env_logger = "0.11"
