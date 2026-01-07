@@ -5,33 +5,8 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 
-/// Source location information for an entity definition.
-#[derive(Clone, Debug, Default)]
-pub struct SourceLocation {
-    /// The script file path where this entity was defined.
-    pub file: Option<String>,
-    /// Line number (1-based).
-    pub line: Option<u32>,
-    /// Column number (1-based).
-    pub column: Option<u32>,
-}
-
-impl SourceLocation {
-    /// Create a new source location.
-    pub fn new(file: Option<String>, line: Option<u32>, column: Option<u32>) -> Self {
-        Self { file, line, column }
-    }
-
-    /// Create an unknown source location (no file, line, or column info).
-    pub fn unknown() -> Self {
-        Self::default()
-    }
-
-    /// Check if this source location has any information.
-    pub fn is_empty(&self) -> bool {
-        self.file.is_none() && self.line.is_none()
-    }
-}
+// Re-export SourceLocation from state for backwards compatibility
+pub use crate::state::SourceLocation;
 
 /// A callback error captured during script execution.
 #[derive(Clone, Debug)]
@@ -223,6 +198,34 @@ pub fn resolve_file(path: &str) -> Option<PathBuf> {
         path,
         get_import_paths().len()
     );
+    None
+}
+
+/// Resolve a file path for writing.
+///
+/// Unlike `resolve_file`, this doesn't require the file to exist.
+/// It resolves the path relative to the script directory if set,
+/// otherwise relative to the current working directory.
+///
+/// Returns None only if no base directory is available.
+pub fn resolve_file_for_write(path: &str) -> Option<PathBuf> {
+    let path_buf = PathBuf::from(path);
+
+    // If already absolute, use it directly
+    if path_buf.is_absolute() {
+        return Some(path_buf);
+    }
+
+    // Try relative to script directory first
+    if let Some(script_dir) = get_script_dir() {
+        return Some(script_dir.join(&path_buf));
+    }
+
+    // Fall back to current working directory
+    if let Ok(cwd) = std::env::current_dir() {
+        return Some(cwd.join(&path_buf));
+    }
+
     None
 }
 

@@ -10,9 +10,10 @@
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use jack::{Client, ClientOptions, MidiIn, Port, ProcessScope};
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 /// MIDI backend type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1226,7 +1227,7 @@ impl SharedMidiState {
 
     /// Get a clone of the current routing configuration.
     pub fn get_routing(&self) -> MidiRouting {
-        self.inner.read().unwrap().routing.clone()
+        self.inner.read().routing.clone()
     }
 
     /// Update the routing configuration.
@@ -1234,7 +1235,7 @@ impl SharedMidiState {
     where
         F: FnOnce(&mut MidiRouting),
     {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write();
         f(&mut inner.routing);
     }
 
@@ -1243,13 +1244,13 @@ impl SharedMidiState {
     where
         F: FnOnce(&mut MidiRouting) -> R,
     {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write();
         f(&mut inner.routing)
     }
 
     /// Clear all routing.
     pub fn clear_routing(&self) {
-        self.inner.write().unwrap().routing.clear();
+        self.inner.write().routing.clear();
     }
 }
 

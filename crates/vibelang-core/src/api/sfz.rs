@@ -3,7 +3,7 @@
 //! This module provides the `load_sfz` function that loads an SFZ instrument
 //! file and makes it available for use with voices.
 
-use crate::api::{context, require_handle};
+use crate::api::{context, require_handle, send_message};
 use crate::state::StateMessage;
 use rhai::Engine;
 use vibelang_sfz::SfzInstrumentHandle;
@@ -49,10 +49,14 @@ pub fn load_sfz(id: String, path: String) -> SfzInstrumentHandle {
     };
 
     // Send the load message to the runtime
-    let _ = handle.send(StateMessage::LoadSfzInstrument {
-        id: id.clone(),
-        sfz_path: sfz_path.clone(),
-    });
+    send_message(
+        &handle,
+        StateMessage::LoadSfzInstrument {
+            id: id.clone(),
+            sfz_path: sfz_path.clone(),
+        },
+        &format!("load_sfz({}, {})", id, path),
+    );
 
     // Wait for the instrument to be loaded (poll state)
     let start = std::time::Instant::now();

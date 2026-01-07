@@ -21,12 +21,13 @@ pub use messages::StateMessage;
 pub use model::{
     ActiveFadeJob, ActiveSequence, ActiveSynth, EffectState, GroupState, LoopStatus, MelodyState,
     MeterLevel, PatternState, SampleInfo, SampleSlice, ScheduledEvent,
-    ScheduledNoteOff, ScriptState, SequenceRunLog, VoiceState, VstInstrumentInfo,
+    ScheduledNoteOff, ScriptState, SequenceRunLog, SourceLocation, VoiceState, VstInstrumentInfo,
 };
 
 // Native-only MIDI types
 #[cfg(feature = "native")]
 pub use model::{
+    AudioRecordingState, AudioRecordingStatus,
     MidiCallbackInfo, MidiCallbackType, MidiConfiguration, MidiDeviceState,
     MidiOutputConfiguration, MidiOutputDeviceState, MidiRecordingState, RecordedMidiNote,
 };

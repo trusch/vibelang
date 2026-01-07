@@ -4,7 +4,7 @@
 //! This enum is the single point of truth for all possible changes
 //! to the audio state.
 
-use crate::api::context::SourceLocation;
+use super::model::SourceLocation;
 use crate::events::{BeatEvent, Pattern};
 #[cfg(feature = "native")]
 use crate::midi::{CcRoute, KeyboardRoute, MidiBackend, MidiDeviceInfo, MidiOutputDeviceInfo, NoteRoute, QueuedMidiEvent};
@@ -162,6 +162,8 @@ pub enum StateMessage {
         midi_output_device_id: Option<u32>,
         /// MIDI channel for output (0-15).
         midi_channel: Option<u8>,
+        /// Base MIDI note for this voice (0-127). Used for drum patterns.
+        midi_note: Option<u8>,
         /// CC mappings: parameter_name -> CC number.
         cc_mappings: HashMap<String, u8>,
     },
@@ -559,6 +561,58 @@ pub enum StateMessage {
 
     /// Disable score capture and write the score file.
     DisableScoreCapture,
+
+    // === Audio Recording (native only) ===
+    #[cfg(feature = "native")]
+    /// Start an audio recording session.
+    ///
+    /// Records audio from a group's bus into a buffer, with optional
+    /// quantized start, count-in, metronome, and file saving.
+    StartRecording {
+        /// Unique ID for this recording.
+        id: String,
+        /// Group path to record from.
+        group_path: String,
+        /// Pre-allocated buffer ID.
+        buffer_id: i32,
+        /// Length in beats (for tempo-synced).
+        length_beats: Option<f64>,
+        /// Length in seconds (for fixed-time).
+        length_seconds: Option<f64>,
+        /// Beat when recording should start.
+        start_beat: f64,
+        /// Count-in length in beats.
+        count_in_beats: f64,
+        /// Whether to play metronome.
+        metronome: bool,
+        /// File path to save recording (None = buffer only).
+        file_path: Option<String>,
+        /// Number of channels (1 or 2).
+        num_channels: i32,
+        /// Source location for debugging.
+        source_location: SourceLocation,
+    },
+
+    #[cfg(feature = "native")]
+    /// Stop an active recording.
+    StopRecording {
+        /// Recording ID to stop.
+        id: String,
+    },
+
+    #[cfg(feature = "native")]
+    /// Notification that a recording has completed.
+    RecordingCompleted {
+        /// Recording ID.
+        id: String,
+    },
+
+    #[cfg(feature = "native")]
+    /// Cancel a pending or active recording.
+    CancelRecording {
+        /// Recording ID to cancel.
+        id: String,
+    },
 }
 
 impl StateMessage {
@@ -688,6 +742,15 @@ impl StateMessage {
             StateMessage::BufferLoaded { .. } => "BufferLoaded",
             StateMessage::EnableScoreCapture { .. } => "EnableScoreCapture",
             StateMessage::DisableScoreCapture => "DisableScoreCapture",
+            // Audio recording variants (native only)
+            #[cfg(feature = "native")]
+            StateMessage::StartRecording { .. } => "StartRecording",
+            #[cfg(feature = "native")]
+            StateMessage::StopRecording { .. } => "StopRecording",
+            #[cfg(feature = "native")]
+            StateMessage::RecordingCompleted { .. } => "RecordingCompleted",
+            #[cfg(feature = "native")]
+            StateMessage::CancelRecording { .. } => "CancelRecording",
         }
     }
 }

@@ -23,6 +23,7 @@
 //! - `native` (default) - Full native support with UDP OSC, JACK/ALSA MIDI, cpal audio
 
 pub mod api;
+pub mod constants;
 pub mod events;
 pub mod reload;
 pub mod sample_synthdef;
@@ -38,11 +39,13 @@ pub mod audio_device;
 #[cfg(feature = "native")]
 pub mod midi;
 #[cfg(feature = "native")]
-pub mod midi_osc_handler;
+pub mod midi_realtime;
 #[cfg(feature = "native")]
 pub mod midi_synthdefs;
 #[cfg(feature = "native")]
 pub mod osc;
+#[cfg(feature = "native")]
+pub mod recording_synthdef;
 #[cfg(feature = "native")]
 pub mod osc_sender;
 #[cfg(feature = "native")]

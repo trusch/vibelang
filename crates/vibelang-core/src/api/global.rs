@@ -5,7 +5,7 @@
 use crate::state::StateMessage;
 use rhai::Engine;
 
-use super::require_handle;
+use super::{require_handle, send_message};
 
 /// Register global functions with the Rhai engine.
 pub fn register(engine: &mut Engine) {
@@ -33,7 +33,11 @@ pub fn register(engine: &mut Engine) {
 /// Set the tempo in BPM.
 pub fn set_tempo(bpm: f64) {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::SetBpm { bpm });
+    send_message(
+        &handle,
+        StateMessage::SetBpm { bpm },
+        &format!("set_tempo({})", bpm),
+    );
 }
 
 /// Set the tempo in BPM (integer overload).
@@ -50,16 +54,24 @@ pub fn get_tempo() -> f64 {
 /// Set the time signature.
 pub fn set_time_signature(numerator: i64, denominator: i64) {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::SetTimeSignature {
-        numerator: numerator as u32,
-        denominator: denominator as u32,
-    });
+    send_message(
+        &handle,
+        StateMessage::SetTimeSignature {
+            numerator: numerator as u32,
+            denominator: denominator as u32,
+        },
+        &format!("set_time_signature({}/{})", numerator, denominator),
+    );
 }
 
 /// Set the quantization in beats.
 pub fn set_quantization(beats: f64) {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::SetQuantization { beats });
+    send_message(
+        &handle,
+        StateMessage::SetQuantization { beats },
+        &format!("set_quantization({})", beats),
+    );
 }
 
 /// Get the current beat position.
@@ -82,11 +94,19 @@ pub fn nudge_transport(beats: f64) {
     let handle = require_handle();
     let current = handle.with_state(|state| state.current_beat);
     let new_beat = (current + beats).max(0.0);
-    let _ = handle.send(StateMessage::SeekTransport { beat: new_beat });
+    send_message(
+        &handle,
+        StateMessage::SeekTransport { beat: new_beat },
+        &format!("nudge_transport({})", beats),
+    );
 }
 
 /// Jump to the start of the transport (beat 0).
 pub fn jump_to_start() {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::SeekTransport { beat: 0.0 });
+    send_message(
+        &handle,
+        StateMessage::SeekTransport { beat: 0.0 },
+        "jump_to_start",
+    );
 }

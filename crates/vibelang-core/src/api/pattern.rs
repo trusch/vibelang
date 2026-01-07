@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use super::bar_utils::{count_bars, split_into_bars};
 use super::context::{self, SourceLocation};
-use super::require_handle;
+use super::{require_handle, send_message};
 
 /// A Pattern builder for creating rhythmic patterns.
 #[derive(Debug, Clone, CustomType)]
@@ -152,14 +152,18 @@ impl Pattern {
             phase_offset: 0.0,
         };
 
-        let _ = handle.send(StateMessage::CreatePattern {
-            name: self.name.clone(),
-            group_path: self.group_path.clone(),
-            voice_name: self.voice_name.clone(),
-            pattern: loop_pattern,
-            source_location: self.source_location.clone(),
-            step_pattern: self.steps.clone(),
-        });
+        send_message(
+            &handle,
+            StateMessage::CreatePattern {
+                name: self.name.clone(),
+                group_path: self.group_path.clone(),
+                voice_name: self.voice_name.clone(),
+                pattern: loop_pattern,
+                source_location: self.source_location.clone(),
+                step_pattern: self.steps.clone(),
+            },
+            &format!("pattern.apply({})", self.name),
+        );
 
         self
     }
@@ -191,8 +195,16 @@ impl Pattern {
             ));
 
         // Register and start the sequence
-        let _ = handle.send(StateMessage::CreateSequence { sequence: seq_def });
-        let _ = handle.send(StateMessage::StartSequence { name: seq_name });
+        send_message(
+            &handle,
+            StateMessage::CreateSequence { sequence: seq_def },
+            &format!("pattern.start({}) create sequence", applied.name),
+        );
+        send_message(
+            &handle,
+            StateMessage::StartSequence { name: seq_name },
+            &format!("pattern.start({})", applied.name),
+        );
 
         applied
     }
@@ -204,7 +216,11 @@ impl Pattern {
         let handle = require_handle();
         // Stop the implicit sequence
         let seq_name = format!("_seq_{}", self.name);
-        let _ = handle.send(StateMessage::StopSequence { name: seq_name });
+        send_message(
+            &handle,
+            StateMessage::StopSequence { name: seq_name },
+            &format!("pattern.stop({})", self.name),
+        );
     }
 
     /// Launch the pattern (start if not playing, chainable).

@@ -9,7 +9,7 @@ use vibelang_sfz::SfzInstrumentHandle;
 
 use super::context::{self, SourceLocation};
 use super::midi::MidiDevice;
-use super::require_handle;
+use super::{require_handle, send_message};
 
 /// A Voice builder for creating and configuring voices.
 #[derive(Debug, Clone, CustomType)]
@@ -38,6 +38,8 @@ pub struct Voice {
     midi_output_device_id: Option<u32>,
     /// MIDI channel for output (1-16, converted to 0-15 internally).
     midi_channel: Option<u8>,
+    /// Base MIDI note for this voice (0-127). Used for drum patterns where all hits should use the same note.
+    midi_note: Option<u8>,
     /// CC mappings: parameter_name -> CC number.
     cc_mappings: HashMap<String, u8>,
 }
@@ -64,6 +66,7 @@ impl Voice {
             source_location,
             midi_output_device_id: None,
             midi_channel: None,
+            midi_note: None,
             cc_mappings: HashMap::new(),
         }
     }
@@ -285,6 +288,47 @@ impl Voice {
         self
     }
 
+    /// Set the base MIDI note for this voice (0-127).
+    ///
+    /// Useful for drum patterns where all hits should send the same note number.
+    /// Can be specified as a MIDI note number (0-127) or a note name like "C1", "F#3".
+    ///
+    /// # Example
+    /// ```rhai
+    /// let kick = voice("kick")
+    ///     .on(midi_out)
+    ///     .channel(10)  // MIDI drum channel
+    ///     .note(36)     // C1 - kick drum note
+    ///     .apply();
+    ///
+    /// kick.pattern("1 . . . 1 . . .").play();
+    /// ```
+    pub fn note(mut self, n: i64) -> Self {
+        self.midi_note = Some((n.clamp(0, 127)) as u8);
+        self.sync_state();
+        self
+    }
+
+    /// Set the base MIDI note using a note name (e.g., "C1", "A#2", "Db3").
+    ///
+    /// # Example
+    /// ```rhai
+    /// let kick = voice("kick")
+    ///     .on(midi_out)
+    ///     .channel(10)
+    ///     .note("C1")   // Same as .note(36)
+    ///     .apply();
+    /// ```
+    pub fn note_str(mut self, note_name: String) -> Self {
+        if let Some(n) = super::helpers::parse_note_name(&note_name) {
+            self.midi_note = Some(n);
+        } else {
+            log::warn!("[VOICE] Invalid note name '{}', ignoring", note_name);
+        }
+        self.sync_state();
+        self
+    }
+
     /// Map a CC number to a parameter name for MIDI output.
     ///
     /// When `.set("param_name", value)` is called on a MIDI voice,
@@ -362,9 +406,13 @@ impl Voice {
     pub fn run(self) -> Self {
         self.sync_state();
         let handle = require_handle();
-        let _ = handle.send(StateMessage::RunVoice {
-            name: self.name.clone(),
-        });
+        send_message(
+            &handle,
+            StateMessage::RunVoice {
+                name: self.name.clone(),
+            },
+            &format!("voice.run({})", self.name),
+        );
         self
     }
 
@@ -381,24 +429,29 @@ impl Voice {
             .map(|(k, v)| (k.clone(), *v as f32))
             .collect();
 
-        let _ = handle.send(StateMessage::UpsertVoice {
-            name: self.name.clone(),
-            group_path: self.group_path.clone(),
-            group_name: None,
-            synth_name: self.synth_name.clone(),
-            polyphony: self.polyphony,
-            gain: self.gain,
-            muted: self.muted,
-            soloed: self.soloed,
-            output_bus: None,
-            params,
-            sfz_instrument: self.sfz_instrument.clone(),
-            vst_instrument: None,
-            source_location: self.source_location.clone(),
-            midi_output_device_id: self.midi_output_device_id,
-            midi_channel: self.midi_channel,
-            cc_mappings: self.cc_mappings.clone(),
-        });
+        send_message(
+            &handle,
+            StateMessage::UpsertVoice {
+                name: self.name.clone(),
+                group_path: self.group_path.clone(),
+                group_name: None,
+                synth_name: self.synth_name.clone(),
+                polyphony: self.polyphony,
+                gain: self.gain,
+                muted: self.muted,
+                soloed: self.soloed,
+                output_bus: None,
+                params,
+                sfz_instrument: self.sfz_instrument.clone(),
+                vst_instrument: None,
+                source_location: self.source_location.clone(),
+                midi_output_device_id: self.midi_output_device_id,
+                midi_channel: self.midi_channel,
+                midi_note: self.midi_note,
+                cc_mappings: self.cc_mappings.clone(),
+            },
+            &format!("voice.sync_state({})", self.name),
+        );
     }
 
     /// Register this voice with the runtime (explicit call, same as sync_state).
@@ -413,24 +466,29 @@ impl Voice {
             .map(|(k, v)| (k.clone(), *v as f32))
             .collect();
 
-        let _ = handle.send(StateMessage::UpsertVoice {
-            name: self.name.clone(),
-            group_path: self.group_path.clone(),
-            group_name: None,
-            synth_name: self.synth_name.clone(),
-            polyphony: self.polyphony,
-            gain: self.gain,
-            muted: self.muted,
-            soloed: self.soloed,
-            output_bus: None,
-            params,
-            sfz_instrument: self.sfz_instrument.clone(),
-            vst_instrument: None,
-            source_location: self.source_location.clone(),
-            midi_output_device_id: self.midi_output_device_id,
-            midi_channel: self.midi_channel,
-            cc_mappings: self.cc_mappings.clone(),
-        });
+        send_message(
+            &handle,
+            StateMessage::UpsertVoice {
+                name: self.name.clone(),
+                group_path: self.group_path.clone(),
+                group_name: None,
+                synth_name: self.synth_name.clone(),
+                polyphony: self.polyphony,
+                gain: self.gain,
+                muted: self.muted,
+                soloed: self.soloed,
+                output_bus: None,
+                params,
+                sfz_instrument: self.sfz_instrument.clone(),
+                vst_instrument: None,
+                source_location: self.source_location.clone(),
+                midi_output_device_id: self.midi_output_device_id,
+                midi_channel: self.midi_channel,
+                midi_note: self.midi_note,
+                cc_mappings: self.cc_mappings.clone(),
+            },
+            &format!("voice.apply({})", self.name),
+        );
 
         self
     }
@@ -454,31 +512,43 @@ pub fn voice_trigger(voice: &mut Voice, params: rhai::Map) {
         }
     }
 
-    let _ = handle.send(StateMessage::TriggerVoice {
-        name: voice.name.clone(),
-        synth_name: voice.synth_name.clone(),
-        group_path: Some(voice.group_path.clone()),
-        params: param_vec,
-    });
+    send_message(
+        &handle,
+        StateMessage::TriggerVoice {
+            name: voice.name.clone(),
+            synth_name: voice.synth_name.clone(),
+            group_path: Some(voice.group_path.clone()),
+            params: param_vec,
+        },
+        &format!("voice.trigger({})", voice.name),
+    );
 }
 
 /// Trigger a voice without parameters.
 pub fn voice_trigger_no_params(voice: &mut Voice) {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::TriggerVoice {
-        name: voice.name.clone(),
-        synth_name: voice.synth_name.clone(),
-        group_path: Some(voice.group_path.clone()),
-        params: Vec::new(),
-    });
+    send_message(
+        &handle,
+        StateMessage::TriggerVoice {
+            name: voice.name.clone(),
+            synth_name: voice.synth_name.clone(),
+            group_path: Some(voice.group_path.clone()),
+            params: Vec::new(),
+        },
+        &format!("voice.trigger({})", voice.name),
+    );
 }
 
 /// Stop all sounds from a voice.
 pub fn voice_stop(voice: &mut Voice) {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::StopVoice {
-        name: voice.name.clone(),
-    });
+    send_message(
+        &handle,
+        StateMessage::StopVoice {
+            name: voice.name.clone(),
+        },
+        &format!("voice.stop({})", voice.name),
+    );
 }
 
 /// Stop all sounds from all voices.
@@ -491,23 +561,31 @@ pub fn voice_stop_all(voice: &mut Voice) {
 pub fn voice_note_on(voice: &mut Voice, note: String, velocity: f64) {
     let midi_note = super::helpers::note(&note) as u8;
     let handle = require_handle();
-    let _ = handle.send(StateMessage::NoteOn {
-        voice_name: voice.name.clone(),
-        note: midi_note,
-        velocity: (velocity * 127.0) as u8,
-        duration: None,
-    });
+    send_message(
+        &handle,
+        StateMessage::NoteOn {
+            voice_name: voice.name.clone(),
+            note: midi_note,
+            velocity: (velocity * 127.0) as u8,
+            duration: None,
+        },
+        &format!("voice.note_on({}, {})", voice.name, note),
+    );
 }
 
 /// Send note on (integer note).
 pub fn voice_note_on_int(voice: &mut Voice, note: i64, velocity: f64) {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::NoteOn {
-        voice_name: voice.name.clone(),
-        note: note as u8,
-        velocity: (velocity * 127.0) as u8,
-        duration: None,
-    });
+    send_message(
+        &handle,
+        StateMessage::NoteOn {
+            voice_name: voice.name.clone(),
+            note: note as u8,
+            velocity: (velocity * 127.0) as u8,
+            duration: None,
+        },
+        &format!("voice.note_on({}, {})", voice.name, note),
+    );
 }
 
 /// Send note on (float note).
@@ -518,12 +596,16 @@ pub fn voice_note_on_float(voice: &mut Voice, note: f64, velocity: f64) {
 /// Send note on with integer velocity.
 pub fn voice_note_on_int_vel(voice: &mut Voice, note: i64, velocity: i64) {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::NoteOn {
-        voice_name: voice.name.clone(),
-        note: note as u8,
-        velocity: velocity as u8,
-        duration: None,
-    });
+    send_message(
+        &handle,
+        StateMessage::NoteOn {
+            voice_name: voice.name.clone(),
+            note: note as u8,
+            velocity: velocity as u8,
+            duration: None,
+        },
+        &format!("voice.note_on({}, {})", voice.name, note),
+    );
 }
 
 /// Send note on with float velocity.
@@ -534,20 +616,28 @@ pub fn voice_note_on_float_vel(voice: &mut Voice, note: f64, velocity: i64) {
 /// Send note off.
 pub fn voice_note_off(voice: &mut Voice, note: i64) {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::NoteOff {
-        voice_name: voice.name.clone(),
-        note: note as u8,
-    });
+    send_message(
+        &handle,
+        StateMessage::NoteOff {
+            voice_name: voice.name.clone(),
+            note: note as u8,
+        },
+        &format!("voice.note_off({}, {})", voice.name, note),
+    );
 }
 
 /// Send control change.
 pub fn voice_control_change(voice: &mut Voice, cc: i64, value: f64) {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::ControlChange {
-        voice_name: voice.name.clone(),
-        cc_num: cc as u8,
-        value: (value * 127.0) as u8,
-    });
+    send_message(
+        &handle,
+        StateMessage::ControlChange {
+            voice_name: voice.name.clone(),
+            cc_num: cc as u8,
+            value: (value * 127.0) as u8,
+        },
+        &format!("voice.cc({}, {})", voice.name, cc),
+    );
 }
 
 /// Register voice API with the Rhai engine.
@@ -583,6 +673,8 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("on", Voice::on_sample);  // Sample overload
     engine.register_fn("on", Voice::on_midi);    // MIDI output overload
     engine.register_fn("channel", Voice::channel);
+    engine.register_fn("note", Voice::note);         // MIDI note number (0-127)
+    engine.register_fn("note", Voice::note_str);     // MIDI note name ("C1", "A#2")
     engine.register_fn("cc", Voice::cc);
     engine.register_fn("poly", Voice::poly);
     engine.register_fn("gain", Voice::gain);

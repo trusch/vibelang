@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use super::bar_utils::split_into_bars;
 use super::context::{self, SourceLocation};
-use super::require_handle;
+use super::{require_handle, send_message};
 
 /// A Melody builder for creating melodic patterns.
 #[derive(Debug, Clone, CustomType)]
@@ -369,14 +369,18 @@ impl Melody {
         // Use notes_strings from .notes() calls for visual editing (supports multiple lanes)
         let notes_patterns = self.notes_strings.clone();
 
-        let _ = handle.send(StateMessage::CreateMelody {
-            name: self.name.clone(),
-            group_path: self.group_path.clone(),
-            voice_name: self.voice_name.clone(),
-            pattern: loop_pattern,
-            source_location: self.source_location.clone(),
-            notes_patterns,
-        });
+        send_message(
+            &handle,
+            StateMessage::CreateMelody {
+                name: self.name.clone(),
+                group_path: self.group_path.clone(),
+                voice_name: self.voice_name.clone(),
+                pattern: loop_pattern,
+                source_location: self.source_location.clone(),
+                notes_patterns,
+            },
+            &format!("melody.apply({})", self.name),
+        );
     }
 
     /// Start the melody playing (chainable).
@@ -399,8 +403,16 @@ impl Melody {
             ));
 
         // Register and start the sequence
-        let _ = handle.send(StateMessage::CreateSequence { sequence: seq_def });
-        let _ = handle.send(StateMessage::StartSequence { name: seq_name });
+        send_message(
+            &handle,
+            StateMessage::CreateSequence { sequence: seq_def },
+            &format!("melody.start({}) create sequence", self.name),
+        );
+        send_message(
+            &handle,
+            StateMessage::StartSequence { name: seq_name },
+            &format!("melody.start({})", self.name),
+        );
 
         self
     }
@@ -412,7 +424,11 @@ impl Melody {
         let handle = require_handle();
         // Stop the implicit sequence
         let seq_name = format!("_seq_{}", self.name);
-        let _ = handle.send(StateMessage::StopSequence { name: seq_name });
+        send_message(
+            &handle,
+            StateMessage::StopSequence { name: seq_name },
+            &format!("melody.stop({})", self.name),
+        );
     }
 
     /// Launch the melody (start if not playing, chainable).

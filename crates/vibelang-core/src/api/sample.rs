@@ -8,7 +8,7 @@ use rhai::Engine;
 use std::path::Path;
 
 use super::context;
-use super::require_handle;
+use super::{require_handle, send_message};
 
 // =============================================================================
 // BPM Detection (requires aubio)
@@ -211,6 +211,10 @@ pub struct SampleHandle {
     pub window_size: f64,
     /// Number of overlapping grains (default: 8)
     pub overlaps: f64,
+    /// Number of channels for pending recordings (used as fallback in synthdef_name)
+    pending_num_channels: Option<i32>,
+    /// Buffer ID for pending recordings (used as fallback in buffer_id)
+    pending_buffer_id: Option<i32>,
 }
 
 impl SampleHandle {
@@ -248,13 +252,17 @@ impl SampleHandle {
             log::info!("[SAMPLE] Loading sample '{}' from '{}'", id, path);
 
             // Send LoadSample message with pre-resolved path
-            let _ = handle.send(StateMessage::LoadSample {
-                id: id.clone(),
-                path: path.clone(),
-                resolved_path,
-                analyze_bpm: false,
-                warp_to_bpm: None,
-            });
+            send_message(
+                &handle,
+                StateMessage::LoadSample {
+                    id: id.clone(),
+                    path: path.clone(),
+                    resolved_path,
+                    analyze_bpm: false,
+                    warp_to_bpm: None,
+                },
+                &format!("sample({}, {})", id, path),
+            );
 
             // Wait for sample to load
             for attempt in 0..50 {
@@ -299,6 +307,8 @@ impl SampleHandle {
             target_bpm: None,
             window_size: 0.1,
             overlaps: 8.0,
+            pending_num_channels: None,
+            pending_buffer_id: None,
         }
     }
 
@@ -334,6 +344,50 @@ impl SampleHandle {
             target_bpm: None,
             window_size: 0.1,
             overlaps: 8.0,
+            pending_num_channels: None,
+            pending_buffer_id: None,
+        }
+    }
+
+    /// Create a sample handle for a pending recording.
+    ///
+    /// The buffer will be filled by the recording system. The sample handle
+    /// can be used immediately but won't produce audio until the recording completes.
+    pub fn new_pending(id: String, path: String, buffer_id: i32, num_channels: i32) -> Self {
+        log::debug!(
+            "[SAMPLE] Created pending sample handle '{}' for buffer {}",
+            id,
+            buffer_id
+        );
+
+        // Note: We don't wait for the sample to appear in state here
+        // because it's a pending recording that will be registered later.
+        // The buffer_id is pre-allocated and will be used when the recording completes.
+
+        Self {
+            id,
+            path,
+            attack: 0.001,
+            sustain_level: 1.0,
+            release: 0.01,
+            offset_seconds: 0.0,
+            length_seconds: None,
+            rate: 1.0,
+            loop_mode: false,
+            amp: 1.0,
+            parent_id: None,
+            start_frame: None,
+            end_frame: None,
+            // Time-stretch / pitch-shift defaults
+            warp_mode: false,
+            speed: 1.0,
+            pitch: 1.0,
+            detected_bpm: 0.0,
+            target_bpm: None,
+            window_size: 0.1,
+            overlaps: 8.0,
+            pending_num_channels: Some(num_channels),
+            pending_buffer_id: Some(buffer_id),
         }
     }
 
@@ -546,7 +600,18 @@ impl SampleHandle {
                     .get(sample_id)
                     .map(|info| info.buffer_id as i64)
             })
-            .unwrap_or(0)
+            .unwrap_or_else(|| {
+                // For pending recordings, use the pre-allocated buffer ID
+                if let Some(buffer_id) = self.pending_buffer_id {
+                    buffer_id as i64
+                } else {
+                    log::warn!(
+                        "[SAMPLE] Sample '{}' not found in state and no pending buffer ID",
+                        self.id
+                    );
+                    0
+                }
+            })
     }
 
     /// Get the synthdef name for this sample.
@@ -560,7 +625,23 @@ impl SampleHandle {
                     .get(sample_id)
                     .map(|info| info.synthdef_name.clone())
             })
-            .unwrap_or_else(|| format!("__sample_{}", self.id))
+            .unwrap_or_else(|| {
+                // For pending recordings, use the stored channel count to determine synthdef
+                if let Some(num_channels) = self.pending_num_channels {
+                    if num_channels == 1 {
+                        "sample_voice_mono".to_string()
+                    } else {
+                        "sample_voice_stereo".to_string()
+                    }
+                } else {
+                    // Fallback - should not normally happen
+                    log::warn!(
+                        "[SAMPLE] Sample '{}' not found in state and no pending channel info",
+                        self.id
+                    );
+                    "sample_voice_stereo".to_string()
+                }
+            })
     }
 
     /// Get the sample duration in seconds.

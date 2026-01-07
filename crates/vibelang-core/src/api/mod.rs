@@ -21,6 +21,7 @@ pub mod group;
 pub mod synthdef;
 pub mod sfz;
 pub mod sample;
+pub mod record;
 pub mod audio_device;
 pub mod midi;
 
@@ -34,8 +35,26 @@ pub use midi::{clear_callbacks, clear_midi_devices, execute_pending_callbacks, g
 pub use sample::{SampleHandle, BpmAnalysis, detect_bpm, detect_bpm_from_file};
 
 use crate::runtime::RuntimeHandle;
+use crate::state::StateMessage;
 use rhai::Engine;
 use std::cell::RefCell;
+
+/// Send a message to the runtime, logging any errors.
+///
+/// This replaces the `let _ = handle.send(...)` anti-pattern with proper error visibility.
+/// While this doesn't propagate errors to the script, it at least makes failures visible
+/// in the log output rather than silently discarding them.
+pub fn send_message(handle: &RuntimeHandle, msg: StateMessage, context: &str) {
+    if let Err(e) = handle.send(msg) {
+        log::error!("[API] Failed to send message ({}): {}", context, e);
+    }
+}
+
+/// Send a message to the runtime using the thread-local handle, logging any errors.
+pub fn send_message_current(msg: StateMessage, context: &str) {
+    let handle = require_handle();
+    send_message(&handle, msg, context);
+}
 
 // Thread-local storage for the runtime handle.
 // This allows Rhai functions to access the runtime without passing it explicitly.
@@ -107,6 +126,9 @@ pub fn register_api(engine: &mut Engine) {
 
     // Register sample API
     sample::register(engine);
+
+    // Register recording API
+    record::register(engine);
 
     // Register unified MIDI API (includes both input and output)
     midi::register(engine);

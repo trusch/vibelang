@@ -9,17 +9,18 @@
 //! - Sending MIDI notes, CCs, pitch bend (output)
 //! - MIDI clock output
 
-use crate::api::require_handle;
+use crate::api::{require_handle, send_message};
 use crate::api::voice::Voice;
 use crate::midi::{
     CcRoute, CcTarget, KeyboardRoute, MidiBackend, MidiDeviceInfo, MidiInputManager,
     MidiOutputHandle, MidiOutputManager, NoteRoute, ParameterCurve, VelocityCurve,
 };
 use crate::state::StateMessage;
+use parking_lot::{Mutex, RwLock};
 use rhai::{Array, Dynamic, Engine, EvalAltResult, FnPtr, Map};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 
 // === Callback Storage ===
 
@@ -47,7 +48,6 @@ static MIDI_OUTPUT_MANAGER: std::sync::LazyLock<Mutex<MidiOutputManager>> =
 fn store_active_device(device: MidiDevice) {
     ACTIVE_MIDI_DEVICES
         .write()
-        .unwrap()
         .insert(device.name.clone(), device);
 }
 
@@ -56,7 +56,6 @@ fn get_existing_device(name: &str) -> Option<MidiDevice> {
     let name_lower = name.to_lowercase();
     ACTIVE_MIDI_DEVICES
         .read()
-        .unwrap()
         .values()
         .find(|d| d.name.to_lowercase().contains(&name_lower))
         .cloned()
@@ -64,25 +63,25 @@ fn get_existing_device(name: &str) -> Option<MidiDevice> {
 
 /// Clear all active MIDI devices (only called on full shutdown, not reload).
 pub fn clear_midi_devices() {
-    ACTIVE_MIDI_DEVICES.write().unwrap().clear();
-    MIDI_OUTPUT_MANAGER.lock().unwrap().close_all();
+    ACTIVE_MIDI_DEVICES.write().clear();
+    MIDI_OUTPUT_MANAGER.lock().close_all();
 }
 
 /// Register a callback and return its ID.
 fn register_callback_fnptr(fn_ptr: FnPtr) -> u64 {
     let id = CALLBACK_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
-    CALLBACK_STORAGE.write().unwrap().insert(id, fn_ptr);
+    CALLBACK_STORAGE.write().insert(id, fn_ptr);
     id
 }
 
 /// Get a callback FnPtr by ID.
 pub fn get_callback_fnptr(id: u64) -> Option<FnPtr> {
-    CALLBACK_STORAGE.read().unwrap().get(&id).cloned()
+    CALLBACK_STORAGE.read().get(&id).cloned()
 }
 
 /// Clear all stored callbacks (called on script reload).
 pub fn clear_callbacks() {
-    CALLBACK_STORAGE.write().unwrap().clear();
+    CALLBACK_STORAGE.write().clear();
 }
 
 /// Execute all pending MIDI callbacks.
@@ -885,6 +884,22 @@ fn midi_open_by_name(name: &str) -> Result<MidiDevice, Box<EvalAltResult>> {
     // Check if device is already connected
     if let Some(existing) = get_existing_device(name) {
         log::info!("[MIDI] Reusing existing connection to '{}'", existing.name);
+        // Re-register the device with the MidiOscHandler to ensure it's available
+        // after reloads. The handler persists but may not have been re-registered.
+        if let Some(ref output_handle) = existing.output_handle {
+            if let Some(device_id) = existing.output_device_id {
+                log::debug!("[MIDI] Re-registering device {} with MidiOscHandler", device_id);
+                send_message(
+                    &runtime_handle,
+                    StateMessage::MidiOutputOpenDevice {
+                        device_id,
+                        info: output_handle.info.clone(),
+                        event_tx: output_handle.event_tx().clone(),
+                    },
+                    &format!("midi_device re-register({})", existing.name),
+                );
+            }
+        }
         return Ok(existing);
     }
 
@@ -948,17 +963,21 @@ fn midi_open_by_name(name: &str) -> Result<MidiDevice, Box<EvalAltResult>> {
 
     // Open output if available
     let (output_handle, output_device_id) = if output_device_info.is_some() {
-        let mut manager = MIDI_OUTPUT_MANAGER.lock().unwrap();
+        let mut manager = MIDI_OUTPUT_MANAGER.lock();
         match manager.open_by_name(name) {
             Ok(handle) => {
                 let device_id = handle.device_id;
 
                 // Register the output device in state
-                let _ = runtime_handle.send(StateMessage::MidiOutputOpenDevice {
-                    device_id,
-                    info: handle.info.clone(),
-                    event_tx: handle.event_tx().clone(),
-                });
+                send_message(
+                    &runtime_handle,
+                    StateMessage::MidiOutputOpenDevice {
+                        device_id,
+                        info: handle.info.clone(),
+                        event_tx: handle.event_tx().clone(),
+                    },
+                    &format!("midi_device open output({})", name),
+                );
 
                 log::info!("[MIDI] Opened output: {}", handle.info.name);
                 (Some(handle), Some(device_id))
@@ -1021,10 +1040,18 @@ fn midi_clock_enable(device: &mut MidiDevice) -> Result<(), Box<EvalAltResult>> 
     })?;
 
     let handle = require_handle();
-    let _ = handle.send(StateMessage::MidiOutputSetClockEnabled { enabled: true });
-    let _ = handle.send(StateMessage::MidiOutputSetClockDevice {
-        device_id: Some(device_id),
-    });
+    send_message(
+        &handle,
+        StateMessage::MidiOutputSetClockEnabled { enabled: true },
+        &format!("midi_clock_enable({})", device.name),
+    );
+    send_message(
+        &handle,
+        StateMessage::MidiOutputSetClockDevice {
+            device_id: Some(device_id),
+        },
+        &format!("midi_clock_enable device({})", device.name),
+    );
     log::info!("[MIDI] Clock output enabled on device {}", device.name);
     Ok(())
 }
@@ -1032,20 +1059,28 @@ fn midi_clock_enable(device: &mut MidiDevice) -> Result<(), Box<EvalAltResult>> 
 /// Disable MIDI clock output.
 fn midi_clock_disable() {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::MidiOutputSetClockEnabled { enabled: false });
+    send_message(
+        &handle,
+        StateMessage::MidiOutputSetClockEnabled { enabled: false },
+        "midi_clock_disable",
+    );
     log::info!("[MIDI] Clock output disabled");
 }
 
 /// Enable or disable MIDI monitoring.
 fn midi_monitor(enabled: bool) {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::MidiSetMonitoring { enabled });
+    send_message(
+        &handle,
+        StateMessage::MidiSetMonitoring { enabled },
+        &format!("midi_monitor({})", enabled),
+    );
 }
 
 /// Clear all MIDI routing.
 fn midi_clear() {
     let handle = require_handle();
-    let _ = handle.send(StateMessage::MidiClearRouting);
+    send_message(&handle, StateMessage::MidiClearRouting, "midi_clear");
 }
 
 // === MidiDevice methods ===

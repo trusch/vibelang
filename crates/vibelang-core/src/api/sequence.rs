@@ -9,7 +9,7 @@ use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Positi
 use std::ops::Range;
 
 use super::context::{self, SourceLocation};
-use super::require_handle;
+use super::{require_handle, send_message};
 
 /// A Sequence builder for creating timeline arrangements.
 #[derive(Debug, Clone, CustomType)]
@@ -180,9 +180,11 @@ impl Sequence {
             source_location: self.source_location.clone(),
         };
 
-        let _ = handle.send(StateMessage::CreateSequence {
-            sequence: def,
-        });
+        send_message(
+            &handle,
+            StateMessage::CreateSequence { sequence: def },
+            &format!("sequence.apply({})", self.name),
+        );
     }
 
     /// Register and apply the sequence.
@@ -196,9 +198,13 @@ impl Sequence {
         self.do_apply();
         let handle = require_handle();
         log::info!("Sending StartSequence message for '{}'", self.name);
-        let _ = handle.send(StateMessage::StartSequence {
-            name: self.name.clone(),
-        });
+        send_message(
+            &handle,
+            StateMessage::StartSequence {
+                name: self.name.clone(),
+            },
+            &format!("sequence.start({})", self.name),
+        );
     }
 
     /// Start the sequence playing once (no loop).
@@ -206,17 +212,25 @@ impl Sequence {
         self.do_apply();
         let handle = require_handle();
         log::info!("Sending StartSequenceOnce message for '{}'", self.name);
-        let _ = handle.send(StateMessage::StartSequenceOnce {
-            name: self.name.clone(),
-        });
+        send_message(
+            &handle,
+            StateMessage::StartSequenceOnce {
+                name: self.name.clone(),
+            },
+            &format!("sequence.start_once({})", self.name),
+        );
     }
 
     /// Stop the sequence.
     pub fn stop(&mut self) {
         let handle = require_handle();
-        let _ = handle.send(StateMessage::StopSequence {
-            name: self.name.clone(),
-        });
+        send_message(
+            &handle,
+            StateMessage::StopSequence {
+                name: self.name.clone(),
+            },
+            &format!("sequence.stop({})", self.name),
+        );
     }
 
     /// Launch the sequence (start if not playing).
@@ -339,9 +353,11 @@ impl Fade {
         .with_range(self.from_value as f32, self.to_value as f32)
         .with_duration(self.duration_beats);
 
-        let _ = handle.send(StateMessage::CreateFadeDefinition {
-            fade: def,
-        });
+        send_message(
+            &handle,
+            StateMessage::CreateFadeDefinition { fade: def },
+            &format!("fade.apply({})", self.name),
+        );
 
         self
     }
@@ -414,15 +430,20 @@ impl Fx {
             .map(|(k, v)| (k.clone(), *v as f32))
             .collect();
 
-        let _ = handle.send(StateMessage::AddEffect {
-            id: self.id,
-            synthdef: self.synth_name.unwrap_or_default(),
-            group_path: self.group_path,
-            params,
-            bus_in: 0,
-            bus_out: 0,
-            source_location: self.source_location.clone(),
-        });
+        let effect_id = self.id.clone();
+        send_message(
+            &handle,
+            StateMessage::AddEffect {
+                id: self.id,
+                synthdef: self.synth_name.unwrap_or_default(),
+                group_path: self.group_path,
+                params,
+                bus_in: 0,
+                bus_out: 0,
+                source_location: self.source_location.clone(),
+            },
+            &format!("fx.apply({})", effect_id),
+        );
     }
 }
 

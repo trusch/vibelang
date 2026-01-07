@@ -6,9 +6,11 @@
 
 use std::collections::HashSet;
 #[cfg(feature = "native")]
+use parking_lot::Mutex;
+#[cfg(feature = "native")]
 use std::path::{Path, PathBuf};
 #[cfg(feature = "native")]
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 #[cfg(feature = "native")]
 use crossbeam_channel::{unbounded, Receiver};
@@ -174,7 +176,7 @@ pub fn validate_script(
     let defined = defined_synthdefs.clone();
     vibelang_dsp::set_deploy_callback(move |bytes| {
         if let Some(name) = extract_synthdef_name(&bytes) {
-            defined.lock().unwrap().insert(name);
+            defined.lock().insert(name);
         }
         Ok(())
     });
@@ -241,7 +243,7 @@ pub fn validate_script(
     let collected = collect_from_messages(&message_rx);
 
     // Get defined synthdefs
-    result.defined_synthdefs = defined_synthdefs.lock().unwrap().clone();
+    result.defined_synthdefs = defined_synthdefs.lock().clone();
     result.referenced_synthdefs = collected.synthdef_refs.clone();
     result.defined_voices = collected.voice_names;
 

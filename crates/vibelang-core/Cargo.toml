@@ -10,7 +10,7 @@ categories = ["multimedia::audio"]
 
 [features]
 default = ["native"]
-native = ["rosc", "jack", "midir", "cpal", "aubio-rs"]
+native = ["rosc", "jack", "midir", "cpal", "aubio-rs", "libc"]
 
 [dependencies]
 # SFZ support
@@ -25,6 +25,7 @@ thiserror = "2.0"
 
 # Concurrency
 crossbeam-channel = "0.5"
+parking_lot = "0.12"
 
 # OSC for SuperCollider communication (native only)
 rosc = { version = "0.11", optional = true }
@@ -62,6 +63,9 @@ jack = { version = "0.13", optional = true }
 
 # Audio device enumeration (native only)
 cpal = { version = "0.17", optional = true }
+
+# System calls for realtime thread priority (native only)
+libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
 env_logger = "0.11"

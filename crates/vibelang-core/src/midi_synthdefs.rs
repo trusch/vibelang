@@ -78,7 +78,7 @@ fn generate_midi_note_on_synthdef() -> Option<(String, Vec<u8>)> {
 
     // Parameters - we'll pack these into a single value on the Rust side
     // The synthdef receives a single "packed" value that contains all MIDI data
-    builder.add_param("packed_data".to_string(), vec![0.0], None); // 0: (device << 21) | (ch << 14) | (note << 7) | vel
+    builder.add_param("packed_data".to_string(), vec![0.0], None); // 0: (device << 18) | (ch << 14) | (note << 7) | vel
 
     builder.create_control_ugen();
 
@@ -104,7 +104,7 @@ fn generate_midi_note_on_synthdef() -> Option<(String, Vec<u8>)> {
     );
 
     // Single SendTrig with packed data (ID 100)
-    // The packed value is pre-computed on the Rust side: (device << 21) | (ch << 14) | (note << 7) | vel
+    // The packed value is pre-computed on the Rust side: (device << 18) | (ch << 14) | (note << 7) | vel
     builder.add_node(
         "SendTrig".to_string(),
         Rate::Control,
@@ -277,20 +277,15 @@ fn generate_midi_note_off_synthdef() -> Option<(String, Vec<u8>)> {
 /// Generate the vibelang_midi_cc synthdef.
 ///
 /// Parameters:
-/// - device_id: MIDI output device ID (0)
-/// - channel: MIDI channel 0-15 (1)
-/// - cc_num: CC number 0-127 (2)
-/// - value: CC value 0-127 (3)
+/// - packed_data: Packed MIDI data (device << 18) | (ch << 14) | (cc_num << 7) | value
 ///
-/// SendTrig IDs: 120 = device_id, 121 = channel, 122 = cc_num, 123 = value
+/// SendTrig ID: 120 = packed CC data
 fn generate_midi_cc_synthdef() -> Option<(String, Vec<u8>)> {
     let name = "vibelang_midi_cc";
     let mut builder = GraphBuilderInner::new();
 
-    builder.add_param("device_id".to_string(), vec![0.0], None);
-    builder.add_param("channel".to_string(), vec![0.0], None);
-    builder.add_param("cc_num".to_string(), vec![1.0], None);
-    builder.add_param("value".to_string(), vec![0.0], None);
+    // Single packed parameter: (device << 18) | (ch << 14) | (cc_num << 7) | value
+    builder.add_param("packed_data".to_string(), vec![0.0], None);
 
     builder.create_control_ugen();
 
@@ -301,11 +296,6 @@ fn generate_midi_cc_synthdef() -> Option<(String, Vec<u8>)> {
 
     let zero = 0.0f32;
     builder.add_constant(zero);
-    // Add trigger ID constants
-    builder.add_constant(120.0f32); // device_id trigger
-    builder.add_constant(121.0f32); // channel trigger
-    builder.add_constant(122.0f32); // cc_num trigger
-    builder.add_constant(123.0f32); // value trigger
 
     let impulse = builder.add_node(
         "Impulse".to_string(),
@@ -315,6 +305,7 @@ fn generate_midi_cc_synthdef() -> Option<(String, Vec<u8>)> {
         0,
     );
 
+    // Single SendTrig with packed data (ID 120)
     builder.add_node(
         "SendTrig".to_string(),
         Rate::Control,
@@ -323,53 +314,8 @@ fn generate_midi_cc_synthdef() -> Option<(String, Vec<u8>)> {
                 node_id: impulse.0,
                 output_index: 0,
             },
-            Input::Constant(120.0),
-            param(0),
-        ],
-        0,
-        0,
-    );
-
-    builder.add_node(
-        "SendTrig".to_string(),
-        Rate::Control,
-        vec![
-            Input::Node {
-                node_id: impulse.0,
-                output_index: 0,
-            },
-            Input::Constant(121.0),
-            param(1),
-        ],
-        0,
-        0,
-    );
-
-    builder.add_node(
-        "SendTrig".to_string(),
-        Rate::Control,
-        vec![
-            Input::Node {
-                node_id: impulse.0,
-                output_index: 0,
-            },
-            Input::Constant(122.0),
-            param(2),
-        ],
-        0,
-        0,
-    );
-
-    builder.add_node(
-        "SendTrig".to_string(),
-        Rate::Control,
-        vec![
-            Input::Node {
-                node_id: impulse.0,
-                output_index: 0,
-            },
-            Input::Constant(123.0),
-            param(3),
+            Input::Constant(120.0), // ID for CC packed data
+            param(0),               // packed_data value
         ],
         0,
         0,
@@ -428,18 +374,15 @@ fn generate_midi_cc_synthdef() -> Option<(String, Vec<u8>)> {
 /// Generate the vibelang_midi_pitch_bend synthdef.
 ///
 /// Parameters:
-/// - device_id: MIDI output device ID (0)
-/// - channel: MIDI channel 0-15 (1)
-/// - value: 14-bit pitch bend value 0-16383, center=8192 (2)
+/// - packed_data: Packed MIDI data (device << 18) | (ch << 14) | value
 ///
-/// SendTrig IDs: 130 = device_id, 131 = channel, 132 = value
+/// SendTrig ID: 130 = packed pitch bend data
 fn generate_midi_pitch_bend_synthdef() -> Option<(String, Vec<u8>)> {
     let name = "vibelang_midi_pitch_bend";
     let mut builder = GraphBuilderInner::new();
 
-    builder.add_param("device_id".to_string(), vec![0.0], None);
-    builder.add_param("channel".to_string(), vec![0.0], None);
-    builder.add_param("value".to_string(), vec![8192.0], None); // Center
+    // Single packed parameter: (device << 18) | (ch << 14) | value
+    builder.add_param("packed_data".to_string(), vec![0.0], None);
 
     builder.create_control_ugen();
 
@@ -450,10 +393,6 @@ fn generate_midi_pitch_bend_synthdef() -> Option<(String, Vec<u8>)> {
 
     let zero = 0.0f32;
     builder.add_constant(zero);
-    // Add trigger ID constants
-    builder.add_constant(130.0f32); // device_id trigger
-    builder.add_constant(131.0f32); // channel trigger
-    builder.add_constant(132.0f32); // value trigger
 
     let impulse = builder.add_node(
         "Impulse".to_string(),
@@ -463,6 +402,7 @@ fn generate_midi_pitch_bend_synthdef() -> Option<(String, Vec<u8>)> {
         0,
     );
 
+    // Single SendTrig with packed data (ID 130)
     builder.add_node(
         "SendTrig".to_string(),
         Rate::Control,
@@ -471,38 +411,8 @@ fn generate_midi_pitch_bend_synthdef() -> Option<(String, Vec<u8>)> {
                 node_id: impulse.0,
                 output_index: 0,
             },
-            Input::Constant(130.0),
-            param(0),
-        ],
-        0,
-        0,
-    );
-
-    builder.add_node(
-        "SendTrig".to_string(),
-        Rate::Control,
-        vec![
-            Input::Node {
-                node_id: impulse.0,
-                output_index: 0,
-            },
-            Input::Constant(131.0),
-            param(1),
-        ],
-        0,
-        0,
-    );
-
-    builder.add_node(
-        "SendTrig".to_string(),
-        Rate::Control,
-        vec![
-            Input::Node {
-                node_id: impulse.0,
-                output_index: 0,
-            },
-            Input::Constant(132.0),
-            param(2),
+            Input::Constant(130.0), // ID for pitch bend packed data
+            param(0),               // packed_data value
         ],
         0,
         0,
@@ -944,45 +854,31 @@ fn generate_midi_continue_synthdef() -> Option<(String, Vec<u8>)> {
     }
 }
 
-/// SendTrig ID ranges for MIDI message types.
+/// SendTrig IDs for MIDI message types.
 ///
-/// These constants define the trigger ID scheme used to identify MIDI messages
-/// when scsynth sends /tr OSC messages.
-///
-/// The new approach uses single triggers with packed values to avoid accumulator issues.
+/// All MIDI messages use single triggers with packed values.
+/// Data is packed into f32 values (24-bit precision).
 pub mod trigger_ids {
-    // Note On: ID 100 - single trigger with packed data
-    // Format: (device << 21) | (channel << 14) | (note << 7) | velocity
-    pub const NOTE_ON_PACKED: i32 = 100;
+    // Note On: ID 100
+    // Format: (device << 18) | (channel << 14) | (note << 7) | velocity
+    pub const NOTE_ON: i32 = 100;
 
-    // Note Off: ID 110 - single trigger with packed data
+    // Note Off: ID 110
     // Format: (device << 14) | (channel << 7) | note
-    pub const NOTE_OFF_PACKED: i32 = 110;
+    pub const NOTE_OFF: i32 = 110;
 
-    // Legacy constants for backwards compatibility (unused)
-    pub const NOTE_ON_DEVICE_ID: i32 = 100;
-    pub const NOTE_ON_CHANNEL: i32 = 101;
-    pub const NOTE_ON_NOTE: i32 = 102;
-    pub const NOTE_ON_VELOCITY: i32 = 103;
-    pub const NOTE_OFF_DEVICE_ID: i32 = 110;
-    pub const NOTE_OFF_CHANNEL: i32 = 111;
-    pub const NOTE_OFF_NOTE: i32 = 112;
+    // CC: ID 120
+    // Format: (device << 18) | (channel << 14) | (cc_num << 7) | value
+    pub const CC: i32 = 120;
 
-    // CC: IDs 120-123
-    pub const CC_DEVICE_ID: i32 = 120;
-    pub const CC_CHANNEL: i32 = 121;
-    pub const CC_NUM: i32 = 122;
-    pub const CC_VALUE: i32 = 123;
+    // Pitch Bend: ID 130
+    // Format: (device << 18) | (channel << 14) | value
+    pub const PITCH_BEND: i32 = 130;
 
-    // Pitch Bend: IDs 130-132
-    pub const PITCH_BEND_DEVICE_ID: i32 = 130;
-    pub const PITCH_BEND_CHANNEL: i32 = 131;
-    pub const PITCH_BEND_VALUE: i32 = 132;
-
-    // Clock: ID 140
+    // Clock: ID 140 (value = device_id)
     pub const CLOCK: i32 = 140;
 
-    // Transport: IDs 150-152
+    // Transport: IDs 150-152 (value = device_id)
     pub const START: i32 = 150;
     pub const STOP: i32 = 151;
     pub const CONTINUE: i32 = 152;
@@ -991,39 +887,39 @@ pub mod trigger_ids {
     pub fn message_type(id: i32) -> Option<super::MidiTriggerType> {
         use super::MidiTriggerType;
         match id {
-            // Single packed triggers
-            NOTE_ON_PACKED => Some(MidiTriggerType::NoteOnPacked),
-            NOTE_OFF_PACKED => Some(MidiTriggerType::NoteOffPacked),
-            // Legacy multi-trigger (not used by new synthdefs but kept for compat)
-            101..=103 => Some(MidiTriggerType::NoteOn),
-            111..=112 => Some(MidiTriggerType::NoteOff),
-            120..=123 => Some(MidiTriggerType::CC),
-            130..=132 => Some(MidiTriggerType::PitchBend),
-            140 => Some(MidiTriggerType::Clock),
-            150 => Some(MidiTriggerType::Start),
-            151 => Some(MidiTriggerType::Stop),
-            152 => Some(MidiTriggerType::Continue),
+            NOTE_ON => Some(MidiTriggerType::NoteOn),
+            NOTE_OFF => Some(MidiTriggerType::NoteOff),
+            CC => Some(MidiTriggerType::CC),
+            PITCH_BEND => Some(MidiTriggerType::PitchBend),
+            CLOCK => Some(MidiTriggerType::Clock),
+            START => Some(MidiTriggerType::Start),
+            STOP => Some(MidiTriggerType::Stop),
+            CONTINUE => Some(MidiTriggerType::Continue),
             _ => None,
         }
     }
 }
 
 /// Types of MIDI trigger messages.
+///
+/// All messages use packed format with a single SendTrig.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MidiTriggerType {
-    /// New single-trigger note on with packed data
-    NoteOnPacked,
-    /// New single-trigger note off with packed data
-    NoteOffPacked,
-    /// Legacy multi-trigger note on (unused by new synthdefs)
+    /// Note on: (device << 18) | (channel << 14) | (note << 7) | velocity
     NoteOn,
-    /// Legacy multi-trigger note off (unused by new synthdefs)
+    /// Note off: (device << 14) | (channel << 7) | note
     NoteOff,
+    /// CC: (device << 18) | (channel << 14) | (cc_num << 7) | value
     CC,
+    /// Pitch bend: (device << 18) | (channel << 14) | value
     PitchBend,
+    /// Clock pulse (value = device_id)
     Clock,
+    /// Transport start (value = device_id)
     Start,
+    /// Transport stop (value = device_id)
     Stop,
+    /// Transport continue (value = device_id)
     Continue,
 }
 

@@ -6,7 +6,7 @@ use crate::state::StateMessage;
 use rhai::{CustomType, Engine, FnPtr, NativeCallContext, TypeBuilder};
 
 use super::context::{self, SourceLocation};
-use super::require_handle;
+use super::{require_handle, send_message};
 
 /// Extract line and position from Rhai error message text.
 /// Rhai errors often contain "(line X, position Y)" in the message.
@@ -67,11 +67,15 @@ impl GroupHandle {
     /// Set the group gain.
     pub fn gain(self, value: f64) -> Self {
         let handle = require_handle();
-        let _ = handle.send(StateMessage::SetGroupParam {
-            path: self.path.clone(),
-            param: "amp".to_string(),
-            value: value as f32,
-        });
+        send_message(
+            &handle,
+            StateMessage::SetGroupParam {
+                path: self.path.clone(),
+                param: "amp".to_string(),
+                value: value as f32,
+            },
+            &format!("group.gain({})", self.path),
+        );
         self
     }
 
@@ -92,24 +96,32 @@ impl GroupHandle {
     /// Solo the group.
     pub fn solo(self, flag: bool) -> Self {
         let handle = require_handle();
-        let _ = handle.send(StateMessage::SoloGroup {
-            path: self.path.clone(),
-            solo: flag,
-        });
+        send_message(
+            &handle,
+            StateMessage::SoloGroup {
+                path: self.path.clone(),
+                solo: flag,
+            },
+            &format!("group.solo({})", self.path),
+        );
         self
     }
 
     /// Fade gain to a target value over duration.
     pub fn fade_gain_to(self, target: f64, duration: f64) -> Self {
         let handle = require_handle();
-        let _ = handle.send(StateMessage::FadeGroupParam {
-            path: self.path.clone(),
-            param: "amp".to_string(),
-            target: target as f32,
-            duration: format!("{}b", duration),
-            delay: None,
-            quantize: None,
-        });
+        send_message(
+            &handle,
+            StateMessage::FadeGroupParam {
+                path: self.path.clone(),
+                param: "amp".to_string(),
+                target: target as f32,
+                duration: format!("{}b", duration),
+                delay: None,
+                quantize: None,
+            },
+            &format!("group.fade_gain_to({})", self.path),
+        );
         self
     }
 
@@ -163,15 +175,19 @@ impl GroupHandle {
             }
         }
 
-        let _ = handle.send(StateMessage::AddEffect {
-            id,
-            synthdef,
-            group_path: self.path.clone(),
-            params: param_map,
-            bus_in: 0,
-            bus_out: 0,
-            source_location: SourceLocation::default(),
-        });
+        send_message(
+            &handle,
+            StateMessage::AddEffect {
+                id: id.clone(),
+                synthdef,
+                group_path: self.path.clone(),
+                params: param_map,
+                bus_in: 0,
+                bus_out: 0,
+                source_location: SourceLocation::default(),
+            },
+            &format!("group.add_effect({}, {})", self.path, id),
+        );
     }
 
     /// Get an effect by ID.
@@ -183,7 +199,11 @@ impl GroupHandle {
     /// Remove an effect.
     pub fn remove_effect(&mut self, id: String) {
         let handle = require_handle();
-        let _ = handle.send(StateMessage::RemoveEffect { id });
+        send_message(
+            &handle,
+            StateMessage::RemoveEffect { id: id.clone() },
+            &format!("group.remove_effect({}, {})", self.path, id),
+        );
     }
 
     /// Get all effects.
@@ -244,9 +264,13 @@ impl MuteBuilder {
     /// Mute immediately.
     pub fn now(&mut self) {
         let handle = require_handle();
-        let _ = handle.send(StateMessage::MuteGroup {
-            path: self.path.clone(),
-        });
+        send_message(
+            &handle,
+            StateMessage::MuteGroup {
+                path: self.path.clone(),
+            },
+            &format!("group.mute({})", self.path),
+        );
     }
 
     /// Mute after a delay.
@@ -272,9 +296,13 @@ impl UnmuteBuilder {
     /// Unmute immediately.
     pub fn now(&mut self) {
         let handle = require_handle();
-        let _ = handle.send(StateMessage::UnmuteGroup {
-            path: self.path.clone(),
-        });
+        send_message(
+            &handle,
+            StateMessage::UnmuteGroup {
+                path: self.path.clone(),
+            },
+            &format!("group.unmute({})", self.path),
+        );
     }
 
     /// Unmute after a delay.
@@ -333,14 +361,18 @@ impl ParamFadeBuilder {
     /// Apply the fade.
     pub fn apply(self) {
         let handle = require_handle();
-        let _ = handle.send(StateMessage::FadeGroupParam {
-            path: self.path,
-            param: self.param,
-            target: self.target as f32,
-            duration: format!("{}b", self.duration),
-            delay: None,
-            quantize: None,
-        });
+        send_message(
+            &handle,
+            StateMessage::FadeGroupParam {
+                path: self.path.clone(),
+                param: self.param.clone(),
+                target: self.target as f32,
+                duration: format!("{}b", self.duration),
+                delay: None,
+                quantize: None,
+            },
+            &format!("group.fade({}, {})", self.path, self.param),
+        );
     }
 }
 
@@ -356,11 +388,15 @@ impl ScheduledParamSetter {
     /// Set immediately.
     pub fn now(self) {
         let handle = require_handle();
-        let _ = handle.send(StateMessage::SetGroupParam {
-            path: self.path,
-            param: self.param,
-            value: self.value as f32,
-        });
+        send_message(
+            &handle,
+            StateMessage::SetGroupParam {
+                path: self.path.clone(),
+                param: self.param.clone(),
+                value: self.value as f32,
+            },
+            &format!("group.set_param({}, {})", self.path, self.param),
+        );
     }
 
     /// Set after delay.
@@ -428,13 +464,17 @@ pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> Gro
     let node_id = 0;
 
     // Create the group in the runtime
-    let _ = handle.send(StateMessage::RegisterGroup {
-        name: name.clone(),
-        path: full_path.clone(),
-        parent_path: Some(parent_path.clone()),
-        node_id,
-        source_location,
-    });
+    send_message(
+        &handle,
+        StateMessage::RegisterGroup {
+            name: name.clone(),
+            path: full_path.clone(),
+            parent_path: Some(parent_path.clone()),
+            node_id,
+            source_location,
+        },
+        &format!("define_group({})", name),
+    );
 
     // Wait for the group to be registered in state before executing the closure.
     // This prevents race conditions where content tries to use the group before it exists.
@@ -508,11 +548,15 @@ pub fn set_group_gain(path: String, value: f64) {
     } else {
         format!("{}/{}", context::current_group_path(), path)
     };
-    let _ = handle.send(StateMessage::SetGroupParam {
-        path: full_path,
-        param: "amp".to_string(),
-        value: value as f32,
-    });
+    send_message(
+        &handle,
+        StateMessage::SetGroupParam {
+            path: full_path.clone(),
+            param: "amp".to_string(),
+            value: value as f32,
+        },
+        &format!("set_group_gain({})", full_path),
+    );
 }
 
 /// Update the main group's generation for reload tracking.
@@ -531,13 +575,17 @@ pub fn create_main_group() {
     // The main group is already created at runtime startup.
     // We just send a RegisterGroup message to update its generation.
     // The handler will see it already exists and just update the generation.
-    let _ = handle.send(StateMessage::RegisterGroup {
-        name: "main".to_string(),
-        path: "main".to_string(),
-        parent_path: None,
-        node_id: MAIN_GROUP_NODE_ID,
-        source_location: SourceLocation::default(),
-    });
+    send_message(
+        &handle,
+        StateMessage::RegisterGroup {
+            name: "main".to_string(),
+            path: "main".to_string(),
+            parent_path: None,
+            node_id: MAIN_GROUP_NODE_ID,
+            source_location: SourceLocation::default(),
+        },
+        "create_main_group",
+    );
 }
 
 /// Register group API with the Rhai engine.

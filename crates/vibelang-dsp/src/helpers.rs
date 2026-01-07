@@ -817,13 +817,10 @@ pub fn sound_in(num_channels: f64) -> Result<Array> {
         // Multiple channels - use In.ar reading from NumOutputBusChannels
         // SoundIn internally does: In.ar(NumOutputBusChannels.ir + bus, numChannels)
         // Since we have 2 output channels, hardware inputs start at bus 2
+        // Note: In.ar only takes bus as input - numChannels is determined by output count
         let node_ref = with_builder(|builder| {
             builder.add_constant(2.0); // NumOutputBusChannels = 2
-            builder.add_constant(num_channels as f32);
-            let inputs = vec![
-                Input::Constant(2.0),
-                Input::Constant(num_channels as f32),
-            ];
+            let inputs = vec![Input::Constant(2.0)];
             builder.add_node("In".to_string(), Rate::Audio, inputs, num_ch, 0)
         })?;
 
@@ -847,15 +844,15 @@ pub fn sound_in_channel(channel: f64) -> Result<NodeRef> {
 }
 
 /// Read from an audio bus.
+///
+/// Note: SuperCollider's In UGen only takes the bus as an input.
+/// The number of channels is determined by the output count, not by an input parameter.
 pub fn in_ar(bus: f64, num_channels: f64) -> Result<Array> {
     let num_ch = num_channels as u32;
     let node_ref = with_builder(|builder| {
         builder.add_constant(bus as f32);
-        builder.add_constant(num_channels as f32);
-        let inputs = vec![
-            Input::Constant(bus as f32),
-            Input::Constant(num_channels as f32),
-        ];
+        // Only pass bus as input - num_channels is determined by output count
+        let inputs = vec![Input::Constant(bus as f32)];
         builder.add_node("In".to_string(), Rate::Audio, inputs, num_ch, 0)
     })?;
 
@@ -868,11 +865,14 @@ pub fn in_ar(bus: f64, num_channels: f64) -> Result<Array> {
 }
 
 /// Read from an audio bus (NodeRef version).
+///
+/// Note: SuperCollider's In UGen only takes the bus as an input.
+/// The number of channels is determined by the output count, not by an input parameter.
 pub fn in_ar_n(bus: NodeRef, num_channels: f64) -> Result<Array> {
     let num_ch = num_channels as u32;
     let node_ref = with_builder(|builder| {
-        builder.add_constant(num_channels as f32);
-        let inputs = vec![bus.to_input(), Input::Constant(num_channels as f32)];
+        // Only pass bus as input - num_channels is determined by output count
+        let inputs = vec![bus.to_input()];
         builder.add_node("In".to_string(), Rate::Audio, inputs, num_ch, 0)
     })?;
 

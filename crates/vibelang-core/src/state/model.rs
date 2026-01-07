@@ -3,8 +3,39 @@
 //! These types represent the complete state of a VibeLang session,
 //! including groups, voices, patterns, melodies, effects, and samples.
 
-use crate::api::context::SourceLocation;
 use crate::events::{BeatEvent, FadeTargetType, Pattern};
+
+// ============================================================================
+// Source Location (shared between api and runtime)
+// ============================================================================
+
+/// Source location information for an entity definition.
+#[derive(Clone, Debug, Default)]
+pub struct SourceLocation {
+    /// The script file path where this entity was defined.
+    pub file: Option<String>,
+    /// Line number (1-based).
+    pub line: Option<u32>,
+    /// Column number (1-based).
+    pub column: Option<u32>,
+}
+
+impl SourceLocation {
+    /// Create a new source location.
+    pub fn new(file: Option<String>, line: Option<u32>, column: Option<u32>) -> Self {
+        Self { file, line, column }
+    }
+
+    /// Create an unknown source location (no file, line, or column info).
+    pub fn unknown() -> Self {
+        Self::default()
+    }
+
+    /// Check if this source location has any information.
+    pub fn is_empty(&self) -> bool {
+        self.file.is_none() && self.line.is_none()
+    }
+}
 #[cfg(feature = "native")]
 use crate::midi::{MidiBackend, MidiDeviceInfo, MidiOutputDeviceInfo, MidiRouting, QueuedMidiEvent};
 #[cfg(feature = "native")]
@@ -580,6 +611,114 @@ fn format_melody_with_bars(tokens: &[String], steps_per_bar: usize) -> String {
 }
 
 // ============================================================================
+// Audio Recording State (native only)
+// ============================================================================
+
+/// Status of an audio recording session.
+#[cfg(feature = "native")]
+#[derive(Clone, Debug, PartialEq)]
+pub enum AudioRecordingStatus {
+    /// Waiting for start beat (quantized start pending).
+    Pending,
+    /// Count-in metronome is playing.
+    CountingIn,
+    /// Actively recording audio.
+    Recording,
+    /// Recording complete, buffer ready for use.
+    Completed,
+    /// Recording was cancelled.
+    Cancelled,
+}
+
+/// State for an active or pending audio recording session.
+///
+/// Records audio from a group's bus into a SuperCollider buffer,
+/// optionally saving to a file and returning a sample handle.
+#[cfg(feature = "native")]
+#[derive(Clone, Debug)]
+pub struct AudioRecordingState {
+    /// Unique ID for this recording.
+    pub id: String,
+    /// Group path being recorded.
+    pub group_path: String,
+    /// Allocated buffer ID in SuperCollider.
+    pub buffer_id: i32,
+    /// Recording synth node ID (set when recording starts).
+    pub node_id: Option<i32>,
+    /// Audio bus to record from (group's audio_bus).
+    pub audio_bus: i32,
+    /// Length in beats (for tempo-synced recordings).
+    pub length_beats: Option<f64>,
+    /// Length in seconds (for fixed-time recordings).
+    pub length_seconds: Option<f64>,
+    /// Beat when recording starts.
+    pub start_beat: f64,
+    /// Beat when recording ends.
+    pub end_beat: f64,
+    /// Count-in length in beats (0 = no count-in).
+    pub count_in_beats: f64,
+    /// Whether to play metronome during count-in/recording.
+    pub metronome: bool,
+    /// File path to save recording (None = buffer only).
+    pub file_path: Option<String>,
+    /// Number of audio channels (1 or 2).
+    pub num_channels: i32,
+    /// Number of frames allocated in buffer.
+    pub num_frames: i32,
+    /// Sample rate (typically 48000).
+    pub sample_rate: f32,
+    /// Current recording status.
+    pub status: AudioRecordingStatus,
+    /// Reload generation when this recording was created.
+    pub generation: u64,
+    /// Whether the buffer has been confirmed allocated by SuperCollider.
+    /// Recording synth won't start until this is true.
+    pub buffer_ready: bool,
+}
+
+#[cfg(feature = "native")]
+impl AudioRecordingState {
+    /// Create a new audio recording state.
+    pub fn new(
+        id: String,
+        group_path: String,
+        buffer_id: i32,
+        audio_bus: i32,
+        start_beat: f64,
+        end_beat: f64,
+        num_channels: i32,
+        num_frames: i32,
+        sample_rate: f32,
+    ) -> Self {
+        Self {
+            id,
+            group_path,
+            buffer_id,
+            node_id: None,
+            audio_bus,
+            length_beats: None,
+            length_seconds: None,
+            start_beat,
+            end_beat,
+            count_in_beats: 0.0,
+            metronome: false,
+            file_path: None,
+            num_channels,
+            num_frames,
+            sample_rate,
+            status: AudioRecordingStatus::Pending,
+            generation: 0,
+            buffer_ready: false,
+        }
+    }
+
+    /// Get the duration of this recording in seconds.
+    pub fn duration_seconds(&self) -> f64 {
+        self.num_frames as f64 / self.sample_rate as f64
+    }
+}
+
+// ============================================================================
 // Script State
 // ============================================================================
 
@@ -672,6 +811,9 @@ pub struct ScriptState {
     /// Next available MIDI output device ID - native only.
     #[cfg(feature = "native")]
     pub next_midi_output_device_id: u32,
+    /// Active audio recordings - native only.
+    #[cfg(feature = "native")]
+    pub audio_recordings: HashMap<String, AudioRecordingState>,
 }
 
 // ============================================================================
@@ -740,6 +882,7 @@ impl ScriptState {
             meter_levels: HashMap::new(),
             midi_output_config: MidiOutputConfiguration::new(),
             next_midi_output_device_id: 1,
+            audio_recordings: HashMap::new(),
         }
     }
 
@@ -901,6 +1044,8 @@ pub struct VoiceState {
     pub midi_output_device_id: Option<u32>,
     /// MIDI channel for output (0-15).
     pub midi_channel: Option<u8>,
+    /// Base MIDI note for this voice (0-127). Used for drum patterns.
+    pub midi_note: Option<u8>,
     /// CC mappings: parameter_name -> CC number.
     pub cc_mappings: HashMap<String, u8>,
 }
@@ -931,6 +1076,7 @@ impl VoiceState {
             source_location: SourceLocation::default(),
             midi_output_device_id: None,
             midi_channel: None,
+            midi_note: None,
             cc_mappings: HashMap::new(),
         }
     }
@@ -1130,7 +1276,11 @@ pub struct ScheduledNoteOff {
     /// MIDI note number.
     pub note: u8,
     /// Specific node ID to release (None = all).
+    /// Special values: -1 = direct MIDI path, -2 = SC-managed MIDI path.
     pub node_id: Option<i32>,
+    /// Packed MIDI data for SC-managed note-off (device_id << 14 | channel << 7 | note).
+    /// Only used when node_id == Some(-2).
+    pub midi_packed_data: Option<u32>,
 }
 
 /// Log entry for a sequence run.
