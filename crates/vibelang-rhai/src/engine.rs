@@ -1,0 +1,1512 @@
+//! Script engine - the main entry point for executing VibeLang scripts.
+//!
+//! The [`ScriptEngine`] wraps a Rhai engine with all VibeLang API functions registered.
+
+use rhai::Engine;
+use std::path::{Path, PathBuf};
+use vibelang_core2::reload::ScriptState;
+
+use crate::api;
+use crate::context;
+use crate::error::{Error, Result};
+
+/// Script engine for executing VibeLang scripts.
+///
+/// The ScriptEngine:
+/// 1. Creates a Rhai engine with all VibeLang API registered
+/// 2. Executes scripts that call the API functions
+/// 3. Collects the resulting ScriptState
+///
+/// # Example
+///
+/// ```ignore
+/// let mut engine = ScriptEngine::new();
+/// let state = engine.execute_file("song.vibe")?;
+/// // Apply state to runtime via reload system
+/// ```
+pub struct ScriptEngine {
+    engine: Engine,
+    import_paths: Vec<PathBuf>,
+}
+
+impl ScriptEngine {
+    /// Create a new script engine with all VibeLang API registered.
+    pub fn new() -> Self {
+        let mut engine = Engine::new();
+
+        // Set appropriate limits for complex scripts
+        engine.set_max_expr_depths(4096, 4096);
+        engine.set_max_call_levels(4096);
+
+        // Override print() to route through the log system
+        engine.on_print(|text| {
+            log::info!("[script] {}", text);
+        });
+
+        // Override debug() similarly
+        engine.on_debug(|text, source, pos| {
+            let loc = match (source, pos) {
+                (Some(src), pos) if !pos.is_none() => format!(" ({}:{})", src, pos),
+                (Some(src), _) => format!(" ({})", src),
+                (None, pos) if !pos.is_none() => format!(" ({})", pos),
+                _ => String::new(),
+            };
+            log::debug!("[script]{} {}", loc, text);
+        });
+
+        // Register VibeLang API
+        api::register_api(&mut engine);
+
+        // Register vibelang-dsp API for define_synthdef
+        vibelang_dsp::register_dsp_api(&mut engine);
+
+        Self {
+            engine,
+            import_paths: Vec::new(),
+        }
+    }
+
+    /// Add import paths for module resolution.
+    pub fn add_import_path(&mut self, path: impl Into<PathBuf>) {
+        self.import_paths.push(path.into());
+    }
+
+    /// Execute a script from a string.
+    ///
+    /// Returns the collected ScriptState that can be applied to a runtime.
+    pub fn execute(&mut self, script: &str) -> Result<ScriptState> {
+        // Initialize context
+        context::init_context();
+
+        // Execute script
+        let result = self.engine.run(script).map_err(Error::from);
+
+        // Take state regardless of result (to clean up context)
+        let state = context::take_state();
+        context::clear_context();
+
+        // Return error if script failed
+        result?;
+
+        Ok(state)
+    }
+
+    /// Execute a script from a file.
+    ///
+    /// Returns the collected ScriptState that can be applied to a runtime.
+    pub fn execute_file(&mut self, path: impl AsRef<Path>) -> Result<ScriptState> {
+        let path = path.as_ref();
+
+        // Read script
+        let script = std::fs::read_to_string(path)?;
+
+        // Set up module resolver
+        let base_path = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        self.setup_module_resolver(base_path);
+
+        // Initialize context
+        context::init_context();
+        context::set_current_file(Some(path.to_path_buf()));
+        context::set_import_paths(self.import_paths.clone());
+
+        // Execute script
+        let result = self.engine.run(&script).map_err(Error::from);
+
+        // Take state regardless of result
+        let state = context::take_state();
+        context::clear_context();
+
+        // Return error if script failed
+        result?;
+
+        Ok(state)
+    }
+
+    /// Execute an AST (pre-compiled script).
+    pub fn execute_ast(&mut self, ast: &rhai::AST) -> Result<ScriptState> {
+        // Initialize context
+        context::init_context();
+
+        // Execute
+        let result = self.engine.run_ast(ast).map_err(Error::from);
+
+        // Take state
+        let state = context::take_state();
+        context::clear_context();
+
+        result?;
+
+        Ok(state)
+    }
+
+    /// Compile a script to AST for repeated execution.
+    pub fn compile(&self, script: &str) -> Result<rhai::AST> {
+        self.engine.compile(script).map_err(Error::from)
+    }
+
+    /// Compile a script file to AST.
+    pub fn compile_file(&self, path: impl AsRef<Path>) -> Result<rhai::AST> {
+        let path = path.as_ref();
+        self.engine.compile_file(path.to_path_buf()).map_err(Error::from)
+    }
+
+    /// Set up module resolver for import statements.
+    fn setup_module_resolver(&mut self, base_path: PathBuf) {
+        let mut collection = rhai::module_resolvers::ModuleResolversCollection::new();
+
+        // 1. Source-relative resolver (highest priority)
+        let mut source_resolver = rhai::module_resolvers::FileModuleResolver::new();
+        source_resolver.set_extension("vibe");
+        collection.push(source_resolver);
+
+        // 2. Base path resolver
+        let mut base_resolver = rhai::module_resolvers::FileModuleResolver::new();
+        base_resolver.set_base_path(base_path);
+        base_resolver.set_extension("vibe");
+        collection.push(base_resolver);
+
+        // 3. Additional import paths
+        for import_path in &self.import_paths {
+            let mut resolver = rhai::module_resolvers::FileModuleResolver::new();
+            resolver.set_base_path(import_path.clone());
+            resolver.set_extension("vibe");
+            collection.push(resolver);
+        }
+
+        self.engine.set_module_resolver(collection);
+    }
+
+    /// Get a reference to the underlying Rhai engine.
+    pub fn engine(&self) -> &Engine {
+        &self.engine
+    }
+
+    /// Get a mutable reference to the underlying Rhai engine.
+    pub fn engine_mut(&mut self) -> &mut Engine {
+        &mut self.engine
+    }
+}
+
+impl Default for ScriptEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_execute_simple_script() {
+        let mut engine = ScriptEngine::new();
+        let state = engine.execute("set_tempo(140);").unwrap();
+        assert_eq!(state.tempo, 140.0);
+    }
+
+    #[test]
+    fn test_execute_with_group() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(128);
+            define_group("Drums", || {
+                let kick = voice("kick").synth("kick_synth").gain(db(-6));
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.tempo, 128.0);
+        assert!(!state.groups.is_empty());
+        assert!(!state.voices.is_empty());
+    }
+
+    #[test]
+    fn test_helper_functions() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            let amp = db(-6);
+            let midi = note("C4");
+            let beats = bars(2);
+            set_tempo(120);
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.tempo, 120.0);
+    }
+
+    #[test]
+    fn test_pattern_api() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(130);
+            define_group("Drums", || {
+                let kick = voice("kick").synth("kick_909").gain(db(-6));
+                let hihat = voice("hihat").synth("hihat_909").gain(db(-10));
+
+                let kick_ptn = pattern("kick_main")
+                    .on(kick)
+                    .step("x... x... x... x...")
+                    .apply();
+
+                let hihat_ptn = pattern("hihat_main")
+                    .on(hihat)
+                    .step("..x. ..x. ..x. ..x.")
+                    .apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.tempo, 130.0);
+        assert!(!state.groups.is_empty(), "Should have groups");
+        assert_eq!(state.voices.len(), 2, "Should have 2 voices");
+        assert_eq!(state.patterns.len(), 2, "Should have 2 patterns");
+    }
+
+    #[test]
+    fn test_melody_api() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Synth", || {
+                let lead = voice("lead").synth("saw_lead").gain(db(-8));
+
+                let melody = melody("main_melody")
+                    .on(lead)
+                    .notes("C4 D4 E4 F4 | G4 A4 B4 C5")
+                    .transpose(0)
+                    .apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.tempo, 120.0);
+        assert_eq!(state.voices.len(), 1, "Should have 1 voice");
+        assert_eq!(state.melodies.len(), 1, "Should have 1 melody");
+
+        // Check melody has notes
+        let melody_id = state.melodies.keys().next().unwrap();
+        let melody_config = state.melodies.get(melody_id).unwrap();
+        assert!(melody_config.notes.len() >= 8, "Should have at least 8 notes");
+    }
+
+    #[test]
+    fn test_sequence_api() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(128);
+
+            define_group("Drums", || {
+                let kick = voice("kick").synth("kick_909");
+                let kick_ptn = pattern("kick_main")
+                    .on(kick)
+                    .step("x... x... x... x...")
+                    .apply();
+            });
+
+            let main_seq = sequence("arrangement")
+                .loop_bars(8)
+                .apply();
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.tempo, 128.0);
+        assert_eq!(state.sequences.len(), 1, "Should have 1 sequence");
+    }
+
+    #[test]
+    fn test_euclidean_pattern() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Drums", || {
+                let perc = voice("perc").synth("perc_synth");
+
+                // Euclidean rhythm: 5 hits in 16 steps
+                let euclid_ptn = pattern("euclid_5_16")
+                    .on(perc)
+                    .euclid(5, 16)
+                    .apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.patterns.len(), 1, "Should have 1 pattern");
+        let pattern_id = state.patterns.keys().next().unwrap();
+        let pattern_config = state.patterns.get(pattern_id).unwrap();
+        assert_eq!(pattern_config.steps.len(), 5, "Should have 5 steps (hits)");
+    }
+
+    #[test]
+    fn test_fx_api() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Synth", || {
+                let lead = voice("lead").synth("saw_lead");
+
+                // Add reverb effect
+                fx("reverb")
+                    .synth("reverb_fx")
+                    .param("room", 0.8)
+                    .param("mix", 0.3)
+                    .apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.effects.len(), 1, "Should have 1 effect");
+    }
+
+    #[test]
+    fn test_comprehensive_script() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            // Full minimal techno-style script
+            set_tempo(130);
+            set_time_signature(4, 4);
+
+            // Drums group
+            define_group("Drums", || {
+                let kick = voice("kick").synth("kick_909").gain(db(-6));
+                let hihat = voice("hihat").synth("hihat_909").gain(db(-10));
+                let clap = voice("clap").synth("clap_909").gain(db(-8));
+
+                pattern("kick_main").on(kick).step("x... .... x... ....").apply();
+                pattern("hihat_main").on(hihat).step("..x. ..x. ..x. ..x.").apply();
+                pattern("clap_main").on(clap).step(".... x... .... x...").apply();
+            });
+
+            // Bass group
+            define_group("Bass", || {
+                let bass = voice("bass").synth("acid_bass").gain(db(-4));
+                melody("bassline").on(bass).notes("C2 . C2 . | C2 . E2 F2").apply();
+            });
+
+            // Lead group with effect
+            define_group("Lead", || {
+                let lead = voice("lead").synth("saw_lead").gain(db(-8));
+                melody("lead_melody").on(lead).notes("G4 - - . | A4 - G4 F4").apply();
+
+                fx("lead_reverb")
+                    .synth("reverb_fx")
+                    .param("room", 0.6)
+                    .apply();
+            });
+
+            // Main arrangement
+            sequence("main")
+                .loop_bars(16)
+                .apply();
+        "#,
+            )
+            .unwrap();
+
+        // Verify all components were created
+        assert_eq!(state.tempo, 130.0);
+        assert!(state.groups.len() >= 3, "Should have at least 3 groups");
+        assert_eq!(state.voices.len(), 5, "Should have 5 voices");
+        assert_eq!(state.patterns.len(), 3, "Should have 3 patterns");
+        assert_eq!(state.melodies.len(), 2, "Should have 2 melodies");
+        assert_eq!(state.effects.len(), 1, "Should have 1 effect");
+        assert_eq!(state.sequences.len(), 1, "Should have 1 sequence");
+    }
+
+    // ==================== Phase 1 Tests: Voice Mute/Solo ====================
+
+    #[test]
+    fn test_voice_mute() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth").mute();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let voice_id = state.voices.keys().next().unwrap();
+        let voice_config = state.voices.get(voice_id).unwrap();
+        assert!(voice_config.muted, "Voice should be muted");
+        assert!(!voice_config.soloed, "Voice should not be soloed");
+    }
+
+    #[test]
+    fn test_voice_unmute() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth").mute().unmute();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let voice_id = state.voices.keys().next().unwrap();
+        let voice_config = state.voices.get(voice_id).unwrap();
+        assert!(!voice_config.muted, "Voice should not be muted after unmute");
+    }
+
+    #[test]
+    fn test_voice_solo() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth").solo();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let voice_id = state.voices.keys().next().unwrap();
+        let voice_config = state.voices.get(voice_id).unwrap();
+        assert!(voice_config.soloed, "Voice should be soloed");
+        assert!(!voice_config.muted, "Voice should not be muted");
+    }
+
+    #[test]
+    fn test_voice_unsolo() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth").solo().unsolo();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let voice_id = state.voices.keys().next().unwrap();
+        let voice_config = state.voices.get(voice_id).unwrap();
+        assert!(!voice_config.soloed, "Voice should not be soloed after unsolo");
+    }
+
+    #[test]
+    fn test_voice_mute_solo_chain() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                // Mute, then solo, then unmute - should be soloed but not muted
+                let v = voice("test_voice").synth("test_synth").mute().solo().unmute();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let voice_id = state.voices.keys().next().unwrap();
+        let voice_config = state.voices.get(voice_id).unwrap();
+        assert!(!voice_config.muted, "Voice should not be muted");
+        assert!(voice_config.soloed, "Voice should be soloed");
+    }
+
+    #[test]
+    fn test_multiple_voices_mute_solo() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v1 = voice("voice1").synth("synth").mute();
+                let v2 = voice("voice2").synth("synth").solo();
+                let v3 = voice("voice3").synth("synth"); // Default: not muted, not soloed
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.voices.len(), 3);
+
+        let mut muted_count = 0;
+        let mut soloed_count = 0;
+        let mut default_count = 0;
+
+        for voice_config in state.voices.values() {
+            if voice_config.muted && !voice_config.soloed {
+                muted_count += 1;
+            } else if voice_config.soloed && !voice_config.muted {
+                soloed_count += 1;
+            } else if !voice_config.muted && !voice_config.soloed {
+                default_count += 1;
+            }
+        }
+
+        assert_eq!(muted_count, 1, "Should have 1 muted voice");
+        assert_eq!(soloed_count, 1, "Should have 1 soloed voice");
+        assert_eq!(default_count, 1, "Should have 1 default voice");
+    }
+
+    // ==================== Phase 1 Tests: Group Mute/Solo ====================
+
+    #[test]
+    fn test_group_mute() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("MutedGroup", || {
+                let v = voice("test_voice").synth("test_synth");
+            });
+            group("MutedGroup").mute();
+        "#,
+            )
+            .unwrap();
+
+        // Find the group (not the main group)
+        let group = state
+            .groups
+            .values()
+            .find(|g| g.name == "MutedGroup")
+            .expect("Should find MutedGroup");
+
+        assert!(group.muted, "Group should be muted");
+        assert!(!group.soloed, "Group should not be soloed");
+    }
+
+    #[test]
+    fn test_group_unmute() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("TestGroup", || {
+                let v = voice("test_voice").synth("test_synth");
+            });
+            group("TestGroup").mute().unmute();
+        "#,
+            )
+            .unwrap();
+
+        let group = state
+            .groups
+            .values()
+            .find(|g| g.name == "TestGroup")
+            .expect("Should find TestGroup");
+
+        assert!(!group.muted, "Group should not be muted after unmute");
+    }
+
+    #[test]
+    fn test_group_solo() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("SoloGroup", || {
+                let v = voice("test_voice").synth("test_synth");
+            });
+            group("SoloGroup").solo(true);
+        "#,
+            )
+            .unwrap();
+
+        let group = state
+            .groups
+            .values()
+            .find(|g| g.name == "SoloGroup")
+            .expect("Should find SoloGroup");
+
+        assert!(group.soloed, "Group should be soloed");
+        assert!(!group.muted, "Group should not be muted");
+    }
+
+    #[test]
+    fn test_group_solo_false() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("TestGroup", || {
+                let v = voice("test_voice").synth("test_synth");
+            });
+            group("TestGroup").solo(true).solo(false);
+        "#,
+            )
+            .unwrap();
+
+        let group = state
+            .groups
+            .values()
+            .find(|g| g.name == "TestGroup")
+            .expect("Should find TestGroup");
+
+        assert!(!group.soloed, "Group should not be soloed after solo(false)");
+    }
+
+    #[test]
+    fn test_group_set_param() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("TestGroup", || {
+                let v = voice("test_voice").synth("test_synth");
+            });
+            group("TestGroup").set_param("filter_cutoff", 0.75);
+        "#,
+            )
+            .unwrap();
+
+        let group = state
+            .groups
+            .values()
+            .find(|g| g.name == "TestGroup")
+            .expect("Should find TestGroup");
+
+        let param = group.params.get("filter_cutoff").expect("Should have filter_cutoff param");
+        assert!((param - 0.75).abs() < 0.001, "filter_cutoff should be 0.75");
+    }
+
+    #[test]
+    fn test_group_gain() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("TestGroup", || {
+                let v = voice("test_voice").synth("test_synth");
+            });
+            group("TestGroup").gain(0.5);
+        "#,
+            )
+            .unwrap();
+
+        let group = state
+            .groups
+            .values()
+            .find(|g| g.name == "TestGroup")
+            .expect("Should find TestGroup");
+
+        let amp = group.params.get("amp").expect("Should have amp param");
+        assert!((amp - 0.5).abs() < 0.001, "amp should be 0.5");
+    }
+
+    // ==================== Phase 1 Tests: Pattern/Melody/Sequence is_playing ====================
+
+    #[test]
+    fn test_pattern_start_is_playing() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                let p = pattern("test_pattern").on(v).step("x...").start();
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.playing_patterns.len(), 1, "Should have 1 playing pattern");
+    }
+
+    #[test]
+    fn test_pattern_stop_not_playing() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                let p = pattern("test_pattern").on(v).step("x...");
+                p.start();
+                p.stop();
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.playing_patterns.len(), 0, "Should have 0 playing patterns after stop");
+    }
+
+    #[test]
+    fn test_pattern_launch() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            set_quantization(4.0); // Quantize to 1 bar
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                let p = pattern("test_pattern").on(v).step("x...").launch();
+            });
+        "#,
+            )
+            .unwrap();
+
+        // launch() should start the pattern
+        assert_eq!(state.playing_patterns.len(), 1, "Should have 1 playing pattern after launch");
+    }
+
+    #[test]
+    fn test_melody_start_is_playing() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                let m = melody("test_melody").on(v).notes("C4 D4 E4 F4").start();
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.playing_melodies.len(), 1, "Should have 1 playing melody");
+    }
+
+    #[test]
+    fn test_melody_stop_not_playing() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                let m = melody("test_melody").on(v).notes("C4 D4 E4 F4");
+                m.start();
+                m.stop();
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.playing_melodies.len(), 0, "Should have 0 playing melodies after stop");
+    }
+
+    #[test]
+    fn test_melody_launch() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            set_quantization(4.0);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                let m = melody("test_melody").on(v).notes("C4 D4 E4 F4").launch();
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.playing_melodies.len(), 1, "Should have 1 playing melody after launch");
+    }
+
+    #[test]
+    fn test_sequence_start_is_playing() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            let seq = sequence("test_sequence").loop_bars(4).apply();
+            seq.start();
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.playing_sequences.len(), 1, "Should have 1 playing sequence");
+    }
+
+    #[test]
+    fn test_sequence_stop_not_playing() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            let seq = sequence("test_sequence").loop_bars(4).apply();
+            seq.start();
+            seq.stop();
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.playing_sequences.len(), 0, "Should have 0 playing sequences after stop");
+    }
+
+    #[test]
+    fn test_sequence_launch() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            set_quantization(4.0);
+            let seq = sequence("test_sequence").loop_bars(4).apply();
+            seq.launch();
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.playing_sequences.len(), 1, "Should have 1 playing sequence after launch");
+    }
+
+    #[test]
+    fn test_multiple_patterns_playing() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                pattern("p1").on(v).step("x...").start();
+                pattern("p2").on(v).step(".x..").start();
+                pattern("p3").on(v).step("..x.").apply(); // apply only, not start
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.patterns.len(), 3, "Should have 3 patterns defined");
+        assert_eq!(state.playing_patterns.len(), 2, "Should have 2 playing patterns");
+    }
+
+    // ==================== Phase 1 Tests: Quantization ====================
+
+    #[test]
+    fn test_set_quantization() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            set_quantization(4.0); // Quantize to 1 bar (4 beats)
+        "#,
+            )
+            .unwrap();
+
+        assert!((state.quantization - 4.0).abs() < 0.001, "Quantization should be 4.0");
+    }
+
+    #[test]
+    fn test_quantization_default() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+        "#,
+            )
+            .unwrap();
+
+        // Default quantization should be 0 (no quantization)
+        assert!((state.quantization - 0.0).abs() < 0.001, "Default quantization should be 0.0");
+    }
+
+    #[test]
+    fn test_quantization_various_values() {
+        let mut engine = ScriptEngine::new();
+
+        // Test various quantization values
+        let test_cases = vec![
+            (0.25, "16th note"),
+            (0.5, "8th note"),
+            (1.0, "quarter note"),
+            (2.0, "half note"),
+            (4.0, "1 bar"),
+            (8.0, "2 bars"),
+            (16.0, "4 bars"),
+        ];
+
+        for (value, description) in test_cases {
+            let script = format!("set_tempo(120); set_quantization({});", value);
+            let state = engine.execute(&script).unwrap();
+            assert!(
+                (state.quantization - value).abs() < 0.001,
+                "Quantization should be {} for {}",
+                value,
+                description
+            );
+        }
+    }
+
+    // ==================== Phase 1 Tests: Chord and Scale Functions ====================
+
+    #[test]
+    fn test_chord_function_in_script() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                // Use chord function to get notes
+                let c_major = chord("C");
+                let m = melody("chord_melody").on(v).notes(c_major).apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let melody_config = state.melodies.values().next().expect("Should have a melody");
+        // C major chord has 3 notes
+        assert!(melody_config.notes.len() >= 3, "Melody should have at least 3 notes from chord");
+    }
+
+    #[test]
+    fn test_scale_function_in_script() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                // Use scale function to get notes
+                let c_scale = scale("C", "major");
+                let m = melody("scale_melody").on(v).notes(c_scale).apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let melody_config = state.melodies.values().next().expect("Should have a melody");
+        // C major scale has 7 notes
+        assert!(melody_config.notes.len() >= 7, "Melody should have at least 7 notes from scale");
+    }
+
+    #[test]
+    fn test_scale_degree_in_script() {
+        let mut engine = ScriptEngine::new();
+
+        // This test verifies scale_degree can be used in scripts
+        // We can't easily check the actual note values, but we can ensure it doesn't error
+        let result = engine.execute(
+            r#"
+            set_tempo(120);
+            let degree_1 = scale_degree("C", "major", 1);
+            let degree_5 = scale_degree("C", "major", 5);
+        "#,
+        );
+
+        assert!(result.is_ok(), "Script with scale_degree should execute without errors");
+    }
+
+    // ==================== Phase 1 Tests: Melody Array Input ====================
+
+    #[test]
+    fn test_melody_add_note() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                let m = melody("note_melody")
+                    .on(v)
+                    .add_note(0.0, 60, 1.0, 0.5)    // C4 at beat 0
+                    .add_note(1.0, 62, 0.8, 0.5)    // D4 at beat 1
+                    .add_note(2.0, 64, 0.9, 0.5)    // E4 at beat 2
+                    .apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let melody_config = state.melodies.values().next().expect("Should have a melody");
+        assert_eq!(melody_config.notes.len(), 3, "Melody should have 3 notes");
+    }
+
+    #[test]
+    fn test_melody_add_chord_at_beat() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                let c_chord = chord("C"); // [60, 64, 67]
+                let m = melody("chord_at_beat")
+                    .on(v)
+                    .add_chord(0.0, c_chord, 1.0, 2.0)
+                    .apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let melody_config = state.melodies.values().next().expect("Should have a melody");
+        // Each note in the chord becomes a separate note event
+        assert_eq!(melody_config.notes.len(), 3, "Melody should have 3 notes (C major chord)");
+    }
+
+    // ==================== Phase 1 Tests: Edge Cases and Error Handling ====================
+
+    #[test]
+    fn test_voice_default_state() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth").apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let voice_config = state.voices.values().next().expect("Should have a voice");
+        assert!(!voice_config.muted, "Voice should not be muted by default");
+        assert!(!voice_config.soloed, "Voice should not be soloed by default");
+    }
+
+    #[test]
+    fn test_group_default_state() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("TestGroup", || {
+                let v = voice("test_voice").synth("test_synth");
+            });
+        "#,
+            )
+            .unwrap();
+
+        let group = state
+            .groups
+            .values()
+            .find(|g| g.name == "TestGroup")
+            .expect("Should find TestGroup");
+
+        assert!(!group.muted, "Group should not be muted by default");
+        assert!(!group.soloed, "Group should not be soloed by default");
+    }
+
+    #[test]
+    fn test_pattern_apply_not_playing() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                let p = pattern("test_pattern").on(v).step("x...").apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        // apply() should NOT start the pattern
+        assert_eq!(state.playing_patterns.len(), 0, "Pattern should not be playing after apply()");
+    }
+
+    #[test]
+    fn test_melody_apply_not_playing() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                let m = melody("test_melody").on(v).notes("C4 D4 E4").apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        // apply() should NOT start the melody
+        assert_eq!(state.playing_melodies.len(), 0, "Melody should not be playing after apply()");
+    }
+
+    #[test]
+    fn test_negative_quantization_clamped() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            set_quantization(-5.0); // Negative should be clamped to 0
+        "#,
+            )
+            .unwrap();
+
+        assert!(state.quantization >= 0.0, "Quantization should be >= 0");
+    }
+
+    #[test]
+    fn test_combined_phase1_features() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            // Test all Phase 1 features together
+            set_tempo(130);
+            set_time_signature(4, 4);
+            set_quantization(4.0);
+
+            // Drums group - muted
+            define_group("Drums", || {
+                let kick = voice("kick").synth("kick_909").gain(db(-6));
+                let hihat = voice("hihat").synth("hihat_909").mute(); // Muted
+
+                pattern("kick_main").on(kick).step("x... x...").start();
+                pattern("hihat_main").on(hihat).step("..x. ..x.").launch();
+            });
+            group("Drums").set_param("compressor", 0.6);
+
+            // Bass group - soloed
+            define_group("Bass", || {
+                let bass = voice("bass").synth("acid_bass").solo(); // Soloed
+
+                // Use scale for the bassline
+                let notes = scale("C", "minor");
+                melody("bassline").on(bass).notes(notes).start();
+            });
+            group("Bass").solo(true);
+
+            // Lead group
+            define_group("Lead", || {
+                let lead = voice("lead").synth("saw_lead");
+
+                // Use add_note for precise control
+                melody("lead_melody")
+                    .on(lead)
+                    .add_note(0.0, 60, 1.0, 2.0)
+                    .add_note(2.0, 67, 0.8, 1.0)
+                    .launch();
+            });
+        "#,
+            )
+            .unwrap();
+
+        // Verify everything was set up correctly
+        assert_eq!(state.tempo, 130.0);
+        assert!((state.quantization - 4.0).abs() < 0.001);
+
+        // Check groups
+        assert!(state.groups.len() >= 3);
+        let bass_group = state.groups.values().find(|g| g.name == "Bass");
+        assert!(bass_group.is_some());
+        assert!(bass_group.unwrap().soloed);
+
+        // Check voices
+        assert_eq!(state.voices.len(), 4);
+
+        // Check patterns and melodies are playing
+        assert_eq!(state.playing_patterns.len(), 2);
+        assert_eq!(state.playing_melodies.len(), 2);
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_midi_api() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+
+            // Get a MIDI device (by index for testing)
+            let keyboard = midi_device(0);
+
+            define_group("Synth", || {
+                let lead = voice("lead").synth("saw_lead").gain(db(-8));
+
+                // Route keyboard to voice
+                keyboard.route_to(lead);
+
+                // Route CC 1 (mod wheel) to filter cutoff
+                keyboard.route_cc(1, lead, "filter_cutoff", 0.0, 1.0);
+            });
+
+            // Open the device for input
+            keyboard.open_input();
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.tempo, 120.0);
+        assert_eq!(state.voices.len(), 1, "Should have 1 voice");
+
+        // Check MIDI routing was created
+        assert_eq!(
+            state.midi_keyboard_routes.len(),
+            1,
+            "Should have 1 keyboard route"
+        );
+        assert_eq!(state.midi_cc_routes.len(), 1, "Should have 1 CC route");
+        assert_eq!(state.midi_inputs.len(), 1, "Should have 1 MIDI input");
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_midi_output_voice() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+
+            // Get a MIDI device for output
+            let synth = midi_device(0);
+
+            define_group("External", || {
+                // Create a voice that outputs to MIDI instead of audio
+                let ext_synth = voice("external_synth")
+                    .on(synth)          // Routes to MIDI device
+                    .channel(2)         // MIDI channel 3 (0-indexed)
+                    .gain(db(0));
+
+                // Create a melody that will be sent as MIDI
+                melody("ext_melody").on(ext_synth).notes("C3 D3 E3 F3").apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.tempo, 120.0);
+        assert_eq!(state.voices.len(), 1, "Should have 1 voice");
+
+        // Check the voice has MIDI output configured
+        let voice_id = state.voices.keys().next().unwrap();
+        let voice_config = state.voices.get(voice_id).unwrap();
+        assert!(
+            voice_config.midi_output.is_some(),
+            "Voice should have MIDI output"
+        );
+        assert_eq!(voice_config.midi_channel, 2, "Voice should be on channel 2");
+    }
+
+    // === Phase 3: Sample API tests ===
+
+    #[test]
+    fn test_sample_envelope_methods() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+
+            // Test sample with envelope settings
+            let kick = sample("kick", "samples/kick.wav")
+                .attack(0.01)
+                .sustain(0.8)
+                .release(0.2);
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.samples.len(), 1, "Should have 1 sample");
+        let sample_id = state.samples.keys().next().unwrap();
+        let sample_config = state.samples.get(sample_id).unwrap();
+        assert!((sample_config.attack - 0.01).abs() < 0.001, "Attack should be 0.01");
+        assert!((sample_config.sustain - 0.8).abs() < 0.001, "Sustain should be 0.8");
+        assert!((sample_config.release - 0.2).abs() < 0.001, "Release should be 0.2");
+    }
+
+    #[test]
+    fn test_sample_playback_methods() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+
+            // Test sample with playback settings
+            let loop_sample = sample("loop", "samples/loop.wav")
+                .amp(0.7)
+                .rate(1.5)
+                .loop_mode(true)
+                .offset(0.5)
+                .length(2.0);
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.samples.len(), 1, "Should have 1 sample");
+        let sample_id = state.samples.keys().next().unwrap();
+        let sample_config = state.samples.get(sample_id).unwrap();
+        assert!((sample_config.amp - 0.7).abs() < 0.001, "Amp should be 0.7");
+        assert!((sample_config.rate - 1.5).abs() < 0.001, "Rate should be 1.5");
+        assert!(sample_config.loop_mode, "Loop mode should be true");
+        assert!((sample_config.offset - 0.5).abs() < 0.001, "Offset should be 0.5");
+        assert_eq!(sample_config.length, Some(2.0), "Length should be 2.0");
+    }
+
+    #[test]
+    fn test_sample_warp_methods() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+
+            // Test sample with warp/time-stretch settings
+            let warped = sample("warped", "samples/loop.wav")
+                .warp(true)
+                .speed(0.5)
+                .pitch(1.2)
+                .window_size(0.15)
+                .overlaps(12.0);
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.samples.len(), 1, "Should have 1 sample");
+        let sample_id = state.samples.keys().next().unwrap();
+        let sample_config = state.samples.get(sample_id).unwrap();
+        assert!(sample_config.warp, "Warp should be true");
+        assert!((sample_config.speed - 0.5).abs() < 0.001, "Speed should be 0.5");
+        assert!((sample_config.pitch - 1.2).abs() < 0.001, "Pitch should be 1.2");
+        assert!((sample_config.window_size - 0.15).abs() < 0.001, "Window size should be 0.15");
+        assert!((sample_config.overlaps - 12.0).abs() < 0.001, "Overlaps should be 12.0");
+    }
+
+    #[test]
+    fn test_sample_semitones() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+
+            // Test pitch shift by semitones
+            let shifted = sample("shifted", "samples/loop.wav")
+                .semitones(12.0);  // One octave up
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.samples.len(), 1, "Should have 1 sample");
+        let sample_id = state.samples.keys().next().unwrap();
+        let sample_config = state.samples.get(sample_id).unwrap();
+        assert!(sample_config.warp, "Warp should be auto-enabled");
+        // 12 semitones = 2^(12/12) = 2.0 (octave up)
+        assert!((sample_config.pitch - 2.0).abs() < 0.001, "Pitch should be 2.0 for +12 semitones");
+    }
+
+    #[test]
+    fn test_sample_warp_to_bpm() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+
+            // Test warp to BPM
+            let tempo_matched = sample("tempo", "samples/loop.wav")
+                .warp_to_bpm(140.0);
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.samples.len(), 1, "Should have 1 sample");
+        let sample_id = state.samples.keys().next().unwrap();
+        let sample_config = state.samples.get(sample_id).unwrap();
+        assert!(sample_config.warp, "Warp should be auto-enabled");
+        assert_eq!(sample_config.target_bpm, Some(140.0), "Target BPM should be 140");
+    }
+
+    #[test]
+    fn test_sample_slice() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+
+            // Test sample slicing
+            let sliced = sample("sliced", "samples/loop.wav")
+                .slice(1.0, 3.0);  // 2-second slice starting at 1 second
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.samples.len(), 1, "Should have 1 sample");
+        let sample_id = state.samples.keys().next().unwrap();
+        let sample_config = state.samples.get(sample_id).unwrap();
+        assert!((sample_config.offset - 1.0).abs() < 0.001, "Offset should be 1.0");
+        assert_eq!(sample_config.length, Some(2.0), "Length should be 2.0 (3.0 - 1.0)");
+    }
+
+    #[test]
+    fn test_sample_chained_methods() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+
+            // Test chaining multiple sample methods
+            let full_sample = sample("full", "samples/loop.wav")
+                .attack(0.005)
+                .release(0.1)
+                .amp(0.9)
+                .warp(true)
+                .speed(0.75)
+                .pitch(1.1)
+                .loop_mode(true);
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.samples.len(), 1, "Should have 1 sample");
+        let sample_id = state.samples.keys().next().unwrap();
+        let sample_config = state.samples.get(sample_id).unwrap();
+        assert!((sample_config.attack - 0.005).abs() < 0.001);
+        assert!((sample_config.release - 0.1).abs() < 0.001);
+        assert!((sample_config.amp - 0.9).abs() < 0.001);
+        assert!(sample_config.warp);
+        assert!((sample_config.speed - 0.75).abs() < 0.001);
+        assert!((sample_config.pitch - 1.1).abs() < 0.001);
+        assert!(sample_config.loop_mode);
+    }
+}

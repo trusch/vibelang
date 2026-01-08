@@ -1,0 +1,22 @@
+[package]
+name = "vibelang-rhai"
+version = "0.1.0"
+edition = "2021"
+description = "Rhai scripting layer for VibeLang - provides the .vibe scripting API"
+license = "MIT"
+
+[features]
+default = ["native"]
+native = ["vibelang-core2/native"]
+midi = ["vibelang-core2/midi", "dep:midir"]
+
+[dependencies]
+vibelang-core2 = { path = "../vibelang-core2" }
+vibelang-dsp = { path = "../vibelang-dsp" }
+rhai = { version = "1", features = ["sync"] }
+tracing = "0.1"
+log = "0.4"
+thiserror = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+midir = { version = "0.10", optional = true }

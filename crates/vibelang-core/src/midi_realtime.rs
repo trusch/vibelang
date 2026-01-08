@@ -46,7 +46,7 @@
 //! ```
 
 use crate::midi::{MidiOutputHandle, QueuedMidiEvent};
-use crate::midi_synthdefs::{trigger_ids, MidiTriggerType};
+use vibelang_dsp::system_synthdefs::{trigger_ids, MidiTriggerType};
 use crossbeam_channel::Sender;
 use parking_lot::RwLock;
 use rosc::{OscMessage, OscPacket, OscType};
@@ -147,6 +147,23 @@ impl MidiRealtimeService {
     /// Create a new MIDI realtime service with default configuration.
     pub fn new() -> Self {
         Self::with_config(MidiRealtimeConfig::default())
+    }
+
+    /// Create a no-op MIDI realtime service for testing.
+    ///
+    /// This creates a service that won't connect to any scsynth instance
+    /// and won't spawn any threads. Useful for unit tests.
+    pub fn noop() -> Self {
+        Self {
+            config: MidiRealtimeConfig {
+                scsynth_addr: "127.0.0.1:0".to_string(),
+                ..Default::default()
+            },
+            devices: Arc::new(RwLock::new(HashMap::new())),
+            running: Arc::new(AtomicBool::new(false)),
+            thread_handle: None,
+            stats: Arc::new(MidiRealtimeStats::new()),
+        }
     }
 
     /// Create a new MIDI realtime service for a specific scsynth address.

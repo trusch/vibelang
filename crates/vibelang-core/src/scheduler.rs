@@ -291,4 +291,242 @@ mod tests {
         assert_eq!(snapshot.name, "kick_pattern");
         assert_eq!(snapshot.kind, LoopKind::Pattern);
     }
+
+    #[test]
+    fn test_collect_due_events_basic() {
+        let mut scheduler = EventScheduler::new();
+        let clock = TransportClock::new();
+
+        let snapshot = LoopSnapshot {
+            name: "test_pattern".to_string(),
+            pattern: make_test_pattern(),
+            start_beat: 0.0,
+            kind: LoopKind::Pattern,
+            group_path: None,
+            voice_name: Some("kick".to_string()),
+        };
+
+        let scheduled_events: Vec<(BeatEvent, BeatTime)> = vec![];
+        let now = Instant::now();
+
+        // Collect events with 1000ms lookahead (at 120 BPM = 2 beats)
+        let events = scheduler.collect_due_events(
+            &clock,
+            now,
+            &[snapshot],
+            &scheduled_events,
+            1000,
+        );
+
+        // Should get events at beats 0 and 1 (within lookahead window)
+        assert!(!events.is_empty());
+    }
+
+    #[test]
+    fn test_collect_due_events_no_duplicates() {
+        let mut scheduler = EventScheduler::new();
+        let clock = TransportClock::new();
+
+        let snapshot = LoopSnapshot {
+            name: "test_pattern".to_string(),
+            pattern: make_test_pattern(),
+            start_beat: 0.0,
+            kind: LoopKind::Pattern,
+            group_path: None,
+            voice_name: Some("kick".to_string()),
+        };
+
+        let scheduled_events: Vec<(BeatEvent, BeatTime)> = vec![];
+        let now = Instant::now();
+
+        // First collection with 2000ms lookahead
+        let events1 = scheduler.collect_due_events(
+            &clock,
+            now,
+            &[snapshot.clone()],
+            &scheduled_events,
+            2000,
+        );
+
+        // Second collection at same position - should return nothing
+        let events2 = scheduler.collect_due_events(
+            &clock,
+            now,
+            &[snapshot],
+            &scheduled_events,
+            2000,
+        );
+
+        assert!(!events1.is_empty());
+        assert!(events2.is_empty(), "Should not return duplicate events");
+    }
+
+    #[test]
+    fn test_collect_due_events_loop_wrap() {
+        let mut scheduler = EventScheduler::new();
+        let clock = TransportClock::new();
+
+        let pattern = Pattern {
+            name: "short".to_string(),
+            events: vec![BeatEvent::new(0.0, "hit")],
+            loop_length_beats: 1.0,
+            phase_offset: 0.0,
+        };
+
+        let snapshot = LoopSnapshot {
+            name: "short_loop".to_string(),
+            pattern,
+            start_beat: 0.0,
+            kind: LoopKind::Pattern,
+            group_path: None,
+            voice_name: Some("perc".to_string()),
+        };
+
+        let scheduled_events: Vec<(BeatEvent, BeatTime)> = vec![];
+        let now = Instant::now();
+
+        // Collect with 2000ms lookahead at 120 BPM = ~4 beats
+        let events = scheduler.collect_due_events(
+            &clock,
+            now,
+            &[snapshot],
+            &scheduled_events,
+            2000,
+        );
+
+        // Should get multiple events due to looping
+        let total_events: usize = events.iter().map(|(_, evts)| evts.len()).sum();
+        assert!(total_events >= 2, "Should get multiple looped events, got {}", total_events);
+    }
+
+    #[test]
+    fn test_collect_scheduled_one_shot_events() {
+        let mut scheduler = EventScheduler::new();
+        let clock = TransportClock::new();
+
+        let one_shot = BeatEvent::new(0.0, "one_shot");
+        let scheduled_events = vec![(one_shot, BeatTime::from_float(1.0))];
+
+        let now = Instant::now();
+
+        let events = scheduler.collect_due_events(
+            &clock,
+            now,
+            &[],
+            &scheduled_events,
+            1000,
+        );
+
+        // Should include the one-shot event
+        assert!(!events.is_empty());
+        let all_events: Vec<_> = events.iter().flat_map(|(_, evts)| evts.iter()).collect();
+        assert!(all_events.iter().any(|e| e.synth_def == "one_shot"));
+    }
+
+    #[test]
+    fn test_loop_kind_equality() {
+        assert_eq!(LoopKind::Pattern, LoopKind::Pattern);
+        assert_eq!(LoopKind::Melody, LoopKind::Melody);
+        assert_eq!(LoopKind::Sequence, LoopKind::Sequence);
+        assert_ne!(LoopKind::Pattern, LoopKind::Melody);
+    }
+
+    #[test]
+    fn test_scheduler_multiple_loops() {
+        let mut scheduler = EventScheduler::new();
+        let clock = TransportClock::new();
+
+        let pattern1 = Pattern {
+            name: "kick".to_string(),
+            events: vec![BeatEvent::new(0.0, "kick")],
+            loop_length_beats: 1.0,
+            phase_offset: 0.0,
+        };
+
+        let pattern2 = Pattern {
+            name: "snare".to_string(),
+            events: vec![BeatEvent::new(0.5, "snare")],
+            loop_length_beats: 1.0,
+            phase_offset: 0.0,
+        };
+
+        let snapshots = vec![
+            LoopSnapshot {
+                name: "kick_loop".to_string(),
+                pattern: pattern1,
+                start_beat: 0.0,
+                kind: LoopKind::Pattern,
+                group_path: None,
+                voice_name: Some("kick".to_string()),
+            },
+            LoopSnapshot {
+                name: "snare_loop".to_string(),
+                pattern: pattern2,
+                start_beat: 0.0,
+                kind: LoopKind::Pattern,
+                group_path: None,
+                voice_name: Some("snare".to_string()),
+            },
+        ];
+
+        let scheduled_events: Vec<(BeatEvent, BeatTime)> = vec![];
+        let now = Instant::now();
+
+        let events = scheduler.collect_due_events(
+            &clock,
+            now,
+            &snapshots,
+            &scheduled_events,
+            1000,
+        );
+
+        // Should have events from both patterns
+        let all_events: Vec<_> = events.iter().flat_map(|(_, evts)| evts.iter()).collect();
+        assert!(all_events.iter().any(|e| e.synth_def == "kick"));
+        assert!(all_events.iter().any(|e| e.synth_def == "snare"));
+    }
+
+    #[test]
+    fn test_scheduler_reset_to_beat() {
+        let mut scheduler = EventScheduler::new();
+
+        scheduler.loop_last_scheduled.insert("loop1".to_string(), BeatTime::from_float(4.0));
+        scheduler.loop_last_scheduled.insert("loop2".to_string(), BeatTime::from_float(8.0));
+
+        assert_eq!(scheduler.tracked_loop_count(), 2);
+
+        scheduler.reset_to_beat(16.0);
+
+        // Loops should be cleared
+        assert_eq!(scheduler.tracked_loop_count(), 0);
+    }
+
+    #[test]
+    fn test_scheduler_sync_to_beat() {
+        let mut scheduler = EventScheduler::new();
+
+        scheduler.loop_last_scheduled.insert("loop1".to_string(), BeatTime::from_float(4.0));
+        scheduler.loop_last_scheduled.insert("loop2".to_string(), BeatTime::from_float(8.0));
+
+        // Sync to beat 12
+        scheduler.sync_to_beat(12.0);
+
+        // All loops should be synced to beat 12
+        for &last_scheduled in scheduler.loop_last_scheduled.values() {
+            assert_eq!(last_scheduled.to_float(), 12.0);
+        }
+    }
+
+    #[test]
+    fn test_scheduler_reset_loop() {
+        let mut scheduler = EventScheduler::new();
+
+        scheduler.loop_last_scheduled.insert("loop1".to_string(), BeatTime::from_float(4.0));
+        scheduler.loop_last_scheduled.insert("loop2".to_string(), BeatTime::from_float(8.0));
+
+        scheduler.reset_loop("loop1");
+
+        assert!(scheduler.loop_last_scheduled.get("loop1").is_none());
+        assert!(scheduler.loop_last_scheduled.get("loop2").is_some());
+    }
 }

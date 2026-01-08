@@ -26,7 +26,6 @@ pub mod api;
 pub mod constants;
 pub mod events;
 pub mod reload;
-pub mod sample_synthdef;
 pub mod scheduler;
 pub mod sequences;
 pub mod state;
@@ -41,11 +40,7 @@ pub mod midi;
 #[cfg(feature = "native")]
 pub mod midi_realtime;
 #[cfg(feature = "native")]
-pub mod midi_synthdefs;
-#[cfg(feature = "native")]
 pub mod osc;
-#[cfg(feature = "native")]
-pub mod recording_synthdef;
 #[cfg(feature = "native")]
 pub mod osc_sender;
 #[cfg(feature = "native")]
@@ -56,6 +51,9 @@ pub mod score;
 pub mod scsynth;
 #[cfg(feature = "native")]
 pub mod scsynth_process;
+
+// Re-export system synthdefs from vibelang-dsp for convenience
+pub use vibelang_dsp::system_synthdefs;
 
 // Re-export main types for convenience (platform-independent)
 pub use events::{ActiveFade, BeatEvent, FadeClip, FadeTargetType, Pattern};

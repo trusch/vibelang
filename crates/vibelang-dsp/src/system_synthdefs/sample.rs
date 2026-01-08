@@ -2,7 +2,7 @@
 //!
 //! Provides PlayBuf-based sample playback and Warp1-based time-stretching synthdefs.
 
-use vibelang_dsp::{encode_synthdef, GraphBuilderInner, GraphIR, Input, Rate};
+use crate::{encode_synthdef, GraphBuilderInner, GraphIR, Input, Rate};
 
 /// Create and encode all sample voice synthdefs.
 /// Returns a vector of (name, encoded_bytes) pairs.
@@ -524,5 +524,22 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
             log::error!("[SAMPLE] Failed to encode Warp SynthDef '{}': {}", name, e);
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_sample_synthdefs() {
+        let defs = create_sample_synthdefs();
+        assert_eq!(defs.len(), 4);
+
+        let names: Vec<_> = defs.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(names.contains(&"sample_voice_mono"));
+        assert!(names.contains(&"sample_voice_stereo"));
+        assert!(names.contains(&"warp_voice_mono"));
+        assert!(names.contains(&"warp_voice_stereo"));
     }
 }

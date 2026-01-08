@@ -9,22 +9,29 @@
 use crate::audio_device::AudioConfig;
 use crate::events::{BeatEvent, FadeTargetType};
 use crate::midi::{MidiMessage, MidiRouting};
+use crate::midi_realtime::MidiRealtimeService;
 use crate::osc_sender::{OscSender, OscTiming};
 use crate::reload::{ChangeOp, EntityKind, ReloadManager, StateSnapshot};
 use crate::scheduler::{EventScheduler, LoopKind, LoopSnapshot};
 use crate::scsynth::{AddAction, BufNum, NodeId, Scsynth, Target};
 use crate::scsynth_process::ScsynthProcess;
-use rosc::{OscMessage, OscPacket, OscType};
-use crate::midi_realtime::MidiRealtimeService;
 use crate::state::{
     ActiveFadeJob, ActiveSequence, ActiveSynth, AudioRecordingState, AudioRecordingStatus,
-    EffectState, GroupState, LoopStatus, MelodyState, PatternState, SampleInfo,
-    ScheduledEvent, ScheduledNoteOff, ScriptState, SequenceRunLog, SourceLocation, StateManager,
-    StateMessage, VoiceState,
+    EffectState, GroupState, LoopStatus, MelodyState, PatternState, SampleInfo, ScheduledEvent,
+    ScheduledNoteOff, SequenceRunLog, SourceLocation, StateManager, StateMessage, VoiceState,
 };
 use crate::timing::{BeatTime, TimeSignature, TransportClock};
+
+use super::handle::RuntimeHandle;
+use super::handlers::{effects, groups, melodies, midi_input, midi_output, patterns, synthdef, transport, voices, RuntimeContext};
+use vibelang_dsp::system_synthdefs::{
+    create_midi_synthdefs, create_recording_synthdefs, create_sample_synthdefs,
+    create_system_link_audio_bytes,
+};
+
 use anyhow::Result;
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver};
+use rosc::{OscMessage, OscPacket, OscType};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -33,170 +40,6 @@ use std::time::{Duration, Instant};
 
 const EPSILON: f64 = 1e-6;
 const LOOKAHEAD_MS: u64 = 250;
-
-/// Handle to the running VibeLang runtime.
-///
-/// This is the main interface for interacting with VibeLang from the API layer.
-/// It provides thread-safe access to state and message sending.
-#[derive(Clone)]
-pub struct RuntimeHandle {
-    /// Sender for state messages.
-    message_tx: Sender<StateMessage>,
-    /// Shared state manager for read access.
-    state_manager: StateManager,
-    /// Reference to the SuperCollider client.
-    scsynth: Scsynth,
-    /// Flag to signal shutdown.
-    shutdown: Arc<AtomicBool>,
-    /// Receiver for sequence completion notifications.
-    completion_rx: Option<crossbeam_channel::Receiver<String>>,
-    /// Sender for MIDI messages to the runtime thread.
-    midi_tx: Sender<MidiMessage>,
-}
-
-impl RuntimeHandle {
-    /// Send a message to the runtime thread.
-    pub fn send(&self, msg: StateMessage) -> Result<()> {
-        self.message_tx
-            .send(msg)
-            .map_err(|e| anyhow::anyhow!("Failed to send message: {}", e))
-    }
-
-    /// Get the state manager for read access.
-    pub fn state(&self) -> &StateManager {
-        &self.state_manager
-    }
-
-    /// Get the SuperCollider client.
-    pub fn scsynth(&self) -> &Scsynth {
-        &self.scsynth
-    }
-
-    /// Read the current state with a closure.
-    pub fn with_state<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&ScriptState) -> R,
-    {
-        self.state_manager.with_state_read(f)
-    }
-
-    /// Write to the state with a closure.
-    pub fn with_state_mut<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut ScriptState) -> R,
-    {
-        self.state_manager.with_state_write(f)
-    }
-
-    /// Get a clone of the message sender.
-    pub fn message_sender(&self) -> Sender<StateMessage> {
-        self.message_tx.clone()
-    }
-
-    /// Signal the runtime to shut down.
-    pub fn shutdown(&self) {
-        self.shutdown.store(true, Ordering::Relaxed);
-    }
-
-    /// Check if shutdown has been requested.
-    pub fn is_shutdown_requested(&self) -> bool {
-        self.shutdown.load(Ordering::Relaxed)
-    }
-
-    /// Wait for a sequence to complete (for play_once sequences).
-    /// Returns true if the sequence completed, false if timeout or no channel.
-    pub fn wait_for_sequence(&self, name: &str, timeout: Option<Duration>) -> bool {
-        let rx = match &self.completion_rx {
-            Some(rx) => rx,
-            None => return false,
-        };
-
-        let deadline = timeout.map(|t| Instant::now() + t);
-
-        loop {
-            let remaining = match deadline {
-                Some(d) => {
-                    let now = Instant::now();
-                    if now >= d {
-                        return false;
-                    }
-                    Some(d - now)
-                }
-                None => None,
-            };
-
-            let result = match remaining {
-                Some(t) => rx.recv_timeout(t),
-                None => rx.recv().map_err(|_| crossbeam_channel::RecvTimeoutError::Disconnected),
-            };
-
-            match result {
-                Ok(completed_name) if completed_name == name => return true,
-                Ok(_) => continue, // Different sequence completed, keep waiting
-                Err(_) => return false, // Timeout or channel closed
-            }
-        }
-    }
-
-    /// Try to receive a sequence completion notification without blocking.
-    /// Returns Some(sequence_name) if a sequence completed, None otherwise.
-    pub fn try_recv_completion(&self) -> Option<String> {
-        self.completion_rx.as_ref()?.try_recv().ok()
-    }
-
-    /// Check if a specific sequence has completed (non-blocking).
-    pub fn is_sequence_completed(&self, name: &str) -> bool {
-        self.with_state(|state| {
-            // If it's in active_sequences and marked completed, it's done
-            if let Some(active) = state.active_sequences.get(name) {
-                return active.completed;
-            }
-            // If it's not in active_sequences but the definition has play_once,
-            // it was started and has now finished
-            if let Some(def) = state.sequences.get(name) {
-                if def.play_once {
-                    // If play_once and not active, it either never started or completed
-                    // We can't distinguish without more tracking, so just return false
-                    return false;
-                }
-            }
-            false
-        })
-    }
-
-    /// Get the MIDI message sender for forwarding MIDI events.
-    /// This is used by the API layer when opening MIDI devices.
-    pub fn midi_sender(&self) -> Sender<MidiMessage> {
-        self.midi_tx.clone()
-    }
-
-    /// Create a RuntimeHandle for validation mode (no runtime thread).
-    ///
-    /// This is used by the validation engine to execute scripts without
-    /// starting a full runtime. The handle can receive messages but
-    /// they won't be processed by a runtime thread.
-    ///
-    /// # Arguments
-    /// * `message_tx` - Sender for state messages (will be received by caller)
-    /// * `state_manager` - State manager for read/write access
-    /// * `scsynth` - SuperCollider client (use `Scsynth::noop()` for validation)
-    /// * `midi_tx` - Sender for MIDI messages (can be unused)
-    pub fn new_validation(
-        message_tx: Sender<StateMessage>,
-        state_manager: StateManager,
-        scsynth: Scsynth,
-        midi_tx: Sender<MidiMessage>,
-    ) -> Self {
-        Self {
-            message_tx,
-            state_manager,
-            scsynth,
-            shutdown: Arc::new(AtomicBool::new(false)),
-            completion_rx: None,
-            midi_tx,
-        }
-    }
-}
 
 /// The VibeLang runtime.
 ///
@@ -279,29 +122,29 @@ impl Runtime {
         system_synthdefs.push(("system_link_audio".to_string(), system_synthdef_bytes.to_vec()));
         log::info!("   Loaded system_link_audio synthdef");
 
-        // Load SFZ synthdefs
-        for (name, bytes) in vibelang_sfz::create_sfz_synthdefs() {
+        // Load SFZ synthdefs (from vibelang-dsp)
+        for (name, bytes) in vibelang_dsp::system_synthdefs::create_sfz_synthdefs() {
             scsynth.d_recv_bytes(bytes.clone())?;
             system_synthdefs.push((name.clone(), bytes));
             log::info!("   Loaded {} synthdef", name);
         }
 
-        // Load sample voice synthdefs (PlayBuf and Warp1 based)
-        for (name, bytes) in crate::sample_synthdef::create_sample_synthdefs() {
+        // Load sample voice synthdefs (PlayBuf and Warp1 based, from vibelang-dsp)
+        for (name, bytes) in create_sample_synthdefs() {
             scsynth.d_recv_bytes(bytes.clone())?;
             system_synthdefs.push((name.clone(), bytes));
             log::info!("   Loaded {} synthdef", name);
         }
 
-        // Load MIDI trigger synthdefs (for SC-managed MIDI output)
-        for (name, bytes) in crate::midi_synthdefs::create_midi_synthdefs() {
+        // Load MIDI trigger synthdefs (for SC-managed MIDI output, from vibelang-dsp)
+        for (name, bytes) in create_midi_synthdefs() {
             scsynth.d_recv_bytes(bytes.clone())?;
             system_synthdefs.push((name.clone(), bytes));
             log::info!("   Loaded {} synthdef", name);
         }
 
-        // Load recording synthdefs (system_record_mono, system_record_stereo, system_metronome)
-        for (name, bytes) in crate::recording_synthdef::create_recording_synthdefs() {
+        // Load recording synthdefs (system_record_mono, system_record_stereo, system_metronome, from vibelang-dsp)
+        for (name, bytes) in create_recording_synthdefs() {
             scsynth.d_recv_bytes(bytes.clone())?;
             system_synthdefs.push((name.clone(), bytes));
             log::info!("   Loaded {} synthdef", name);
@@ -435,6 +278,10 @@ struct RuntimeThread {
 }
 
 impl RuntimeThread {
+    // =========================================================================
+    // Construction & Main Loop
+    // =========================================================================
+
     fn with_completion_channel(
         sc: Scsynth,
         shared: StateManager,
@@ -481,6 +328,25 @@ impl RuntimeThread {
         // Clean shutdown of MIDI realtime service
         self.midi_rt.stop();
     }
+
+    /// Create a RuntimeContext for use with extracted handlers.
+    fn create_context(&mut self) -> RuntimeContext<'_> {
+        RuntimeContext {
+            osc_sender: &mut self.osc_sender,
+            sc: &self.sc,
+            shared: &self.shared,
+            scheduler: &mut self.scheduler,
+            transport: &mut self.transport,
+            reload_manager: &mut self.reload_manager,
+            completion_tx: &self.completion_tx,
+            sc_midi_clock_node_id: &mut self.sc_midi_clock_node_id,
+            midi_rt: &mut self.midi_rt,
+        }
+    }
+
+    // =========================================================================
+    // MIDI Input Processing
+    // =========================================================================
 
     /// Process all pending MIDI messages.
     fn drain_midi_messages(&mut self) {
@@ -563,27 +429,6 @@ impl RuntimeThread {
                 self.transport.beat_at(Instant::now()).to_float(),
             ) {
                 log::error!("[SC-MIDI CLOCK] Failed to free clock synth: {}", e);
-            }
-        }
-    }
-
-    /// Update the SC-managed MIDI clock synth tempo.
-    fn update_sc_midi_clock_tempo(&mut self, bpm: f64) {
-        if let Some(node_id) = self.sc_midi_clock_node_id {
-            let clock_freq = bpm / 60.0 * 24.0;
-
-            log::debug!(
-                "[SC-MIDI CLOCK] Updating clock tempo: node={} bpm={} freq={}Hz",
-                node_id, bpm, clock_freq
-            );
-
-            if let Err(e) = self.osc_sender.n_set(
-                OscTiming::Now,
-                NodeId::new(node_id),
-                &[("freq", clock_freq as f32)],
-                self.transport.beat_at(Instant::now()).to_float(),
-            ) {
-                log::error!("[SC-MIDI CLOCK] Failed to update clock tempo: {}", e);
             }
         }
     }
@@ -1008,6 +853,10 @@ impl RuntimeThread {
     // Note: MIDI callbacks are now queued for execution by the script thread.
     // See the callback execution mechanism in the API layer.
 
+    // =========================================================================
+    // OSC Communication with SuperCollider
+    // =========================================================================
+
     /// Poll for OSC messages from scsynth (e.g., /n_end notifications)
     fn poll_osc_messages(&mut self) {
         // Process all available OSC messages
@@ -1165,6 +1014,13 @@ impl RuntimeThread {
         }
     }
 
+    // =========================================================================
+    // Message Dispatcher
+    // The handle_message function is the main message dispatcher (~1300 lines).
+    // It routes StateMessage variants to their handlers.
+    // Consider splitting into runtime/handlers/ modules in the future.
+    // =========================================================================
+
     fn drain_messages(&mut self) {
         while let Ok(msg) = self.message_rx.try_recv() {
             self.handle_message(msg);
@@ -1173,191 +1029,52 @@ impl RuntimeThread {
 
     fn handle_message(&mut self, msg: StateMessage) {
         match msg {
-            // === Transport ===
+            // === Transport (delegated to handlers::transport) ===
             StateMessage::SetBpm { bpm } => {
-                let now = Instant::now();
-                self.transport.set_bpm(bpm, now);
-                self.shared.with_state_write(|state| {
-                    state.tempo = bpm;
-                    state.bump_version();
-                });
-                // Also update OscSender's tempo for score capture timing
-                self.osc_sender.set_tempo(bpm);
-
-                // Update SC-managed MIDI clock synth tempo if running
-                self.update_sc_midi_clock_tempo(bpm);
+                let mut ctx = self.create_context();
+                transport::handle_set_bpm(&mut ctx, bpm);
             }
             StateMessage::SetQuantization { beats } => {
-                self.shared.with_state_write(|state| {
-                    state.quantization_beats = beats.max(EPSILON);
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                transport::handle_set_quantization(&mut ctx, beats);
             }
             StateMessage::SetTimeSignature {
                 numerator,
                 denominator,
             } => {
-                self.transport
-                    .set_time_signature(numerator, denominator, Instant::now());
-                self.shared.with_state_write(|state| {
-                    state.time_signature = TimeSignature::new(numerator, denominator);
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                transport::handle_set_time_signature(&mut ctx, numerator, denominator);
             }
             StateMessage::StartScheduler => {
-                let now = Instant::now();
-                self.transport.start(now);
-                // Don't reset scheduler here - seek handles that
-                self.shared.with_state_write(|state| {
-                    state.transport_running = true;
-                    state.bump_version();
-                });
-
-                // Send MIDI start message if clock output is enabled
-                let clock_enabled = self.shared.with_state_read(|state| {
-                    state.midi_output_config.clock_output_enabled
-                });
-                if clock_enabled {
-                    self.send_midi_clock_message(crate::midi::QueuedMidiEvent::start());
-                    log::info!("[MIDI CLOCK] Sent START message");
-                }
+                let mut ctx = self.create_context();
+                transport::handle_start_scheduler(&mut ctx);
             }
             StateMessage::StopScheduler => {
-                let now = Instant::now();
-                let current_beat = self.transport.beat_at(now).to_float();
-
-                // Send MIDI stop message if clock output is enabled
-                let clock_enabled = self.shared.with_state_read(|state| {
-                    state.midi_output_config.clock_output_enabled
-                });
-                if clock_enabled {
-                    self.send_midi_clock_message(crate::midi::QueuedMidiEvent::stop());
-                    log::info!("[MIDI CLOCK] Sent STOP message");
-                }
-
-                // Stop transport and prevent new events
-                self.transport.stop(now);
-                self.scheduler.sync_to_beat(current_beat);
-                self.shared.with_state_write(|state| {
-                    state.transport_running = false;
-                    state.bump_version();
-                });
-
-                // Collect all nodes that need gate=0 (active notes + pending)
-                let nodes_to_release: Vec<i32> = self.shared.with_state_write(|state| {
-                    use std::collections::HashSet;
-                    let mut nodes: HashSet<i32> = HashSet::new();
-
-                    // All active notes
-                    for voice in state.voices.values_mut() {
-                        for node_ids in voice.active_notes.values() {
-                            nodes.extend(node_ids.iter().copied());
-                        }
-                        voice.active_notes.clear();
-                    }
-
-                    // All active synths
-                    for &node_id in state.active_synths.keys() {
-                        nodes.insert(node_id);
-                    }
-
-                    // All pending nodes (scheduled but may not have started yet)
-                    for &node_id in state.pending_nodes.keys() {
-                        nodes.insert(node_id);
-                    }
-
-                    // Clear scheduled note-offs since we're releasing everything
-                    state.scheduled_note_offs.clear();
-
-                    nodes.into_iter().collect()
-                });
-
-                // Send gate=0 to release all notes
-                log::debug!(
-                    "[STOP] Pausing at beat {}, sending gate=0 to {} nodes",
-                    current_beat,
-                    nodes_to_release.len()
-                );
-                for node_id in nodes_to_release {
-                    let _ = self.osc_sender.n_set(
-                        OscTiming::Now,
-                        NodeId::new(node_id),
-                        &[("gate", 0.0f32)],
-                        current_beat,
-                    );
-                }
+                let mut ctx = self.create_context();
+                transport::handle_stop_scheduler(&mut ctx);
             }
             StateMessage::SeekTransport { beat } => {
-                let now = Instant::now();
-                let target_beat = beat.max(0.0);
-                self.transport.seek(BeatTime::from_float(target_beat), now);
-                // Reset scheduler to target beat to prevent event burst
-                self.scheduler.reset_to_beat(target_beat);
-                self.shared.with_state_write(|state| {
-                    state.current_beat = target_beat;
-                    // Reset sequence anchors so they restart cleanly from target beat
-                    for active in state.active_sequences.values_mut() {
-                        active.anchor_beat = target_beat;
-                        active.triggered_clips.clear();
-                        active.last_iteration = 0;
-                        active.completed = false;
-                    }
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                transport::handle_seek_transport(&mut ctx, beat);
             }
             StateMessage::BeginReload => {
-                // Capture a snapshot of current state BEFORE incrementing generation.
-                // This snapshot will be used to diff against the new state after script execution.
+                // Capture snapshot before creating context (avoids borrow conflict)
                 let snapshot = self.capture_state_snapshot();
-                self.reload_manager.begin_reload(snapshot);
-
-                // Update quantization from state
-                let quantization = self.shared.with_state_read(|s| s.quantization_beats);
-                self.reload_manager.set_quantization(quantization);
-
-                // Increment generation for tracking which entities were touched
-                // Also clear MIDI routing (but keep devices connected) so scripts can re-register routes
-                self.shared.with_state_write(|state| {
-                    state.reload_generation += 1;
-                    // Clear MIDI routing but keep devices - routes will be re-registered by script
-                    state.midi_config.routing.clear();
-                    state.midi_config.callbacks.clear();
-                    state.bump_version();
-                });
-                log::debug!("[MIDI] Cleared routing on reload (devices preserved)");
+                let mut ctx = self.create_context();
+                transport::handle_begin_reload(&mut ctx, snapshot);
             }
             StateMessage::SetScrubMute { muted } => {
-                self.shared.with_state_write(|state| {
-                    state.scrub_muted = muted;
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                transport::handle_set_scrub_mute(&mut ctx, muted);
             }
 
-            // === SynthDefs ===
+            // === SynthDefs (delegated to handlers::synthdef) ===
             StateMessage::LoadSynthDef { name, bytes } => {
-                log::debug!("Loading synthdef '{}'", name);
-                // Store bytes in state for score capture
-                self.shared.with_state_write(|state| {
-                    state.synthdefs.insert(name.clone(), bytes.clone());
-                });
-
-                // Capture to score if enabled - add /d_recv at time 0
-                if let Some(writer) = self.osc_sender.score_writer_mut() {
-                    let packet = rosc::OscPacket::Message(rosc::OscMessage {
-                        addr: "/d_recv".to_string(),
-                        args: vec![rosc::OscType::Blob(bytes.clone())],
-                    });
-                    // Synthdefs should be at time 0 (before any notes play)
-                    writer.add_packet(0.0, packet);
-                    log::debug!("[SCORE] Captured synthdef '{}' at time 0", name);
-                }
-
-                if let Err(e) = self.sc.d_recv_bytes(bytes) {
-                    log::error!("Failed to load synthdef '{}': {}", name, e);
-                }
+                let mut ctx = self.create_context();
+                synthdef::handle_load_synthdef(&mut ctx, name, bytes);
             }
 
-            // === Groups ===
+            // === Groups (delegated to handlers::groups) ===
             StateMessage::RegisterGroup {
                 name,
                 path,
@@ -1365,36 +1082,35 @@ impl RuntimeThread {
                 node_id,
                 source_location,
             } => {
-                self.handle_register_group(name, path, parent_path, node_id, source_location);
+                let mut ctx = self.create_context();
+                groups::handle_register_group(&mut ctx, name, path, parent_path, node_id, source_location);
             }
             StateMessage::UnregisterGroup { path } => {
-                self.shared.with_state_write(|state| {
-                    state.groups.remove(&path);
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                groups::handle_unregister_group(&mut ctx, path);
             }
             StateMessage::SetGroupParam { path, param, value } => {
-                self.handle_set_group_param(&path, &param, value);
+                let mut ctx = self.create_context();
+                groups::handle_set_group_param(&mut ctx, &path, &param, value);
             }
             StateMessage::MuteGroup { path } => {
-                self.set_group_run_state(&path, false);
+                let mut ctx = self.create_context();
+                groups::handle_mute_group(&mut ctx, &path);
             }
             StateMessage::UnmuteGroup { path } => {
-                self.set_group_run_state(&path, true);
+                let mut ctx = self.create_context();
+                groups::handle_unmute_group(&mut ctx, &path);
             }
             StateMessage::SoloGroup { path, solo } => {
-                self.shared.with_state_write(|state| {
-                    if let Some(group) = state.groups.get_mut(&path) {
-                        group.soloed = solo;
-                        state.bump_version();
-                    }
-                });
+                let mut ctx = self.create_context();
+                groups::handle_solo_group(&mut ctx, &path, solo);
             }
             StateMessage::FinalizeGroups => {
+                // FinalizeGroups still calls internal method as it needs finalize_reload
                 self.finalize_groups();
             }
 
-            // === Voices ===
+            // === Voices (delegated to handlers::voices) ===
             StateMessage::UpsertVoice {
                 name,
                 group_path,
@@ -1414,110 +1130,29 @@ impl RuntimeThread {
                 midi_note,
                 cc_mappings,
             } => {
-                let generation = self.shared.with_state_read(|s| s.reload_generation);
-                // Check if gain changed and get running node if any
-                let (gain_changed, running_node) = self.shared.with_state_read(|state| {
-                    if let Some(voice) = state.voices.get(&name) {
-                        let changed = (voice.gain - gain).abs() > 0.0001;
-                        (changed, voice.running_node_id)
-                    } else {
-                        (false, None)
-                    }
-                });
-
-                self.shared.with_state_write(|state| {
-                    let voice = state.voices.entry(name.clone()).or_insert_with(|| {
-                        VoiceState::new(name.clone(), group_path.clone())
-                    });
-                    voice.group_path = group_path;
-                    voice.group_name = group_name;
-                    voice.synth_name = synth_name;
-                    voice.polyphony = polyphony;
-                    voice.gain = gain;
-                    voice.muted = muted;
-                    voice.soloed = soloed;
-                    voice.output_bus = output_bus;
-                    voice.params = params;
-                    voice.sfz_instrument = sfz_instrument;
-                    voice.vst_instrument = vst_instrument;
-                    voice.generation = generation;
-                    voice.source_location = source_location;
-                    voice.midi_output_device_id = midi_output_device_id;
-                    voice.midi_channel = midi_channel;
-                    voice.midi_note = midi_note;
-                    voice.cc_mappings = cc_mappings;
-                    state.bump_version();
-                });
-
-                // If gain changed and voice has a running synth, update it
-                if gain_changed {
-                    if let Some(node_id) = running_node {
-                        let current_beat = self.transport.beat_at(Instant::now()).to_float();
-                        let _ = self.osc_sender.n_set(
-                            OscTiming::Now,
-                            NodeId::new(node_id),
-                            &[("amp", gain as f32)],
-                            current_beat,
-                        );
-                        log::debug!("[VOICE] Updated running node {} gain to {}", node_id, gain);
-                    }
-                }
+                let mut ctx = self.create_context();
+                voices::handle_upsert_voice(
+                    &mut ctx, name, group_path, group_name, synth_name, polyphony,
+                    gain, muted, soloed, output_bus, params, sfz_instrument,
+                    vst_instrument, source_location, midi_output_device_id,
+                    midi_channel, midi_note, cc_mappings,
+                );
             }
             StateMessage::DeleteVoice { name } => {
-                self.shared.with_state_write(|state| {
-                    state.voices.remove(&name);
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                voices::handle_delete_voice(&mut ctx, name);
             }
             StateMessage::SetVoiceParam { name, param, value } => {
-                // Check if this voice has MIDI CC mapping for this param
-                let midi_cc_info = self.shared.with_state_read(|state| {
-                    if let Some(voice) = state.voices.get(&name) {
-                        if let Some(device_id) = voice.midi_output_device_id {
-                            if let Some(&cc_num) = voice.cc_mappings.get(&param) {
-                                let channel = voice.midi_channel.unwrap_or(0);
-                                if let Some(device) = state.midi_output_config.devices.get(&device_id) {
-                                    return Some((device.event_tx.clone(), channel, cc_num));
-                                }
-                            }
-                        }
-                    }
-                    None
-                });
-
-                // Send MIDI CC if mapped
-                if let Some((event_tx, channel, cc_num)) = midi_cc_info {
-                    // Convert 0.0-1.0 to 0-127
-                    let cc_value = (value.clamp(0.0, 1.0) * 127.0) as u8;
-                    let midi_event = crate::midi::QueuedMidiEvent::control_change(channel, cc_num, cc_value);
-                    let _ = event_tx.send(midi_event);
-                    log::debug!("[MIDI_OUT] Voice '{}' CC: {}={} (param='{}', ch={})",
-                        name, cc_num, cc_value, param, channel + 1);
-                }
-
-                // Always update the local state too
-                self.shared.with_state_write(|state| {
-                    if let Some(voice) = state.voices.get_mut(&name) {
-                        voice.params.insert(param, value);
-                        state.bump_version();
-                    }
-                });
+                let mut ctx = self.create_context();
+                voices::handle_set_voice_param(&mut ctx, &name, param, value);
             }
             StateMessage::MuteVoice { name } => {
-                self.shared.with_state_write(|state| {
-                    if let Some(voice) = state.voices.get_mut(&name) {
-                        voice.muted = true;
-                        state.bump_version();
-                    }
-                });
+                let mut ctx = self.create_context();
+                voices::handle_mute_voice(&mut ctx, &name);
             }
             StateMessage::UnmuteVoice { name } => {
-                self.shared.with_state_write(|state| {
-                    if let Some(voice) = state.voices.get_mut(&name) {
-                        voice.muted = false;
-                        state.bump_version();
-                    }
-                });
+                let mut ctx = self.create_context();
+                voices::handle_unmute_voice(&mut ctx, &name);
             }
             StateMessage::TriggerVoice {
                 name,
@@ -1525,6 +1160,7 @@ impl RuntimeThread {
                 group_path,
                 params,
             } => {
+                // Still uses internal method (complex synth creation logic)
                 self.trigger_voice(&name, synth_name, group_path, params);
             }
             StateMessage::NoteOn {
@@ -1533,13 +1169,15 @@ impl RuntimeThread {
                 velocity,
                 duration,
             } => {
+                // Still uses internal method (complex note handling)
                 self.handle_note_on(&voice_name, note, velocity, duration);
             }
             StateMessage::NoteOff { voice_name, note } => {
+                // Still uses internal method (complex note handling)
                 self.handle_note_off(&voice_name, note, None);
             }
 
-            // === Patterns ===
+            // === Patterns (delegated to handlers::patterns) ===
             StateMessage::CreatePattern {
                 name,
                 group_path,
@@ -1548,44 +1186,29 @@ impl RuntimeThread {
                 source_location,
                 step_pattern,
             } => {
-                let generation = self.shared.with_state_read(|s| s.reload_generation);
-                self.shared.with_state_write(|state| {
-                    let ps = state.patterns.entry(name.clone()).or_insert_with(|| {
-                        PatternState::new(name.clone(), group_path.clone(), voice_name.clone())
-                    });
-                    ps.loop_pattern = Some(pattern);
-                    ps.generation = generation;
-                    ps.group_path = group_path;
-                    ps.voice_name = voice_name;
-                    ps.source_location = source_location;
-                    ps.step_pattern = step_pattern;
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                patterns::handle_create_pattern(
+                    &mut ctx, name, group_path, voice_name, pattern, source_location, step_pattern,
+                );
             }
             StateMessage::DeletePattern { name } => {
-                // Reset scheduler tracking to prevent ghost events when pattern is recreated
-                self.scheduler.reset_loop(&name);
-                self.shared.with_state_write(|state| {
-                    state.patterns.remove(&name);
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                patterns::handle_delete_pattern(&mut ctx, &name);
             }
             StateMessage::SetPatternParam { name, param, value } => {
-                self.shared.with_state_write(|state| {
-                    if let Some(p) = state.patterns.get_mut(&name) {
-                        p.params.insert(param, value);
-                        state.bump_version();
-                    }
-                });
+                let mut ctx = self.create_context();
+                patterns::handle_set_pattern_param(&mut ctx, &name, param, value);
             }
             StateMessage::StartPattern { name } => {
+                // Still uses internal method (complex scheduler interaction)
                 self.queue_loop_start(&name, LoopKind::Pattern);
             }
             StateMessage::StopPattern { name } => {
+                // Still uses internal method (complex scheduler interaction)
                 self.stop_loop(&name, LoopKind::Pattern);
             }
 
-            // === Melodies ===
+            // === Melodies (delegated to handlers::melodies) ===
             StateMessage::CreateMelody {
                 name,
                 group_path,
@@ -1594,33 +1217,18 @@ impl RuntimeThread {
                 source_location,
                 notes_patterns,
             } => {
-                let generation = self.shared.with_state_read(|s| s.reload_generation);
-                self.shared.with_state_write(|state| {
-                    let ms = state.melodies.entry(name.clone()).or_insert_with(|| {
-                        MelodyState::new(name.clone(), group_path.clone(), voice_name.clone())
-                    });
-                    ms.loop_pattern = Some(pattern);
-                    ms.generation = generation;
-                    ms.group_path = group_path;
-                    ms.voice_name = voice_name;
-                    ms.source_location = source_location;
-                    ms.notes_patterns = notes_patterns;
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                melodies::handle_create_melody(
+                    &mut ctx, name, group_path, voice_name, pattern, source_location, notes_patterns,
+                );
             }
             StateMessage::DeleteMelody { name } => {
-                self.shared.with_state_write(|state| {
-                    state.melodies.remove(&name);
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                melodies::handle_delete_melody(&mut ctx, &name);
             }
             StateMessage::SetMelodyParam { name, param, value } => {
-                self.shared.with_state_write(|state| {
-                    if let Some(m) = state.melodies.get_mut(&name) {
-                        m.params.insert(param, value);
-                        state.bump_version();
-                    }
-                });
+                let mut ctx = self.create_context();
+                melodies::handle_set_melody_param(&mut ctx, &name, param, value);
             }
             StateMessage::StartMelody { name } => {
                 self.queue_loop_start(&name, LoopKind::Melody);
@@ -1809,29 +1417,12 @@ impl RuntimeThread {
                 self.handle_add_effect(id, synthdef, group_path, params, source_location);
             }
             StateMessage::RemoveEffect { id } => {
-                let node_to_free = self.shared.with_state_write(|state| {
-                    let node = state.effects.remove(&id).and_then(|e| e.node_id);
-                    state.bump_version();
-                    node
-                });
-                if let Some(node_id) = node_to_free {
-                    let current_beat = self.transport.beat_at(Instant::now()).to_float();
-                    let _ = self.osc_sender.n_free(OscTiming::Now, NodeId::new(node_id), current_beat);
-                }
+                let mut ctx = self.create_context();
+                effects::handle_remove_effect(&mut ctx, id);
             }
             StateMessage::SetEffectParam { id, param, value } => {
-                let node_to_update = self.shared.with_state_write(|state| {
-                    let node_id = state.effects.get_mut(&id).and_then(|effect| {
-                        effect.params.insert(param.clone(), value);
-                        effect.node_id
-                    });
-                    state.bump_version();
-                    node_id
-                });
-                if let Some(node_id) = node_to_update {
-                    let current_beat = self.transport.beat_at(Instant::now()).to_float();
-                    let _ = self.osc_sender.n_set(OscTiming::Now, NodeId::new(node_id), &[(param.as_str(), value)], current_beat);
-                }
+                let mut ctx = self.create_context();
+                effects::handle_set_effect_param(&mut ctx, &id, param, value);
             }
 
             // === Samples ===
@@ -1950,41 +1541,24 @@ impl RuntimeThread {
                 info,
                 backend,
             } => {
-                self.shared.with_state_write(|state| {
-                    let device_state = crate::state::MidiDeviceState {
-                        id: device_id,
-                        info,
-                        backend,
-                        generation: state.reload_generation,
-                    };
-                    state.midi_config.devices.insert(device_id, device_state);
-                    state.bump_version();
-                });
-                log::info!("[MIDI] Device {} registered in state", device_id);
+                let mut ctx = self.create_context();
+                midi_input::handle_open_device(&mut ctx, device_id, info, backend);
             }
 
             StateMessage::MidiCloseDevice { device_id } => {
-                self.shared.with_state_write(|state| {
-                    state.midi_config.devices.remove(&device_id);
-                    state.bump_version();
-                });
-                log::info!("[MIDI] Device {} removed from state", device_id);
+                let mut ctx = self.create_context();
+                midi_input::handle_close_device(&mut ctx, device_id);
             }
 
             StateMessage::MidiCloseAllDevices => {
-                self.shared.with_state_write(|state| {
-                    state.midi_config.devices.clear();
-                    state.bump_version();
-                });
-                log::info!("[MIDI] All devices removed from state");
+                let mut ctx = self.create_context();
+                midi_input::handle_close_all_devices(&mut ctx);
             }
 
             // === MIDI Routing ===
             StateMessage::MidiAddKeyboardRoute { route } => {
-                self.shared.with_state_write(|state| {
-                    state.midi_config.routing.add_keyboard_route(route);
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                midi_input::handle_add_keyboard_route(&mut ctx, route);
             }
 
             StateMessage::MidiAddNoteRoute {
@@ -1992,10 +1566,8 @@ impl RuntimeThread {
                 note,
                 route,
             } => {
-                self.shared.with_state_write(|state| {
-                    state.midi_config.routing.add_note_route(channel, note, route);
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                midi_input::handle_add_note_route(&mut ctx, channel, note, route);
             }
 
             StateMessage::MidiAddCcRoute {
@@ -2003,25 +1575,18 @@ impl RuntimeThread {
                 cc_number,
                 route,
             } => {
-                self.shared.with_state_write(|state| {
-                    state.midi_config.routing.add_cc_route(channel, cc_number, route);
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                midi_input::handle_add_cc_route(&mut ctx, channel, cc_number, route);
             }
 
             StateMessage::MidiAddPitchBendRoute { channel, route } => {
-                self.shared.with_state_write(|state| {
-                    state.midi_config.routing.add_pitch_bend_route(channel, route);
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                midi_input::handle_add_pitch_bend_route(&mut ctx, channel, route);
             }
 
             StateMessage::MidiClearRouting => {
-                self.shared.with_state_write(|state| {
-                    state.midi_config.clear_routing();
-                    state.bump_version();
-                });
-                log::info!("[MIDI] All routing cleared");
+                let mut ctx = self.create_context();
+                midi_input::handle_clear_routing(&mut ctx);
             }
 
             // === MIDI Callbacks ===
@@ -2032,33 +1597,10 @@ impl RuntimeThread {
                 on_note_on,
                 on_note_off,
             } => {
-                self.shared.with_state_write(|state| {
-                    // Add to routing
-                    let callback = crate::midi::NoteCallback {
-                        channel,
-                        note,
-                        on_note_on,
-                        on_note_off,
-                        callback_id,
-                    };
-                    state.midi_config.routing.add_note_callback(callback);
-
-                    // Track callback metadata
-                    state.midi_config.callbacks.insert(
-                        callback_id,
-                        crate::state::MidiCallbackInfo {
-                            id: callback_id,
-                            callback_type: crate::state::MidiCallbackType::Note {
-                                channel,
-                                note,
-                                on_note_on,
-                                on_note_off,
-                            },
-                            generation: state.reload_generation,
-                        },
-                    );
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                midi_input::handle_register_note_callback(
+                    &mut ctx, callback_id, channel, note, on_note_on, on_note_off,
+                );
             }
 
             StateMessage::MidiRegisterCcCallback {
@@ -2068,148 +1610,65 @@ impl RuntimeThread {
                 threshold,
                 above_threshold,
             } => {
-                self.shared.with_state_write(|state| {
-                    // Add to routing
-                    let callback = crate::midi::CcCallback {
-                        channel,
-                        cc_number,
-                        threshold,
-                        above_threshold,
-                        callback_id,
-                    };
-                    state.midi_config.routing.add_cc_callback(callback);
-
-                    // Track callback metadata
-                    state.midi_config.callbacks.insert(
-                        callback_id,
-                        crate::state::MidiCallbackInfo {
-                            id: callback_id,
-                            callback_type: crate::state::MidiCallbackType::Cc {
-                                channel,
-                                cc_number,
-                                threshold,
-                                above_threshold,
-                            },
-                            generation: state.reload_generation,
-                        },
-                    );
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                midi_input::handle_register_cc_callback(
+                    &mut ctx, callback_id, channel, cc_number, threshold, above_threshold,
+                );
             }
 
             StateMessage::MidiSetMonitoring { enabled } => {
-                self.shared.with_state_write(|state| {
-                    state.midi_config.monitor_enabled = enabled;
-                    state.midi_config.routing.monitor_enabled = enabled;
-                    state.bump_version();
-                });
-                log::info!("[MIDI] Monitoring set to {}", enabled);
+                let mut ctx = self.create_context();
+                midi_input::handle_set_monitoring(&mut ctx, enabled);
             }
 
             // === MIDI Recording ===
             StateMessage::MidiSetRecordingQuantization { positions_per_bar } => {
-                // Validate: must be 4, 8, 16, 32, or 64
-                if [4, 8, 16, 32, 64].contains(&positions_per_bar) {
-                    self.shared.with_state_write(|state| {
-                        state.midi_recording.quantization = positions_per_bar;
-                        state.bump_version();
-                    });
-                    log::debug!("[MIDI] Recording quantization set to 1/{}", positions_per_bar);
-                } else {
-                    log::warn!(
-                        "[MIDI] Invalid recording quantization {}, must be 4, 8, 16, 32, or 64",
-                        positions_per_bar
-                    );
-                }
+                let mut ctx = self.create_context();
+                midi_input::handle_set_recording_quantization(&mut ctx, positions_per_bar);
             }
             StateMessage::MidiSetRecordingEnabled { enabled } => {
-                self.shared.with_state_write(|state| {
-                    state.midi_recording.recording_enabled = enabled;
-                    state.bump_version();
-                });
-                log::info!("[MIDI] Recording {}", if enabled { "enabled" } else { "disabled" });
+                let mut ctx = self.create_context();
+                midi_input::handle_set_recording_enabled(&mut ctx, enabled);
             }
             StateMessage::MidiClearRecording => {
-                self.shared.with_state_write(|state| {
-                    state.midi_recording.clear();
-                    state.bump_version();
-                });
-                log::info!("[MIDI] Recording history cleared");
+                let mut ctx = self.create_context();
+                midi_input::handle_clear_recording(&mut ctx);
             }
 
             // === MIDI Output ===
             StateMessage::MidiOutputOpenDevice { device_id, info, event_tx } => {
-                // Create a MidiOutputHandle for the realtime service
-                let handle = crate::midi::MidiOutputHandle::new(
-                    device_id,
-                    info.clone(),
-                    event_tx.clone(),
-                );
-
-                // Register with the MIDI realtime service
-                self.midi_rt.register_device_from_handle(&handle);
-
-                self.shared.with_state_write(|state| {
-                    let device_state = crate::state::MidiOutputDeviceState::new(
-                        device_id,
-                        info,
-                        event_tx,
-                    );
-                    state.midi_output_config.devices.insert(device_id, device_state);
-                    state.bump_version();
-                });
-                log::info!("[MIDI OUTPUT] Opened device {} (registered with realtime service)", device_id);
+                let mut ctx = self.create_context();
+                midi_output::handle_open_device(&mut ctx, device_id, info, event_tx);
             }
 
             StateMessage::MidiOutputCloseDevice { device_id } => {
-                // Unregister from MIDI realtime service
-                self.midi_rt.unregister_device(device_id);
-
-                self.shared.with_state_write(|state| {
-                    state.midi_output_config.devices.remove(&device_id);
-                    state.bump_version();
-                });
-                log::info!("[MIDI OUTPUT] Closed device {}", device_id);
+                let mut ctx = self.create_context();
+                midi_output::handle_close_device(&mut ctx, device_id);
             }
 
             StateMessage::MidiOutputCloseAllDevices => {
-                self.shared.with_state_write(|state| {
-                    state.midi_output_config.devices.clear();
-                    state.bump_version();
-                });
-                log::info!("[MIDI OUTPUT] Closed all devices");
+                let mut ctx = self.create_context();
+                midi_output::handle_close_all_devices(&mut ctx);
             }
 
             StateMessage::MidiOutputNoteOn { device_id, channel, note, velocity } => {
-                if let Some(device) = self.shared.with_state_read(|state| {
-                    state.midi_output_config.devices.get(&device_id).cloned()
-                }) {
-                    let _ = device.event_tx.send(crate::midi::QueuedMidiEvent::note_on(channel, note, velocity));
-                }
+                let ctx = self.create_context();
+                midi_output::handle_note_on(&ctx, device_id, channel, note, velocity);
             }
 
             StateMessage::MidiOutputNoteOff { device_id, channel, note } => {
-                if let Some(device) = self.shared.with_state_read(|state| {
-                    state.midi_output_config.devices.get(&device_id).cloned()
-                }) {
-                    let _ = device.event_tx.send(crate::midi::QueuedMidiEvent::note_off(channel, note));
-                }
+                let ctx = self.create_context();
+                midi_output::handle_note_off(&ctx, device_id, channel, note);
             }
 
             StateMessage::MidiOutputControlChange { device_id, channel, controller, value } => {
-                if let Some(device) = self.shared.with_state_read(|state| {
-                    state.midi_output_config.devices.get(&device_id).cloned()
-                }) {
-                    let _ = device.event_tx.send(crate::midi::QueuedMidiEvent::control_change(channel, controller, value));
-                }
+                let ctx = self.create_context();
+                midi_output::handle_control_change(&ctx, device_id, channel, controller, value);
             }
 
             StateMessage::MidiOutputPitchBend { device_id, channel, value } => {
-                if let Some(device) = self.shared.with_state_read(|state| {
-                    state.midi_output_config.devices.get(&device_id).cloned()
-                }) {
-                    let _ = device.event_tx.send(crate::midi::QueuedMidiEvent::pitch_bend(channel, value));
-                }
+                let ctx = self.create_context();
+                midi_output::handle_pitch_bend(&ctx, device_id, channel, value);
             }
 
             StateMessage::MidiOutputSetClockEnabled { enabled } => {
@@ -2240,22 +1699,23 @@ impl RuntimeThread {
             }
 
             StateMessage::MidiOutputSetClockDevice { device_id } => {
-                self.shared.with_state_write(|state| {
-                    state.midi_output_config.clock_device_id = device_id;
-                    state.bump_version();
-                });
+                let mut ctx = self.create_context();
+                midi_output::handle_set_clock_device(&mut ctx, device_id);
             }
 
             StateMessage::MidiOutputSendStart => {
-                self.send_midi_clock_message(crate::midi::QueuedMidiEvent::start());
+                let mut ctx = self.create_context();
+                midi_output::handle_send_start(&mut ctx);
             }
 
             StateMessage::MidiOutputSendStop => {
-                self.send_midi_clock_message(crate::midi::QueuedMidiEvent::stop());
+                let mut ctx = self.create_context();
+                midi_output::handle_send_stop(&mut ctx);
             }
 
             StateMessage::MidiOutputSendContinue => {
-                self.send_midi_clock_message(crate::midi::QueuedMidiEvent::continue_msg());
+                let mut ctx = self.create_context();
+                midi_output::handle_send_continue(&mut ctx);
             }
 
             // === OSC Feedback ===
@@ -2463,6 +1923,11 @@ impl RuntimeThread {
             }
         }
     }
+
+    // =========================================================================
+    // Scheduler & Event Processing
+    // Beat scheduling, event collection, and event firing
+    // =========================================================================
 
     fn tick(&mut self) {
         let now = Instant::now();
@@ -3723,95 +3188,10 @@ impl RuntimeThread {
         }
     }
 
-    fn handle_register_group(
-        &mut self,
-        name: String,
-        path: String,
-        parent_path: Option<String>,
-        mut node_id: i32,
-        source_location: SourceLocation,
-    ) {
-        let generation = self.shared.with_state_read(|s| s.reload_generation);
-
-        // Check if the group already exists in state (was created externally)
-        let already_exists = self
-            .shared
-            .with_state_read(|state| state.groups.contains_key(&path));
-
-        if already_exists {
-            // Update generation and source_location even if group exists
-            self.shared.with_state_write(|state| {
-                if let Some(group) = state.groups.get_mut(&path) {
-                    group.generation = generation;
-                    group.source_location = source_location;
-                }
-            });
-            log::debug!("Group '{}' already exists, updated generation and source_location", path);
-            return;
-        }
-
-        // Track if node was pre-created externally (non-zero node_id means SC group already exists)
-        let externally_created = node_id != 0;
-
-        // Allocate node ID if not provided (0 means allocate)
-        if node_id == 0 {
-            node_id = self.shared.with_state_write(|state| state.allocate_group_node());
-        }
-
-        // Create the group on SuperCollider (only if not externally created)
-        if !externally_created {
-            // Get parent's node_id and link_synth_node_id
-            let (parent_id, parent_link_synth) = parent_path
-                .as_ref()
-                .and_then(|pp| {
-                    self.shared.with_state_read(|state| {
-                        state.groups.get(pp).map(|g| (g.node_id, g.link_synth_node_id))
-                    })
-                })
-                .unwrap_or((Some(0), None));
-
-            let parent_node_id = parent_id.unwrap_or(0);
-
-            // IMPORTANT: If parent has a link synth, we must place the new group BEFORE it!
-            // Otherwise the link synth executes before the child group's audio is written,
-            // causing the child's audio to never reach the parent's bus.
-            let (add_action, target) = if let Some(link_node) = parent_link_synth {
-                log::info!(
-                    "[GROUP] Creating group '{}' BEFORE parent's link synth (node {})",
-                    path, link_node
-                );
-                (AddAction::AddBefore, Target::from(link_node))
-            } else {
-                log::info!(
-                    "[GROUP] Creating group '{}' at HEAD of parent (node {})",
-                    path, parent_node_id
-                );
-                (AddAction::AddToHead, Target::from(parent_node_id))
-            };
-
-            if let Err(e) = self.osc_sender.g_new(
-                NodeId::new(node_id),
-                add_action,
-                target,
-            ) {
-                log::error!("Failed to create group '{}': {}", path, e);
-                return;
-            }
-        }
-
-        // Allocate audio bus (always required, never optional)
-        let audio_bus = self.shared.with_state_write(|state| state.allocate_audio_bus());
-
-        // Store in state
-        self.shared.with_state_write(|state| {
-            let mut group = GroupState::new(name, path.clone(), parent_path, audio_bus);
-            group.node_id = Some(node_id);
-            group.generation = generation;
-            group.source_location = source_location;
-            state.groups.insert(path, group);
-            state.bump_version();
-        });
-    }
+    // =========================================================================
+    // Group Handlers
+    // Group creation, configuration, and finalization
+    // =========================================================================
 
     fn handle_set_group_param(&mut self, path_or_name: &str, param: &str, value: f32) {
         // Update state - try to find group by path first, then by name
@@ -3869,21 +3249,6 @@ impl RuntimeThread {
             None => {
                 log::trace!("[GROUP PARAM] Group '{}' not found when setting {}={}", path_or_name, param, value);
             }
-        }
-    }
-
-    fn set_group_run_state(&mut self, path: &str, running: bool) {
-        let node_to_set = self.shared.with_state_write(|state| {
-            let node_id = state.groups.get_mut(path).and_then(|group| {
-                group.muted = !running;
-                group.node_id
-            });
-            state.bump_version();
-            node_id
-        });
-        if let Some(node_id) = node_to_set {
-            let current_beat = self.transport.beat_at(Instant::now()).to_float();
-            let _ = self.osc_sender.n_run(OscTiming::Now, NodeId::new(node_id), running, current_beat);
         }
     }
 
@@ -4297,6 +3662,11 @@ impl RuntimeThread {
         }
     }
 
+    // =========================================================================
+    // Voice Handlers
+    // Voice triggering, note on/off, and voice lifecycle
+    // =========================================================================
+
     fn trigger_voice(
         &mut self,
         name: &str,
@@ -4701,6 +4071,11 @@ impl RuntimeThread {
         }
     }
 
+    // =========================================================================
+    // Effect Handlers
+    // Audio effect chain management
+    // =========================================================================
+
     /// Add an effect to a group.
     ///
     /// Effects are inserted after all voices but before the link synth.
@@ -4896,6 +4271,11 @@ impl RuntimeThread {
 
         log::info!("[EFFECT] Created effect '{}' (node {}) on bus {}", id, node_id, bus_in);
     }
+
+    // =========================================================================
+    // Loop & Sequence Management
+    // Pattern/melody loop lifecycle and sequence scheduling
+    // =========================================================================
 
     fn queue_loop_start(&mut self, name: &str, kind: LoopKind) {
         let quantization = self.shared.with_state_read(|s| s.quantization_beats);
@@ -6000,262 +5380,4 @@ struct WavMetadata {
     num_channels: i32,
     sample_rate: f32,
     num_frames: i32,
-}
-
-/// Create the system_link_audio synthdef bytes.
-///
-/// This synthdef routes audio from a group bus to the main output with:
-/// - amp parameter for gain control
-/// - Metering via SendTrig (peak and RMS for L/R channels)
-///
-/// Signal flow:
-///   In.ar(inbus) → × amp → Out.ar(outbus)
-///                     ↓
-///              Peak + Amplitude → SendTrig (at 20Hz)
-///
-/// SendTrig IDs:
-///   0: peak_left, 1: peak_right, 2: rms_left, 3: rms_right
-fn create_system_link_audio_bytes() -> Result<Vec<u8>> {
-    // Build the synthdef manually without depending on vibelang-dsp
-    // Format: SuperCollider synthdef file format v2
-
-    use std::io::Write;
-    let mut buf = Vec::new();
-
-    // File header
-    buf.write_all(b"SCgf")?; // Magic
-    buf.write_all(&2i32.to_be_bytes())?; // Version 2
-    buf.write_all(&1i16.to_be_bytes())?; // Number of synthdefs
-
-    // SynthDef name
-    let name = b"system_link_audio";
-    buf.push(name.len() as u8);
-    buf.write_all(name)?;
-
-    // Constants (7 total)
-    // 0: 0.0 (SendTrig ID 0 for peak_left)
-    // 1: 1.0 (SendTrig ID 1 for peak_right)
-    // 2: 2.0 (SendTrig ID 2 for rms_left)
-    // 3: 3.0 (SendTrig ID 3 for rms_right)
-    // 4: 20.0 (Impulse frequency - 20Hz for meter updates)
-    // 5: 0.01 (Amplitude attack time)
-    // 6: 0.1 (Amplitude release time)
-    buf.write_all(&7i32.to_be_bytes())?; // num constants
-    buf.write_all(&0.0f32.to_be_bytes())?; // constant 0
-    buf.write_all(&1.0f32.to_be_bytes())?; // constant 1
-    buf.write_all(&2.0f32.to_be_bytes())?; // constant 2
-    buf.write_all(&3.0f32.to_be_bytes())?; // constant 3
-    buf.write_all(&20.0f32.to_be_bytes())?; // constant 4
-    buf.write_all(&0.01f32.to_be_bytes())?; // constant 5
-    buf.write_all(&0.1f32.to_be_bytes())?; // constant 6
-
-    // Parameters: inbus=0, outbus=0, amp=1.0
-    buf.write_all(&3i32.to_be_bytes())?; // num params
-    buf.write_all(&0.0f32.to_be_bytes())?; // inbus default = 0
-    buf.write_all(&0.0f32.to_be_bytes())?; // outbus default = 0
-    buf.write_all(&1.0f32.to_be_bytes())?; // amp default = 1.0
-
-    // Param names
-    buf.write_all(&3i32.to_be_bytes())?; // num param names
-    // inbus
-    let inbus_name = b"inbus";
-    buf.push(inbus_name.len() as u8);
-    buf.write_all(inbus_name)?;
-    buf.write_all(&0i32.to_be_bytes())?; // index 0
-    // outbus
-    let outbus_name = b"outbus";
-    buf.push(outbus_name.len() as u8);
-    buf.write_all(outbus_name)?;
-    buf.write_all(&1i32.to_be_bytes())?; // index 1
-    // amp
-    let amp_name = b"amp";
-    buf.push(amp_name.len() as u8);
-    buf.write_all(amp_name)?;
-    buf.write_all(&2i32.to_be_bytes())?; // index 2
-
-    // UGens (14 total)
-    buf.write_all(&14i32.to_be_bytes())?; // num ugens
-
-    // Helper to write a constant input reference
-    fn write_const_input(buf: &mut Vec<u8>, const_idx: i32) -> std::io::Result<()> {
-        buf.write_all(&(-1i32).to_be_bytes())?; // -1 means constant
-        buf.write_all(&const_idx.to_be_bytes())?;
-        Ok(())
-    }
-
-    // Helper to write a UGen input reference
-    fn write_ugen_input(buf: &mut Vec<u8>, ugen_idx: i32, output_idx: i32) -> std::io::Result<()> {
-        buf.write_all(&ugen_idx.to_be_bytes())?;
-        buf.write_all(&output_idx.to_be_bytes())?;
-        Ok(())
-    }
-
-    // UGen 0: Control (control rate, 3 outputs: inbus, outbus, amp)
-    let control_name = b"Control";
-    buf.push(control_name.len() as u8);
-    buf.write_all(control_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&0i32.to_be_bytes())?; // num inputs
-    buf.write_all(&3i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    buf.push(1); // output 0 rate: control (inbus)
-    buf.push(1); // output 1 rate: control (outbus)
-    buf.push(1); // output 2 rate: control (amp)
-
-    // UGen 1: In.ar (audio rate, 2 outputs: left, right)
-    let in_name = b"In";
-    buf.push(in_name.len() as u8);
-    buf.write_all(in_name)?;
-    buf.push(2); // rate: audio
-    buf.write_all(&1i32.to_be_bytes())?; // num inputs
-    buf.write_all(&2i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 0, 0)?; // input: Control output 0 (inbus)
-    buf.push(2); // output 0 rate: audio (left)
-    buf.push(2); // output 1 rate: audio (right)
-
-    // UGen 2: BinaryOpUGen * (left × amp) - audio rate
-    let binop_name = b"BinaryOpUGen";
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(2); // rate: audio
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&2i16.to_be_bytes())?; // special index: 2 = multiplication
-    write_ugen_input(&mut buf, 1, 0)?; // input 0: In output 0 (left)
-    write_ugen_input(&mut buf, 0, 2)?; // input 1: Control output 2 (amp)
-    buf.push(2); // output rate: audio
-
-    // UGen 3: BinaryOpUGen * (right × amp) - audio rate
-    buf.push(binop_name.len() as u8);
-    buf.write_all(binop_name)?;
-    buf.push(2); // rate: audio
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&2i16.to_be_bytes())?; // special index: 2 = multiplication
-    write_ugen_input(&mut buf, 1, 1)?; // input 0: In output 1 (right)
-    write_ugen_input(&mut buf, 0, 2)?; // input 1: Control output 2 (amp)
-    buf.push(2); // output rate: audio
-
-    // UGen 4: Out.ar (outputs scaled audio to outbus)
-    let out_name = b"Out";
-    buf.push(out_name.len() as u8);
-    buf.write_all(out_name)?;
-    buf.push(2); // rate: audio
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&0i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 0, 1)?; // input 0: Control output 1 (outbus)
-    write_ugen_input(&mut buf, 2, 0)?; // input 1: BinaryOpUGen#2 (scaled_left)
-    write_ugen_input(&mut buf, 3, 0)?; // input 2: BinaryOpUGen#3 (scaled_right)
-
-    // UGen 5: Impulse.kr (20Hz trigger for meter updates)
-    let impulse_name = b"Impulse";
-    buf.push(impulse_name.len() as u8);
-    buf.write_all(impulse_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs (freq, phase)
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_const_input(&mut buf, 4)?; // input 0: constant 4 (20.0 Hz)
-    write_const_input(&mut buf, 0)?; // input 1: constant 0 (0.0 phase)
-    buf.push(1); // output rate: control
-
-    // UGen 6: Peak.kr (left channel peak, reset by Impulse)
-    let peak_name = b"Peak";
-    buf.push(peak_name.len() as u8);
-    buf.write_all(peak_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 2, 0)?; // input 0: BinaryOpUGen#2 (scaled_left)
-    write_ugen_input(&mut buf, 5, 0)?; // input 1: Impulse#5 (reset trigger)
-    buf.push(1); // output rate: control
-
-    // UGen 7: Peak.kr (right channel peak, reset by Impulse)
-    buf.push(peak_name.len() as u8);
-    buf.write_all(peak_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&2i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 3, 0)?; // input 0: BinaryOpUGen#3 (scaled_right)
-    write_ugen_input(&mut buf, 5, 0)?; // input 1: Impulse#5 (reset trigger)
-    buf.push(1); // output rate: control
-
-    // UGen 8: Amplitude.kr (left channel RMS-like)
-    let amplitude_name = b"Amplitude";
-    buf.push(amplitude_name.len() as u8);
-    buf.write_all(amplitude_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 2, 0)?; // input 0: BinaryOpUGen#2 (scaled_left)
-    write_const_input(&mut buf, 5)?; // input 1: constant 5 (0.01 attack)
-    write_const_input(&mut buf, 6)?; // input 2: constant 6 (0.1 release)
-    buf.push(1); // output rate: control
-
-    // UGen 9: Amplitude.kr (right channel RMS-like)
-    buf.push(amplitude_name.len() as u8);
-    buf.write_all(amplitude_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&1i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 3, 0)?; // input 0: BinaryOpUGen#3 (scaled_right)
-    write_const_input(&mut buf, 5)?; // input 1: constant 5 (0.01 attack)
-    write_const_input(&mut buf, 6)?; // input 2: constant 6 (0.1 release)
-    buf.push(1); // output rate: control
-
-    // UGen 10: SendTrig.kr (send peak_left)
-    let sendtrig_name = b"SendTrig";
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&0i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 5, 0)?; // input 0: Impulse#5 (trigger)
-    write_const_input(&mut buf, 0)?; // input 1: constant 0 (ID = 0 for peak_left)
-    write_ugen_input(&mut buf, 6, 0)?; // input 2: Peak#6 (peak_left value)
-
-    // UGen 11: SendTrig.kr (send peak_right)
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&0i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 5, 0)?; // input 0: Impulse#5 (trigger)
-    write_const_input(&mut buf, 1)?; // input 1: constant 1 (ID = 1 for peak_right)
-    write_ugen_input(&mut buf, 7, 0)?; // input 2: Peak#7 (peak_right value)
-
-    // UGen 12: SendTrig.kr (send rms_left)
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&0i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 5, 0)?; // input 0: Impulse#5 (trigger)
-    write_const_input(&mut buf, 2)?; // input 1: constant 2 (ID = 2 for rms_left)
-    write_ugen_input(&mut buf, 8, 0)?; // input 2: Amplitude#8 (rms_left value)
-
-    // UGen 13: SendTrig.kr (send rms_right)
-    buf.push(sendtrig_name.len() as u8);
-    buf.write_all(sendtrig_name)?;
-    buf.push(1); // rate: control
-    buf.write_all(&3i32.to_be_bytes())?; // num inputs
-    buf.write_all(&0i32.to_be_bytes())?; // num outputs
-    buf.write_all(&0i16.to_be_bytes())?; // special index
-    write_ugen_input(&mut buf, 5, 0)?; // input 0: Impulse#5 (trigger)
-    write_const_input(&mut buf, 3)?; // input 1: constant 3 (ID = 3 for rms_right)
-    write_ugen_input(&mut buf, 9, 0)?; // input 2: Amplitude#9 (rms_right value)
-
-    // Variants: none
-    buf.write_all(&0i16.to_be_bytes())?;
-
-    Ok(buf)
 }

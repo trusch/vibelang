@@ -1,0 +1,35 @@
+[package]
+name = "vibelang-core2"
+version = "0.1.0"
+edition = "2021"
+description = "Clean, trait-based runtime for VibeLang - generic over synthesis backends"
+license = "MIT"
+
+[features]
+default = ["native"]
+native = ["rosc"]
+midi = ["dep:midir"]
+
+[dependencies]
+async-trait = "0.1"
+tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
+tokio-util = "0.7"
+thiserror = "1"
+tracing = "0.1"
+vibelang-dsp = { path = "../vibelang-dsp" }
+vibelang-sfz = { path = "../vibelang-sfz" }
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rosc = { version = "0.10", optional = true }
+midir = { version = "0.9", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"

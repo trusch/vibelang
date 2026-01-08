@@ -249,4 +249,81 @@ mod tests {
         let val = fade.current_value();
         assert!(val >= 0.0 && val <= 1.0);
     }
+
+    #[test]
+    fn test_beat_event_with_voice_name() {
+        let event = BeatEvent::new(2.0, "synth")
+            .with_voice_name("lead");
+
+        assert_eq!(event.voice_name, Some("lead".to_string()));
+        assert_eq!(event.beat, 2.0);
+        assert_eq!(event.synth_def, "synth");
+    }
+
+    #[test]
+    fn test_beat_event_controls() {
+        let event = BeatEvent::new(0.0, "bass")
+            .with_control("freq", 55.0)
+            .with_control("amp", 0.5)
+            .with_control("pan", -0.3);
+
+        assert_eq!(event.controls.len(), 3);
+        assert!(event.controls.iter().any(|(k, v)| k == "freq" && *v == 55.0));
+        assert!(event.controls.iter().any(|(k, v)| k == "amp" && *v == 0.5));
+        assert!(event.controls.iter().any(|(k, v)| k == "pan" && *v == -0.3));
+    }
+
+    #[test]
+    fn test_pattern_empty() {
+        let pattern = Pattern::new("empty", 4.0);
+        assert_eq!(pattern.events.len(), 0);
+        assert_eq!(pattern.loop_length_beats, 4.0);
+        assert_eq!(pattern.phase_offset, 0.0);
+    }
+
+    #[test]
+    fn test_pattern_multiple_events() {
+        let pattern = Pattern::new("beat", 8.0)
+            .with_event(BeatEvent::new(0.0, "kick"))
+            .with_event(BeatEvent::new(2.0, "snare"))
+            .with_event(BeatEvent::new(4.0, "kick"))
+            .with_event(BeatEvent::new(6.0, "snare"));
+
+        assert_eq!(pattern.events.len(), 4);
+        assert_eq!(pattern.loop_length_beats, 8.0);
+
+        // Verify event positions
+        assert_eq!(pattern.events[0].beat, 0.0);
+        assert_eq!(pattern.events[1].beat, 2.0);
+        assert_eq!(pattern.events[2].beat, 4.0);
+        assert_eq!(pattern.events[3].beat, 6.0);
+    }
+
+    #[test]
+    fn test_fade_target_type() {
+        assert_eq!(FadeTargetType::Voice, FadeTargetType::Voice);
+        assert_eq!(FadeTargetType::Group, FadeTargetType::Group);
+        assert_ne!(FadeTargetType::Voice, FadeTargetType::Group);
+    }
+
+    #[test]
+    fn test_fade_clip_creation() {
+        let clip = FadeClip {
+            name: "fade_out".to_string(),
+            sequence_name: None,
+            target_type: FadeTargetType::Voice,
+            target_name: "lead".to_string(),
+            param_name: "amp".to_string(),
+            start_value: 1.0,
+            target_value: 0.0,
+            duration_beats: 4.0,
+        };
+
+        assert_eq!(clip.name, "fade_out");
+        assert_eq!(clip.target_type, FadeTargetType::Voice);
+        assert_eq!(clip.target_name, "lead");
+        assert_eq!(clip.start_value, 1.0);
+        assert_eq!(clip.target_value, 0.0);
+        assert_eq!(clip.duration_beats, 4.0);
+    }
 }

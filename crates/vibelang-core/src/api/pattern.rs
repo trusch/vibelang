@@ -344,7 +344,10 @@ fn calculate_loop_length_from_pattern(pattern: &str) -> f64 {
     effective_bars as f64 * beats_per_bar
 }
 
-/// Generate a Euclidean rhythm pattern.
+/// Generate a Euclidean rhythm pattern using the Bjorklund algorithm.
+///
+/// The Bjorklund algorithm distributes hits as evenly as possible across steps,
+/// producing classic Euclidean rhythms like E(3,8) = "x..x..x."
 fn generate_euclidean(hits: usize, steps: usize) -> String {
     if steps == 0 {
         return String::new();
@@ -356,17 +359,41 @@ fn generate_euclidean(hits: usize, steps: usize) -> String {
         return ".".repeat(steps);
     }
 
-    // Bresenham-style Euclidean algorithm
-    let mut pattern = vec![false; steps];
-    let mut bucket = 0;
-
-    for slot in pattern.iter_mut() {
-        bucket += hits;
-        if bucket >= steps {
-            bucket -= steps;
-            *slot = true;
+    // Bjorklund algorithm implementation
+    fn bjorklund(front: &mut Vec<Vec<bool>>, back: &mut Vec<Vec<bool>>) {
+        if back.len() <= 1 {
+            return;
         }
+
+        let merge_count = front.len().min(back.len());
+
+        // Take from back and append to front elements
+        for i in 0..merge_count {
+            let suffix = back.remove(0);
+            front[i].extend(suffix);
+        }
+
+        // The merged front elements become the new front
+        // The unmerged front elements become the new back
+        if merge_count < front.len() {
+            let new_back: Vec<Vec<bool>> = front.drain(merge_count..).collect();
+            *back = new_back;
+        }
+
+        bjorklund(front, back);
     }
+
+    let mut front: Vec<Vec<bool>> = (0..hits).map(|_| vec![true]).collect();
+    let mut back: Vec<Vec<bool>> = (0..steps - hits).map(|_| vec![false]).collect();
+
+    bjorklund(&mut front, &mut back);
+
+    // Concatenate all groups (front then back)
+    let pattern: Vec<bool> = front
+        .into_iter()
+        .chain(back)
+        .flat_map(|group| group)
+        .collect();
 
     pattern
         .into_iter()

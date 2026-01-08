@@ -2,7 +2,7 @@
 //!
 //! Provides synthdefs for audio recording and metronome click generation.
 
-use vibelang_dsp::{encode_synthdef, GraphBuilderInner, GraphIR, Input, Rate};
+use crate::{encode_synthdef, GraphBuilderInner, GraphIR, Input, Rate};
 
 /// Create and encode all recording-related synthdefs.
 /// Returns a vector of (name, encoded_bytes) pairs.
@@ -79,17 +79,17 @@ fn generate_record_synthdef(name: &str, num_channels: i32) -> Option<(String, Ve
 
     // RecordBuf UGen input order (from SC source - inputArray comes LAST!):
     // bufnum, offset, recLevel, preLevel, run, loop, trigger, doneAction, ...inputArray
-    let mut recordbuf_inputs = Vec::new();
-
-    // Fixed parameters FIRST
-    recordbuf_inputs.push(param(0));              // bufnum
-    recordbuf_inputs.push(Input::Constant(zero)); // offset = 0
-    recordbuf_inputs.push(Input::Constant(one));  // recLevel = 1
-    recordbuf_inputs.push(Input::Constant(zero)); // preLevel = 0
-    recordbuf_inputs.push(param(2));              // run
-    recordbuf_inputs.push(Input::Constant(zero)); // loop = 0 (no loop)
-    recordbuf_inputs.push(Input::Constant(one));  // trigger = 1
-    recordbuf_inputs.push(Input::Constant(zero)); // doneAction = 0 (envelope handles freeing)
+    let mut recordbuf_inputs = vec![
+        // Fixed parameters FIRST
+        param(0),              // bufnum
+        Input::Constant(zero), // offset = 0
+        Input::Constant(one),  // recLevel = 1
+        Input::Constant(zero), // preLevel = 0
+        param(2),              // run
+        Input::Constant(zero), // loop = 0 (no loop)
+        Input::Constant(one),  // trigger = 1
+        Input::Constant(zero), // doneAction = 0 (envelope handles freeing)
+    ];
 
     // Input channels LAST (this is what SC's multiNew does: ++ inputArray.asArray)
     for ch in 0..num_channels {

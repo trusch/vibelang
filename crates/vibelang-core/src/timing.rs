@@ -386,4 +386,120 @@ mod tests {
         assert!((latency.total_ms() - 52.0).abs() < 0.001);
         assert!((latency.total_seconds() - 0.052).abs() < 0.0001);
     }
+
+    #[test]
+    fn test_beat_time_comparison() {
+        let a = BeatTime::from_float(1.0);
+        let b = BeatTime::from_float(2.0);
+        let c = BeatTime::from_float(1.0);
+
+        assert!(a < b);
+        assert!(b > a);
+        assert_eq!(a, c);
+    }
+
+    #[test]
+    fn test_beat_time_zero() {
+        let zero = BeatTime::ZERO;
+        assert_eq!(zero.to_float(), 0.0);
+    }
+
+    #[test]
+    fn test_time_signature_defaults() {
+        let ts = TimeSignature::default();
+        assert_eq!(ts.numerator, 4);
+        assert_eq!(ts.denominator, 4);
+        assert_eq!(ts.beats_per_bar(), 4.0);
+    }
+
+    #[test]
+    fn test_time_signature_custom() {
+        let ts = TimeSignature::new(3, 4);
+        assert_eq!(ts.numerator, 3);
+        assert_eq!(ts.denominator, 4);
+        assert_eq!(ts.beats_per_bar(), 3.0);
+
+        // 6/8 time = 3 beats per bar (in quarter notes)
+        let ts68 = TimeSignature::new(6, 8);
+        assert_eq!(ts68.beats_per_bar(), 3.0);
+    }
+
+    #[test]
+    fn test_transport_clock_bpm() {
+        let mut clock = TransportClock::new();
+        let now = Instant::now();
+
+        // Default BPM is 120
+        assert_eq!(clock.bpm(), 120.0);
+
+        // Change BPM
+        clock.set_bpm(140.0, now);
+        assert_eq!(clock.bpm(), 140.0);
+
+        // BPM should clamp at boundaries
+        clock.set_bpm(0.5, now);
+        assert_eq!(clock.bpm(), 1.0); // Minimum is 1
+
+        clock.set_bpm(1000.0, now);
+        assert_eq!(clock.bpm(), 999.0); // Maximum is 999
+    }
+
+    #[test]
+    fn test_transport_clock_start_stop() {
+        let mut clock = TransportClock::new();
+        let now = Instant::now();
+
+        assert!(!clock.is_running());
+
+        clock.start(now);
+        assert!(clock.is_running());
+
+        clock.stop(now);
+        assert!(!clock.is_running());
+    }
+
+    #[test]
+    fn test_transport_clock_seek() {
+        let mut clock = TransportClock::new();
+        let now = Instant::now();
+
+        clock.seek(BeatTime::from_float(8.0), now);
+        let beat = clock.beat_at(now);
+
+        assert!((beat.to_float() - 8.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_transport_clock_lookahead_beats() {
+        let clock = TransportClock::new(); // 120 BPM
+
+        // At 120 BPM, 500ms = 1 beat
+        let lookahead = clock.lookahead_beats(500);
+        assert!((lookahead - 1.0).abs() < 0.001);
+
+        // 1000ms = 2 beats
+        let lookahead2 = clock.lookahead_beats(1000);
+        assert!((lookahead2 - 2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_beat_time_ordering() {
+        use std::collections::BTreeSet;
+
+        let mut set = BTreeSet::new();
+        set.insert(BeatTime::from_float(3.0));
+        set.insert(BeatTime::from_float(1.0));
+        set.insert(BeatTime::from_float(2.0));
+
+        let sorted: Vec<_> = set.iter().map(|bt| bt.to_float()).collect();
+        assert_eq!(sorted, vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_current_beat() {
+        let clock = TransportClock::new();
+        // When stopped, current_beat should return anchor_beat
+        let beat = clock.current_beat();
+        assert!(beat >= 0.0);
+    }
 }

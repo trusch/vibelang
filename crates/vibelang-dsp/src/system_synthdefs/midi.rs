@@ -8,7 +8,7 @@
 //! This approach ensures perfect synchronization between MIDI and audio events,
 //! as both are scheduled through the same OSC bundle timing mechanism.
 
-use vibelang_dsp::{encode_synthdef, GraphBuilderInner, GraphIR, Input, Rate};
+use crate::{encode_synthdef, GraphBuilderInner, GraphIR, Input, Rate};
 
 /// SendReply command IDs for MIDI messages.
 /// These are used as the cmdName in SendReply to distinguish message types.
@@ -296,6 +296,7 @@ fn generate_midi_cc_synthdef() -> Option<(String, Vec<u8>)> {
 
     let zero = 0.0f32;
     builder.add_constant(zero);
+    builder.add_constant(120.0f32); // CC trigger ID constant
 
     let impulse = builder.add_node(
         "Impulse".to_string(),
@@ -393,6 +394,7 @@ fn generate_midi_pitch_bend_synthdef() -> Option<(String, Vec<u8>)> {
 
     let zero = 0.0f32;
     builder.add_constant(zero);
+    builder.add_constant(130.0f32); // Pitch bend trigger ID constant
 
     let impulse = builder.add_node(
         "Impulse".to_string(),
@@ -930,28 +932,53 @@ mod tests {
     #[test]
     fn test_create_midi_synthdefs() {
         let defs = create_midi_synthdefs();
-        assert_eq!(defs.len(), 8, "Should create 8 MIDI synthdefs");
 
         let names: Vec<&str> = defs.iter().map(|(n, _)| n.as_str()).collect();
-        assert!(names.contains(&"vibelang_midi_note_on"));
-        assert!(names.contains(&"vibelang_midi_note_off"));
-        assert!(names.contains(&"vibelang_midi_cc"));
-        assert!(names.contains(&"vibelang_midi_pitch_bend"));
-        assert!(names.contains(&"vibelang_midi_clock"));
-        assert!(names.contains(&"vibelang_midi_start"));
-        assert!(names.contains(&"vibelang_midi_stop"));
-        assert!(names.contains(&"vibelang_midi_continue"));
+        eprintln!("Created synthdefs ({}):", names.len());
+        for name in &names {
+            eprintln!("  - {}", name);
+        }
+
+        // Check all expected synthdefs exist
+        let expected = [
+            "vibelang_midi_note_on",
+            "vibelang_midi_note_off",
+            "vibelang_midi_cc",
+            "vibelang_midi_pitch_bend",
+            "vibelang_midi_clock",
+            "vibelang_midi_start",
+            "vibelang_midi_stop",
+            "vibelang_midi_continue",
+        ];
+
+        for expected_name in expected {
+            assert!(
+                names.contains(&expected_name),
+                "Missing synthdef: {}",
+                expected_name
+            );
+        }
+
+        assert_eq!(defs.len(), 8, "Should create 8 MIDI synthdefs");
     }
 
     #[test]
-    fn test_trigger_id_ranges() {
+    fn test_trigger_id_exact_matches() {
         use trigger_ids::*;
 
-        assert_eq!(message_type(100), Some(MidiTriggerType::NoteOn));
-        assert_eq!(message_type(103), Some(MidiTriggerType::NoteOn));
-        assert_eq!(message_type(110), Some(MidiTriggerType::NoteOff));
-        assert_eq!(message_type(140), Some(MidiTriggerType::Clock));
-        assert_eq!(message_type(150), Some(MidiTriggerType::Start));
+        // Each trigger ID is a specific value, not a range
+        assert_eq!(message_type(NOTE_ON), Some(MidiTriggerType::NoteOn)); // 100
+        assert_eq!(message_type(NOTE_OFF), Some(MidiTriggerType::NoteOff)); // 110
+        assert_eq!(message_type(CC), Some(MidiTriggerType::CC)); // 120
+        assert_eq!(message_type(PITCH_BEND), Some(MidiTriggerType::PitchBend)); // 130
+        assert_eq!(message_type(CLOCK), Some(MidiTriggerType::Clock)); // 140
+        assert_eq!(message_type(START), Some(MidiTriggerType::Start)); // 150
+        assert_eq!(message_type(STOP), Some(MidiTriggerType::Stop)); // 151
+        assert_eq!(message_type(CONTINUE), Some(MidiTriggerType::Continue)); // 152
+
+        // Unknown IDs should return None
         assert_eq!(message_type(99), None);
+        assert_eq!(message_type(101), None);
+        assert_eq!(message_type(200), None);
     }
 }

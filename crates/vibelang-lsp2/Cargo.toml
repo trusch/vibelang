@@ -1,0 +1,51 @@
+[package]
+name = "vibelang-lsp2"
+version = "0.1.0"
+edition = "2021"
+description = "Language Server Protocol implementation for VibeLang (core2-based)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/trusch/vibelang"
+keywords = ["music", "audio", "lsp", "language-server"]
+categories = ["development-tools"]
+
+[dependencies]
+# Core2 runtime (for validation) - NOT vibelang-core
+vibelang-core2 = { path = "../vibelang-core2" }
+
+# Rhai scripting layer
+vibelang-rhai = { path = "../vibelang-rhai" }
+
+# Rhai engine (for error types)
+rhai = { version = "1", features = ["sync"] }
+
+# DSP for UGen manifests and synthdef validation
+vibelang-dsp = { path = "../vibelang-dsp" }
+
+# Standard library (for stdlib path)
+vibelang-std = { path = "../vibelang-std" }
+
+# LSP server
+tower-lsp = "0.20"
+async-trait = "0.1"
+
+# Document management
+ropey = "1.6"
+dashmap = "6"
+regex = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["io-std", "sync", "rt-multi-thread"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+
+[features]
+default = []

@@ -1,10 +1,10 @@
-// SFZ voice synthdef with gate-controlled envelope
-// PlayBuf -> EnvGen (ASR) -> amp -> Out
+//! SFZ voice synthdef with gate-controlled envelope.
+//!
+//! PlayBuf -> EnvGen (ASR) -> amp -> Out
 
-use vibelang_dsp::{GraphBuilderInner, GraphIR, Input, Rate, encode_synthdef};
-use anyhow::Result;
+use crate::{encode_synthdef, GraphBuilderInner, GraphIR, Input, Rate};
 
-/// Create SFZ voice synthdef with gate-controlled ASR envelope
+/// Create SFZ voice synthdef with gate-controlled ASR envelope.
 ///
 /// The envelope responds to gate changes:
 /// - gate=1: Attack phase (0 -> sustain), then holds at sustain
@@ -22,7 +22,7 @@ use anyhow::Result;
 /// - release: envelope release time (8)
 /// - loop: loop mode 0=no, 1=yes (9)
 /// - startPos: start position in frames (10)
-pub fn create_sfz_voice_synthdef_bufrd(num_channels: u32) -> Result<GraphIR> {
+pub fn create_sfz_voice_synthdef(num_channels: u32) -> Result<GraphIR, crate::SynthDefError> {
     let name = if num_channels == 1 {
         "sfz_voice_mono"
     } else {
@@ -205,21 +205,21 @@ pub fn create_sfz_synthdefs() -> Vec<(String, Vec<u8>)> {
     let mut defs = Vec::new();
 
     // Create mono version
-    if let Ok(mono) = create_sfz_voice_synthdef_bufrd(1) {
+    if let Ok(mono) = create_sfz_voice_synthdef(1) {
         if let Ok(bytes) = encode_synthdef(&mono) {
             defs.push(("sfz_voice_mono".to_string(), bytes));
         }
     }
 
     // Create stereo version
-    if let Ok(stereo) = create_sfz_voice_synthdef_bufrd(2) {
+    if let Ok(stereo) = create_sfz_voice_synthdef(2) {
         if let Ok(bytes) = encode_synthdef(&stereo) {
             defs.push(("sfz_voice_stereo".to_string(), bytes));
         }
     }
 
     // Also create generic "sfz_voice" as stereo by default
-    if let Ok(mut stereo2) = create_sfz_voice_synthdef_bufrd(2) {
+    if let Ok(mut stereo2) = create_sfz_voice_synthdef(2) {
         stereo2.name = "sfz_voice".to_string();
         if let Ok(bytes) = encode_synthdef(&stereo2) {
             defs.push(("sfz_voice".to_string(), bytes));
@@ -227,4 +227,36 @@ pub fn create_sfz_synthdefs() -> Vec<(String, Vec<u8>)> {
     }
 
     defs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_sfz_synthdefs() {
+        let defs = create_sfz_synthdefs();
+        assert_eq!(defs.len(), 3);
+
+        let names: Vec<_> = defs.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(names.contains(&"sfz_voice_mono"));
+        assert!(names.contains(&"sfz_voice_stereo"));
+        assert!(names.contains(&"sfz_voice"));
+    }
+
+    #[test]
+    fn test_create_sfz_voice_synthdef_mono() {
+        let ir = create_sfz_voice_synthdef(1).unwrap();
+        assert_eq!(ir.name, "sfz_voice_mono");
+        let bytes = encode_synthdef(&ir).unwrap();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_create_sfz_voice_synthdef_stereo() {
+        let ir = create_sfz_voice_synthdef(2).unwrap();
+        assert_eq!(ir.name, "sfz_voice_stereo");
+        let bytes = encode_synthdef(&ir).unwrap();
+        assert!(!bytes.is_empty());
+    }
 }
