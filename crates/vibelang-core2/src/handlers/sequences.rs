@@ -1,6 +1,8 @@
 //! Sequences handler implementation.
 
 use crate::backend::Backend;
+use crate::compat::Instant;
+use crate::compat::RwLock;
 use crate::state::{ActiveFade, SequenceState, State};
 use crate::traits::{Clip, FadeConfig, SequenceConfig, Sequences};
 use crate::types::{Beat, MelodyId, PatternId, SequenceId};
@@ -8,8 +10,6 @@ use crate::{Error, Result};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::sync::Arc;
-use crate::compat::Instant;
-use crate::compat::RwLock;
 
 /// A unique identifier for a clip within a sequence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -89,7 +89,10 @@ impl<B: Backend> SequencesHandler<B> {
                         melody.playing = true;
                         melody.loop_position = Beat::ZERO;
                     } else {
-                        tracing::warn!("Sequence tried to start melody {:?} but it doesn't exist", id);
+                        tracing::warn!(
+                            "Sequence tried to start melody {:?} but it doesn't exist",
+                            id
+                        );
                     }
                 }
                 ClipAction::StopMelody(id) => {
@@ -125,11 +128,18 @@ impl<B: Backend> SequencesHandler<B> {
                     };
 
                     // Get starting value - use explicit `from` or look up current value from state
-                    let start_value = config.from.unwrap_or_else(|| current_state_value.unwrap_or(0.0));
+                    let start_value = config
+                        .from
+                        .unwrap_or_else(|| current_state_value.unwrap_or(0.0));
 
                     tracing::debug!(
                         "Starting fade on {:?}/{}: from={:?} (state={:?}), using start={}, to={}",
-                        config.target, config.param, config.from, current_state_value, start_value, config.to
+                        config.target,
+                        config.param,
+                        config.from,
+                        current_state_value,
+                        start_value,
+                        config.to
                     );
 
                     // Immediately apply the starting value to state
@@ -137,7 +147,10 @@ impl<B: Backend> SequencesHandler<B> {
                     match &config.target {
                         FadeTarget::Voice(id) => {
                             if let Some(voice) = state.voices.get_mut(id) {
-                                voice.config.params.insert(config.param.clone(), start_value);
+                                voice
+                                    .config
+                                    .params
+                                    .insert(config.param.clone(), start_value);
                             }
                         }
                         FadeTarget::Group(id) => {
@@ -220,8 +233,14 @@ impl<B: Backend> SequencesHandler<B> {
         }
 
         for seq in playing_sequences {
-            let (seq_id, last_pos, length, looping, start_beat, clips) =
-                (seq.id, seq.position, seq.length, seq.looping, seq.start_beat, seq.clips);
+            let (seq_id, last_pos, length, looping, start_beat, clips) = (
+                seq.id,
+                seq.position,
+                seq.length,
+                seq.looping,
+                seq.start_beat,
+                seq.clips,
+            );
             // Calculate elapsed beats since sequence started
             // If start_beat is None, use current_beat directly (legacy behavior for top-level sequences)
             let elapsed = start_beat.map_or(current_beat, |sb| current_beat - sb);
@@ -522,7 +541,11 @@ mod tests {
     impl Backend for MockBackend {
         type Error = MockError;
 
-        async fn load_synthdef(&self, _name: &str, _data: &[u8]) -> std::result::Result<(), Self::Error> {
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -550,15 +573,28 @@ mod tests {
             Ok(())
         }
 
-        async fn run_node(&self, _node: NodeId, _running: bool) -> std::result::Result<(), Self::Error> {
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
-        async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> std::result::Result<(), Self::Error> {
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
-        async fn load_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<BufferInfo, Self::Error> {
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
             Ok(BufferInfo {
                 frames: 44100,
                 channels: 2,
@@ -579,7 +615,11 @@ mod tests {
             })
         }
 
-        async fn write_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<(), Self::Error> {
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -692,7 +732,10 @@ mod tests {
         let (handler, _state) = create_handler();
 
         let result = handler.delete(SequenceId::new(999)).await;
-        assert!(result.is_err(), "Deleting non-existent sequence should fail");
+        assert!(
+            result.is_err(),
+            "Deleting non-existent sequence should fail"
+        );
     }
 
     // =========================================================================
@@ -739,7 +782,10 @@ mod tests {
         let (handler, _state) = create_handler();
 
         let result = handler.start(SequenceId::new(999), false).await;
-        assert!(result.is_err(), "Starting non-existent sequence should fail");
+        assert!(
+            result.is_err(),
+            "Starting non-existent sequence should fail"
+        );
     }
 
     #[tokio::test]
@@ -764,7 +810,10 @@ mod tests {
         let (handler, _state) = create_handler();
 
         let result = handler.stop(SequenceId::new(999)).await;
-        assert!(result.is_err(), "Stopping non-existent sequence should fail");
+        assert!(
+            result.is_err(),
+            "Stopping non-existent sequence should fail"
+        );
     }
 
     // =========================================================================
@@ -803,7 +852,10 @@ mod tests {
 
         let state_read = state.read().await;
         let seq = state_read.sequences.get(&seq_id).unwrap();
-        assert!(!seq.paused, "Pausing stopped sequence should not set paused");
+        assert!(
+            !seq.paused,
+            "Pausing stopped sequence should not set paused"
+        );
     }
 
     #[tokio::test]
@@ -876,7 +928,11 @@ mod tests {
                 pattern_id,
                 PatternState {
                     id: pattern_id,
-                    config: PatternConfig::with_length("test_pattern", crate::types::VoiceId::new(1), 4.0),
+                    config: PatternConfig::with_length(
+                        "test_pattern",
+                        crate::types::VoiceId::new(1),
+                        4.0,
+                    ),
                     playing: false,
                     loop_position: Beat::ZERO,
                 },
@@ -885,12 +941,11 @@ mod tests {
 
         // Create sequence with pattern clip
         let seq_id = SequenceId::new(1);
-        let config = SequenceConfig::with_length("test_seq", 8.0)
-            .with_clip(Clip::Pattern {
-                id: pattern_id,
-                start: Beat::from_f64(0.0),
-                end: Beat::from_f64(4.0),
-            });
+        let config = SequenceConfig::with_length("test_seq", 8.0).with_clip(Clip::Pattern {
+            id: pattern_id,
+            start: Beat::from_f64(0.0),
+            end: Beat::from_f64(4.0),
+        });
         handler.create(seq_id, config).await.unwrap();
         handler.start(seq_id, false).await.unwrap();
 
@@ -914,7 +969,11 @@ mod tests {
                 pattern_id,
                 PatternState {
                     id: pattern_id,
-                    config: PatternConfig::with_length("test_pattern", crate::types::VoiceId::new(1), 4.0),
+                    config: PatternConfig::with_length(
+                        "test_pattern",
+                        crate::types::VoiceId::new(1),
+                        4.0,
+                    ),
                     playing: false,
                     loop_position: Beat::ZERO,
                 },
@@ -923,12 +982,11 @@ mod tests {
 
         // Create sequence with pattern clip 0-4 beats
         let seq_id = SequenceId::new(1);
-        let config = SequenceConfig::with_length("test_seq", 8.0)
-            .with_clip(Clip::Pattern {
-                id: pattern_id,
-                start: Beat::from_f64(0.0),
-                end: Beat::from_f64(4.0),
-            });
+        let config = SequenceConfig::with_length("test_seq", 8.0).with_clip(Clip::Pattern {
+            id: pattern_id,
+            start: Beat::from_f64(0.0),
+            end: Beat::from_f64(4.0),
+        });
         handler.create(seq_id, config).await.unwrap();
         handler.start(seq_id, false).await.unwrap();
 
@@ -946,7 +1004,10 @@ mod tests {
 
         let state_read = state.read().await;
         let pattern = state_read.patterns.get(&pattern_id).unwrap();
-        assert!(!pattern.playing, "Pattern should be stopped after clip ends");
+        assert!(
+            !pattern.playing,
+            "Pattern should be stopped after clip ends"
+        );
     }
 
     // =========================================================================
@@ -985,7 +1046,11 @@ mod tests {
 
         let state_read = state.read().await;
         let seq = state_read.sequences.get(&seq_id).unwrap();
-        assert_eq!(seq.start_beat, Some(Beat::from_f64(10.0)), "Start should set start_beat");
+        assert_eq!(
+            seq.start_beat,
+            Some(Beat::from_f64(10.0)),
+            "Start should set start_beat"
+        );
     }
 
     // =========================================================================

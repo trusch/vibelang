@@ -18,7 +18,7 @@ use crate::error::{Error, Result};
 #[cfg(target_arch = "wasm32")]
 mod wasm_resolver {
     use rhai::module_resolvers::ModuleResolver;
-    use rhai::{Engine, Module, Position, AST, Scope};
+    use rhai::{Engine, Module, Position, Scope, AST};
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -97,11 +97,7 @@ mod wasm_resolver {
 
             // Create module from AST
             let module = Module::eval_ast_as_new(Scope::new(), &ast, engine).map_err(|e| {
-                Box::new(rhai::EvalAltResult::ErrorInModule(
-                    path.to_string(),
-                    e,
-                    pos,
-                ))
+                Box::new(rhai::EvalAltResult::ErrorInModule(path.to_string(), e, pos))
             })?;
 
             Ok(rhai::Shared::new(module))
@@ -119,10 +115,12 @@ mod wasm_resolver {
             // Look up the module source
             let source = match self.modules.get(&normalized) {
                 Some(s) => s,
-                None => return Some(Err(Box::new(rhai::EvalAltResult::ErrorModuleNotFound(
-                    format!("Module not found: {} (looked for: {})", path, normalized),
-                    pos,
-                )))),
+                None => {
+                    return Some(Err(Box::new(rhai::EvalAltResult::ErrorModuleNotFound(
+                        format!("Module not found: {} (looked for: {})", path, normalized),
+                        pos,
+                    ))))
+                }
             };
 
             // Compile the source
@@ -317,7 +315,9 @@ impl ScriptEngine {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn compile_file(&self, path: impl AsRef<Path>) -> Result<rhai::AST> {
         let path = path.as_ref();
-        self.engine.compile_file(path.to_path_buf()).map_err(Error::from)
+        self.engine
+            .compile_file(path.to_path_buf())
+            .map_err(Error::from)
     }
 
     /// Set up module resolver for import statements (native only).
@@ -508,7 +508,10 @@ mod tests {
         // Check melody has notes
         let melody_id = state.melodies.keys().next().unwrap();
         let melody_config = state.melodies.get(melody_id).unwrap();
-        assert!(melody_config.notes.len() >= 8, "Should have at least 8 notes");
+        assert!(
+            melody_config.notes.len() >= 8,
+            "Should have at least 8 notes"
+        );
     }
 
     #[test]
@@ -682,7 +685,10 @@ mod tests {
 
         let voice_id = state.voices.keys().next().unwrap();
         let voice_config = state.voices.get(voice_id).unwrap();
-        assert!(!voice_config.muted, "Voice should not be muted after unmute");
+        assert!(
+            !voice_config.muted,
+            "Voice should not be muted after unmute"
+        );
     }
 
     #[test]
@@ -721,7 +727,10 @@ mod tests {
 
         let voice_id = state.voices.keys().next().unwrap();
         let voice_config = state.voices.get(voice_id).unwrap();
-        assert!(!voice_config.soloed, "Voice should not be soloed after unsolo");
+        assert!(
+            !voice_config.soloed,
+            "Voice should not be soloed after unsolo"
+        );
     }
 
     #[test]
@@ -880,7 +889,10 @@ mod tests {
             .find(|g| g.name == "TestGroup")
             .expect("Should find TestGroup");
 
-        assert!(!group.soloed, "Group should not be soloed after solo(false)");
+        assert!(
+            !group.soloed,
+            "Group should not be soloed after solo(false)"
+        );
     }
 
     #[test]
@@ -904,7 +916,10 @@ mod tests {
             .find(|g| g.name == "TestGroup")
             .expect("Should find TestGroup");
 
-        let param = group.params.get("filter_cutoff").expect("Should have filter_cutoff param");
+        let param = group
+            .params
+            .get("filter_cutoff")
+            .expect("Should have filter_cutoff param");
         assert!((param - 0.75).abs() < 0.001, "filter_cutoff should be 0.75");
     }
 
@@ -950,7 +965,11 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(state.playing_patterns.len(), 1, "Should have 1 playing pattern");
+        assert_eq!(
+            state.playing_patterns.len(),
+            1,
+            "Should have 1 playing pattern"
+        );
     }
 
     #[test]
@@ -970,7 +989,11 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(state.playing_patterns.len(), 0, "Should have 0 playing patterns after stop");
+        assert_eq!(
+            state.playing_patterns.len(),
+            0,
+            "Should have 0 playing patterns after stop"
+        );
     }
 
     #[test]
@@ -990,7 +1013,11 @@ mod tests {
             .unwrap();
 
         // launch() should start the pattern
-        assert_eq!(state.playing_patterns.len(), 1, "Should have 1 playing pattern after launch");
+        assert_eq!(
+            state.playing_patterns.len(),
+            1,
+            "Should have 1 playing pattern after launch"
+        );
     }
 
     #[test]
@@ -1008,7 +1035,11 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(state.playing_melodies.len(), 1, "Should have 1 playing melody");
+        assert_eq!(
+            state.playing_melodies.len(),
+            1,
+            "Should have 1 playing melody"
+        );
     }
 
     #[test]
@@ -1028,7 +1059,11 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(state.playing_melodies.len(), 0, "Should have 0 playing melodies after stop");
+        assert_eq!(
+            state.playing_melodies.len(),
+            0,
+            "Should have 0 playing melodies after stop"
+        );
     }
 
     #[test]
@@ -1047,7 +1082,11 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(state.playing_melodies.len(), 1, "Should have 1 playing melody after launch");
+        assert_eq!(
+            state.playing_melodies.len(),
+            1,
+            "Should have 1 playing melody after launch"
+        );
     }
 
     #[test]
@@ -1063,7 +1102,11 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(state.playing_sequences.len(), 1, "Should have 1 playing sequence");
+        assert_eq!(
+            state.playing_sequences.len(),
+            1,
+            "Should have 1 playing sequence"
+        );
     }
 
     #[test]
@@ -1080,7 +1123,11 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(state.playing_sequences.len(), 0, "Should have 0 playing sequences after stop");
+        assert_eq!(
+            state.playing_sequences.len(),
+            0,
+            "Should have 0 playing sequences after stop"
+        );
     }
 
     #[test]
@@ -1097,7 +1144,11 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(state.playing_sequences.len(), 1, "Should have 1 playing sequence after launch");
+        assert_eq!(
+            state.playing_sequences.len(),
+            1,
+            "Should have 1 playing sequence after launch"
+        );
     }
 
     #[test]
@@ -1118,7 +1169,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(state.patterns.len(), 3, "Should have 3 patterns defined");
-        assert_eq!(state.playing_patterns.len(), 2, "Should have 2 playing patterns");
+        assert_eq!(
+            state.playing_patterns.len(),
+            2,
+            "Should have 2 playing patterns"
+        );
     }
 
     // ==================== Phase 1 Tests: Quantization ====================
@@ -1135,7 +1190,10 @@ mod tests {
             )
             .unwrap();
 
-        assert!((state.quantization - 4.0).abs() < 0.001, "Quantization should be 4.0");
+        assert!(
+            (state.quantization - 4.0).abs() < 0.001,
+            "Quantization should be 4.0"
+        );
     }
 
     #[test]
@@ -1150,7 +1208,10 @@ mod tests {
             .unwrap();
 
         // Default quantization should be 0 (no quantization)
-        assert!((state.quantization - 0.0).abs() < 0.001, "Default quantization should be 0.0");
+        assert!(
+            (state.quantization - 0.0).abs() < 0.001,
+            "Default quantization should be 0.0"
+        );
     }
 
     #[test]
@@ -1199,9 +1260,16 @@ mod tests {
             )
             .unwrap();
 
-        let melody_config = state.melodies.values().next().expect("Should have a melody");
+        let melody_config = state
+            .melodies
+            .values()
+            .next()
+            .expect("Should have a melody");
         // C major chord has 3 notes
-        assert!(melody_config.notes.len() >= 3, "Melody should have at least 3 notes from chord");
+        assert!(
+            melody_config.notes.len() >= 3,
+            "Melody should have at least 3 notes from chord"
+        );
     }
 
     #[test]
@@ -1221,9 +1289,16 @@ mod tests {
             )
             .unwrap();
 
-        let melody_config = state.melodies.values().next().expect("Should have a melody");
+        let melody_config = state
+            .melodies
+            .values()
+            .next()
+            .expect("Should have a melody");
         // C major scale has 7 notes
-        assert!(melody_config.notes.len() >= 7, "Melody should have at least 7 notes from scale");
+        assert!(
+            melody_config.notes.len() >= 7,
+            "Melody should have at least 7 notes from scale"
+        );
     }
 
     #[test]
@@ -1240,7 +1315,10 @@ mod tests {
         "#,
         );
 
-        assert!(result.is_ok(), "Script with scale_degree should execute without errors");
+        assert!(
+            result.is_ok(),
+            "Script with scale_degree should execute without errors"
+        );
     }
 
     // ==================== Phase 1 Tests: Melody Array Input ====================
@@ -1265,7 +1343,11 @@ mod tests {
             )
             .unwrap();
 
-        let melody_config = state.melodies.values().next().expect("Should have a melody");
+        let melody_config = state
+            .melodies
+            .values()
+            .next()
+            .expect("Should have a melody");
         assert_eq!(melody_config.notes.len(), 3, "Melody should have 3 notes");
     }
 
@@ -1288,9 +1370,17 @@ mod tests {
             )
             .unwrap();
 
-        let melody_config = state.melodies.values().next().expect("Should have a melody");
+        let melody_config = state
+            .melodies
+            .values()
+            .next()
+            .expect("Should have a melody");
         // Each note in the chord becomes a separate note event
-        assert_eq!(melody_config.notes.len(), 3, "Melody should have 3 notes (C major chord)");
+        assert_eq!(
+            melody_config.notes.len(),
+            3,
+            "Melody should have 3 notes (C major chord)"
+        );
     }
 
     // ==================== Phase 1 Tests: Edge Cases and Error Handling ====================
@@ -1311,7 +1401,10 @@ mod tests {
 
         let voice_config = state.voices.values().next().expect("Should have a voice");
         assert!(!voice_config.muted, "Voice should not be muted by default");
-        assert!(!voice_config.soloed, "Voice should not be soloed by default");
+        assert!(
+            !voice_config.soloed,
+            "Voice should not be soloed by default"
+        );
     }
 
     #[test]
@@ -1354,7 +1447,11 @@ mod tests {
             .unwrap();
 
         // apply() should NOT start the pattern
-        assert_eq!(state.playing_patterns.len(), 0, "Pattern should not be playing after apply()");
+        assert_eq!(
+            state.playing_patterns.len(),
+            0,
+            "Pattern should not be playing after apply()"
+        );
     }
 
     #[test]
@@ -1373,7 +1470,11 @@ mod tests {
             .unwrap();
 
         // apply() should NOT start the melody
-        assert_eq!(state.playing_melodies.len(), 0, "Melody should not be playing after apply()");
+        assert_eq!(
+            state.playing_melodies.len(),
+            0,
+            "Melody should not be playing after apply()"
+        );
     }
 
     #[test]
@@ -1557,9 +1658,18 @@ mod tests {
         assert_eq!(state.samples.len(), 1, "Should have 1 sample");
         let sample_id = state.samples.keys().next().unwrap();
         let sample_config = state.samples.get(sample_id).unwrap();
-        assert!((sample_config.attack - 0.01).abs() < 0.001, "Attack should be 0.01");
-        assert!((sample_config.sustain - 0.8).abs() < 0.001, "Sustain should be 0.8");
-        assert!((sample_config.release - 0.2).abs() < 0.001, "Release should be 0.2");
+        assert!(
+            (sample_config.attack - 0.01).abs() < 0.001,
+            "Attack should be 0.01"
+        );
+        assert!(
+            (sample_config.sustain - 0.8).abs() < 0.001,
+            "Sustain should be 0.8"
+        );
+        assert!(
+            (sample_config.release - 0.2).abs() < 0.001,
+            "Release should be 0.2"
+        );
     }
 
     #[test]
@@ -1585,9 +1695,15 @@ mod tests {
         let sample_id = state.samples.keys().next().unwrap();
         let sample_config = state.samples.get(sample_id).unwrap();
         assert!((sample_config.amp - 0.7).abs() < 0.001, "Amp should be 0.7");
-        assert!((sample_config.rate - 1.5).abs() < 0.001, "Rate should be 1.5");
+        assert!(
+            (sample_config.rate - 1.5).abs() < 0.001,
+            "Rate should be 1.5"
+        );
         assert!(sample_config.loop_mode, "Loop mode should be true");
-        assert!((sample_config.offset - 0.5).abs() < 0.001, "Offset should be 0.5");
+        assert!(
+            (sample_config.offset - 0.5).abs() < 0.001,
+            "Offset should be 0.5"
+        );
         assert_eq!(sample_config.length, Some(2.0), "Length should be 2.0");
     }
 
@@ -1614,10 +1730,22 @@ mod tests {
         let sample_id = state.samples.keys().next().unwrap();
         let sample_config = state.samples.get(sample_id).unwrap();
         assert!(sample_config.warp, "Warp should be true");
-        assert!((sample_config.speed - 0.5).abs() < 0.001, "Speed should be 0.5");
-        assert!((sample_config.pitch - 1.2).abs() < 0.001, "Pitch should be 1.2");
-        assert!((sample_config.window_size - 0.15).abs() < 0.001, "Window size should be 0.15");
-        assert!((sample_config.overlaps - 12.0).abs() < 0.001, "Overlaps should be 12.0");
+        assert!(
+            (sample_config.speed - 0.5).abs() < 0.001,
+            "Speed should be 0.5"
+        );
+        assert!(
+            (sample_config.pitch - 1.2).abs() < 0.001,
+            "Pitch should be 1.2"
+        );
+        assert!(
+            (sample_config.window_size - 0.15).abs() < 0.001,
+            "Window size should be 0.15"
+        );
+        assert!(
+            (sample_config.overlaps - 12.0).abs() < 0.001,
+            "Overlaps should be 12.0"
+        );
     }
 
     #[test]
@@ -1640,7 +1768,10 @@ mod tests {
         let sample_config = state.samples.get(sample_id).unwrap();
         assert!(sample_config.warp, "Warp should be auto-enabled");
         // 12 semitones = 2^(12/12) = 2.0 (octave up)
-        assert!((sample_config.pitch - 2.0).abs() < 0.001, "Pitch should be 2.0 for +12 semitones");
+        assert!(
+            (sample_config.pitch - 2.0).abs() < 0.001,
+            "Pitch should be 2.0 for +12 semitones"
+        );
     }
 
     #[test]
@@ -1662,7 +1793,11 @@ mod tests {
         let sample_id = state.samples.keys().next().unwrap();
         let sample_config = state.samples.get(sample_id).unwrap();
         assert!(sample_config.warp, "Warp should be auto-enabled");
-        assert_eq!(sample_config.target_bpm, Some(140.0), "Target BPM should be 140");
+        assert_eq!(
+            sample_config.target_bpm,
+            Some(140.0),
+            "Target BPM should be 140"
+        );
     }
 
     #[test]
@@ -1683,8 +1818,15 @@ mod tests {
         assert_eq!(state.samples.len(), 1, "Should have 1 sample");
         let sample_id = state.samples.keys().next().unwrap();
         let sample_config = state.samples.get(sample_id).unwrap();
-        assert!((sample_config.offset - 1.0).abs() < 0.001, "Offset should be 1.0");
-        assert_eq!(sample_config.length, Some(2.0), "Length should be 2.0 (3.0 - 1.0)");
+        assert!(
+            (sample_config.offset - 1.0).abs() < 0.001,
+            "Offset should be 1.0"
+        );
+        assert_eq!(
+            sample_config.length,
+            Some(2.0),
+            "Length should be 2.0 (3.0 - 1.0)"
+        );
     }
 
     #[test]

@@ -23,20 +23,32 @@ pub enum MidiMessage {
     /// Note off: channel, note
     NoteOff { channel: u8, note: u8 },
     /// Control change: channel, controller, value
-    ControlChange { channel: u8, controller: u8, value: u8 },
+    ControlChange {
+        channel: u8,
+        controller: u8,
+        value: u8,
+    },
 }
 
 impl MidiMessage {
     /// Convert to raw MIDI bytes
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
-            MidiMessage::NoteOn { channel, note, velocity } => {
+            MidiMessage::NoteOn {
+                channel,
+                note,
+                velocity,
+            } => {
                 vec![0x90 | (channel & 0x0F), *note & 0x7F, *velocity & 0x7F]
             }
             MidiMessage::NoteOff { channel, note } => {
                 vec![0x80 | (channel & 0x0F), *note & 0x7F, 0]
             }
-            MidiMessage::ControlChange { channel, controller, value } => {
+            MidiMessage::ControlChange {
+                channel,
+                controller,
+                value,
+            } => {
                 vec![0xB0 | (channel & 0x0F), *controller & 0x7F, *value & 0x7F]
             }
         }
@@ -75,7 +87,8 @@ impl JackMidiOutput {
     /// Create a new JACK MIDI output
     pub fn new(client_name: &str, port_name: &str) -> Result<Self> {
         // Create JACK client
-        let (client, _status) = jack::Client::new(client_name, jack::ClientOptions::NO_START_SERVER)?;
+        let (client, _status) =
+            jack::Client::new(client_name, jack::ClientOptions::NO_START_SERVER)?;
 
         // Create MIDI output port
         let midi_out = client.register_port(port_name, jack::MidiOut::default())?;
@@ -83,10 +96,7 @@ impl JackMidiOutput {
         // Create channel for sending MIDI messages
         let (tx, rx) = channel();
 
-        let handler = JackMidiHandler {
-            midi_out,
-            rx,
-        };
+        let handler = JackMidiHandler { midi_out, rx };
 
         // Activate the client
         let active_client = client.activate_async((), handler)?;
@@ -121,14 +131,22 @@ impl JackMidiOutput {
         // Note: This requires the client to be active, which it is after new()
         // But we can't easily get access to it here since it's wrapped in AsyncClient
         // For now, users can use jack_connect externally or qjackctl
-        log::info!("To connect: jack_connect {} {}", self.port_name, destination);
+        log::info!(
+            "To connect: jack_connect {} {}",
+            self.port_name,
+            destination
+        );
         Ok(())
     }
 }
 
 impl MidiOutput for JackMidiOutput {
     fn note_on(&self, channel: u8, note: u8, velocity: u8) {
-        let _ = self.tx.send(MidiMessage::NoteOn { channel, note, velocity });
+        let _ = self.tx.send(MidiMessage::NoteOn {
+            channel,
+            note,
+            velocity,
+        });
     }
 
     fn note_off(&self, channel: u8, note: u8) {
@@ -136,7 +154,11 @@ impl MidiOutput for JackMidiOutput {
     }
 
     fn control_change(&self, channel: u8, controller: u8, value: u8) {
-        let _ = self.tx.send(MidiMessage::ControlChange { channel, controller, value });
+        let _ = self.tx.send(MidiMessage::ControlChange {
+            channel,
+            controller,
+            value,
+        });
     }
 
     fn port_name(&self) -> &str {
@@ -177,7 +199,12 @@ pub struct DummyMidiOutput;
 
 impl MidiOutput for DummyMidiOutput {
     fn note_on(&self, channel: u8, note: u8, velocity: u8) {
-        log::debug!("MIDI Note On: ch={} note={} vel={}", channel, note, velocity);
+        log::debug!(
+            "MIDI Note On: ch={} note={} vel={}",
+            channel,
+            note,
+            velocity
+        );
     }
 
     fn note_off(&self, channel: u8, note: u8) {
@@ -204,7 +231,9 @@ pub fn is_jack_running() -> bool {
 
 /// List available JACK MIDI ports
 pub fn list_jack_midi_ports() -> Vec<String> {
-    if let Ok((client, _)) = jack::Client::new("term-keys-list", jack::ClientOptions::NO_START_SERVER) {
+    if let Ok((client, _)) =
+        jack::Client::new("term-keys-list", jack::ClientOptions::NO_START_SERVER)
+    {
         client.ports(None, Some("midi"), jack::PortFlags::IS_INPUT)
     } else {
         Vec::new()
@@ -217,13 +246,24 @@ mod tests {
 
     #[test]
     fn test_midi_message_bytes() {
-        let note_on = MidiMessage::NoteOn { channel: 0, note: 60, velocity: 100 };
+        let note_on = MidiMessage::NoteOn {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        };
         assert_eq!(note_on.to_bytes(), vec![0x90, 60, 100]);
 
-        let note_off = MidiMessage::NoteOff { channel: 1, note: 48 };
+        let note_off = MidiMessage::NoteOff {
+            channel: 1,
+            note: 48,
+        };
         assert_eq!(note_off.to_bytes(), vec![0x81, 48, 0]);
 
-        let cc = MidiMessage::ControlChange { channel: 0, controller: 1, value: 64 };
+        let cc = MidiMessage::ControlChange {
+            channel: 0,
+            controller: 1,
+            value: 64,
+        };
         assert_eq!(cc.to_bytes(), vec![0xB0, 1, 64]);
     }
 

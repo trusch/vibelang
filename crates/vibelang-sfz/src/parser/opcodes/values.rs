@@ -1,8 +1,8 @@
-use std::str::FromStr;
 use std::path::PathBuf;
+use std::str::FromStr;
 
-use crate::parser::error::Error;
 use super::Result;
+use crate::parser::error::Error;
 use crate::parser::path_utils::normalize_path;
 
 /// Trait for parsing opcode values
@@ -72,7 +72,8 @@ impl OpcodeValue for i32 {
     /// hikey=84    // Highest key (C6)
     /// ```
     fn parse_opcode(s: &str) -> Result<Self> {
-        s.parse::<i32>().map_err(|_| Error::InvalidOpcodeValue(s.to_string(), "integer".to_string()))
+        s.parse::<i32>()
+            .map_err(|_| Error::InvalidOpcodeValue(s.to_string(), "integer".to_string()))
     }
 }
 
@@ -89,7 +90,8 @@ impl OpcodeValue for f32 {
     /// ampeg_attack=0.01 // Attack time in seconds
     /// ```
     fn parse_opcode(s: &str) -> Result<Self> {
-        s.parse::<f32>().map_err(|_| Error::InvalidOpcodeValue(s.to_string(), "float".to_string()))
+        s.parse::<f32>()
+            .map_err(|_| Error::InvalidOpcodeValue(s.to_string(), "float".to_string()))
     }
 }
 
@@ -113,7 +115,10 @@ impl OpcodeValue for bool {
         match s.to_lowercase().as_str() {
             "yes" | "true" | "1" | "on" => Ok(true),
             "no" | "false" | "0" | "off" => Ok(false),
-            _ => Err(Error::InvalidOpcodeValue(s.to_string(), "boolean".to_string())),
+            _ => Err(Error::InvalidOpcodeValue(
+                s.to_string(),
+                "boolean".to_string(),
+            )),
         }
     }
 }
@@ -179,7 +184,10 @@ impl FromStr for LoopMode {
             "one_shot" | "oneshot" => Ok(LoopMode::OneShot),
             "loop" | "loop_continuous" => Ok(LoopMode::Loop),
             "loop_sustain" => Ok(LoopMode::LoopContinuous),
-            _ => Err(Error::InvalidOpcodeValue(s.to_string(), "LoopMode".to_string())),
+            _ => Err(Error::InvalidOpcodeValue(
+                s.to_string(),
+                "LoopMode".to_string(),
+            )),
         }
     }
 }
@@ -229,7 +237,10 @@ impl FromStr for TriggerMode {
             "release" => Ok(TriggerMode::Release),
             "first" => Ok(TriggerMode::First),
             "legato" => Ok(TriggerMode::Legato),
-            _ => Err(Error::InvalidOpcodeValue(s.to_string(), "TriggerMode".to_string())),
+            _ => Err(Error::InvalidOpcodeValue(
+                s.to_string(),
+                "TriggerMode".to_string(),
+            )),
         }
     }
 }
@@ -271,7 +282,10 @@ impl FromStr for OffMode {
         match s.to_lowercase().as_str() {
             "fast" => Ok(OffMode::Fast),
             "normal" => Ok(OffMode::Normal),
-            _ => Err(Error::InvalidOpcodeValue(s.to_string(), "OffMode".to_string())),
+            _ => Err(Error::InvalidOpcodeValue(
+                s.to_string(),
+                "OffMode".to_string(),
+            )),
         }
     }
 }
@@ -280,4 +294,4 @@ impl OpcodeValue for OffMode {
     fn parse_opcode(s: &str) -> Result<Self> {
         s.parse()
     }
-} 
+}

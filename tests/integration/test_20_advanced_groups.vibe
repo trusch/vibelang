@@ -39,7 +39,7 @@ define_synthdef("group_reverb")
     .param("mix", 0.3)
     .body(|in_bus, mix| {
         let input = in_ar(in_bus, 2);
-        let reverb = free_verb(input, mix, 0.5, 0.5);
+        let reverb = free_verb_ar(input, mix, 0.5, 0.5);
         replace_out(in_bus, reverb)
     });
 

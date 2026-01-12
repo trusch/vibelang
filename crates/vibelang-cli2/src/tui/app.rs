@@ -7,7 +7,7 @@ use ratatui::style::Color;
 use ratatui::widgets::ListState;
 use std::collections::{HashSet, VecDeque};
 use std::time::{Duration, Instant};
-use vibelang_core2::{GroupId, State, TimeSignature};
+use vibelang_core2::{GroupId, State, VoiceId};
 
 const MAX_LOG_ENTRIES: usize = 100;
 
@@ -82,8 +82,8 @@ pub struct TuiApp {
     pub focus_events_supported: bool,
     /// Script file path
     pub script_path: Option<String>,
-    /// Time when the session started
-    pub session_start: Instant,
+    /// Target voice for keyboard input (first voice if not set)
+    pub keyboard_target_voice: Option<VoiceId>,
 }
 
 impl TuiApp {
@@ -124,18 +124,13 @@ impl TuiApp {
             has_focus: true,
             focus_events_supported: false,
             script_path: None,
-            session_start: Instant::now(),
+            keyboard_target_voice: None,
         }
     }
 
     /// Set the script file path
     pub fn set_script_path(&mut self, path: String) {
         self.script_path = Some(path);
-    }
-
-    /// Set the JACK port name for the virtual keyboard
-    pub fn set_keyboard_port(&mut self, port_name: Option<String>) {
-        self.keyboard_port_name = port_name;
     }
 
     /// Set whether OS keyboard listener is active
@@ -158,17 +153,6 @@ impl TuiApp {
         self.last_terminal_event = Some(Instant::now());
     }
 
-    /// Check if terminal appears to have focus
-    pub fn terminal_has_focus(&self) -> bool {
-        if self.focus_events_supported {
-            self.has_focus
-        } else if let Some(last_event) = self.last_terminal_event {
-            last_event.elapsed() < Duration::from_millis(500)
-        } else {
-            false
-        }
-    }
-
     /// Toggle collapse state of the selected item
     pub fn toggle_collapse(&mut self) {
         let entries = self.hierarchy_entries();
@@ -181,11 +165,6 @@ impl TuiApp {
                 }
             }
         }
-    }
-
-    /// Check if an item is collapsed
-    pub fn is_collapsed(&self, id: &str) -> bool {
-        self.collapsed_items.contains(id)
     }
 
     /// Update state from the runtime
@@ -204,10 +183,6 @@ impl TuiApp {
                 self.error_message = Some(msg.clone());
                 self.add_log(Level::Error, format!("ERROR: {}", msg));
             }
-            TuiEvent::ClearError => {
-                self.error_message = None;
-                self.show_error_modal = false;
-            }
         }
     }
 
@@ -221,13 +196,6 @@ impl TuiApp {
         });
         if self.log_buffer.len() > MAX_LOG_ENTRIES {
             self.log_buffer.pop_front();
-        }
-    }
-
-    /// Toggle error modal
-    pub fn toggle_error_modal(&mut self) {
-        if self.error_message.is_some() {
-            self.show_error_modal = !self.show_error_modal;
         }
     }
 
@@ -249,18 +217,11 @@ impl TuiApp {
         };
     }
 
-    pub fn focus_hierarchy(&mut self) {
-        self.focused_panel = PanelFocus::Hierarchy;
-    }
-
-    pub fn focus_log(&mut self) {
-        self.focused_panel = PanelFocus::Log;
-    }
-
     pub fn move_selection_up(&mut self) {
         if self.focused_panel == PanelFocus::Hierarchy {
             self.hierarchy_selection = self.hierarchy_selection.saturating_sub(1);
-            self.hierarchy_list_state.select(Some(self.hierarchy_selection));
+            self.hierarchy_list_state
+                .select(Some(self.hierarchy_selection));
         }
     }
 
@@ -272,7 +233,8 @@ impl TuiApp {
             } else if self.hierarchy_selection + 1 < len {
                 self.hierarchy_selection += 1;
             }
-            self.hierarchy_list_state.select(Some(self.hierarchy_selection));
+            self.hierarchy_list_state
+                .select(Some(self.hierarchy_selection));
         }
     }
 
@@ -280,7 +242,8 @@ impl TuiApp {
     pub fn move_selection_page_up(&mut self) {
         if self.focused_panel == PanelFocus::Hierarchy {
             self.hierarchy_selection = self.hierarchy_selection.saturating_sub(self.page_size);
-            self.hierarchy_list_state.select(Some(self.hierarchy_selection));
+            self.hierarchy_list_state
+                .select(Some(self.hierarchy_selection));
         } else if self.focused_panel == PanelFocus::Log {
             self.log_scroll = self.log_scroll.saturating_sub(self.page_size);
         }
@@ -293,11 +256,13 @@ impl TuiApp {
             if len > 0 {
                 self.hierarchy_selection = (self.hierarchy_selection + self.page_size).min(len - 1);
             }
-            self.hierarchy_list_state.select(Some(self.hierarchy_selection));
+            self.hierarchy_list_state
+                .select(Some(self.hierarchy_selection));
         } else if self.focused_panel == PanelFocus::Log {
             let filtered_len = self.filtered_log_entries().len();
             if filtered_len > 0 {
-                self.log_scroll = (self.log_scroll + self.page_size).min(filtered_len.saturating_sub(1));
+                self.log_scroll =
+                    (self.log_scroll + self.page_size).min(filtered_len.saturating_sub(1));
             }
         }
     }
@@ -321,17 +286,6 @@ impl TuiApp {
             }
         }
         self.sync_selection_bounds();
-    }
-
-    /// Cycle minimum log level
-    pub fn cycle_log_level(&mut self) {
-        self.min_log_level = match self.min_log_level {
-            Level::Error => Level::Warn,
-            Level::Warn => Level::Info,
-            Level::Info => Level::Debug,
-            Level::Debug => Level::Trace,
-            Level::Trace => Level::Error,
-        };
     }
 
     /// Set specific log level by number (1-5)
@@ -384,7 +338,9 @@ impl TuiApp {
         let query = self.search_query.to_lowercase();
         entries
             .into_iter()
-            .filter(|e| e.label.to_lowercase().contains(&query) || e.detail.to_lowercase().contains(&query))
+            .filter(|e| {
+                e.label.to_lowercase().contains(&query) || e.detail.to_lowercase().contains(&query)
+            })
             .collect()
     }
 
@@ -413,7 +369,10 @@ impl TuiApp {
                     Level::Trace => true,
                 };
                 let search_ok = self.log_search_query.is_empty()
-                    || entry.message.to_lowercase().contains(&self.log_search_query.to_lowercase());
+                    || entry
+                        .message
+                        .to_lowercase()
+                        .contains(&self.log_search_query.to_lowercase());
                 level_ok && search_ok
             })
             .collect()
@@ -435,8 +394,15 @@ impl TuiApp {
             .map(|e| e.id.clone())
             .collect();
 
-        let newly_active: HashSet<String> = current_active.difference(&self.prev_active_items).cloned().collect();
-        let newly_inactive: HashSet<String> = self.prev_active_items.difference(&current_active).cloned().collect();
+        let newly_active: HashSet<String> = current_active
+            .difference(&self.prev_active_items)
+            .cloned()
+            .collect();
+        let newly_inactive: HashSet<String> = self
+            .prev_active_items
+            .difference(&current_active)
+            .cloned()
+            .collect();
 
         if !newly_active.is_empty() || !newly_inactive.is_empty() {
             self.flash_items = newly_active.union(&newly_inactive).cloned().collect();
@@ -444,11 +410,6 @@ impl TuiApp {
         }
 
         self.prev_active_items = current_active;
-    }
-
-    /// Check if an item should flash
-    pub fn should_flash(&self, id: &str) -> bool {
-        self.flash_items.contains(id)
     }
 
     /// Check if currently in any search/input mode
@@ -459,6 +420,56 @@ impl TuiApp {
     /// Check if the virtual keyboard is active and capturing keys
     pub fn keyboard_active(&self) -> bool {
         self.virtual_keyboard.visible
+    }
+
+    /// Get the effective keyboard target voice
+    /// Returns the explicitly set voice, or falls back to the first available voice
+    pub fn get_keyboard_target_voice(&self) -> Option<VoiceId> {
+        if let Some(voice_id) = self.keyboard_target_voice {
+            // Verify the voice still exists
+            if let Some(state) = &self.runtime_state {
+                if state.voices.contains_key(&voice_id) {
+                    return Some(voice_id);
+                }
+            }
+        }
+        // Fall back to first voice
+        if let Some(state) = &self.runtime_state {
+            state.voices.keys().next().copied()
+        } else {
+            None
+        }
+    }
+
+    /// Set the keyboard target voice from the currently selected hierarchy item
+    pub fn set_keyboard_target_from_selection(&mut self) {
+        let entries = self.hierarchy_entries();
+        if let Some(entry) = entries.get(self.hierarchy_selection) {
+            if entry.kind == HierarchyKind::Voice {
+                // Parse voice ID from entry.id (format: "voice:{id}")
+                if let Some(id_str) = entry.id.strip_prefix("voice:") {
+                    if let Ok(raw_id) = id_str.parse::<u32>() {
+                        self.keyboard_target_voice = Some(VoiceId::new(raw_id));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Get the name of the keyboard target voice for display
+    pub fn keyboard_target_voice_name(&self) -> String {
+        if let Some(voice_id) = self.get_keyboard_target_voice() {
+            if let Some(state) = &self.runtime_state {
+                if let Some(voice_state) = state.voices.get(&voice_id) {
+                    if !voice_state.config.name.is_empty() {
+                        return voice_state.config.name.clone();
+                    }
+                }
+            }
+            voice_id.to_string()
+        } else {
+            "none".to_string()
+        }
     }
 
     /// Add to the pending seek offset (debounced - actual seek happens later)
@@ -496,10 +507,6 @@ impl TuiApp {
         self.timeline_offset_beats = 0.0;
     }
 
-    pub fn reset_time_scroll(&mut self) {
-        self.timeline_offset_beats = 0.0;
-    }
-
     /// Build hierarchy entries from core2 state
     pub fn hierarchy_entries(&self) -> Vec<HierarchyEntry> {
         if let Some(state) = &self.runtime_state {
@@ -530,47 +537,24 @@ impl TuiApp {
     /// Get beat position information
     pub fn get_beat_info(&self) -> BeatInfo {
         if let Some(state) = &self.runtime_state {
-            let beats_per_bar = state.time_sig.beats_per_bar() as f64;
+            let beats_per_bar = state.time_sig.beats_per_bar();
             let current_beat = state.current_beat.to_f64();
             let current_bar = (current_beat / beats_per_bar).floor() as i64;
             let beat_in_bar = current_beat % beats_per_bar;
             let beat_number_in_bar = (beat_in_bar.floor() as i64) + 1;
             let total_beats_in_bar = state.time_sig.numerator as i64;
 
-            let num_beats = state.time_sig.numerator as usize;
-            let current_beat_index = beat_in_bar.floor() as usize;
-            let beat_fraction = beat_in_bar.fract();
-
-            let mut beat_indicator = String::new();
-            for i in 0..num_beats {
-                if i == current_beat_index {
-                    if beat_fraction < 0.25 {
-                        beat_indicator.push('\u{2588}'); // █
-                    } else if beat_fraction < 0.5 {
-                        beat_indicator.push('\u{2593}'); // ▓
-                    } else if beat_fraction < 0.75 {
-                        beat_indicator.push('\u{2592}'); // ▒
-                    } else {
-                        beat_indicator.push('\u{2591}'); // ░
-                    }
-                } else if i < current_beat_index {
-                    beat_indicator.push('\u{25AA}'); // ▪
-                } else {
-                    beat_indicator.push('\u{00B7}'); // ·
-                }
-                beat_indicator.push(' ');
-            }
-
             BeatInfo {
-                current_beat,
                 bar_number: current_bar + 1,
                 beat_in_bar,
                 beat_number_in_bar,
                 total_beats_in_bar,
                 bpm: state.tempo,
-                time_signature: format!("{}/{}", state.time_sig.numerator, state.time_sig.denominator),
+                time_signature: format!(
+                    "{}/{}",
+                    state.time_sig.numerator, state.time_sig.denominator
+                ),
                 running: state.playing,
-                beat_indicator,
             }
         } else {
             BeatInfo::default()
@@ -584,7 +568,8 @@ impl TuiApp {
         } else if self.hierarchy_selection >= hierarchy_len {
             self.hierarchy_selection = hierarchy_len.saturating_sub(1);
         }
-        self.hierarchy_list_state.select(Some(self.hierarchy_selection));
+        self.hierarchy_list_state
+            .select(Some(self.hierarchy_selection));
     }
 }
 
@@ -597,7 +582,6 @@ impl Default for TuiApp {
 /// Beat position information for display
 #[derive(Default)]
 pub struct BeatInfo {
-    pub current_beat: f64,
     pub bar_number: i64,
     pub beat_in_bar: f64,
     pub beat_number_in_bar: i64,
@@ -605,7 +589,6 @@ pub struct BeatInfo {
     pub bpm: f64,
     pub time_signature: String,
     pub running: bool,
-    pub beat_indicator: String,
 }
 
 /// Panel focus - only Hierarchy and Log
@@ -648,9 +631,7 @@ pub struct ResourceStats {
     pub voices: usize,
     pub effects: usize,
     pub samples: usize,
-    pub synthdefs: usize,
     pub buffers_allocated: u32,
-    pub buses_allocated: u32,
 }
 
 impl ResourceStats {
@@ -660,9 +641,7 @@ impl ResourceStats {
             voices: state.voices.len(),
             effects: state.effects.len(),
             samples: state.samples.len(),
-            synthdefs: state.synthdefs.len(),
             buffers_allocated: state.next_buffer_id,
-            buses_allocated: state.next_bus_id.saturating_sub(16),
         }
     }
 }
@@ -718,7 +697,8 @@ fn build_hierarchy_entries(state: &State, collapsed: &HashSet<String>) -> Vec<Hi
 
     // Group groups by parent
     let mut root_groups: Vec<GroupId> = Vec::new();
-    let mut child_groups: std::collections::HashMap<GroupId, Vec<GroupId>> = std::collections::HashMap::new();
+    let mut child_groups: std::collections::HashMap<GroupId, Vec<GroupId>> =
+        std::collections::HashMap::new();
 
     for (id, group_state) in &state.groups {
         if let Some(parent) = group_state.parent {
@@ -820,7 +800,8 @@ fn collect_group_entries(
         }
 
         // Build params
-        let params: Vec<(String, String)> = group_state.params
+        let params: Vec<(String, String)> = group_state
+            .params
             .iter()
             .map(|(k, v)| (k.clone(), format_param_value(*v)))
             .collect();
@@ -839,7 +820,8 @@ fn collect_group_entries(
 
         if !is_collapsed {
             // Add voices in this group
-            let mut voice_ids: Vec<_> = state.voices
+            let mut voice_ids: Vec<_> = state
+                .voices
                 .iter()
                 .filter(|(_, v)| v.config.group == *group_id)
                 .map(|(id, _)| id)
@@ -857,7 +839,9 @@ fn collect_group_entries(
                         detail_parts.push(format!("poly:{}", voice_state.config.polyphony));
                     }
 
-                    let params: Vec<(String, String)> = voice_state.config.params
+                    let params: Vec<(String, String)> = voice_state
+                        .config
+                        .params
                         .iter()
                         .map(|(k, v)| (k.clone(), format_param_value(*v)))
                         .collect();
@@ -865,7 +849,11 @@ fn collect_group_entries(
                     entries.push(HierarchyEntry {
                         id: format!("voice:{}", voice_id),
                         depth: depth + 1,
-                        label: if voice_state.config.name.is_empty() { voice_id.to_string() } else { voice_state.config.name.clone() },
+                        label: if voice_state.config.name.is_empty() {
+                            voice_id.to_string()
+                        } else {
+                            voice_state.config.name.clone()
+                        },
                         detail: detail_parts.join(" \u{2022} "),
                         params,
                         kind: HierarchyKind::Voice,
@@ -877,10 +865,13 @@ fn collect_group_entries(
             }
 
             // Add patterns targeting voices in this group
-            let mut pattern_ids: Vec<_> = state.patterns
+            let mut pattern_ids: Vec<_> = state
+                .patterns
                 .iter()
                 .filter(|(_, p)| {
-                    p.config.voice.as_ref()
+                    p.config
+                        .voice
+                        .as_ref()
                         .and_then(|vid| state.voices.get(vid))
                         .map(|v| v.config.group == *group_id)
                         .unwrap_or(false)
@@ -891,11 +882,23 @@ fn collect_group_entries(
 
             for pattern_id in pattern_ids {
                 if let Some(pattern_state) = state.patterns.get(pattern_id) {
-                    let status = if pattern_state.playing { "\u{25B6}" } else { "\u{23F8}" };
-                    let voice_name = pattern_state.config.voice
-                        .and_then(|vid| state.voices.get(&vid).map(|v| {
-                            if v.config.name.is_empty() { vid.to_string() } else { v.config.name.clone() }
-                        }))
+                    let status = if pattern_state.playing {
+                        "\u{25B6}"
+                    } else {
+                        "\u{23F8}"
+                    };
+                    let voice_name = pattern_state
+                        .config
+                        .voice
+                        .and_then(|vid| {
+                            state.voices.get(&vid).map(|v| {
+                                if v.config.name.is_empty() {
+                                    vid.to_string()
+                                } else {
+                                    v.config.name.clone()
+                                }
+                            })
+                        })
                         .unwrap_or_else(|| "?".to_string());
 
                     let label = if pattern_state.config.name.is_empty() {
@@ -919,10 +922,13 @@ fn collect_group_entries(
             }
 
             // Add melodies targeting voices in this group
-            let mut melody_ids: Vec<_> = state.melodies
+            let mut melody_ids: Vec<_> = state
+                .melodies
                 .iter()
                 .filter(|(_, m)| {
-                    m.config.voice.as_ref()
+                    m.config
+                        .voice
+                        .as_ref()
                         .and_then(|vid| state.voices.get(vid))
                         .map(|v| v.config.group == *group_id)
                         .unwrap_or(false)
@@ -933,11 +939,23 @@ fn collect_group_entries(
 
             for melody_id in melody_ids {
                 if let Some(melody_state) = state.melodies.get(melody_id) {
-                    let status = if melody_state.playing { "\u{25B6}" } else { "\u{23F8}" };
-                    let voice_name = melody_state.config.voice
-                        .and_then(|vid| state.voices.get(&vid).map(|v| {
-                            if v.config.name.is_empty() { vid.to_string() } else { v.config.name.clone() }
-                        }))
+                    let status = if melody_state.playing {
+                        "\u{25B6}"
+                    } else {
+                        "\u{23F8}"
+                    };
+                    let voice_name = melody_state
+                        .config
+                        .voice
+                        .and_then(|vid| {
+                            state.voices.get(&vid).map(|v| {
+                                if v.config.name.is_empty() {
+                                    vid.to_string()
+                                } else {
+                                    v.config.name.clone()
+                                }
+                            })
+                        })
                         .unwrap_or_else(|| "?".to_string());
 
                     let label = if melody_state.config.name.is_empty() {
@@ -961,7 +979,8 @@ fn collect_group_entries(
             }
 
             // Add effects in this group
-            let mut effect_ids: Vec<_> = state.effects
+            let mut effect_ids: Vec<_> = state
+                .effects
                 .iter()
                 .filter(|(_, e)| e.group == *group_id)
                 .map(|(id, _)| id)
@@ -970,7 +989,8 @@ fn collect_group_entries(
 
             for effect_id in effect_ids {
                 if let Some(effect_state) = state.effects.get(effect_id) {
-                    let params: Vec<(String, String)> = effect_state.params
+                    let params: Vec<(String, String)> = effect_state
+                        .params
                         .iter()
                         .map(|(k, v)| (k.clone(), format_param_value(*v)))
                         .collect();
@@ -994,7 +1014,14 @@ fn collect_group_entries(
                 let mut sorted_children = children.clone();
                 sorted_children.sort_by_key(|id| id.raw());
                 for child_id in sorted_children {
-                    collect_group_entries(&child_id, depth + 1, entries, state, child_groups, collapsed);
+                    collect_group_entries(
+                        &child_id,
+                        depth + 1,
+                        entries,
+                        state,
+                        child_groups,
+                        collapsed,
+                    );
                 }
             }
         }

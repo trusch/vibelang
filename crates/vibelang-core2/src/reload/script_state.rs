@@ -3,18 +3,22 @@
 //! This module defines the state extracted from a `.vibe` script,
 //! without runtime-specific IDs (node IDs, buffer IDs, etc.).
 
-use crate::traits::{MelodyConfig, ModulatorConfig, PatternConfig, SampleConfig, SequenceConfig, SfzConfig, VoiceConfig};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::traits::RecordingConfig;
 #[cfg(feature = "midi")]
 use crate::traits::FadeTarget;
-use crate::types::{
-    EffectId, GroupId, MelodyId, ModulatorId, ParamMap, PatternId, SampleId, SequenceId, SfzId, TimeSignature, VoiceId,
-};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::types::RecordingId;
+use crate::traits::RecordingConfig;
+use crate::traits::{
+    MelodyConfig, ModulatorConfig, PatternConfig, SampleConfig, SequenceConfig, SfzConfig,
+    VoiceConfig,
+};
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::types::RecordingId;
+use crate::types::{
+    EffectId, GroupId, MelodyId, ModulatorId, ParamMap, PatternId, SampleId, SequenceId, SfzId,
+    TimeSignature, VoiceId,
+};
 use std::collections::{HashMap, HashSet};
 
 /// Configuration for a group (from script, no runtime IDs).

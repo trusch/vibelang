@@ -158,7 +158,10 @@ pub async fn start_server(
         .route("/patterns/{id}", get(routes::patterns::get_pattern))
         .route("/patterns/{id}", patch(routes::patterns::update_pattern))
         .route("/patterns/{id}", delete(routes::patterns::delete_pattern))
-        .route("/patterns/{id}/start", post(routes::patterns::start_pattern))
+        .route(
+            "/patterns/{id}/start",
+            post(routes::patterns::start_pattern),
+        )
         .route("/patterns/{id}/stop", post(routes::patterns::stop_pattern))
         // Melodies
         .route("/melodies", get(routes::melodies::list_melodies))
@@ -173,7 +176,10 @@ pub async fn start_server(
         .route("/sequences", post(routes::sequences::create_sequence))
         .route("/sequences/{id}", get(routes::sequences::get_sequence))
         .route("/sequences/{id}", patch(routes::sequences::update_sequence))
-        .route("/sequences/{id}", delete(routes::sequences::delete_sequence))
+        .route(
+            "/sequences/{id}",
+            delete(routes::sequences::delete_sequence),
+        )
         .route(
             "/sequences/{id}/start",
             post(routes::sequences::start_sequence),
@@ -233,26 +239,39 @@ pub async fn start_server(
         .route("/midi/cc", post(routes::midi::send_cc))
         .route("/midi/record/start", post(routes::midi::start_recording))
         .route("/midi/record/stop", post(routes::midi::stop_recording))
-        .route("/midi/clock/enable", post(routes::midi::enable_clock_output))
-        .route("/midi/clock/disable", post(routes::midi::disable_clock_output))
+        .route(
+            "/midi/clock/enable",
+            post(routes::midi::enable_clock_output),
+        )
+        .route(
+            "/midi/clock/disable",
+            post(routes::midi::disable_clock_output),
+        )
         .route("/midi/transport/start", post(routes::midi::send_midi_start))
         .route("/midi/transport/stop", post(routes::midi::send_midi_stop))
-        .route("/midi/transport/continue", post(routes::midi::send_midi_continue))
+        .route(
+            "/midi/transport/continue",
+            post(routes::midi::send_midi_continue),
+        )
         // Route management
         .route("/midi/routes", get(routes::midi::list_routes))
         .route("/midi/routes", delete(routes::midi::clear_routes))
-        .route("/midi/route/keyboard", post(routes::midi::add_keyboard_route))
-        .route("/midi/route/{index}", delete(routes::midi::remove_keyboard_route));
+        .route(
+            "/midi/route/keyboard",
+            post(routes::midi::add_keyboard_route),
+        )
+        .route(
+            "/midi/route/{index}",
+            delete(routes::midi::remove_keyboard_route),
+        );
 
     // Add shared state and CORS middleware
-    let app = app
-        .with_state(app_state)
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        );
+    let app = app.with_state(app_state).layer(
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any),
+    );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(

@@ -45,30 +45,102 @@ static UGEN_CACHE: OnceLock<HashMap<String, UGenDefinition>> = OnceLock::new();
 
 /// Embedded UGen manifests - compiled into the binary.
 const EMBEDDED_MANIFESTS: &[(&str, &str)] = &[
-    ("oscillators", include_str!("../../../vibelang-dsp/ugen_manifests/oscillators.json")),
-    ("filters", include_str!("../../../vibelang-dsp/ugen_manifests/filters.json")),
-    ("envelopes", include_str!("../../../vibelang-dsp/ugen_manifests/envelopes.json")),
-    ("delays", include_str!("../../../vibelang-dsp/ugen_manifests/delays.json")),
-    ("reverb", include_str!("../../../vibelang-dsp/ugen_manifests/reverb.json")),
-    ("noise", include_str!("../../../vibelang-dsp/ugen_manifests/noise.json")),
-    ("dynamics", include_str!("../../../vibelang-dsp/ugen_manifests/dynamics.json")),
-    ("panning", include_str!("../../../vibelang-dsp/ugen_manifests/panning.json")),
-    ("buffers", include_str!("../../../vibelang-dsp/ugen_manifests/buffers.json")),
-    ("bufdelays", include_str!("../../../vibelang-dsp/ugen_manifests/bufdelays.json")),
-    ("triggers", include_str!("../../../vibelang-dsp/ugen_manifests/triggers.json")),
-    ("math", include_str!("../../../vibelang-dsp/ugen_manifests/math.json")),
-    ("control", include_str!("../../../vibelang-dsp/ugen_manifests/control.json")),
-    ("inout", include_str!("../../../vibelang-dsp/ugen_manifests/inout.json")),
-    ("multichannel", include_str!("../../../vibelang-dsp/ugen_manifests/multichannel.json")),
-    ("analysis", include_str!("../../../vibelang-dsp/ugen_manifests/analysis.json")),
-    ("conversion", include_str!("../../../vibelang-dsp/ugen_manifests/conversion.json")),
-    ("demand", include_str!("../../../vibelang-dsp/ugen_manifests/demand.json")),
-    ("fft", include_str!("../../../vibelang-dsp/ugen_manifests/fft.json")),
-    ("granular", include_str!("../../../vibelang-dsp/ugen_manifests/granular.json")),
-    ("info", include_str!("../../../vibelang-dsp/ugen_manifests/info.json")),
-    ("physical", include_str!("../../../vibelang-dsp/ugen_manifests/physical.json")),
-    ("pitchtime", include_str!("../../../vibelang-dsp/ugen_manifests/pitchtime.json")),
-    ("random", include_str!("../../../vibelang-dsp/ugen_manifests/random.json")),
+    (
+        "oscillators",
+        include_str!("../../../vibelang-dsp/ugen_manifests/oscillators.json"),
+    ),
+    (
+        "filters",
+        include_str!("../../../vibelang-dsp/ugen_manifests/filters.json"),
+    ),
+    (
+        "envelopes",
+        include_str!("../../../vibelang-dsp/ugen_manifests/envelopes.json"),
+    ),
+    (
+        "delays",
+        include_str!("../../../vibelang-dsp/ugen_manifests/delays.json"),
+    ),
+    (
+        "reverb",
+        include_str!("../../../vibelang-dsp/ugen_manifests/reverb.json"),
+    ),
+    (
+        "noise",
+        include_str!("../../../vibelang-dsp/ugen_manifests/noise.json"),
+    ),
+    (
+        "dynamics",
+        include_str!("../../../vibelang-dsp/ugen_manifests/dynamics.json"),
+    ),
+    (
+        "panning",
+        include_str!("../../../vibelang-dsp/ugen_manifests/panning.json"),
+    ),
+    (
+        "buffers",
+        include_str!("../../../vibelang-dsp/ugen_manifests/buffers.json"),
+    ),
+    (
+        "bufdelays",
+        include_str!("../../../vibelang-dsp/ugen_manifests/bufdelays.json"),
+    ),
+    (
+        "triggers",
+        include_str!("../../../vibelang-dsp/ugen_manifests/triggers.json"),
+    ),
+    (
+        "math",
+        include_str!("../../../vibelang-dsp/ugen_manifests/math.json"),
+    ),
+    (
+        "control",
+        include_str!("../../../vibelang-dsp/ugen_manifests/control.json"),
+    ),
+    (
+        "inout",
+        include_str!("../../../vibelang-dsp/ugen_manifests/inout.json"),
+    ),
+    (
+        "multichannel",
+        include_str!("../../../vibelang-dsp/ugen_manifests/multichannel.json"),
+    ),
+    (
+        "analysis",
+        include_str!("../../../vibelang-dsp/ugen_manifests/analysis.json"),
+    ),
+    (
+        "conversion",
+        include_str!("../../../vibelang-dsp/ugen_manifests/conversion.json"),
+    ),
+    (
+        "demand",
+        include_str!("../../../vibelang-dsp/ugen_manifests/demand.json"),
+    ),
+    (
+        "fft",
+        include_str!("../../../vibelang-dsp/ugen_manifests/fft.json"),
+    ),
+    (
+        "granular",
+        include_str!("../../../vibelang-dsp/ugen_manifests/granular.json"),
+    ),
+    (
+        "info",
+        include_str!("../../../vibelang-dsp/ugen_manifests/info.json"),
+    ),
+    (
+        "physical",
+        include_str!("../../../vibelang-dsp/ugen_manifests/physical.json"),
+    ),
+    (
+        "pitchtime",
+        include_str!("../../../vibelang-dsp/ugen_manifests/pitchtime.json"),
+    ),
+    (
+        "random",
+        include_str!("../../../vibelang-dsp/ugen_manifests/random.json"),
+    ),
 ];
 
 /// Load UGen definitions from embedded manifests.
@@ -111,7 +183,10 @@ pub fn to_snake_case(s: &str) -> String {
         if c.is_uppercase() {
             if i > 0 {
                 let prev_lower = chars[i - 1].is_lowercase();
-                let next_lower = chars.get(i + 1).map(|ch| ch.is_lowercase()).unwrap_or(false);
+                let next_lower = chars
+                    .get(i + 1)
+                    .map(|ch| ch.is_lowercase())
+                    .unwrap_or(false);
                 if prev_lower || next_lower {
                     result.push('_');
                 }
@@ -174,14 +249,6 @@ pub fn get_ugen_completions() -> Vec<CompletionItem> {
             "init rate"
         };
 
-        // Build signature
-        let params: Vec<String> = ugen
-            .inputs
-            .iter()
-            .map(|i| format!("{}: {}", i.name, i.input_type))
-            .collect();
-        let signature = format!("{}({})", func_name, params.join(", "));
-
         // Build parameter snippet
         let snippet_params: Vec<String> = ugen
             .inputs
@@ -193,7 +260,10 @@ pub fn get_ugen_completions() -> Vec<CompletionItem> {
 
         // Build documentation
         let mut doc = format!("**{}** - {}\n\n", ugen.name, ugen.description);
-        doc.push_str(&format!("**Category:** {} | **Rate:** {}\n\n", ugen.category, rate));
+        doc.push_str(&format!(
+            "**Category:** {} | **Rate:** {}\n\n",
+            ugen.category, rate
+        ));
 
         if !ugen.inputs.is_empty() {
             doc.push_str("**Parameters:**\n");

@@ -7,19 +7,19 @@
 //! - Entities (groups, voices, patterns, melodies, sequences, effects)
 //! - Active playback state (running synths, active fades)
 
+use crate::compat::Instant;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::traits::RecordingInfo;
 use crate::traits::{
     FadeConfig, MelodyConfig, ModulatorConfig, PatternConfig, SampleInfo, SequenceConfig,
     VoiceConfig,
 };
 #[cfg(not(target_arch = "wasm32"))]
-use crate::traits::RecordingInfo;
+use crate::types::RecordingId;
 use crate::types::{
     Beat, BufferId, BusId, ControlBusId, EffectId, GroupId, MelodyId, ModulatorId, NodeId,
     ParamMap, PatternId, SampleId, SequenceId, SfzId, TimeSignature, VoiceId,
 };
-#[cfg(not(target_arch = "wasm32"))]
-use crate::types::RecordingId;
-use crate::compat::Instant;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -388,7 +388,12 @@ impl MeterLevel {
         if self.is_stale() {
             (0.0, 0.0, 0.0, 0.0)
         } else {
-            (self.peak_left, self.peak_right, self.rms_left, self.rms_right)
+            (
+                self.peak_left,
+                self.peak_right,
+                self.rms_left,
+                self.rms_right,
+            )
         }
     }
 }

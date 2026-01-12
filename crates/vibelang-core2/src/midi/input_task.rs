@@ -212,9 +212,15 @@ impl<H: MidiEventHandler> MidiInputTask<H> {
         let queue_stats = self.queue.stats();
         tracing::info!(
             "[MIDI_INPUT] Queue stats: sent={} received={} dropped={} in_flight={}",
-            queue_stats.events_sent.load(std::sync::atomic::Ordering::Relaxed),
-            queue_stats.events_received.load(std::sync::atomic::Ordering::Relaxed),
-            queue_stats.events_dropped.load(std::sync::atomic::Ordering::Relaxed),
+            queue_stats
+                .events_sent
+                .load(std::sync::atomic::Ordering::Relaxed),
+            queue_stats
+                .events_received
+                .load(std::sync::atomic::Ordering::Relaxed),
+            queue_stats
+                .events_dropped
+                .load(std::sync::atomic::Ordering::Relaxed),
             queue_stats.in_flight(),
         );
 
@@ -395,12 +401,7 @@ impl<H: MidiEventHandler> MidiInputTaskBuilder<H> {
     /// Returns the cancellation token and join handle.
     pub fn spawn(self) -> (CancellationToken, JoinHandle<()>) {
         let shutdown = CancellationToken::new();
-        let task = MidiInputTask::new(
-            self.queue,
-            self.handler,
-            self.config,
-            shutdown.clone(),
-        );
+        let task = MidiInputTask::new(self.queue, self.handler, self.config, shutdown.clone());
         let handle = task.spawn();
         (shutdown, handle)
     }

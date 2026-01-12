@@ -6,6 +6,7 @@
 use crate::types::{ModulatorId, ParamMap};
 use crate::Result;
 use async_trait::async_trait;
+use std::collections::HashMap;
 
 /// Configuration for creating a modulator.
 #[derive(Clone, Debug, PartialEq)]
@@ -18,6 +19,13 @@ pub struct ModulatorConfig {
 
     /// Parameter values for the modulator synth.
     pub params: ParamMap,
+
+    /// Modulation mappings (param_name -> source modulator_id).
+    ///
+    /// When set, the specified parameters will be modulated by control buses
+    /// written to by the corresponding source modulators. This enables nested
+    /// modulation, e.g., an LFO's rate controlled by another LFO.
+    pub modulations: HashMap<String, ModulatorId>,
 }
 
 impl ModulatorConfig {
@@ -27,12 +35,19 @@ impl ModulatorConfig {
             name: name.into(),
             synthdef: synthdef.into(),
             params: ParamMap::new(),
+            modulations: HashMap::new(),
         }
     }
 
     /// Add a parameter value.
     pub fn with_param(mut self, name: impl Into<String>, value: f32) -> Self {
         self.params.insert(name.into(), value);
+        self
+    }
+
+    /// Add a modulation mapping (param modulated by source modulator).
+    pub fn with_modulation(mut self, param: impl Into<String>, source: ModulatorId) -> Self {
+        self.modulations.insert(param.into(), source);
         self
     }
 }
@@ -86,6 +101,7 @@ mod tests {
         assert_eq!(config.name, "my_lfo");
         assert_eq!(config.synthdef, "lfo_sine");
         assert!(config.params.is_empty());
+        assert!(config.modulations.is_empty());
     }
 
     #[test]
@@ -103,12 +119,9 @@ mod tests {
 
     #[test]
     fn test_modulator_config_equality() {
-        let config1 = ModulatorConfig::new("lfo", "lfo_sine")
-            .with_param("rate", 2.0);
-        let config2 = ModulatorConfig::new("lfo", "lfo_sine")
-            .with_param("rate", 2.0);
-        let config3 = ModulatorConfig::new("lfo", "lfo_sine")
-            .with_param("rate", 4.0);
+        let config1 = ModulatorConfig::new("lfo", "lfo_sine").with_param("rate", 2.0);
+        let config2 = ModulatorConfig::new("lfo", "lfo_sine").with_param("rate", 2.0);
+        let config3 = ModulatorConfig::new("lfo", "lfo_sine").with_param("rate", 4.0);
 
         assert_eq!(config1, config2);
         assert_ne!(config1, config3);
@@ -116,8 +129,7 @@ mod tests {
 
     #[test]
     fn test_modulator_config_clone() {
-        let config = ModulatorConfig::new("lfo", "lfo_sine")
-            .with_param("rate", 2.0);
+        let config = ModulatorConfig::new("lfo", "lfo_sine").with_param("rate", 2.0);
         let cloned = config.clone();
 
         assert_eq!(config, cloned);
@@ -144,7 +156,7 @@ mod tests {
     fn test_modulator_config_param_override() {
         let config = ModulatorConfig::new("lfo", "lfo_sine")
             .with_param("rate", 1.0)
-            .with_param("rate", 4.0);  // Override
+            .with_param("rate", 4.0); // Override
 
         assert_eq!(config.params.get("rate"), Some(&4.0_f32));
     }
@@ -158,5 +170,41 @@ mod tests {
 
         assert_eq!(config.params.get("lo"), Some(&-1.0_f32));
         assert_eq!(config.params.get("hi"), Some(&1.0_f32));
+    }
+
+    #[test]
+    fn test_modulator_config_with_modulation() {
+        let source_id = ModulatorId::new(1);
+        let config = ModulatorConfig::new("main_lfo", "lfo_sine")
+            .with_param("lo", 200.0)
+            .with_param("hi", 2000.0)
+            .with_modulation("rate", source_id);
+
+        assert_eq!(config.modulations.len(), 1);
+        assert_eq!(config.modulations.get("rate"), Some(&source_id));
+    }
+
+    #[test]
+    fn test_modulator_config_multiple_modulations() {
+        let rate_mod = ModulatorId::new(1);
+        let depth_mod = ModulatorId::new(2);
+        let config = ModulatorConfig::new("main_lfo", "lfo_sine")
+            .with_modulation("rate", rate_mod)
+            .with_modulation("hi", depth_mod);
+
+        assert_eq!(config.modulations.len(), 2);
+        assert_eq!(config.modulations.get("rate"), Some(&rate_mod));
+        assert_eq!(config.modulations.get("hi"), Some(&depth_mod));
+    }
+
+    #[test]
+    fn test_modulator_config_equality_with_modulations() {
+        let source_id = ModulatorId::new(1);
+        let config1 = ModulatorConfig::new("lfo", "lfo_sine").with_modulation("rate", source_id);
+        let config2 = ModulatorConfig::new("lfo", "lfo_sine").with_modulation("rate", source_id);
+        let config3 = ModulatorConfig::new("lfo", "lfo_sine");
+
+        assert_eq!(config1, config2);
+        assert_ne!(config1, config3);
     }
 }

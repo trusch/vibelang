@@ -3,38 +3,37 @@
 //! Provides semantic highlighting for better syntax coloring.
 
 use tower_lsp::lsp_types::{
-    SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens,
-    SemanticTokensLegend,
+    SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens, SemanticTokensLegend,
 };
 
 use crate::analysis::AnalysisResult;
 
 /// Semantic token types used by VibeLang.
 pub const TOKEN_TYPES: &[SemanticTokenType] = &[
-    SemanticTokenType::NAMESPACE,    // 0: groups
-    SemanticTokenType::TYPE,         // 1: synthdefs
-    SemanticTokenType::CLASS,        // 2: effects
-    SemanticTokenType::FUNCTION,     // 3: voices, functions
-    SemanticTokenType::METHOD,       // 4: methods like .apply(), .play()
-    SemanticTokenType::PROPERTY,     // 5: parameters
-    SemanticTokenType::VARIABLE,     // 6: variables
-    SemanticTokenType::STRING,       // 7: strings
-    SemanticTokenType::NUMBER,       // 8: numbers
-    SemanticTokenType::KEYWORD,      // 9: keywords
-    SemanticTokenType::OPERATOR,     // 10: operators
-    SemanticTokenType::COMMENT,      // 11: comments
-    SemanticTokenType::MACRO,        // 12: patterns/melodies
-    SemanticTokenType::PARAMETER,    // 13: function parameters
-    SemanticTokenType::ENUM_MEMBER,  // 14: note names
+    SemanticTokenType::NAMESPACE,   // 0: groups
+    SemanticTokenType::TYPE,        // 1: synthdefs
+    SemanticTokenType::CLASS,       // 2: effects
+    SemanticTokenType::FUNCTION,    // 3: voices, functions
+    SemanticTokenType::METHOD,      // 4: methods like .apply(), .play()
+    SemanticTokenType::PROPERTY,    // 5: parameters
+    SemanticTokenType::VARIABLE,    // 6: variables
+    SemanticTokenType::STRING,      // 7: strings
+    SemanticTokenType::NUMBER,      // 8: numbers
+    SemanticTokenType::KEYWORD,     // 9: keywords
+    SemanticTokenType::OPERATOR,    // 10: operators
+    SemanticTokenType::COMMENT,     // 11: comments
+    SemanticTokenType::MACRO,       // 12: patterns/melodies
+    SemanticTokenType::PARAMETER,   // 13: function parameters
+    SemanticTokenType::ENUM_MEMBER, // 14: note names
 ];
 
 /// Semantic token modifiers.
 pub const TOKEN_MODIFIERS: &[SemanticTokenModifier] = &[
-    SemanticTokenModifier::DECLARATION,  // 0
-    SemanticTokenModifier::DEFINITION,   // 1
-    SemanticTokenModifier::READONLY,     // 2
-    SemanticTokenModifier::STATIC,       // 3
-    SemanticTokenModifier::DEPRECATED,   // 4
+    SemanticTokenModifier::DECLARATION,     // 0
+    SemanticTokenModifier::DEFINITION,      // 1
+    SemanticTokenModifier::READONLY,        // 2
+    SemanticTokenModifier::STATIC,          // 3
+    SemanticTokenModifier::DEPRECATED,      // 4
     SemanticTokenModifier::DEFAULT_LIBRARY, // 5
 ];
 
@@ -107,7 +106,6 @@ const TT_TYPE: u32 = 1;
 const TT_CLASS: u32 = 2;
 const TT_FUNCTION: u32 = 3;
 const TT_METHOD: u32 = 4;
-const TT_PROPERTY: u32 = 5;
 const TT_VARIABLE: u32 = 6;
 const TT_STRING: u32 = 7;
 const TT_NUMBER: u32 = 8;
@@ -168,17 +166,13 @@ fn tokenize_line(
 
         // Numbers
         if chars[pos].is_ascii_digit()
-            || (chars[pos] == '-'
-                && pos + 1 < chars.len()
-                && chars[pos + 1].is_ascii_digit())
+            || (chars[pos] == '-' && pos + 1 < chars.len() && chars[pos + 1].is_ascii_digit())
         {
             let start = pos;
             if chars[pos] == '-' {
                 pos += 1;
             }
-            while pos < chars.len()
-                && (chars[pos].is_ascii_digit() || chars[pos] == '.')
-            {
+            while pos < chars.len() && (chars[pos].is_ascii_digit() || chars[pos] == '.') {
                 pos += 1;
             }
             let length = (pos - start) as u32;
@@ -195,8 +189,7 @@ fn tokenize_line(
             let word: String = chars[start..pos].iter().collect();
             let length = (pos - start) as u32;
 
-            let (token_type, modifiers) =
-                classify_identifier(&word, line, start, analysis);
+            let (token_type, modifiers) = classify_identifier(&word, line, start, analysis);
             builder.push(line_num, start as u32, length, token_type, modifiers);
             continue;
         }
@@ -245,8 +238,8 @@ fn classify_identifier(
 ) -> (u32, u32) {
     // Keywords
     let keywords = [
-        "let", "fn", "if", "else", "for", "while", "loop", "break", "continue",
-        "return", "true", "false", "import", "export", "const", "mut",
+        "let", "fn", "if", "else", "for", "while", "loop", "break", "continue", "return", "true",
+        "false", "import", "export", "const", "mut",
     ];
     if keywords.contains(&word) {
         return (TT_KEYWORD, 0);
@@ -254,11 +247,28 @@ fn classify_identifier(
 
     // Built-in functions (from stdlib)
     let builtins = [
-        "voice", "pattern", "melody", "sequence", "group", "define_group",
-        "set_tempo", "set_time_signature", "set_quantization",
-        "load_sample", "load_sfz", "define_synthdef", "define_fx",
-        "at_bar", "every", "after", "fade_in", "fade_out",
-        "midi_out", "midi_in", "record", "export_audio",
+        "voice",
+        "pattern",
+        "melody",
+        "sequence",
+        "group",
+        "define_group",
+        "set_tempo",
+        "set_time_signature",
+        "set_quantization",
+        "load_sample",
+        "load_sfz",
+        "define_synthdef",
+        "define_fx",
+        "at_bar",
+        "every",
+        "after",
+        "fade_in",
+        "fade_out",
+        "midi_out",
+        "midi_in",
+        "record",
+        "export_audio",
     ];
     if builtins.contains(&word) {
         return (TT_FUNCTION, MOD_DEFAULT_LIBRARY);
@@ -271,22 +281,22 @@ fn classify_identifier(
 
     // Check against analysis results
     if let Some(analysis) = analysis {
-        if analysis.voice_defs.contains(&word.to_string()) {
+        if analysis.voice_defs.contains(word) {
             return (TT_FUNCTION, MOD_DEFINITION);
         }
-        if analysis.pattern_defs.contains(&word.to_string()) {
+        if analysis.pattern_defs.contains(word) {
             return (TT_MACRO, MOD_DEFINITION);
         }
-        if analysis.melody_defs.contains(&word.to_string()) {
+        if analysis.melody_defs.contains(word) {
             return (TT_MACRO, MOD_DEFINITION);
         }
-        if analysis.group_defs.contains(&word.to_string()) {
+        if analysis.group_defs.contains(word) {
             return (TT_NAMESPACE, MOD_DEFINITION);
         }
-        if analysis.local_synthdefs.contains(&word.to_string()) {
+        if analysis.local_synthdefs.contains(word) {
             return (TT_TYPE, MOD_DEFINITION);
         }
-        if analysis.local_effects.contains(&word.to_string()) {
+        if analysis.local_effects.contains(word) {
             return (TT_CLASS, MOD_DEFINITION);
         }
     }
@@ -309,9 +319,15 @@ fn looks_like_pattern(content: &str) -> bool {
     }
     // Pattern chars: x, -, ., |, space, numbers
     trimmed.chars().all(|c| {
-        c == 'x' || c == 'X' || c == '-' || c == '.'
-            || c == '|' || c == ' ' || c.is_ascii_digit()
-            || c == 'o' || c == 'O'
+        c == 'x'
+            || c == 'X'
+            || c == '-'
+            || c == '.'
+            || c == '|'
+            || c == ' '
+            || c.is_ascii_digit()
+            || c == 'o'
+            || c == 'O'
     })
 }
 

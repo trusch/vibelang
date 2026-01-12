@@ -2,11 +2,11 @@
 //!
 //! Provides quick fixes and refactoring actions.
 
+use std::collections::HashMap;
 use tower_lsp::lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, Diagnostic, Position, Range, TextEdit, Url,
     WorkspaceEdit,
 };
-use std::collections::HashMap;
 
 use crate::analysis::AnalysisResult;
 
@@ -396,9 +396,8 @@ fn extract_quoted_name(message: &str) -> Option<String> {
 fn get_similar_synthdefs(name: &str) -> Vec<String> {
     // Common synthdefs to suggest
     let known = vec![
-        "kick", "snare", "hihat", "clap", "bass", "lead", "pad", "pluck",
-        "sine", "saw", "square", "triangle", "noise", "fm", "am",
-        "sampler", "sfz", "granular",
+        "kick", "snare", "hihat", "clap", "bass", "lead", "pad", "pluck", "sine", "saw", "square",
+        "triangle", "noise", "fm", "am", "sampler", "sfz", "granular",
     ];
 
     // Simple fuzzy matching - find names that share characters
@@ -447,7 +446,9 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
 fn guess_import_path(name: &str) -> String {
     // Map common names to likely import paths
     match name.to_lowercase().as_str() {
-        n if n.contains("kick") || n.contains("snare") || n.contains("hihat") => "drums".to_string(),
+        n if n.contains("kick") || n.contains("snare") || n.contains("hihat") => {
+            "drums".to_string()
+        }
         n if n.contains("bass") => "bass".to_string(),
         n if n.contains("lead") || n.contains("synth") => "synths".to_string(),
         n if n.contains("pad") => "pads".to_string(),
@@ -525,6 +526,7 @@ mod tests {
     fn test_levenshtein() {
         assert_eq!(levenshtein_distance("kick", "kick"), 0);
         assert_eq!(levenshtein_distance("kick", "kik"), 1);
-        assert_eq!(levenshtein_distance("kick", "pike"), 2);
+        assert_eq!(levenshtein_distance("kick", "pike"), 3); // k→p, c→k, k→e
+        assert_eq!(levenshtein_distance("kick", "lick"), 1); // k→l
     }
 }

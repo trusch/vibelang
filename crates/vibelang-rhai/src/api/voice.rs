@@ -5,19 +5,19 @@
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::collections::HashMap;
 use vibelang_core2::traits::VoiceConfig;
+#[cfg(feature = "midi")]
+use vibelang_core2::types::MidiDeviceId;
 use vibelang_core2::types::ModulatorId;
 #[cfg(not(target_arch = "wasm32"))]
 use vibelang_core2::types::SfzId;
-#[cfg(feature = "midi")]
-use vibelang_core2::types::MidiDeviceId;
 
-use crate::context;
+#[cfg(feature = "midi")]
+use super::midi::MidiDevice;
 use super::modulator::Modulator;
 use super::sample::SampleHandle;
 #[cfg(not(target_arch = "wasm32"))]
 use super::sfz::SfzHandle;
-#[cfg(feature = "midi")]
-use super::midi::MidiDevice;
+use crate::context;
 
 /// A Voice builder for creating and configuring voices.
 #[derive(Debug, Clone, CustomType)]
@@ -144,7 +144,8 @@ impl Voice {
     pub fn on_sample(mut self, sample: SampleHandle) -> Self {
         // Use sample_voice synthdef
         self.synth_name = Some("sample_voice".to_string());
-        self.params.insert("bufnum".to_string(), sample.buffer_id as f32);
+        self.params
+            .insert("bufnum".to_string(), sample.buffer_id as f32);
         self
     }
 
@@ -306,7 +307,12 @@ impl Voice {
         if !params.contains_key("amp") {
             params.insert("amp".to_string(), self.gain);
         }
-        tracing::debug!("Voice sync_to_state: name={}, gain={}, amp in params={:?}", self.name, self.gain, params.get("amp"));
+        tracing::debug!(
+            "Voice sync_to_state: name={}, gain={}, amp in params={:?}",
+            self.name,
+            self.gain,
+            params.get("amp")
+        );
 
         let config = VoiceConfig {
             name: self.name.clone(),
@@ -426,6 +432,7 @@ mod tests {
             round_robin_count: 0,
             choke_group: None,
             modulations: HashMap::new(),
+            param_cc_map: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_output_device: None,
             #[cfg(feature = "midi")]
@@ -613,7 +620,8 @@ mod tests {
     /// Helper to test modulation storage directly without context
     fn test_voice_with_modulation(name: &str, param: &str, mod_id: u32) -> Voice {
         let mut v = test_voice(name);
-        v.modulations.insert(param.to_string(), ModulatorId::new(mod_id));
+        v.modulations
+            .insert(param.to_string(), ModulatorId::new(mod_id));
         v
     }
 
@@ -628,8 +636,10 @@ mod tests {
     #[test]
     fn test_voice_modulate_multiple_params() {
         let mut v = test_voice("test").synth("my_synth".to_string());
-        v.modulations.insert("cutoff".to_string(), ModulatorId::new(1));
-        v.modulations.insert("resonance".to_string(), ModulatorId::new(2));
+        v.modulations
+            .insert("cutoff".to_string(), ModulatorId::new(1));
+        v.modulations
+            .insert("resonance".to_string(), ModulatorId::new(2));
         v.modulations.insert("pan".to_string(), ModulatorId::new(3));
 
         assert_eq!(v.modulations.len(), 3);
@@ -642,8 +652,10 @@ mod tests {
     fn test_voice_modulate_override() {
         // Test that modulating the same param twice uses the last value
         let mut v = test_voice("test");
-        v.modulations.insert("cutoff".to_string(), ModulatorId::new(1)); // slow_lfo
-        v.modulations.insert("cutoff".to_string(), ModulatorId::new(2)); // fast_lfo
+        v.modulations
+            .insert("cutoff".to_string(), ModulatorId::new(1)); // slow_lfo
+        v.modulations
+            .insert("cutoff".to_string(), ModulatorId::new(2)); // fast_lfo
 
         assert_eq!(v.modulations.len(), 1);
         assert_eq!(v.modulations.get("cutoff"), Some(&ModulatorId::new(2)));
@@ -656,7 +668,8 @@ mod tests {
             .poly(8)
             .gain(0.5)
             .set_param("freq".to_string(), 440.0);
-        v.modulations.insert("cutoff".to_string(), ModulatorId::new(1));
+        v.modulations
+            .insert("cutoff".to_string(), ModulatorId::new(1));
 
         // Verify other settings are preserved
         assert_eq!(v.synth_name, Some("my_synth".to_string()));
@@ -676,10 +689,14 @@ mod tests {
     fn test_voice_modulate_with_different_ids() {
         // Test that modulations can store different modulator IDs
         let mut v = test_voice("test");
-        v.modulations.insert("param1".to_string(), ModulatorId::new(100));
-        v.modulations.insert("param2".to_string(), ModulatorId::new(200));
-        v.modulations.insert("param3".to_string(), ModulatorId::new(300));
-        v.modulations.insert("param4".to_string(), ModulatorId::new(400));
+        v.modulations
+            .insert("param1".to_string(), ModulatorId::new(100));
+        v.modulations
+            .insert("param2".to_string(), ModulatorId::new(200));
+        v.modulations
+            .insert("param3".to_string(), ModulatorId::new(300));
+        v.modulations
+            .insert("param4".to_string(), ModulatorId::new(400));
 
         assert_eq!(v.modulations.len(), 4);
         assert_eq!(v.modulations.get("param1"), Some(&ModulatorId::new(100)));

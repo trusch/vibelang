@@ -11,9 +11,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use tower_lsp::lsp_types::{
-    Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range,
-};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 
 /// Result of analyzing a document.
 #[derive(Clone, Debug, Default)]
@@ -129,7 +127,6 @@ pub fn analyze_document(
     // Run linting passes
     lint_melodies(content, &mut result.lint_diagnostics);
     lint_patterns(content, &mut result.lint_diagnostics);
-    lint_variables(content, &mut result.lint_diagnostics);
     lint_voice_references(content, &result.voice_defs, &mut result.lint_diagnostics);
     lint_sample_files(file_path, &result.sample_refs, &mut result.lint_diagnostics);
 
@@ -144,7 +141,10 @@ fn parse_error_to_diagnostic(error: &rhai::ParseError) -> Diagnostic {
 
     Diagnostic {
         range: Range {
-            start: Position { line, character: col },
+            start: Position {
+                line,
+                character: col,
+            },
             end: Position {
                 line,
                 character: col + 10, // Approximate error length
@@ -317,7 +317,9 @@ fn parse_local_synthdefs(content: &str, result: &mut AnalysisResult) {
         for line in content.lines() {
             for cap in re.captures_iter(line) {
                 if let Some(name_match) = cap.get(1) {
-                    result.local_synthdefs.insert(name_match.as_str().to_string());
+                    result
+                        .local_synthdefs
+                        .insert(name_match.as_str().to_string());
                 }
             }
         }
@@ -492,7 +494,10 @@ pub enum CompletionContext {
     /// Inside method chain - suggest chainable methods.
     MethodChain { object_type: Option<String> },
     /// Inside function call - for signature help.
-    FunctionCall { function_name: String, param_index: usize },
+    FunctionCall {
+        function_name: String,
+        param_index: usize,
+    },
     /// Inside DSP body (define_synthdef/define_fx .body closure) - suggest UGens.
     DspBody,
     /// Unknown context.
@@ -642,9 +647,10 @@ fn is_inside_dsp_body(content: &str, line: usize, _character: usize) -> bool {
         // Check for .body( which starts a DSP context
         if line_content.contains(".body(") {
             // Check if it's preceded by define_synthdef or define_fx
-            let text_before: String = lines.iter()
+            let text_before: String = lines
+                .iter()
                 .take(lines.iter().position(|l| l == line_content).unwrap_or(0) + 1)
-                .map(|l| *l)
+                .copied()
                 .collect::<Vec<_>>()
                 .join(" ");
 
@@ -724,7 +730,12 @@ fn lint_melodies(content: &str, diagnostics: &mut Vec<Diagnostic>) {
 }
 
 /// Lint the content of a .notes() call.
-fn lint_melody_content(content: &str, line: u32, start_col: u32, diagnostics: &mut Vec<Diagnostic>) {
+fn lint_melody_content(
+    content: &str,
+    line: u32,
+    start_col: u32,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     // Tokenize and validate
     let tokens: Vec<&str> = content
         .split(|c: char| c.is_whitespace() || c == '|')
@@ -732,7 +743,7 @@ fn lint_melody_content(content: &str, line: u32, start_col: u32, diagnostics: &m
         .collect();
 
     // Check each token
-    for (idx, token) in tokens.iter().enumerate() {
+    for token in &tokens {
         if !is_valid_melody_token(token) {
             diagnostics.push(Diagnostic {
                 range: Range {
@@ -854,7 +865,12 @@ fn lint_patterns(content: &str, diagnostics: &mut Vec<Diagnostic>) {
                 if let Some(content_match) = cap.get(1) {
                     let pattern_content = content_match.as_str();
                     let content_start = content_match.start() as u32;
-                    lint_pattern_content(pattern_content, line_num as u32, content_start, diagnostics);
+                    lint_pattern_content(
+                        pattern_content,
+                        line_num as u32,
+                        content_start,
+                        diagnostics,
+                    );
                 }
             }
         }
@@ -862,7 +878,12 @@ fn lint_patterns(content: &str, diagnostics: &mut Vec<Diagnostic>) {
 }
 
 /// Lint the content of a .step() call.
-fn lint_pattern_content(content: &str, line: u32, start_col: u32, diagnostics: &mut Vec<Diagnostic>) {
+fn lint_pattern_content(
+    content: &str,
+    line: u32,
+    start_col: u32,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let steps: Vec<char> = content
         .chars()
         .filter(|c| !c.is_whitespace() && *c != '|')
@@ -897,8 +918,14 @@ fn lint_pattern_content(content: &str, line: u32, start_col: u32, diagnostics: &
     if !steps.is_empty() && steps.len() % 4 != 0 {
         diagnostics.push(Diagnostic {
             range: Range {
-                start: Position { line, character: start_col },
-                end: Position { line, character: start_col + content.len() as u32 },
+                start: Position {
+                    line,
+                    character: start_col,
+                },
+                end: Position {
+                    line,
+                    character: start_col + content.len() as u32,
+                },
             },
             severity: Some(DiagnosticSeverity::WARNING),
             code: Some(NumberOrString::String("pattern-length".to_string())),
@@ -912,63 +939,12 @@ fn lint_pattern_content(content: &str, line: u32, start_col: u32, diagnostics: &
     }
 }
 
-/// Lint variable usage.
-fn lint_variables(content: &str, diagnostics: &mut Vec<Diagnostic>) {
-    let mut defined_vars: HashSet<String> = HashSet::new();
-
-    // Collect defined variables
-    let assign_pattern = regex::Regex::new(r"\blet\s+([a-zA-Z_]\w*)\s*=").ok();
-    if let Some(re) = assign_pattern {
-        for line in content.lines() {
-            for cap in re.captures_iter(line) {
-                if let Some(var_match) = cap.get(1) {
-                    defined_vars.insert(var_match.as_str().to_string());
-                }
-            }
-        }
-    }
-
-    // Collect closure parameters
-    let closure_pattern = regex::Regex::new(r"\|([^|]*)\|").ok();
-    if let Some(re) = closure_pattern {
-        for line in content.lines() {
-            for cap in re.captures_iter(line) {
-                if let Some(params) = cap.get(1) {
-                    for param in params.as_str().split(',') {
-                        let param = param.trim();
-                        if !param.is_empty() {
-                            let ident: String = param
-                                .chars()
-                                .take_while(|c| c.is_alphanumeric() || *c == '_')
-                                .collect();
-                            if !ident.is_empty() {
-                                defined_vars.insert(ident);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Collect for loop variables
-    let for_pattern = regex::Regex::new(r"\bfor\s+([a-zA-Z_]\w*)\s+in\b").ok();
-    if let Some(re) = for_pattern {
-        for line in content.lines() {
-            for cap in re.captures_iter(line) {
-                if let Some(var_match) = cap.get(1) {
-                    defined_vars.insert(var_match.as_str().to_string());
-                }
-            }
-        }
-    }
-
-    // Note: We don't report unknown identifiers as hints because it would be noisy.
-    // The actual Rhai runtime will report undefined variable errors.
-}
-
 /// Lint .on("voice_name") calls to check if the voice exists.
-fn lint_voice_references(content: &str, defined_voices: &HashSet<String>, diagnostics: &mut Vec<Diagnostic>) {
+fn lint_voice_references(
+    content: &str,
+    defined_voices: &HashSet<String>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let on_pattern = regex::Regex::new(r#"\.on\s*\(\s*"([^"]+)"\s*\)"#).ok();
 
     if let Some(re) = on_pattern {
@@ -1090,7 +1066,11 @@ fn lint_sample_files(
 
         // Check if file exists
         if !resolved_path.exists() {
-            let file_type = if sample.is_sfz { "SFZ instrument" } else { "sample" };
+            let file_type = if sample.is_sfz {
+                "SFZ instrument"
+            } else {
+                "sample"
+            };
             diagnostics.push(Diagnostic {
                 range: sample.range,
                 severity: Some(DiagnosticSeverity::WARNING),

@@ -1,13 +1,13 @@
 //! Groups handler implementation.
 
 use crate::backend::{AddAction, Backend};
+use crate::compat::RwLock;
 use crate::state::{GroupState, State};
 use crate::traits::Groups;
 use crate::types::{BusId, GroupId, NodeId, ParamMap};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
-use crate::compat::RwLock;
 
 /// Handler for group operations.
 pub struct GroupsHandler<B: Backend> {
@@ -183,10 +183,7 @@ impl<B: Backend> Groups for GroupsHandler<B> {
         let (target_node_id, link_synth_node_id) = {
             let mut state = self.state.write().await;
 
-            let group = state
-                .groups
-                .get_mut(&id)
-                .ok_or(Error::GroupNotFound(id))?;
+            let group = state.groups.get_mut(&id).ok_or(Error::GroupNotFound(id))?;
 
             // Update state
             group.params.insert(param.to_string(), value);
@@ -214,10 +211,7 @@ impl<B: Backend> Groups for GroupsHandler<B> {
     async fn mute(&self, id: GroupId, muted: bool) -> Result<()> {
         let mut state = self.state.write().await;
 
-        let group = state
-            .groups
-            .get_mut(&id)
-            .ok_or(Error::GroupNotFound(id))?;
+        let group = state.groups.get_mut(&id).ok_or(Error::GroupNotFound(id))?;
 
         group.muted = muted;
 
@@ -236,10 +230,7 @@ impl<B: Backend> Groups for GroupsHandler<B> {
             let mut state = self.state.write().await;
 
             // Update the target group's soloed state
-            let group = state
-                .groups
-                .get_mut(&id)
-                .ok_or(Error::GroupNotFound(id))?;
+            let group = state.groups.get_mut(&id).ok_or(Error::GroupNotFound(id))?;
             group.soloed = solo;
 
             // Check if ANY group is now soloed
@@ -345,7 +336,11 @@ mod tests {
     impl Backend for MockBackend {
         type Error = MockError;
 
-        async fn load_synthdef(&self, _name: &str, _data: &[u8]) -> std::result::Result<(), Self::Error> {
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -376,17 +371,30 @@ mod tests {
             Ok(())
         }
 
-        async fn run_node(&self, _node: NodeId, _running: bool) -> std::result::Result<(), Self::Error> {
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
             self.run_node_calls.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
 
-        async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> std::result::Result<(), Self::Error> {
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
             self.params_set.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
 
-        async fn load_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<BufferInfo, Self::Error> {
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
             Ok(BufferInfo {
                 frames: 44100,
                 channels: 2,
@@ -407,7 +415,11 @@ mod tests {
             })
         }
 
-        async fn write_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<(), Self::Error> {
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -433,7 +445,11 @@ mod tests {
     // Helper Functions
     // =========================================================================
 
-    fn create_handler() -> (GroupsHandler<MockBackend>, Arc<MockBackend>, Arc<RwLock<State>>) {
+    fn create_handler() -> (
+        GroupsHandler<MockBackend>,
+        Arc<MockBackend>,
+        Arc<RwLock<State>>,
+    ) {
         let backend = Arc::new(MockBackend::new());
         let state = Arc::new(RwLock::new(State::default()));
         let handler = GroupsHandler::new(backend.clone(), state.clone());
@@ -452,7 +468,11 @@ mod tests {
         let result = handler.create(group_id, "TestGroup", None).await;
 
         assert!(result.is_ok(), "Creating group should succeed");
-        assert_eq!(backend.groups_created(), 1, "One group should be created in backend");
+        assert_eq!(
+            backend.groups_created(),
+            1,
+            "One group should be created in backend"
+        );
 
         let state_read = state.read().await;
         assert!(state_read.groups.contains_key(&group_id));
@@ -494,7 +514,9 @@ mod tests {
     async fn test_create_group_with_nonexistent_parent_fails() {
         let (handler, _, _state) = create_handler();
 
-        let result = handler.create(GroupId::new(1), "Child", Some(GroupId::new(999))).await;
+        let result = handler
+            .create(GroupId::new(1), "Child", Some(GroupId::new(999)))
+            .await;
         assert!(result.is_err(), "Should fail with non-existent parent");
     }
 
@@ -511,7 +533,10 @@ mod tests {
         // Node ID should be > 0 (0 is reserved for root)
         assert!(group.node_id.0 > 0, "Node ID should be allocated");
         // Audio bus should be in the group bus range (>= 16)
-        assert!(group.audio_bus.0 >= 16, "Audio bus should be in group range");
+        assert!(
+            group.audio_bus.0 >= 16,
+            "Audio bus should be in group range"
+        );
     }
 
     // =========================================================================
@@ -566,7 +591,10 @@ mod tests {
         let (handler, _, _state) = create_handler();
 
         let result = handler.set_param(GroupId::new(999), "gain", 0.5).await;
-        assert!(result.is_err(), "Setting param on non-existent group should fail");
+        assert!(
+            result.is_err(),
+            "Setting param on non-existent group should fail"
+        );
     }
 
     // =========================================================================
@@ -669,7 +697,10 @@ mod tests {
         handler.solo(group1, true).await.unwrap();
 
         // Should have called run_node for both groups
-        assert!(backend.run_node_calls() >= 2, "run_node should be called for all groups");
+        assert!(
+            backend.run_node_calls() >= 2,
+            "run_node should be called for all groups"
+        );
     }
 
     // =========================================================================
@@ -689,7 +720,10 @@ mod tests {
 
         let state_read = state.read().await;
         let group = state_read.groups.get(&group_id).unwrap();
-        assert!(group.link_synth_node_id.is_some(), "Link synth node ID should be set");
+        assert!(
+            group.link_synth_node_id.is_some(),
+            "Link synth node ID should be set"
+        );
     }
 
     #[tokio::test]
@@ -719,7 +753,11 @@ mod tests {
         handler.finalize().await.unwrap();
 
         // Should only create one link synth (the second finalize is a no-op)
-        assert_eq!(backend.synths_created(), 1, "Should only create link synth once");
+        assert_eq!(
+            backend.synths_created(),
+            1,
+            "Should only create link synth once"
+        );
     }
 
     // =========================================================================

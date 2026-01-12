@@ -299,7 +299,13 @@ fn env_gen_with_env_impl(
             builder.add_constant(env.levels[i + 1]);
             builder.add_constant(env.times[i]);
             let curve_val = env.curves[i];
-            let shape = if curve_val == 1.0 { 1.0 } else if curve_val == 2.0 { 2.0 } else { 5.0 };
+            let shape = if curve_val == 1.0 {
+                1.0
+            } else if curve_val == 2.0 {
+                2.0
+            } else {
+                5.0
+            };
             builder.add_constant(shape);
             builder.add_constant(curve_val);
         }
@@ -321,7 +327,13 @@ fn env_gen_with_env_impl(
             inputs.push(Input::Constant(env.levels[i + 1]));
             inputs.push(Input::Constant(env.times[i]));
             let curve_val = env.curves[i];
-            let shape = if curve_val == 1.0 { 1.0 } else if curve_val == 2.0 { 2.0 } else { 5.0 };
+            let shape = if curve_val == 1.0 {
+                1.0
+            } else if curve_val == 2.0 {
+                2.0
+            } else {
+                5.0
+            };
             inputs.push(Input::Constant(shape));
             inputs.push(Input::Constant(curve_val));
         }
@@ -636,12 +648,7 @@ impl EnvelopeBuilder {
 
     /// Configure an ASR envelope (attack → sustain → release).
     /// Accepts f64 (seconds), i64 (seconds), or humantime strings for times.
-    pub fn asr(
-        mut self,
-        attack: rhai::Dynamic,
-        sustain: f64,
-        release: rhai::Dynamic,
-    ) -> Self {
+    pub fn asr(mut self, attack: rhai::Dynamic, sustain: f64, release: rhai::Dynamic) -> Self {
         if let Ok(a) = parse_duration(attack) {
             self.attack = Some(a);
         }
@@ -929,44 +936,81 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
     // Register Env static methods
     engine.register_fn("env_perc", || Env::perc(0.01, 1.0));
     engine.register_fn("env_perc", |attack: f64| Env::perc(attack, 1.0));
-    engine.register_fn("env_perc", |attack: f64, release: f64| Env::perc(attack, release));
-    engine.register_fn("env_adsr", |attack: f64, decay: f64, sustain: f64, release: f64| {
-        Env::adsr(attack, decay, sustain, release)
+    engine.register_fn("env_perc", |attack: f64, release: f64| {
+        Env::perc(attack, release)
     });
+    engine.register_fn(
+        "env_adsr",
+        |attack: f64, decay: f64, sustain: f64, release: f64| {
+            Env::adsr(attack, decay, sustain, release)
+        },
+    );
     engine.register_fn("env_asr", |attack: f64, sustain: f64, release: f64| {
         Env::asr(attack, sustain, release)
     });
     engine.register_fn("env_triangle", |duration: f64| Env::triangle(duration));
 
     // Bus I/O
-    engine.register_fn("in_ar", |bus: f64, num_channels: f64| in_ar(bus, num_channels).unwrap());
-    engine.register_fn("in_ar", |bus: f64, num_channels: i64| in_ar(bus, num_channels as f64).unwrap());
-    engine.register_fn("in_ar", |bus: i64, num_channels: f64| in_ar(bus as f64, num_channels).unwrap());
-    engine.register_fn("in_ar", |bus: i64, num_channels: i64| in_ar(bus as f64, num_channels as f64).unwrap());
-    engine.register_fn("in_ar", |bus: NodeRef, num_channels: f64| in_ar_n(bus, num_channels).unwrap());
-    engine.register_fn("in_ar", |bus: NodeRef, num_channels: i64| in_ar_n(bus, num_channels as f64).unwrap());
-    engine.register_fn("replace_out_ar", |bus: f64, channels: Array| replace_out_ar(bus, channels).unwrap());
-    engine.register_fn("replace_out_ar", |bus: NodeRef, channels: Array| replace_out_ar_n(bus, channels).unwrap());
+    engine.register_fn("in_ar", |bus: f64, num_channels: f64| {
+        in_ar(bus, num_channels).unwrap()
+    });
+    engine.register_fn("in_ar", |bus: f64, num_channels: i64| {
+        in_ar(bus, num_channels as f64).unwrap()
+    });
+    engine.register_fn("in_ar", |bus: i64, num_channels: f64| {
+        in_ar(bus as f64, num_channels).unwrap()
+    });
+    engine.register_fn("in_ar", |bus: i64, num_channels: i64| {
+        in_ar(bus as f64, num_channels as f64).unwrap()
+    });
+    engine.register_fn("in_ar", |bus: NodeRef, num_channels: f64| {
+        in_ar_n(bus, num_channels).unwrap()
+    });
+    engine.register_fn("in_ar", |bus: NodeRef, num_channels: i64| {
+        in_ar_n(bus, num_channels as f64).unwrap()
+    });
+    engine.register_fn("replace_out_ar", |bus: f64, channels: Array| {
+        replace_out_ar(bus, channels).unwrap()
+    });
+    engine.register_fn("replace_out_ar", |bus: NodeRef, channels: Array| {
+        replace_out_ar_n(bus, channels).unwrap()
+    });
 
     // Hardware audio input (line-in, microphone)
-    engine.register_fn("sound_in", |num_channels: f64| sound_in(num_channels).unwrap());
-    engine.register_fn("sound_in", |num_channels: i64| sound_in(num_channels as f64).unwrap());
-    engine.register_fn("sound_in_channel", |channel: f64| sound_in_channel(channel).unwrap());
-    engine.register_fn("sound_in_channel", |channel: i64| sound_in_channel(channel as f64).unwrap());
+    engine.register_fn("sound_in", |num_channels: f64| {
+        sound_in(num_channels).unwrap()
+    });
+    engine.register_fn("sound_in", |num_channels: i64| {
+        sound_in(num_channels as f64).unwrap()
+    });
+    engine.register_fn("sound_in_channel", |channel: f64| {
+        sound_in_channel(channel).unwrap()
+    });
+    engine.register_fn("sound_in_channel", |channel: i64| {
+        sound_in_channel(channel as f64).unwrap()
+    });
 
     // Mix and utilities
     engine.register_fn("mix", |arr: Array| mix(arr).unwrap());
     engine.register_fn("sum", |arr: Array| mix(arr).unwrap()); // Alias for mix
     engine.register_fn("dup", |sig: NodeRef, count: i64| dup(sig, count).unwrap());
-    engine.register_fn("channels", |sig: NodeRef, count: i64| channels(sig, count).unwrap());
-    engine.register_fn("channel", |sig: NodeRef, index: i64| channel(sig, index).unwrap());
-    engine.register_fn("detune_spread", |voices: i64, amount: f64| detune_spread(voices, amount).unwrap());
+    engine.register_fn("channels", |sig: NodeRef, count: i64| {
+        channels(sig, count).unwrap()
+    });
+    engine.register_fn("channel", |sig: NodeRef, index: i64| {
+        channel(sig, index).unwrap()
+    });
+    engine.register_fn("detune_spread", |voices: i64, amount: f64| {
+        detune_spread(voices, amount).unwrap()
+    });
 
     // Array utilities
     engine.register_fn("zip", array_zip);
 
     // Envelopes
-    engine.register_fn("env_gen", |gate: NodeRef, done: i64| env_gen(gate, done).unwrap());
+    engine.register_fn("env_gen", |gate: NodeRef, done: i64| {
+        env_gen(gate, done).unwrap()
+    });
 
     // EnvGen builder
     engine
@@ -980,7 +1024,9 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
         .register_fn("with_time_scale", EnvGenBuilder::with_time_scale_n)
         .register_fn("with_done_action", EnvGenBuilder::with_done_action)
         .register_fn("with_done_action", EnvGenBuilder::with_done_action_n)
-        .register_fn("build", |builder: EnvGenBuilder| EnvGenBuilder::build(builder).unwrap());
+        .register_fn("build", |builder: EnvGenBuilder| {
+            EnvGenBuilder::build(builder).unwrap()
+        });
 
     // New fluent EnvelopeBuilder API
     engine
@@ -1020,18 +1066,30 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
         .register_fn("triangle", EnvelopeBuilder::triangle)
         .register_fn("triangle", EnvelopeBuilder::triangle_f)
         // Build method
-        .register_fn("build", |builder: EnvelopeBuilder| EnvelopeBuilder::build(builder).unwrap());
+        .register_fn("build", |builder: EnvelopeBuilder| {
+            EnvelopeBuilder::build(builder).unwrap()
+        });
 
     // EnvGen with Env
     engine.register_fn(
         "env_gen",
-        |env: Env, gate: NodeRef, level_scale: f64, level_bias: f64, time_scale: f64, done_action: f64| {
+        |env: Env,
+         gate: NodeRef,
+         level_scale: f64,
+         level_bias: f64,
+         time_scale: f64,
+         done_action: f64| {
             env_gen_with_env(env, gate, level_scale, level_bias, time_scale, done_action).unwrap()
         },
     );
     engine.register_fn(
         "env_gen",
-        |env: Env, gate: NodeRef, level_scale: NodeRef, level_bias: NodeRef, time_scale: NodeRef, done_action: NodeRef| {
+        |env: Env,
+         gate: NodeRef,
+         level_scale: NodeRef,
+         level_bias: NodeRef,
+         time_scale: NodeRef,
+         done_action: NodeRef| {
             env_gen_with_env_n(env, gate, level_scale, level_bias, time_scale, done_action).unwrap()
         },
     );

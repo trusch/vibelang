@@ -149,8 +149,8 @@ impl MidiCallbacks {
             .into_iter()
             .filter(|cb| {
                 // Match callback type
-                let type_matches = cb.callback_type == callback_type
-                    || cb.callback_type == CallbackType::AllData;
+                let type_matches =
+                    cb.callback_type == callback_type || cb.callback_type == CallbackType::AllData;
 
                 // Match channel filter
                 let channel_matches = cb.channel.is_none_or(|ch| ch == channel);
@@ -723,7 +723,8 @@ mod tests {
         assert_eq!(device_callbacks.len(), 2);
 
         // Get matching callbacks for CC 74 on channel 0
-        let matching = callbacks.get_matching(MidiDeviceId::new(0), CallbackType::ControlChange(74), 0);
+        let matching =
+            callbacks.get_matching(MidiDeviceId::new(0), CallbackType::ControlChange(74), 0);
         assert_eq!(matching.len(), 2); // Both AllData and the specific CC callback
 
         // Unregister

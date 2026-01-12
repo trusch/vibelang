@@ -23,8 +23,8 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 use vibelang_core2::{
-    setup_metering, setup_node_tracking, Message, ReloadMessage, Runtime, RuntimeHandle, ScsynthBackend, ScsynthConfig,
-    ScsynthProcess, State, TransportMessage,
+    setup_metering, setup_node_tracking, Message, ReloadMessage, Runtime, ScsynthBackend,
+    ScsynthConfig, ScsynthProcess, TransportMessage, VoiceMessage,
 };
 use vibelang_rhai::ScriptEngine;
 
@@ -208,13 +208,44 @@ async fn main() -> Result<()> {
             fs_sandbox,
         } => {
             // Build extension config
-            let ext_config = build_extension_config(no_extensions, no_fs, no_exec, no_net, fs_sandbox);
+            let ext_config =
+                build_extension_config(no_extensions, no_fs, no_exec, no_net, fs_sandbox);
 
             let watch = !no_watch;
             if tui {
-                run_tui_mode(file, watch, api, api_port, include_paths, scsynth_addr, no_boot, no_jack_connect, device, sample_rate, input_channels, output_channels, ext_config).await
+                run_tui_mode(
+                    file,
+                    watch,
+                    api,
+                    api_port,
+                    include_paths,
+                    scsynth_addr,
+                    no_boot,
+                    no_jack_connect,
+                    device,
+                    sample_rate,
+                    input_channels,
+                    output_channels,
+                    ext_config,
+                )
+                .await
             } else {
-                run_simple_mode(file, watch, api, api_port, include_paths, scsynth_addr, no_boot, no_jack_connect, device, sample_rate, input_channels, output_channels, ext_config).await
+                run_simple_mode(
+                    file,
+                    watch,
+                    api,
+                    api_port,
+                    include_paths,
+                    scsynth_addr,
+                    no_boot,
+                    no_jack_connect,
+                    device,
+                    sample_rate,
+                    input_channels,
+                    output_channels,
+                    ext_config,
+                )
+                .await
             }
         }
         Commands::Render {
@@ -236,13 +267,12 @@ async fn main() -> Result<()> {
             Ok(())
         }
         #[cfg(feature = "lsp")]
-        Commands::Lsp => {
-            vibelang_lsp2::run_lsp_server().await
-        }
+        Commands::Lsp => vibelang_lsp2::run_lsp_server().await,
     }
 }
 
 /// Run in simple mode (no TUI, just console output)
+#[allow(clippy::too_many_arguments)]
 async fn run_simple_mode(
     file: PathBuf,
     watch: bool,
@@ -286,7 +316,7 @@ async fn run_simple_mode(
             .sample_rate(sample_rate)
             .input_channels(input_channels)
             .output_channels(output_channels)
-            .verbose(true);  // Enable verbose mode for debugging
+            .verbose(true); // Enable verbose mode for debugging
         if let Some(dev) = &device {
             config = config.device(dev);
         }
@@ -327,13 +357,14 @@ async fn run_simple_mode(
     let deploy_handle = handle.clone();
     vibelang_dsp::set_deploy_callback(move |bytes| {
         let name = extract_synthdef_name(&bytes).unwrap_or_else(|| "unknown".to_string());
-        tracing::debug!("Deploy callback: queuing synthdef '{}' ({} bytes)", name, bytes.len());
+        tracing::debug!(
+            "Deploy callback: queuing synthdef '{}' ({} bytes)",
+            name,
+            bytes.len()
+        );
         deploy_handle
             .try_send(vibelang_core2::Message::SynthDef(
-                vibelang_core2::SynthDefMessage::Load {
-                    name,
-                    data: bytes,
-                },
+                vibelang_core2::SynthDefMessage::Load { name, data: bytes },
             ))
             .map_err(|e| {
                 tracing::error!("Deploy callback: failed to queue synthdef: {}", e);
@@ -362,35 +393,33 @@ async fn run_simple_mode(
         let eval_ext_config = ext_config.clone();
         let eval_handle = handle.clone();
         tokio::spawn(async move {
-            loop {
-                match eval_rx.recv() {
-                    Ok(job) => {
-                        let result = match evaluate_code(&job.code, &eval_include_paths, &eval_ext_config) {
-                            Ok(state) => {
-                                // Apply the state
-                                match eval_handle.send(ReloadMessage::Apply { state }.into()).await {
-                                    Ok(_) => vibelang_http2::EvalResult {
-                                        success: true,
-                                        result: Some("Code executed successfully".to_string()),
-                                        error: None,
-                                    },
-                                    Err(e) => vibelang_http2::EvalResult {
-                                        success: false,
-                                        result: None,
-                                        error: Some(format!("Failed to apply: {}", e)),
-                                    },
-                                }
-                            }
+            while let Ok(job) = eval_rx.recv() {
+                let result = match evaluate_code(&job.code, &eval_include_paths, &eval_ext_config) {
+                    Ok(state) => {
+                        // Apply the state
+                        match eval_handle
+                            .send(ReloadMessage::Apply { state }.into())
+                            .await
+                        {
+                            Ok(_) => vibelang_http2::EvalResult {
+                                success: true,
+                                result: Some("Code executed successfully".to_string()),
+                                error: None,
+                            },
                             Err(e) => vibelang_http2::EvalResult {
                                 success: false,
                                 result: None,
-                                error: Some(e.to_string()),
+                                error: Some(format!("Failed to apply: {}", e)),
                             },
-                        };
-                        let _ = job.response_tx.send(result);
+                        }
                     }
-                    Err(_) => break, // Channel closed
-                }
+                    Err(e) => vibelang_http2::EvalResult {
+                        success: false,
+                        result: None,
+                        error: Some(e.to_string()),
+                    },
+                };
+                let _ = job.response_tx.send(result);
             }
         });
     }
@@ -425,9 +454,7 @@ async fn run_simple_mode(
         std::process::exit(exit_code);
     }
 
-    handle
-        .send(ReloadMessage::Apply { state }.into())
-        .await?;
+    handle.send(ReloadMessage::Apply { state }.into()).await?;
 
     // Start transport
     handle
@@ -516,6 +543,7 @@ async fn run_simple_mode(
 }
 
 /// Run in TUI mode
+#[allow(clippy::too_many_arguments)]
 async fn run_tui_mode(
     file: PathBuf,
     watch: bool,
@@ -623,13 +651,14 @@ async fn run_tui_mode(
     let deploy_handle = handle.clone();
     vibelang_dsp::set_deploy_callback(move |bytes| {
         let name = extract_synthdef_name(&bytes).unwrap_or_else(|| "unknown".to_string());
-        log::info!("Deploy callback: queuing synthdef '{}' ({} bytes)", name, bytes.len());
+        log::info!(
+            "Deploy callback: queuing synthdef '{}' ({} bytes)",
+            name,
+            bytes.len()
+        );
         deploy_handle
             .try_send(vibelang_core2::Message::SynthDef(
-                vibelang_core2::SynthDefMessage::Load {
-                    name,
-                    data: bytes,
-                },
+                vibelang_core2::SynthDefMessage::Load { name, data: bytes },
             ))
             .map_err(|e| {
                 log::error!("Deploy callback: failed to queue synthdef: {}", e);
@@ -688,10 +717,7 @@ async fn run_tui_mode(
     // Run initial script
     match execute_script(&file, &include_paths, &ext_config) {
         Ok(state) => {
-            if let Err(e) = handle
-                .send(ReloadMessage::Apply { state }.into())
-                .await
-            {
+            if let Err(e) = handle.send(ReloadMessage::Apply { state }.into()).await {
                 log::error!("Failed to apply script: {}", e);
                 app.process_event(tui::TuiEvent::Error(format!("{}", e)));
             } else {
@@ -800,14 +826,35 @@ async fn run_tui_mode(
                             if let Some((note, velocity)) =
                                 app.virtual_keyboard.key_down(KeyCode::Char(c))
                             {
-                                log::debug!("Note on: {} vel:{}", note, velocity);
+                                if let Some(voice_id) = app.get_keyboard_target_voice() {
+                                    let _ = handle
+                                        .send(Message::Voice(VoiceMessage::NoteOn {
+                                            voice: voice_id,
+                                            note,
+                                            velocity: velocity as f32 / 127.0,
+                                        }))
+                                        .await;
+                                    log::debug!("Note on: {} vel:{} -> {}", note, velocity, voice_id);
+                                } else {
+                                    log::debug!("Note on: {} (no target voice)", note);
+                                }
                             }
                         }
                     }
                     tui::os_keyboard::OsKeyEvent::KeyUp(c) => {
                         if app.keyboard_active() {
                             if let Some(note) = app.virtual_keyboard.key_up(KeyCode::Char(c)) {
-                                log::debug!("Note off: {}", note);
+                                if let Some(voice_id) = app.get_keyboard_target_voice() {
+                                    let _ = handle
+                                        .send(Message::Voice(VoiceMessage::NoteOff {
+                                            voice: voice_id,
+                                            note,
+                                        }))
+                                        .await;
+                                    log::debug!("Note off: {} -> {}", note, voice_id);
+                                } else {
+                                    log::debug!("Note off: {} (no target voice)", note);
+                                }
                             }
                         }
                     }
@@ -818,7 +865,8 @@ async fn run_tui_mode(
         // Handle pending seek
         if let Some(seek_offset) = app.check_seek_debounce() {
             // Calculate target beat from current position + offset
-            let current_beat = app.runtime_state
+            let current_beat = app
+                .runtime_state
                 .as_ref()
                 .map(|s| s.current_beat.to_f64())
                 .unwrap_or(0.0);
@@ -891,25 +939,50 @@ async fn run_tui_mode(
                         match key.code {
                             KeyCode::Char('k') | KeyCode::Esc => {
                                 let released = app.virtual_keyboard.hide();
-                                for note in released {
-                                    log::debug!("Note off: {}", note);
+                                if let Some(voice_id) = app.get_keyboard_target_voice() {
+                                    for note in released {
+                                        let _ = handle
+                                            .send(Message::Voice(VoiceMessage::NoteOff {
+                                                voice: voice_id,
+                                                note,
+                                            }))
+                                            .await;
+                                        log::debug!("Note off: {} -> {}", note, voice_id);
+                                    }
                                 }
                             }
                             KeyCode::Char('<') => {
                                 let released = app.virtual_keyboard.octave_down();
-                                for note in released {
-                                    log::debug!("Note off: {}", note);
+                                if let Some(voice_id) = app.get_keyboard_target_voice() {
+                                    for note in released {
+                                        let _ = handle
+                                            .send(Message::Voice(VoiceMessage::NoteOff {
+                                                voice: voice_id,
+                                                note,
+                                            }))
+                                            .await;
+                                        log::debug!("Note off: {} -> {}", note, voice_id);
+                                    }
                                 }
                             }
                             KeyCode::Char('>') => {
                                 let released = app.virtual_keyboard.octave_up();
-                                for note in released {
-                                    log::debug!("Note off: {}", note);
+                                if let Some(voice_id) = app.get_keyboard_target_voice() {
+                                    for note in released {
+                                        let _ = handle
+                                            .send(Message::Voice(VoiceMessage::NoteOff {
+                                                voice: voice_id,
+                                                note,
+                                            }))
+                                            .await;
+                                        log::debug!("Note off: {} -> {}", note, voice_id);
+                                    }
                                 }
                             }
                             KeyCode::Char(' ') => {
                                 // Toggle playback based on current state
-                                let is_playing = app.runtime_state
+                                let is_playing = app
+                                    .runtime_state
                                     .as_ref()
                                     .map(|s| s.playing)
                                     .unwrap_or(false);
@@ -924,7 +997,18 @@ async fn run_tui_mode(
                                 if let Some((note, velocity)) =
                                     app.virtual_keyboard.key_down(KeyCode::Char(c))
                                 {
-                                    log::debug!("Note on: {} vel:{}", note, velocity);
+                                    if let Some(voice_id) = app.get_keyboard_target_voice() {
+                                        let _ = handle
+                                            .send(Message::Voice(VoiceMessage::NoteOn {
+                                                voice: voice_id,
+                                                note,
+                                                velocity: velocity as f32 / 127.0,
+                                            }))
+                                            .await;
+                                        log::debug!("Note on: {} vel:{} -> {}", note, velocity, voice_id);
+                                    } else {
+                                        log::debug!("Note on: {} (no target voice)", note);
+                                    }
                                 }
                             }
                             _ => {}
@@ -943,7 +1027,8 @@ async fn run_tui_mode(
                         }
                         KeyCode::Char(' ') => {
                             // Toggle playback based on current state
-                            let is_playing = app.runtime_state
+                            let is_playing = app
+                                .runtime_state
                                 .as_ref()
                                 .map(|s| s.playing)
                                 .unwrap_or(false);
@@ -990,8 +1075,7 @@ async fn run_tui_mode(
                         KeyCode::PageDown => {
                             app.move_selection_page_down();
                         }
-                        KeyCode::Tab
-                        | KeyCode::Char('l')
+                        KeyCode::Tab | KeyCode::Char('l')
                             if !key.modifiers.contains(KeyModifiers::CONTROL) =>
                         {
                             app.toggle_focus();
@@ -1021,7 +1105,13 @@ async fn run_tui_mode(
                         KeyCode::Char('K') => {
                             app.virtual_keyboard.show();
                         }
-                        KeyCode::Char(c) if c >= '1' && c <= '5' => {
+                        KeyCode::Char('V') => {
+                            // Set selected voice as keyboard target
+                            app.set_keyboard_target_from_selection();
+                            let name = app.keyboard_target_voice_name();
+                            log::info!("Keyboard target: {}", name);
+                        }
+                        KeyCode::Char(c) if ('1'..='5').contains(&c) => {
                             app.set_log_level(c.to_digit(10).unwrap() as u8);
                         }
                         KeyCode::Esc => {
@@ -1046,8 +1136,18 @@ async fn run_tui_mode(
 
         // Auto-release expired notes from virtual keyboard
         let expired = app.virtual_keyboard.get_expired_notes();
-        for note in expired {
-            log::debug!("Note off (expired): {}", note);
+        if !expired.is_empty() {
+            if let Some(voice_id) = app.get_keyboard_target_voice() {
+                for note in expired {
+                    let _ = handle
+                        .send(Message::Voice(VoiceMessage::NoteOff {
+                            voice: voice_id,
+                            note,
+                        }))
+                        .await;
+                    log::debug!("Note off (expired): {} -> {}", note, voice_id);
+                }
+            }
         }
     }
 

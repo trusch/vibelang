@@ -7,13 +7,13 @@ use axum::{
 };
 use std::sync::Arc;
 use vibelang_core2::{
-    traits::SequenceConfig,
-    types::Beat,
-    Clip, MelodyId, PatternId, SequenceId, SequenceMessage,
+    traits::SequenceConfig, types::Beat, Clip, MelodyId, PatternId, SequenceId, SequenceMessage,
 };
 
 use crate::{
-    models::{ErrorResponse, Sequence, SequenceClip, SequenceCreate, SequenceStartRequest, SequenceUpdate},
+    models::{
+        ErrorResponse, Sequence, SequenceClip, SequenceCreate, SequenceStartRequest, SequenceUpdate,
+    },
     AppState,
 };
 
@@ -25,7 +25,9 @@ async fn resolve_sequence_id(
     // First, try to parse as a numeric ID
     if let Ok(num_id) = identifier.parse::<u32>() {
         let sequence_id = SequenceId::new(num_id);
-        let exists = state.with_state(|s| s.sequences.contains_key(&sequence_id)).await;
+        let exists = state
+            .with_state(|s| s.sequences.contains_key(&sequence_id))
+            .await;
         if exists {
             return Ok(sequence_id);
         }
@@ -249,7 +251,8 @@ pub async fn pause_sequence(
 /// Convert API SequenceClip to internal Clip
 fn api_clip_to_clip(clip: &SequenceClip) -> Option<Clip> {
     let start = Beat::from_f64(clip.start_beat);
-    let end = clip.end_beat
+    let end = clip
+        .end_beat
         .or(clip.duration_beats.map(|d| clip.start_beat + d))
         .map(Beat::from_f64)
         .unwrap_or_else(|| Beat::from_f64(clip.start_beat + 4.0));
@@ -279,7 +282,10 @@ pub async fn create_sequence(
     // Generate sequence ID from name hash
     let sequence_id = state
         .with_state(|s| {
-            let id = req.name.bytes().fold(1u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+            let id = req
+                .name
+                .bytes()
+                .fold(1u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
             let mut id = id % 10000 + 1;
             while s.sequences.contains_key(&SequenceId::new(id)) {
                 id += 1;
@@ -289,9 +295,7 @@ pub async fn create_sequence(
         .await;
 
     // Convert API clips to internal Clips
-    let clips: Vec<Clip> = req.clips.iter()
-        .filter_map(api_clip_to_clip)
-        .collect();
+    let clips: Vec<Clip> = req.clips.iter().filter_map(api_clip_to_clip).collect();
 
     let config = SequenceConfig {
         name: req.name.clone(),
@@ -300,7 +304,13 @@ pub async fn create_sequence(
     };
 
     if let Err(e) = state
-        .send(SequenceMessage::Create { id: sequence_id, config }.into())
+        .send(
+            SequenceMessage::Create {
+                id: sequence_id,
+                config,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -325,7 +335,9 @@ pub async fn create_sequence(
         Some(seq) => Ok((StatusCode::CREATED, Json(seq))),
         None => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal("Sequence created but not found in state")),
+            Json(ErrorResponse::internal(
+                "Sequence created but not found in state",
+            )),
         )),
     }
 }

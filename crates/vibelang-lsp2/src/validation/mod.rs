@@ -434,7 +434,10 @@ mod tests {
         let result = engine.validate("set_tempo(10);");
         assert!(result.is_valid);
         assert!(
-            result.warnings.iter().any(|w| w.message.contains("low tempo")),
+            result
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("low tempo")),
             "Should warn about low tempo"
         );
 

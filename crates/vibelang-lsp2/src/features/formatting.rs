@@ -45,7 +45,6 @@ fn format_content(content: &str, tab_size: u32, insert_spaces: bool) -> String {
     let mut result = String::new();
     let mut indent_level: i32 = 0;
     let mut in_multiline_string = false;
-    let mut prev_line_ends_with_open = false;
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -66,7 +65,6 @@ fn format_content(content: &str, tab_size: u32, insert_spaces: bool) -> String {
         // Skip empty lines but preserve them
         if trimmed.is_empty() {
             result.push('\n');
-            prev_line_ends_with_open = false;
             continue;
         }
 
@@ -99,12 +97,6 @@ fn format_content(content: &str, tab_size: u32, insert_spaces: bool) -> String {
         if indent_level < 0 {
             indent_level = 0;
         }
-
-        // Track if line ends with open brace/paren for method chains
-        prev_line_ends_with_open = trimmed.ends_with('{')
-            || trimmed.ends_with('(')
-            || trimmed.ends_with("||")
-            || trimmed.ends_with(',');
     }
 
     // Remove trailing newline if original didn't have one
@@ -147,7 +139,10 @@ fn format_line(line: &str) -> String {
             // Ensure space after commas
             ',' => {
                 result.push(',');
-                if chars.peek().is_some_and(|&next| next != ' ' && next != '\n') {
+                if chars
+                    .peek()
+                    .is_some_and(|&next| next != ' ' && next != '\n')
+                {
                     result.push(' ');
                 }
             }
@@ -241,7 +236,9 @@ fn format_line(line: &str) -> String {
                             result.push(' ');
                         }
                         result.push(c);
-                        if chars.peek().is_some_and(|&next| next != ' ' && next != '=' && !(c == '-' && next.is_ascii_digit())) {
+                        if chars.peek().is_some_and(|&next| {
+                            next != ' ' && next != '=' && !(c == '-' && next.is_ascii_digit())
+                        }) {
                             result.push(' ');
                         }
                     }

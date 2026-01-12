@@ -331,11 +331,25 @@ impl ScsynthBackend {
     ) {
         match packet {
             OscPacket::Message(msg) => {
-                Self::handle_message(msg, pending_buffer_info, pending_sync, pending_control_bus, callbacks, server_ready);
+                Self::handle_message(
+                    msg,
+                    pending_buffer_info,
+                    pending_sync,
+                    pending_control_bus,
+                    callbacks,
+                    server_ready,
+                );
             }
             OscPacket::Bundle(bundle) => {
                 for content in bundle.content {
-                    Self::handle_packet(content, pending_buffer_info, pending_sync, pending_control_bus, callbacks, server_ready);
+                    Self::handle_packet(
+                        content,
+                        pending_buffer_info,
+                        pending_sync,
+                        pending_control_bus,
+                        callbacks,
+                        server_ready,
+                    );
                 }
             }
         }
@@ -374,8 +388,7 @@ impl ScsynthBackend {
                 // Node ended
                 if msg.args.len() >= 5 {
                     let node_id = NodeId::new(Self::get_int(&msg.args, 0).unwrap_or(0) as u32);
-                    let parent_group =
-                        NodeId::new(Self::get_int(&msg.args, 1).unwrap_or(0) as u32);
+                    let parent_group = NodeId::new(Self::get_int(&msg.args, 1).unwrap_or(0) as u32);
                     let prev_node = NodeId::new(Self::get_int(&msg.args, 2).unwrap_or(-1) as u32);
                     let next_node = NodeId::new(Self::get_int(&msg.args, 3).unwrap_or(-1) as u32);
                     let is_group = Self::get_int(&msg.args, 4).unwrap_or(0) == 1;
@@ -399,8 +412,7 @@ impl ScsynthBackend {
                 // Node started
                 if msg.args.len() >= 5 {
                     let node_id = NodeId::new(Self::get_int(&msg.args, 0).unwrap_or(0) as u32);
-                    let parent_group =
-                        NodeId::new(Self::get_int(&msg.args, 1).unwrap_or(0) as u32);
+                    let parent_group = NodeId::new(Self::get_int(&msg.args, 1).unwrap_or(0) as u32);
                     let prev_node = NodeId::new(Self::get_int(&msg.args, 2).unwrap_or(-1) as u32);
                     let next_node = NodeId::new(Self::get_int(&msg.args, 3).unwrap_or(-1) as u32);
                     let is_group = Self::get_int(&msg.args, 4).unwrap_or(0) == 1;
@@ -466,7 +478,11 @@ impl ScsynthBackend {
                     (command == "/n_free" || command == "/n_set") && reason.contains("not found");
 
                 if is_expected_node_not_found {
-                    tracing::trace!("Expected: {} - {} (synth already freed via doneAction)", command, reason);
+                    tracing::trace!(
+                        "Expected: {} - {} (synth already freed via doneAction)",
+                        command,
+                        reason
+                    );
                 } else {
                     tracing::warn!("Fail: {} - {}", command, reason);
                 }
@@ -514,7 +530,12 @@ impl ScsynthBackend {
 
                     // Don't log meter triggers (too noisy at 20Hz)
                     if trig_id >= 100 {
-                        tracing::trace!("Trigger: node={} id={} value={}", node_id.0, trig_id, value);
+                        tracing::trace!(
+                            "Trigger: node={} id={} value={}",
+                            node_id.0,
+                            trig_id,
+                            value
+                        );
                     }
 
                     Some(OscResponse::Trigger {
@@ -764,12 +785,7 @@ impl Backend for ScsynthBackend {
         param: &str,
         bus: u32,
     ) -> Result<(), Self::Error> {
-        tracing::debug!(
-            "n_map: node={}, param='{}', bus={}",
-            node.0,
-            param,
-            bus
-        );
+        tracing::debug!("n_map: node={}, param='{}', bus={}", node.0, param, bus);
         self.send_msg(
             "/n_map",
             vec![
@@ -938,10 +954,7 @@ impl Backend for ScsynthBackend {
             }
             Err(_) => {
                 // Timeout - query buffer info manually
-                tracing::warn!(
-                    "Buffer {} load timeout, querying info manually",
-                    id.0
-                );
+                tracing::warn!("Buffer {} load timeout, querying info manually", id.0);
                 self.query_buffer_info(id).await
             }
         }
@@ -1019,11 +1032,11 @@ impl Backend for ScsynthBackend {
             vec![
                 OscType::Int(id.0 as i32),
                 OscType::String(path_str.to_string()),
-                OscType::String("wav".to_string()),   // header format
+                OscType::String("wav".to_string()), // header format
                 OscType::String("float".to_string()), // sample format
-                OscType::Int(-1),                     // num frames (-1 = all)
-                OscType::Int(0),                      // start frame
-                OscType::Int(0),                      // leave open (0 = close after write)
+                OscType::Int(-1),                   // num frames (-1 = all)
+                OscType::Int(0),                    // start frame
+                OscType::Int(0),                    // leave open (0 = close after write)
             ],
         )?;
 
@@ -1078,7 +1091,10 @@ impl AddActionExt for AddAction {
 /// // Set up node tracking after creating the runtime
 /// setup_node_tracking(runtime.backend(), runtime.state().clone());
 /// ```
-pub fn setup_node_tracking(backend: &ScsynthBackend, state: Arc<tokio::sync::RwLock<crate::State>>) {
+pub fn setup_node_tracking(
+    backend: &ScsynthBackend,
+    state: Arc<tokio::sync::RwLock<crate::State>>,
+) {
     let state_clone = state;
 
     backend.on_response(Arc::new(move |response| {
@@ -1124,7 +1140,12 @@ pub fn setup_metering(backend: &ScsynthBackend, state: Arc<tokio::sync::RwLock<c
     let state_clone = state;
 
     backend.on_response(Arc::new(move |response| {
-        if let OscResponse::Trigger { node_id, trig_id, value } = response {
+        if let OscResponse::Trigger {
+            node_id,
+            trig_id,
+            value,
+        } = response
+        {
             // Only handle meter triggers (IDs 0-3)
             // Higher IDs (100+) are used for other purposes like MIDI triggers
             if (0..=3).contains(&trig_id) {

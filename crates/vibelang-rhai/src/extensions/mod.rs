@@ -137,18 +137,15 @@ pub fn register_extensions(engine: &mut Engine, config: &ExtensionConfig) {
 
 /// Check if any extensions are available (compiled in).
 pub fn has_extensions() -> bool {
-    #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
-    {
-        return true;
-    }
-
-    #[cfg(not(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net")))]
-    {
-        return false;
-    }
+    cfg!(any(
+        feature = "ext-fs",
+        feature = "ext-exec",
+        feature = "ext-net"
+    ))
 }
 
 /// List available (compiled-in) extensions.
+#[allow(clippy::vec_init_then_push)] // Conditional cfg attributes require this pattern
 pub fn list_available_extensions() -> Vec<&'static str> {
     let mut list = Vec::new();
 

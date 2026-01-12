@@ -337,7 +337,10 @@ mod tests {
         assert_approx(curve.apply(0.5), 0.25, 0.001, "ease_in at 0.5 (t^2 = 0.25)");
         assert_approx(curve.apply(1.0), 1.0, 0.001, "ease_in at 1");
         // At 0.5, value should be less than 0.5 (slow start)
-        assert!(curve.apply(0.5) < 0.5, "ease_in should be below linear at midpoint");
+        assert!(
+            curve.apply(0.5) < 0.5,
+            "ease_in should be below linear at midpoint"
+        );
     }
 
     #[test]
@@ -347,14 +350,22 @@ mod tests {
         assert_approx(curve.apply(0.5), 0.75, 0.001, "ease_out at 0.5");
         assert_approx(curve.apply(1.0), 1.0, 0.001, "ease_out at 1");
         // At 0.5, value should be more than 0.5 (fast start)
-        assert!(curve.apply(0.5) > 0.5, "ease_out should be above linear at midpoint");
+        assert!(
+            curve.apply(0.5) > 0.5,
+            "ease_out should be above linear at midpoint"
+        );
     }
 
     #[test]
     fn test_ease_in_out_curve() {
         let curve = FadeCurve::EaseInOut;
         assert_approx(curve.apply(0.0), 0.0, 0.001, "ease_in_out at 0");
-        assert_approx(curve.apply(0.5), 0.5, 0.001, "ease_in_out at 0.5 (midpoint)");
+        assert_approx(
+            curve.apply(0.5),
+            0.5,
+            0.001,
+            "ease_in_out at 0.5 (midpoint)",
+        );
         assert_approx(curve.apply(1.0), 1.0, 0.001, "ease_in_out at 1");
         // Should be symmetric around midpoint
         let at_25 = curve.apply(0.25);
@@ -368,13 +379,19 @@ mod tests {
         let sine_in = FadeCurve::SineIn;
         assert_approx(sine_in.apply(0.0), 0.0, 0.001, "sine_in at 0");
         assert_approx(sine_in.apply(1.0), 1.0, 0.001, "sine_in at 1");
-        assert!(sine_in.apply(0.5) < 0.5, "sine_in should be below linear at midpoint");
+        assert!(
+            sine_in.apply(0.5) < 0.5,
+            "sine_in should be below linear at midpoint"
+        );
 
         // SineOut: sin(t * PI/2)
         let sine_out = FadeCurve::SineOut;
         assert_approx(sine_out.apply(0.0), 0.0, 0.001, "sine_out at 0");
         assert_approx(sine_out.apply(1.0), 1.0, 0.001, "sine_out at 1");
-        assert!(sine_out.apply(0.5) > 0.5, "sine_out should be above linear at midpoint");
+        assert!(
+            sine_out.apply(0.5) > 0.5,
+            "sine_out should be above linear at midpoint"
+        );
 
         // SineInOut: (1 - cos(t * PI)) / 2
         let sine_inout = FadeCurve::SineInOut;
@@ -409,7 +426,12 @@ mod tests {
         // Default exponent (2.0) should match ease_in
         let exp2 = FadeCurve::Exponential { exponent: 2.0 };
         let ease_in = FadeCurve::EaseIn;
-        assert_approx(exp2.apply(0.5), ease_in.apply(0.5), 0.001, "exp(2) should match ease_in");
+        assert_approx(
+            exp2.apply(0.5),
+            ease_in.apply(0.5),
+            0.001,
+            "exp(2) should match ease_in",
+        );
 
         // Exponent 1.0 should be linear
         let exp1 = FadeCurve::Exponential { exponent: 1.0 };
@@ -418,11 +440,19 @@ mod tests {
         // Exponent 3.0 should match cubic_in
         let exp3 = FadeCurve::Exponential { exponent: 3.0 };
         let cubic_in = FadeCurve::CubicIn;
-        assert_approx(exp3.apply(0.5), cubic_in.apply(0.5), 0.001, "exp(3) should match cubic_in");
+        assert_approx(
+            exp3.apply(0.5),
+            cubic_in.apply(0.5),
+            0.001,
+            "exp(3) should match cubic_in",
+        );
 
         // Higher exponent = slower start
         let exp5 = FadeCurve::Exponential { exponent: 5.0 };
-        assert!(exp5.apply(0.5) < exp3.apply(0.5), "higher exponent = slower start");
+        assert!(
+            exp5.apply(0.5) < exp3.apply(0.5),
+            "higher exponent = slower start"
+        );
     }
 
     #[test]
@@ -431,7 +461,10 @@ mod tests {
         assert_approx(log.apply(0.0), 0.0, 0.001, "log at 0");
         assert_approx(log.apply(1.0), 1.0, 0.001, "log at 1");
         // Logarithmic should be above linear (fast start)
-        assert!(log.apply(0.5) > 0.5, "log should be above linear at midpoint");
+        assert!(
+            log.apply(0.5) > 0.5,
+            "log should be above linear at midpoint"
+        );
     }
 
     #[test]
@@ -462,7 +495,10 @@ mod tests {
         assert_approx(spline.apply(1.0), 1.0, 0.001, "spline at 1");
         // At midpoint, should be near our control point
         let at_mid = spline.apply(0.5);
-        assert!(at_mid > 0.7 && at_mid < 0.9, "spline should pass near control point");
+        assert!(
+            at_mid > 0.7 && at_mid < 0.9,
+            "spline should pass near control point"
+        );
     }
 
     #[test]
@@ -498,9 +534,19 @@ mod tests {
 
         for curve in curves {
             // Values below 0 should clamp to 0
-            assert_approx(curve.apply(-0.5), curve.apply(0.0), 0.001, "should clamp below 0");
+            assert_approx(
+                curve.apply(-0.5),
+                curve.apply(0.0),
+                0.001,
+                "should clamp below 0",
+            );
             // Values above 1 should clamp to 1
-            assert_approx(curve.apply(1.5), curve.apply(1.0), 0.001, "should clamp above 1");
+            assert_approx(
+                curve.apply(1.5),
+                curve.apply(1.0),
+                0.001,
+                "should clamp above 1",
+            );
         }
     }
 
@@ -520,12 +566,24 @@ mod tests {
             FadeCurve::Exponential { exponent: 2.0 },
             FadeCurve::Logarithmic,
             FadeCurve::Step,
-            FadeCurve::CubicSpline { points: vec![(0.5, 0.5)] },
+            FadeCurve::CubicSpline {
+                points: vec![(0.5, 0.5)],
+            },
         ];
 
         for curve in curves {
-            assert_approx(curve.apply(0.0), 0.0, 0.001, &format!("{:?} should start at 0", curve));
-            assert_approx(curve.apply(1.0), 1.0, 0.001, &format!("{:?} should end at 1", curve));
+            assert_approx(
+                curve.apply(0.0),
+                0.0,
+                0.001,
+                &format!("{:?} should start at 0", curve),
+            );
+            assert_approx(
+                curve.apply(1.0),
+                1.0,
+                0.001,
+                &format!("{:?} should end at 1", curve),
+            );
         }
     }
 

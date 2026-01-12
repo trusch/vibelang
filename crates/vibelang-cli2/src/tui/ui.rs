@@ -1,10 +1,9 @@
 //! UI rendering logic for the TUI
 
 use crate::tui::app::{
-    BeatInfo, HierarchyEntry, HierarchyKind, LogEntry, PanelFocus, ResourceStats,
-    SummaryStats, TuiApp,
+    BeatInfo, HierarchyEntry, HierarchyKind, PanelFocus, ResourceStats, SummaryStats, TuiApp,
 };
-use crate::tui::keyboard::{note_name, VirtualKeyboard};
+use crate::tui::keyboard::VirtualKeyboard;
 use crate::tui::layout::{create_layout_with_keyboard, truncate_string};
 use log::Level;
 use ratatui::{
@@ -57,7 +56,12 @@ pub fn render_ui(frame: &mut Frame, app: &mut TuiApp) {
 
     // Handle maximized log view
     if app.log_maximized {
-        render_log_maximized(frame, layout.main, app, app.focused_panel == PanelFocus::Log);
+        render_log_maximized(
+            frame,
+            layout.main,
+            app,
+            app.focused_panel == PanelFocus::Log,
+        );
         let focused = app.focused_panel == PanelFocus::Hierarchy;
         render_unified_hierarchy(
             frame,
@@ -85,7 +89,14 @@ pub fn render_ui(frame: &mut Frame, app: &mut TuiApp) {
 
     // Render keyboard if visible
     if let Some(keyboard_area) = layout.keyboard {
-        render_keyboard(frame, keyboard_area, &app.virtual_keyboard, app.keyboard_port_name.as_deref(), app.os_keyboard_active);
+        render_keyboard(
+            frame,
+            keyboard_area,
+            &app.virtual_keyboard,
+            app.keyboard_port_name.as_deref(),
+            app.os_keyboard_active,
+            &app.keyboard_target_voice_name(),
+        );
     }
 
     // Render footer
@@ -112,7 +123,11 @@ fn render_header(
     } else {
         Color::Yellow
     };
-    let status_icon = if beat_info.running { "\u{25B6}" } else { "\u{23F8}" }; // ▶ ⏸
+    let status_icon = if beat_info.running {
+        "\u{25B6}"
+    } else {
+        "\u{23F8}"
+    }; // ▶ ⏸
 
     // Calculate progress bar width
     let bar_width = area.width.saturating_sub(12) as usize;
@@ -146,7 +161,10 @@ fn render_header(
             ),
             Span::raw("  Beat "),
             Span::styled(
-                format!("{}/{}", beat_info.beat_number_in_bar, beat_info.total_beats_in_bar),
+                format!(
+                    "{}/{}",
+                    beat_info.beat_number_in_bar, beat_info.total_beats_in_bar
+                ),
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -174,7 +192,9 @@ fn render_header(
             Span::raw(" "),
             Span::styled(
                 format!("{}\u{25B6}", summary.patterns_playing),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("/{}", summary.patterns_total),
@@ -185,7 +205,9 @@ fn render_header(
             Span::raw(" "),
             Span::styled(
                 format!("{}\u{25B6}", summary.melodies_playing),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("/{}", summary.melodies_total),
@@ -196,7 +218,9 @@ fn render_header(
             Span::raw(" "),
             Span::styled(
                 format!("{}\u{25B6}", summary.sequences_playing),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("/{}", summary.sequences_total),
@@ -329,8 +353,7 @@ fn render_unified_hierarchy(
         return;
     }
 
-    let list = List::new(items)
-        .highlight_style(Style::default());
+    let list = List::new(items).highlight_style(Style::default());
     frame.render_stateful_widget(list, inner, list_state);
 }
 
@@ -352,7 +375,11 @@ fn render_hierarchy_entry(
 
     // Collapse/expand marker for collapsible items
     let collapse_marker = if entry.collapsible {
-        if entry.collapsed { "\u{25B8}" } else { "\u{25BE}" } // ▸ ▾
+        if entry.collapsed {
+            "\u{25B8}"
+        } else {
+            "\u{25BE}"
+        } // ▸ ▾
     } else {
         " "
     };
@@ -360,10 +387,28 @@ fn render_hierarchy_entry(
     let type_marker = match entry.kind {
         HierarchyKind::Group => "\u{25CF}", // ●
         HierarchyKind::Voice => "\u{266A}", // ♪
-        HierarchyKind::Pattern => if entry.active { "\u{25C6}" } else { "\u{25C7}" }, // ◆ ◇
-        HierarchyKind::Melody => if entry.active { "\u{25C6}" } else { "\u{25C7}" }, // ◆ ◇
+        HierarchyKind::Pattern => {
+            if entry.active {
+                "\u{25C6}"
+            } else {
+                "\u{25C7}"
+            }
+        } // ◆ ◇
+        HierarchyKind::Melody => {
+            if entry.active {
+                "\u{25C6}"
+            } else {
+                "\u{25C7}"
+            }
+        } // ◆ ◇
         HierarchyKind::Effect => "\u{25C8}", // ◈
-        HierarchyKind::Sequence => if entry.active { "\u{25B6}" } else { "\u{25B7}" }, // ▶ ▷
+        HierarchyKind::Sequence => {
+            if entry.active {
+                "\u{25B6}"
+            } else {
+                "\u{25B7}"
+            }
+        } // ▶ ▷
         HierarchyKind::Section => "\u{2501}", // ━
     };
 
@@ -412,7 +457,11 @@ fn render_hierarchy_entry(
         Span::raw(indent),
         Span::styled(
             collapse_marker,
-            Style::default().fg(if entry.collapsible { Color::White } else { Color::DarkGray }),
+            Style::default().fg(if entry.collapsible {
+                Color::White
+            } else {
+                Color::DarkGray
+            }),
         ),
         Span::styled(type_marker, Style::default().fg(marker_color)),
         Span::raw(" "),
@@ -420,12 +469,19 @@ fn render_hierarchy_entry(
             format!("{:<width$}", name, width = name_col),
             Style::default()
                 .fg(name_color)
-                .add_modifier(if entry.active { Modifier::BOLD } else { Modifier::empty() }),
+                .add_modifier(if entry.active {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
         ),
     ];
 
     if !detail.is_empty() || !params.is_empty() {
-        spans.push(Span::styled(" \u{2502} ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            " \u{2502} ",
+            Style::default().fg(Color::DarkGray),
+        ));
         spans.push(Span::styled(
             format!("{:<width$}", detail, width = detail_col),
             Style::default().fg(detail_color),
@@ -569,21 +625,23 @@ fn render_keyboard(
     keyboard: &VirtualKeyboard,
     port_name: Option<&str>,
     os_active: bool,
+    target_voice: &str,
 ) {
     let port_status = if let Some(name) = port_name {
         format!(" \u{2192} {} ", name)
     } else {
-        " (no JACK) ".to_string()
+        "".to_string()
     };
 
     let os_indicator = if os_active { " [OS]" } else { "" };
 
     let block = Block::default()
         .title(format!(
-            " Keyboard {} vel:{} oct:{}{}{}",
+            " Keyboard{} vel:{} oct:{} \u{2192} {}{}{}",
             port_status,
             keyboard.velocity(),
             keyboard.octave_name(),
+            target_voice,
             os_indicator,
             if keyboard.visible { "" } else { " (hidden)" }
         ))
@@ -621,7 +679,11 @@ fn render_keyboard(
 
         if has_black && i > 0 {
             let is_pressed = keyboard.is_key_pressed(upper_black[black_idx]);
-            let display = format!("{:^w$}", upper_black[black_idx].display_char, w = key_width - 1);
+            let display = format!(
+                "{:^w$}",
+                upper_black[black_idx].display_char,
+                w = key_width - 1
+            );
             if is_pressed {
                 upper_black_line.push_str(&format!("\x1b[7m{}\x1b[0m ", display));
             } else {
@@ -646,7 +708,12 @@ fn render_keyboard(
         let display = format!("{:^w$}", key.display_char, w = key_width);
         upper_white_line.push(Span::styled(display, style));
     }
-    lines.push(Line::from(vec![Span::raw("  ")].into_iter().chain(upper_white_line).collect::<Vec<_>>()));
+    lines.push(Line::from(
+        vec![Span::raw("  ")]
+            .into_iter()
+            .chain(upper_white_line)
+            .collect::<Vec<_>>(),
+    ));
 
     // Lower black keys line
     let mut lower_black_line = String::new();
@@ -658,7 +725,11 @@ fn render_keyboard(
 
         if has_black && i > 0 {
             let is_pressed = keyboard.is_key_pressed(lower_black[black_idx]);
-            let display = format!("{:^w$}", lower_black[black_idx].display_char, w = key_width - 1);
+            let display = format!(
+                "{:^w$}",
+                lower_black[black_idx].display_char,
+                w = key_width - 1
+            );
             if is_pressed {
                 lower_black_line.push_str(&format!("\x1b[7m{}\x1b[0m ", display));
             } else {
@@ -683,7 +754,12 @@ fn render_keyboard(
         let display = format!("{:^w$}", key.display_char, w = key_width);
         lower_white_line.push(Span::styled(display, style));
     }
-    lines.push(Line::from(vec![Span::raw("  ")].into_iter().chain(lower_white_line).collect::<Vec<_>>()));
+    lines.push(Line::from(
+        vec![Span::raw("  ")]
+            .into_iter()
+            .chain(lower_white_line)
+            .collect::<Vec<_>>(),
+    ));
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, inner);
@@ -742,8 +818,7 @@ fn render_search_bar(frame: &mut Frame, area: Rect, app: &TuiApp) {
     frame.render_widget(block, search_area);
 
     let text = format!("{}_", query);
-    let paragraph = Paragraph::new(text)
-        .style(Style::default().fg(Color::White));
+    let paragraph = Paragraph::new(text).style(Style::default().fg(Color::White));
     frame.render_widget(paragraph, inner);
 }
 
@@ -770,20 +845,35 @@ fn render_help_modal(frame: &mut Frame, area: Rect) {
         .border_style(Style::default().fg(Color::Cyan));
 
     let help_text = vec![
-        Line::from(Span::styled("Transport", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Transport",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from("  Space     Play/Pause transport"),
         Line::from("  \u{2190}/\u{2192}       Seek backward/forward 1 beat"),
         Line::from("  Ctrl+\u{2190}/\u{2192}  Seek backward/forward 1 bar"),
         Line::from("  0/Home    Jump to start"),
         Line::from(""),
-        Line::from(Span::styled("Navigation", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Navigation",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from("  \u{2191}/\u{2193}/j/k  Move selection"),
         Line::from("  Tab/L     Switch panel focus"),
         Line::from("  Enter     Collapse/expand item"),
         Line::from("  [/]       Collapse/Expand all"),
         Line::from("  PgUp/Dn   Page navigation"),
         Line::from(""),
-        Line::from(Span::styled("Other", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Other",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from("  K         Toggle virtual keyboard"),
         Line::from("  /         Search hierarchy"),
         Line::from("  1-5       Set log level"),

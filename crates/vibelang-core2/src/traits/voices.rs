@@ -3,9 +3,9 @@
 //! Voices are the primary way to produce sound. They wrap a synthdef
 //! and can be triggered by patterns, melodies, or direct MIDI input.
 
-use crate::types::{GroupId, ModulatorId, ParamMap, SfzId, VoiceId};
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
+use crate::types::{GroupId, ModulatorId, ParamMap, SfzId, VoiceId};
 use crate::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;

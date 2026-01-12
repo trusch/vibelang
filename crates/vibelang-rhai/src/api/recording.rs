@@ -24,8 +24,8 @@ use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Positi
 use std::path::PathBuf;
 use vibelang_core2::traits::RecordingConfig as CoreRecordingConfig;
 
-use crate::context;
 use super::sample::SampleHandle;
+use crate::context;
 
 // Suppress unused imports warning for rhai derive macro requirements
 #[allow(unused_imports)]
@@ -98,6 +98,11 @@ impl RecordHandle {
         self
     }
 
+    /// Set recording length in bars (integer variant).
+    pub fn bars_int(self, num_bars: i64) -> Self {
+        self.bars(num_bars as f64)
+    }
+
     /// Set recording length in beats.
     pub fn beats(mut self, num_beats: f64) -> Self {
         self.length_bars = None;
@@ -106,12 +111,22 @@ impl RecordHandle {
         self
     }
 
+    /// Set recording length in beats (integer variant).
+    pub fn beats_int(self, num_beats: i64) -> Self {
+        self.beats(num_beats as f64)
+    }
+
     /// Set recording length in seconds (fixed time, ignores tempo).
     pub fn seconds(mut self, secs: f64) -> Self {
         self.length_bars = None;
         self.length_beats = None;
         self.length_seconds = Some(secs);
         self
+    }
+
+    /// Set recording length in seconds (integer variant).
+    pub fn seconds_int(self, secs: i64) -> Self {
+        self.seconds(secs as f64)
     }
 
     // === Group Configuration ===
@@ -216,12 +231,7 @@ impl RecordHandle {
         // The actual buffer will be allocated by the runtime
         let buffer_id = recording_id.raw() as i32;
 
-        SampleHandle::new_pending(
-            self.id,
-            file_path_str,
-            buffer_id,
-            self.num_channels as i32,
-        )
+        SampleHandle::new_pending(self.id, file_path_str, buffer_id, self.num_channels as i32)
     }
 }
 
@@ -263,8 +273,11 @@ pub fn register(engine: &mut Engine) {
 
     // Length configuration (builder methods)
     engine.register_fn("bars", RecordHandle::bars);
+    engine.register_fn("bars", RecordHandle::bars_int);
     engine.register_fn("beats", RecordHandle::beats);
+    engine.register_fn("beats", RecordHandle::beats_int);
     engine.register_fn("seconds", RecordHandle::seconds);
+    engine.register_fn("seconds", RecordHandle::seconds_int);
 
     // Group configuration
     engine.register_fn("from_group", RecordHandle::from_group);

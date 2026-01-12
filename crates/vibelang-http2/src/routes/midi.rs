@@ -6,11 +6,7 @@
 //! - Recording control
 //! - Clock output control
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use vibelang_core2::types::MidiDeviceId;
@@ -124,9 +120,7 @@ pub struct ErrorResponse {
 /// List all available MIDI devices.
 ///
 /// GET /midi/devices
-pub async fn list_devices(
-    State(_state): State<Arc<AppState>>,
-) -> Json<Vec<MidiDeviceDto>> {
+pub async fn list_devices(State(_state): State<Arc<AppState>>) -> Json<Vec<MidiDeviceDto>> {
     // Note: This requires direct access to the MIDI handler.
     // For now, we'll use the midir crate directly here.
     use midir::{MidiInput, MidiOutput};
@@ -239,7 +233,9 @@ pub async fn close_device(
     let device_id = MidiDeviceId::new(req.device_id);
     state
         .handle
-        .send(Message::Midi(MidiMessage::CloseDevice { device: device_id }))
+        .send(Message::Midi(MidiMessage::CloseDevice {
+            device: device_id,
+        }))
         .await
         .map_err(|e| {
             (
@@ -439,7 +435,9 @@ pub async fn enable_clock_output(
     let device_id = MidiDeviceId::new(req.device_id);
     state
         .handle
-        .send(Message::Midi(MidiMessage::EnableClockOutput { device: device_id }))
+        .send(Message::Midi(MidiMessage::EnableClockOutput {
+            device: device_id,
+        }))
         .await
         .map_err(|e| {
             (
@@ -466,7 +464,9 @@ pub async fn disable_clock_output(
     let device_id = MidiDeviceId::new(req.device_id);
     state
         .handle
-        .send(Message::Midi(MidiMessage::DisableClockOutput { device: device_id }))
+        .send(Message::Midi(MidiMessage::DisableClockOutput {
+            device: device_id,
+        }))
         .await
         .map_err(|e| {
             (
@@ -547,7 +547,9 @@ pub async fn send_midi_continue(
     let device_id = MidiDeviceId::new(req.device_id);
     state
         .handle
-        .send(Message::Midi(MidiMessage::SendContinue { device: device_id }))
+        .send(Message::Midi(MidiMessage::SendContinue {
+            device: device_id,
+        }))
         .await
         .map_err(|e| {
             (
@@ -595,9 +597,7 @@ pub struct RouteInfoDto {
 /// GET /midi/routes
 ///
 /// Note: This returns basic route info. Routes are primarily managed via Rhai scripts.
-pub async fn list_routes(
-    State(_state): State<Arc<AppState>>,
-) -> Json<RouteInfoDto> {
+pub async fn list_routes(State(_state): State<Arc<AppState>>) -> Json<RouteInfoDto> {
     // Routes are managed by the MidiHandler which isn't directly accessible from HTTP.
     // This returns informational status only.
     Json(RouteInfoDto {
@@ -641,7 +641,10 @@ pub async fn add_keyboard_route(
         })?;
 
     Ok(Json(AddKeyboardRouteResponse {
-        message: format!("Keyboard route added: device {} -> voice {}", req.device_id, req.voice_id),
+        message: format!(
+            "Keyboard route added: device {} -> voice {}",
+            req.device_id, req.voice_id
+        ),
     }))
 }
 

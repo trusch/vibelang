@@ -25,7 +25,9 @@ pub fn get_signature_help(
             .iter()
             .map(|(name, _param_type, desc)| ParameterInformation {
                 label: ParameterLabel::Simple(name.to_string()),
-                documentation: Some(tower_lsp::lsp_types::Documentation::String(desc.to_string())),
+                documentation: Some(tower_lsp::lsp_types::Documentation::String(
+                    desc.to_string(),
+                )),
             })
             .collect();
 
@@ -147,28 +149,40 @@ pub fn get_builtin_signatures() -> Vec<(String, SignatureInformation)> {
             "voice",
             "voice(name, synthdef)",
             "Create a new voice with the given name and synthdef",
-            vec![("name", "The name of the voice"), ("synthdef", "The synthdef to use")],
+            vec![
+                ("name", "The name of the voice"),
+                ("synthdef", "The synthdef to use"),
+            ],
         ),
         // Pattern creation
         (
             "pattern",
             "pattern(name, notation)",
             "Create a pattern from notation string",
-            vec![("name", "The name of the pattern"), ("notation", "Pattern notation (e.g., \"x-x- x-x-\")")],
+            vec![
+                ("name", "The name of the pattern"),
+                ("notation", "Pattern notation (e.g., \"x-x- x-x-\")"),
+            ],
         ),
         // Melody creation
         (
             "melody",
             "melody(name, notation)",
             "Create a melody from notation string",
-            vec![("name", "The name of the melody"), ("notation", "Melody notation (e.g., \"c4 e4 g4\")")],
+            vec![
+                ("name", "The name of the melody"),
+                ("notation", "Melody notation (e.g., \"c4 e4 g4\")"),
+            ],
         ),
         // Group creation
         (
             "define_group",
             "define_group(name, closure)",
             "Define a group of voices and patterns",
-            vec![("name", "The group name"), ("closure", "A closure defining group contents")],
+            vec![
+                ("name", "The group name"),
+                ("closure", "A closure defining group contents"),
+            ],
         ),
         // Transport
         (
@@ -181,56 +195,80 @@ pub fn get_builtin_signatures() -> Vec<(String, SignatureInformation)> {
             "set_time_signature",
             "set_time_signature(numerator, denominator)",
             "Set the time signature",
-            vec![("numerator", "Beats per bar"), ("denominator", "Note value for one beat")],
+            vec![
+                ("numerator", "Beats per bar"),
+                ("denominator", "Note value for one beat"),
+            ],
         ),
         // Sample loading
         (
             "load_sample",
             "load_sample(name, path)",
             "Load an audio sample from file",
-            vec![("name", "Sample name for reference"), ("path", "Path to the audio file")],
+            vec![
+                ("name", "Sample name for reference"),
+                ("path", "Path to the audio file"),
+            ],
         ),
         // SFZ loading
         (
             "load_sfz",
             "load_sfz(name, path)",
             "Load an SFZ instrument",
-            vec![("name", "Instrument name"), ("path", "Path to the .sfz file")],
+            vec![
+                ("name", "Instrument name"),
+                ("path", "Path to the .sfz file"),
+            ],
         ),
         // Synthdef building
         (
             "define_synthdef",
             "define_synthdef(name, closure)",
             "Define a custom synthesizer",
-            vec![("name", "Synthdef name"), ("closure", "A closure defining the synth graph")],
+            vec![
+                ("name", "Synthdef name"),
+                ("closure", "A closure defining the synth graph"),
+            ],
         ),
         // Effect building
         (
             "define_fx",
             "define_fx(name, closure)",
             "Define a custom effect",
-            vec![("name", "Effect name"), ("closure", "A closure defining the effect graph")],
+            vec![
+                ("name", "Effect name"),
+                ("closure", "A closure defining the effect graph"),
+            ],
         ),
         // Sequence
         (
             "sequence",
             "sequence(name, patterns)",
             "Create a sequence from an array of patterns",
-            vec![("name", "Sequence name"), ("patterns", "Array of pattern references")],
+            vec![
+                ("name", "Sequence name"),
+                ("patterns", "Array of pattern references"),
+            ],
         ),
         // Arrangement
         (
             "at_bar",
             "at_bar(bar, closure)",
             "Schedule actions to run at a specific bar",
-            vec![("bar", "Bar number (1-based)"), ("closure", "Actions to perform")],
+            vec![
+                ("bar", "Bar number (1-based)"),
+                ("closure", "Actions to perform"),
+            ],
         ),
         // MIDI
         (
             "midi_out",
             "midi_out(device, channel)",
             "Create a MIDI output voice",
-            vec![("device", "MIDI device name or index"), ("channel", "MIDI channel (0-15)")],
+            vec![
+                ("device", "MIDI device name or index"),
+                ("channel", "MIDI channel (0-15)"),
+            ],
         ),
         (
             "midi_in",

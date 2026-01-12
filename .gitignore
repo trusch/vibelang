@@ -53,3 +53,6 @@ __pycache__/
 .env.local
 *.local
 CLAUDE.md
+.parcel-cache
+dist
+landing-page/dist

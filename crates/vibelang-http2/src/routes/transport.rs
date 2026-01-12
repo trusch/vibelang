@@ -3,7 +3,7 @@
 use axum::{extract::State, http::StatusCode, Json};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use vibelang_core2::{Beat, TransportMessage, TimeSignature as CoreTimeSignature};
+use vibelang_core2::{Beat, TimeSignature as CoreTimeSignature, TransportMessage};
 
 use crate::{
     models::{ErrorResponse, SeekRequest, TimeSignature, TransportState, TransportUpdate},
@@ -18,7 +18,9 @@ fn build_transport_state(s: &vibelang_core2::State) -> TransportState {
         .unwrap_or(0);
 
     // Calculate loop info from active sequences
-    let loop_beats = s.sequences.values()
+    let loop_beats = s
+        .sequences
+        .values()
         .filter(|seq| seq.playing)
         .map(|seq| seq.config.length.to_f64())
         .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -68,7 +70,10 @@ pub async fn update_transport(
         if let Err(e) = state.send(TransportMessage::SetTempo { bpm }.into()).await {
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::internal(&format!("Failed to set BPM: {}", e))),
+                Json(ErrorResponse::internal(&format!(
+                    "Failed to set BPM: {}",
+                    e
+                ))),
             ));
         }
     }
@@ -146,7 +151,12 @@ pub async fn seek_transport(
     }
 
     if let Err(e) = state
-        .send(TransportMessage::Seek { beat: Beat::from_f64(req.beat) }.into())
+        .send(
+            TransportMessage::Seek {
+                beat: Beat::from_f64(req.beat),
+            }
+            .into(),
+        )
         .await
     {
         return Err((

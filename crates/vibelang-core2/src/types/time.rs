@@ -243,7 +243,10 @@ impl TimeSignature {
     /// Create a new time signature.
     #[inline]
     pub const fn new(numerator: u8, denominator: u8) -> Self {
-        Self { numerator, denominator }
+        Self {
+            numerator,
+            denominator,
+        }
     }
 
     /// Standard 4/4 time.

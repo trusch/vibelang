@@ -56,10 +56,10 @@ fn parse_url_components(url: &str) -> Result<(bool, String, u16, String), Box<Ev
     let url = url.trim();
 
     // Check for HTTPS
-    let (is_https, rest) = if url.starts_with("https://") {
-        (true, &url[8..])
-    } else if url.starts_with("http://") {
-        (false, &url[7..])
+    let (is_https, rest) = if let Some(stripped) = url.strip_prefix("https://") {
+        (true, stripped)
+    } else if let Some(stripped) = url.strip_prefix("http://") {
+        (false, stripped)
     } else {
         return Err(Box::new(EvalAltResult::ErrorRuntime(
             "URL must start with http:// or https://".to_string().into(),
@@ -100,7 +100,9 @@ pub fn http_get(url: &str) -> Result<String, Box<EvalAltResult>> {
 
     if is_https {
         return Err(Box::new(EvalAltResult::ErrorRuntime(
-            "HTTPS not supported in basic net extension. Use http:// or enable ext-net-tls".to_string().into(),
+            "HTTPS not supported in basic net extension. Use http:// or enable ext-net-tls"
+                .to_string()
+                .into(),
             rhai::Position::NONE,
         )));
     }
@@ -195,12 +197,18 @@ pub fn http_post_json(url: &str, data: Map) -> Result<Dynamic, Box<EvalAltResult
     json_parse(&response)
 }
 
-fn http_post_with_content_type(url: &str, body: &str, content_type: &str) -> Result<String, Box<EvalAltResult>> {
+fn http_post_with_content_type(
+    url: &str,
+    body: &str,
+    content_type: &str,
+) -> Result<String, Box<EvalAltResult>> {
     let (is_https, host, port, path) = parse_url_components(url)?;
 
     if is_https {
         return Err(Box::new(EvalAltResult::ErrorRuntime(
-            "HTTPS not supported in basic net extension".to_string().into(),
+            "HTTPS not supported in basic net extension"
+                .to_string()
+                .into(),
             rhai::Position::NONE,
         )));
     }
@@ -326,11 +334,17 @@ pub fn parse_url(url: &str) -> Result<Map, Box<EvalAltResult>> {
     };
 
     let mut result = Map::new();
-    result.insert("scheme".into(), Dynamic::from(if is_https { "https" } else { "http" }));
+    result.insert(
+        "scheme".into(),
+        Dynamic::from(if is_https { "https" } else { "http" }),
+    );
     result.insert("host".into(), Dynamic::from(host));
     result.insert("port".into(), Dynamic::from(port as i64));
     result.insert("path".into(), Dynamic::from(path_only.to_string()));
-    result.insert("query".into(), Dynamic::from(query.unwrap_or("").to_string()));
+    result.insert(
+        "query".into(),
+        Dynamic::from(query.unwrap_or("").to_string()),
+    );
 
     Ok(result)
 }
@@ -339,7 +353,7 @@ pub fn parse_url(url: &str) -> Result<Map, Box<EvalAltResult>> {
 pub fn build_query_string(params: Map) -> String {
     params
         .into_iter()
-        .map(|(k, v)| format!("{}={}", url_encode(&k.to_string()), url_encode(&v.to_string())))
+        .map(|(k, v)| format!("{}={}", url_encode(k.as_ref()), url_encode(&v.to_string())))
         .collect::<Vec<_>>()
         .join("&")
 }
@@ -467,7 +481,7 @@ fn parse_json_object(json: &str) -> Result<Dynamic, Box<EvalAltResult>> {
                 '}' | ']' => depth -= 1,
                 ',' if depth == 0 => {
                     let pair: String = chars[start..i].iter().collect();
-                    parse_json_pair(&pair.trim(), &mut result)?;
+                    parse_json_pair(pair.trim(), &mut result)?;
                     start = i + 1;
                 }
                 _ => {}
@@ -479,7 +493,7 @@ fn parse_json_object(json: &str) -> Result<Dynamic, Box<EvalAltResult>> {
     // Last pair
     if start < chars.len() {
         let pair: String = chars[start..].iter().collect();
-        parse_json_pair(&pair.trim(), &mut result)?;
+        parse_json_pair(pair.trim(), &mut result)?;
     }
 
     Ok(Dynamic::from(result))
@@ -613,7 +627,7 @@ fn json_stringify_map(map: &Map) -> Result<String, Box<EvalAltResult>> {
         first = false;
 
         result.push('"');
-        result.push_str(&escape_json_string(&key.to_string()));
+        result.push_str(&escape_json_string(key.as_ref()));
         result.push_str("\":");
         result.push_str(&stringify_value(value)?);
     }
@@ -636,7 +650,7 @@ fn stringify_value(value: &Dynamic) -> Result<String, Box<EvalAltResult>> {
         Ok(format!("\"{}\"", escape_json_string(&s)))
     } else if value.is_array() {
         let arr: Array = value.clone().cast();
-        let elements: Result<Vec<String>, _> = arr.iter().map(|v| stringify_value(v)).collect();
+        let elements: Result<Vec<String>, _> = arr.iter().map(stringify_value).collect();
         Ok(format!("[{}]", elements?.join(",")))
     } else if value.is_map() {
         let map: Map = value.clone().cast();
@@ -687,7 +701,10 @@ mod tests {
         assert!(json_parse("true").unwrap().as_bool().unwrap());
         assert!(!json_parse("false").unwrap().as_bool().unwrap());
         assert!(json_parse("null").unwrap().is_unit());
-        assert_eq!(json_parse("\"hello\"").unwrap().into_string().unwrap(), "hello");
+        assert_eq!(
+            json_parse("\"hello\"").unwrap().into_string().unwrap(),
+            "hello"
+        );
     }
 
     #[test]
@@ -699,8 +716,13 @@ mod tests {
 
     #[test]
     fn test_json_parse_object() {
-        let obj: Map = json_parse("{\"name\": \"test\", \"value\": 42}").unwrap().cast();
-        assert_eq!(obj.get("name").unwrap().clone().into_string().unwrap(), "test");
+        let obj: Map = json_parse("{\"name\": \"test\", \"value\": 42}")
+            .unwrap()
+            .cast();
+        assert_eq!(
+            obj.get("name").unwrap().clone().into_string().unwrap(),
+            "test"
+        );
         assert_eq!(obj.get("value").unwrap().as_int().unwrap(), 42);
     }
 

@@ -371,12 +371,8 @@ mod tests {
 
     #[test]
     fn test_sample_handle_new_pending() {
-        let sample = SampleHandle::new_pending(
-            "recording".to_string(),
-            "output/rec.wav".to_string(),
-            42,
-            2,
-        );
+        let sample =
+            SampleHandle::new_pending("recording".to_string(), "output/rec.wav".to_string(), 42, 2);
         assert_eq!(sample.id, "recording");
         assert_eq!(sample.path, PathBuf::from("output/rec.wav"));
         assert_eq!(sample.buffer_id, 42);

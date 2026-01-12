@@ -134,8 +134,8 @@ pub fn key_to_char_german(key: Key) -> Option<char> {
 
         // Octave control
         Key::ShiftLeft | Key::ShiftRight => None, // handled separately
-        Key::DownArrow => Some('<'), // octave down (also mapped to < key)
-        Key::UpArrow => Some('>'),   // octave up (also mapped to > key)
+        Key::DownArrow => Some('<'),              // octave down (also mapped to < key)
+        Key::UpArrow => Some('>'),                // octave up (also mapped to > key)
 
         _ => None,
     }

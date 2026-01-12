@@ -53,9 +53,11 @@ impl MidiClock {
     /// Call this when receiving the first MIDI message to establish
     /// the relationship between midir timestamps and system time.
     pub fn calibrate(&self, timestamp_us: u64) {
-        self.reference_timestamp_us.store(timestamp_us, Ordering::SeqCst);
+        self.reference_timestamp_us
+            .store(timestamp_us, Ordering::SeqCst);
         let audio_frame = self.audio_frame.load(Ordering::SeqCst);
-        self.reference_audio_frame.store(audio_frame, Ordering::SeqCst);
+        self.reference_audio_frame
+            .store(audio_frame, Ordering::SeqCst);
     }
 
     /// Update the current audio frame position.
@@ -212,7 +214,10 @@ impl MidiClockSync {
     /// Handle transport continue message.
     pub fn on_continue(&mut self) {
         self.transport_running = true;
-        tracing::info!("[MIDI_CLOCK] Transport CONTINUE from position {}", self.song_position);
+        tracing::info!(
+            "[MIDI_CLOCK] Transport CONTINUE from position {}",
+            self.song_position
+        );
     }
 
     /// Handle transport stop message.

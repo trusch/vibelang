@@ -49,17 +49,17 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
     let mut builder = GraphBuilderInner::new();
 
     // Parameters - order matters for control output indices
-    builder.add_param("out".to_string(), vec![0.0], None);        // 0
-    builder.add_param("bufnum".to_string(), vec![0.0], None);     // 1
-    builder.add_param("rate".to_string(), vec![1.0], None);       // 2
-    builder.add_param("amp".to_string(), vec![1.0], None);        // 3
-    builder.add_param("gate".to_string(), vec![1.0], None);       // 4
-    builder.add_param("attack".to_string(), vec![0.001], None);   // 5
-    builder.add_param("sustain".to_string(), vec![1.0], None);    // 6
-    builder.add_param("release".to_string(), vec![0.01], None);   // 7
-    builder.add_param("loop".to_string(), vec![0.0], None);       // 8
-    builder.add_param("startPos".to_string(), vec![0.0], None);   // 9
-    builder.add_param("endPos".to_string(), vec![-1.0], None);    // 10
+    builder.add_param("out".to_string(), vec![0.0], None); // 0
+    builder.add_param("bufnum".to_string(), vec![0.0], None); // 1
+    builder.add_param("rate".to_string(), vec![1.0], None); // 2
+    builder.add_param("amp".to_string(), vec![1.0], None); // 3
+    builder.add_param("gate".to_string(), vec![1.0], None); // 4
+    builder.add_param("attack".to_string(), vec![0.001], None); // 5
+    builder.add_param("sustain".to_string(), vec![1.0], None); // 6
+    builder.add_param("release".to_string(), vec![0.01], None); // 7
+    builder.add_param("loop".to_string(), vec![0.0], None); // 8
+    builder.add_param("startPos".to_string(), vec![0.0], None); // 9
+    builder.add_param("endPos".to_string(), vec![-1.0], None); // 10
 
     builder.create_control_ugen();
 
@@ -257,7 +257,11 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
     let ir = GraphIR::from_builder(name.to_string(), builder);
     match encode_synthdef(&ir) {
         Ok(bytes) => {
-            log::debug!("[SAMPLE] Generated {} synthdef ({} bytes)", name, bytes.len());
+            log::debug!(
+                "[SAMPLE] Generated {} synthdef ({} bytes)",
+                name,
+                bytes.len()
+            );
             Some((name.to_string(), bytes))
         }
         Err(e) => {
@@ -290,19 +294,19 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
     let mut builder = GraphBuilderInner::new();
 
     // Parameters
-    builder.add_param("out".to_string(), vec![0.0], None);           // 0
-    builder.add_param("bufnum".to_string(), vec![0.0], None);        // 1
-    builder.add_param("speed".to_string(), vec![1.0], None);         // 2 - time stretch
-    builder.add_param("pitch".to_string(), vec![1.0], None);         // 3 - pitch shift
-    builder.add_param("amp".to_string(), vec![1.0], None);           // 4
-    builder.add_param("gate".to_string(), vec![1.0], None);          // 5
-    builder.add_param("attack".to_string(), vec![0.01], None);       // 6
-    builder.add_param("sustain".to_string(), vec![1.0], None);       // 7
-    builder.add_param("release".to_string(), vec![0.1], None);       // 8
-    builder.add_param("startPos".to_string(), vec![0.0], None);      // 9 - normalized 0-1
-    builder.add_param("endPos".to_string(), vec![1.0], None);        // 10 - normalized 0-1
-    builder.add_param("windowSize".to_string(), vec![0.1], None);    // 11
-    builder.add_param("overlaps".to_string(), vec![8.0], None);      // 12
+    builder.add_param("out".to_string(), vec![0.0], None); // 0
+    builder.add_param("bufnum".to_string(), vec![0.0], None); // 1
+    builder.add_param("speed".to_string(), vec![1.0], None); // 2 - time stretch
+    builder.add_param("pitch".to_string(), vec![1.0], None); // 3 - pitch shift
+    builder.add_param("amp".to_string(), vec![1.0], None); // 4
+    builder.add_param("gate".to_string(), vec![1.0], None); // 5
+    builder.add_param("attack".to_string(), vec![0.01], None); // 6
+    builder.add_param("sustain".to_string(), vec![1.0], None); // 7
+    builder.add_param("release".to_string(), vec![0.1], None); // 8
+    builder.add_param("startPos".to_string(), vec![0.0], None); // 9 - normalized 0-1
+    builder.add_param("endPos".to_string(), vec![1.0], None); // 10 - normalized 0-1
+    builder.add_param("windowSize".to_string(), vec![0.1], None); // 11
+    builder.add_param("overlaps".to_string(), vec![8.0], None); // 12
 
     builder.create_control_ugen();
 
@@ -353,8 +357,14 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         "BinaryOpUGen".to_string(),
         Rate::Control,
         vec![
-            Input::Node { node_id: pos_range.0, output_index: 0 },
-            Input::Node { node_id: buf_dur.0, output_index: 0 },
+            Input::Node {
+                node_id: pos_range.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: buf_dur.0,
+                output_index: 0,
+            },
         ],
         1,
         2, // multiplication
@@ -364,7 +374,10 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         "BinaryOpUGen".to_string(),
         Rate::Control,
         vec![
-            Input::Node { node_id: scaled_dur.0, output_index: 0 },
+            Input::Node {
+                node_id: scaled_dur.0,
+                output_index: 0,
+            },
             param(2), // speed
         ],
         1,
@@ -378,7 +391,10 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         vec![
             param(9),  // start = startPos
             param(10), // end = endPos
-            Input::Node { node_id: actual_dur.0, output_index: 0 }, // dur
+            Input::Node {
+                node_id: actual_dur.0,
+                output_index: 0,
+            }, // dur
             Input::Constant(zero), // doneAction=0 (envelope handles freeing)
         ],
         1,
@@ -431,14 +447,17 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         "Warp1".to_string(),
         Rate::Audio,
         vec![
-            param(1),  // bufnum
-            Input::Node { node_id: pointer.0, output_index: 0 }, // pointer
-            param(3),  // freqScale (pitch)
+            param(1), // bufnum
+            Input::Node {
+                node_id: pointer.0,
+                output_index: 0,
+            }, // pointer
+            param(3), // freqScale (pitch)
             param(11), // windowSize
             Input::Constant(neg_one), // envbufnum = -1 (built-in Hann window)
             param(12), // overlaps
-            Input::Constant(zero),    // windowRandRatio = 0
-            Input::Constant(interp),  // interp = 4 (cubic)
+            Input::Constant(zero), // windowRandRatio = 0
+            Input::Constant(interp), // interp = 4 (cubic)
         ],
         num_channels as u32,
         0,
@@ -488,7 +507,10 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
             Rate::Audio,
             vec![
                 warp_ch,
-                Input::Node { node_id: env_node.0, output_index: 0 },
+                Input::Node {
+                    node_id: env_node.0,
+                    output_index: 0,
+                },
             ],
             1,
             2, // multiplication
@@ -499,7 +521,10 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
             "BinaryOpUGen".to_string(),
             Rate::Audio,
             vec![
-                Input::Node { node_id: env_mul_node.0, output_index: 0 },
+                Input::Node {
+                    node_id: env_mul_node.0,
+                    output_index: 0,
+                },
                 param(4), // amp
             ],
             1,
@@ -517,7 +542,11 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
     let ir = GraphIR::from_builder(name.to_string(), builder);
     match encode_synthdef(&ir) {
         Ok(bytes) => {
-            log::debug!("[SAMPLE] Generated {} synthdef ({} bytes)", name, bytes.len());
+            log::debug!(
+                "[SAMPLE] Generated {} synthdef ({} bytes)",
+                name,
+                bytes.len()
+            );
             Some((name.to_string(), bytes))
         }
         Err(e) => {

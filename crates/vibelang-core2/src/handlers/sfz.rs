@@ -5,6 +5,7 @@
 //! persistent round-robin state for proper sample alternation.
 
 use crate::backend::Backend;
+use crate::compat::RwLock;
 use crate::state::{SfzInstrumentState, SfzRegionState, State};
 use crate::traits::{Sfz, SfzTriggerInfo, SfzTriggerMode};
 use crate::types::{BufferId, SfzId};
@@ -13,7 +14,6 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use crate::compat::RwLock;
 
 /// Handler for SFZ instrument management.
 ///
@@ -66,7 +66,11 @@ impl<B: Backend> SfzHandler<B> {
             seq_length: region.seq_length.unwrap_or(0) as u32,
             ampeg_attack: region.opcodes.ampeg_attack.unwrap_or(0.001),
             ampeg_decay: region.opcodes.ampeg_decay.unwrap_or(0.0),
-            ampeg_sustain: region.opcodes.ampeg_sustain.map(|s| s / 100.0).unwrap_or(1.0),
+            ampeg_sustain: region
+                .opcodes
+                .ampeg_sustain
+                .map(|s| s / 100.0)
+                .unwrap_or(1.0),
             ampeg_release: region.opcodes.ampeg_release.unwrap_or(0.01),
             volume: region.opcodes.volume.unwrap_or(0.0),
             pan: region
@@ -276,10 +280,7 @@ impl<B: Backend> Sfz for SfzHandler<B> {
 
             let seq_len = regions[0].seq_length;
             let current_pos = {
-                let pos = instrument
-                    .round_robin_state
-                    .entry((note, 0))
-                    .or_insert(1);
+                let pos = instrument.round_robin_state.entry((note, 0)).or_insert(1);
                 let current = *pos;
                 *pos = if current >= seq_len { 1 } else { current + 1 };
                 current

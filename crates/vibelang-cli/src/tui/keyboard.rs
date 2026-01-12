@@ -650,6 +650,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "vibelang-cli (v1) is deprecated and being removed in v0.3.0"]
     fn test_black_keys() {
         let config = KeyboardConfig::german_layout();
 

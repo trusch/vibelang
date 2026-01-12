@@ -205,7 +205,8 @@ impl MidiRecording {
         // Find the pending note-on and set its duration
         if let Some(index) = self.pending_notes.remove(&(note, channel)) {
             if let Some(recorded_note) = self.notes.get_mut(index) {
-                let relative_beat = Beat::from_f64(current_beat.to_f64() - self.start_beat.to_f64());
+                let relative_beat =
+                    Beat::from_f64(current_beat.to_f64() - self.start_beat.to_f64());
                 let duration = Beat::from_f64(relative_beat.to_f64() - recorded_note.beat.to_f64());
                 recorded_note.duration = Some(duration);
             }
@@ -226,7 +227,8 @@ impl MidiRecording {
         }
 
         let relative_beat = Beat::from_f64(current_beat.to_f64() - self.start_beat.to_f64());
-        self.cc_events.push(RecordedMidiCc::new(cc, value, channel, relative_beat));
+        self.cc_events
+            .push(RecordedMidiCc::new(cc, value, channel, relative_beat));
     }
 
     /// Stop recording and finalize.
@@ -239,7 +241,8 @@ impl MidiRecording {
         for (_key, index) in self.pending_notes.drain() {
             if let Some(recorded_note) = self.notes.get_mut(index) {
                 if recorded_note.duration.is_none() {
-                    let duration = Beat::from_f64(relative_end.to_f64() - recorded_note.beat.to_f64());
+                    let duration =
+                        Beat::from_f64(relative_end.to_f64() - recorded_note.beat.to_f64());
                     recorded_note.duration = Some(duration);
                 }
             }
@@ -281,7 +284,12 @@ impl MidiRecording {
     /// * `quantize_beats` - Grid size for quantization (e.g., 0.25 for 16th notes).
     ///   Use 0.0 for no quantization.
     /// * `voice` - The voice ID to assign to the pattern.
-    pub fn to_pattern(&self, name: impl Into<String>, quantize_beats: f64, voice: VoiceId) -> PatternConfig {
+    pub fn to_pattern(
+        &self,
+        name: impl Into<String>,
+        quantize_beats: f64,
+        voice: VoiceId,
+    ) -> PatternConfig {
         let duration = self.duration();
         let length = if quantize_beats > 0.0 {
             // Round up to nearest bar
@@ -319,9 +327,9 @@ impl MidiRecording {
         }
 
         // Sort steps by beat position
-        config.steps.sort_by(|a, b| {
-            a.beat.to_f64().partial_cmp(&b.beat.to_f64()).unwrap()
-        });
+        config
+            .steps
+            .sort_by(|a, b| a.beat.to_f64().partial_cmp(&b.beat.to_f64()).unwrap());
 
         config
     }
@@ -339,13 +347,16 @@ impl MidiRecording {
                 note.beat.to_f64()
             };
 
-            let duration = note.duration.map(|d| {
-                if quantize_beats > 0.0 {
-                    Self::quantize_beat(d.to_f64(), quantize_beats).max(quantize_beats)
-                } else {
-                    d.to_f64()
-                }
-            }).unwrap_or(0.25);
+            let duration = note
+                .duration
+                .map(|d| {
+                    if quantize_beats > 0.0 {
+                        Self::quantize_beat(d.to_f64(), quantize_beats).max(quantize_beats)
+                    } else {
+                        d.to_f64()
+                    }
+                })
+                .unwrap_or(0.25);
 
             events.push((beat_pos, note.note, note.velocity, duration));
         }
@@ -438,8 +449,7 @@ mod tests {
     #[test]
     fn test_recording_channel_filter() {
         let device_id = MidiDeviceId::new(0);
-        let mut recording = MidiRecording::new(device_id, Beat::ZERO)
-            .with_channel_filter(0);
+        let mut recording = MidiRecording::new(device_id, Beat::ZERO).with_channel_filter(0);
 
         // Record notes on different channels
         recording.record_note_on(60, 100, 0, Beat::from_f64(0.0)); // Should be recorded

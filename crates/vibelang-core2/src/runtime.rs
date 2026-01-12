@@ -26,35 +26,36 @@
 //! ```
 
 use crate::backend::Backend;
-use crate::compat::{
-    channel, Instant, Receiver, ReceiverExt, RwLock, Sender, SenderExt,
-};
+use crate::compat::{channel, Instant, Receiver, ReceiverExt, RwLock, Sender, SenderExt};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::compat::{timeout, Duration};
-use crate::handlers::{
-    EffectsHandler, FadesHandler, GroupsHandler, MelodiesHandler, ModulatorsHandler, PatternsHandler,
-    SamplesHandler, SequencesHandler, SfzHandler, SynthDefsHandler, TransportHandler, VoicesHandler,
-};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::handlers::RecordingsHandler;
-use crate::message::{
-    EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, ModulatorMessage, PatternMessage,
-    SampleMessage, SequenceMessage, SfzMessage, SyncMessage, SynthDefMessage, TransportMessage, VoiceMessage,
+use crate::handlers::{
+    EffectsHandler, FadesHandler, GroupsHandler, MelodiesHandler, ModulatorsHandler,
+    PatternsHandler, SamplesHandler, SequencesHandler, SfzHandler, SynthDefsHandler,
+    TransportHandler, VoicesHandler,
 };
+#[cfg(feature = "midi")]
+use crate::message::MidiMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::message::RecordingMessage;
 use crate::message::ReloadMessage;
-#[cfg(feature = "midi")]
-use crate::message::MidiMessage;
+use crate::message::{
+    EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, ModulatorMessage,
+    PatternMessage, SampleMessage, SequenceMessage, SfzMessage, SyncMessage, SynthDefMessage,
+    TransportMessage, VoiceMessage,
+};
 use crate::reload;
 use crate::state::State;
-use crate::traits::{
-    Effects, Fades, Groups, Melodies, Modulators, Patterns, Samples, Sequences, Sfz, SynthDefs, Transport, Voices,
-};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::traits::Recordings;
 #[cfg(feature = "midi")]
 use crate::traits::Midi;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::traits::Recordings;
+use crate::traits::{
+    Effects, Fades, Groups, Melodies, Modulators, Patterns, Samples, Sequences, Sfz, SynthDefs,
+    Transport, Voices,
+};
 use crate::{Error, Result};
 use std::sync::Arc;
 
@@ -167,7 +168,10 @@ impl<B: Backend> Runtime<B> {
     ///
     /// Equivalent to `runtime.handle().send(msg).await`.
     pub async fn send(&self, msg: Message) -> Result<()> {
-        self.tx.send_async(msg).await.map_err(|_| Error::ChannelClosed)
+        self.tx
+            .send_async(msg)
+            .await
+            .map_err(|_| Error::ChannelClosed)
     }
 
     /// Run the main loop until the channel is closed.
@@ -308,7 +312,9 @@ impl<B: Backend> Runtime<B> {
 
             // Groups
             Message::Group(group_msg) => match group_msg {
-                GroupMessage::Create { id, name, parent } => self.groups.create(id, &name, parent).await,
+                GroupMessage::Create { id, name, parent } => {
+                    self.groups.create(id, &name, parent).await
+                }
                 GroupMessage::Delete { id } => self.groups.delete(id).await,
                 GroupMessage::SetParam { id, param, value } => {
                     self.groups.set_param(id, &param, value).await
@@ -396,9 +402,7 @@ impl<B: Backend> Runtime<B> {
 
             // Reload - apply new script state
             Message::Reload(reload_msg) => match *reload_msg {
-                ReloadMessage::Apply { state: new_state } => {
-                    self.apply_reload(new_state).await
-                }
+                ReloadMessage::Apply { state: new_state } => self.apply_reload(new_state).await,
             },
 
             // Sync - synchronize with backend and notify caller
@@ -427,7 +431,11 @@ impl<B: Backend> Runtime<B> {
                     channel,
                     note,
                     velocity,
-                } => self.midi.send_note_on(device, channel, note, velocity).await,
+                } => {
+                    self.midi
+                        .send_note_on(device, channel, note, velocity)
+                        .await
+                }
                 MidiMessage::NoteOff {
                     device,
                     channel,
@@ -444,7 +452,11 @@ impl<B: Backend> Runtime<B> {
                     channel,
                     note,
                     velocity,
-                } => self.midi.send_note_on(device, channel, note, velocity).await,
+                } => {
+                    self.midi
+                        .send_note_on(device, channel, note, velocity)
+                        .await
+                }
                 MidiMessage::SendNoteOff {
                     device,
                     channel,
@@ -458,9 +470,7 @@ impl<B: Backend> Runtime<B> {
                 } => self.midi.send_cc(device, channel, cc, value).await,
 
                 // Recording
-                MidiMessage::StartRecording { device } => {
-                    self.midi.start_recording(device).await
-                }
+                MidiMessage::StartRecording { device } => self.midi.start_recording(device).await,
                 MidiMessage::StartRecordingChannel { device, channel } => {
                     self.midi.start_recording_channel(device, channel).await
                 }
@@ -534,7 +544,9 @@ impl<B: Backend> Runtime<B> {
                 }
                 RecordingMessage::Stop { id } => self.recordings.stop(id).await,
                 RecordingMessage::Cancel { id } => self.recordings.cancel(id).await,
-                RecordingMessage::BufferAllocated { id } => self.recordings.buffer_allocated(id).await,
+                RecordingMessage::BufferAllocated { id } => {
+                    self.recordings.buffer_allocated(id).await
+                }
                 RecordingMessage::Completed { id } => {
                     // This is handled internally by tick(), but can also be triggered externally
                     tracing::debug!("Recording {} completed via message", id.0);
@@ -604,7 +616,11 @@ impl<B: Backend> Runtime<B> {
 
         // Apply time signature change if needed
         if let Some(time_sig) = diff.time_sig_changed {
-            tracing::debug!("Reload: changing time signature to {}/{}", time_sig.numerator, time_sig.denominator);
+            tracing::debug!(
+                "Reload: changing time signature to {}/{}",
+                time_sig.numerator,
+                time_sig.denominator
+            );
             self.transport.set_time_signature(time_sig).await?;
         }
 
@@ -730,7 +746,11 @@ impl<B: Backend> Runtime<B> {
 
         // Create new modulators (before voices so modulations can reference them)
         for (id, config) in &diff.modulators.created {
-            tracing::debug!("Reload: creating modulator {:?} with synthdef '{}'", id, config.synthdef);
+            tracing::debug!(
+                "Reload: creating modulator {:?} with synthdef '{}'",
+                id,
+                config.synthdef
+            );
             if let Err(e) = self.modulators.create(*id, config.clone()).await {
                 tracing::error!("Reload: failed to create modulator {:?}: {}", id, e);
             }
@@ -771,7 +791,11 @@ impl<B: Backend> Runtime<B> {
         // Create new effects
         for (id, config) in &diff.effects.created {
             tracing::debug!("Reload: creating effect {:?}", id);
-            if let Err(e) = self.effects.add(*id, config.group, &config.synthdef, &config.params).await {
+            if let Err(e) = self
+                .effects
+                .add(*id, config.group, &config.synthdef, &config.params)
+                .await
+            {
                 tracing::error!("Reload: failed to create effect {:?}: {}", id, e);
             }
         }
@@ -784,11 +808,21 @@ impl<B: Backend> Runtime<B> {
         for (id, new_config) in &diff.groups.updated {
             // Apply all params from the new config
             for (param, value) in &new_config.params {
-                tracing::debug!("Reload: updating group {:?} param {} to {}", id, param, value);
+                tracing::debug!(
+                    "Reload: updating group {:?} param {} to {}",
+                    id,
+                    param,
+                    value
+                );
                 let _ = self.groups.set_param(*id, param, *value).await;
             }
             // Apply mute/solo state
-            tracing::debug!("Reload: updating group {:?} muted={} soloed={}", id, new_config.muted, new_config.soloed);
+            tracing::debug!(
+                "Reload: updating group {:?} muted={} soloed={}",
+                id,
+                new_config.muted,
+                new_config.soloed
+            );
             let _ = self.groups.mute(*id, new_config.muted).await;
             let _ = self.groups.solo(*id, new_config.soloed).await;
         }
@@ -869,7 +903,9 @@ impl<B: Backend> Runtime<B> {
             // Save current playback state
             let (was_playing, looping) = {
                 let state = self.state.read().await;
-                state.sequences.get(id)
+                state
+                    .sequences
+                    .get(id)
                     .map(|s| (s.playing, s.looping))
                     .unwrap_or((false, false))
             };
@@ -903,7 +939,12 @@ impl<B: Backend> Runtime<B> {
         // Update effects - apply all params from new config
         for (id, new_config) in &diff.effects.updated {
             for (param, value) in &new_config.params {
-                tracing::debug!("Reload: updating effect {:?} param {} to {}", id, param, value);
+                tracing::debug!(
+                    "Reload: updating effect {:?} param {} to {}",
+                    id,
+                    param,
+                    value
+                );
                 let _ = self.effects.set_param(*id, param, *value).await;
             }
         }
@@ -911,7 +952,12 @@ impl<B: Backend> Runtime<B> {
         // Update modulators - apply all params from new config
         for (id, new_config) in &diff.modulators.updated {
             for (param, value) in &new_config.params {
-                tracing::debug!("Reload: updating modulator {:?} param {} to {}", id, param, value);
+                tracing::debug!(
+                    "Reload: updating modulator {:?} param {} to {}",
+                    id,
+                    param,
+                    value
+                );
                 let _ = self.modulators.set_param(*id, param, *value).await;
             }
         }
@@ -943,7 +989,11 @@ impl<B: Backend> Runtime<B> {
             let (should_start, pattern_length) = {
                 let state = self.state.read().await;
                 let should_start = state.patterns.get(id).is_some_and(|p| !p.playing);
-                let length = state.patterns.get(id).map(|p| p.config.length).unwrap_or(crate::types::Beat::from_f64(4.0));
+                let length = state
+                    .patterns
+                    .get(id)
+                    .map(|p| p.config.length)
+                    .unwrap_or(crate::types::Beat::from_f64(4.0));
                 (should_start, length)
             };
             if should_start {
@@ -957,7 +1007,11 @@ impl<B: Backend> Runtime<B> {
                     base_position
                 } else {
                     let pos = base_position + crate::types::Beat::from_f64(0.001);
-                    if pos >= pattern_length { pos - pattern_length } else { pos }
+                    if pos >= pattern_length {
+                        pos - pattern_length
+                    } else {
+                        pos
+                    }
                 };
                 if let Some(pattern) = state.patterns.get_mut(id) {
                     pattern.loop_position = synced_position;
@@ -971,7 +1025,11 @@ impl<B: Backend> Runtime<B> {
             let (should_start, melody_length) = {
                 let state = self.state.read().await;
                 let should_start = state.melodies.get(id).is_some_and(|m| !m.playing);
-                let length = state.melodies.get(id).map(|m| m.config.length).unwrap_or(crate::types::Beat::from_f64(4.0));
+                let length = state
+                    .melodies
+                    .get(id)
+                    .map(|m| m.config.length)
+                    .unwrap_or(crate::types::Beat::from_f64(4.0));
                 (should_start, length)
             };
             if should_start {
@@ -987,7 +1045,11 @@ impl<B: Backend> Runtime<B> {
                 } else {
                     // Mid-song reload - add epsilon to avoid re-triggering
                     let pos = base_position + crate::types::Beat::from_f64(0.001);
-                    if pos >= melody_length { pos - melody_length } else { pos }
+                    if pos >= melody_length {
+                        pos - melody_length
+                    } else {
+                        pos
+                    }
                 };
                 if let Some(melody) = state.melodies.get_mut(id) {
                     melody.loop_position = synced_position;
@@ -1001,7 +1063,11 @@ impl<B: Backend> Runtime<B> {
             let (should_start, sequence_length) = {
                 let state = self.state.read().await;
                 let should_start = state.sequences.get(id).is_some_and(|s| !s.playing);
-                let length = state.sequences.get(id).map(|s| s.config.length).unwrap_or(crate::types::Beat::from_f64(16.0));
+                let length = state
+                    .sequences
+                    .get(id)
+                    .map(|s| s.config.length)
+                    .unwrap_or(crate::types::Beat::from_f64(16.0));
                 (should_start, length)
             };
             if should_start {
@@ -1016,7 +1082,11 @@ impl<B: Backend> Runtime<B> {
                     base_position
                 } else {
                     let pos = base_position + crate::types::Beat::from_f64(0.001);
-                    if pos >= sequence_length { pos - sequence_length } else { pos }
+                    if pos >= sequence_length {
+                        pos - sequence_length
+                    } else {
+                        pos
+                    }
                 };
                 if let Some(sequence) = state.sequences.get_mut(id) {
                     sequence.position = synced_position;
@@ -1057,7 +1127,10 @@ impl RuntimeHandle {
     ///
     /// Returns an error if the runtime has been dropped.
     pub async fn send(&self, msg: Message) -> Result<()> {
-        self.tx.send_async(msg).await.map_err(|_| Error::ChannelClosed)
+        self.tx
+            .send_async(msg)
+            .await
+            .map_err(|_| Error::ChannelClosed)
     }
 
     /// Try to send a message without waiting.
@@ -1076,7 +1149,9 @@ impl RuntimeHandle {
         use futures::Sink;
         let mut tx = self.tx.clone();
         // In WASM, try_send is not directly available, but we can use start_send
-        std::pin::Pin::new(&mut tx).start_send(msg).map_err(|_| Error::ChannelClosed)
+        std::pin::Pin::new(&mut tx)
+            .start_send(msg)
+            .map_err(|_| Error::ChannelClosed)
     }
 
     /// Send a message, blocking the current thread until it's queued.
@@ -1099,7 +1174,8 @@ impl RuntimeHandle {
     /// Use this after queueing synthdefs to ensure they're loaded before creating synths.
     pub async fn sync_and_wait(&self) -> Result<()> {
         let (tx, rx) = crate::compat::oneshot();
-        self.send(Message::Sync(SyncMessage::SyncAndNotify { notify: tx })).await?;
+        self.send(Message::Sync(SyncMessage::SyncAndNotify { notify: tx }))
+            .await?;
         rx.await.map_err(|_| Error::ChannelClosed)
     }
 }
@@ -1131,7 +1207,11 @@ mod tests {
     impl Backend for MockBackend {
         type Error = MockError;
 
-        async fn load_synthdef(&self, _name: &str, _data: &[u8]) -> std::result::Result<(), Self::Error> {
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -1159,7 +1239,11 @@ mod tests {
             Ok(())
         }
 
-        async fn run_node(&self, _node: NodeId, _running: bool) -> std::result::Result<(), Self::Error> {
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -1206,7 +1290,11 @@ mod tests {
             })
         }
 
-        async fn write_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<(), Self::Error> {
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -1232,7 +1320,9 @@ mod tests {
 
         // Can send messages
         handle
-            .send(Message::Transport(TransportMessage::SetTempo { bpm: 140.0 }))
+            .send(Message::Transport(TransportMessage::SetTempo {
+                bpm: 140.0,
+            }))
             .await
             .unwrap();
     }
@@ -1243,7 +1333,9 @@ mod tests {
 
         // Send a message
         runtime
-            .send(Message::Transport(TransportMessage::SetTempo { bpm: 140.0 }))
+            .send(Message::Transport(TransportMessage::SetTempo {
+                bpm: 140.0,
+            }))
             .await
             .unwrap();
 
@@ -1268,7 +1360,14 @@ mod tests {
 
         // Create a group
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
+            .send(
+                GroupMessage::Create {
+                    id: GroupId::new(1),
+                    name: "test_group".to_string(),
+                    parent: None,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
@@ -1281,7 +1380,12 @@ mod tests {
 
         // Delete the group
         runtime
-            .send(GroupMessage::Delete { id: GroupId::new(1) }.into())
+            .send(
+                GroupMessage::Delete {
+                    id: GroupId::new(1),
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
@@ -1303,14 +1407,27 @@ mod tests {
 
         // First register the synthdef
         runtime
-            .send(SynthDefMessage::Load { name: "simple_sine".to_string(), data: vec![] }.into())
+            .send(
+                SynthDefMessage::Load {
+                    name: "simple_sine".to_string(),
+                    data: vec![],
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
 
         // Create a group
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
+            .send(
+                GroupMessage::Create {
+                    id: GroupId::new(1),
+                    name: "test_group".to_string(),
+                    parent: None,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
@@ -1318,7 +1435,13 @@ mod tests {
         // Create a voice
         let config = VoiceConfig::new("test_voice", "simple_sine", GroupId::new(1));
         runtime
-            .send(VoiceMessage::Create { id: VoiceId::new(1), config }.into())
+            .send(
+                VoiceMessage::Create {
+                    id: VoiceId::new(1),
+                    config,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
@@ -1331,14 +1454,25 @@ mod tests {
 
         // Trigger the voice
         runtime
-            .send(VoiceMessage::Trigger { id: VoiceId::new(1), params: ParamMap::new() }.into())
+            .send(
+                VoiceMessage::Trigger {
+                    id: VoiceId::new(1),
+                    params: ParamMap::new(),
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
 
         // Delete voice
         runtime
-            .send(VoiceMessage::Delete { id: VoiceId::new(1) }.into())
+            .send(
+                VoiceMessage::Delete {
+                    id: VoiceId::new(1),
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
@@ -1349,19 +1483,13 @@ mod tests {
         let mut runtime = Runtime::new(MockBackend);
 
         // Start transport
-        runtime
-            .send(TransportMessage::Start.into())
-            .await
-            .unwrap();
+        runtime.send(TransportMessage::Start.into()).await.unwrap();
         runtime.tick().await;
 
         assert!(runtime.transport.is_playing().await);
 
         // Stop transport
-        runtime
-            .send(TransportMessage::Stop.into())
-            .await
-            .unwrap();
+        runtime.send(TransportMessage::Stop.into()).await.unwrap();
         runtime.tick().await;
 
         assert!(!runtime.transport.is_playing().await);
@@ -1391,14 +1519,28 @@ mod tests {
 
         // Create parent group
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
+            .send(
+                GroupMessage::Create {
+                    id: GroupId::new(1),
+                    name: "test_group".to_string(),
+                    parent: None,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
 
         // Create child group
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(2), name: "child_group".to_string(), parent: Some(GroupId::new(1)) }.into())
+            .send(
+                GroupMessage::Create {
+                    id: GroupId::new(2),
+                    name: "child_group".to_string(),
+                    parent: Some(GroupId::new(1)),
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
@@ -1423,20 +1565,54 @@ mod tests {
         let mut runtime = Runtime::new(MockBackend);
 
         // First register the synthdef
-        runtime.send(SynthDefMessage::Load { name: "test".to_string(), data: vec![] }.into()).await.unwrap();
+        runtime
+            .send(
+                SynthDefMessage::Load {
+                    name: "test".to_string(),
+                    data: vec![],
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
         runtime.tick().await;
 
         // Setup: create group and voice
-        runtime.send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into()).await.unwrap();
-        runtime.send(VoiceMessage::Create {
-            id: VoiceId::new(1),
-            config: VoiceConfig::new("test_voice", "test", GroupId::new(1))
-        }.into()).await.unwrap();
+        runtime
+            .send(
+                GroupMessage::Create {
+                    id: GroupId::new(1),
+                    name: "test_group".to_string(),
+                    parent: None,
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+        runtime
+            .send(
+                VoiceMessage::Create {
+                    id: VoiceId::new(1),
+                    config: VoiceConfig::new("test_voice", "test", GroupId::new(1)),
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
         runtime.tick().await;
 
         // Create pattern
         let config = PatternConfig::new("test_pattern", VoiceId::new(1), Beat::from_f64(4.0));
-        runtime.send(PatternMessage::Create { id: PatternId::new(1), config }.into()).await.unwrap();
+        runtime
+            .send(
+                PatternMessage::Create {
+                    id: PatternId::new(1),
+                    config,
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
         runtime.tick().await;
 
         // Verify pattern exists
@@ -1446,15 +1622,39 @@ mod tests {
         }
 
         // Start pattern
-        runtime.send(PatternMessage::Start { id: PatternId::new(1) }.into()).await.unwrap();
+        runtime
+            .send(
+                PatternMessage::Start {
+                    id: PatternId::new(1),
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
         runtime.tick().await;
 
         // Stop pattern
-        runtime.send(PatternMessage::Stop { id: PatternId::new(1) }.into()).await.unwrap();
+        runtime
+            .send(
+                PatternMessage::Stop {
+                    id: PatternId::new(1),
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
         runtime.tick().await;
 
         // Delete pattern
-        runtime.send(PatternMessage::Delete { id: PatternId::new(1) }.into()).await.unwrap();
+        runtime
+            .send(
+                PatternMessage::Delete {
+                    id: PatternId::new(1),
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
         runtime.tick().await;
 
         {
@@ -1470,8 +1670,14 @@ mod tests {
         let handle2 = handle1.clone();
 
         // Both handles should work
-        handle1.send(TransportMessage::SetTempo { bpm: 120.0 }.into()).await.unwrap();
-        handle2.send(TransportMessage::SetTempo { bpm: 130.0 }.into()).await.unwrap();
+        handle1
+            .send(TransportMessage::SetTempo { bpm: 120.0 }.into())
+            .await
+            .unwrap();
+        handle2
+            .send(TransportMessage::SetTempo { bpm: 130.0 }.into())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -1509,18 +1715,38 @@ mod tests {
 
         // Create two groups
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
+            .send(
+                GroupMessage::Create {
+                    id: GroupId::new(1),
+                    name: "test_group".to_string(),
+                    parent: None,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(2), name: "test_group2".to_string(), parent: None }.into())
+            .send(
+                GroupMessage::Create {
+                    id: GroupId::new(2),
+                    name: "test_group2".to_string(),
+                    parent: None,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
 
         // Solo group 1
         runtime
-            .send(GroupMessage::Solo { id: GroupId::new(1), solo: true }.into())
+            .send(
+                GroupMessage::Solo {
+                    id: GroupId::new(1),
+                    solo: true,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
@@ -1536,7 +1762,13 @@ mod tests {
 
         // Unsolo group 1
         runtime
-            .send(GroupMessage::Solo { id: GroupId::new(1), solo: false }.into())
+            .send(
+                GroupMessage::Solo {
+                    id: GroupId::new(1),
+                    solo: false,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
@@ -1558,14 +1790,27 @@ mod tests {
 
         // Create a group
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
+            .send(
+                GroupMessage::Create {
+                    id: GroupId::new(1),
+                    name: "test_group".to_string(),
+                    parent: None,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
 
         // Mute the group
         runtime
-            .send(GroupMessage::Mute { id: GroupId::new(1), muted: true }.into())
+            .send(
+                GroupMessage::Mute {
+                    id: GroupId::new(1),
+                    muted: true,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
@@ -1579,7 +1824,13 @@ mod tests {
 
         // Unmute the group
         runtime
-            .send(GroupMessage::Mute { id: GroupId::new(1), muted: false }.into())
+            .send(
+                GroupMessage::Mute {
+                    id: GroupId::new(1),
+                    muted: false,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
@@ -1632,7 +1883,14 @@ mod tests {
 
         // First create a group normally
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
+            .send(
+                GroupMessage::Create {
+                    id: GroupId::new(1),
+                    name: "test_group".to_string(),
+                    parent: None,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;
@@ -1641,14 +1899,17 @@ mod tests {
         let mut new_state = ScriptState::new();
         let mut params = ParamMap::new();
         params.insert("amp".to_string(), 0.5);
-        new_state.add_group(GroupId::new(1), GroupConfig {
-            name: "test".to_string(),
-            parent: None,
-            params,
-            effects: Vec::new(),
-            muted: false,
-            soloed: false,
-        });
+        new_state.add_group(
+            GroupId::new(1),
+            GroupConfig {
+                name: "test".to_string(),
+                parent: None,
+                params,
+                effects: Vec::new(),
+                muted: false,
+                soloed: false,
+            },
+        );
 
         runtime
             .send(ReloadMessage::Apply { state: new_state }.into())
@@ -1674,7 +1935,14 @@ mod tests {
 
         // First create a group
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
+            .send(
+                GroupMessage::Create {
+                    id: GroupId::new(1),
+                    name: "test_group".to_string(),
+                    parent: None,
+                }
+                .into(),
+            )
             .await
             .unwrap();
         runtime.tick().await;

@@ -5,31 +5,25 @@
 use std::fs;
 use std::path::Path;
 
-mod parse;
-mod types;
 mod error;
 pub mod opcodes;
+mod parse;
 pub mod path_utils;
+mod types;
 
 // Export main types
-pub use types::{SfzFile, SfzSection, SfzSectionType};
 pub use error::Error;
+pub use types::{SfzFile, SfzSection, SfzSectionType};
 
 // Re-export available opcode traits
 pub use opcodes::categories::{
-    SoundSourceOpcodes,
-    RegionLogicOpcodes,
-    PerformanceOpcodes,
-    AmplitudeEnvelopeOpcodes,
-    PitchEnvelopeOpcodes,
-    FilterOpcodes,
-    FilterEnvelopeOpcodes,
-    SamplePlaybackOpcodes,
+    AmplitudeEnvelopeOpcodes, FilterEnvelopeOpcodes, FilterOpcodes, PerformanceOpcodes,
+    PitchEnvelopeOpcodes, RegionLogicOpcodes, SamplePlaybackOpcodes, SoundSourceOpcodes,
 };
-pub use opcodes::{SfzOpcodes, LoopMode, TriggerMode, OffMode};
+pub use opcodes::{LoopMode, OffMode, SfzOpcodes, TriggerMode};
 
 // Export path utilities
-pub use path_utils::{normalize_path, combine_sample_path};
+pub use path_utils::{combine_sample_path, normalize_path};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -44,8 +38,8 @@ pub fn parse_sfz_file<P: AsRef<Path>>(path: P) -> Result<SfzFile> {
     let mut sfz = parse_sfz_str(&content)?;
 
     // Use the absolute path for resolving sample paths
-    let absolute_path = fs::canonicalize(path.as_ref())
-        .unwrap_or_else(|_| path.as_ref().to_path_buf());
+    let absolute_path =
+        fs::canonicalize(path.as_ref()).unwrap_or_else(|_| path.as_ref().to_path_buf());
 
     sfz.source_file = Some(absolute_path);
     Ok(sfz)

@@ -8,18 +8,18 @@
 //! - Undo/redo functionality
 //! - Deterministic behavior
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::traits::RecordingConfig;
 use crate::traits::{
     FadeConfig, FadeTarget, MelodyConfig, ModulatorConfig, PatternConfig, SampleConfig,
     SequenceConfig, VoiceConfig,
 };
 #[cfg(not(target_arch = "wasm32"))]
-use crate::traits::RecordingConfig;
+use crate::types::RecordingId;
 use crate::types::{
     Beat, EffectId, GroupId, MelodyId, ModulatorId, ParamMap, PatternId, SampleId, SequenceId,
     SfzId, TimeSignature, VoiceId,
 };
-#[cfg(not(target_arch = "wasm32"))]
-use crate::types::RecordingId;
 use std::path::PathBuf;
 
 // =============================================================================
@@ -130,13 +130,21 @@ pub enum RecordingMessage {
 #[derive(Clone, Debug)]
 pub enum GroupMessage {
     /// Create a new group.
-    Create { id: GroupId, name: String, parent: Option<GroupId> },
+    Create {
+        id: GroupId,
+        name: String,
+        parent: Option<GroupId>,
+    },
 
     /// Delete a group.
     Delete { id: GroupId },
 
     /// Set a group parameter.
-    SetParam { id: GroupId, param: String, value: f32 },
+    SetParam {
+        id: GroupId,
+        param: String,
+        value: f32,
+    },
 
     /// Mute or unmute a group.
     Mute { id: GroupId, muted: bool },
@@ -185,7 +193,11 @@ pub enum VoiceMessage {
     Mute { id: VoiceId, muted: bool },
 
     /// Set a voice parameter on all active synths.
-    SetParam { id: VoiceId, param: String, value: f32 },
+    SetParam {
+        id: VoiceId,
+        param: String,
+        value: f32,
+    },
 }
 
 // =============================================================================
@@ -196,7 +208,10 @@ pub enum VoiceMessage {
 #[derive(Clone, Debug)]
 pub enum PatternMessage {
     /// Create a new pattern.
-    Create { id: PatternId, config: PatternConfig },
+    Create {
+        id: PatternId,
+        config: PatternConfig,
+    },
 
     /// Delete a pattern.
     Delete { id: PatternId },
@@ -208,7 +223,11 @@ pub enum PatternMessage {
     Stop { id: PatternId },
 
     /// Set a pattern parameter.
-    SetParam { id: PatternId, param: String, value: f32 },
+    SetParam {
+        id: PatternId,
+        param: String,
+        value: f32,
+    },
 }
 
 // =============================================================================
@@ -279,7 +298,11 @@ pub enum EffectMessage {
     Remove { id: EffectId },
 
     /// Set an effect parameter.
-    SetParam { id: EffectId, param: String, value: f32 },
+    SetParam {
+        id: EffectId,
+        param: String,
+        value: f32,
+    },
 }
 
 // =============================================================================
@@ -356,20 +379,24 @@ pub enum MidiMessage {
     // =========================================================================
     // Device Management
     // =========================================================================
-
     /// Open a MIDI input device.
-    OpenInput { device: crate::types::ids::MidiDeviceId },
+    OpenInput {
+        device: crate::types::ids::MidiDeviceId,
+    },
 
     /// Open a MIDI output device.
-    OpenOutput { device: crate::types::ids::MidiDeviceId },
+    OpenOutput {
+        device: crate::types::ids::MidiDeviceId,
+    },
 
     /// Close a MIDI device (input or output).
-    CloseDevice { device: crate::types::ids::MidiDeviceId },
+    CloseDevice {
+        device: crate::types::ids::MidiDeviceId,
+    },
 
     // =========================================================================
     // Note/CC Output
     // =========================================================================
-
     /// Send a MIDI note-on.
     NoteOn {
         device: crate::types::ids::MidiDeviceId,
@@ -419,9 +446,10 @@ pub enum MidiMessage {
     // =========================================================================
     // Recording
     // =========================================================================
-
     /// Start recording MIDI input from a device.
-    StartRecording { device: crate::types::ids::MidiDeviceId },
+    StartRecording {
+        device: crate::types::ids::MidiDeviceId,
+    },
 
     /// Start recording MIDI input from a device on a specific channel.
     StartRecordingChannel {
@@ -438,26 +466,34 @@ pub enum MidiMessage {
     // =========================================================================
     // Clock Output
     // =========================================================================
-
     /// Enable MIDI clock output to a device.
-    EnableClockOutput { device: crate::types::ids::MidiDeviceId },
+    EnableClockOutput {
+        device: crate::types::ids::MidiDeviceId,
+    },
 
     /// Disable MIDI clock output from a device.
-    DisableClockOutput { device: crate::types::ids::MidiDeviceId },
+    DisableClockOutput {
+        device: crate::types::ids::MidiDeviceId,
+    },
 
     /// Send MIDI Start message.
-    SendStart { device: crate::types::ids::MidiDeviceId },
+    SendStart {
+        device: crate::types::ids::MidiDeviceId,
+    },
 
     /// Send MIDI Stop message.
-    SendStop { device: crate::types::ids::MidiDeviceId },
+    SendStop {
+        device: crate::types::ids::MidiDeviceId,
+    },
 
     /// Send MIDI Continue message.
-    SendContinue { device: crate::types::ids::MidiDeviceId },
+    SendContinue {
+        device: crate::types::ids::MidiDeviceId,
+    },
 
     // =========================================================================
     // Route Management
     // =========================================================================
-
     /// Add a keyboard route mapping MIDI input to a voice.
     AddKeyboardRoute {
         device: crate::types::ids::MidiDeviceId,
@@ -840,7 +876,9 @@ mod tests {
     fn test_all_transport_messages() {
         let msgs = vec![
             TransportMessage::SetTempo { bpm: 120.0 },
-            TransportMessage::SetTimeSignature { time_sig: TimeSignature::default() },
+            TransportMessage::SetTimeSignature {
+                time_sig: TimeSignature::default(),
+            },
             TransportMessage::Seek { beat: Beat::ZERO },
             TransportMessage::Start,
             TransportMessage::Stop,
@@ -855,11 +893,27 @@ mod tests {
     #[test]
     fn test_all_group_messages() {
         let msgs = vec![
-            GroupMessage::Create { id: GroupId::new(1), name: "test".to_string(), parent: None },
-            GroupMessage::Delete { id: GroupId::new(1) },
-            GroupMessage::SetParam { id: GroupId::new(1), param: "amp".to_string(), value: 0.5 },
-            GroupMessage::Mute { id: GroupId::new(1), muted: true },
-            GroupMessage::Solo { id: GroupId::new(1), solo: true },
+            GroupMessage::Create {
+                id: GroupId::new(1),
+                name: "test".to_string(),
+                parent: None,
+            },
+            GroupMessage::Delete {
+                id: GroupId::new(1),
+            },
+            GroupMessage::SetParam {
+                id: GroupId::new(1),
+                param: "amp".to_string(),
+                value: 0.5,
+            },
+            GroupMessage::Mute {
+                id: GroupId::new(1),
+                muted: true,
+            },
+            GroupMessage::Solo {
+                id: GroupId::new(1),
+                solo: true,
+            },
             GroupMessage::Finalize,
         ];
 
@@ -876,14 +930,31 @@ mod tests {
         let msgs = vec![
             VoiceMessage::Create {
                 id: VoiceId::new(1),
-                config: VoiceConfig::new("test_voice", "sine", GroupId::new(1))
+                config: VoiceConfig::new("test_voice", "sine", GroupId::new(1)),
             },
-            VoiceMessage::Delete { id: VoiceId::new(1) },
-            VoiceMessage::Trigger { id: VoiceId::new(1), params: ParamBuilder::new().build() },
-            VoiceMessage::Stop { id: VoiceId::new(1) },
-            VoiceMessage::NoteOn { voice: VoiceId::new(1), note: 60, velocity: 0.8 },
-            VoiceMessage::NoteOff { voice: VoiceId::new(1), note: 60 },
-            VoiceMessage::Mute { id: VoiceId::new(1), muted: true },
+            VoiceMessage::Delete {
+                id: VoiceId::new(1),
+            },
+            VoiceMessage::Trigger {
+                id: VoiceId::new(1),
+                params: ParamBuilder::new().build(),
+            },
+            VoiceMessage::Stop {
+                id: VoiceId::new(1),
+            },
+            VoiceMessage::NoteOn {
+                voice: VoiceId::new(1),
+                note: 60,
+                velocity: 0.8,
+            },
+            VoiceMessage::NoteOff {
+                voice: VoiceId::new(1),
+                note: 60,
+            },
+            VoiceMessage::Mute {
+                id: VoiceId::new(1),
+                muted: true,
+            },
         ];
 
         for msg in msgs {
@@ -897,12 +968,22 @@ mod tests {
         let msgs = vec![
             PatternMessage::Create {
                 id: PatternId::new(1),
-                config: PatternConfig::new("test_pattern", VoiceId::new(1), Beat::from_f64(4.0))
+                config: PatternConfig::new("test_pattern", VoiceId::new(1), Beat::from_f64(4.0)),
             },
-            PatternMessage::Delete { id: PatternId::new(1) },
-            PatternMessage::Start { id: PatternId::new(1) },
-            PatternMessage::Stop { id: PatternId::new(1) },
-            PatternMessage::SetParam { id: PatternId::new(1), param: "amp".to_string(), value: 0.5 },
+            PatternMessage::Delete {
+                id: PatternId::new(1),
+            },
+            PatternMessage::Start {
+                id: PatternId::new(1),
+            },
+            PatternMessage::Stop {
+                id: PatternId::new(1),
+            },
+            PatternMessage::SetParam {
+                id: PatternId::new(1),
+                param: "amp".to_string(),
+                value: 0.5,
+            },
         ];
 
         for msg in msgs {
@@ -916,13 +997,24 @@ mod tests {
         let msgs = vec![
             SequenceMessage::Create {
                 id: SequenceId::new(1),
-                config: SequenceConfig::new("test_sequence", Beat::from_f64(16.0))
+                config: SequenceConfig::new("test_sequence", Beat::from_f64(16.0)),
             },
-            SequenceMessage::Delete { id: SequenceId::new(1) },
-            SequenceMessage::Start { id: SequenceId::new(1), looping: true },
-            SequenceMessage::Stop { id: SequenceId::new(1) },
-            SequenceMessage::Pause { id: SequenceId::new(1) },
-            SequenceMessage::Resume { id: SequenceId::new(1) },
+            SequenceMessage::Delete {
+                id: SequenceId::new(1),
+            },
+            SequenceMessage::Start {
+                id: SequenceId::new(1),
+                looping: true,
+            },
+            SequenceMessage::Stop {
+                id: SequenceId::new(1),
+            },
+            SequenceMessage::Pause {
+                id: SequenceId::new(1),
+            },
+            SequenceMessage::Resume {
+                id: SequenceId::new(1),
+            },
         ];
 
         for msg in msgs {
@@ -943,27 +1035,56 @@ mod tests {
     fn test_from_all_message_types() {
         // Verify all From implementations exist
         let _: Message = TransportMessage::Start.into();
-        let _: Message = SynthDefMessage::Load { name: "test".to_string(), data: vec![] }.into();
-        let _: Message = SampleMessage::Free { id: SampleId::new(1) }.into();
+        let _: Message = SynthDefMessage::Load {
+            name: "test".to_string(),
+            data: vec![],
+        }
+        .into();
+        let _: Message = SampleMessage::Free {
+            id: SampleId::new(1),
+        }
+        .into();
         let _: Message = SfzMessage::Unload { id: SfzId::new(1) }.into();
         let _: Message = GroupMessage::Finalize.into();
-        let _: Message = VoiceMessage::Stop { id: VoiceId::new(1) }.into();
-        let _: Message = PatternMessage::Stop { id: PatternId::new(1) }.into();
-        let _: Message = MelodyMessage::Stop { id: MelodyId::new(1) }.into();
-        let _: Message = SequenceMessage::Stop { id: SequenceId::new(1) }.into();
-        let _: Message = EffectMessage::Remove { id: EffectId::new(1) }.into();
+        let _: Message = VoiceMessage::Stop {
+            id: VoiceId::new(1),
+        }
+        .into();
+        let _: Message = PatternMessage::Stop {
+            id: PatternId::new(1),
+        }
+        .into();
+        let _: Message = MelodyMessage::Stop {
+            id: MelodyId::new(1),
+        }
+        .into();
+        let _: Message = SequenceMessage::Stop {
+            id: SequenceId::new(1),
+        }
+        .into();
+        let _: Message = EffectMessage::Remove {
+            id: EffectId::new(1),
+        }
+        .into();
         let _: Message = FadeMessage::Cancel {
             target: FadeTarget::Group(GroupId::new(1)),
-            param: "amp".to_string()
-        }.into();
+            param: "amp".to_string(),
+        }
+        .into();
         #[cfg(not(target_arch = "wasm32"))]
-        let _: Message = RecordingMessage::Stop { id: RecordingId::new(1) }.into();
+        let _: Message = RecordingMessage::Stop {
+            id: RecordingId::new(1),
+        }
+        .into();
     }
 
     #[test]
     fn test_all_sfz_messages() {
         let msgs = vec![
-            SfzMessage::Load { id: SfzId::new(1), path: PathBuf::from("test.sfz") },
+            SfzMessage::Load {
+                id: SfzId::new(1),
+                path: PathBuf::from("test.sfz"),
+            },
             SfzMessage::Unload { id: SfzId::new(1) },
         ];
 
@@ -983,10 +1104,18 @@ mod tests {
                 id: RecordingId::new(1),
                 config: RecordingConfig::default(),
             },
-            RecordingMessage::Stop { id: RecordingId::new(1) },
-            RecordingMessage::Cancel { id: RecordingId::new(1) },
-            RecordingMessage::BufferAllocated { id: RecordingId::new(1) },
-            RecordingMessage::Completed { id: RecordingId::new(1) },
+            RecordingMessage::Stop {
+                id: RecordingId::new(1),
+            },
+            RecordingMessage::Cancel {
+                id: RecordingId::new(1),
+            },
+            RecordingMessage::BufferAllocated {
+                id: RecordingId::new(1),
+            },
+            RecordingMessage::Completed {
+                id: RecordingId::new(1),
+            },
         ];
 
         for msg in msgs {

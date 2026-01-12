@@ -55,20 +55,20 @@ type Result<T> = std::result::Result<T, Error>;
 /// * `Result<SfzFile>` - The parsed SFZ file or an error
 pub fn parse_sfz(content: &str) -> Result<SfzFile> {
     let mut sfz = SfzFile::new();
-    
+
     let mut current_section: Option<SfzSection> = None;
     let mut current_group: Option<SfzSection> = None;
     let mut current_master: Option<SfzSection> = None;
-    
+
     // Process each line in the content
     for line in content.lines() {
         let line = line.trim();
-        
+
         // Skip empty lines and comments
         if line.is_empty() || line.starts_with("//") {
             continue;
         }
-        
+
         // Handle section headers
         if line.starts_with('<') && line.contains('>') {
             if let Some(section) = current_section.take() {
@@ -79,21 +79,21 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
                     SfzSectionType::Master => {
                         current_master = Some(section.clone());
                         sfz.masters.push(section);
-                    },
+                    }
                     SfzSectionType::Group => {
                         current_group = Some(section.clone());
                         sfz.groups.push(section);
-                    },
+                    }
                     SfzSectionType::Region => sfz.regions.push(section),
                     SfzSectionType::Curve => sfz.curves.push(section),
                     SfzSectionType::Effect => sfz.effects.push(section),
                 }
             }
-            
+
             // Parse the section header
             let section_type = parse_section_header(line)?;
             let mut opcodes = HashMap::new();
-            
+
             // Inherit opcodes from parent sections
             match section_type {
                 SfzSectionType::Region => {
@@ -113,7 +113,7 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
                             opcodes.insert(k.clone(), v.clone());
                         }
                     }
-                },
+                }
                 SfzSectionType::Group => {
                     // Group inherits from current master
                     if let Some(master) = &current_master {
@@ -126,7 +126,7 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
                             opcodes.insert(k.clone(), v.clone());
                         }
                     }
-                },
+                }
                 SfzSectionType::Master => {
                     // Master inherits from global
                     if let Some(global) = &sfz.global {
@@ -134,10 +134,10 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
                             opcodes.insert(k.clone(), v.clone());
                         }
                     }
-                },
+                }
                 _ => {}
             }
-            
+
             current_section = Some(SfzSection {
                 section_type,
                 opcodes,
@@ -148,19 +148,21 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
                 let parts: Vec<&str> = line.splitn(2, '=').collect();
                 if parts.len() == 2 {
                     let opcode = parts[0].trim();
-                    
+
                     // Remove inline comments from the value
                     let mut value = parts[1].trim();
                     if let Some(comment_pos) = value.find("//") {
                         value = value[..comment_pos].trim();
                     }
-                    
-                    section.opcodes.insert(opcode.to_string(), value.to_string());
+
+                    section
+                        .opcodes
+                        .insert(opcode.to_string(), value.to_string());
                 }
             }
         }
     }
-    
+
     // Add the final section if there is one
     if let Some(section) = current_section {
         match section.section_type {
@@ -173,7 +175,7 @@ pub fn parse_sfz(content: &str) -> Result<SfzFile> {
             SfzSectionType::Effect => sfz.effects.push(section),
         }
     }
-    
+
     Ok(sfz)
 }
 
@@ -214,23 +216,26 @@ fn parse_section_header(line: &str) -> Result<SfzSectionType> {
     // Extract the section name from <section_name>
     let start = line.find('<').unwrap_or(0) + 1;
     let end = line.find('>').unwrap_or(line.len());
-    
+
     if start >= end || start == 0 || end == line.len() + 1 {
         return Err(Error::Parse(format!("Invalid section header: {}", line)));
     }
-    
+
     let section_name = &line[start..end].trim().to_lowercase();
-    
+
     match SfzSectionType::from_header(section_name) {
         Some(section_type) => Ok(section_type),
-        None => Err(Error::Parse(format!("Unknown section type: {}", section_name))),
+        None => Err(Error::Parse(format!(
+            "Unknown section type: {}",
+            section_name
+        ))),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_parse_simple_sfz() {
         let content = r#"
@@ -244,21 +249,24 @@ mod tests {
         sample=piano_C3.wav
         key=60
         "#;
-        
+
         let sfz = parse_sfz(content).expect("Failed to parse SFZ");
-        
+
         assert!(sfz.control.is_some());
         assert!(sfz.global.is_some());
         assert_eq!(sfz.regions.len(), 1);
-        
+
         let control = sfz.control.unwrap();
-        assert_eq!(control.get_opcode_str("default_path"), Some("samples/piano/"));
-        
+        assert_eq!(
+            control.get_opcode_str("default_path"),
+            Some("samples/piano/")
+        );
+
         let global = sfz.global.unwrap();
         assert_eq!(global.get_opcode_str("volume"), Some("0"));
-        
+
         let region = &sfz.regions[0];
         assert_eq!(region.get_opcode_str("sample"), Some("piano_C3.wav"));
         assert_eq!(region.get_opcode_str("key"), Some("60"));
     }
-} 
+}

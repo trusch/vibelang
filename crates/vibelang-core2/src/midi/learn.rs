@@ -23,24 +23,13 @@ use crate::types::{EffectId, GroupId, VoiceId};
 #[derive(Clone, Debug, PartialEq)]
 pub enum LearnTarget {
     /// Map to a voice parameter.
-    Voice {
-        voice_id: VoiceId,
-        param: String,
-    },
+    Voice { voice_id: VoiceId, param: String },
     /// Map to an effect parameter.
-    Effect {
-        effect_id: EffectId,
-        param: String,
-    },
+    Effect { effect_id: EffectId, param: String },
     /// Map to a group parameter (e.g., amp, pan).
-    Group {
-        group_id: GroupId,
-        param: String,
-    },
+    Group { group_id: GroupId, param: String },
     /// Map to a global parameter.
-    Global {
-        param: String,
-    },
+    Global { param: String },
 }
 
 impl LearnTarget {
@@ -259,10 +248,7 @@ impl MidiLearn {
     /// Wait for a mapping to be learned (async).
     ///
     /// Returns `None` if cancelled or timed out.
-    pub async fn wait_for_mapping(
-        &self,
-        timeout: std::time::Duration,
-    ) -> Option<LearnedMapping> {
+    pub async fn wait_for_mapping(&self, timeout: std::time::Duration) -> Option<LearnedMapping> {
         // This is a simple implementation that polls.
         // In production, you'd use the receiver directly.
         let start = std::time::Instant::now();
@@ -340,19 +326,14 @@ impl LearnManager {
             .read()
             .iter()
             .filter(|m| {
-                m.device_id == device_id
-                    && m.channel == channel
-                    && m.controller == controller
+                m.device_id == device_id && m.channel == channel && m.controller == controller
             })
             .cloned()
             .collect()
     }
 
     /// Process a MIDI event, returning parameter updates.
-    pub fn process_event(
-        &self,
-        event: &TimestampedMidiEvent,
-    ) -> Vec<(LearnTarget, f32)> {
+    pub fn process_event(&self, event: &TimestampedMidiEvent) -> Vec<(LearnTarget, f32)> {
         // First check if we're learning
         if self.learn.process_event(event) {
             return Vec::new();

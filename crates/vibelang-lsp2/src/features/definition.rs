@@ -58,7 +58,9 @@ pub fn get_variable_definition(
                     && def.range.start.character <= position.character)
             {
                 // Update best match if this is closer to the current position
-                if best_match.is_none() || def.range.start.line > best_match.unwrap().range.start.line {
+                if best_match.is_none()
+                    || def.range.start.line > best_match.unwrap().range.start.line
+                {
                     best_match = Some(def);
                 }
             }

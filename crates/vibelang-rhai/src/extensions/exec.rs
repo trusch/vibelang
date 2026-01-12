@@ -127,10 +127,7 @@ pub fn exec_lines(command: &str) -> Result<Array, Box<EvalAltResult>> {
 
 /// Execute a program with explicit arguments (safer than string parsing).
 pub fn exec_with_args(program: &str, args: Array) -> Result<String, Box<EvalAltResult>> {
-    let args: Vec<String> = args
-        .into_iter()
-        .map(|a| a.to_string())
-        .collect();
+    let args: Vec<String> = args.into_iter().map(|a| a.to_string()).collect();
 
     let output = Command::new(program)
         .args(&args)
@@ -174,9 +171,18 @@ pub fn exec_full(command: &str) -> Result<Map, Box<EvalAltResult>> {
         })?;
 
     let mut result = Map::new();
-    result.insert("stdout".into(), Dynamic::from(String::from_utf8_lossy(&output.stdout).to_string()));
-    result.insert("stderr".into(), Dynamic::from(String::from_utf8_lossy(&output.stderr).to_string()));
-    result.insert("status".into(), Dynamic::from(output.status.code().unwrap_or(-1) as i64));
+    result.insert(
+        "stdout".into(),
+        Dynamic::from(String::from_utf8_lossy(&output.stdout).to_string()),
+    );
+    result.insert(
+        "stderr".into(),
+        Dynamic::from(String::from_utf8_lossy(&output.stderr).to_string()),
+    );
+    result.insert(
+        "status".into(),
+        Dynamic::from(output.status.code().unwrap_or(-1) as i64),
+    );
     result.insert("success".into(), Dynamic::from(output.status.success()));
 
     Ok(result)

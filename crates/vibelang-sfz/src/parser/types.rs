@@ -45,7 +45,7 @@ pub struct SfzFile {
     /// ampeg_release=0.5
     /// ```
     pub global: Option<SfzSection>,
-    
+
     /// Control section with settings applied to all regions
     ///
     /// The `<control>` section contains special settings that affect the entire instrument.
@@ -57,7 +57,7 @@ pub struct SfzFile {
     /// default_path=samples/piano/
     /// ```
     pub control: Option<SfzSection>,
-    
+
     /// Master sections with settings applied to groups of regions
     ///
     /// `<master>` sections act as an intermediate level between global and group.
@@ -70,7 +70,7 @@ pub struct SfzFile {
     /// volume=-6
     /// ```
     pub masters: Vec<SfzSection>,
-    
+
     /// Group sections with settings applied to collections of regions
     ///
     /// `<group>` sections define settings for a related collection of regions,
@@ -83,7 +83,7 @@ pub struct SfzFile {
     /// hivel=127
     /// ```
     pub groups: Vec<SfzSection>,
-    
+
     /// Region sections defining each individual sample
     ///
     /// `<region>` sections are the fundamental building blocks of an SFZ instrument.
@@ -96,7 +96,7 @@ pub struct SfzFile {
     /// key=60
     /// ```
     pub regions: Vec<SfzSection>,
-    
+
     /// Curve sections for defining response curves
     ///
     /// `<curve>` sections define custom response curves for velocity, controllers,
@@ -110,7 +110,7 @@ pub struct SfzFile {
     /// v127=1
     /// ```
     pub curves: Vec<SfzSection>,
-    
+
     /// Effect sections for defining audio processing
     ///
     /// `<effect>` sections define audio processing effects like reverb, delay, etc.
@@ -122,7 +122,7 @@ pub struct SfzFile {
     /// reverb_level=30
     /// ```
     pub effects: Vec<SfzSection>,
-    
+
     /// Source file path if loaded from disk
     ///
     /// This is used to resolve relative paths to samples.
@@ -177,7 +177,7 @@ impl SfzFile {
     pub fn has_regions(&self) -> bool {
         !self.regions.is_empty()
     }
-    
+
     /// Get the default path from the control section if available
     ///
     /// In SFZ, the `default_path` opcode specifies a directory where samples should be looked for.
@@ -194,15 +194,17 @@ impl SfzFile {
     /// default_path=samples/piano/
     /// ```
     pub fn get_default_path(&self) -> Option<String> {
-        self.control.as_ref().and_then(|ctrl| ctrl.get_opcode_str("default_path").map(String::from))
+        self.control
+            .as_ref()
+            .and_then(|ctrl| ctrl.get_opcode_str("default_path").map(String::from))
     }
-    
+
     /// Resolve a sample path for the specified section
-    /// 
+    ///
     /// This is a basic resolution method that combines the default_path with the sample path.
     /// For a more comprehensive resolution that takes into account the SFZ file location
     /// and guarantees absolute paths, use `resolve_absolute_sample_path()` instead.
-    /// 
+    ///
     /// # SFZ Sample Path Resolution
     ///
     /// In SFZ, sample paths can be:
@@ -212,19 +214,19 @@ impl SfzFile {
     ///
     /// This function handles the first two cases, combining default_path with relative
     /// sample paths while leaving absolute paths unchanged.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `section` - The section containing the sample opcode
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// * `Option<PathBuf>` - The resolved path or None if no sample is defined
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use sfz_parser::{parse_sfz_str, SfzSectionType, SfzSection};
+    /// use vibelang_sfz::parser::{parse_sfz_str, SfzSectionType, SfzSection};
     ///
     /// let sfz_content = r#"
     /// <control>
@@ -244,9 +246,9 @@ impl SfzFile {
         let default_path = self.get_default_path();
         section.resolve_sample_path(default_path.as_deref())
     }
-    
+
     /// Resolve a sample path to an absolute path
-    /// 
+    ///
     /// This comprehensive resolution method takes into account:
     /// 1. The sample path from the section
     /// 2. The default_path from the control section (if available)
@@ -275,13 +277,13 @@ impl SfzFile {
     /// # Example
     ///
     /// ```no_run
-    /// use sfz_parser::{parse_sfz_file, SfzSectionType, SfzSection};
+    /// use vibelang_sfz::parser::{parse_sfz_file, SfzSectionType, SfzSection};
     /// use std::path::Path;
     ///
     /// // Parse an SFZ file (which sets the source_file)
     /// let sfz = parse_sfz_file("instruments/piano.sfz").unwrap();
     /// let region = &sfz.regions[0];
-    /// 
+    ///
     /// // Get a guaranteed absolute path to the sample
     /// let sample_path = sfz.resolve_absolute_sample_path(region).unwrap();
     /// assert!(sample_path.is_absolute());
@@ -289,15 +291,15 @@ impl SfzFile {
     pub fn resolve_absolute_sample_path(&self, section: &SfzSection) -> Option<PathBuf> {
         // Get the sample path from the section
         let sample_path = section.get_opcode_str("sample")?;
-        
+
         // Get the default_path from the control section
         let default_path = self.get_default_path();
-        
+
         // Resolve to an absolute path
         Some(resolve_absolute_path(
             sample_path,
             default_path.as_deref(),
-            self.source_file.as_deref()
+            self.source_file.as_deref(),
         ))
     }
 }
@@ -325,37 +327,37 @@ pub enum SfzSectionType {
     /// The `<global>` section contains parameters that apply to all regions,
     /// providing a way to set common parameters for the entire instrument.
     Global,
-    
+
     /// Control settings for the entire instrument
     ///
     /// The `<control>` section contains special settings like default_path
     /// that affect the entire instrument's behavior.
     Control,
-    
+
     /// Master settings that apply to groups
     ///
     /// The `<master>` section is an intermediate level that can override
     /// global settings and be overridden by group settings.
     Master,
-    
+
     /// Group settings for collections of regions
     ///
     /// The `<group>` section contains settings for a related collection
     /// of regions, such as velocity layers or round-robins.
     Group,
-    
+
     /// Region defining a single sample
     ///
     /// The `<region>` section is the fundamental building block, defining
     /// a single sample and how it should be played.
     Region,
-    
+
     /// Curve defining a response curve
     ///
     /// The `<curve>` section defines a custom response curve for velocity,
     /// controllers, or other parameters.
     Curve,
-    
+
     /// Effect settings
     ///
     /// The `<effect>` section defines audio processing effects.
@@ -431,7 +433,7 @@ impl SfzSectionType {
 pub struct SfzSection {
     /// The type of section (global, region, etc.)
     pub section_type: SfzSectionType,
-    
+
     /// The opcodes and their values in this section
     ///
     /// In SFZ, opcodes are parameter=value pairs that define various aspects
@@ -481,7 +483,7 @@ impl SfzSection {
     pub fn get_opcode(&self, name: &str) -> Option<&String> {
         self.opcodes.get(name)
     }
-    
+
     /// Gets an opcode value as a string slice if it exists
     ///
     /// This method retrieves the value of an opcode as a string slice.
@@ -496,12 +498,12 @@ impl SfzSection {
     pub fn get_opcode_str(&self, name: &str) -> Option<&str> {
         self.opcodes.get(name).map(|s| s.as_str())
     }
-    
+
     /// Resolve a sample path using the provided default path
-    /// 
+    ///
     /// This combines the sample path from this section with the default path
     /// and normalizes the result for the current OS.
-    /// 
+    ///
     /// # SFZ Sample Paths
     ///
     /// In SFZ, the sample opcode specifies which audio file to play. Sample paths can be:
@@ -510,13 +512,13 @@ impl SfzSection {
     ///
     /// This method handles path normalization for cross-platform compatibility and
     /// combines relative paths with the default_path.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `default_path` - The default path to use for relative sample paths
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// * `Option<PathBuf>` - The resolved sample path, or None if this section
     ///   doesn't have a sample opcode
     pub fn resolve_sample_path(&self, default_path: Option<&str>) -> Option<PathBuf> {
@@ -529,4 +531,4 @@ impl SfzSection {
             }
         })
     }
-} 
+}

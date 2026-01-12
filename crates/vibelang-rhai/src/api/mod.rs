@@ -6,12 +6,12 @@ pub mod assert;
 pub mod global;
 pub mod group;
 pub mod helpers;
-pub mod modulator;
-pub mod voice;
-pub mod pattern;
 pub mod melody;
-pub mod sequence;
+pub mod modulator;
+pub mod pattern;
 pub mod sample;
+pub mod sequence;
+pub mod voice;
 
 /// Clear all object registries.
 ///
@@ -24,9 +24,9 @@ pub fn clear_all_registries() {
 
 // Native-only modules (require file I/O)
 #[cfg(not(target_arch = "wasm32"))]
-pub mod sfz;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod recording;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod sfz;
 
 #[cfg(feature = "midi")]
 pub mod midi;

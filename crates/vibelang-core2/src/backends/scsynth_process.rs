@@ -379,9 +379,9 @@ impl ScsynthProcess {
     /// Check if the process is still running.
     pub fn is_running(&mut self) -> bool {
         match self.child.try_wait() {
-            Ok(None) => true,       // Still running
-            Ok(Some(_)) => false,   // Exited
-            Err(_) => false,        // Error checking status
+            Ok(None) => true,     // Still running
+            Ok(Some(_)) => false, // Exited
+            Err(_) => false,      // Error checking status
         }
     }
 
@@ -471,7 +471,10 @@ impl ScsynthProcess {
         let (playback_l, playback_r) = self.find_best_audio_output(&inputs);
 
         if let (Some(left), Some(right)) = (playback_l, playback_r) {
-            tracing::info!("Auto-connecting SuperCollider to: {}", left.split(':').next().unwrap_or(&left));
+            tracing::info!(
+                "Auto-connecting SuperCollider to: {}",
+                left.split(':').next().unwrap_or(&left)
+            );
 
             // Connect left channel
             let result_l = Command::new("pw-link")
@@ -569,12 +572,12 @@ impl ScsynthProcess {
         }
 
         // Find system playback ports (standard JACK naming)
-        let system_l = ports.lines().find(|l| {
-            l.contains("system:playback_1") || l.contains("playback_FL")
-        });
-        let system_r = ports.lines().find(|l| {
-            l.contains("system:playback_2") || l.contains("playback_FR")
-        });
+        let system_l = ports
+            .lines()
+            .find(|l| l.contains("system:playback_1") || l.contains("playback_FL"));
+        let system_r = ports
+            .lines()
+            .find(|l| l.contains("system:playback_2") || l.contains("playback_FR"));
 
         if let (Some(left), Some(right)) = (system_l, system_r) {
             tracing::info!("Auto-connecting SuperCollider via JACK to: {}", left);

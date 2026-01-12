@@ -53,7 +53,7 @@ mod midi;
 
 // Re-export traits
 pub use effects::Effects;
-pub use fades::{FadeCurve, FadeConfig, FadeTarget, Fades};
+pub use fades::{FadeConfig, FadeCurve, FadeTarget, Fades};
 pub use groups::Groups;
 pub use melodies::{Melodies, MelodyConfig, NoteEvent};
 pub use modulators::{ModulatorConfig, Modulators};

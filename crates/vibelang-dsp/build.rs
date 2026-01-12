@@ -25,7 +25,8 @@ fn main() {
             if path.extension().and_then(|s| s.to_str()) == Some("json") {
                 println!("cargo:rerun-if-changed={}", path.display());
                 let manifest_str = fs::read_to_string(&path).unwrap();
-                let mut category_manifest: Vec<Value> = serde_json::from_str(&manifest_str).unwrap();
+                let mut category_manifest: Vec<Value> =
+                    serde_json::from_str(&manifest_str).unwrap();
                 manifest.append(&mut category_manifest);
             }
         }
@@ -107,7 +108,12 @@ fn main() {
                 });
 
                 if let Some(default) = param_default {
-                    writeln!(f, "/// - `{}` (default: {}): {}", param_name, default, param_desc).unwrap();
+                    writeln!(
+                        f,
+                        "/// - `{}` (default: {}): {}",
+                        param_name, default, param_desc
+                    )
+                    .unwrap();
                 } else {
                     writeln!(f, "/// - `{}`: {}", param_name, param_desc).unwrap();
                 }

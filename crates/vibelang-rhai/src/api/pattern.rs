@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use vibelang_core2::traits::{PatternConfig, Step};
 use vibelang_core2::types::Beat;
 
-use crate::context;
 use super::voice::Voice;
+use crate::context;
 
 // Global registry for patterns - allows looking up patterns by name
 thread_local! {
@@ -198,9 +198,7 @@ impl Pattern {
     /// Check if the pattern is playing.
     pub fn is_playing(&mut self) -> bool {
         let pattern_id = context::get_or_create_pattern_id(&self.name);
-        context::with_state(|state| {
-            state.playing_patterns.contains(&pattern_id)
-        })
+        context::with_state(|state| state.playing_patterns.contains(&pattern_id))
     }
 }
 
@@ -258,9 +256,9 @@ fn parse_pattern_steps(steps: &str, _length: f64, swing: f32) -> Vec<Step> {
             // x = normal (0.7), X = accent (1.0), o = ghost (0.3)
             // 1-9 = scaled velocity (0.1 to 1.0)
             let velocity = match ch {
-                'x' => Some(0.7),              // Normal hit
-                'X' => Some(1.0),              // Accent/loud
-                'o' | 'O' => Some(0.3),        // Ghost note/soft
+                'x' => Some(0.7),       // Normal hit
+                'X' => Some(1.0),       // Accent/loud
+                'o' | 'O' => Some(0.3), // Ghost note/soft
                 '1'..='9' => {
                     // 1 = 0.11, 5 = 0.55, 9 = 1.0
                     let digit = (*ch as u8 - b'0') as f32;
@@ -552,11 +550,11 @@ mod tests {
         // Numeric values 1-9 = scaled velocity (1/9 to 9/9)
         let steps = parse_pattern_steps("1", 4.0, 0.0);
         let vel = *steps[0].params.get("amp").unwrap();
-        assert!((vel - 1.0/9.0).abs() < 0.01); // ~0.11
+        assert!((vel - 1.0 / 9.0).abs() < 0.01); // ~0.11
 
         let steps = parse_pattern_steps("5", 4.0, 0.0);
         let vel = *steps[0].params.get("amp").unwrap();
-        assert!((vel - 5.0/9.0).abs() < 0.01); // ~0.55
+        assert!((vel - 5.0 / 9.0).abs() < 0.01); // ~0.55
 
         let steps = parse_pattern_steps("9", 4.0, 0.0);
         let vel = *steps[0].params.get("amp").unwrap();

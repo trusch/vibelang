@@ -37,7 +37,11 @@ pub mod ui;
 // Re-export main types
 pub use config::{Config, KeyboardLayout, Theme};
 pub use error::{Error, Result};
-pub use keyboard::{KeyMapping, KeyboardConfig, VirtualKeyboard, note_name, C3_MIDI, DEFAULT_VELOCITY};
+pub use keyboard::{
+    note_name, KeyMapping, KeyboardConfig, VirtualKeyboard, C3_MIDI, DEFAULT_VELOCITY,
+};
 pub use midi::{MidiBackend, MidiOutput};
-pub use os_keyboard::{OsKeyEvent, OsKeyboardListener, is_available as os_keyboard_available};
-pub use ui::{render_keyboard, render_keyboard_compact, render_keyboard_standalone, KeyboardWidget};
+pub use os_keyboard::{is_available as os_keyboard_available, OsKeyEvent, OsKeyboardListener};
+pub use ui::{
+    render_keyboard, render_keyboard_compact, render_keyboard_standalone, KeyboardWidget,
+};

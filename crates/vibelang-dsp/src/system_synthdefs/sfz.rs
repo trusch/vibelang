@@ -129,20 +129,20 @@ pub fn create_sfz_voice_synthdef(num_channels: u32) -> Result<GraphIR, crate::Sy
             Input::Constant(one),              // timeScale = 1
             Input::Constant(done_action_free), // doneAction = 2 (free synth)
             // Envelope specification:
-            Input::Constant(zero),             // initLevel = 0
-            Input::Constant(num_stages),       // numStages = 2
-            Input::Constant(release_node),     // releaseNode = 1
-            Input::Constant(loop_node),        // loopNode = -1 (no loop)
+            Input::Constant(zero),         // initLevel = 0
+            Input::Constant(num_stages),   // numStages = 2
+            Input::Constant(release_node), // releaseNode = 1
+            Input::Constant(loop_node),    // loopNode = -1 (no loop)
             // Stage 0: Attack (0 -> sustain level)
-            param(7),                          // endLevel = sustain param
-            param(5),                          // time = attack param
-            Input::Constant(shape_linear),     // shape = linear (1)
-            Input::Constant(zero),             // curve = 0
+            param(7),                      // endLevel = sustain param
+            param(5),                      // time = attack param
+            Input::Constant(shape_linear), // shape = linear (1)
+            Input::Constant(zero),         // curve = 0
             // Stage 1: Release (sustain -> 0)
-            Input::Constant(zero),             // endLevel = 0
-            param(8),                          // time = release param
-            Input::Constant(shape_linear),     // shape = linear (1)
-            Input::Constant(zero),             // curve = 0
+            Input::Constant(zero),         // endLevel = 0
+            param(8),                      // time = release param
+            Input::Constant(shape_linear), // shape = linear (1)
+            Input::Constant(zero),         // curve = 0
         ],
         1, // 1 output
         0, // special_index

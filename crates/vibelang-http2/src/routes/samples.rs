@@ -16,17 +16,15 @@ use crate::{
 
 /// Parse a sample ID from a string path parameter.
 fn parse_sample_id(id: &str) -> Result<SampleId, (StatusCode, Json<ErrorResponse>)> {
-    id.parse::<u32>()
-        .map(SampleId::new)
-        .map_err(|_| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::bad_request(&format!(
-                    "Invalid sample ID '{}': must be a number",
-                    id
-                ))),
-            )
-        })
+    id.parse::<u32>().map(SampleId::new).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::bad_request(&format!(
+                "Invalid sample ID '{}': must be a number",
+                id
+            ))),
+        )
+    })
 }
 
 /// Convert internal SampleInfo to API Sample model
@@ -68,7 +66,11 @@ pub async fn get_sample(
     let sample_id = parse_sample_id(&id)?;
 
     let sample = state
-        .with_state(|s| s.samples.get(&sample_id).map(|info| sample_to_api(&sample_id, info)))
+        .with_state(|s| {
+            s.samples
+                .get(&sample_id)
+                .map(|info| sample_to_api(&sample_id, info))
+        })
         .await;
 
     match sample {
@@ -90,17 +92,15 @@ pub async fn load_sample(
 ) -> Result<(StatusCode, Json<Sample>), (StatusCode, Json<ErrorResponse>)> {
     // Parse or generate sample ID
     let sample_id = if let Some(id_str) = &req.id {
-        id_str.parse::<u32>()
-            .map(SampleId::new)
-            .map_err(|_| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse::bad_request(&format!(
-                        "Invalid sample ID '{}': must be a number",
-                        id_str
-                    ))),
-                )
-            })?
+        id_str.parse::<u32>().map(SampleId::new).map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::bad_request(&format!(
+                    "Invalid sample ID '{}': must be a number",
+                    id_str
+                ))),
+            )
+        })?
     } else {
         // Generate a new ID
         state
@@ -112,14 +112,16 @@ pub async fn load_sample(
     };
 
     // Check if sample already exists
-    let exists = state.with_state(|s| s.samples.contains_key(&sample_id)).await;
+    let exists = state
+        .with_state(|s| s.samples.contains_key(&sample_id))
+        .await;
     if exists {
         return Err((
             StatusCode::CONFLICT,
-            Json(ErrorResponse::new("conflict", &format!(
-                "Sample '{}' already exists",
-                sample_id.raw()
-            ))),
+            Json(ErrorResponse::new(
+                "conflict",
+                &format!("Sample '{}' already exists", sample_id.raw()),
+            )),
         ));
     }
 
@@ -128,7 +130,13 @@ pub async fn load_sample(
 
     // Send load message
     if let Err(e) = state
-        .send(SampleMessage::Load { id: sample_id, config }.into())
+        .send(
+            SampleMessage::Load {
+                id: sample_id,
+                config,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -144,14 +152,20 @@ pub async fn load_sample(
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
     let sample = state
-        .with_state(|s| s.samples.get(&sample_id).map(|info| sample_to_api(&sample_id, info)))
+        .with_state(|s| {
+            s.samples
+                .get(&sample_id)
+                .map(|info| sample_to_api(&sample_id, info))
+        })
         .await;
 
     match sample {
         Some(s) => Ok((StatusCode::CREATED, Json(s))),
         None => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal("Sample load sent but not found in state")),
+            Json(ErrorResponse::internal(
+                "Sample load sent but not found in state",
+            )),
         )),
     }
 }
@@ -163,7 +177,9 @@ pub async fn delete_sample(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let sample_id = parse_sample_id(&id)?;
 
-    let exists = state.with_state(|s| s.samples.contains_key(&sample_id)).await;
+    let exists = state
+        .with_state(|s| s.samples.contains_key(&sample_id))
+        .await;
     if !exists {
         return Err((
             StatusCode::NOT_FOUND,

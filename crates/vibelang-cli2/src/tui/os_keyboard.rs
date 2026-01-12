@@ -20,20 +20,18 @@ pub fn start_os_keyboard_listener() -> Option<mpsc::Receiver<OsKeyEvent>> {
     let (tx, rx) = mpsc::channel();
 
     std::thread::spawn(move || {
-        let callback = move |event: Event| {
-            match event.event_type {
-                EventType::KeyPress(key) => {
-                    if let Some(c) = key_to_char(key) {
-                        let _ = tx.send(OsKeyEvent::KeyDown(c));
-                    }
+        let callback = move |event: Event| match event.event_type {
+            EventType::KeyPress(key) => {
+                if let Some(c) = key_to_char(key) {
+                    let _ = tx.send(OsKeyEvent::KeyDown(c));
                 }
-                EventType::KeyRelease(key) => {
-                    if let Some(c) = key_to_char(key) {
-                        let _ = tx.send(OsKeyEvent::KeyUp(c));
-                    }
-                }
-                _ => {}
             }
+            EventType::KeyRelease(key) => {
+                if let Some(c) = key_to_char(key) {
+                    let _ = tx.send(OsKeyEvent::KeyUp(c));
+                }
+            }
+            _ => {}
         };
 
         if let Err(e) = listen(callback) {

@@ -57,7 +57,9 @@ fn deploy_bytes(bytes: Vec<u8>) -> Result<(), SynthDefError> {
     if let Some(ref cb) = *callback {
         cb(bytes).map_err(SynthDefError::OscError)
     } else {
-        Err(SynthDefError::OscError("No deploy callback set. Call set_deploy_callback first.".to_string()))
+        Err(SynthDefError::OscError(
+            "No deploy callback set. Call set_deploy_callback first.".to_string(),
+        ))
     }
 }
 
@@ -457,14 +459,18 @@ pub fn register_synthdef_api(engine: &mut Engine) {
         FxBuilderHandle::new(name)
     });
 
-    engine.register_fn("define_modulator", |name: String| -> ModulatorBuilderHandle {
-        ModulatorBuilderHandle::new(name)
-    });
+    engine.register_fn(
+        "define_modulator",
+        |name: String| -> ModulatorBuilderHandle { ModulatorBuilderHandle::new(name) },
+    );
 
     // Backward-compatible overload that accepts a closure receiving the builder
     engine.register_fn(
         "define_synthdef",
-        |ctx: NativeCallContext, name: String, closure: rhai::FnPtr| -> Result<(), Box<EvalAltResult>> {
+        |ctx: NativeCallContext,
+         name: String,
+         closure: rhai::FnPtr|
+         -> Result<(), Box<EvalAltResult>> {
             let builder = SynthDefBuilderHandle::new(name);
             closure
                 .call_within_context::<Dynamic>(&ctx, (builder,))
@@ -474,7 +480,10 @@ pub fn register_synthdef_api(engine: &mut Engine) {
 
     engine.register_fn(
         "define_fx",
-        |ctx: NativeCallContext, name: String, closure: rhai::FnPtr| -> Result<(), Box<EvalAltResult>> {
+        |ctx: NativeCallContext,
+         name: String,
+         closure: rhai::FnPtr|
+         -> Result<(), Box<EvalAltResult>> {
             let builder = FxBuilderHandle::new(name);
             closure
                 .call_within_context::<Dynamic>(&ctx, (builder,))
@@ -484,7 +493,10 @@ pub fn register_synthdef_api(engine: &mut Engine) {
 
     engine.register_fn(
         "define_modulator",
-        |ctx: NativeCallContext, name: String, closure: rhai::FnPtr| -> Result<(), Box<EvalAltResult>> {
+        |ctx: NativeCallContext,
+         name: String,
+         closure: rhai::FnPtr|
+         -> Result<(), Box<EvalAltResult>> {
             let builder = ModulatorBuilderHandle::new(name);
             closure
                 .call_within_context::<Dynamic>(&ctx, (builder,))

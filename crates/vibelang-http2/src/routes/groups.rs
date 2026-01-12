@@ -68,9 +68,10 @@ fn group_to_api(
         .collect();
 
     // Get parent name from parent state
-    let parent_path = state.parent.as_ref().and_then(|parent_id| {
-        all_groups.get(parent_id).map(|gs| gs.name.clone())
-    });
+    let parent_path = state
+        .parent
+        .as_ref()
+        .and_then(|parent_id| all_groups.get(parent_id).map(|gs| gs.name.clone()));
 
     Group {
         name,
@@ -83,7 +84,7 @@ fn group_to_api(
         muted: state.muted,
         soloed: state.soloed,
         params: state.params.iter().map(|(k, v)| (k.clone(), *v)).collect(),
-        synth_node_ids: None, // Not tracked in core state
+        synth_node_ids: None,  // Not tracked in core state
         source_location: None, // Not tracked in core state
     }
 }
@@ -110,7 +111,11 @@ pub async fn get_group(
     let group_id = resolve_group_id(&state, &id).await?;
 
     let group = state
-        .with_state(|s| s.groups.get(&group_id).map(|gs| group_to_api(&group_id, gs, &s.groups)))
+        .with_state(|s| {
+            s.groups
+                .get(&group_id)
+                .map(|gs| group_to_api(&group_id, gs, &s.groups))
+        })
         .await;
 
     match group {
@@ -168,7 +173,13 @@ pub async fn mute_group(
     let group_id = resolve_group_id(&state, &id).await?;
 
     if let Err(e) = state
-        .send(GroupMessage::Mute { id: group_id, muted: true }.into())
+        .send(
+            GroupMessage::Mute {
+                id: group_id,
+                muted: true,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -191,7 +202,13 @@ pub async fn unmute_group(
     let group_id = resolve_group_id(&state, &id).await?;
 
     if let Err(e) = state
-        .send(GroupMessage::Mute { id: group_id, muted: false }.into())
+        .send(
+            GroupMessage::Mute {
+                id: group_id,
+                muted: false,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -214,7 +231,13 @@ pub async fn solo_group(
     let group_id = resolve_group_id(&state, &id).await?;
 
     if let Err(e) = state
-        .send(GroupMessage::Solo { id: group_id, solo: true }.into())
+        .send(
+            GroupMessage::Solo {
+                id: group_id,
+                solo: true,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -237,7 +260,13 @@ pub async fn unsolo_group(
     let group_id = resolve_group_id(&state, &id).await?;
 
     if let Err(e) = state
-        .send(GroupMessage::Solo { id: group_id, solo: false }.into())
+        .send(
+            GroupMessage::Solo {
+                id: group_id,
+                solo: false,
+            }
+            .into(),
+        )
         .await
     {
         return Err((

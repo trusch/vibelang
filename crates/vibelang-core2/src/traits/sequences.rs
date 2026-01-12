@@ -26,16 +26,10 @@ pub enum Clip {
     },
 
     /// A fade automation clip.
-    Fade {
-        config: FadeConfig,
-        start: Beat,
-    },
+    Fade { config: FadeConfig, start: Beat },
 
     /// A nested sequence.
-    Sequence {
-        id: SequenceId,
-        start: Beat,
-    },
+    Sequence { id: SequenceId, start: Beat },
 }
 
 impl Clip {

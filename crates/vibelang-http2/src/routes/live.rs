@@ -126,7 +126,10 @@ pub async fn get_live_state(State(state): State<Arc<AppState>>) -> Json<LiveStat
                 .iter()
                 .filter(|(_, vs)| !vs.note_nodes.is_empty())
                 .map(|(id, vs)| {
-                    (id.raw().to_string(), vs.note_nodes.keys().copied().collect())
+                    (
+                        id.raw().to_string(),
+                        vs.note_nodes.keys().copied().collect(),
+                    )
                 })
                 .collect();
 

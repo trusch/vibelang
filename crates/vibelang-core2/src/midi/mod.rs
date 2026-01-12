@@ -105,21 +105,24 @@ mod voice_output;
 // Legacy re-exports (existing API, maintained for compatibility)
 // =============================================================================
 pub use callbacks::{
-    CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder, MidiCallbacks,
-    NoteRouteBuilder, ParameterCurve, StoredCallback, VelocityCurve, VelocityMapping,
-    parse_note_name,
+    parse_note_name, CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder,
+    MidiCallbacks, NoteRouteBuilder, ParameterCurve, StoredCallback, VelocityCurve,
+    VelocityMapping,
 };
-pub use constants::{decode_packed_midi, trigger_ids, MidiData, MidiTriggerType, pack_note_on, pack_note_off, pack_cc, pack_pitch_bend};
-pub use realtime::{MidiRealtimeConfig, MidiRealtimeService, MidiRealtimeStats, QueuedMidiEvent, MidiDeviceSender};
+pub use constants::{
+    decode_packed_midi, pack_cc, pack_note_off, pack_note_on, pack_pitch_bend, trigger_ids,
+    MidiData, MidiTriggerType,
+};
+pub use realtime::{
+    MidiDeviceSender, MidiRealtimeConfig, MidiRealtimeService, MidiRealtimeStats, QueuedMidiEvent,
+};
 
 // =============================================================================
 // New infrastructure re-exports
 // =============================================================================
 
 // Core event types (MIDI 2.0-ready)
-pub use events::{
-    Channel, ControlValue, MidiMessage, TimestampedMidiEvent, Velocity,
-};
+pub use events::{Channel, ControlValue, MidiMessage, TimestampedMidiEvent, Velocity};
 
 // Device management with separate input/output namespaces
 pub use devices::{
@@ -127,7 +130,7 @@ pub use devices::{
 };
 
 // Event queue for lock-free MIDI processing
-pub use queue::{MidiEventQueue, AsyncMidiEventReceiver, MidiEventSender, QueueStats};
+pub use queue::{AsyncMidiEventReceiver, MidiEventQueue, MidiEventSender, QueueStats};
 
 // Clock synchronization
 pub use clock::{MidiClock, MidiClockSync};
@@ -153,7 +156,10 @@ pub use encoder::{
 pub use mpe::{MpeConfig, MpeNoteState, MpeState, MpeZone, CC_TIMBRE, DEFAULT_PITCH_BEND_RANGE};
 
 // NRPN/RPN support
-pub use nrpn::{NrpnDecoder, ParameterMessage, CC_DATA_ENTRY_LSB, CC_DATA_ENTRY_MSB, CC_NRPN_LSB, CC_NRPN_MSB, CC_RPN_LSB, CC_RPN_MSB};
+pub use nrpn::{
+    NrpnDecoder, ParameterMessage, CC_DATA_ENTRY_LSB, CC_DATA_ENTRY_MSB, CC_NRPN_LSB, CC_NRPN_MSB,
+    CC_RPN_LSB, CC_RPN_MSB,
+};
 
 // MIDI Learn
 pub use learn::{LearnManager, LearnTarget, LearnedMapping, MidiLearn};

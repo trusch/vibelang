@@ -273,7 +273,9 @@ import "stdlib/bass/sub.vibe";
 let kick = voice("kick");
 "#;
         let ranges = get_folding_ranges(content);
-        let import_range = ranges.iter().find(|r| r.kind == Some(FoldingRangeKind::Imports));
+        let import_range = ranges
+            .iter()
+            .find(|r| r.kind == Some(FoldingRangeKind::Imports));
         assert!(import_range.is_some());
     }
 
@@ -286,7 +288,9 @@ let kick = voice("kick");
 let x = 42;
 "#;
         let ranges = get_folding_ranges(content);
-        let comment_range = ranges.iter().find(|r| r.kind == Some(FoldingRangeKind::Comment));
+        let comment_range = ranges
+            .iter()
+            .find(|r| r.kind == Some(FoldingRangeKind::Comment));
         assert!(comment_range.is_some());
     }
 }

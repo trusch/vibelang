@@ -89,11 +89,8 @@ mod tests {
 
     #[test]
     fn test_sfz_instrument_handle() {
-        let mut handle = SfzInstrumentHandle::new(
-            "test_bass".to_string(),
-            "/path/to/bass.sfz".to_string(),
-            42,
-        );
+        let mut handle =
+            SfzInstrumentHandle::new("test_bass".to_string(), "/path/to/bass.sfz".to_string(), 42);
 
         assert_eq!(handle.get_id(), "test_bass");
         assert_eq!(handle.get_path(), "/path/to/bass.sfz");

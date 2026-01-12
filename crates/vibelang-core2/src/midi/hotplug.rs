@@ -278,7 +278,10 @@ fn enumerate_inputs() -> Vec<MidiInputInfo> {
     let midi_in = match MidiInput::new("vibelang-hotplug") {
         Ok(m) => m,
         Err(e) => {
-            tracing::warn!("[HOTPLUG] Failed to create MIDI input for enumeration: {}", e);
+            tracing::warn!(
+                "[HOTPLUG] Failed to create MIDI input for enumeration: {}",
+                e
+            );
             return Vec::new();
         }
     };
@@ -304,7 +307,10 @@ fn enumerate_outputs() -> Vec<MidiOutputInfo> {
     let midi_out = match MidiOutput::new("vibelang-hotplug") {
         Ok(m) => m,
         Err(e) => {
-            tracing::warn!("[HOTPLUG] Failed to create MIDI output for enumeration: {}", e);
+            tracing::warn!(
+                "[HOTPLUG] Failed to create MIDI output for enumeration: {}",
+                e
+            );
             return Vec::new();
         }
     };
@@ -365,12 +371,18 @@ impl AutoReconnect {
 
     /// Check if an input should be auto-reconnected.
     pub fn should_reconnect_input(&self, name: &str) -> bool {
-        self.config.read().auto_reconnect_inputs.contains(&name.to_string())
+        self.config
+            .read()
+            .auto_reconnect_inputs
+            .contains(&name.to_string())
     }
 
     /// Check if an output should be auto-reconnected.
     pub fn should_reconnect_output(&self, name: &str) -> bool {
-        self.config.read().auto_reconnect_outputs.contains(&name.to_string())
+        self.config
+            .read()
+            .auto_reconnect_outputs
+            .contains(&name.to_string())
     }
 
     /// Handle a hot-plug event.

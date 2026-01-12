@@ -1,20 +1,20 @@
-mod sound_source;
-mod region_logic;
-mod performance;
 mod amplitude_envelope;
-mod pitch_envelope;
 mod filter;
 mod filter_envelope;
+mod performance;
+mod pitch_envelope;
+mod region_logic;
 mod sample_playback;
+mod sound_source;
 
-pub use sound_source::SoundSourceOpcodes;
-pub use region_logic::RegionLogicOpcodes;
-pub use performance::PerformanceOpcodes;
 pub use amplitude_envelope::AmplitudeEnvelopeOpcodes;
-pub use pitch_envelope::PitchEnvelopeOpcodes;
 pub use filter::FilterOpcodes;
 pub use filter_envelope::FilterEnvelopeOpcodes;
+pub use performance::PerformanceOpcodes;
+pub use pitch_envelope::PitchEnvelopeOpcodes;
+pub use region_logic::RegionLogicOpcodes;
 pub use sample_playback::SamplePlaybackOpcodes;
+pub use sound_source::SoundSourceOpcodes;
 
 // TODO: Implement these modules
 // mod amplitude_envelope;
@@ -27,4 +27,4 @@ pub use sample_playback::SamplePlaybackOpcodes;
 // pub use pitch_envelope::PitchEnvelopeOpcodes;
 // pub use filter::FilterOpcodes;
 // pub use filter_envelope::FilterEnvelopeOpcodes;
-// pub use sample_playback::SamplePlaybackOpcodes; 
+// pub use sample_playback::SamplePlaybackOpcodes;

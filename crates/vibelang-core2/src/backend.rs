@@ -218,7 +218,10 @@ pub trait Backend: Send + Sync + 'static {
     ///
     /// A HashMap mapping bus index to its current value.
     /// Buses that failed to read are omitted from the result.
-    async fn get_control_buses(&self, buses: &[u32]) -> Result<std::collections::HashMap<u32, f32>, Self::Error> {
+    async fn get_control_buses(
+        &self,
+        buses: &[u32],
+    ) -> Result<std::collections::HashMap<u32, f32>, Self::Error> {
         // Default implementation: sequential reads
         let mut result = std::collections::HashMap::new();
         for &bus in buses {
@@ -375,7 +378,10 @@ pub trait Backend: 'static {
     }
 
     /// Read multiple control bus values in a batch.
-    async fn get_control_buses(&self, buses: &[u32]) -> Result<std::collections::HashMap<u32, f32>, Self::Error> {
+    async fn get_control_buses(
+        &self,
+        buses: &[u32],
+    ) -> Result<std::collections::HashMap<u32, f32>, Self::Error> {
         let mut result = std::collections::HashMap::new();
         for &bus in buses {
             if let Ok(value) = self.get_control_bus(bus).await {

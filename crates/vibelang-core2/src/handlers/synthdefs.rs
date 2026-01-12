@@ -1,13 +1,13 @@
 //! SynthDefs handler implementation.
 
 use crate::backend::Backend;
+use crate::compat::RwLock;
 use crate::state::State;
 use crate::synthdefs::generate_builtins;
 use crate::traits::SynthDefs;
 use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
-use crate::compat::RwLock;
 
 /// Handler for synthdef operations.
 pub struct SynthDefsHandler<B: Backend> {
@@ -44,7 +44,11 @@ impl<B: Backend> SynthDefsHandler<B> {
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<B: Backend> SynthDefs for SynthDefsHandler<B> {
     async fn load(&self, name: &str, data: &[u8]) -> Result<()> {
-        tracing::debug!("SynthDefsHandler: loading synthdef '{}' ({} bytes)", name, data.len());
+        tracing::debug!(
+            "SynthDefsHandler: loading synthdef '{}' ({} bytes)",
+            name,
+            data.len()
+        );
 
         // Load in backend
         self.backend
@@ -59,7 +63,10 @@ impl<B: Backend> SynthDefs for SynthDefsHandler<B> {
         // the synthdef is available.
         self.backend.sync().await.map_err(Error::backend)?;
 
-        tracing::debug!("SynthDefsHandler: sync completed for '{}', registered in state", name);
+        tracing::debug!(
+            "SynthDefsHandler: sync completed for '{}', registered in state",
+            name
+        );
 
         // Track in state
         let mut state = self.state.write().await;

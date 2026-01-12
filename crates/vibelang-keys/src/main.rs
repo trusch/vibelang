@@ -5,7 +5,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, EnableFocusChange, DisableFocusChange},
+    event::{
+        self, DisableFocusChange, EnableFocusChange, Event, KeyCode, KeyEventKind, KeyModifiers,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -172,7 +174,11 @@ fn run_tui(config: Config) -> Result<()> {
 
     // Cleanup
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableFocusChange)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableFocusChange
+    )?;
 
     result
 }
@@ -348,7 +354,10 @@ fn run_event_loop(
         } else {
             // No terminal event - check if we should assume focus lost
             // (for terminals that don't support focus events)
-            if has_focus && os_keyboard.is_some() && last_activity.elapsed().as_millis() > FOCUS_TIMEOUT_MS {
+            if has_focus
+                && os_keyboard.is_some()
+                && last_activity.elapsed().as_millis() > FOCUS_TIMEOUT_MS
+            {
                 // Don't auto-lose focus, but be more conservative
                 // This is a fallback for terminals without focus event support
             }

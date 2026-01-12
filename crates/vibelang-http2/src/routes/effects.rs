@@ -15,17 +15,15 @@ use crate::{
 
 /// Parse an effect ID from a string path parameter.
 fn parse_effect_id(id: &str) -> Result<EffectId, (StatusCode, Json<ErrorResponse>)> {
-    id.parse::<u32>()
-        .map(EffectId::new)
-        .map_err(|_| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::bad_request(&format!(
-                    "Invalid effect ID '{}': must be a number",
-                    id
-                ))),
-            )
-        })
+    id.parse::<u32>().map(EffectId::new).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::bad_request(&format!(
+                "Invalid effect ID '{}': must be a number",
+                id
+            ))),
+        )
+    })
 }
 
 /// Convert internal EffectState to API Effect model
@@ -152,7 +150,10 @@ pub async fn delete_effect(
         ));
     }
 
-    if let Err(e) = state.send(EffectMessage::Remove { id: effect_id }.into()).await {
+    if let Err(e) = state
+        .send(EffectMessage::Remove { id: effect_id }.into())
+        .await
+    {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse::internal(&format!(

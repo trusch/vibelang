@@ -150,11 +150,7 @@ pub async fn run_event_broadcaster(
         // Read current state
         let (current_beat, running, bpm) = {
             let guard = state.read().await;
-            (
-                guard.current_beat.to_f64(),
-                guard.playing,
-                guard.tempo,
-            )
+            (guard.current_beat.to_f64(), guard.playing, guard.tempo)
         };
 
         let now = std::time::SystemTime::now()

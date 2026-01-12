@@ -28,13 +28,13 @@
 //! ```
 
 use crate::backend::{AddAction, Backend};
+use crate::compat::RwLock;
 use crate::state::State;
 use crate::traits::{RecordingConfig, RecordingInfo, RecordingStatus, Recordings};
 use crate::types::{Beat, BufferId, RecordingId};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
-use crate::compat::RwLock;
 
 /// Handler for audio recording sessions.
 ///
@@ -119,7 +119,10 @@ impl<B: Backend> RecordingsHandler<B> {
                 .ok_or(Error::RecordingNotFound(id))?;
 
             // Get the group's node ID for placement
-            let group_state = state.groups.get(&info.group).ok_or(Error::GroupNotFound(info.group))?;
+            let group_state = state
+                .groups
+                .get(&info.group)
+                .ok_or(Error::GroupNotFound(info.group))?;
 
             (
                 info.buffer_id,
@@ -194,7 +197,10 @@ impl<B: Backend> RecordingsHandler<B> {
 
         // Stop the recording synth if it exists
         if let Some(node_id) = node_id {
-            self.backend.free_node(node_id).await.map_err(Error::backend)?;
+            self.backend
+                .free_node(node_id)
+                .await
+                .map_err(Error::backend)?;
         }
 
         // Save to file if path was specified
@@ -252,7 +258,10 @@ impl<B: Backend> Recordings for RecordingsHandler<B> {
             let buffer_id = state.alloc_buffer_id();
 
             // Get audio bus from the group
-            let group_state = state.groups.get(&config.group).ok_or(Error::GroupNotFound(config.group))?;
+            let group_state = state
+                .groups
+                .get(&config.group)
+                .ok_or(Error::GroupNotFound(config.group))?;
             let audio_bus = group_state.audio_bus;
 
             // Calculate start beat (quantized if not specified)
@@ -377,11 +386,17 @@ impl<B: Backend> Recordings for RecordingsHandler<B> {
 
         // Free the recording synth if running
         if let Some(node_id) = node_id {
-            self.backend.free_node(node_id).await.map_err(Error::backend)?;
+            self.backend
+                .free_node(node_id)
+                .await
+                .map_err(Error::backend)?;
         }
 
         // Free the buffer
-        self.backend.free_buffer(buffer_id).await.map_err(Error::backend)?;
+        self.backend
+            .free_buffer(buffer_id)
+            .await
+            .map_err(Error::backend)?;
 
         tracing::info!("Recording {} cancelled", id.0);
 

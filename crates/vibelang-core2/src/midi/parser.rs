@@ -136,10 +136,7 @@ impl MidiParser {
                     pos += 1;
                 } else if status::is_status(byte) {
                     // Unexpected status byte - abort SysEx
-                    tracing::warn!(
-                        "[MIDI_PARSER] SysEx aborted by status byte 0x{:02X}",
-                        byte
-                    );
+                    tracing::warn!("[MIDI_PARSER] SysEx aborted by status byte 0x{:02X}", byte);
                     self.sysex_buffer.clear();
                     self.in_sysex = false;
                     // Don't advance pos - let the status byte be parsed
@@ -194,7 +191,10 @@ impl MidiParser {
             (rs, 0)
         } else {
             // No status and no running status - can't parse
-            tracing::debug!("[MIDI_PARSER] Data byte without running status: 0x{:02X}", first);
+            tracing::debug!(
+                "[MIDI_PARSER] Data byte without running status: 0x{:02X}",
+                first
+            );
             return (None, 1); // Skip the byte
         };
 
@@ -546,10 +546,7 @@ mod tests {
             parse_midi_bytes(&[0xFB]),
             Some(MidiMessage::Continue)
         ));
-        assert!(matches!(
-            parse_midi_bytes(&[0xFC]),
-            Some(MidiMessage::Stop)
-        ));
+        assert!(matches!(parse_midi_bytes(&[0xFC]), Some(MidiMessage::Stop)));
     }
 
     #[test]

@@ -728,6 +728,418 @@ voice("keys").on(piano).poly(8);`
 sleep(500);  // Wait 500ms
 snare.trigger();`
     }
+  ],
+  'Extensions': [
+    {
+      name: 'Filesystem (ext-fs)',
+      signature: 'Feature: ext-fs',
+      description: 'File system access extension. Provides functions for reading, writing, and manipulating files and directories. Must be enabled with --ext-fs flag.',
+      params: [],
+      example: `// Enable with: vibelang run --ext-fs script.vibe
+
+// Read and write files
+let content = read_file("notes.txt");
+write_file("output.txt", "Hello!");
+
+// Check files
+if file_exists("config.json") {
+    let size = file_size("config.json");
+}
+
+// Find files with glob patterns
+let samples = glob("**/*.wav");`
+    },
+    {
+      name: 'read_file',
+      signature: 'read_file(path) -> String',
+      description: 'Read entire file contents as a string.',
+      params: [{ name: 'path', type: 'String', description: 'Path to the file to read' }],
+      example: `let lyrics = read_file("song_lyrics.txt");
+print(lyrics);`
+    },
+    {
+      name: 'read_lines',
+      signature: 'read_lines(path) -> Array',
+      description: 'Read file contents as an array of lines.',
+      params: [{ name: 'path', type: 'String', description: 'Path to the file to read' }],
+      example: `let songs = read_lines("playlist.txt");
+for song in songs {
+    print("Track: " + song);
+}`
+    },
+    {
+      name: 'write_file',
+      signature: 'write_file(path, content)',
+      description: 'Write content to a file (creates or overwrites).',
+      params: [
+        { name: 'path', type: 'String', description: 'Path to the file' },
+        { name: 'content', type: 'String', description: 'Content to write' }
+      ],
+      example: `write_file("session.json", json_stringify(session_data));`
+    },
+    {
+      name: 'append_file',
+      signature: 'append_file(path, content)',
+      description: 'Append content to a file.',
+      params: [
+        { name: 'path', type: 'String', description: 'Path to the file' },
+        { name: 'content', type: 'String', description: 'Content to append' }
+      ],
+      example: `append_file("log.txt", "Session started\\n");`
+    },
+    {
+      name: 'file_exists',
+      signature: 'file_exists(path) -> bool',
+      description: 'Check if a file or directory exists.',
+      params: [{ name: 'path', type: 'String', description: 'Path to check' }],
+      example: `if file_exists("backup.wav") {
+    print("Backup found!");
+}`
+    },
+    {
+      name: 'is_dir / is_file',
+      signature: 'is_dir(path) -> bool / is_file(path) -> bool',
+      description: 'Check if path is a directory or regular file.',
+      params: [{ name: 'path', type: 'String', description: 'Path to check' }],
+      example: `if is_dir("samples") {
+    let files = list_dir("samples");
+}`
+    },
+    {
+      name: 'file_size',
+      signature: 'file_size(path) -> i64',
+      description: 'Get file size in bytes.',
+      params: [{ name: 'path', type: 'String', description: 'Path to the file' }],
+      example: `let size = file_size("audio.wav");
+print("File is " + size + " bytes");`
+    },
+    {
+      name: 'list_dir',
+      signature: 'list_dir(path) -> Array',
+      description: 'List contents of a directory.',
+      params: [{ name: 'path', type: 'String', description: 'Directory path' }],
+      example: `let files = list_dir("samples/kicks");
+for f in files {
+    print(f);
+}`
+    },
+    {
+      name: 'create_dir / create_dir_all',
+      signature: 'create_dir(path) / create_dir_all(path)',
+      description: 'Create a directory. create_dir_all creates parent directories too.',
+      params: [{ name: 'path', type: 'String', description: 'Directory path to create' }],
+      example: `create_dir_all("output/renders/2024");`
+    },
+    {
+      name: 'copy_file',
+      signature: 'copy_file(src, dst) -> i64',
+      description: 'Copy a file. Returns bytes copied.',
+      params: [
+        { name: 'src', type: 'String', description: 'Source file path' },
+        { name: 'dst', type: 'String', description: 'Destination file path' }
+      ],
+      example: `let bytes = copy_file("original.wav", "backup.wav");`
+    },
+    {
+      name: 'rename_file',
+      signature: 'rename_file(src, dst)',
+      description: 'Rename or move a file.',
+      params: [
+        { name: 'src', type: 'String', description: 'Current path' },
+        { name: 'dst', type: 'String', description: 'New path' }
+      ],
+      example: `rename_file("temp.wav", "final_mix.wav");`
+    },
+    {
+      name: 'remove_file / remove_dir',
+      signature: 'remove_file(path) / remove_dir(path)',
+      description: 'Remove a file or empty directory.',
+      params: [{ name: 'path', type: 'String', description: 'Path to remove' }],
+      example: `remove_file("temp.txt");
+remove_dir("empty_folder");`
+    },
+    {
+      name: 'glob',
+      signature: 'glob(pattern) -> Array',
+      description: 'Find files matching a glob pattern. Supports * (any chars), ** (recursive), ? (single char).',
+      params: [{ name: 'pattern', type: 'String', description: 'Glob pattern (e.g., "*.wav", "**/*.vibe")' }],
+      example: `// Find all wav files
+let samples = glob("*.wav");
+
+// Find recursively
+let all_vibes = glob("**/*.vibe");
+
+// Match pattern
+let tracks = glob("track_??.wav");`
+    },
+    {
+      name: 'path_join',
+      signature: 'path_join(base, path) -> String',
+      description: 'Join path components.',
+      params: [
+        { name: 'base', type: 'String', description: 'Base path' },
+        { name: 'path', type: 'String', description: 'Path to append' }
+      ],
+      example: `let full = path_join("samples", "kicks/kick_01.wav");`
+    },
+    {
+      name: 'path_parent / path_filename',
+      signature: 'path_parent(path) / path_filename(path) -> String',
+      description: 'Get parent directory or filename from a path.',
+      params: [{ name: 'path', type: 'String', description: 'Path to parse' }],
+      example: `let dir = path_parent("/home/user/song.vibe");  // /home/user
+let name = path_filename("/home/user/song.vibe"); // song.vibe`
+    },
+    {
+      name: 'path_extension / path_stem',
+      signature: 'path_extension(path) / path_stem(path) -> String',
+      description: 'Get file extension or filename without extension.',
+      params: [{ name: 'path', type: 'String', description: 'Path to parse' }],
+      example: `let ext = path_extension("song.vibe");  // vibe
+let stem = path_stem("song.vibe");      // song`
+    },
+    {
+      name: 'Shell Exec (ext-exec)',
+      signature: 'Feature: ext-exec',
+      description: 'Shell command execution extension. Allows running external commands and accessing environment variables. Use with caution - only in trusted environments.',
+      params: [],
+      example: `// Enable with: vibelang run --ext-exec script.vibe
+
+// Run commands
+let files = exec("ls -la");
+let status = exec_status("make build");
+
+// Use shell features (pipes, etc.)
+let count = shell("ls *.wav | wc -l");
+
+// Environment variables
+let home = env_var("HOME");`
+    },
+    {
+      name: 'exec',
+      signature: 'exec(command) -> String',
+      description: 'Execute a command and return stdout as string.',
+      params: [{ name: 'command', type: 'String', description: 'Command to execute (space-separated)' }],
+      example: `let output = exec("ls -la");
+print(output);`
+    },
+    {
+      name: 'exec_status',
+      signature: 'exec_status(command) -> i64',
+      description: 'Execute a command and return exit status code.',
+      params: [{ name: 'command', type: 'String', description: 'Command to execute' }],
+      example: `let status = exec_status("which ffmpeg");
+if status == 0 {
+    print("ffmpeg is installed");
+}`
+    },
+    {
+      name: 'exec_lines',
+      signature: 'exec_lines(command) -> Array',
+      description: 'Execute a command and return stdout as array of lines.',
+      params: [{ name: 'command', type: 'String', description: 'Command to execute' }],
+      example: `let files = exec_lines("ls");
+for f in files {
+    print(f);
+}`
+    },
+    {
+      name: 'exec_with_args',
+      signature: 'exec_with_args(program, args) -> String',
+      description: 'Execute program with explicit arguments array (safer for special characters).',
+      params: [
+        { name: 'program', type: 'String', description: 'Program to run' },
+        { name: 'args', type: 'Array', description: 'Array of arguments' }
+      ],
+      example: `// Safe with spaces and special chars
+let result = exec_with_args("echo", ["Hello", "World!"]);
+exec_with_args("touch", ["my file.txt"]);`
+    },
+    {
+      name: 'exec_full',
+      signature: 'exec_full(command) -> Map',
+      description: 'Execute command and return full result with stdout, stderr, status, and success.',
+      params: [{ name: 'command', type: 'String', description: 'Command to execute' }],
+      example: `let result = exec_full("make build");
+print("stdout: " + result.stdout);
+print("stderr: " + result.stderr);
+print("status: " + result.status);
+print("success: " + result.success);`
+    },
+    {
+      name: 'shell',
+      signature: 'shell(script) -> String',
+      description: 'Execute script through system shell. Supports pipes, redirects, and shell features.',
+      params: [{ name: 'script', type: 'String', description: 'Shell script to execute' }],
+      example: `// Use pipes
+let count = shell("ls *.wav | wc -l");
+
+// Chain commands
+shell("echo hello && echo world");`
+    },
+    {
+      name: 'env_var / env_var_or',
+      signature: 'env_var(name) / env_var_or(name, default) -> String',
+      description: 'Get environment variable value, optionally with a default.',
+      params: [
+        { name: 'name', type: 'String', description: 'Variable name' },
+        { name: 'default', type: 'String', description: 'Default value if not set' }
+      ],
+      example: `let home = env_var("HOME");
+let editor = env_var_or("EDITOR", "nano");`
+    },
+    {
+      name: 'set_env_var',
+      signature: 'set_env_var(name, value)',
+      description: 'Set an environment variable.',
+      params: [
+        { name: 'name', type: 'String', description: 'Variable name' },
+        { name: 'value', type: 'String', description: 'Value to set' }
+      ],
+      example: `set_env_var("MY_CONFIG", "production");`
+    },
+    {
+      name: 'env_vars',
+      signature: 'env_vars() -> Map',
+      description: 'Get all environment variables as a map.',
+      params: [],
+      example: `let vars = env_vars();
+print("PATH: " + vars["PATH"]);`
+    },
+    {
+      name: 'cwd / set_cwd',
+      signature: 'cwd() -> String / set_cwd(path)',
+      description: 'Get or set current working directory.',
+      params: [{ name: 'path', type: 'String', description: 'Directory to change to' }],
+      example: `let current = cwd();
+set_cwd("/tmp");
+// ... do work ...
+set_cwd(current);  // restore`
+    },
+    {
+      name: 'pid',
+      signature: 'pid() -> i64',
+      description: 'Get current process ID.',
+      params: [],
+      example: `let process_id = pid();
+print("Running as PID: " + process_id);`
+    },
+    {
+      name: 'Networking (ext-net)',
+      signature: 'Feature: ext-net',
+      description: 'HTTP client and networking extension. Provides HTTP requests, URL utilities, and JSON parsing. Basic version supports HTTP only.',
+      params: [],
+      example: `// Enable with: vibelang run --ext-net script.vibe
+
+// HTTP requests
+let data = http_get_json("http://api.example.com/data");
+
+// POST JSON data
+http_post_json("http://api.example.com/save", #{
+    tempo: 120,
+    key: "C minor"
+});
+
+// URL and JSON utilities
+let encoded = url_encode("hello world");
+let parsed = json_parse(json_string);`
+    },
+    {
+      name: 'http_get',
+      signature: 'http_get(url) -> String',
+      description: 'Perform HTTP GET request and return body as string.',
+      params: [{ name: 'url', type: 'String', description: 'URL to fetch (http:// only in basic version)' }],
+      example: `let html = http_get("http://example.com");`
+    },
+    {
+      name: 'http_get_lines',
+      signature: 'http_get_lines(url) -> Array',
+      description: 'Perform HTTP GET and return body as array of lines.',
+      params: [{ name: 'url', type: 'String', description: 'URL to fetch' }],
+      example: `let lines = http_get_lines("http://example.com/data.txt");
+for line in lines { print(line); }`
+    },
+    {
+      name: 'http_get_json',
+      signature: 'http_get_json(url) -> Dynamic',
+      description: 'Perform HTTP GET and parse JSON response.',
+      params: [{ name: 'url', type: 'String', description: 'URL to fetch' }],
+      example: `let data = http_get_json("http://api.example.com/config");
+print("Setting: " + data.setting);`
+    },
+    {
+      name: 'http_post',
+      signature: 'http_post(url, body) -> String',
+      description: 'Perform HTTP POST with form data.',
+      params: [
+        { name: 'url', type: 'String', description: 'URL to post to' },
+        { name: 'body', type: 'String', description: 'Form data body' }
+      ],
+      example: `let result = http_post("http://api.example.com/submit", "name=test&value=123");`
+    },
+    {
+      name: 'http_post_json',
+      signature: 'http_post_json(url, data) -> Dynamic',
+      description: 'POST JSON data and parse JSON response.',
+      params: [
+        { name: 'url', type: 'String', description: 'URL to post to' },
+        { name: 'data', type: 'Map', description: 'Data to send as JSON' }
+      ],
+      example: `let response = http_post_json("http://api.example.com/save", #{
+    title: "My Song",
+    bpm: 120
+});`
+    },
+    {
+      name: 'url_encode / url_decode',
+      signature: 'url_encode(s) / url_decode(s) -> String',
+      description: 'URL encode or decode a string.',
+      params: [{ name: 's', type: 'String', description: 'String to encode/decode' }],
+      example: `let encoded = url_encode("hello world");  // hello+world
+let decoded = url_decode("hello+world");  // hello world`
+    },
+    {
+      name: 'parse_url',
+      signature: 'parse_url(url) -> Map',
+      description: 'Parse URL into components (scheme, host, port, path, query).',
+      params: [{ name: 'url', type: 'String', description: 'URL to parse' }],
+      example: `let parts = parse_url("http://example.com:8080/path?q=1");
+print(parts.host);   // example.com
+print(parts.port);   // 8080
+print(parts.path);   // /path
+print(parts.query);  // q=1`
+    },
+    {
+      name: 'build_query_string',
+      signature: 'build_query_string(params) -> String',
+      description: 'Build URL query string from a map.',
+      params: [{ name: 'params', type: 'Map', description: 'Map of parameters' }],
+      example: `let query = build_query_string(#{
+    search: "drum samples",
+    format: "wav"
+});
+// search=drum+samples&format=wav`
+    },
+    {
+      name: 'json_parse',
+      signature: 'json_parse(json) -> Dynamic',
+      description: 'Parse JSON string into Rhai value.',
+      params: [{ name: 'json', type: 'String', description: 'JSON string to parse' }],
+      example: `let data = json_parse(\`{"name": "test", "values": [1, 2, 3]}\`);
+print(data.name);        // test
+print(data.values[0]);   // 1`
+    },
+    {
+      name: 'json_stringify',
+      signature: 'json_stringify(value) -> String',
+      description: 'Convert Rhai value to JSON string.',
+      params: [{ name: 'value', type: 'Dynamic', description: 'Value to convert' }],
+      example: `let json = json_stringify(#{
+    tempo: 128,
+    tracks: ["drums", "bass"]
+});
+write_file("config.json", json);`
+    }
   ]
 };
 
@@ -755,7 +1167,9 @@ const categoryDescriptions = {
 
   'SynthDef': `SynthDefs let you create custom synthesizers and effects at the DSP level. Using VibeLang's UGen library (oscillators, filters, envelopes, and more), you can build anything from simple sine waves to complex FM synthesizers. Effects process input signals and can be added to groups. The standard library includes many ready-to-use synthdefs, but defining your own unlocks unlimited sonic possibilities.`,
 
-  'Helpers': `Helper functions provide convenient utilities for common tasks. Convert decibels to linear amplitude, parse note names to MIDI numbers, calculate bar durations, load SFZ instruments, and control script timing. These functions make your code more readable and handle the math and conversions that would otherwise clutter your musical logic.`
+  'Helpers': `Helper functions provide convenient utilities for common tasks. Convert decibels to linear amplitude, parse note names to MIDI numbers, calculate bar durations, load SFZ instruments, and control script timing. These functions make your code more readable and handle the math and conversions that would otherwise clutter your musical logic.`,
+
+  'Extensions': `VibeLang provides optional extensions that add powerful capabilities beyond music creation. Extensions must be explicitly enabled with feature flags for security reasons. The **Filesystem extension (ext-fs)** provides file I/O operations, directory manipulation, and glob pattern matching. The **Shell Execution extension (ext-exec)** allows running external commands, accessing environment variables, and interacting with the system. The **Networking extension (ext-net)** provides HTTP client functionality, URL utilities, and JSON parsing for web API integration. Enable extensions with the --ext-fs, --ext-exec, or --ext-net flags when running scripts.`
 };
 
 function Documentation({ theme, onToggleTheme }) {

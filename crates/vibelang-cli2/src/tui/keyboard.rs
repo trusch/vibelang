@@ -33,7 +33,8 @@ pub struct KeyboardConfig {
     pub base_note: u8,
     /// Default velocity for key presses
     pub velocity: u8,
-    /// MIDI channel (0-15)
+    /// MIDI channel (0-15) - reserved for future MIDI output
+    #[allow(dead_code)]
     pub channel: u8,
 }
 
@@ -48,37 +49,177 @@ impl KeyboardConfig {
     pub fn german_layout() -> Self {
         let mappings = vec![
             // Lower octave - white keys (bottom row)
-            KeyMapping { key: KeyCode::Char('y'), display_char: 'Y', note_offset: -3, is_black_key: false }, // A2
-            KeyMapping { key: KeyCode::Char('x'), display_char: 'X', note_offset: -1, is_black_key: false }, // B2
-            KeyMapping { key: KeyCode::Char('c'), display_char: 'C', note_offset: 0, is_black_key: false },  // C3
-            KeyMapping { key: KeyCode::Char('v'), display_char: 'V', note_offset: 2, is_black_key: false },  // D3
-            KeyMapping { key: KeyCode::Char('b'), display_char: 'B', note_offset: 4, is_black_key: false },  // E3
-            KeyMapping { key: KeyCode::Char('n'), display_char: 'N', note_offset: 5, is_black_key: false },  // F3
-            KeyMapping { key: KeyCode::Char('m'), display_char: 'M', note_offset: 7, is_black_key: false },  // G3
-            KeyMapping { key: KeyCode::Char(','), display_char: ',', note_offset: 9, is_black_key: false },  // A3
-            KeyMapping { key: KeyCode::Char('.'), display_char: '.', note_offset: 11, is_black_key: false }, // B3
-            KeyMapping { key: KeyCode::Char('-'), display_char: '-', note_offset: 12, is_black_key: false }, // C4
+            KeyMapping {
+                key: KeyCode::Char('y'),
+                display_char: 'Y',
+                note_offset: -3,
+                is_black_key: false,
+            }, // A2
+            KeyMapping {
+                key: KeyCode::Char('x'),
+                display_char: 'X',
+                note_offset: -1,
+                is_black_key: false,
+            }, // B2
+            KeyMapping {
+                key: KeyCode::Char('c'),
+                display_char: 'C',
+                note_offset: 0,
+                is_black_key: false,
+            }, // C3
+            KeyMapping {
+                key: KeyCode::Char('v'),
+                display_char: 'V',
+                note_offset: 2,
+                is_black_key: false,
+            }, // D3
+            KeyMapping {
+                key: KeyCode::Char('b'),
+                display_char: 'B',
+                note_offset: 4,
+                is_black_key: false,
+            }, // E3
+            KeyMapping {
+                key: KeyCode::Char('n'),
+                display_char: 'N',
+                note_offset: 5,
+                is_black_key: false,
+            }, // F3
+            KeyMapping {
+                key: KeyCode::Char('m'),
+                display_char: 'M',
+                note_offset: 7,
+                is_black_key: false,
+            }, // G3
+            KeyMapping {
+                key: KeyCode::Char(','),
+                display_char: ',',
+                note_offset: 9,
+                is_black_key: false,
+            }, // A3
+            KeyMapping {
+                key: KeyCode::Char('.'),
+                display_char: '.',
+                note_offset: 11,
+                is_black_key: false,
+            }, // B3
+            KeyMapping {
+                key: KeyCode::Char('-'),
+                display_char: '-',
+                note_offset: 12,
+                is_black_key: false,
+            }, // C4
             // Lower octave - black keys (home row)
-            KeyMapping { key: KeyCode::Char('s'), display_char: 'S', note_offset: -2, is_black_key: true },  // A#2
-            KeyMapping { key: KeyCode::Char('f'), display_char: 'F', note_offset: 1, is_black_key: true },   // C#3
-            KeyMapping { key: KeyCode::Char('g'), display_char: 'G', note_offset: 3, is_black_key: true },   // D#3
-            KeyMapping { key: KeyCode::Char('j'), display_char: 'J', note_offset: 6, is_black_key: true },   // F#3
-            KeyMapping { key: KeyCode::Char('k'), display_char: 'K', note_offset: 8, is_black_key: true },   // G#3
-            KeyMapping { key: KeyCode::Char('l'), display_char: 'L', note_offset: 10, is_black_key: true },  // A#3
+            KeyMapping {
+                key: KeyCode::Char('s'),
+                display_char: 'S',
+                note_offset: -2,
+                is_black_key: true,
+            }, // A#2
+            KeyMapping {
+                key: KeyCode::Char('f'),
+                display_char: 'F',
+                note_offset: 1,
+                is_black_key: true,
+            }, // C#3
+            KeyMapping {
+                key: KeyCode::Char('g'),
+                display_char: 'G',
+                note_offset: 3,
+                is_black_key: true,
+            }, // D#3
+            KeyMapping {
+                key: KeyCode::Char('j'),
+                display_char: 'J',
+                note_offset: 6,
+                is_black_key: true,
+            }, // F#3
+            KeyMapping {
+                key: KeyCode::Char('k'),
+                display_char: 'K',
+                note_offset: 8,
+                is_black_key: true,
+            }, // G#3
+            KeyMapping {
+                key: KeyCode::Char('l'),
+                display_char: 'L',
+                note_offset: 10,
+                is_black_key: true,
+            }, // A#3
             // Upper octave - white keys (QWERTY row)
-            KeyMapping { key: KeyCode::Char('q'), display_char: 'Q', note_offset: 14, is_black_key: false }, // D4
-            KeyMapping { key: KeyCode::Char('w'), display_char: 'W', note_offset: 16, is_black_key: false }, // E4
-            KeyMapping { key: KeyCode::Char('e'), display_char: 'E', note_offset: 17, is_black_key: false }, // F4
-            KeyMapping { key: KeyCode::Char('r'), display_char: 'R', note_offset: 19, is_black_key: false }, // G4
-            KeyMapping { key: KeyCode::Char('t'), display_char: 'T', note_offset: 21, is_black_key: false }, // A4
-            KeyMapping { key: KeyCode::Char('z'), display_char: 'Z', note_offset: 23, is_black_key: false }, // B4
-            KeyMapping { key: KeyCode::Char('u'), display_char: 'U', note_offset: 24, is_black_key: false }, // C5
+            KeyMapping {
+                key: KeyCode::Char('q'),
+                display_char: 'Q',
+                note_offset: 14,
+                is_black_key: false,
+            }, // D4
+            KeyMapping {
+                key: KeyCode::Char('w'),
+                display_char: 'W',
+                note_offset: 16,
+                is_black_key: false,
+            }, // E4
+            KeyMapping {
+                key: KeyCode::Char('e'),
+                display_char: 'E',
+                note_offset: 17,
+                is_black_key: false,
+            }, // F4
+            KeyMapping {
+                key: KeyCode::Char('r'),
+                display_char: 'R',
+                note_offset: 19,
+                is_black_key: false,
+            }, // G4
+            KeyMapping {
+                key: KeyCode::Char('t'),
+                display_char: 'T',
+                note_offset: 21,
+                is_black_key: false,
+            }, // A4
+            KeyMapping {
+                key: KeyCode::Char('z'),
+                display_char: 'Z',
+                note_offset: 23,
+                is_black_key: false,
+            }, // B4
+            KeyMapping {
+                key: KeyCode::Char('u'),
+                display_char: 'U',
+                note_offset: 24,
+                is_black_key: false,
+            }, // C5
             // Upper octave - black keys (number row)
-            KeyMapping { key: KeyCode::Char('1'), display_char: '1', note_offset: 13, is_black_key: true },  // C#4
-            KeyMapping { key: KeyCode::Char('2'), display_char: '2', note_offset: 15, is_black_key: true },  // D#4
-            KeyMapping { key: KeyCode::Char('4'), display_char: '4', note_offset: 18, is_black_key: true },  // F#4
-            KeyMapping { key: KeyCode::Char('5'), display_char: '5', note_offset: 20, is_black_key: true },  // G#4
-            KeyMapping { key: KeyCode::Char('6'), display_char: '6', note_offset: 22, is_black_key: true },  // A#4
+            KeyMapping {
+                key: KeyCode::Char('1'),
+                display_char: '1',
+                note_offset: 13,
+                is_black_key: true,
+            }, // C#4
+            KeyMapping {
+                key: KeyCode::Char('2'),
+                display_char: '2',
+                note_offset: 15,
+                is_black_key: true,
+            }, // D#4
+            KeyMapping {
+                key: KeyCode::Char('4'),
+                display_char: '4',
+                note_offset: 18,
+                is_black_key: true,
+            }, // F#4
+            KeyMapping {
+                key: KeyCode::Char('5'),
+                display_char: '5',
+                note_offset: 20,
+                is_black_key: true,
+            }, // G#4
+            KeyMapping {
+                key: KeyCode::Char('6'),
+                display_char: '6',
+                note_offset: 22,
+                is_black_key: true,
+            }, // A#4
         ];
 
         Self {
@@ -89,47 +230,16 @@ impl KeyboardConfig {
         }
     }
 
-    /// Get the MIDI note for a given key press
-    pub fn get_note_for_key(&self, key: KeyCode) -> Option<u8> {
-        self.mappings.iter().find(|m| m.key == key).map(|m| {
-            let note = self.base_note as i16 + m.note_offset as i16;
-            note.clamp(0, 127) as u8
-        })
-    }
-
     /// Get the mapping for a given key
     pub fn get_mapping(&self, key: KeyCode) -> Option<&KeyMapping> {
         self.mappings.iter().find(|m| m.key == key)
     }
 
-    /// Check if a key is part of the keyboard
-    pub fn is_keyboard_key(&self, key: KeyCode) -> bool {
-        self.mappings.iter().any(|m| m.key == key)
-    }
-
-    /// Transpose the keyboard up or down
-    pub fn transpose(&mut self, semitones: i8) {
-        let new_base = self.base_note as i16 + semitones as i16;
-        self.base_note = new_base.clamp(0, 127) as u8;
-    }
-
-    /// Get all white keys sorted by note offset
-    pub fn white_keys(&self) -> Vec<&KeyMapping> {
-        let mut keys: Vec<_> = self.mappings.iter().filter(|m| !m.is_black_key).collect();
-        keys.sort_by_key(|m| m.note_offset);
-        keys
-    }
-
-    /// Get all black keys sorted by note offset
-    pub fn black_keys(&self) -> Vec<&KeyMapping> {
-        let mut keys: Vec<_> = self.mappings.iter().filter(|m| m.is_black_key).collect();
-        keys.sort_by_key(|m| m.note_offset);
-        keys
-    }
-
     /// Get lower octave white keys
     pub fn lower_white_keys(&self) -> Vec<&KeyMapping> {
-        let mut keys: Vec<_> = self.mappings.iter()
+        let mut keys: Vec<_> = self
+            .mappings
+            .iter()
             .filter(|m| !m.is_black_key && m.note_offset <= 12)
             .collect();
         keys.sort_by_key(|m| m.note_offset);
@@ -138,7 +248,9 @@ impl KeyboardConfig {
 
     /// Get upper octave white keys
     pub fn upper_white_keys(&self) -> Vec<&KeyMapping> {
-        let mut keys: Vec<_> = self.mappings.iter()
+        let mut keys: Vec<_> = self
+            .mappings
+            .iter()
             .filter(|m| !m.is_black_key && m.note_offset > 12)
             .collect();
         keys.sort_by_key(|m| m.note_offset);
@@ -147,7 +259,9 @@ impl KeyboardConfig {
 
     /// Get lower octave black keys
     pub fn lower_black_keys(&self) -> Vec<&KeyMapping> {
-        let mut keys: Vec<_> = self.mappings.iter()
+        let mut keys: Vec<_> = self
+            .mappings
+            .iter()
             .filter(|m| m.is_black_key && m.note_offset <= 12)
             .collect();
         keys.sort_by_key(|m| m.note_offset);
@@ -156,7 +270,9 @@ impl KeyboardConfig {
 
     /// Get upper octave black keys
     pub fn upper_black_keys(&self) -> Vec<&KeyMapping> {
-        let mut keys: Vec<_> = self.mappings.iter()
+        let mut keys: Vec<_> = self
+            .mappings
+            .iter()
             .filter(|m| m.is_black_key && m.note_offset > 12)
             .collect();
         keys.sort_by_key(|m| m.note_offset);
@@ -207,6 +323,7 @@ impl VirtualKeyboard {
     }
 
     /// Toggle keyboard visibility
+    #[allow(dead_code)]
     pub fn toggle(&mut self) {
         self.visible = !self.visible;
         if !self.visible {
@@ -231,6 +348,7 @@ impl VirtualKeyboard {
     }
 
     /// Release all pressed notes without changing visibility
+    #[allow(dead_code)]
     pub fn release_all(&mut self) -> Vec<u8> {
         let released: Vec<u8> = self.pressed_notes.drain().collect();
         self.note_to_key.clear();
@@ -274,6 +392,7 @@ impl VirtualKeyboard {
     }
 
     /// Touch a note to extend its duration
+    #[allow(dead_code)]
     pub fn touch_note(&mut self, key: KeyCode) {
         if !self.visible {
             return;
@@ -308,7 +427,8 @@ impl VirtualKeyboard {
         }
 
         let now = std::time::Instant::now();
-        let expired: Vec<u8> = self.note_timestamps
+        let expired: Vec<u8> = self
+            .note_timestamps
             .iter()
             .filter(|(_, &timestamp)| now.duration_since(timestamp) > self.note_release_duration)
             .map(|(&note, _)| note)
@@ -324,6 +444,7 @@ impl VirtualKeyboard {
     }
 
     /// Check if a note is currently pressed
+    #[allow(dead_code)]
     pub fn is_note_pressed(&self, note: u8) -> bool {
         self.pressed_notes.contains(&note)
     }
@@ -372,25 +493,21 @@ impl VirtualKeyboard {
     }
 
     /// Set velocity
+    #[allow(dead_code)]
     pub fn set_velocity(&mut self, velocity: u8) {
         self.config.velocity = velocity.min(127);
     }
 
     /// Get the MIDI channel
+    #[allow(dead_code)]
     pub fn channel(&self) -> u8 {
         self.config.channel
     }
 
     /// Set the MIDI channel
+    #[allow(dead_code)]
     pub fn set_channel(&mut self, channel: u8) {
         self.config.channel = channel.min(15);
     }
 }
 
-/// Convert a MIDI note number to a note name
-pub fn note_name(note: u8) -> String {
-    let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-    let octave = (note / 12) as i8 - 1;
-    let name = names[(note % 12) as usize];
-    format!("{}{}", name, octave)
-}

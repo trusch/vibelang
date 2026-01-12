@@ -1,13 +1,13 @@
 //! Fades handler implementation.
 
 use crate::backend::Backend;
+use crate::compat::RwLock;
 use crate::state::{ActiveFade, State};
 use crate::traits::{FadeConfig, FadeTarget, Fades};
 use crate::types::NodeId;
 use crate::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
-use crate::compat::RwLock;
 
 /// Handler for fade operations.
 pub struct FadesHandler<B: Backend> {
@@ -110,7 +110,9 @@ impl<B: Backend> FadesHandler<B> {
                 if data.is_complete {
                     tracing::debug!(
                         "Fade completed on {:?}/{}: final value={}",
-                        &data.target, &data.param, data.value
+                        &data.target,
+                        &data.param,
+                        data.value
                     );
                     completed_indices.push(data.index);
                 }
@@ -183,9 +185,9 @@ impl<B: Backend> Fades for FadesHandler<B> {
         });
 
         // Cancel any existing fade on the same target/param
-        state.active_fades.retain(|f| {
-            f.config.target != config.target || f.config.param != config.param
-        });
+        state
+            .active_fades
+            .retain(|f| f.config.target != config.target || f.config.param != config.param);
 
         // Add the new fade
         state.active_fades.push(ActiveFade {
@@ -200,9 +202,9 @@ impl<B: Backend> Fades for FadesHandler<B> {
     async fn cancel(&self, target: &FadeTarget, param: &str) -> Result<()> {
         let mut state = self.state.write().await;
 
-        state.active_fades.retain(|f| {
-            &f.config.target != target || f.config.param != param
-        });
+        state
+            .active_fades
+            .retain(|f| &f.config.target != target || f.config.param != param);
 
         Ok(())
     }

@@ -27,11 +27,7 @@ pub enum MidiData {
         value: u8,
     },
     /// Pitch bend: device, channel, value (-8192 to +8191)
-    PitchBend {
-        device: u8,
-        channel: u8,
-        value: i16,
-    },
+    PitchBend { device: u8, channel: u8, value: i16 },
     /// Clock pulse: device
     Clock { device: u8 },
     /// Transport start: device
@@ -144,8 +140,7 @@ pub fn pack_note_on(device: u8, channel: u8, note: u8, velocity: u8) -> f32 {
 ///
 /// Packed f32 value for use with `vibelang_midi_note_off` synthdef.
 pub fn pack_note_off(device: u8, channel: u8, note: u8) -> f32 {
-    let packed =
-        ((device as u32) << 14) | ((channel as u32 & 0x7F) << 7) | (note as u32 & 0x7F);
+    let packed = ((device as u32) << 14) | ((channel as u32 & 0x7F) << 7) | (note as u32 & 0x7F);
     packed as f32
 }
 

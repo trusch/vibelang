@@ -206,12 +206,20 @@ impl Default for MidiEncoder {
 
 /// Encode a note on message (no running status).
 pub fn encode_note_on(channel: u8, note: u8, velocity: u8) -> [u8; 3] {
-    [status::NOTE_ON | (channel & 0x0F), note & 0x7F, velocity & 0x7F]
+    [
+        status::NOTE_ON | (channel & 0x0F),
+        note & 0x7F,
+        velocity & 0x7F,
+    ]
 }
 
 /// Encode a note off message (no running status).
 pub fn encode_note_off(channel: u8, note: u8, velocity: u8) -> [u8; 3] {
-    [status::NOTE_OFF | (channel & 0x0F), note & 0x7F, velocity & 0x7F]
+    [
+        status::NOTE_OFF | (channel & 0x0F),
+        note & 0x7F,
+        velocity & 0x7F,
+    ]
 }
 
 /// Encode a control change message (no running status).
@@ -238,7 +246,10 @@ pub fn encode_pitch_bend(channel: u8, value: i16) -> [u8; 3] {
 
 /// Encode a channel aftertouch message (no running status).
 pub fn encode_channel_aftertouch(channel: u8, pressure: u8) -> [u8; 2] {
-    [status::CHANNEL_AFTERTOUCH | (channel & 0x0F), pressure & 0x7F]
+    [
+        status::CHANNEL_AFTERTOUCH | (channel & 0x0F),
+        pressure & 0x7F,
+    ]
 }
 
 /// Encode a poly aftertouch message (no running status).

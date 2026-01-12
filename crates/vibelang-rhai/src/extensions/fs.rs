@@ -31,7 +31,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 thread_local! {
-    static FS_BASE_PATH: RefCell<Option<PathBuf>> = RefCell::new(None);
+    static FS_BASE_PATH: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
 
 /// Set the base path for filesystem operations.
@@ -51,7 +51,11 @@ fn resolve_path(path: &str) -> Result<PathBuf, Box<EvalAltResult>> {
             // If the path is absolute, reject it in sandbox mode
             if path.is_absolute() {
                 return Err(Box::new(EvalAltResult::ErrorRuntime(
-                    format!("Absolute paths not allowed in sandbox mode: {}", path.display()).into(),
+                    format!(
+                        "Absolute paths not allowed in sandbox mode: {}",
+                        path.display()
+                    )
+                    .into(),
                     rhai::Position::NONE,
                 )));
             }
@@ -173,7 +177,12 @@ pub fn append_file(path: &str, content: &str) -> Result<(), Box<EvalAltResult>> 
         .open(&path)
         .map_err(|e| {
             Box::new(EvalAltResult::ErrorRuntime(
-                format!("Failed to open file '{}' for appending: {}", path.display(), e).into(),
+                format!(
+                    "Failed to open file '{}' for appending: {}",
+                    path.display(),
+                    e
+                )
+                .into(),
                 rhai::Position::NONE,
             ))
         })?;
@@ -192,23 +201,17 @@ pub fn append_file(path: &str, content: &str) -> Result<(), Box<EvalAltResult>> 
 
 /// Check if a file or directory exists.
 pub fn file_exists(path: &str) -> bool {
-    resolve_path(path)
-        .map(|p| p.exists())
-        .unwrap_or(false)
+    resolve_path(path).map(|p| p.exists()).unwrap_or(false)
 }
 
 /// Check if path is a directory.
 pub fn is_dir(path: &str) -> bool {
-    resolve_path(path)
-        .map(|p| p.is_dir())
-        .unwrap_or(false)
+    resolve_path(path).map(|p| p.is_dir()).unwrap_or(false)
 }
 
 /// Check if path is a file.
 pub fn is_file(path: &str) -> bool {
-    resolve_path(path)
-        .map(|p| p.is_file())
-        .unwrap_or(false)
+    resolve_path(path).map(|p| p.is_file()).unwrap_or(false)
 }
 
 /// Get file size in bytes.
@@ -300,14 +303,18 @@ pub fn remove_file(path: &str) -> Result<(), Box<EvalAltResult>> {
 pub fn copy_file(src: &str, dst: &str) -> Result<i64, Box<EvalAltResult>> {
     let src = resolve_path(src)?;
     let dst = resolve_path(dst)?;
-    std::fs::copy(&src, &dst)
-        .map(|n| n as i64)
-        .map_err(|e| {
-            Box::new(EvalAltResult::ErrorRuntime(
-                format!("Failed to copy '{}' to '{}': {}", src.display(), dst.display(), e).into(),
-                rhai::Position::NONE,
-            ))
-        })
+    std::fs::copy(&src, &dst).map(|n| n as i64).map_err(|e| {
+        Box::new(EvalAltResult::ErrorRuntime(
+            format!(
+                "Failed to copy '{}' to '{}': {}",
+                src.display(),
+                dst.display(),
+                e
+            )
+            .into(),
+            rhai::Position::NONE,
+        ))
+    })
 }
 
 /// Rename or move a file.
@@ -316,7 +323,13 @@ pub fn rename_file(src: &str, dst: &str) -> Result<(), Box<EvalAltResult>> {
     let dst = resolve_path(dst)?;
     std::fs::rename(&src, &dst).map_err(|e| {
         Box::new(EvalAltResult::ErrorRuntime(
-            format!("Failed to rename '{}' to '{}': {}", src.display(), dst.display(), e).into(),
+            format!(
+                "Failed to rename '{}' to '{}': {}",
+                src.display(),
+                dst.display(),
+                e
+            )
+            .into(),
             rhai::Position::NONE,
         ))
     })
@@ -336,10 +349,17 @@ pub fn glob_files(pattern: &str) -> Result<Array, Box<EvalAltResult>> {
     // For now, use a simple recursive directory walk with pattern matching
     // In a production environment, consider using the `glob` crate
 
-    let base = FS_BASE_PATH.with(|bp| bp.borrow().clone()).unwrap_or_else(|| PathBuf::from("."));
+    let base = FS_BASE_PATH
+        .with(|bp| bp.borrow().clone())
+        .unwrap_or_else(|| PathBuf::from("."));
     let mut results = Array::new();
 
-    fn walk_dir(dir: &Path, pattern: &str, results: &mut Array, base: &Path) -> std::io::Result<()> {
+    fn walk_dir(
+        dir: &Path,
+        pattern: &str,
+        results: &mut Array,
+        base: &Path,
+    ) -> std::io::Result<()> {
         if dir.is_dir() {
             for entry in std::fs::read_dir(dir)? {
                 let entry = entry?;
@@ -382,19 +402,19 @@ fn matches_glob(pattern: &str, text: &str) -> bool {
             (Some('*'), _) => {
                 if pattern.get(1) == Some(&'*') {
                     // ** matches everything including path separators
-                    matches(&pattern[2..], text) || (!text.is_empty() && matches(pattern, &text[1..]))
+                    matches(&pattern[2..], text)
+                        || (!text.is_empty() && matches(pattern, &text[1..]))
                 } else {
                     // * matches everything except path separators
-                    matches(&pattern[1..], text) ||
-                    (!text.is_empty() && text[0] != '/' && text[0] != '\\' && matches(pattern, &text[1..]))
+                    matches(&pattern[1..], text)
+                        || (!text.is_empty()
+                            && text[0] != '/'
+                            && text[0] != '\\'
+                            && matches(pattern, &text[1..]))
                 }
             }
-            (Some('?'), Some(c)) if *c != '/' && *c != '\\' => {
-                matches(&pattern[1..], &text[1..])
-            }
-            (Some(p), Some(t)) if p == t => {
-                matches(&pattern[1..], &text[1..])
-            }
+            (Some('?'), Some(c)) if *c != '/' && *c != '\\' => matches(&pattern[1..], &text[1..]),
+            (Some(p), Some(t)) if p == t => matches(&pattern[1..], &text[1..]),
             _ => false,
         }
     }

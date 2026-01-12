@@ -28,11 +28,7 @@ impl Log for TuiLogger {
             });
         } else {
             // Route to stderr
-            eprintln!(
-                "[{}] {}",
-                record.level(),
-                message
-            );
+            eprintln!("[{}] {}", record.level(), message);
         }
     }
 
@@ -40,14 +36,6 @@ impl Log for TuiLogger {
 }
 
 static LOGGER: std::sync::OnceLock<TuiLogger> = std::sync::OnceLock::new();
-
-/// Initialize the logger in normal (stderr) mode
-pub fn init_logger() -> Result<(), SetLoggerError> {
-    let logger = LOGGER.get_or_init(|| TuiLogger { tui_mode: false });
-    log::set_logger(logger)?;
-    log::set_max_level(log::LevelFilter::Info);
-    Ok(())
-}
 
 /// Initialize the logger in TUI mode
 pub fn init_tui_logger() -> Result<(), SetLoggerError> {

@@ -86,7 +86,11 @@ impl GroupHandle {
     pub fn is_muted(&mut self) -> bool {
         let group_id = context::get_or_create_group_id(&self.path);
         context::with_state(|state| {
-            state.groups.get(&group_id).map(|c| c.muted).unwrap_or(false)
+            state
+                .groups
+                .get(&group_id)
+                .map(|c| c.muted)
+                .unwrap_or(false)
         })
     }
 
@@ -94,7 +98,11 @@ impl GroupHandle {
     pub fn is_soloed(&mut self) -> bool {
         let group_id = context::get_or_create_group_id(&self.path);
         context::with_state(|state| {
-            state.groups.get(&group_id).map(|c| c.soloed).unwrap_or(false)
+            state
+                .groups
+                .get(&group_id)
+                .map(|c| c.soloed)
+                .unwrap_or(false)
         })
     }
 
@@ -113,7 +121,11 @@ impl GroupHandle {
     pub fn effect_count(&mut self) -> i64 {
         let group_id = context::get_or_create_group_id(&self.path);
         context::with_state(|state| {
-            state.groups.get(&group_id).map(|c| c.effects.len() as i64).unwrap_or(0)
+            state
+                .groups
+                .get(&group_id)
+                .map(|c| c.effects.len() as i64)
+                .unwrap_or(0)
         })
     }
 

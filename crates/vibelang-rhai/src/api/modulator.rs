@@ -15,6 +15,9 @@ use crate::context;
 /// Modulators are control-rate signal generators (LFOs, envelopes, followers)
 /// that output to control buses. These can be connected to voice parameters
 /// for dynamic modulation.
+///
+/// Nested modulation is supported: modulator parameters can be modulated by
+/// other modulators using the `.modulate()` method.
 #[derive(Debug, Clone, CustomType)]
 pub struct Modulator {
     /// Modulator name (unique identifier).
@@ -23,6 +26,8 @@ pub struct Modulator {
     pub(crate) synthdef: String,
     /// Parameter values for the modulator synth.
     pub(crate) params: HashMap<String, f32>,
+    /// Modulation mappings (param_name -> source modulator_id).
+    pub(crate) modulations: HashMap<String, ModulatorId>,
 }
 
 impl Modulator {
@@ -40,6 +45,7 @@ impl Modulator {
             name,
             synthdef: String::new(),
             params: HashMap::new(),
+            modulations: HashMap::new(),
         }
     }
 
@@ -96,6 +102,36 @@ impl Modulator {
         self
     }
 
+    /// Connect another modulator to a parameter of this modulator (nested modulation).
+    ///
+    /// This enables complex modulation routing, e.g., an LFO's rate controlled
+    /// by another LFO.
+    ///
+    /// # Example
+    ///
+    /// ```rhai
+    /// // Rate modulator - controls how fast the main LFO runs
+    /// let rate_mod = modulator("rate_lfo")
+    ///     .synth("lfo_sine")
+    ///     .param("rate", 0.1)     // Very slow
+    ///     .param("lo", 0.5)       // LFO rate min
+    ///     .param("hi", 8.0)       // LFO rate max
+    ///     .apply();
+    ///
+    /// // Main filter LFO with modulated rate
+    /// let filter_lfo = modulator("filter_lfo")
+    ///     .synth("lfo_sine")
+    ///     .param("lo", 200.0)
+    ///     .param("hi", 2000.0)
+    ///     .modulate("rate", rate_mod)  // Rate controlled by rate_mod!
+    ///     .apply();
+    /// ```
+    pub fn modulate(mut self, param: String, source: Modulator) -> Self {
+        let source_id = context::get_or_create_modulator_id(&source.name);
+        self.modulations.insert(param, source_id);
+        self
+    }
+
     /// Register this modulator with the script state (chainable).
     fn sync_to_state(&self) -> ModulatorId {
         let modulator_id = context::get_or_create_modulator_id(&self.name);
@@ -104,6 +140,7 @@ impl Modulator {
             name: self.name.clone(),
             synthdef: self.synthdef.clone(),
             params: self.params.clone(),
+            modulations: self.modulations.clone(),
         };
 
         context::with_state(|state| {
@@ -186,6 +223,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("param", Modulator::param);
     engine.register_fn("set_param", Modulator::set_param);
     engine.register_fn("name", Modulator::name);
+    engine.register_fn("modulate", Modulator::modulate);
     engine.register_fn("apply", Modulator::apply);
 
     // ModulatorHandle getters
@@ -204,6 +242,7 @@ mod tests {
             name: name.to_string(),
             synthdef: synthdef.to_string(),
             params: HashMap::new(),
+            modulations: HashMap::new(),
         }
     }
 
@@ -213,6 +252,7 @@ mod tests {
             name: format!("{}_test", synthdef),
             synthdef: synthdef.to_string(),
             params: HashMap::new(),
+            modulations: HashMap::new(),
         }
     }
 
@@ -224,6 +264,7 @@ mod tests {
             name: "my-wobble".to_string(),
             synthdef: String::new(),
             params: HashMap::new(),
+            modulations: HashMap::new(),
         }
         .synth("lfo_sine".to_string())
         .param("lo".to_string(), 100.0)
@@ -233,6 +274,7 @@ mod tests {
         assert_eq!(m.synthdef, "lfo_sine");
         assert_eq!(m.params.get("lo"), Some(&100.0_f32));
         assert_eq!(m.params.get("hi"), Some(&500.0_f32));
+        assert!(m.modulations.is_empty());
     }
 
     #[test]
@@ -241,6 +283,7 @@ mod tests {
             name: "my_lfo".to_string(),
             synthdef: String::new(),
             params: HashMap::new(),
+            modulations: HashMap::new(),
         }
         .synth("lfo_saw".to_string());
 
@@ -254,6 +297,7 @@ mod tests {
             name: "my_lfo".to_string(),
             synthdef: String::new(),
             params: HashMap::new(),
+            modulations: HashMap::new(),
         }
         .on("lfo_tri".to_string());
 
@@ -333,7 +377,7 @@ mod tests {
     fn test_modulator_float_precision() {
         // Test that f64 to f32 conversion works correctly
         let m = test_modulator_simple("lfo_sine")
-            .set_param("rate".to_string(), 0.125)  // Common rate for 8-bar cycle
+            .set_param("rate".to_string(), 0.125) // Common rate for 8-bar cycle
             .set_param("lo".to_string(), 20.0)
             .set_param("hi".to_string(), 20000.0);
 

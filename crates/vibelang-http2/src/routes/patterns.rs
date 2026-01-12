@@ -13,7 +13,10 @@ use vibelang_core2::{
 };
 
 use crate::{
-    models::{ErrorResponse, LoopState, LoopStatus, Pattern, PatternCreate, PatternEvent, PatternUpdate, StartRequest, StopRequest},
+    models::{
+        ErrorResponse, LoopState, LoopStatus, Pattern, PatternCreate, PatternEvent, PatternUpdate,
+        StartRequest, StopRequest,
+    },
     AppState,
 };
 
@@ -25,7 +28,9 @@ async fn resolve_pattern_id(
     // First, try to parse as a numeric ID
     if let Ok(num_id) = identifier.parse::<u32>() {
         let pattern_id = PatternId::new(num_id);
-        let exists = state.with_state(|s| s.patterns.contains_key(&pattern_id)).await;
+        let exists = state
+            .with_state(|s| s.patterns.contains_key(&pattern_id))
+            .await;
         if exists {
             return Ok(pattern_id);
         }
@@ -63,20 +68,28 @@ fn pattern_to_api(
     // Use the actual name from config
     let name = state.config.name.clone();
     // Get voice name from the voice state
-    let voice_name = state.config.voice
+    let voice_name = state
+        .config
+        .voice
         .and_then(|vid| voices.get(&vid))
         .map(|vs| vs.config.name.clone())
         .unwrap_or_default();
 
     // Get group path from the voice if available
-    let group_path = state.config.voice
+    let group_path = state
+        .config
+        .voice
         .and_then(|vid| voices.get(&vid))
         .map(|vs| vs.config.group.raw().to_string())
         .unwrap_or_else(|| "0".to_string());
 
     // Convert playing state to LoopStatus
     let status = LoopStatus {
-        state: if state.playing { LoopState::Playing } else { LoopState::Stopped },
+        state: if state.playing {
+            LoopState::Playing
+        } else {
+            LoopState::Stopped
+        },
         start_beat: None,
         stop_beat: None,
     };
@@ -280,7 +293,10 @@ pub async fn create_pattern(
     let pattern_id = state
         .with_state(|s| {
             // Use a simple hash of the name for ID
-            let id = req.name.bytes().fold(1u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+            let id = req
+                .name
+                .bytes()
+                .fold(1u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
             // Make sure it doesn't conflict
             let mut id = id % 10000 + 1;
             while s.patterns.contains_key(&PatternId::new(id)) {
@@ -291,21 +307,25 @@ pub async fn create_pattern(
         .await;
 
     // Convert events to Steps
-    let steps: Vec<Step> = req.events.iter().map(|e| {
-        let mut step = Step::new(Beat::from_f64(e.beat));
-        if let Some(params) = &e.params {
-            for (k, v) in params {
-                step.params.insert(k.clone(), *v);
+    let steps: Vec<Step> = req
+        .events
+        .iter()
+        .map(|e| {
+            let mut step = Step::new(Beat::from_f64(e.beat));
+            if let Some(params) = &e.params {
+                for (k, v) in params {
+                    step.params.insert(k.clone(), *v);
+                }
             }
-        }
-        // Also add default params
-        for (k, v) in &req.params {
-            if !step.params.contains_key(k) {
-                step.params.insert(k.clone(), *v);
+            // Also add default params
+            for (k, v) in &req.params {
+                if !step.params.contains_key(k) {
+                    step.params.insert(k.clone(), *v);
+                }
             }
-        }
-        step
-    }).collect();
+            step
+        })
+        .collect();
 
     let config = PatternConfig {
         name: req.name.clone(),
@@ -316,7 +336,13 @@ pub async fn create_pattern(
     };
 
     if let Err(e) = state
-        .send(PatternMessage::Create { id: pattern_id, config }.into())
+        .send(
+            PatternMessage::Create {
+                id: pattern_id,
+                config,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -341,7 +367,9 @@ pub async fn create_pattern(
         Some(p) => Ok((StatusCode::CREATED, Json(p))),
         None => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal("Pattern created but not found in state")),
+            Json(ErrorResponse::internal(
+                "Pattern created but not found in state",
+            )),
         )),
     }
 }

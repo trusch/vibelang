@@ -76,17 +76,17 @@ pub fn create_system_link_audio_bytes() -> Result<Vec<u8>, std::io::Error> {
 
     // Param names
     buf.write_all(&3i32.to_be_bytes())?; // num param names
-    // inbus
+                                         // inbus
     let inbus_name = b"inbus";
     buf.push(inbus_name.len() as u8);
     buf.write_all(inbus_name)?;
     buf.write_all(&0i32.to_be_bytes())?; // index 0
-    // outbus
+                                         // outbus
     let outbus_name = b"outbus";
     buf.push(outbus_name.len() as u8);
     buf.write_all(outbus_name)?;
     buf.write_all(&1i32.to_be_bytes())?; // index 1
-    // amp
+                                         // amp
     let amp_name = b"amp";
     buf.push(amp_name.len() as u8);
     buf.write_all(amp_name)?;

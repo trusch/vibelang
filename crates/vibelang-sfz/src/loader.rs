@@ -142,8 +142,7 @@ fn load_sfz_region(
     };
 
     // Read WAV metadata for duration calculation
-    let (buffer_frames, sample_rate) = read_wav_info(&sample_path)
-        .unwrap_or((44100, 44100.0)); // Default to 1 second at 44.1kHz if reading fails
+    let (buffer_frames, sample_rate) = read_wav_info(&sample_path).unwrap_or((44100, 44100.0)); // Default to 1 second at 44.1kHz if reading fails
 
     // Extract region parameters
     let opcodes = parse_region_opcodes(sfz_region, global_opcodes)?;
@@ -327,9 +326,7 @@ fn parse_region_opcodes(
 // Helper functions
 
 fn extract_opcodes_from_section(section: Option<&SfzSection>) -> HashMap<String, String> {
-    section
-        .map(|s| s.opcodes.clone())
-        .unwrap_or_default()
+    section.map(|s| s.opcodes.clone()).unwrap_or_default()
 }
 
 fn extract_key_range(section: &SfzSection) -> Result<(u8, u8)> {

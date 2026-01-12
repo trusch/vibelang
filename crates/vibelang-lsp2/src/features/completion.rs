@@ -17,7 +17,7 @@ use tower_lsp::lsp_types::{
 };
 
 use crate::analysis::{AnalysisResult, CompletionContext};
-use crate::data::{get_api_docs, get_ugen_completions, ApiFunctionDoc};
+use crate::data::{get_api_docs, get_ugen_completions};
 
 /// Get completions for a given context.
 pub fn get_completions(
@@ -35,7 +35,9 @@ pub fn get_completions(
         CompletionContext::ImportPath => get_import_completions(import_paths, current_file),
         CompletionContext::ParamName { synthdef } => get_param_completions(synthdef.as_deref()),
         CompletionContext::NotePattern => get_note_pattern_completions(),
-        CompletionContext::MethodChain { object_type } => get_method_completions(object_type.as_deref()),
+        CompletionContext::MethodChain { object_type } => {
+            get_method_completions(object_type.as_deref())
+        }
         CompletionContext::FunctionCall { .. } => vec![], // Handled by signature help
         CompletionContext::DspBody => get_ugen_completions(), // UGen functions inside .body()
         CompletionContext::Unknown => vec![],
@@ -82,10 +84,12 @@ fn get_snippet_for_function(name: &str) -> String {
         "sample" => "sample(\"$1\", \"$2\")$0".to_string(),
         "load_sfz" => "load_sfz(\"$1\", \"$2\")$0".to_string(),
         "define_synthdef" => {
-            "define_synthdef(\"$1\")\n\t.param(\"$2\", $3)\n\t.body(|$2| {\n\t\t$0\n\t})".to_string()
+            "define_synthdef(\"$1\")\n\t.param(\"$2\", $3)\n\t.body(|$2| {\n\t\t$0\n\t})"
+                .to_string()
         }
         "define_fx" => {
-            "define_fx(\"$1\")\n\t.param(\"$2\", $3)\n\t.body(|input, $2| {\n\t\t$0\n\t})".to_string()
+            "define_fx(\"$1\")\n\t.param(\"$2\", $3)\n\t.body(|input, $2| {\n\t\t$0\n\t})"
+                .to_string()
         }
         "set_tempo" => "set_tempo($1)$0".to_string(),
         "set_quantization" => "set_quantization(\"$1\")$0".to_string(),
@@ -97,6 +101,54 @@ fn get_snippet_for_function(name: &str) -> String {
         "chord" => "chord(\"$1\", \"$2\")$0".to_string(),
         "scale" => "scale(\"$1\", \"$2\", $3)$0".to_string(),
         "envelope" => "envelope()$0".to_string(),
+        // Filesystem extension (ext-fs)
+        "read_file" => "read_file(\"$1\")$0".to_string(),
+        "read_lines" => "read_lines(\"$1\")$0".to_string(),
+        "write_file" => "write_file(\"$1\", $2)$0".to_string(),
+        "append_file" => "append_file(\"$1\", $2)$0".to_string(),
+        "file_exists" => "file_exists(\"$1\")$0".to_string(),
+        "is_dir" => "is_dir(\"$1\")$0".to_string(),
+        "is_file" => "is_file(\"$1\")$0".to_string(),
+        "file_size" => "file_size(\"$1\")$0".to_string(),
+        "list_dir" => "list_dir(\"$1\")$0".to_string(),
+        "create_dir" => "create_dir(\"$1\")$0".to_string(),
+        "create_dir_all" => "create_dir_all(\"$1\")$0".to_string(),
+        "remove_dir" => "remove_dir(\"$1\")$0".to_string(),
+        "remove_file" => "remove_file(\"$1\")$0".to_string(),
+        "copy_file" => "copy_file(\"$1\", \"$2\")$0".to_string(),
+        "rename_file" => "rename_file(\"$1\", \"$2\")$0".to_string(),
+        "glob" => "glob(\"$1\")$0".to_string(),
+        "path_join" => "path_join(\"$1\", \"$2\")$0".to_string(),
+        "path_parent" => "path_parent(\"$1\")$0".to_string(),
+        "path_filename" => "path_filename(\"$1\")$0".to_string(),
+        "path_extension" => "path_extension(\"$1\")$0".to_string(),
+        "path_stem" => "path_stem(\"$1\")$0".to_string(),
+        // Shell execution extension (ext-exec)
+        "exec" => "exec(\"$1\")$0".to_string(),
+        "exec_status" => "exec_status(\"$1\")$0".to_string(),
+        "exec_lines" => "exec_lines(\"$1\")$0".to_string(),
+        "exec_with_args" => "exec_with_args(\"$1\", [$2])$0".to_string(),
+        "exec_full" => "exec_full(\"$1\")$0".to_string(),
+        "shell" => "shell(\"$1\")$0".to_string(),
+        "env_var" => "env_var(\"$1\")$0".to_string(),
+        "env_var_or" => "env_var_or(\"$1\", \"$2\")$0".to_string(),
+        "set_env_var" => "set_env_var(\"$1\", \"$2\")$0".to_string(),
+        "env_vars" => "env_vars()$0".to_string(),
+        "cwd" => "cwd()$0".to_string(),
+        "set_cwd" => "set_cwd(\"$1\")$0".to_string(),
+        "pid" => "pid()$0".to_string(),
+        // Networking extension (ext-net)
+        "http_get" => "http_get(\"$1\")$0".to_string(),
+        "http_get_lines" => "http_get_lines(\"$1\")$0".to_string(),
+        "http_get_json" => "http_get_json(\"$1\")$0".to_string(),
+        "http_post" => "http_post(\"$1\", $2)$0".to_string(),
+        "http_post_json" => "http_post_json(\"$1\", #{ $2 })$0".to_string(),
+        "url_encode" => "url_encode($1)$0".to_string(),
+        "url_decode" => "url_decode($1)$0".to_string(),
+        "parse_url" => "parse_url(\"$1\")$0".to_string(),
+        "build_query_string" => "build_query_string(#{ $1 })$0".to_string(),
+        "json_parse" => "json_parse($1)$0".to_string(),
+        "json_stringify" => "json_stringify($1)$0".to_string(),
         _ => format!("{}($1)$0", name),
     }
 }
@@ -311,7 +363,9 @@ fn get_note_pattern_completions() -> Vec<CompletionItem> {
     }
 
     // Add chord types
-    let chord_types = ["maj", "min", "7", "maj7", "m7", "dim", "aug", "sus2", "sus4"];
+    let chord_types = [
+        "maj", "min", "7", "maj7", "m7", "dim", "aug", "sus2", "sus4",
+    ];
     for chord in chord_types {
         items.push(CompletionItem {
             label: format!(":{}", chord),
@@ -367,10 +421,18 @@ fn method_item(name: &str, signature: &str, description: &str) -> CompletionItem
 fn get_voice_methods() -> Vec<CompletionItem> {
     vec![
         method_item("synth", "(name: string)", "Set the synthdef to use"),
-        method_item("on", "(source)", "Set the sound source (synthdef, sample, or SFZ)"),
+        method_item(
+            "on",
+            "(source)",
+            "Set the sound source (synthdef, sample, or SFZ)",
+        ),
         method_item("poly", "(count: int)", "Set polyphony count"),
         method_item("gain", "(level: float)", "Set gain level in dB"),
-        method_item("param", "(name: string, value: float)", "Set a synth parameter"),
+        method_item(
+            "param",
+            "(name: string, value: float)",
+            "Set a synth parameter",
+        ),
         method_item("pan", "(value: float)", "Set pan position (-1 to 1)"),
         method_item("group", "(path: string)", "Assign to a group"),
         method_item("channel", "(n: int)", "Set MIDI channel (0-15)"),
@@ -385,12 +447,24 @@ fn get_voice_methods() -> Vec<CompletionItem> {
 fn get_pattern_methods() -> Vec<CompletionItem> {
     vec![
         method_item("on", "(voice)", "Set the voice to trigger"),
-        method_item("on_voice", "(voice)", "Set the voice to trigger (by object)"),
+        method_item(
+            "on_voice",
+            "(voice)",
+            "Set the voice to trigger (by object)",
+        ),
         method_item("step", "(pattern: string)", "Set step pattern (x/./-)"),
-        method_item("euclid", "(hits: int, steps: int)", "Generate Euclidean rhythm"),
+        method_item(
+            "euclid",
+            "(hits: int, steps: int)",
+            "Generate Euclidean rhythm",
+        ),
         method_item("len", "(beats: float)", "Set pattern length in beats"),
         method_item("swing", "(amount: float)", "Set swing amount (0-1)"),
-        method_item("set_param", "(key: string, value)", "Set per-step parameter"),
+        method_item(
+            "set_param",
+            "(key: string, value)",
+            "Set per-step parameter",
+        ),
         method_item("apply", "()", "Register pattern without starting"),
         method_item("start", "()", "Start pattern playback"),
         method_item("launch", "()", "Start pattern at next quantization"),
@@ -424,7 +498,11 @@ fn get_sequence_methods() -> Vec<CompletionItem> {
         method_item("loop_beats", "(beats: int)", "Set loop length in beats"),
         method_item("clip", "(range, source)", "Add a clip to the sequence"),
         method_item("clip_once", "(range, source)", "Add a one-shot clip"),
-        method_item("clip_loops", "(range, source, count)", "Add clip with loop count"),
+        method_item(
+            "clip_loops",
+            "(range, source, count)",
+            "Add clip with loop count",
+        ),
         method_item("apply", "()", "Register sequence without starting"),
         method_item("start", "()", "Start sequence playback"),
         method_item("stop", "()", "Stop sequence playback"),
@@ -434,7 +512,11 @@ fn get_sequence_methods() -> Vec<CompletionItem> {
 fn get_fx_methods() -> Vec<CompletionItem> {
     vec![
         method_item("synth", "(name: string)", "Set the effect synthdef"),
-        method_item("param", "(name: string, value: float)", "Set an effect parameter"),
+        method_item(
+            "param",
+            "(name: string, value: float)",
+            "Set an effect parameter",
+        ),
         method_item("bypass", "(bypassed: bool)", "Bypass the effect"),
         method_item("apply", "()", "Apply the effect to the group"),
     ]
@@ -461,7 +543,11 @@ fn get_fade_methods() -> Vec<CompletionItem> {
         method_item("param", "(name: string)", "Parameter to fade"),
         method_item("from", "(value: float)", "Starting value"),
         method_item("to", "(value: float)", "Ending value"),
-        method_item("over", "(duration: string)", "Duration string (e.g., '4bar')"),
+        method_item(
+            "over",
+            "(duration: string)",
+            "Duration string (e.g., '4bar')",
+        ),
         method_item("over_bars", "(bars: float)", "Duration in bars"),
         method_item("over_beats", "(beats: float)", "Duration in beats"),
         method_item("curve", "(type: string)", "Fade curve type"),
@@ -514,7 +600,11 @@ fn get_synthdef_builder_methods() -> Vec<CompletionItem> {
 fn get_fx_builder_methods() -> Vec<CompletionItem> {
     vec![
         method_item("param", "(name: string, default: float)", "Add a parameter"),
-        method_item("body", "(closure)", "Set the effect DSP body (receives 'input')"),
+        method_item(
+            "body",
+            "(closure)",
+            "Set the effect DSP body (receives 'input')",
+        ),
     ]
 }
 

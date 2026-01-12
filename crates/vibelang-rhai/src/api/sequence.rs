@@ -6,14 +6,14 @@ use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Positi
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Range;
+use vibelang_core2::reload::EffectConfig;
 use vibelang_core2::traits::{Clip, FadeConfig, FadeCurve, SequenceConfig};
 use vibelang_core2::types::Beat;
-use vibelang_core2::reload::EffectConfig;
 
-use crate::context;
-use super::pattern::Pattern;
 use super::melody::Melody;
+use super::pattern::Pattern;
 use super::voice::Voice;
+use crate::context;
 
 // Global registry for sequences - allows looking up sequences by name
 thread_local! {
@@ -33,7 +33,8 @@ fn get_sequence(name: &str) -> Option<Sequence> {
 /// Store a sequence in the registry.
 fn store_sequence(sequence: &Sequence) {
     SEQUENCE_REGISTRY.with(|r| {
-        r.borrow_mut().insert(sequence.name.clone(), sequence.clone());
+        r.borrow_mut()
+            .insert(sequence.name.clone(), sequence.clone());
     });
 }
 
@@ -151,10 +152,7 @@ impl Sequence {
                 end,
             });
         } else if let Some(f) = source.clone().try_cast::<Fade>() {
-            self.clips.push(ClipInfo::Fade {
-                fade: f,
-                start,
-            });
+            self.clips.push(ClipInfo::Fade { fade: f, start });
         } else if let Some(s) = source.clone().try_cast::<Sequence>() {
             self.clips.push(ClipInfo::Sequence {
                 name: s.name.clone(),
@@ -281,9 +279,7 @@ impl Sequence {
     /// Check if the sequence is playing.
     pub fn is_playing(&mut self) -> bool {
         let sequence_id = context::get_or_create_sequence_id(&self.name);
-        context::with_state(|state| {
-            state.playing_sequences.contains(&sequence_id)
-        })
+        context::with_state(|state| state.playing_sequences.contains(&sequence_id))
     }
 }
 
@@ -628,7 +624,7 @@ pub fn register(engine: &mut Engine) {
     // Fade builder methods
     engine.register_fn("on_group", Fade::on_group);
     engine.register_fn("on_voice", Fade::on_voice);
-    engine.register_fn("on_voice", Fade::on_voice_handle);  // Overload for Voice handle
+    engine.register_fn("on_voice", Fade::on_voice_handle); // Overload for Voice handle
     engine.register_fn("on_effect", Fade::on_effect);
     engine.register_fn("param", Fade::param);
     engine.register_fn("from", Fade::from);

@@ -458,9 +458,15 @@ pub fn register_node_ref(engine: &mut rhai::Engine) {
     engine.register_fn("round", |a: NodeRef| a.round().unwrap());
 
     // Signal processing
-    engine.register_fn("clip", |a: NodeRef, lo: f64, hi: f64| a.clip(lo, hi).unwrap());
-    engine.register_fn("wrap", |a: NodeRef, lo: f64, hi: f64| a.wrap(lo, hi).unwrap());
-    engine.register_fn("fold", |a: NodeRef, lo: f64, hi: f64| a.fold(lo, hi).unwrap());
+    engine.register_fn("clip", |a: NodeRef, lo: f64, hi: f64| {
+        a.clip(lo, hi).unwrap()
+    });
+    engine.register_fn("wrap", |a: NodeRef, lo: f64, hi: f64| {
+        a.wrap(lo, hi).unwrap()
+    });
+    engine.register_fn("fold", |a: NodeRef, lo: f64, hi: f64| {
+        a.fold(lo, hi).unwrap()
+    });
 
     // Binary math ops
     engine.register_fn("min", |a: NodeRef, b: NodeRef| a.min(b).unwrap());
@@ -483,7 +489,9 @@ pub fn register_node_ref(engine: &mut rhai::Engine) {
     engine.register_fn("round_to", |a: NodeRef, b: f64| a.round_to(b).unwrap());
 
     // Interpolation
-    engine.register_fn("lerp", |a: NodeRef, b: NodeRef, t: NodeRef| a.lerp(b, t).unwrap());
+    engine.register_fn("lerp", |a: NodeRef, b: NodeRef, t: NodeRef| {
+        a.lerp(b, t).unwrap()
+    });
 }
 
 #[cfg(test)]

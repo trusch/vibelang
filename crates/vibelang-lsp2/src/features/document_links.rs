@@ -87,9 +87,9 @@ fn extract_sample_link(
     let after_sample = &line[sample_start + 7..];
 
     // Skip the first argument (name)
-    let first_quote = after_sample.find(|c| c == '"' || c == '\'')?;
+    let first_quote = after_sample.find(['"', '\''])?;
     let after_first = &after_sample[first_quote + 1..];
-    let first_close = after_first.find(|c| c == '"' || c == '\'')?;
+    let first_close = after_first.find(['"', '\''])?;
     let after_close = &after_first[first_close + 1..];
 
     // Find the comma and second argument
@@ -97,7 +97,7 @@ fn extract_sample_link(
     let after_comma = &after_close[comma + 1..].trim_start();
 
     // Find the path argument
-    let quote_char = after_comma.chars().find(|c| *c == '"' || *c == '\'')?;
+    let quote_char = after_comma.chars().find(|&c| c == '"' || c == '\'')?;
     let quote_start = after_comma.find(quote_char)?;
     let path_start = quote_start + 1;
     let rest = &after_comma[path_start..];
@@ -141,9 +141,9 @@ fn extract_sfz_link(
     let after_sfz = &line[sfz_start + 9..];
 
     // Skip the first argument (name)
-    let first_quote = after_sfz.find(|c| c == '"' || c == '\'')?;
+    let first_quote = after_sfz.find(['"', '\''])?;
     let after_first = &after_sfz[first_quote + 1..];
-    let first_close = after_first.find(|c| c == '"' || c == '\'')?;
+    let first_close = after_first.find(['"', '\''])?;
     let after_close = &after_first[first_close + 1..];
 
     // Find the comma and second argument
@@ -151,7 +151,7 @@ fn extract_sfz_link(
     let after_comma = &after_close[comma + 1..].trim_start();
 
     // Find the path argument
-    let quote_char = after_comma.chars().find(|c| *c == '"' || *c == '\'')?;
+    let quote_char = after_comma.chars().find(|&c| c == '"' || c == '\'')?;
     let quote_start = after_comma.find(quote_char)?;
     let path_start = quote_start + 1;
     let rest = &after_comma[path_start..];

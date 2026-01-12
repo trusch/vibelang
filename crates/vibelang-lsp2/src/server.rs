@@ -74,12 +74,13 @@ impl VibeLangServer {
             let known_effects = self.known_effects.read().unwrap().clone();
 
             // Run validation engine if available
-            let validation_diagnostics = if let Some(engine) = self.validation_engine.read().unwrap().as_ref() {
-                let result = engine.validate(&doc.text());
-                result.all_diagnostics()
-            } else {
-                Vec::new()
-            };
+            let validation_diagnostics =
+                if let Some(engine) = self.validation_engine.read().unwrap().as_ref() {
+                    let result = engine.validate(&doc.text());
+                    result.all_diagnostics()
+                } else {
+                    Vec::new()
+                };
 
             // Combine all diagnostics
             let mut all_diagnostics = Vec::new();
@@ -89,7 +90,8 @@ impl VibeLangServer {
             all_diagnostics.extend(validation_diagnostics);
 
             // Filter out duplicate diagnostics
-            all_diagnostics = crate::features::diagnostics::deduplicate_diagnostics(all_diagnostics);
+            all_diagnostics =
+                crate::features::diagnostics::deduplicate_diagnostics(all_diagnostics);
 
             // Check for undefined synthdefs
             for synthdef_ref in &analysis.synthdef_refs {
@@ -174,7 +176,13 @@ impl VibeLangServer {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    self.scan_directory_for_defs(&path, synthdefs, effects, synthdef_info, effect_info);
+                    self.scan_directory_for_defs(
+                        &path,
+                        synthdefs,
+                        effects,
+                        synthdef_info,
+                        effect_info,
+                    );
                 } else if path.extension().is_some_and(|e| e == "vibe") {
                     self.scan_file_for_defs(&path, synthdefs, effects, synthdef_info, effect_info);
                 }
@@ -254,18 +262,18 @@ impl VibeLangServer {
     }
 
     /// Extract parameters from synthdef/fx definition content.
-    fn extract_params_from_content(&self, content: &str, _name: &str) -> Vec<crate::data::ParamInfo> {
+    fn extract_params_from_content(
+        &self,
+        content: &str,
+        _name: &str,
+    ) -> Vec<crate::data::ParamInfo> {
         let mut params = Vec::new();
         let param_re = regex::Regex::new(r#"\.param\s*\(\s*["']([^"']+)["']\s*,\s*([^)]+)\)"#).ok();
 
         if let Some(re) = param_re {
             for cap in re.captures_iter(content) {
                 if let (Some(name_match), Some(default_match)) = (cap.get(1), cap.get(2)) {
-                    let default: f64 = default_match
-                        .as_str()
-                        .trim()
-                        .parse()
-                        .unwrap_or(0.0);
+                    let default: f64 = default_match.as_str().trim().parse().unwrap_or(0.0);
                     params.push(crate::data::ParamInfo {
                         name: name_match.as_str().to_string(),
                         default,
@@ -395,22 +403,26 @@ impl LanguageServer for VibeLangServer {
                     file_operations: None,
                 }),
                 semantic_tokens_provider: Some(
-                    SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
-                        legend: SemanticTokensLegend {
-                            token_types,
-                            token_modifiers,
+                    SemanticTokensServerCapabilities::SemanticTokensOptions(
+                        SemanticTokensOptions {
+                            legend: SemanticTokensLegend {
+                                token_types,
+                                token_modifiers,
+                            },
+                            full: Some(SemanticTokensFullOptions::Bool(true)),
+                            range: Some(false),
+                            ..Default::default()
                         },
-                        full: Some(SemanticTokensFullOptions::Bool(true)),
-                        range: Some(false),
-                        ..Default::default()
-                    }),
+                    ),
                 ),
-                diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
-                    identifier: Some("vibelang".to_string()),
-                    inter_file_dependencies: true,
-                    workspace_diagnostics: false,
-                    ..Default::default()
-                })),
+                diagnostic_provider: Some(DiagnosticServerCapabilities::Options(
+                    DiagnosticOptions {
+                        identifier: Some("vibelang".to_string()),
+                        inter_file_dependencies: true,
+                        workspace_diagnostics: false,
+                        ..Default::default()
+                    },
+                )),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -521,7 +533,13 @@ impl LanguageServer for VibeLangServer {
         let synthdef_info = self.synthdef_info.read().unwrap().clone();
         let effect_info = self.effect_info.read().unwrap().clone();
 
-        Ok(hover::get_hover(&word, &content, position, &synthdef_info, &effect_info))
+        Ok(hover::get_hover(
+            &word,
+            &content,
+            position,
+            &synthdef_info,
+            &effect_info,
+        ))
     }
 
     async fn goto_definition(
@@ -579,13 +597,14 @@ impl LanguageServer for VibeLangServer {
 
         let content = doc.text();
         // Get the current line
-        let line = content
-            .lines()
-            .nth(position.line as usize)
-            .unwrap_or("");
+        let line = content.lines().nth(position.line as usize).unwrap_or("");
 
         let api_docs: Vec<_> = get_api_docs().values().cloned().collect();
-        Ok(signature_help::get_signature_help(line, position.character, &api_docs))
+        Ok(signature_help::get_signature_help(
+            line,
+            position.character,
+            &api_docs,
+        ))
     }
 
     async fn document_symbol(
@@ -604,10 +623,8 @@ impl LanguageServer for VibeLangServer {
         // Get cached analysis
         let analysis = self.analysis_cache.get(&uri);
 
-        let symbols = document_symbols::get_document_symbols(
-            &content,
-            analysis.as_ref().map(|a| a.value()),
-        );
+        let symbols =
+            document_symbols::get_document_symbols(&content, analysis.as_ref().map(|a| a.value()));
 
         Ok(Some(DocumentSymbolResponse::Nested(symbols)))
     }
@@ -673,10 +690,8 @@ impl LanguageServer for VibeLangServer {
         let content = doc.text();
         let analysis = self.analysis_cache.get(&uri);
 
-        let tokens = semantic_tokens::get_semantic_tokens(
-            &content,
-            analysis.as_ref().map(|a| a.value()),
-        );
+        let tokens =
+            semantic_tokens::get_semantic_tokens(&content, analysis.as_ref().map(|a| a.value()));
 
         Ok(Some(SemanticTokensResult::Tokens(tokens)))
     }
@@ -911,7 +926,7 @@ fn is_position_in_string(line: &str, char_pos: usize) -> bool {
 /// Extract the string content at a position.
 fn extract_string_at_position(line: &str, char_pos: usize) -> Option<String> {
     let before = &line[..char_pos];
-    let quote_start = before.rfind(|c| c == '"' || c == '\'')?;
+    let quote_start = before.rfind(['"', '\''])?;
     let quote_char = before.chars().nth(quote_start)?;
 
     let after = &line[quote_start + 1..];

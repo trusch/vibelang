@@ -35,9 +35,7 @@ pub async fn get_synthdef(
     State(state): State<Arc<AppState>>,
     Path(name): Path<String>,
 ) -> Result<Json<SynthDefInfo>, (StatusCode, Json<ErrorResponse>)> {
-    let exists = state
-        .with_state(|s| s.synthdefs.contains(&name))
-        .await;
+    let exists = state.with_state(|s| s.synthdefs.contains(&name)).await;
 
     if exists {
         Ok(Json(SynthDefInfo {

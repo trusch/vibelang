@@ -1,6 +1,7 @@
 //! Patterns handler implementation.
 
 use crate::backend::{AddAction, Backend};
+use crate::compat::RwLock;
 use crate::state::{PatternState, State};
 use crate::traits::{PatternConfig, Patterns, Step};
 use crate::types::{Beat, NodeId, ParamMap, PatternId, VoiceId};
@@ -8,7 +9,6 @@ use crate::validation::Validate;
 use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
-use crate::compat::RwLock;
 
 /// Handler for pattern operations.
 pub struct PatternsHandler<B: Backend> {
@@ -52,7 +52,11 @@ impl<B: Backend> PatternsHandler<B> {
                 .collect();
 
             if !pattern_ids.is_empty() {
-                tracing::trace!("Patterns tick at beat {:?}: {} playing patterns", current_beat, pattern_ids.len());
+                tracing::trace!(
+                    "Patterns tick at beat {:?}: {} playing patterns",
+                    current_beat,
+                    pattern_ids.len()
+                );
             }
 
             for pattern_id in pattern_ids {
@@ -129,7 +133,10 @@ impl<B: Backend> PatternsHandler<B> {
                         choke_group,
                     )) = voice_info
                     {
-                        let group_info = state.groups.get(&group_id).map(|g| (g.node_id, g.audio_bus));
+                        let group_info = state
+                            .groups
+                            .get(&group_id)
+                            .map(|g| (g.node_id, g.audio_bus));
 
                         if let Some((group_node_id, audio_bus)) = group_info {
                             tracing::debug!(
@@ -180,8 +187,9 @@ impl<B: Backend> PatternsHandler<B> {
                                         if other_voice.config.choke_group.as_ref() == Some(choke) {
                                             // Collect all active nodes to choke
                                             choke_nodes.append(&mut other_voice.active_nodes);
-                                            choke_nodes
-                                                .extend(other_voice.note_nodes.drain().map(|(_, n)| n));
+                                            choke_nodes.extend(
+                                                other_voice.note_nodes.drain().map(|(_, n)| n),
+                                            );
                                         }
                                     }
                                 }
@@ -414,7 +422,11 @@ mod tests {
             Beat::from_f64(0.25),
             Beat::from_f64(4.0),
         );
-        assert_eq!(triggered.len(), 0, "Step at last_pos should NOT trigger (exclusive start)");
+        assert_eq!(
+            triggered.len(),
+            0,
+            "Step at last_pos should NOT trigger (exclusive start)"
+        );
     }
 
     #[test]
@@ -428,7 +440,11 @@ mod tests {
             Beat::from_f64(0.25),
             Beat::from_f64(4.0),
         );
-        assert_eq!(triggered.len(), 1, "Step at new_pos SHOULD trigger (inclusive end)");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Step at new_pos SHOULD trigger (inclusive end)"
+        );
     }
 
     #[test]
@@ -471,7 +487,11 @@ mod tests {
             Beat::from_f64(0.5),
             Beat::from_f64(4.0),
         );
-        assert_eq!(triggered.len(), 1, "Only exact match should trigger on first tick");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Only exact match should trigger on first tick"
+        );
         assert_eq!(triggered[0].to_f64(), 0.5);
     }
 
@@ -504,7 +524,11 @@ mod tests {
             Beat::from_f64(0.25),
             Beat::from_f64(4.0),
         );
-        assert_eq!(triggered.len(), 1, "Step near end should trigger during wrap");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Step near end should trigger during wrap"
+        );
     }
 
     #[test]
@@ -518,7 +542,11 @@ mod tests {
             Beat::from_f64(0.25),
             Beat::from_f64(4.0),
         );
-        assert_eq!(triggered.len(), 1, "Step at new_pos should trigger during wrap");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Step at new_pos should trigger during wrap"
+        );
     }
 
     #[test]
@@ -532,7 +560,11 @@ mod tests {
             Beat::from_f64(0.25),
             Beat::from_f64(4.0),
         );
-        assert_eq!(triggered.len(), 0, "Step past new_pos should NOT trigger during wrap");
+        assert_eq!(
+            triggered.len(),
+            0,
+            "Step past new_pos should NOT trigger during wrap"
+        );
     }
 
     #[test]
@@ -585,7 +617,11 @@ mod tests {
             Beat::from_f64(0.0), // Wrapped
             Beat::from_f64(4.0),
         );
-        assert_eq!(triggered.len(), 1, "Step near end should trigger before wrap");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Step near end should trigger before wrap"
+        );
     }
 
     // =========================================================================
@@ -698,7 +734,11 @@ mod tests {
             Beat::from_f64(4.0),
         );
         // new_pos is INCLUSIVE - step at exactly 1.0 triggers when we reach 1.0
-        assert_eq!(triggered.len(), 1, "Step at new_pos should trigger (inclusive end)");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Step at new_pos should trigger (inclusive end)"
+        );
     }
 
     #[test]
@@ -712,6 +752,10 @@ mod tests {
             Beat::from_f64(4.0),
         );
         // last_pos is EXCLUSIVE - step at 1.0 was already triggered, should NOT trigger again
-        assert_eq!(triggered.len(), 0, "Step at last_pos should NOT trigger again (exclusive start)");
+        assert_eq!(
+            triggered.len(),
+            0,
+            "Step at last_pos should NOT trigger again (exclusive start)"
+        );
     }
 }

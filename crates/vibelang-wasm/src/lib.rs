@@ -32,19 +32,27 @@
 //! gameLoop();
 //! ```
 
+// This crate is only functional on wasm32 target, but we allow it to compile
+// on native targets for workspace-wide checks (cargo test --workspace, clippy, etc.)
+#![cfg_attr(not(target_arch = "wasm32"), allow(unused_imports, dead_code))]
+
 use serde::{Deserialize, Serialize};
+#[cfg(target_arch = "wasm32")]
 use vibelang_core2::backends::WebScsynthBackend;
-use vibelang_core2::{Runtime, Message};
+#[cfg(target_arch = "wasm32")]
 use vibelang_core2::message::TransportMessage;
+#[cfg(target_arch = "wasm32")]
+use vibelang_core2::{Message, Runtime};
 use vibelang_dsp::{
-    get_all_synthdefs_encoded, get_all_effects_encoded,
-    clear_synthdef_registry, clear_effect_registry,
-    set_deploy_callback, system_synthdefs,
+    clear_effect_registry, clear_synthdef_registry, get_all_effects_encoded,
+    get_all_synthdefs_encoded, set_deploy_callback, system_synthdefs,
 };
 use vibelang_rhai::ScriptEngine;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 // Initialize panic hook for better error messages in browser console
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
@@ -84,6 +92,7 @@ pub struct CompiledSynthdef {
 /// VibeLang runtime for WASM.
 ///
 /// This wraps the native Rust runtime and scheduler for browser use.
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub struct VibelangRuntime {
     /// Script engine for parsing
@@ -94,6 +103,7 @@ pub struct VibelangRuntime {
     initialized: bool,
 }
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl VibelangRuntime {
     /// Create a new VibeLang runtime.
@@ -128,7 +138,9 @@ impl VibelangRuntime {
 
         // Initialize it (checks if JS side is ready)
         web_sys::console::log_1(&JsValue::from_str("Initializing backend..."));
-        backend.init().await
+        backend
+            .init()
+            .await
             .map_err(|e| JsValue::from_str(&format!("Failed to init backend: {}", e)))?;
 
         // Create the runtime
@@ -137,13 +149,17 @@ impl VibelangRuntime {
 
         // Load built-in synthdefs
         web_sys::console::log_1(&JsValue::from_str("Loading builtins..."));
-        runtime.load_builtins().await
+        runtime
+            .load_builtins()
+            .await
             .map_err(|e| JsValue::from_str(&format!("Failed to load builtins: {}", e)))?;
 
         self.runtime = Some(runtime);
         self.initialized = true;
 
-        web_sys::console::log_1(&JsValue::from_str("VibeLang runtime initialized successfully"));
+        web_sys::console::log_1(&JsValue::from_str(
+            "VibeLang runtime initialized successfully",
+        ));
 
         Ok(())
     }
@@ -177,30 +193,37 @@ impl VibelangRuntime {
 
                 // If runtime is initialized, apply the state
                 if let Some(runtime) = &self.runtime {
-                    web_sys::console::log_1(&JsValue::from_str("Runtime present, applying state..."));
+                    web_sys::console::log_1(&JsValue::from_str(
+                        "Runtime present, applying state...",
+                    ));
 
                     // Load user synthdefs to SuperSonic
                     let synthdefs = get_all_synthdefs_encoded();
-                    web_sys::console::log_1(&JsValue::from_str(
-                        &format!("Found {} synthdefs to load", synthdefs.len())
-                    ));
+                    web_sys::console::log_1(&JsValue::from_str(&format!(
+                        "Found {} synthdefs to load",
+                        synthdefs.len()
+                    )));
                     for (name, data) in synthdefs {
-                        web_sys::console::log_1(&JsValue::from_str(
-                            &format!("Loading synthdef: {} ({} bytes)", name, data.len())
-                        ));
+                        web_sys::console::log_1(&JsValue::from_str(&format!(
+                            "Loading synthdef: {} ({} bytes)",
+                            name,
+                            data.len()
+                        )));
                         if let Err(e) = load_synthdef_to_supersonic(&name, &data).await {
-                            web_sys::console::warn_1(&JsValue::from_str(
-                                &format!("Failed to load synthdef {}: {:?}", name, e)
-                            ));
+                            web_sys::console::warn_1(&JsValue::from_str(&format!(
+                                "Failed to load synthdef {}: {:?}",
+                                name, e
+                            )));
                         }
                     }
 
                     // Load user effects
                     for (name, data) in get_all_effects_encoded() {
                         if let Err(e) = load_synthdef_to_supersonic(&name, &data).await {
-                            web_sys::console::warn_1(&JsValue::from_str(
-                                &format!("Failed to load effect {}: {:?}", name, e)
-                            ));
+                            web_sys::console::warn_1(&JsValue::from_str(&format!(
+                                "Failed to load effect {}: {:?}",
+                                name, e
+                            )));
                         }
                     }
 
@@ -208,25 +231,24 @@ impl VibelangRuntime {
                     let handle = runtime.handle();
                     let reload_msg = vibelang_core2::message::ReloadMessage::Apply { state };
                     if let Err(e) = handle.send(Message::Reload(Box::new(reload_msg))).await {
-                        web_sys::console::warn_1(&JsValue::from_str(
-                            &format!("Failed to apply state: {}", e)
-                        ));
+                        web_sys::console::warn_1(&JsValue::from_str(&format!(
+                            "Failed to apply state: {}",
+                            e
+                        )));
                     }
                 }
 
                 result
             }
-            Err(e) => {
-                ExecutionResult {
-                    success: false,
-                    error: Some(format!("{}", e)),
-                    groups: 0,
-                    voices: 0,
-                    patterns: 0,
-                    melodies: 0,
-                    tempo: 120.0,
-                }
-            }
+            Err(e) => ExecutionResult {
+                success: false,
+                error: Some(format!("{}", e)),
+                groups: 0,
+                voices: 0,
+                patterns: 0,
+                melodies: 0,
+                tempo: 120.0,
+            },
         };
 
         serde_wasm_bindgen::to_value(&execution_result).unwrap_or(JsValue::NULL)
@@ -250,9 +272,13 @@ impl VibelangRuntime {
         if let Some(runtime) = &self.runtime {
             web_sys::console::log_1(&JsValue::from_str("Sending TransportMessage::Start"));
             let handle = runtime.handle();
-            handle.send(TransportMessage::Start.into()).await
+            handle
+                .send(TransportMessage::Start.into())
+                .await
                 .map_err(|e| JsValue::from_str(&format!("Failed to start: {}", e)))?;
-            web_sys::console::log_1(&JsValue::from_str("TransportMessage::Start sent successfully"));
+            web_sys::console::log_1(&JsValue::from_str(
+                "TransportMessage::Start sent successfully",
+            ));
         } else {
             web_sys::console::warn_1(&JsValue::from_str("Runtime not initialized - cannot start"));
         }
@@ -264,7 +290,9 @@ impl VibelangRuntime {
     pub async fn stop(&self) -> Result<(), JsValue> {
         if let Some(runtime) = &self.runtime {
             let handle = runtime.handle();
-            handle.send(TransportMessage::Stop.into()).await
+            handle
+                .send(TransportMessage::Stop.into())
+                .await
                 .map_err(|e| JsValue::from_str(&format!("Failed to stop: {}", e)))?;
         }
         Ok(())
@@ -332,6 +360,7 @@ impl VibelangRuntime {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl Default for VibelangRuntime {
     fn default() -> Self {
         Self::new()
@@ -339,6 +368,7 @@ impl Default for VibelangRuntime {
 }
 
 /// Helper to load a synthdef to SuperSonic via JS bridge.
+#[cfg(target_arch = "wasm32")]
 async fn load_synthdef_to_supersonic(name: &str, data: &[u8]) -> Result<(), JsValue> {
     #[wasm_bindgen]
     extern "C" {
@@ -349,7 +379,9 @@ async fn load_synthdef_to_supersonic(name: &str, data: &[u8]) -> Result<(), JsVa
     let array = js_sys::Uint8Array::new_with_length(data.len() as u32);
     array.copy_from(data);
 
-    if let Some(bridge) = js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str("vibelangBridge")).ok() {
+    if let Some(bridge) =
+        js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str("vibelangBridge")).ok()
+    {
         if !bridge.is_undefined() {
             loadSynthdef(name, array).await;
         }
@@ -362,12 +394,14 @@ async fn load_synthdef_to_supersonic(name: &str, data: &[u8]) -> Result<(), JsVa
 // TODO: Remove this once the new runtime is fully working
 
 /// Legacy VibeLang engine (parse-only, for backwards compatibility).
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub struct VibelangEngine {
     engine: ScriptEngine,
     last_state: Option<vibelang_core2::reload::ScriptState>,
 }
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl VibelangEngine {
     #[wasm_bindgen(constructor)]
@@ -452,6 +486,7 @@ impl VibelangEngine {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl Default for VibelangEngine {
     fn default() -> Self {
         Self::new()
@@ -459,12 +494,14 @@ impl Default for VibelangEngine {
 }
 
 /// Log a message to the browser console.
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn log(message: &str) {
     web_sys::console::log_1(&JsValue::from_str(message));
 }
 
 /// Get the VibeLang version.
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()

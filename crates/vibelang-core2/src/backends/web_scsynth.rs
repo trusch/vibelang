@@ -26,9 +26,7 @@ pub enum WebScsynthError {
 
 impl From<JsValue> for WebScsynthError {
     fn from(value: JsValue) -> Self {
-        let msg = value
-            .as_string()
-            .unwrap_or_else(|| format!("{:?}", value));
+        let msg = value.as_string().unwrap_or_else(|| format!("{:?}", value));
         WebScsynthError::JsError(msg)
     }
 }

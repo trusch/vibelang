@@ -38,7 +38,7 @@
 //!     .to_param(lead, "cutoff", 100.0, 10000.0);
 //! ```
 
-#![cfg(feature = "midi")]
+// Note: This module is already gated by #[cfg(feature = "midi")] in mod.rs
 
 use rhai::{Array, CustomType, Dynamic, Engine, FnPtr, TypeBuilder};
 use vibelang_core2::midi::{
@@ -52,8 +52,8 @@ use vibelang_core2::reload::{
 use vibelang_core2::traits::FadeTarget;
 use vibelang_core2::types::MidiDeviceId;
 
-use crate::context;
 use super::voice::Voice;
+use crate::context;
 
 /// Handle to a MIDI device.
 #[derive(Debug, Clone, CustomType)]
@@ -570,7 +570,9 @@ impl KeyboardRoute {
 
     /// Set the note range using MIDI note numbers.
     pub fn range_midi(mut self, min: i64, max: i64) -> Self {
-        self.builder = self.builder.range(min.clamp(0, 127) as u8, max.clamp(0, 127) as u8);
+        self.builder = self
+            .builder
+            .range(min.clamp(0, 127) as u8, max.clamp(0, 127) as u8);
         self
     }
 
@@ -716,7 +718,11 @@ impl NoteRoute {
             source_note: self.builder.source_note,
             channel: self.builder.channel,
             choke_group: self.builder.choke_group.clone(),
-            velocity_param: self.builder.velocity_mapping.as_ref().map(|m| m.param.clone()),
+            velocity_param: self
+                .builder
+                .velocity_mapping
+                .as_ref()
+                .map(|m| m.param.clone()),
             velocity_min: self.builder.velocity_mapping.as_ref().map(|m| m.min),
             velocity_max: self.builder.velocity_mapping.as_ref().map(|m| m.max),
             voice: voice_id,
@@ -846,7 +852,7 @@ pub fn list_midi_devices() -> Array {
 
     // List output devices
     if let Ok(midi_out) = MidiOutput::new("vibelang-rhai-list") {
-        for (_idx, port) in midi_out.ports().iter().enumerate() {
+        for port in midi_out.ports().iter() {
             if let Ok(name) = midi_out.port_name(port) {
                 // Check if we already have this device from input
                 if let Some(&existing_idx) = seen_names.get(&name) {
@@ -986,14 +992,17 @@ impl MidiRecordingHandle {
     /// Get the note events as an array.
     pub fn get_notes(&mut self) -> Array {
         use rhai::Map;
-        self.notes.iter().map(|(beat, note, vel, dur)| {
-            let mut map = Map::new();
-            map.insert("beat".into(), Dynamic::from(*beat));
-            map.insert("note".into(), Dynamic::from(*note));
-            map.insert("velocity".into(), Dynamic::from(*vel));
-            map.insert("duration".into(), Dynamic::from(*dur));
-            Dynamic::from(map)
-        }).collect()
+        self.notes
+            .iter()
+            .map(|(beat, note, vel, dur)| {
+                let mut map = Map::new();
+                map.insert("beat".into(), Dynamic::from(*beat));
+                map.insert("note".into(), Dynamic::from(*note));
+                map.insert("velocity".into(), Dynamic::from(*vel));
+                map.insert("duration".into(), Dynamic::from(*dur));
+                Dynamic::from(map)
+            })
+            .collect()
     }
 
     /// Convert to a pattern string (quantized).
@@ -1028,7 +1037,8 @@ impl MidiRecordingHandle {
         }
 
         // Convert to pattern string
-        steps.iter()
+        steps
+            .iter()
             .map(|&v| {
                 if v == 0 {
                     '.'
@@ -1092,7 +1102,10 @@ pub fn register(engine: &mut Engine) {
 
     // Recording methods
     engine.register_fn("start_recording", MidiDevice::start_recording);
-    engine.register_fn("start_recording_channel", MidiDevice::start_recording_channel);
+    engine.register_fn(
+        "start_recording_channel",
+        MidiDevice::start_recording_channel,
+    );
 
     // Clock output methods
     engine.register_fn("enable_clock", MidiDevice::enable_clock);

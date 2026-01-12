@@ -271,12 +271,8 @@ impl MidiDeviceManager {
                 "vibelang-input",
                 move |timestamp, data, _| {
                     if let Some(msg) = parse_midi_bytes(data) {
-                        let event = TimestampedMidiEvent::new(
-                            timestamp,
-                            Instant::now(),
-                            device_id,
-                            msg,
-                        );
+                        let event =
+                            TimestampedMidiEvent::new(timestamp, Instant::now(), device_id, msg);
                         sender.try_send(event);
                     }
                 },

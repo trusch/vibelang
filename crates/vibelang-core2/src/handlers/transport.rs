@@ -161,7 +161,11 @@ mod tests {
     impl Backend for MockBackend {
         type Error = MockError;
 
-        async fn load_synthdef(&self, _name: &str, _data: &[u8]) -> std::result::Result<(), Self::Error> {
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -189,15 +193,28 @@ mod tests {
             Ok(())
         }
 
-        async fn run_node(&self, _node: NodeId, _running: bool) -> std::result::Result<(), Self::Error> {
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
-        async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> std::result::Result<(), Self::Error> {
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
-        async fn load_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<BufferInfo, Self::Error> {
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
             Ok(BufferInfo {
                 frames: 44100,
                 channels: 2,
@@ -218,7 +235,11 @@ mod tests {
             })
         }
 
-        async fn write_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<(), Self::Error> {
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -314,7 +335,13 @@ mod tests {
     #[tokio::test]
     async fn test_set_time_signature_3_4() {
         let handler = create_handler();
-        handler.set_time_signature(TimeSignature { numerator: 3, denominator: 4 }).await.unwrap();
+        handler
+            .set_time_signature(TimeSignature {
+                numerator: 3,
+                denominator: 4,
+            })
+            .await
+            .unwrap();
         let sig = handler.time_signature().await;
         assert_eq!(sig.numerator, 3);
         assert_eq!(sig.denominator, 4);
@@ -323,7 +350,13 @@ mod tests {
     #[tokio::test]
     async fn test_set_time_signature_6_8() {
         let handler = create_handler();
-        handler.set_time_signature(TimeSignature { numerator: 6, denominator: 8 }).await.unwrap();
+        handler
+            .set_time_signature(TimeSignature {
+                numerator: 6,
+                denominator: 8,
+            })
+            .await
+            .unwrap();
         let sig = handler.time_signature().await;
         assert_eq!(sig.numerator, 6);
         assert_eq!(sig.denominator, 8);
@@ -332,7 +365,13 @@ mod tests {
     #[tokio::test]
     async fn test_set_time_signature_5_4() {
         let handler = create_handler();
-        handler.set_time_signature(TimeSignature { numerator: 5, denominator: 4 }).await.unwrap();
+        handler
+            .set_time_signature(TimeSignature {
+                numerator: 5,
+                denominator: 4,
+            })
+            .await
+            .unwrap();
         let sig = handler.time_signature().await;
         assert_eq!(sig.numerator, 5);
         assert_eq!(sig.denominator, 4);
@@ -345,7 +384,10 @@ mod tests {
     #[tokio::test]
     async fn test_default_not_playing() {
         let handler = create_handler();
-        assert!(!handler.is_playing().await, "Should not be playing by default");
+        assert!(
+            !handler.is_playing().await,
+            "Should not be playing by default"
+        );
     }
 
     #[tokio::test]
@@ -360,7 +402,10 @@ mod tests {
         let handler = create_handler();
         handler.start().await.unwrap();
         handler.stop().await.unwrap();
-        assert!(!handler.is_playing().await, "Should not be playing after stop");
+        assert!(
+            !handler.is_playing().await,
+            "Should not be playing after stop"
+        );
     }
 
     #[tokio::test]
@@ -372,7 +417,10 @@ mod tests {
         handler.start().await.unwrap();
 
         let state_read = state.read().await;
-        assert!(state_read.playing, "State playing should be true after start");
+        assert!(
+            state_read.playing,
+            "State playing should be true after start"
+        );
     }
 
     #[tokio::test]
@@ -385,7 +433,10 @@ mod tests {
         handler.stop().await.unwrap();
 
         let state_read = state.read().await;
-        assert!(!state_read.playing, "State playing should be false after stop");
+        assert!(
+            !state_read.playing,
+            "State playing should be false after stop"
+        );
     }
 
     // =========================================================================
@@ -399,7 +450,10 @@ mod tests {
 
         let beat = handler.current_beat().await;
         // Allow small floating point tolerance
-        assert!((beat.to_f64() - 8.0).abs() < 0.01, "Current beat should be near 8.0 after seek");
+        assert!(
+            (beat.to_f64() - 8.0).abs() < 0.01,
+            "Current beat should be near 8.0 after seek"
+        );
     }
 
     #[tokio::test]
@@ -411,7 +465,10 @@ mod tests {
         handler.seek(Beat::from_f64(16.0)).await.unwrap();
 
         let state_read = state.read().await;
-        assert!((state_read.current_beat.to_f64() - 16.0).abs() < 0.01, "State current_beat should be updated");
+        assert!(
+            (state_read.current_beat.to_f64() - 16.0).abs() < 0.01,
+            "State current_beat should be updated"
+        );
     }
 
     #[tokio::test]
@@ -425,7 +482,10 @@ mod tests {
 
         let beat = handler.current_beat().await;
         // Beat should be at or near 32.0 (may have advanced slightly)
-        assert!(beat.to_f64() >= 32.0, "Current beat should be >= 32.0 after seek");
+        assert!(
+            beat.to_f64() >= 32.0,
+            "Current beat should be >= 32.0 after seek"
+        );
     }
 
     // =========================================================================
@@ -468,7 +528,11 @@ mod tests {
 
         // State should NOT have been updated (transport is stopped)
         let state_read = state.read().await;
-        assert_eq!(state_read.current_beat.to_f64(), 5.0, "Beat should not change when stopped");
+        assert_eq!(
+            state_read.current_beat.to_f64(),
+            5.0,
+            "Beat should not change when stopped"
+        );
     }
 
     // =========================================================================
@@ -487,7 +551,10 @@ mod tests {
         let handler = create_handler();
         handler.start().await.unwrap();
         let beat = handler.current_beat().await;
-        assert!(beat.to_f64() >= 0.0, "Current beat after start should be >= 0");
+        assert!(
+            beat.to_f64() >= 0.0,
+            "Current beat after start should be >= 0"
+        );
     }
 
     // =========================================================================
@@ -505,7 +572,10 @@ mod tests {
         assert!(!handler.is_playing().await);
 
         handler.start().await.unwrap();
-        assert!(handler.is_playing().await, "Should be playing after re-start");
+        assert!(
+            handler.is_playing().await,
+            "Should be playing after re-start"
+        );
     }
 
     #[tokio::test]
@@ -515,7 +585,10 @@ mod tests {
         handler.start().await.unwrap();
         handler.set_tempo(180.0).await.unwrap();
 
-        assert!(handler.is_playing().await, "Should still be playing after tempo change");
+        assert!(
+            handler.is_playing().await,
+            "Should still be playing after tempo change"
+        );
         assert_eq!(handler.tempo().await, 180.0);
     }
 
@@ -524,9 +597,18 @@ mod tests {
         let handler = create_handler();
 
         handler.start().await.unwrap();
-        handler.set_time_signature(TimeSignature { numerator: 7, denominator: 8 }).await.unwrap();
+        handler
+            .set_time_signature(TimeSignature {
+                numerator: 7,
+                denominator: 8,
+            })
+            .await
+            .unwrap();
 
-        assert!(handler.is_playing().await, "Should still be playing after time signature change");
+        assert!(
+            handler.is_playing().await,
+            "Should still be playing after time signature change"
+        );
         let sig = handler.time_signature().await;
         assert_eq!(sig.numerator, 7);
         assert_eq!(sig.denominator, 8);
@@ -544,7 +626,11 @@ mod tests {
         handler.seek(Beat::ZERO).await.unwrap();
 
         let beat = handler.current_beat().await;
-        assert_eq!(beat.to_f64(), 0.0, "Should be at beat 0 after seeking to zero");
+        assert_eq!(
+            beat.to_f64(),
+            0.0,
+            "Should be at beat 0 after seeking to zero"
+        );
     }
 
     #[tokio::test]
@@ -577,6 +663,9 @@ mod tests {
         handler.seek(Beat::from_f64(1000.0)).await.unwrap();
 
         let beat = handler.current_beat().await;
-        assert!((beat.to_f64() - 1000.0).abs() < 0.01, "Should be at beat 1000");
+        assert!(
+            (beat.to_f64() - 1000.0).abs() < 0.01,
+            "Should be at beat 1000"
+        );
     }
 }

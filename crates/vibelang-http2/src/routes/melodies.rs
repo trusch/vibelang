@@ -13,7 +13,10 @@ use vibelang_core2::{
 };
 
 use crate::{
-    models::{ErrorResponse, LoopState, LoopStatus, Melody, MelodyCreate, MelodyEvent, MelodyUpdate, StartRequest, StopRequest},
+    models::{
+        ErrorResponse, LoopState, LoopStatus, Melody, MelodyCreate, MelodyEvent, MelodyUpdate,
+        StartRequest, StopRequest,
+    },
     AppState,
 };
 
@@ -25,7 +28,9 @@ async fn resolve_melody_id(
     // First, try to parse as a numeric ID
     if let Ok(num_id) = identifier.parse::<u32>() {
         let melody_id = MelodyId::new(num_id);
-        let exists = state.with_state(|s| s.melodies.contains_key(&melody_id)).await;
+        let exists = state
+            .with_state(|s| s.melodies.contains_key(&melody_id))
+            .await;
         if exists {
             return Ok(melody_id);
         }
@@ -63,20 +68,28 @@ fn melody_to_api(
     // Use the actual name from config
     let name = state.config.name.clone();
     // Get voice name from voice state
-    let voice_name = state.config.voice
+    let voice_name = state
+        .config
+        .voice
         .and_then(|vid| voices.get(&vid))
         .map(|vs| vs.config.name.clone())
         .unwrap_or_default();
 
     // Get group path from the voice if available
-    let group_path = state.config.voice
+    let group_path = state
+        .config
+        .voice
         .and_then(|vid| voices.get(&vid))
         .map(|vs| vs.config.group.raw().to_string())
         .unwrap_or_else(|| "0".to_string());
 
     // Convert playing state to LoopStatus
     let status = LoopStatus {
-        state: if state.playing { LoopState::Playing } else { LoopState::Stopped },
+        state: if state.playing {
+            LoopState::Playing
+        } else {
+            LoopState::Stopped
+        },
         start_beat: None,
         stop_beat: None,
     };
@@ -93,7 +106,7 @@ fn melody_to_api(
             .map(|n| MelodyEvent {
                 beat: n.beat.to_f64(),
                 note: format!("{}", n.note), // MIDI note number as string
-                frequency: None, // Could calculate from note if needed
+                frequency: None,             // Could calculate from note if needed
                 duration: Some(n.duration.to_f64()),
                 velocity: Some(n.velocity),
                 params: None,
@@ -244,8 +257,14 @@ fn parse_note(note: &str) -> u8 {
     let mut offset = 0i8;
     while let Some(&c) = chars.peek() {
         match c {
-            '#' => { offset += 1; chars.next(); }
-            'B' if chars.clone().count() > 1 => { offset -= 1; chars.next(); } // 'b' for flat
+            '#' => {
+                offset += 1;
+                chars.next();
+            }
+            'B' if chars.clone().count() > 1 => {
+                offset -= 1;
+                chars.next();
+            } // 'b' for flat
             _ => break,
         }
     }
@@ -293,7 +312,10 @@ pub async fn create_melody(
     // Generate melody ID from name hash
     let melody_id = state
         .with_state(|s| {
-            let id = req.name.bytes().fold(1u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+            let id = req
+                .name
+                .bytes()
+                .fold(1u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
             let mut id = id % 10000 + 1;
             while s.melodies.contains_key(&MelodyId::new(id)) {
                 id += 1;
@@ -303,14 +325,18 @@ pub async fn create_melody(
         .await;
 
     // Convert events to NoteEvents
-    let notes: Vec<NoteEvent> = req.events.iter().map(|e| {
-        NoteEvent::new(
-            e.beat,
-            parse_note(&e.note),
-            e.velocity.unwrap_or(0.8),
-            e.duration.unwrap_or(1.0),
-        )
-    }).collect();
+    let notes: Vec<NoteEvent> = req
+        .events
+        .iter()
+        .map(|e| {
+            NoteEvent::new(
+                e.beat,
+                parse_note(&e.note),
+                e.velocity.unwrap_or(0.8),
+                e.duration.unwrap_or(1.0),
+            )
+        })
+        .collect();
 
     let config = MelodyConfig {
         name: req.name.clone(),
@@ -321,7 +347,13 @@ pub async fn create_melody(
     };
 
     if let Err(e) = state
-        .send(MelodyMessage::Create { id: melody_id, config }.into())
+        .send(
+            MelodyMessage::Create {
+                id: melody_id,
+                config,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -346,7 +378,9 @@ pub async fn create_melody(
         Some(m) => Ok((StatusCode::CREATED, Json(m))),
         None => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal("Melody created but not found in state")),
+            Json(ErrorResponse::internal(
+                "Melody created but not found in state",
+            )),
         )),
     }
 }

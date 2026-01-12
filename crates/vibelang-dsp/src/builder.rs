@@ -5,7 +5,9 @@
 
 use crate::encoder::encode_synthdef;
 use crate::errors::{Result, SynthDefError};
-use crate::graph::{clear_active_builder, set_active_builder, GraphBuilderInner, GraphIR, Input, Rate};
+use crate::graph::{
+    clear_active_builder, set_active_builder, GraphBuilderInner, GraphIR, Input, Rate,
+};
 use crate::helpers;
 use crate::rhainodes::{self, NodeRef};
 use crate::ugens::register_generated_ugens;

@@ -1,0 +1,188 @@
+// Tutorial: Shell Execution Extension (ext-exec)
+// Difficulty: advanced | Duration: 5 min
+// Description: Execute shell commands and interact with the system.
+//
+// NOTE: This extension must be enabled with the `ext-exec` feature flag.
+// Run with: vibelang run --ext-exec example.vibe
+//
+// SECURITY WARNING: This extension allows arbitrary command execution.
+// Only use in trusted environments!
+
+// ============================================================
+// BASIC COMMAND EXECUTION
+// ============================================================
+
+// Execute a command and get stdout as string
+let files = exec("ls -la");
+print(files);
+
+// Get output as array of lines
+let lines = exec_lines("ls");
+for line in lines {
+    print("File: " + line);
+}
+
+// Get just the exit status code
+let status = exec_status("which ffmpeg");
+if status == 0 {
+    print("ffmpeg is installed!");
+} else {
+    print("ffmpeg not found");
+}
+
+// ============================================================
+// SAFER EXECUTION WITH ARGUMENTS
+// ============================================================
+
+// Use exec_with_args for arguments with spaces or special characters
+let result = exec_with_args("echo", ["Hello", "World!"]);
+print(result);
+
+// This is safer than string concatenation
+let filename = "my file with spaces.txt";
+exec_with_args("touch", [filename]);
+
+// ============================================================
+// FULL COMMAND RESULT
+// ============================================================
+
+// Get stdout, stderr, status, and success flag
+let result = exec_full("ls /nonexistent 2>&1");
+
+print("stdout: " + result.stdout);
+print("stderr: " + result.stderr);
+print("status: " + result.status);
+print("success: " + result.success);
+
+// ============================================================
+// SHELL EXECUTION (PIPES, REDIRECTS)
+// ============================================================
+
+// Use shell() for complex commands with pipes
+let count = shell("ls *.wav 2>/dev/null | wc -l");
+print("Found " + count.trim() + " wav files");
+
+// Chain commands
+let result = shell("echo 'Hello' && echo 'World'");
+print(result);
+
+// Use shell features
+shell("for i in 1 2 3; do echo $i; done");
+
+// ============================================================
+// ENVIRONMENT VARIABLES
+// ============================================================
+
+// Get an environment variable
+let home = env_var("HOME");
+print("Home directory: " + home);
+
+// Get with a default value
+let editor = env_var_or("EDITOR", "nano");
+print("Editor: " + editor);
+
+// Set an environment variable
+set_env_var("MY_VAR", "my_value");
+
+// Get all environment variables as a map
+let all_vars = env_vars();
+print("PATH = " + all_vars["PATH"]);
+
+// ============================================================
+// WORKING DIRECTORY
+// ============================================================
+
+// Get current working directory
+let current = cwd();
+print("Current directory: " + current);
+
+// Change directory
+set_cwd("/tmp");
+print("Now in: " + cwd());
+
+// Change back
+set_cwd(current);
+
+// ============================================================
+// PROCESS INFORMATION
+// ============================================================
+
+// Get current process ID
+let process_id = pid();
+print("Process ID: " + process_id);
+
+// ============================================================
+// PRACTICAL EXAMPLE: Audio Processing Pipeline
+// ============================================================
+
+import "stdlib/drums/kicks/kick_808.vibe";
+
+set_tempo(120);
+
+// Check for external tools
+let has_ffmpeg = exec_status("which ffmpeg") == 0;
+let has_sox = exec_status("which sox") == 0;
+
+if has_ffmpeg {
+    // Convert a sample to a different format
+    let result = exec_full("ffmpeg -i input.wav -ar 44100 output.wav -y");
+    if result.success {
+        print("Conversion successful!");
+    } else {
+        print("Error: " + result.stderr);
+    }
+}
+
+if has_sox {
+    // Get audio file info
+    let info = exec("soxi drums.wav");
+    print(info);
+
+    // Apply effects with sox
+    shell("sox input.wav output.wav reverb 50 50 100");
+}
+
+// ============================================================
+// PRACTICAL EXAMPLE: Git Integration
+// ============================================================
+
+// Check git status
+let status = exec("git status --porcelain");
+if status.len() > 0 {
+    print("Uncommitted changes detected!");
+    let lines = exec_lines("git status --porcelain");
+    for line in lines {
+        print("  " + line);
+    }
+}
+
+// Get current branch
+let branch = exec("git branch --show-current");
+print("Current branch: " + branch.trim());
+
+// Get last commit message
+let last_commit = exec("git log -1 --format=%s");
+print("Last commit: " + last_commit.trim());
+
+// ============================================================
+// PRACTICAL EXAMPLE: Batch Sample Processing
+// ============================================================
+
+// Normalize all samples in a directory
+fn normalize_samples(dir) {
+    let files = exec_lines("ls " + dir + "/*.wav 2>/dev/null");
+
+    for file in files {
+        let file = file.trim();
+        if file.len() > 0 {
+            print("Normalizing: " + file);
+            let result = exec_full("sox " + file + " -n stat 2>&1");
+            // Process result...
+        }
+    }
+}
+
+// Run with custom environment
+set_env_var("SAMPLE_RATE", "48000");
+let sr = env_var("SAMPLE_RATE");
+print("Processing at " + sr + " Hz");

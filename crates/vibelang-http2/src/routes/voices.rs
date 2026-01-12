@@ -9,7 +9,10 @@ use std::sync::Arc;
 use vibelang_core2::{GroupId, ParamMap, VoiceConfig, VoiceId, VoiceMessage};
 
 use crate::{
-    models::{ErrorResponse, NoteOffRequest, NoteOnRequest, ParamSet, TriggerRequest, Voice, VoiceCreate, VoiceUpdate},
+    models::{
+        ErrorResponse, NoteOffRequest, NoteOnRequest, ParamSet, TriggerRequest, Voice, VoiceCreate,
+        VoiceUpdate,
+    },
     AppState,
 };
 
@@ -52,7 +55,7 @@ async fn resolve_voice_id(
 }
 
 /// Convert internal VoiceState to API Voice model
-fn voice_to_api(id: &VoiceId, state: &vibelang_core2::VoiceState) -> Voice {
+fn voice_to_api(_id: &VoiceId, state: &vibelang_core2::VoiceState) -> Voice {
     // Use the actual name from config
     let name = state.config.name.clone();
     let group_path = state.config.group.raw().to_string();
@@ -67,7 +70,12 @@ fn voice_to_api(id: &VoiceId, state: &vibelang_core2::VoiceState) -> Voice {
         output_bus: None, // Not directly tracked
         muted: state.config.muted,
         soloed: false, // Voice-level solo not tracked in core
-        params: state.config.params.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+        params: state
+            .config
+            .params
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect(),
         sfz_instrument: state.config.sfz_instrument.map(|s| s.raw().to_string()),
         vst_instrument: None, // Not implemented
         active_notes: Some(state.note_nodes.keys().copied().collect()),
@@ -100,7 +108,11 @@ pub async fn get_voice(
     let voice_id = resolve_voice_id(&state, &id).await?;
 
     let voice = state
-        .with_state(|s| s.voices.get(&voice_id).map(|vs| voice_to_api(&voice_id, vs)))
+        .with_state(|s| {
+            s.voices
+                .get(&voice_id)
+                .map(|vs| voice_to_api(&voice_id, vs))
+        })
         .await;
 
     match voice {
@@ -165,7 +177,13 @@ pub async fn trigger_voice(
     }
 
     if let Err(e) = state
-        .send(VoiceMessage::Trigger { id: voice_id, params }.into())
+        .send(
+            VoiceMessage::Trigger {
+                id: voice_id,
+                params,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -240,7 +258,13 @@ pub async fn note_off(
     let voice_id = resolve_voice_id(&state, &id).await?;
 
     if let Err(e) = state
-        .send(VoiceMessage::NoteOff { voice: voice_id, note: req.note }.into())
+        .send(
+            VoiceMessage::NoteOff {
+                voice: voice_id,
+                note: req.note,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -294,7 +318,13 @@ pub async fn mute_voice(
     let voice_id = resolve_voice_id(&state, &id).await?;
 
     if let Err(e) = state
-        .send(VoiceMessage::Mute { id: voice_id, muted: true }.into())
+        .send(
+            VoiceMessage::Mute {
+                id: voice_id,
+                muted: true,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -317,7 +347,13 @@ pub async fn unmute_voice(
     let voice_id = resolve_voice_id(&state, &id).await?;
 
     if let Err(e) = state
-        .send(VoiceMessage::Mute { id: voice_id, muted: false }.into())
+        .send(
+            VoiceMessage::Mute {
+                id: voice_id,
+                muted: false,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -347,25 +383,29 @@ pub async fn create_voice(
 
     // Parse group ID (default to root group if not specified)
     let group_id = if let Some(gid) = &req.group_path {
-        gid.parse::<u32>()
-            .map(GroupId::new)
-            .map_err(|_| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse::bad_request(&format!(
-                        "Invalid group path '{}': must be a number",
-                        gid
-                    ))),
-                )
-            })?
+        gid.parse::<u32>().map(GroupId::new).map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::bad_request(&format!(
+                    "Invalid group path '{}': must be a number",
+                    gid
+                ))),
+            )
+        })?
     } else {
         // Use root group (ID 0)
         GroupId::new(0)
     };
 
     // Build voice config - synth_name is required
-    let voice_name = req.name.clone().unwrap_or_else(|| voice_id.raw().to_string());
-    let synth_name = req.synth_name.clone().unwrap_or_else(|| "default".to_string());
+    let voice_name = req
+        .name
+        .clone()
+        .unwrap_or_else(|| voice_id.raw().to_string());
+    let synth_name = req
+        .synth_name
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
     let mut config = VoiceConfig::new(&voice_name, &synth_name, group_id);
     if let Some(polyphony) = req.polyphony {
         config = config.with_polyphony(polyphony);
@@ -376,7 +416,13 @@ pub async fn create_voice(
 
     // Send create message
     if let Err(e) = state
-        .send(VoiceMessage::Create { id: voice_id, config }.into())
+        .send(
+            VoiceMessage::Create {
+                id: voice_id,
+                config,
+            }
+            .into(),
+        )
         .await
     {
         return Err((
@@ -393,14 +439,20 @@ pub async fn create_voice(
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
     let voice = state
-        .with_state(|s| s.voices.get(&voice_id).map(|vs| voice_to_api(&voice_id, vs)))
+        .with_state(|s| {
+            s.voices
+                .get(&voice_id)
+                .map(|vs| voice_to_api(&voice_id, vs))
+        })
         .await;
 
     match voice {
         Some(v) => Ok((StatusCode::CREATED, Json(v))),
         None => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal("Voice created but not found in state")),
+            Json(ErrorResponse::internal(
+                "Voice created but not found in state",
+            )),
         )),
     }
 }

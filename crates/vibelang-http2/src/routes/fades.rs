@@ -10,7 +10,7 @@ use std::sync::Arc;
 use vibelang_core2::{
     traits::{FadeConfig, FadeCurve, FadeTarget},
     types::Duration,
-    FadeMessage, GroupId, VoiceId, EffectId,
+    EffectId, FadeMessage, GroupId, VoiceId,
 };
 
 use crate::{
@@ -135,7 +135,9 @@ fn parse_curve_name(curve: &str) -> FadeCurve {
 fn parse_curve_spec(spec: &CurveSpec) -> FadeCurve {
     match spec {
         CurveSpec::Name(name) => parse_curve_name(name),
-        CurveSpec::Exponential { exp } => FadeCurve::Exponential { exponent: *exp as f32 },
+        CurveSpec::Exponential { exp } => FadeCurve::Exponential {
+            exponent: *exp as f32,
+        },
         CurveSpec::Spline { spline } => FadeCurve::CubicSpline {
             points: spline.iter().map(|[t, v]| (*t as f32, *v as f32)).collect(),
         },
@@ -210,10 +212,7 @@ pub async fn fade_group(
         .with_state(|s| {
             s.groups
                 .iter()
-                .find(|(_, g)| {
-                    g.id.raw().to_string() == path
-                        || format!("{}", g.id) == path
-                })
+                .find(|(_, g)| g.id.raw().to_string() == path || format!("{}", g.id) == path)
                 .map(|(id, _)| *id)
         })
         .await;
@@ -315,36 +314,54 @@ pub async fn cancel_fade(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let target = match req.target_type {
         FadeTargetType::Group => {
-            let id = req.target_name.parse::<u32>().map(GroupId::new).map_err(|_| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse::bad_request("Invalid group ID")),
-                )
-            })?;
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(GroupId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid group ID")),
+                    )
+                })?;
             FadeTarget::Group(id)
         }
         FadeTargetType::Voice => {
-            let id = req.target_name.parse::<u32>().map(VoiceId::new).map_err(|_| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse::bad_request("Invalid voice ID")),
-                )
-            })?;
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(VoiceId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid voice ID")),
+                    )
+                })?;
             FadeTarget::Voice(id)
         }
         FadeTargetType::Effect => {
-            let id = req.target_name.parse::<u32>().map(EffectId::new).map_err(|_| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse::bad_request("Invalid effect ID")),
-                )
-            })?;
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(EffectId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid effect ID")),
+                    )
+                })?;
             FadeTarget::Effect(id)
         }
     };
 
     state
-        .send(FadeMessage::Cancel { target, param: req.param }.into())
+        .send(
+            FadeMessage::Cancel {
+                target,
+                param: req.param,
+            }
+            .into(),
+        )
         .await
         .map_err(|e| {
             (
@@ -363,30 +380,42 @@ pub async fn start_fade(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let target = match req.target_type {
         FadeTargetType::Group => {
-            let id = req.target_name.parse::<u32>().map(GroupId::new).map_err(|_| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse::bad_request("Invalid group ID")),
-                )
-            })?;
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(GroupId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid group ID")),
+                    )
+                })?;
             FadeTarget::Group(id)
         }
         FadeTargetType::Voice => {
-            let id = req.target_name.parse::<u32>().map(VoiceId::new).map_err(|_| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse::bad_request("Invalid voice ID")),
-                )
-            })?;
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(VoiceId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid voice ID")),
+                    )
+                })?;
             FadeTarget::Voice(id)
         }
         FadeTargetType::Effect => {
-            let id = req.target_name.parse::<u32>().map(EffectId::new).map_err(|_| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse::bad_request("Invalid effect ID")),
-                )
-            })?;
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(EffectId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid effect ID")),
+                    )
+                })?;
             FadeTarget::Effect(id)
         }
     };

@@ -2,7 +2,10 @@
 //!
 //! This module defines the unified error type used throughout the crate.
 
-use crate::types::{EffectId, GroupId, MelodyId, ModulatorId, PatternId, RecordingId, SampleId, SequenceId, SfzId, VoiceId};
+use crate::types::{
+    EffectId, GroupId, MelodyId, ModulatorId, PatternId, RecordingId, SampleId, SequenceId, SfzId,
+    VoiceId,
+};
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -123,6 +126,10 @@ pub enum Error {
     /// Invalid configuration.
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
+
+    /// Circular modulation dependency detected.
+    #[error("circular modulation dependency: {0}")]
+    CircularModulationDependency(String),
 
     // =========================================================================
     // Channel Errors

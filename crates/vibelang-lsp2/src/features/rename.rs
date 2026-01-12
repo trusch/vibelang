@@ -9,10 +9,7 @@ use tower_lsp::lsp_types::{Position, PrepareRenameResponse, Range, TextEdit, Url
 use super::references::{find_entity_references, find_references};
 
 /// Prepare rename - validate that the symbol can be renamed.
-pub fn prepare_rename(
-    content: &str,
-    position: Position,
-) -> Option<PrepareRenameResponse> {
+pub fn prepare_rename(content: &str, position: Position) -> Option<PrepareRenameResponse> {
     let word = get_word_at_position(content, position)?;
 
     // Check if this is a valid renameable symbol
@@ -188,7 +185,7 @@ fn is_position_in_string(line: &str, char_pos: usize) -> bool {
 fn extract_string_at_position(line: &str, char_pos: usize) -> Option<String> {
     // Find the opening quote
     let before = &line[..char_pos];
-    let quote_start = before.rfind(|c| c == '"' || c == '\'')?;
+    let quote_start = before.rfind(['"', '\''])?;
     let quote_char = before.chars().nth(quote_start)?;
 
     // Find the closing quote
@@ -216,8 +213,20 @@ fn is_valid_identifier(s: &str) -> bool {
 fn is_keyword(s: &str) -> bool {
     matches!(
         s,
-        "let" | "if" | "else" | "for" | "while" | "loop" | "fn" | "return" | "true" | "false"
-            | "in" | "break" | "continue" | "import"
+        "let"
+            | "if"
+            | "else"
+            | "for"
+            | "while"
+            | "loop"
+            | "fn"
+            | "return"
+            | "true"
+            | "false"
+            | "in"
+            | "break"
+            | "continue"
+            | "import"
     )
 }
 

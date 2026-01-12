@@ -8,13 +8,13 @@
 //! which are automatically added by `define_fx()` in vibelang-dsp.
 
 use crate::backend::{AddAction, Backend};
+use crate::compat::RwLock;
 use crate::state::{EffectState, State};
 use crate::traits::Effects;
 use crate::types::{EffectId, GroupId, NodeId, ParamMap};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
-use crate::compat::RwLock;
 
 /// Handler for effect operations.
 pub struct EffectsHandler<B: Backend> {
@@ -52,7 +52,10 @@ impl<B: Backend> Effects for EffectsHandler<B> {
                 return Err(Error::SynthDefNotFound(synthdef.to_string()));
             }
 
-            let group_state = state.groups.get(&group).ok_or(Error::GroupNotFound(group))?;
+            let group_state = state
+                .groups
+                .get(&group)
+                .ok_or(Error::GroupNotFound(group))?;
             let group_node_id = group_state.node_id;
             let audio_bus = group_state.audio_bus;
             let link_synth_node_id = group_state.link_synth_node_id;
@@ -206,7 +209,11 @@ mod tests {
     impl Backend for MockBackend {
         type Error = MockError;
 
-        async fn load_synthdef(&self, _name: &str, _data: &[u8]) -> std::result::Result<(), Self::Error> {
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -236,16 +243,29 @@ mod tests {
             Ok(())
         }
 
-        async fn run_node(&self, _node: NodeId, _running: bool) -> std::result::Result<(), Self::Error> {
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
-        async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> std::result::Result<(), Self::Error> {
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
             self.params_set.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
 
-        async fn load_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<BufferInfo, Self::Error> {
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
             Ok(BufferInfo {
                 frames: 44100,
                 channels: 2,
@@ -266,7 +286,11 @@ mod tests {
             })
         }
 
-        async fn write_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<(), Self::Error> {
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -292,7 +316,11 @@ mod tests {
     // Helper Functions
     // =========================================================================
 
-    fn create_handler() -> (EffectsHandler<MockBackend>, Arc<MockBackend>, Arc<RwLock<State>>) {
+    fn create_handler() -> (
+        EffectsHandler<MockBackend>,
+        Arc<MockBackend>,
+        Arc<RwLock<State>>,
+    ) {
         let backend = Arc::new(MockBackend::new());
         let state = Arc::new(RwLock::new(State::default()));
         let handler = EffectsHandler::new(backend.clone(), state.clone());
@@ -383,7 +411,12 @@ mod tests {
 
         let effect_id = EffectId::new(1);
         let result = handler
-            .add(effect_id, GroupId::new(1), "nonexistent_fx", &ParamMap::new())
+            .add(
+                effect_id,
+                GroupId::new(1),
+                "nonexistent_fx",
+                &ParamMap::new(),
+            )
             .await;
 
         assert!(result.is_err(), "Should fail with non-existent synthdef");
@@ -498,7 +531,10 @@ mod tests {
         setup_state_with_group(&state).await;
 
         let result = handler.set_param(EffectId::new(999), "room", 0.5).await;
-        assert!(result.is_err(), "Setting param on non-existent effect should fail");
+        assert!(
+            result.is_err(),
+            "Setting param on non-existent effect should fail"
+        );
     }
 
     #[tokio::test]
@@ -542,7 +578,11 @@ mod tests {
 
         let state_read = state.read().await;
         let effect = state_read.effects.get(&effect_id).unwrap();
-        assert_eq!(effect.audio_bus, BusId(16), "Effect should use group's audio bus");
+        assert_eq!(
+            effect.audio_bus,
+            BusId(16),
+            "Effect should use group's audio bus"
+        );
     }
 
     #[tokio::test]

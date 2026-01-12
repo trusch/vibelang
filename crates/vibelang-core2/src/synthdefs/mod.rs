@@ -54,7 +54,10 @@ pub fn generate_builtins() -> Vec<(String, Vec<u8>)> {
     } else {
         // Fallback to simple routing without metering if DSP version fails
         tracing::warn!("Failed to create system_link_audio from vibelang-dsp, using fallback");
-        all_defs.push(("system_link_audio".to_string(), generate_simple_link_audio()));
+        all_defs.push((
+            "system_link_audio".to_string(),
+            generate_simple_link_audio(),
+        ));
     }
 
     // Add all system synthdefs from vibelang-dsp
@@ -78,13 +81,7 @@ fn generate_simple_link_audio() -> Vec<u8> {
     builder.create_control_ugen();
 
     // In.ar(inbus, 2)
-    let in_node = builder.add_node(
-        "In",
-        Rate::Audio,
-        vec![Input::param(0)],
-        2,
-        0,
-    );
+    let in_node = builder.add_node("In", Rate::Audio, vec![Input::param(0)], 2, 0);
 
     // left * amp
     let left_scaled = builder.add_node(
@@ -147,7 +144,7 @@ fn generate_simple_sine() -> Vec<u8> {
         "SinOsc",
         Rate::Audio,
         vec![
-            Input::param(0),               // freq
+            Input::param(0),                    // freq
             Input::Constant { index: const_0 }, // phase
         ],
         1,
@@ -164,7 +161,7 @@ fn generate_simple_sine() -> Vec<u8> {
         "Linen",
         Rate::Control,
         vec![
-            Input::param(2),                    // gate
+            Input::param(2),                       // gate
             Input::Constant { index: const_0_01 }, // attack time
             Input::Constant { index: const_1 },    // sustain level
             Input::Constant { index: const_0_1 },  // release time
@@ -190,10 +187,7 @@ fn generate_simple_sine() -> Vec<u8> {
     let mul2_node = builder.add_node(
         "BinaryOpUGen",
         Rate::Audio,
-        vec![
-            Input::node(mul1_node, 0),
-            Input::node(linen_node, 0),
-        ],
+        vec![Input::node(mul1_node, 0), Input::node(linen_node, 0)],
         1,
         2, // multiply
     );
@@ -216,7 +210,7 @@ fn generate_simple_sine() -> Vec<u8> {
         "Out",
         Rate::Audio,
         vec![
-            Input::param(3),         // out
+            Input::param(3),          // out
             Input::node(pan_node, 0), // left
             Input::node(pan_node, 1), // right
         ],
@@ -237,18 +231,17 @@ mod tests {
 
         // Should have many synthdefs now from vibelang-dsp
         // At minimum: system_link_audio, sample voices, SFZ voices, simple_sine
-        assert!(builtins.len() >= 5, "Expected at least 5 synthdefs, got {}", builtins.len());
+        assert!(
+            builtins.len() >= 5,
+            "Expected at least 5 synthdefs, got {}",
+            builtins.len()
+        );
 
         for (name, bytes) in &builtins {
             // All synthdefs should start with "SCgf" header
             assert_eq!(&bytes[0..4], b"SCgf", "Invalid header for {}", name);
             // Version should be 2
-            assert_eq!(
-                &bytes[4..8],
-                &[0, 0, 0, 2],
-                "Invalid version for {}",
-                name
-            );
+            assert_eq!(&bytes[4..8], &[0, 0, 0, 2], "Invalid version for {}", name);
         }
     }
 
@@ -258,7 +251,10 @@ mod tests {
         let names: Vec<&str> = builtins.iter().map(|(n, _)| n.as_str()).collect();
 
         // Check for essential synthdefs
-        assert!(names.contains(&"system_link_audio"), "Missing system_link_audio");
+        assert!(
+            names.contains(&"system_link_audio"),
+            "Missing system_link_audio"
+        );
         assert!(names.contains(&"simple_sine"), "Missing simple_sine");
 
         // Check for sample voices from vibelang-dsp

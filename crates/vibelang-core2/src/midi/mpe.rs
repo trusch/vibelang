@@ -318,9 +318,7 @@ impl MpeState {
 
     /// Check if a note is active on any member channel.
     pub fn is_note_active(&self, note: u8) -> bool {
-        self.channel_state
-            .iter()
-            .any(|s| s.note == Some(note))
+        self.channel_state.iter().any(|s| s.note == Some(note))
     }
 
     /// Get the channel that has a given note active.

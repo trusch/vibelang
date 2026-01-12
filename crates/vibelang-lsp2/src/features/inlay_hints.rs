@@ -40,7 +40,12 @@ fn extract_tempo(content: &str) -> Option<f64> {
 }
 
 /// Get inlay hints for a single line.
-fn get_line_hints(line_num: u32, line: &str, api_docs: &[ApiFunctionDoc], tempo: f64) -> Vec<InlayHint> {
+fn get_line_hints(
+    line_num: u32,
+    line: &str,
+    api_docs: &[ApiFunctionDoc],
+    tempo: f64,
+) -> Vec<InlayHint> {
     let mut hints = Vec::new();
 
     // Parameter name hints for function calls
@@ -208,24 +213,31 @@ fn get_timing_hints(line_num: u32, line: &str, tempo: f64) -> Vec<InlayHint> {
                             character: (end_pos + 1) as u32,
                         },
                         label: InlayHintLabel::LabelParts(vec![InlayHintLabelPart {
-                            value: format!(" {} steps ({})", steps, format_duration_ms(total_duration_ms)),
-                            tooltip: Some(tower_lsp::lsp_types::MarkupContent {
-                                kind: tower_lsp::lsp_types::MarkupKind::Markdown,
-                                value: format!(
-                                    "**Pattern timing at {} BPM:**\n\n\
+                            value: format!(
+                                " {} steps ({})",
+                                steps,
+                                format_duration_ms(total_duration_ms)
+                            ),
+                            tooltip: Some(
+                                tower_lsp::lsp_types::MarkupContent {
+                                    kind: tower_lsp::lsp_types::MarkupKind::Markdown,
+                                    value: format!(
+                                        "**Pattern timing at {} BPM:**\n\n\
                                     - **{}** steps\n\
                                     - Step duration: **{:.0}ms** (16th note)\n\
                                     - Total duration: **{}**\n\n\
                                     At 16th note resolution: {:.2} bars\n\
                                     At 8th note resolution: {:.2} bars",
-                                    tempo as u32,
-                                    steps,
-                                    step_duration_ms,
-                                    format_duration_ms(total_duration_ms),
-                                    bars_16th,
-                                    bars_8th
-                                ),
-                            }.into()),
+                                        tempo as u32,
+                                        steps,
+                                        step_duration_ms,
+                                        format_duration_ms(total_duration_ms),
+                                        bars_16th,
+                                        bars_8th
+                                    ),
+                                }
+                                .into(),
+                            ),
                             location: None,
                             command: None,
                         }]),
@@ -255,10 +267,7 @@ fn format_duration_ms(ms: f64) -> String {
 
 /// Count steps in a pattern.
 fn count_pattern_steps(pattern: &str) -> usize {
-    pattern
-        .chars()
-        .filter(|c| *c != ' ' && *c != '|')
-        .count()
+    pattern.chars().filter(|c| *c != ' ' && *c != '|').count()
 }
 
 /// Get note frequency hints.
@@ -293,7 +302,11 @@ fn get_note_hints(line_num: u32, line: &str) -> Vec<InlayHint> {
                                     kind: Some(InlayHintKind::TYPE),
                                     text_edits: None,
                                     tooltip: Some(tower_lsp::lsp_types::InlayHintTooltip::String(
-                                        format!("Frequency: {:.2} Hz\nMIDI note: {}", freq, note_to_midi(&note, octave))
+                                        format!(
+                                            "Frequency: {:.2} Hz\nMIDI note: {}",
+                                            freq,
+                                            note_to_midi(&note, octave)
+                                        ),
                                     )),
                                     padding_left: Some(false),
                                     padding_right: Some(true),
@@ -368,7 +381,7 @@ fn get_duration_hints(line_num: u32, line: &str, tempo: f64) -> Vec<InlayHint> {
                 let denominator: u32 = denom.as_str().parse().unwrap_or(4);
 
                 // Only show hints for musical fractions
-                if denominator.is_power_of_two() && denominator >= 2 && denominator <= 64 {
+                if denominator.is_power_of_two() && (2..=64).contains(&denominator) {
                     let duration_name = get_duration_name(numerator, denominator);
 
                     // Calculate duration in milliseconds
@@ -385,15 +398,21 @@ fn get_duration_hints(line_num: u32, line: &str, tempo: f64) -> Vec<InlayHint> {
                             },
                             label: InlayHintLabel::LabelParts(vec![InlayHintLabelPart {
                                 value: format!(" ({}, {})", name, format_duration_ms(duration_ms)),
-                                tooltip: Some(tower_lsp::lsp_types::MarkupContent {
-                                    kind: tower_lsp::lsp_types::MarkupKind::Markdown,
-                                    value: format!(
-                                        "**{}/{}** = **{}** at {} BPM\n\n\
+                                tooltip: Some(
+                                    tower_lsp::lsp_types::MarkupContent {
+                                        kind: tower_lsp::lsp_types::MarkupKind::Markdown,
+                                        value: format!(
+                                            "**{}/{}** = **{}** at {} BPM\n\n\
                                         Duration: **{}**",
-                                        numerator, denominator, name, tempo as u32,
-                                        format_duration_ms(duration_ms)
-                                    ),
-                                }.into()),
+                                            numerator,
+                                            denominator,
+                                            name,
+                                            tempo as u32,
+                                            format_duration_ms(duration_ms)
+                                        ),
+                                    }
+                                    .into(),
+                                ),
                                 location: None,
                                 command: None,
                             }]),
@@ -411,12 +430,19 @@ fn get_duration_hints(line_num: u32, line: &str, tempo: f64) -> Vec<InlayHint> {
                                 line: line_num,
                                 character: cap.get(0).unwrap().end() as u32,
                             },
-                            label: InlayHintLabel::String(format!(" ({})", format_duration_ms(duration_ms))),
+                            label: InlayHintLabel::String(format!(
+                                " ({})",
+                                format_duration_ms(duration_ms)
+                            )),
                             kind: Some(InlayHintKind::TYPE),
                             text_edits: None,
-                            tooltip: Some(tower_lsp::lsp_types::InlayHintTooltip::String(
-                                format!("{}/{} = {} at {} BPM", numerator, denominator, format_duration_ms(duration_ms), tempo as u32)
-                            )),
+                            tooltip: Some(tower_lsp::lsp_types::InlayHintTooltip::String(format!(
+                                "{}/{} = {} at {} BPM",
+                                numerator,
+                                denominator,
+                                format_duration_ms(duration_ms),
+                                tempo as u32
+                            ))),
                             padding_left: Some(false),
                             padding_right: Some(true),
                             data: None,
@@ -487,7 +513,18 @@ mod tests {
 
     #[test]
     fn test_parse_argument_positions() {
-        let args = r#""name", synthdef"#;
+        // Simple identifiers
+        let args = "name, synthdef)";
+        let positions = parse_argument_positions(args);
+        assert_eq!(positions.len(), 2);
+
+        // Single argument
+        let args = "single)";
+        let positions = parse_argument_positions(args);
+        assert_eq!(positions.len(), 1);
+
+        // With nested parens
+        let args = "foo(1, 2), bar)";
         let positions = parse_argument_positions(args);
         assert_eq!(positions.len(), 2);
     }

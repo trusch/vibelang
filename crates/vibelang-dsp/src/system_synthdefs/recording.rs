@@ -39,10 +39,10 @@ fn generate_record_synthdef(name: &str, num_channels: i32) -> Option<(String, Ve
     let mut builder = GraphBuilderInner::new();
 
     // Parameters
-    builder.add_param("bufnum".to_string(), vec![0.0], None);    // 0
-    builder.add_param("in_bus".to_string(), vec![0.0], None);    // 1
-    builder.add_param("run".to_string(), vec![1.0], None);       // 2 - 1=recording, 0=paused
-    builder.add_param("gate".to_string(), vec![1.0], None);      // 3 - close to stop
+    builder.add_param("bufnum".to_string(), vec![0.0], None); // 0
+    builder.add_param("in_bus".to_string(), vec![0.0], None); // 1
+    builder.add_param("run".to_string(), vec![1.0], None); // 2 - 1=recording, 0=paused
+    builder.add_param("gate".to_string(), vec![1.0], None); // 3 - close to stop
 
     builder.create_control_ugen();
 
@@ -66,14 +66,18 @@ fn generate_record_synthdef(name: &str, num_channels: i32) -> Option<(String, Ve
 
     // In.ar(bus) - read from the group's audio bus
     // Note: Number of channels is determined by num_outputs, NOT by an input parameter
-    log::debug!("[RECORDING] {} creating In.ar with bus param at index 1, {} channels", name, num_channels);
+    log::debug!(
+        "[RECORDING] {} creating In.ar with bus param at index 1, {} channels",
+        name,
+        num_channels
+    );
     let in_node = builder.add_node(
         "In".to_string(),
         Rate::Audio,
         vec![
-            param(1),  // in_bus - ONLY input (channel count from output count)
+            param(1), // in_bus - ONLY input (channel count from output count)
         ],
-        num_channels as u32,  // output count determines number of channels to read
+        num_channels as u32, // output count determines number of channels to read
         0,
     );
 
@@ -138,8 +142,14 @@ fn generate_record_synthdef(name: &str, num_channels: i32) -> Option<(String, Ve
         "BinaryOpUGen".to_string(),
         Rate::Audio,
         vec![
-            Input::Node { node_id: dc.0, output_index: 0 },
-            Input::Node { node_id: env_node.0, output_index: 0 },
+            Input::Node {
+                node_id: dc.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: env_node.0,
+                output_index: 0,
+            },
         ],
         1,
         2, // multiplication
@@ -151,7 +161,10 @@ fn generate_record_synthdef(name: &str, num_channels: i32) -> Option<(String, Ve
         Rate::Audio,
         vec![
             Input::Constant(zero), // out bus 0
-            Input::Node { node_id: out_sig.0, output_index: 0 },
+            Input::Node {
+                node_id: out_sig.0,
+                output_index: 0,
+            },
         ],
         0,
         0,
@@ -161,16 +174,29 @@ fn generate_record_synthdef(name: &str, num_channels: i32) -> Option<(String, Ve
 
     // Debug: log the synthdef structure
     log::debug!("[RECORDING] {} synthdef structure:", name);
-    log::debug!("[RECORDING]   Parameters: {:?}", ir.params.iter().map(|p| &p.name).collect::<Vec<_>>());
+    log::debug!(
+        "[RECORDING]   Parameters: {:?}",
+        ir.params.iter().map(|p| &p.name).collect::<Vec<_>>()
+    );
     log::debug!("[RECORDING]   Constants: {:?}", ir.constants);
     for (i, node) in ir.nodes.iter().enumerate() {
-        log::debug!("[RECORDING]   Node {}: {} (rate={:?}, inputs={}, outputs={})",
-            i, node.name, node.rate, node.inputs.len(), node.num_outputs);
+        log::debug!(
+            "[RECORDING]   Node {}: {} (rate={:?}, inputs={}, outputs={})",
+            i,
+            node.name,
+            node.rate,
+            node.inputs.len(),
+            node.num_outputs
+        );
     }
 
     match encode_synthdef(&ir) {
         Ok(bytes) => {
-            log::debug!("[RECORDING] Generated {} synthdef ({} bytes)", name, bytes.len());
+            log::debug!(
+                "[RECORDING] Generated {} synthdef ({} bytes)",
+                name,
+                bytes.len()
+            );
             Some((name.to_string(), bytes))
         }
         Err(e) => {
@@ -194,8 +220,8 @@ fn generate_metronome_synthdef() -> Option<(String, Vec<u8>)> {
     let mut builder = GraphBuilderInner::new();
 
     // Parameters
-    builder.add_param("out".to_string(), vec![0.0], None);    // 0
-    builder.add_param("amp".to_string(), vec![0.5], None);    // 1
+    builder.add_param("out".to_string(), vec![0.0], None); // 0
+    builder.add_param("amp".to_string(), vec![0.5], None); // 1
     builder.add_param("accent".to_string(), vec![0.0], None); // 2 - 0=normal, 1=beat 1
 
     builder.create_control_ugen();
@@ -242,7 +268,10 @@ fn generate_metronome_synthdef() -> Option<(String, Vec<u8>)> {
         "BinaryOpUGen".to_string(),
         Rate::Control,
         vec![
-            Input::Node { node_id: one_minus_accent.0, output_index: 0 },
+            Input::Node {
+                node_id: one_minus_accent.0,
+                output_index: 0,
+            },
             Input::Constant(freq_normal),
         ],
         1,
@@ -253,10 +282,7 @@ fn generate_metronome_synthdef() -> Option<(String, Vec<u8>)> {
     let freq_part2 = builder.add_node(
         "BinaryOpUGen".to_string(),
         Rate::Control,
-        vec![
-            param(2),
-            Input::Constant(freq_accent),
-        ],
+        vec![param(2), Input::Constant(freq_accent)],
         1,
         2, // multiplication
     );
@@ -266,8 +292,14 @@ fn generate_metronome_synthdef() -> Option<(String, Vec<u8>)> {
         "BinaryOpUGen".to_string(),
         Rate::Control,
         vec![
-            Input::Node { node_id: freq_part1.0, output_index: 0 },
-            Input::Node { node_id: freq_part2.0, output_index: 0 },
+            Input::Node {
+                node_id: freq_part1.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: freq_part2.0,
+                output_index: 0,
+            },
         ],
         1,
         0, // addition
@@ -278,7 +310,10 @@ fn generate_metronome_synthdef() -> Option<(String, Vec<u8>)> {
         "SinOsc".to_string(),
         Rate::Audio,
         vec![
-            Input::Node { node_id: freq.0, output_index: 0 },
+            Input::Node {
+                node_id: freq.0,
+                output_index: 0,
+            },
             Input::Constant(zero), // phase = 0
         ],
         1,
@@ -310,8 +345,14 @@ fn generate_metronome_synthdef() -> Option<(String, Vec<u8>)> {
         "BinaryOpUGen".to_string(),
         Rate::Audio,
         vec![
-            Input::Node { node_id: osc.0, output_index: 0 },
-            Input::Node { node_id: env.0, output_index: 0 },
+            Input::Node {
+                node_id: osc.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: env.0,
+                output_index: 0,
+            },
         ],
         1,
         2, // multiplication
@@ -322,7 +363,10 @@ fn generate_metronome_synthdef() -> Option<(String, Vec<u8>)> {
         "BinaryOpUGen".to_string(),
         Rate::Audio,
         vec![
-            Input::Node { node_id: osc_env.0, output_index: 0 },
+            Input::Node {
+                node_id: osc_env.0,
+                output_index: 0,
+            },
             param(1), // amp
         ],
         1,
@@ -335,8 +379,14 @@ fn generate_metronome_synthdef() -> Option<(String, Vec<u8>)> {
         Rate::Audio,
         vec![
             param(0), // out bus
-            Input::Node { node_id: final_sig.0, output_index: 0 },
-            Input::Node { node_id: final_sig.0, output_index: 0 }, // duplicate for stereo
+            Input::Node {
+                node_id: final_sig.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: final_sig.0,
+                output_index: 0,
+            }, // duplicate for stereo
         ],
         0,
         0,
@@ -345,7 +395,11 @@ fn generate_metronome_synthdef() -> Option<(String, Vec<u8>)> {
     let ir = GraphIR::from_builder(name.to_string(), builder);
     match encode_synthdef(&ir) {
         Ok(bytes) => {
-            log::debug!("[RECORDING] Generated {} synthdef ({} bytes)", name, bytes.len());
+            log::debug!(
+                "[RECORDING] Generated {} synthdef ({} bytes)",
+                name,
+                bytes.len()
+            );
             Some((name.to_string(), bytes))
         }
         Err(e) => {

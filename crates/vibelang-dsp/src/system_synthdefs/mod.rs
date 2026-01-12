@@ -19,8 +19,8 @@ pub mod sfz;
 
 pub use midi::{create_midi_synthdefs, trigger_ids, MidiTriggerType};
 pub use midi::{
-    MIDI_REPLY_CC, MIDI_REPLY_CLOCK, MIDI_REPLY_CONTINUE, MIDI_REPLY_NOTE_OFF,
-    MIDI_REPLY_NOTE_ON, MIDI_REPLY_PITCH_BEND, MIDI_REPLY_START, MIDI_REPLY_STOP,
+    MIDI_REPLY_CC, MIDI_REPLY_CLOCK, MIDI_REPLY_CONTINUE, MIDI_REPLY_NOTE_OFF, MIDI_REPLY_NOTE_ON,
+    MIDI_REPLY_PITCH_BEND, MIDI_REPLY_START, MIDI_REPLY_STOP,
 };
 pub use recording::create_recording_synthdefs;
 pub use routing::create_system_link_audio_bytes;

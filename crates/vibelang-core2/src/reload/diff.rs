@@ -385,7 +385,9 @@ mod tests {
         let mut new_configs = HashMap::new();
         new_configs.insert(1u32, "new_config".to_string());
 
-        let diff = diff_entities(&current_ids, &new_configs, |_| Some("old_config".to_string()));
+        let diff = diff_entities(&current_ids, &new_configs, |_| {
+            Some("old_config".to_string())
+        });
 
         assert!(diff.created.is_empty());
         assert!(diff.deleted.is_empty());
@@ -400,7 +402,9 @@ mod tests {
         let mut new_configs = HashMap::new();
         new_configs.insert(1u32, "same_config".to_string());
 
-        let diff = diff_entities(&current_ids, &new_configs, |_| Some("same_config".to_string()));
+        let diff = diff_entities(&current_ids, &new_configs, |_| {
+            Some("same_config".to_string())
+        });
 
         assert!(diff.created.is_empty());
         assert!(diff.deleted.is_empty());

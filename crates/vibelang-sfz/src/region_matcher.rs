@@ -219,8 +219,6 @@ mod tests {
         assert!((calculate_playback_rate(48, Some(60), None, None) - 0.5).abs() < 0.001);
 
         // With transpose
-        assert!(
-            (calculate_playback_rate(60, Some(60), None, Some(12)) - 2.0).abs() < 0.001
-        );
+        assert!((calculate_playback_rate(60, Some(60), None, Some(12)) - 2.0).abs() < 0.001);
     }
 }

@@ -229,8 +229,7 @@ impl JitterCompensator {
         let midi_instant = self.midi_timestamp_to_instant(event.timestamp_us);
 
         // Apply drift correction
-        let elapsed_sec =
-            (event.timestamp_us - self.reference_midi_us) as f64 / 1_000_000.0;
+        let elapsed_sec = (event.timestamp_us - self.reference_midi_us) as f64 / 1_000_000.0;
         let drift_correction_us = (self.drift_us_per_sec * elapsed_sec) as i64;
 
         // Calculate target instant:
@@ -270,7 +269,8 @@ impl JitterCompensator {
         let mean = sum as f64 / n as f64;
 
         // Calculate standard deviation
-        let variance: f64 = self.samples
+        let variance: f64 = self
+            .samples
             .iter()
             .map(|s| {
                 let diff = s.latency_us as f64 - mean;

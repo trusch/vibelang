@@ -11,12 +11,12 @@
 //! - Debugging is easier since errors point to the source
 
 use crate::error::{Error, Result};
-use crate::traits::{
-    Clip, FadeConfig, MelodyConfig, NoteEvent, PatternConfig, SampleConfig,
-    SequenceConfig, VoiceConfig,
-};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingConfig;
+use crate::traits::{
+    Clip, FadeConfig, MelodyConfig, NoteEvent, PatternConfig, SampleConfig, SequenceConfig,
+    VoiceConfig,
+};
 use crate::types::Beat;
 
 /// Validation constants
@@ -126,7 +126,8 @@ impl Validate for PatternConfig {
                 "length",
                 format!(
                     "pattern length must be at least {} beats, got {}",
-                    limits::MIN_LENGTH_BEATS, length_beats
+                    limits::MIN_LENGTH_BEATS,
+                    length_beats
                 ),
             ));
         }
@@ -135,7 +136,8 @@ impl Validate for PatternConfig {
                 "length",
                 format!(
                     "pattern length must be at most {} beats, got {}",
-                    limits::MAX_LENGTH_BEATS, length_beats
+                    limits::MAX_LENGTH_BEATS,
+                    length_beats
                 ),
             ));
         }
@@ -186,7 +188,8 @@ impl Validate for MelodyConfig {
                 "length",
                 format!(
                     "melody length must be at least {} beats, got {}",
-                    limits::MIN_LENGTH_BEATS, length_beats
+                    limits::MIN_LENGTH_BEATS,
+                    length_beats
                 ),
             ));
         }
@@ -195,7 +198,8 @@ impl Validate for MelodyConfig {
                 "length",
                 format!(
                     "melody length must be at most {} beats, got {}",
-                    limits::MAX_LENGTH_BEATS, length_beats
+                    limits::MAX_LENGTH_BEATS,
+                    length_beats
                 ),
             ));
         }
@@ -230,7 +234,9 @@ fn validate_note_event(note: &NoteEvent, index: usize, melody_length: f64) -> Re
             "note",
             format!(
                 "note {} has invalid MIDI note number {}, max is {}",
-                index, note.note, limits::MAX_MIDI_NOTE
+                index,
+                note.note,
+                limits::MAX_MIDI_NOTE
             ),
         ));
     }
@@ -241,7 +247,10 @@ fn validate_note_event(note: &NoteEvent, index: usize, melody_length: f64) -> Re
             "velocity",
             format!(
                 "note {} velocity {} must be between {} and {}",
-                index, note.velocity, limits::MIN_VELOCITY, limits::MAX_VELOCITY
+                index,
+                note.velocity,
+                limits::MIN_VELOCITY,
+                limits::MAX_VELOCITY
             ),
         ));
     }
@@ -251,7 +260,10 @@ fn validate_note_event(note: &NoteEvent, index: usize, melody_length: f64) -> Re
     if beat_pos < 0.0 {
         return Err(Error::invalid_param(
             "beat",
-            format!("note {} beat position cannot be negative: {}", index, beat_pos),
+            format!(
+                "note {} beat position cannot be negative: {}",
+                index, beat_pos
+            ),
         ));
     }
     if beat_pos >= melody_length {
@@ -291,7 +303,8 @@ impl Validate for FadeConfig {
                 "duration",
                 format!(
                     "fade duration must be at most {} beats, got {}",
-                    limits::MAX_LENGTH_BEATS, duration_beats
+                    limits::MAX_LENGTH_BEATS,
+                    duration_beats
                 ),
             ));
         }
@@ -317,7 +330,8 @@ impl Validate for SequenceConfig {
                 "length",
                 format!(
                     "sequence length must be at least {} beats, got {}",
-                    limits::MIN_LENGTH_BEATS, length_beats
+                    limits::MIN_LENGTH_BEATS,
+                    length_beats
                 ),
             ));
         }
@@ -326,7 +340,8 @@ impl Validate for SequenceConfig {
                 "length",
                 format!(
                     "sequence length must be at most {} beats, got {}",
-                    limits::MAX_LENGTH_BEATS, length_beats
+                    limits::MAX_LENGTH_BEATS,
+                    length_beats
                 ),
             ));
         }
@@ -350,7 +365,10 @@ fn validate_clip(clip: &Clip, index: usize, sequence_length: f64) -> Result<()> 
             if start_beats < 0.0 {
                 return Err(Error::invalid_param(
                     "clip",
-                    format!("clip {} start position cannot be negative: {}", index, start_beats),
+                    format!(
+                        "clip {} start position cannot be negative: {}",
+                        index, start_beats
+                    ),
                 ));
             }
             if end_beats <= start_beats {
@@ -377,7 +395,10 @@ fn validate_clip(clip: &Clip, index: usize, sequence_length: f64) -> Result<()> 
             if start_beats < 0.0 {
                 return Err(Error::invalid_param(
                     "clip",
-                    format!("clip {} start position cannot be negative: {}", index, start_beats),
+                    format!(
+                        "clip {} start position cannot be negative: {}",
+                        index, start_beats
+                    ),
                 ));
             }
             if start_beats >= sequence_length {
@@ -454,7 +475,8 @@ impl Validate for RecordingConfig {
                 "num_channels",
                 format!(
                     "recording can have at most {} channels, got {}",
-                    limits::MAX_CHANNELS, self.num_channels
+                    limits::MAX_CHANNELS,
+                    self.num_channels
                 ),
             ));
         }
@@ -475,10 +497,7 @@ impl Validate for SampleConfig {
     fn validate(&self) -> Result<()> {
         // Validate path exists (basic check - actual file check happens at load time)
         if self.path.as_os_str().is_empty() {
-            return Err(Error::invalid_param(
-                "path",
-                "sample path cannot be empty",
-            ));
+            return Err(Error::invalid_param("path", "sample path cannot be empty"));
         }
 
         // Validate rate
@@ -574,7 +593,11 @@ pub fn validate_midi_note(note: u8) -> Result<()> {
     if note > limits::MAX_MIDI_NOTE {
         return Err(Error::invalid_param(
             "note",
-            format!("MIDI note must be 0-{}, got {}", limits::MAX_MIDI_NOTE, note),
+            format!(
+                "MIDI note must be 0-{}, got {}",
+                limits::MAX_MIDI_NOTE,
+                note
+            ),
         ));
     }
     Ok(())
@@ -598,7 +621,8 @@ pub fn validate_midi_channel(channel: u8) -> Result<()> {
             "channel",
             format!(
                 "MIDI channel must be 0-{}, got {}",
-                limits::MAX_MIDI_CHANNEL, channel
+                limits::MAX_MIDI_CHANNEL,
+                channel
             ),
         ));
     }
@@ -612,7 +636,9 @@ pub fn validate_velocity(velocity: f32) -> Result<()> {
             "velocity",
             format!(
                 "velocity must be between {} and {}, got {}",
-                limits::MIN_VELOCITY, limits::MAX_VELOCITY, velocity
+                limits::MIN_VELOCITY,
+                limits::MAX_VELOCITY,
+                velocity
             ),
         ));
     }
@@ -675,8 +701,8 @@ mod tests {
         assert!(config.validate().is_err());
 
         // Invalid swing
-        let config =
-            PatternConfig::with_length("test_pattern", crate::types::VoiceId::new(0), 4.0).with_swing(1.5);
+        let config = PatternConfig::with_length("test_pattern", crate::types::VoiceId::new(0), 4.0)
+            .with_swing(1.5);
         assert!(config.validate().is_err());
     }
 

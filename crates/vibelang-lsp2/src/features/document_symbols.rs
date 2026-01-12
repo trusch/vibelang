@@ -9,7 +9,10 @@ use tower_lsp::lsp_types::{DocumentSymbol, Position, Range, SymbolKind};
 use crate::analysis::AnalysisResult;
 
 /// Get document symbols for outline view.
-pub fn get_document_symbols(content: &str, analysis: Option<&AnalysisResult>) -> Vec<DocumentSymbol> {
+pub fn get_document_symbols(
+    content: &str,
+    analysis: Option<&AnalysisResult>,
+) -> Vec<DocumentSymbol> {
     let mut symbols = Vec::new();
 
     // Transport settings
@@ -23,12 +26,24 @@ pub fn get_document_symbols(content: &str, analysis: Option<&AnalysisResult>) ->
             tags: None,
             deprecated: None,
             range: Range {
-                start: Position { line: 0, character: 0 },
-                end: Position { line: 0, character: 0 },
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: Position {
+                    line: 0,
+                    character: 0,
+                },
             },
             selection_range: Range {
-                start: Position { line: 0, character: 0 },
-                end: Position { line: 0, character: 0 },
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: Position {
+                    line: 0,
+                    character: 0,
+                },
             },
             children: Some(transport_children),
         });
@@ -50,7 +65,11 @@ pub fn get_document_symbols(content: &str, analysis: Option<&AnalysisResult>) ->
                     deprecated: None,
                     range,
                     selection_range: range,
-                    children: if children.is_empty() { None } else { Some(children) },
+                    children: if children.is_empty() {
+                        None
+                    } else {
+                        Some(children)
+                    },
                 });
             }
         }
@@ -62,12 +81,24 @@ pub fn get_document_symbols(content: &str, analysis: Option<&AnalysisResult>) ->
                 tags: None,
                 deprecated: None,
                 range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 selection_range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 children: Some(group_symbols),
             });
@@ -97,12 +128,24 @@ pub fn get_document_symbols(content: &str, analysis: Option<&AnalysisResult>) ->
                 tags: None,
                 deprecated: None,
                 range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 selection_range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 children: Some(voice_symbols),
             });
@@ -132,12 +175,24 @@ pub fn get_document_symbols(content: &str, analysis: Option<&AnalysisResult>) ->
                 tags: None,
                 deprecated: None,
                 range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 selection_range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 children: Some(pattern_symbols),
             });
@@ -167,12 +222,24 @@ pub fn get_document_symbols(content: &str, analysis: Option<&AnalysisResult>) ->
                 tags: None,
                 deprecated: None,
                 range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 selection_range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 children: Some(melody_symbols),
             });
@@ -202,12 +269,24 @@ pub fn get_document_symbols(content: &str, analysis: Option<&AnalysisResult>) ->
                 tags: None,
                 deprecated: None,
                 range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 selection_range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 children: Some(sequence_symbols),
             });
@@ -237,12 +316,24 @@ pub fn get_document_symbols(content: &str, analysis: Option<&AnalysisResult>) ->
                 tags: None,
                 deprecated: None,
                 range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 selection_range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 children: Some(synthdef_symbols),
             });
@@ -272,12 +363,24 @@ pub fn get_document_symbols(content: &str, analysis: Option<&AnalysisResult>) ->
                 tags: None,
                 deprecated: None,
                 range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 selection_range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 children: Some(effect_symbols),
             });
@@ -301,7 +404,8 @@ fn extract_transport_symbols(content: &str, symbols: &mut Vec<DocumentSymbol>) {
             for (line_num, line) in content.lines().enumerate() {
                 if let Some(m) = re.find(line) {
                     symbols.push(DocumentSymbol {
-                        name: line[m.start()..m.end().min(line.len().min(m.start() + 30))].to_string(),
+                        name: line[m.start()..m.end().min(line.len().min(m.start() + 30))]
+                            .to_string(),
                         detail: Some(detail.to_string()),
                         kind: SymbolKind::PROPERTY,
                         tags: None,
@@ -419,7 +523,7 @@ fn find_group_children(content: &str, group_start_line: u32) -> Vec<DocumentSymb
 
             for (entity_type, kind) in entities {
                 let pattern = format!(r#"{}\s*\(\s*["']([^"']+)["']"#, entity_type);
-                if let Some(re) = regex::Regex::new(&pattern).ok() {
+                if let Ok(re) = regex::Regex::new(&pattern) {
                     for cap in re.captures_iter(line) {
                         if let Some(name_match) = cap.get(1) {
                             children.push(DocumentSymbol {

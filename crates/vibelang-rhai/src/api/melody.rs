@@ -20,9 +20,9 @@ use std::collections::HashMap;
 use vibelang_core2::traits::{MelodyConfig, NoteEvent};
 use vibelang_core2::types::Beat;
 
-use crate::context;
 use super::helpers::parse_note_name;
 use super::voice::Voice;
+use crate::context;
 
 // Global registry for melodies - allows looking up melodies by name
 thread_local! {
@@ -190,14 +190,14 @@ impl Melody {
                         note_start_beat = beat;
                         note_duration = beat_per_token;
                     }
-                    NoteToken::ScaleDegree { degree, octave_offset } => {
+                    NoteToken::ScaleDegree {
+                        degree,
+                        octave_offset,
+                    } => {
                         // Resolve scale degree to MIDI note
-                        if let Some(midi) = resolve_scale_degree(
-                            *degree,
-                            *octave_offset,
-                            &self.root,
-                            &self.scale,
-                        ) {
+                        if let Some(midi) =
+                            resolve_scale_degree(*degree, *octave_offset, &self.root, &self.scale)
+                        {
                             if let Some(prev_notes) = current_notes.take() {
                                 self.notes.push(MelodyNote {
                                     beat: note_start_beat,
@@ -293,7 +293,13 @@ impl Melody {
     /// - chord_notes: Array of MIDI note numbers
     /// - velocity: Velocity (0.0-1.0)
     /// - duration: Duration in beats
-    pub fn add_chord(mut self, beat: f64, chord_notes: rhai::Array, velocity: f64, duration: f64) -> Self {
+    pub fn add_chord(
+        mut self,
+        beat: f64,
+        chord_notes: rhai::Array,
+        velocity: f64,
+        duration: f64,
+    ) -> Self {
         let midi_notes: Vec<u8> = chord_notes
             .into_iter()
             .filter_map(|n| n.as_int().ok().map(|n| n.clamp(0, 127) as u8))
@@ -415,9 +421,7 @@ impl Melody {
     /// Check if the melody is playing.
     pub fn is_playing(&mut self) -> bool {
         let melody_id = context::get_or_create_melody_id(&self.name);
-        context::with_state(|state| {
-            state.playing_melodies.contains(&melody_id)
-        })
+        context::with_state(|state| state.playing_melodies.contains(&melody_id))
     }
 }
 
@@ -472,7 +476,7 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
                 while let Some(&next) = chars.peek() {
                     if next == ']' {
                         chars.next(); // consume ']'
-                        // Parse the last note if any
+                                      // Parse the last note if any
                         if !current_note.is_empty() {
                             if let Some(midi) = parse_note_name(&current_note) {
                                 chord_notes.push(midi);
@@ -481,7 +485,7 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
                         break;
                     } else if next == ' ' || next == '\t' {
                         chars.next(); // consume whitespace
-                        // Parse accumulated note
+                                      // Parse accumulated note
                         if !current_note.is_empty() {
                             if let Some(midi) = parse_note_name(&current_note) {
                                 chord_notes.push(midi);
@@ -524,7 +528,10 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
                     }
                 }
 
-                tokens.push(NoteToken::ScaleDegree { degree, octave_offset });
+                tokens.push(NoteToken::ScaleDegree {
+                    degree,
+                    octave_offset,
+                });
             }
 
             // Absolute note names (A-G), with optional chord suffix
@@ -797,7 +804,10 @@ mod tests {
         // Check each is a scale degree
         for (i, token) in tokens.iter().enumerate() {
             match token {
-                NoteToken::ScaleDegree { degree, octave_offset } => {
+                NoteToken::ScaleDegree {
+                    degree,
+                    octave_offset,
+                } => {
                     assert_eq!(*degree, (i + 1) as u8);
                     assert_eq!(*octave_offset, 0);
                 }
@@ -812,7 +822,10 @@ mod tests {
         assert_eq!(tokens.len(), 3);
 
         match &tokens[0] {
-            NoteToken::ScaleDegree { degree, octave_offset } => {
+            NoteToken::ScaleDegree {
+                degree,
+                octave_offset,
+            } => {
                 assert_eq!(*degree, 1);
                 assert_eq!(*octave_offset, 1);
             }
@@ -820,7 +833,10 @@ mod tests {
         }
 
         match &tokens[1] {
-            NoteToken::ScaleDegree { degree, octave_offset } => {
+            NoteToken::ScaleDegree {
+                degree,
+                octave_offset,
+            } => {
                 assert_eq!(*degree, 2);
                 assert_eq!(*octave_offset, 2);
             }
@@ -828,7 +844,10 @@ mod tests {
         }
 
         match &tokens[2] {
-            NoteToken::ScaleDegree { degree, octave_offset } => {
+            NoteToken::ScaleDegree {
+                degree,
+                octave_offset,
+            } => {
                 assert_eq!(*degree, 3);
                 assert_eq!(*octave_offset, 3);
             }
@@ -842,7 +861,10 @@ mod tests {
         assert_eq!(tokens.len(), 3);
 
         match &tokens[0] {
-            NoteToken::ScaleDegree { degree, octave_offset } => {
+            NoteToken::ScaleDegree {
+                degree,
+                octave_offset,
+            } => {
                 assert_eq!(*degree, 1);
                 assert_eq!(*octave_offset, -1);
             }
@@ -850,7 +872,10 @@ mod tests {
         }
 
         match &tokens[1] {
-            NoteToken::ScaleDegree { degree, octave_offset } => {
+            NoteToken::ScaleDegree {
+                degree,
+                octave_offset,
+            } => {
                 assert_eq!(*degree, 2);
                 assert_eq!(*octave_offset, -2);
             }
@@ -858,7 +883,10 @@ mod tests {
         }
 
         match &tokens[2] {
-            NoteToken::ScaleDegree { degree, octave_offset } => {
+            NoteToken::ScaleDegree {
+                degree,
+                octave_offset,
+            } => {
                 assert_eq!(*degree, 3);
                 assert_eq!(*octave_offset, -3);
             }
@@ -871,11 +899,23 @@ mod tests {
         let tokens = tokenize_bar("1 - . C4 2'");
         assert_eq!(tokens.len(), 5);
 
-        assert!(matches!(&tokens[0], NoteToken::ScaleDegree { degree: 1, octave_offset: 0 }));
+        assert!(matches!(
+            &tokens[0],
+            NoteToken::ScaleDegree {
+                degree: 1,
+                octave_offset: 0
+            }
+        ));
         assert!(matches!(&tokens[1], NoteToken::Tie));
         assert!(matches!(&tokens[2], NoteToken::Rest));
         assert!(matches!(&tokens[3], NoteToken::Notes(_)));
-        assert!(matches!(&tokens[4], NoteToken::ScaleDegree { degree: 2, octave_offset: 1 }));
+        assert!(matches!(
+            &tokens[4],
+            NoteToken::ScaleDegree {
+                degree: 2,
+                octave_offset: 1
+            }
+        ));
     }
 
     #[test]

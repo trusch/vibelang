@@ -6,7 +6,9 @@
 //! - Windows: `%APPDATA%\vibe-keys\config.toml`
 
 use crate::error::{Error, Result};
-use crate::keyboard::{KeyboardConfig, KeyMapping, C3_MIDI, DEFAULT_NOTE_RELEASE_MS, DEFAULT_VELOCITY};
+use crate::keyboard::{
+    KeyMapping, KeyboardConfig, C3_MIDI, DEFAULT_NOTE_RELEASE_MS, DEFAULT_VELOCITY,
+};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -14,7 +16,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 /// Main configuration structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// Keyboard configuration
@@ -23,16 +25,6 @@ pub struct Config {
     pub midi: MidiSettings,
     /// UI/Theme configuration
     pub theme: Theme,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            keyboard: KeyboardSettings::default(),
-            midi: MidiSettings::default(),
-            theme: Theme::default(),
-        }
-    }
 }
 
 impl Config {
@@ -44,7 +36,10 @@ impl Config {
             let config: Config = toml::from_str(&content)?;
             Ok(config)
         } else {
-            Err(Error::Config(format!("Config file not found at {:?}", path)))
+            Err(Error::Config(format!(
+                "Config file not found at {:?}",
+                path
+            )))
         }
     }
 
@@ -69,7 +64,9 @@ impl Config {
         if let Some(proj_dirs) = ProjectDirs::from("", "", "vibe-keys") {
             Ok(proj_dirs.config_dir().join("config.toml"))
         } else {
-            Err(Error::Config("Could not determine config directory".to_string()))
+            Err(Error::Config(
+                "Could not determine config directory".to_string(),
+            ))
         }
     }
 
@@ -226,7 +223,9 @@ impl CustomKeyMapping {
     pub fn to_key_mapping(&self) -> KeyMapping {
         KeyMapping {
             key_char: self.key.to_ascii_lowercase(),
-            display_char: self.display.unwrap_or_else(|| self.key.to_ascii_uppercase()),
+            display_char: self
+                .display
+                .unwrap_or_else(|| self.key.to_ascii_uppercase()),
             note_offset: self.offset,
             is_black_key: self.black,
         }

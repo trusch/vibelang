@@ -1,12 +1,12 @@
 use crate::parser::error::Error;
+use crate::parser::opcodes::{LoopMode, OffMode, SfzOpcodes, TriggerMode};
 use crate::parser::types::SfzSection;
-use crate::parser::opcodes::{SfzOpcodes, LoopMode, OffMode, TriggerMode};
 
 type Result<T> = std::result::Result<T, Error>;
 
 /// Trait for sample playback opcodes
 ///
-/// Sample playback opcodes control how audio samples are played back, including 
+/// Sample playback opcodes control how audio samples are played back, including
 /// their start points, loop behavior, direction, and playback speed. These opcodes
 /// are essential for shaping the temporal characteristics of samples and enabling
 /// techniques like looping, one-shot playback, reverse playback, and time-stretching.
@@ -19,7 +19,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `offset=2048` (Skip the first 2048 samples when playing)
     fn offset(&self) -> Result<i32>;
-    
+
     /// Gets the offset modulation from MIDI CC
     ///
     /// Controls how much a MIDI CC affects the sample offset.
@@ -27,7 +27,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `offset_oncc64=4096` (Sustain pedal increases offset by up to 4096 samples)
     fn offset_oncc(&self, cc: i32) -> Result<i32>;
-    
+
     /// Gets the random offset variation
     ///
     /// Adds a random variation to the sample offset.
@@ -35,7 +35,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `offset_random=1000` (Random offset variation of up to 1000 samples)
     fn offset_random(&self) -> Result<i32>;
-    
+
     /// Gets the end position in the sample in samples
     ///
     /// Specifies where to stop playback within the sample, in samples.
@@ -43,7 +43,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `end=24000` (Stop playback at sample 24000)
     fn end(&self) -> Result<i32>;
-    
+
     /// Gets the count of complete sample playbacks
     ///
     /// Specifies how many times to play the sample before stopping.
@@ -51,7 +51,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `count=3` (Play the sample 3 times consecutively)
     fn count(&self) -> Result<i32>;
-    
+
     /// Gets the delay before playback in seconds
     ///
     /// Specifies how long to wait after note-on before starting playback.
@@ -59,14 +59,14 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `delay=0.5` (Wait 0.5 seconds before playing the sample)
     fn delay(&self) -> Result<f32>;
-    
+
     /// Gets the delay modulation from MIDI CC
     ///
     /// Controls how much a MIDI CC affects the delay time.
     ///
     /// Example: `delay_oncc1=1.0` (Mod wheel increases delay up to 1 second)
     fn delay_oncc(&self, cc: i32) -> Result<f32>;
-    
+
     /// Gets the delay random variation
     ///
     /// Adds a random variation to the delay time.
@@ -74,7 +74,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `delay_random=0.1` (Random delay variation of up to 0.1 seconds)
     fn delay_random(&self) -> Result<f32>;
-    
+
     /// Gets the sample stop mode
     ///
     /// Specifies what happens when a note is released.
@@ -82,7 +82,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `off_mode=normal` (Use normal release behavior)
     fn off_mode(&self) -> Result<OffMode>;
-    
+
     /// Gets the loop mode
     ///
     /// Controls how the sample loops during playback.
@@ -90,7 +90,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `loop_mode=loop_sustain` (Loop while key is held, then release)
     fn loop_mode(&self) -> Result<LoopMode>;
-    
+
     /// Gets the loop start position in samples
     ///
     /// Specifies where the loop begins within the sample, in samples.
@@ -98,7 +98,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `loop_start=12000` (Start the loop at sample 12000)
     fn loop_start(&self) -> Result<i32>;
-    
+
     /// Gets the loop end position in samples
     ///
     /// Specifies where the loop ends within the sample, in samples.
@@ -106,7 +106,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `loop_end=24000` (End the loop at sample 24000)
     fn loop_end(&self) -> Result<i32>;
-    
+
     /// Gets the loop crossfade length in samples
     ///
     /// Specifies how many samples to use for crossfading between loop end and start.
@@ -114,7 +114,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `loop_crossfade=1000` (1000 sample crossfade for smoother loops)
     fn loop_crossfade(&self) -> Result<i32>;
-    
+
     /// Gets the number of times to play the loop
     ///
     /// Specifies how many times to repeat the loop before continuing to the rest of the sample.
@@ -122,7 +122,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `loop_count=4` (Play the loop 4 times, then continue)
     fn loop_count(&self) -> Result<i32>;
-    
+
     /// Gets the sync beat timing
     ///
     /// Controls how the sample synchronizes with the host tempo.
@@ -130,7 +130,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `sync_beats=4` (Sync to 4 beats)
     fn sync_beats(&self) -> Result<f32>;
-    
+
     /// Gets the sync offset in beats
     ///
     /// Specifies an offset from the sync point, in beats.
@@ -138,7 +138,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `sync_offset=0.5` (Offset sync by half a beat)
     fn sync_offset(&self) -> Result<f32>;
-    
+
     /// Gets the playback direction
     ///
     /// Controls whether the sample is played forward or backward.
@@ -146,7 +146,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `direction=-1` (Play the sample in reverse)
     fn direction(&self) -> Result<i32>;
-    
+
     /// Gets the time stretching mode
     ///
     /// Specifies which algorithm to use for time-stretching.
@@ -154,7 +154,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `timestretch_mode=elastique` (Use Elastique algorithm for time stretching)
     fn timestretch_mode(&self) -> Result<String>;
-    
+
     /// Gets the time stretching ratio
     ///
     /// Controls the speed of playback as a ratio.
@@ -162,7 +162,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `timestretch_ratio=0.5` (Play at half speed)
     fn timestretch_ratio(&self) -> Result<f32>;
-    
+
     /// Gets the pitch shifting mode
     ///
     /// Specifies which algorithm to use for pitch-shifting.
@@ -170,7 +170,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `pitchshift_mode=elastique` (Use Elastique algorithm for pitch shifting)
     fn pitchshift_mode(&self) -> Result<String>;
-    
+
     /// Gets the pitch shift amount in semitones
     ///
     /// Controls how much to shift the pitch, in semitones.
@@ -178,7 +178,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `pitchshift_amount=12` (Shift pitch up by one octave)
     fn pitchshift_amount(&self) -> Result<f32>;
-    
+
     /// Gets the phase offset between left and right channels
     ///
     /// Controls the phase offset between stereo channels, in degrees.
@@ -186,7 +186,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `phase=180` (Invert phase between channels)
     fn phase(&self) -> Result<f32>;
-    
+
     /// Gets the trigger mode
     ///
     /// Specifies what causes the sample to trigger.
@@ -194,7 +194,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `trigger=release` (Play the sample when the note is released)
     fn trigger(&self) -> Result<TriggerMode>;
-    
+
     /// Gets the playback rate in percentage
     ///
     /// Controls the speed of sample playback as a percentage.
@@ -202,7 +202,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `playback_rate=50` (Play at half speed)
     fn playback_rate(&self) -> Result<f32>;
-    
+
     /// Gets the chance of the sample playing
     ///
     /// Specifies a probability (0-100%) that the sample will be played when triggered.
@@ -210,7 +210,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `rt_chance=80` (80% chance the sample will play when triggered)
     fn rt_chance(&self) -> Result<f32>;
-    
+
     /// Gets the number of loop alternations
     ///
     /// Controls ping-pong style looping by alternating between forward and backward.
@@ -218,7 +218,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `loop_alternate=1` (Alternate loop direction each cycle)
     fn loop_alternate(&self) -> Result<i32>;
-    
+
     /// Gets whether to tune the sample
     ///
     /// Controls whether the sample follows keyboard pitch tracking.
@@ -226,7 +226,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `tune=0` (Disable pitch tracking, play at original speed)
     fn tune(&self) -> Result<i32>;
-    
+
     /// Gets the sample quality mode
     ///
     /// Specifies the interpolation quality for resampling.
@@ -234,7 +234,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `sample_quality=2` (Use high quality interpolation)
     fn sample_quality(&self) -> Result<i32>;
-    
+
     /// Gets the transpose amount in semitones
     ///
     /// Controls how much to transpose the sample, in semitones.
@@ -242,7 +242,7 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `transpose=12` (Play one octave higher and faster)
     fn transpose(&self) -> Result<i32>;
-    
+
     /// Gets whether the sample loops seamlessly
     ///
     /// Indicates if the sample has been prepared for seamless looping.
@@ -250,14 +250,14 @@ pub trait SamplePlaybackOpcodes {
     ///
     /// Example: `loopwaves=1` (Sample is prepared for seamless looping)
     fn loopwaves(&self) -> Result<i32>;
-    
+
     /// Gets the sample start modulation from MIDI CC
     ///
     /// Controls how much a MIDI CC affects the sample start point.
     ///
     /// Example: `start_oncc1=2000` (Mod wheel increases start point by up to 2000 samples)
     fn start_oncc(&self, cc: i32) -> Result<i32>;
-    
+
     /// Gets the loop crossfade modulation from MIDI CC
     ///
     /// Controls how much a MIDI CC affects the loop crossfade length.
@@ -270,128 +270,128 @@ impl SamplePlaybackOpcodes for SfzSection {
     fn loop_mode(&self) -> Result<LoopMode> {
         SfzOpcodes::get_opcode(self, "loop_mode")
     }
-    
+
     fn loop_start(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "loop_start")
     }
-    
+
     fn loop_end(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "loop_end")
     }
-    
+
     fn loop_crossfade(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "loop_crossfade")
     }
-    
+
     fn loop_count(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "loop_count")
     }
-    
+
     fn offset(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "offset")
     }
-    
+
     fn offset_random(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "offset_random")
     }
-    
+
     fn offset_oncc(&self, cc: i32) -> Result<i32> {
         SfzOpcodes::get_opcode(self, &format!("offset_oncc{}", cc))
     }
-    
+
     fn direction(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "direction")
     }
-    
+
     fn sync_offset(&self) -> Result<f32> {
         SfzOpcodes::get_opcode(self, "sync_offset")
     }
-    
+
     fn sync_beats(&self) -> Result<f32> {
         SfzOpcodes::get_opcode(self, "sync_beats")
     }
-    
+
     fn end(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "end")
     }
-    
+
     fn count(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "count")
     }
-    
+
     fn delay(&self) -> Result<f32> {
         SfzOpcodes::get_opcode(self, "delay")
     }
-    
+
     fn delay_oncc(&self, cc: i32) -> Result<f32> {
         SfzOpcodes::get_opcode(self, &format!("delay_oncc{}", cc))
     }
-    
+
     fn delay_random(&self) -> Result<f32> {
         SfzOpcodes::get_opcode(self, "delay_random")
     }
-    
+
     fn off_mode(&self) -> Result<OffMode> {
         SfzOpcodes::get_opcode(self, "off_mode")
     }
-    
+
     fn timestretch_mode(&self) -> Result<String> {
         SfzOpcodes::get_opcode(self, "timestretch_mode")
     }
-    
+
     fn timestretch_ratio(&self) -> Result<f32> {
         SfzOpcodes::get_opcode(self, "timestretch_ratio")
     }
-    
+
     fn pitchshift_mode(&self) -> Result<String> {
         SfzOpcodes::get_opcode(self, "pitchshift_mode")
     }
-    
+
     fn pitchshift_amount(&self) -> Result<f32> {
         SfzOpcodes::get_opcode(self, "pitchshift_amount")
     }
-    
+
     fn phase(&self) -> Result<f32> {
         SfzOpcodes::get_opcode(self, "phase")
     }
-    
+
     fn trigger(&self) -> Result<TriggerMode> {
         SfzOpcodes::get_opcode(self, "trigger")
     }
-    
+
     fn playback_rate(&self) -> Result<f32> {
         SfzOpcodes::get_opcode(self, "playback_rate")
     }
-    
+
     fn rt_chance(&self) -> Result<f32> {
         SfzOpcodes::get_opcode(self, "rt_chance")
     }
-    
+
     fn loop_alternate(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "loop_alternate")
     }
-    
+
     fn tune(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "tune")
     }
-    
+
     fn sample_quality(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "sample_quality")
     }
-    
+
     fn transpose(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "transpose")
     }
-    
+
     fn loopwaves(&self) -> Result<i32> {
         SfzOpcodes::get_opcode(self, "loopwaves")
     }
-    
+
     fn start_oncc(&self, cc: i32) -> Result<i32> {
         SfzOpcodes::get_opcode(self, &format!("start_oncc{}", cc))
     }
-    
+
     fn loop_crossfade_oncc(&self, cc: i32) -> Result<i32> {
         SfzOpcodes::get_opcode(self, &format!("loop_crossfade_oncc{}", cc))
     }
-} 
+}

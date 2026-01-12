@@ -7,10 +7,7 @@ use tower_lsp::lsp_types::{Location, Position, Range, SymbolInformation, SymbolK
 use crate::data::DocumentStore;
 
 /// Get workspace symbols matching a query.
-pub fn get_workspace_symbols(
-    query: &str,
-    documents: &DocumentStore,
-) -> Vec<SymbolInformation> {
+pub fn get_workspace_symbols(query: &str, documents: &DocumentStore) -> Vec<SymbolInformation> {
     let mut symbols = Vec::new();
     let query_lower = query.to_lowercase();
 
@@ -273,8 +270,12 @@ define_synthdef("my_synth").param("freq", 440).body(|freq| sin_osc_ar(freq));
         let uri = Url::parse("file:///test.vibe").unwrap();
         let symbols = extract_symbols_from_content(content, &uri);
 
-        assert!(symbols.iter().any(|s| s.name == "kick" && s.kind == SymbolKind::VARIABLE));
-        assert!(symbols.iter().any(|s| s.name == "kick" && s.kind == SymbolKind::FUNCTION));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "kick" && s.kind == SymbolKind::VARIABLE));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "kick" && s.kind == SymbolKind::FUNCTION));
         assert!(symbols.iter().any(|s| s.name == "beat"));
         assert!(symbols.iter().any(|s| s.name == "my_synth"));
     }

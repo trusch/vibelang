@@ -35,19 +35,19 @@
 //! let regions = find_matching_regions(&instrument, 60, 100, TriggerMode::Attack, &mut rr_state);
 //! ```
 
-pub mod parser;
-pub mod types;
-pub mod loader;
-pub mod region_matcher;
 pub mod api;
+pub mod loader;
+pub mod parser;
+pub mod region_matcher;
+pub mod types;
 
-pub use types::*;
+pub use api::*;
 pub use loader::*;
 pub use region_matcher::*;
-pub use api::*;
+pub use types::*;
 
 // Re-export SFZ synthdefs from vibelang-dsp for backward compatibility
 pub use vibelang_dsp::system_synthdefs::sfz::{create_sfz_synthdefs, create_sfz_voice_synthdef};
 
 // Re-export parser types for convenience
-pub use parser::{TriggerMode, LoopMode};
+pub use parser::{LoopMode, TriggerMode};

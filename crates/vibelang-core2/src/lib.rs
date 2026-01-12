@@ -149,7 +149,10 @@ pub use state::{
 
 // Re-export the scsynth backend when available (native only)
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-pub use backends::{setup_metering, setup_node_tracking, ScsynthBackend, ScsynthConfig, ScsynthProcess, ProcessError};
+pub use backends::{
+    setup_metering, setup_node_tracking, ProcessError, ScsynthBackend, ScsynthConfig,
+    ScsynthProcess,
+};
 
 // Re-export the web backend for WASM
 #[cfg(target_arch = "wasm32")]
@@ -157,7 +160,10 @@ pub use backends::{WebScsynthBackend, WebScsynthError};
 
 // Re-export types at crate root for convenience
 pub use types::{
-    ids::{BufferId, BusId, EffectId, GroupId, MelodyId, NodeId, PatternId, SampleId, SequenceId, VoiceId},
+    ids::{
+        BufferId, BusId, EffectId, GroupId, MelodyId, NodeId, PatternId, SampleId, SequenceId,
+        VoiceId,
+    },
     params::ParamMap,
     time::{Beat, Duration, TimeSignature},
 };
@@ -186,11 +192,11 @@ pub use traits::{Midi, MidiDeviceInfo};
 
 #[cfg(feature = "midi")]
 pub use midi::{
-    decode_packed_midi, pack_cc, pack_note_off, pack_note_on, pack_pitch_bend, trigger_ids,
-    CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder, MidiCallbacks,
+    decode_packed_midi, pack_cc, pack_note_off, pack_note_on, pack_pitch_bend, parse_note_name,
+    trigger_ids, CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder, MidiCallbacks,
     MidiData, MidiDeviceSender, MidiRealtimeConfig, MidiRealtimeService, MidiRealtimeStats,
     MidiTriggerType, NoteRouteBuilder, ParameterCurve, QueuedMidiEvent, StoredCallback,
-    VelocityCurve, VelocityMapping, parse_note_name,
+    VelocityCurve, VelocityMapping,
 };
 
 #[cfg(all(feature = "midi", not(target_arch = "wasm32")))]

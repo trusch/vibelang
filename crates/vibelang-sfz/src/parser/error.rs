@@ -1,6 +1,6 @@
-use thiserror::Error;
-use std::path::PathBuf;
 use std::io;
+use std::path::PathBuf;
+use thiserror::Error;
 
 /// Errors that can occur during SFZ parsing
 ///
@@ -29,7 +29,7 @@ pub enum Error {
     /// - File system errors
     #[error("IO error: {0}")]
     IO(#[from] io::Error),
-    
+
     /// Parse error for general syntax problems
     ///
     /// This indicates that the SFZ file contains syntax that cannot be parsed.
@@ -39,7 +39,7 @@ pub enum Error {
     /// - Unexpected characters or file encoding issues
     #[error("Parse error: {0}")]
     Parse(String),
-    
+
     /// Invalid opcode value for a particular type
     ///
     /// This occurs when an opcode value cannot be converted to the expected type.
@@ -48,7 +48,7 @@ pub enum Error {
     /// - Using an out-of-range value like `volume=1000` (should be -144 to 6)
     #[error("Invalid value '{0}' for type {1}")]
     InvalidOpcodeValue(String, String),
-    
+
     /// Missing required opcode
     ///
     /// This indicates that a required opcode was not found when needed.
@@ -57,7 +57,7 @@ pub enum Error {
     /// - Referencing a controller with `oncc` but the controller isn't defined
     #[error("Opcode '{0}' not found")]
     MissingOpcode(String),
-    
+
     /// Invalid SFZ section
     ///
     /// This indicates that a section in the SFZ file is invalid.
@@ -67,7 +67,7 @@ pub enum Error {
     /// - Sections are improperly nested
     #[error("Invalid SFZ section: {0}")]
     InvalidSection(String),
-    
+
     /// Missing required section
     ///
     /// This occurs when a required section is missing.
@@ -75,7 +75,7 @@ pub enum Error {
     /// - At least one `<region>` section
     #[error("Missing required section: {0}")]
     MissingSection(String),
-    
+
     /// File not found
     ///
     /// This occurs when an SFZ file or sample file cannot be found.
@@ -85,7 +85,7 @@ pub enum Error {
     /// - Case sensitivity issues on Unix-like systems
     #[error("File not found: {0}")]
     FileNotFound(PathBuf),
-    
+
     /// Detailed parse error with line and column information
     ///
     /// This provides more context about where in the SFZ file a parse error occurred.
@@ -98,7 +98,7 @@ pub enum Error {
         /// Error message describing the problem
         message: String,
     },
-    
+
     /// Invalid opcode name
     ///
     /// This occurs when an opcode name is not recognized or is invalid.
@@ -108,7 +108,7 @@ pub enum Error {
     /// - Using undefined custom opcodes
     #[error("Invalid opcode: {0}")]
     InvalidOpcode(String),
-    
+
     /// Invalid value for a specific opcode
     ///
     /// This occurs when an opcode value is invalid for that specific opcode,
@@ -123,18 +123,18 @@ pub enum Error {
         /// The invalid value
         value: String,
     },
-    
+
     /// Missing required header
     ///
     /// This occurs when a required section header is missing.
     /// For example, an SFZ file might require at least one region section.
     #[error("Missing required header {0}")]
     MissingHeader(String),
-    
+
     /// Missing required region definition
     ///
     /// This occurs when an SFZ file has no `<region>` sections.
     /// A valid SFZ instrument typically needs at least one region to produce sound.
     #[error("Missing required region definition")]
     MissingRegion,
-} 
+}

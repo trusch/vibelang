@@ -1,0 +1,231 @@
+// Tutorial: Networking Extension (ext-net)
+// Difficulty: advanced | Duration: 5 min
+// Description: Make HTTP requests and work with web APIs.
+//
+// NOTE: This extension must be enabled with the `ext-net` feature flag.
+// Run with: vibelang run --ext-net example.vibe
+//
+// LIMITATION: Basic version only supports HTTP (not HTTPS).
+// For HTTPS, enable the `ext-net-tls` feature.
+
+// ============================================================
+// HTTP GET REQUESTS
+// ============================================================
+
+// Simple GET request - returns body as string
+let response = http_get("http://httpbin.org/get");
+print(response);
+
+// GET request returning lines
+let lines = http_get_lines("http://example.com/data.txt");
+for line in lines {
+    print(line);
+}
+
+// GET request with JSON parsing
+let data = http_get_json("http://httpbin.org/json");
+print("Title: " + data.slideshow.title);
+
+// ============================================================
+// HTTP POST REQUESTS
+// ============================================================
+
+// POST with form data
+let result = http_post("http://httpbin.org/post", "name=vibelang&version=1.0");
+print(result);
+
+// POST with JSON data
+let payload = #{
+    title: "My Song",
+    bpm: 120,
+    key: "C minor"
+};
+let response = http_post_json("http://httpbin.org/post", payload);
+print("Response: " + response.json);
+
+// ============================================================
+// URL UTILITIES
+// ============================================================
+
+// URL encode a string (for query parameters)
+let encoded = url_encode("hello world & more");
+print("Encoded: " + encoded);  // hello+world+%26+more
+
+// URL decode a string
+let decoded = url_decode("hello+world+%26+more");
+print("Decoded: " + decoded);  // hello world & more
+
+// Parse a URL into components
+let parts = parse_url("http://example.com:8080/path/to/resource?query=value");
+print("Host: " + parts.host);    // example.com
+print("Port: " + parts.port);    // 8080
+print("Path: " + parts.path);    // /path/to/resource
+print("Query: " + parts.query);  // query=value
+
+// Build a query string from a map
+let params = #{
+    search: "drum samples",
+    format: "wav",
+    limit: 10
+};
+let query = build_query_string(params);
+print("Query: " + query);  // search=drum+samples&format=wav&limit=10
+
+// ============================================================
+// JSON UTILITIES
+// ============================================================
+
+// Parse JSON string to Rhai value
+let json_str = `{"name": "test", "values": [1, 2, 3], "active": true}`;
+let parsed = json_parse(json_str);
+print("Name: " + parsed.name);
+print("First value: " + parsed.values[0]);
+print("Active: " + parsed.active);
+
+// Convert Rhai value to JSON string
+let data = #{
+    tempo: 128,
+    tracks: ["drums", "bass", "synth"],
+    settings: #{
+        reverb: 0.3,
+        delay: 0.25
+    }
+};
+let json = json_stringify(data);
+print("JSON: " + json);
+
+// ============================================================
+// PRACTICAL EXAMPLE: Fetch Remote Sample Library
+// ============================================================
+
+import "stdlib/drums/kicks/kick_808.vibe";
+
+set_tempo(120);
+
+// Fetch sample library index from a server
+fn fetch_sample_library(base_url) {
+    let index_url = base_url + "/samples/index.json";
+
+    // In practice, you'd use HTTPS - this is for demo
+    // let catalog = http_get_json(index_url);
+
+    // Simulated response
+    let catalog = #{
+        kicks: ["kick_01.wav", "kick_02.wav"],
+        snares: ["snare_01.wav", "snare_02.wav"],
+        hihats: ["hihat_01.wav", "hihat_02.wav"]
+    };
+
+    print("Available samples:");
+    print("  Kicks: " + catalog.kicks.len());
+    print("  Snares: " + catalog.snares.len());
+    print("  Hihats: " + catalog.hihats.len());
+
+    catalog
+}
+
+// ============================================================
+// PRACTICAL EXAMPLE: Send Telemetry/Analytics
+// ============================================================
+
+fn send_session_start(session_id) {
+    let data = #{
+        event: "session_start",
+        session_id: session_id,
+        tempo: 120,
+        timestamp: "2024-01-15T10:30:00Z"
+    };
+
+    // http_post_json("http://analytics.example.com/events", data);
+    print("Would send: " + json_stringify(data));
+}
+
+// ============================================================
+// PRACTICAL EXAMPLE: Collaborative Jam Session
+// ============================================================
+
+// Poll for updates from a jam server
+fn poll_jam_updates(server_url, session_id) {
+    let url = server_url + "/jam/" + session_id + "/updates";
+    // let updates = http_get_json(url);
+
+    // Simulated response
+    let updates = #{
+        tempo_change: (),      // null = no change
+        new_patterns: [],
+        chat_messages: ["Let's go to the bridge!"]
+    };
+
+    // Apply tempo change if present
+    if updates.tempo_change != () {
+        set_tempo(updates.tempo_change);
+        print("Tempo changed to: " + updates.tempo_change);
+    }
+
+    // Show chat messages
+    for msg in updates.chat_messages {
+        print("[Chat] " + msg);
+    }
+}
+
+// Send your changes to the jam server
+fn push_jam_update(server_url, session_id, changes) {
+    let url = server_url + "/jam/" + session_id + "/push";
+    // http_post_json(url, changes);
+    print("Pushed changes: " + json_stringify(changes));
+}
+
+// ============================================================
+// PRACTICAL EXAMPLE: Weather-Based Generative Music
+// ============================================================
+
+// Fetch weather and use it to influence music parameters
+fn get_weather_mood() {
+    // In practice: http_get_json("http://api.weather.com/current")
+    let weather = #{
+        temperature: 22,
+        conditions: "sunny",
+        humidity: 45
+    };
+
+    // Map weather to musical parameters
+    let mood = #{
+        tempo: 100 + weather.temperature,  // Warmer = faster
+        brightness: if weather.conditions == "sunny" { 0.8 } else { 0.4 },
+        reverb: weather.humidity / 100.0   // Humid = more reverb
+    };
+
+    print("Weather mood:");
+    print("  Tempo: " + mood.tempo);
+    print("  Brightness: " + mood.brightness);
+    print("  Reverb: " + mood.reverb);
+
+    mood
+}
+
+// ============================================================
+// PRACTICAL EXAMPLE: Remote MIDI Controller
+// ============================================================
+
+// Send MIDI-like messages to a remote device
+fn send_remote_note(server, channel, note, velocity) {
+    let params = #{
+        channel: channel,
+        note: note,
+        velocity: velocity
+    };
+    let query = build_query_string(params);
+    // http_get(server + "/midi/note?" + query);
+    print("Remote note: ch=" + channel + " note=" + note + " vel=" + velocity);
+}
+
+fn send_remote_cc(server, channel, cc, value) {
+    let params = #{
+        channel: channel,
+        cc: cc,
+        value: value
+    };
+    let query = build_query_string(params);
+    // http_get(server + "/midi/cc?" + query);
+    print("Remote CC: ch=" + channel + " cc=" + cc + " val=" + value);
+}

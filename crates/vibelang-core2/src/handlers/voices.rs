@@ -1,6 +1,7 @@
 //! Voices handler implementation.
 
 use crate::backend::{AddAction, Backend};
+use crate::compat::RwLock;
 use crate::state::{State, VoiceState};
 use crate::traits::{VoiceConfig, Voices};
 use crate::types::{NodeId, ParamMap, VoiceId};
@@ -9,10 +10,11 @@ use crate::{Error, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::compat::RwLock;
 
 #[cfg(feature = "midi")]
-use crate::midi::{has_modulator_cc_mappings, send_cc_for_param, send_modulator_ccs, QueuedMidiEvent};
+use crate::midi::{
+    has_modulator_cc_mappings, send_cc_for_param, send_modulator_ccs, QueuedMidiEvent,
+};
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
 #[cfg(feature = "midi")]
@@ -81,7 +83,11 @@ impl<B: Backend> VoicesHandler<B> {
     #[cfg(feature = "midi")]
     pub async fn tick_modulators(&self) {
         // Collect MIDI voices with modulator CC mappings, and all unique control buses
-        let (midi_voices_info, all_buses): (Vec<(VoiceConfig, Vec<(String, u32)>)>, Vec<u32>) = {
+        #[allow(clippy::type_complexity)]
+        let (midi_voices_info, all_buses): (
+            Vec<(VoiceConfig, Vec<(String, u32)>)>,
+            Vec<u32>,
+        ) = {
             let state = self.state.read().await;
             let mut all_buses_set = std::collections::HashSet::new();
 
@@ -229,13 +235,18 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     async fn trigger(&self, id: VoiceId, params: &ParamMap) -> Result<()> {
         // Gather info and allocate node while holding lock
         // modulations_to_apply: Vec<(param_name, control_bus)>
-        let (node_id, group_node_id, synthdef, merged_params, old_nodes, choke_nodes, modulations_to_apply) = {
+        let (
+            node_id,
+            group_node_id,
+            synthdef,
+            merged_params,
+            old_nodes,
+            choke_nodes,
+            modulations_to_apply,
+        ) = {
             let mut state = self.state.write().await;
 
-            let voice = state
-                .voices
-                .get(&id)
-                .ok_or(Error::VoiceNotFound(id))?;
+            let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
 
             let group = state
                 .groups
@@ -260,19 +271,25 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let mut modulations_to_apply: Vec<(String, u32)> = Vec::new();
             tracing::debug!(
                 "Voice {:?}: has {} modulations configured",
-                id, voice.config.modulations.len()
+                id,
+                voice.config.modulations.len()
             );
             for (param_name, modulator_id) in &voice.config.modulations {
                 tracing::debug!(
                     "Voice {:?}: checking modulation for param '{}' with modulator {:?}",
-                    id, param_name, modulator_id
+                    id,
+                    param_name,
+                    modulator_id
                 );
                 if let Some(modulator_state) = state.modulators.get(modulator_id) {
                     let control_bus = modulator_state.control_bus.raw();
                     modulations_to_apply.push((param_name.clone(), control_bus));
                     tracing::debug!(
                         "Voice {:?}: will map param '{}' to control bus {} (modulator {:?})",
-                        id, param_name, control_bus, modulator_id
+                        id,
+                        param_name,
+                        control_bus,
+                        modulator_id
                     );
                 } else {
                     tracing::warn!(
@@ -320,7 +337,15 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 }
             }
 
-            (node_id, group_node_id, synthdef, merged_params, old_nodes, choke_nodes, modulations_to_apply)
+            (
+                node_id,
+                group_node_id,
+                synthdef,
+                merged_params,
+                old_nodes,
+                choke_nodes,
+                modulations_to_apply,
+            )
         };
 
         // Choke nodes from other voices in the same choke group (lock released)
@@ -343,10 +368,16 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
         // Apply modulations: map parameters to control buses
         for (param_name, control_bus) in modulations_to_apply {
-            if let Err(e) = self.backend.map_param_to_bus(node_id, &param_name, control_bus).await {
+            if let Err(e) = self
+                .backend
+                .map_param_to_bus(node_id, &param_name, control_bus)
+                .await
+            {
                 tracing::error!(
                     "Failed to map param '{}' to control bus {}: {}",
-                    param_name, control_bus, e
+                    param_name,
+                    control_bus,
+                    e
                 );
             }
         }
@@ -363,10 +394,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         let nodes_to_free = {
             let mut state = self.state.write().await;
 
-            let voice = state
-                .voices
-                .get_mut(&id)
-                .ok_or(Error::VoiceNotFound(id))?;
+            let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
 
             let nodes: Vec<NodeId> = voice.active_nodes.drain(..).collect();
             voice.note_nodes.clear();
@@ -386,10 +414,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         let (node_id, group_node_id, synthdef, params, old_node, modulations_to_apply) = {
             let mut state = self.state.write().await;
 
-            let voice = state
-                .voices
-                .get(&id)
-                .ok_or(Error::VoiceNotFound(id))?;
+            let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
 
             let group = state
                 .groups
@@ -412,12 +437,15 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let mut modulations_to_apply: Vec<(String, u32)> = Vec::new();
             tracing::debug!(
                 "Voice {:?} note_on: has {} modulations configured",
-                id, voice.config.modulations.len()
+                id,
+                voice.config.modulations.len()
             );
             for (param_name, modulator_id) in &voice.config.modulations {
                 tracing::debug!(
                     "Voice {:?} note_on: checking modulation for param '{}' with modulator {:?}",
-                    id, param_name, modulator_id
+                    id,
+                    param_name,
+                    modulator_id
                 );
                 if let Some(modulator_state) = state.modulators.get(modulator_id) {
                     let control_bus = modulator_state.control_bus.raw();
@@ -445,7 +473,14 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Track note -> node mapping
             voice.note_nodes.insert(note, node_id);
 
-            (node_id, group_node_id, synthdef, params, old_node, modulations_to_apply)
+            (
+                node_id,
+                group_node_id,
+                synthdef,
+                params,
+                old_node,
+                modulations_to_apply,
+            )
         };
 
         // Free old node if any (lock released)
@@ -456,22 +491,22 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         // Create synth
         // Use Head so voices execute before effects/link synths (which are at tail)
         self.backend
-            .create_synth(
-                &synthdef,
-                node_id,
-                group_node_id,
-                AddAction::Head,
-                &params,
-            )
+            .create_synth(&synthdef, node_id, group_node_id, AddAction::Head, &params)
             .await
             .map_err(Error::backend)?;
 
         // Apply modulations: map parameters to control buses
         for (param_name, control_bus) in modulations_to_apply {
-            if let Err(e) = self.backend.map_param_to_bus(node_id, &param_name, control_bus).await {
+            if let Err(e) = self
+                .backend
+                .map_param_to_bus(node_id, &param_name, control_bus)
+                .await
+            {
                 tracing::error!(
                     "Failed to map param '{}' to control bus {}: {}",
-                    param_name, control_bus, e
+                    param_name,
+                    control_bus,
+                    e
                 );
             }
         }
@@ -483,10 +518,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         let node_to_release = {
             let mut state = self.state.write().await;
 
-            let voice = state
-                .voices
-                .get_mut(&id)
-                .ok_or(Error::VoiceNotFound(id))?;
+            let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
 
             voice.note_nodes.remove(&note)
         };
@@ -505,10 +537,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     async fn mute(&self, id: VoiceId, muted: bool) -> Result<()> {
         let mut state = self.state.write().await;
 
-        let voice = state
-            .voices
-            .get_mut(&id)
-            .ok_or(Error::VoiceNotFound(id))?;
+        let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
 
         voice.config.muted = muted;
 
@@ -521,10 +550,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         let (nodes, voice_config): (Vec<NodeId>, VoiceConfig) = {
             let mut state = self.state.write().await;
 
-            let voice = state
-                .voices
-                .get_mut(&id)
-                .ok_or(Error::VoiceNotFound(id))?;
+            let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
 
             // Update the default param value for future triggers
             voice.config.params.insert(param.to_string(), value);
@@ -540,10 +566,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         let nodes: Vec<NodeId> = {
             let mut state = self.state.write().await;
 
-            let voice = state
-                .voices
-                .get_mut(&id)
-                .ok_or(Error::VoiceNotFound(id))?;
+            let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
 
             // Update the default param value for future triggers
             voice.config.params.insert(param.to_string(), value);
@@ -563,7 +586,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             if sent {
                 tracing::debug!(
                     "Voice {:?}: sent MIDI CC for param '{}' = {}",
-                    id, param, value
+                    id,
+                    param,
+                    value
                 );
             }
         }
@@ -641,7 +666,11 @@ mod tests {
     impl Backend for MockBackend {
         type Error = MockError;
 
-        async fn load_synthdef(&self, _name: &str, _data: &[u8]) -> std::result::Result<(), Self::Error> {
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -671,16 +700,29 @@ mod tests {
             Ok(())
         }
 
-        async fn run_node(&self, _node: NodeId, _running: bool) -> std::result::Result<(), Self::Error> {
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
-        async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> std::result::Result<(), Self::Error> {
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
             self.params_set.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
 
-        async fn load_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<BufferInfo, Self::Error> {
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
             Ok(BufferInfo {
                 frames: 44100,
                 channels: 2,
@@ -701,7 +743,11 @@ mod tests {
             })
         }
 
-        async fn write_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<(), Self::Error> {
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
 
@@ -728,7 +774,11 @@ mod tests {
     // =========================================================================
 
     /// Create a handler with a group and synthdef already registered.
-    fn create_handler_with_group() -> (VoicesHandler<MockBackend>, Arc<MockBackend>, Arc<RwLock<State>>) {
+    fn create_handler_with_group() -> (
+        VoicesHandler<MockBackend>,
+        Arc<MockBackend>,
+        Arc<RwLock<State>>,
+    ) {
         let backend = Arc::new(MockBackend::new());
         let state = Arc::new(RwLock::new(State::default()));
         let handler = VoicesHandler::new(backend.clone(), state.clone());
@@ -867,7 +917,10 @@ mod tests {
         // Delete should free nodes
         handler.delete(voice_id).await.unwrap();
 
-        assert!(backend.nodes_freed() >= 2, "Nodes should be freed on delete");
+        assert!(
+            backend.nodes_freed() >= 2,
+            "Nodes should be freed on delete"
+        );
     }
 
     // =========================================================================
@@ -935,7 +988,11 @@ mod tests {
         assert_eq!(backend.synths_created(), 5);
 
         // Should have freed 3 old nodes (5 - polyphony 2 = 3)
-        assert_eq!(backend.nodes_freed(), 3, "Excess nodes should be freed for polyphony");
+        assert_eq!(
+            backend.nodes_freed(),
+            3,
+            "Excess nodes should be freed for polyphony"
+        );
     }
 
     // =========================================================================
@@ -959,7 +1016,11 @@ mod tests {
         let result = handler.stop(voice_id).await;
         assert!(result.is_ok(), "Stop should succeed");
 
-        assert_eq!(backend.nodes_freed(), 2, "All nodes should be freed on stop");
+        assert_eq!(
+            backend.nodes_freed(),
+            2,
+            "All nodes should be freed on stop"
+        );
     }
 
     #[tokio::test]
@@ -1005,7 +1066,11 @@ mod tests {
 
         // Should create 2 synths, free 1 (the first one)
         assert_eq!(backend.synths_created(), 2);
-        assert_eq!(backend.nodes_freed(), 1, "Old note should be freed when same note played again");
+        assert_eq!(
+            backend.nodes_freed(),
+            1,
+            "Old note should be freed when same note played again"
+        );
     }
 
     #[tokio::test]
@@ -1037,7 +1102,10 @@ mod tests {
 
         // Note off for a note that isn't playing
         let result = handler.note_off(voice_id, 60).await;
-        assert!(result.is_ok(), "Note off for inactive note should succeed (no-op)");
+        assert!(
+            result.is_ok(),
+            "Note off for inactive note should succeed (no-op)"
+        );
 
         assert_eq!(backend.params_set(), 0, "No params should be set");
     }
@@ -1127,7 +1195,11 @@ mod tests {
         // Set param should update all active synths
         handler.set_param(voice_id, "freq", 880.0).await.unwrap();
 
-        assert_eq!(backend.params_set(), 2, "Param should be set on all active synths");
+        assert_eq!(
+            backend.params_set(),
+            2,
+            "Param should be set on all active synths"
+        );
     }
 
     #[tokio::test]
@@ -1136,7 +1208,10 @@ mod tests {
         setup_state_with_group(&state).await;
 
         let result = handler.set_param(VoiceId::new(999), "freq", 440.0).await;
-        assert!(result.is_err(), "Setting param on non-existent voice should fail");
+        assert!(
+            result.is_err(),
+            "Setting param on non-existent voice should fail"
+        );
     }
 
     // =========================================================================
@@ -1160,7 +1235,10 @@ mod tests {
             let state_read = state.read().await;
             let voice = state_read.voices.get(&voice_id).unwrap();
             let expected = ((expected_rr + 1) % 4) as u32;
-            assert_eq!(voice.round_robin_position, expected, "RR position should wrap around");
+            assert_eq!(
+                voice.round_robin_position, expected,
+                "RR position should wrap around"
+            );
         }
     }
 
@@ -1192,7 +1270,11 @@ mod tests {
 
         // 2 synths created, 1 freed (from choke)
         assert_eq!(backend.synths_created(), 2);
-        assert_eq!(backend.nodes_freed(), 1, "Choke group should free other voice's node");
+        assert_eq!(
+            backend.nodes_freed(),
+            1,
+            "Choke group should free other voice's node"
+        );
     }
 
     #[tokio::test]
@@ -1217,7 +1299,11 @@ mod tests {
 
         // 2 synths created, 0 freed (different choke groups)
         assert_eq!(backend.synths_created(), 2);
-        assert_eq!(backend.nodes_freed(), 0, "Different choke groups should not interfere");
+        assert_eq!(
+            backend.nodes_freed(),
+            0,
+            "Different choke groups should not interfere"
+        );
     }
 
     // =========================================================================

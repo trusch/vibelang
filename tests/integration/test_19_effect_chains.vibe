@@ -41,7 +41,7 @@ define_synthdef("fx_reverb")
     .param("damp", 0.5)
     .body(|in_bus, mix, room, damp| {
         let input = in_ar(in_bus, 2);
-        let reverb = free_verb(input, mix, room, damp);
+        let reverb = free_verb_ar(input, mix, room, damp);
         replace_out(in_bus, reverb)
     });
 

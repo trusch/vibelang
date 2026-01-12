@@ -97,10 +97,7 @@ fn ensure_stdlib_extracted(target_path: &PathBuf) {
             target_path.display()
         );
     } else {
-        eprintln!(
-            "Extracting stdlib to {}",
-            target_path.display()
-        );
+        eprintln!("Extracting stdlib to {}", target_path.display());
     }
 
     // Extract the embedded stdlib

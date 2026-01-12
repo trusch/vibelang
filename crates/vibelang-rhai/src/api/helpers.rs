@@ -179,11 +179,11 @@ pub fn parse_chord(name: &str, default_octave: i8) -> Vec<u8> {
         "m" | "min" | "minor" | "-" => vec![0, 3, 7],
 
         // Seventh chords
-        "7" => vec![0, 4, 7, 10],           // Dominant 7th
+        "7" => vec![0, 4, 7, 10], // Dominant 7th
         "maj7" | "m7" if quality.starts_with("maj") || quality == "M7" => vec![0, 4, 7, 11], // Major 7th
         "m7" | "min7" | "-7" => vec![0, 3, 7, 10], // Minor 7th
-        "dim7" | "°7" => vec![0, 3, 6, 9],  // Diminished 7th
-        "m7b5" | "ø7" | "ø" => vec![0, 3, 6, 10], // Half-diminished
+        "dim7" | "°7" => vec![0, 3, 6, 9],         // Diminished 7th
+        "m7b5" | "ø7" | "ø" => vec![0, 3, 6, 10],  // Half-diminished
 
         // Suspended
         "sus2" => vec![0, 2, 7],
@@ -638,10 +638,7 @@ pub fn parse_time_spec(spec: &str, tempo: f64) -> f64 {
 
     // Bars: "2bars", "1bar"
     if spec.ends_with("bars") || spec.ends_with("bar") {
-        let num_str = spec
-            .trim_end_matches("bars")
-            .trim_end_matches("bar")
-            .trim();
+        let num_str = spec.trim_end_matches("bars").trim_end_matches("bar").trim();
         if let Ok(num_bars) = num_str.parse::<f64>() {
             return num_bars * 4.0;
         }
@@ -938,7 +935,10 @@ mod tests {
         assert_eq!(intervals, vec![0, 2, 3, 5, 7, 8, 10]);
 
         // Alternative names
-        assert_eq!(get_scale_intervals("natural_minor"), vec![0, 2, 3, 5, 7, 8, 10]);
+        assert_eq!(
+            get_scale_intervals("natural_minor"),
+            vec![0, 2, 3, 5, 7, 8, 10]
+        );
         assert_eq!(get_scale_intervals("aeolian"), vec![0, 2, 3, 5, 7, 8, 10]);
     }
 
@@ -948,17 +948,26 @@ mod tests {
         assert_eq!(get_scale_intervals("dorian"), vec![0, 2, 3, 5, 7, 9, 10]);
         assert_eq!(get_scale_intervals("phrygian"), vec![0, 1, 3, 5, 7, 8, 10]);
         assert_eq!(get_scale_intervals("lydian"), vec![0, 2, 4, 6, 7, 9, 11]);
-        assert_eq!(get_scale_intervals("mixolydian"), vec![0, 2, 4, 5, 7, 9, 10]);
+        assert_eq!(
+            get_scale_intervals("mixolydian"),
+            vec![0, 2, 4, 5, 7, 9, 10]
+        );
         assert_eq!(get_scale_intervals("locrian"), vec![0, 1, 3, 5, 6, 8, 10]);
     }
 
     #[test]
     fn test_get_scale_intervals_harmonic_melodic() {
         // Harmonic minor: raised 7th
-        assert_eq!(get_scale_intervals("harmonic_minor"), vec![0, 2, 3, 5, 7, 8, 11]);
+        assert_eq!(
+            get_scale_intervals("harmonic_minor"),
+            vec![0, 2, 3, 5, 7, 8, 11]
+        );
 
         // Melodic minor: raised 6th and 7th
-        assert_eq!(get_scale_intervals("melodic_minor"), vec![0, 2, 3, 5, 7, 9, 11]);
+        assert_eq!(
+            get_scale_intervals("melodic_minor"),
+            vec![0, 2, 3, 5, 7, 9, 11]
+        );
     }
 
     #[test]
@@ -968,7 +977,10 @@ mod tests {
         assert_eq!(get_scale_intervals("major_pentatonic"), vec![0, 2, 4, 7, 9]);
 
         // Minor pentatonic: 1 b3 4 5 b7
-        assert_eq!(get_scale_intervals("minor_pentatonic"), vec![0, 3, 5, 7, 10]);
+        assert_eq!(
+            get_scale_intervals("minor_pentatonic"),
+            vec![0, 3, 5, 7, 10]
+        );
     }
 
     #[test]
@@ -995,7 +1007,10 @@ mod tests {
     #[test]
     fn test_get_scale_intervals_unknown() {
         // Unknown scale defaults to major
-        assert_eq!(get_scale_intervals("unknown_scale"), vec![0, 2, 4, 5, 7, 9, 11]);
+        assert_eq!(
+            get_scale_intervals("unknown_scale"),
+            vec![0, 2, 4, 5, 7, 9, 11]
+        );
     }
 
     #[test]
@@ -1192,11 +1207,7 @@ mod tests {
             for note in &notes {
                 let note_str = format!("{}{}", note, octave);
                 let result = parse_note_name(&note_str);
-                assert!(
-                    result.is_some(),
-                    "Failed to parse note: {}",
-                    note_str
-                );
+                assert!(result.is_some(), "Failed to parse note: {}", note_str);
                 let midi = result.unwrap();
                 assert!(
                     midi <= 127,
@@ -1238,9 +1249,19 @@ mod tests {
     fn test_scale_intervals_ascending() {
         // All scale intervals should be strictly ascending
         let scales = [
-            "major", "minor", "dorian", "phrygian", "lydian",
-            "mixolydian", "locrian", "harmonic_minor", "melodic_minor",
-            "pentatonic", "blues", "chromatic", "whole_tone",
+            "major",
+            "minor",
+            "dorian",
+            "phrygian",
+            "lydian",
+            "mixolydian",
+            "locrian",
+            "harmonic_minor",
+            "melodic_minor",
+            "pentatonic",
+            "blues",
+            "chromatic",
+            "whole_tone",
         ];
 
         for scale_name in &scales {
@@ -1260,9 +1281,19 @@ mod tests {
     fn test_scale_intervals_within_octave() {
         // All scale intervals should be within one octave (0-11)
         let scales = [
-            "major", "minor", "dorian", "phrygian", "lydian",
-            "mixolydian", "locrian", "harmonic_minor", "melodic_minor",
-            "pentatonic", "blues", "chromatic", "whole_tone",
+            "major",
+            "minor",
+            "dorian",
+            "phrygian",
+            "lydian",
+            "mixolydian",
+            "locrian",
+            "harmonic_minor",
+            "melodic_minor",
+            "pentatonic",
+            "blues",
+            "chromatic",
+            "whole_tone",
         ];
 
         for scale_name in &scales {

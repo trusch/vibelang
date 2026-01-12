@@ -1,6 +1,7 @@
 //! Melodies handler implementation.
 
 use crate::backend::{AddAction, Backend};
+use crate::compat::RwLock;
 use crate::state::{MelodyState, State};
 use crate::traits::{Melodies, MelodyConfig, NoteEvent};
 use crate::types::{Beat, MelodyId, NodeId, ParamMap, VoiceId};
@@ -9,7 +10,6 @@ use crate::{Error, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::compat::RwLock;
 
 /// Tracks pending note-off: when it should fire
 type PendingNoteOffs = HashMap<NodeId, Beat>;
@@ -139,11 +139,14 @@ impl<B: Backend> MelodiesHandler<B> {
                         let mut modulations = Vec::new();
                         for (param_name, modulator_id) in &v.config.modulations {
                             if let Some(modulator_state) = state.modulators.get(modulator_id) {
-                                modulations.push((param_name.clone(), modulator_state.control_bus.raw()));
+                                modulations
+                                    .push((param_name.clone(), modulator_state.control_bus.raw()));
                             } else {
                                 tracing::warn!(
                                     "Modulator {:?} not found for param '{}' on voice {:?}",
-                                    modulator_id, param_name, voice_id
+                                    modulator_id,
+                                    param_name,
+                                    voice_id
                                 );
                             }
                         }
@@ -156,7 +159,10 @@ impl<B: Backend> MelodiesHandler<B> {
                     });
 
                     if let Some((synthdef, base_params, group_id, modulations)) = voice_info {
-                        let group_info = state.groups.get(&group_id).map(|g| (g.node_id, g.audio_bus));
+                        let group_info = state
+                            .groups
+                            .get(&group_id)
+                            .map(|g| (g.node_id, g.audio_bus));
 
                         if let Some((group_node_id, audio_bus)) = group_info {
                             for note_event in notes_to_trigger {
@@ -185,17 +191,18 @@ impl<B: Backend> MelodiesHandler<B> {
                                 let off_beat = current_beat + note_event.duration;
 
                                 // Track the new node in voice state and capture old node if re-triggering
-                                let old_node_id = if let Some(voice) = state.voices.get_mut(&voice_id) {
-                                    // If note already playing, we'll replace it
-                                    let old = voice.note_nodes.remove(&note_event.note);
-                                    if let Some(old_node) = old {
-                                        voice.active_nodes.retain(|n| *n != old_node);
-                                    }
-                                    voice.note_nodes.insert(note_event.note, node_id);
-                                    old
-                                } else {
-                                    None
-                                };
+                                let old_node_id =
+                                    if let Some(voice) = state.voices.get_mut(&voice_id) {
+                                        // If note already playing, we'll replace it
+                                        let old = voice.note_nodes.remove(&note_event.note);
+                                        if let Some(old_node) = old {
+                                            voice.active_nodes.retain(|n| *n != old_node);
+                                        }
+                                        voice.note_nodes.insert(note_event.note, node_id);
+                                        old
+                                    } else {
+                                        None
+                                    };
 
                                 triggers.push(NoteTrigger {
                                     melody_id,
@@ -230,7 +237,8 @@ impl<B: Backend> MelodiesHandler<B> {
                 // Send gate=0 to release the old synth
                 tracing::debug!(
                     "Releasing old node {} (re-triggered note {})",
-                    old_node.0, trigger.note
+                    old_node.0,
+                    trigger.note
                 );
                 let _ = self.backend.set_param(old_node, "gate", 0.0).await;
             }
@@ -249,7 +257,10 @@ impl<B: Backend> MelodiesHandler<B> {
 
             // Apply modulations - map control buses to synth parameters
             for (param_name, control_bus) in &trigger.modulations {
-                let _ = self.backend.map_param_to_bus(trigger.node_id, param_name, *control_bus).await;
+                let _ = self
+                    .backend
+                    .map_param_to_bus(trigger.node_id, param_name, *control_bus)
+                    .await;
             }
 
             // Schedule the note-off using node_id as key (each synth is unique)
@@ -257,7 +268,9 @@ impl<B: Backend> MelodiesHandler<B> {
                 let mut note_offs = self.pending_note_offs.write().await;
                 tracing::debug!(
                     "Scheduling note-off: node={}, note={}, off_beat={}",
-                    trigger.node_id.0, trigger.note, trigger.off_beat.to_f64()
+                    trigger.node_id.0,
+                    trigger.note,
+                    trigger.off_beat.to_f64()
                 );
                 note_offs.insert(trigger.node_id, trigger.off_beat);
             }
@@ -291,7 +304,8 @@ impl<B: Backend> MelodiesHandler<B> {
                 if off_beat <= current_beat {
                     tracing::debug!(
                         "Note-off due: node={}, off_beat={}",
-                        node_id.0, off_beat.to_f64()
+                        node_id.0,
+                        off_beat.to_f64()
                     );
                     to_remove.push(node_id);
                 }
@@ -316,7 +330,11 @@ impl<B: Backend> MelodiesHandler<B> {
         }
 
         for node_id in notes_to_off {
-            tracing::debug!("Sending note-off: node={}, current_beat={}", node_id.0, current_beat.to_f64());
+            tracing::debug!(
+                "Sending note-off: node={}, current_beat={}",
+                node_id.0,
+                current_beat.to_f64()
+            );
             let _ = self.backend.set_param(node_id, "gate", 0.0).await;
         }
     }
@@ -449,7 +467,12 @@ mod tests {
 
     /// Filter notes that should trigger between last_pos and new_pos.
     /// This mirrors the logic in MelodiesHandler::tick.
-    fn filter_notes(notes: &[NoteEvent], last_pos: Beat, new_pos: Beat, _length: Beat) -> Vec<Beat> {
+    fn filter_notes(
+        notes: &[NoteEvent],
+        last_pos: Beat,
+        new_pos: Beat,
+        _length: Beat,
+    ) -> Vec<Beat> {
         if new_pos < last_pos {
             // Wrapped around - trigger notes from last_pos to end and 0 to new_pos
             notes
@@ -491,7 +514,11 @@ mod tests {
             Beat::from_f64(4.0),
         );
         // Note: This is the opposite of pattern behavior!
-        assert_eq!(triggered.len(), 0, "Note at last_pos should NOT trigger (exclusive)");
+        assert_eq!(
+            triggered.len(),
+            0,
+            "Note at last_pos should NOT trigger (exclusive)"
+        );
     }
 
     #[test]
@@ -506,7 +533,11 @@ mod tests {
             Beat::from_f64(4.0),
         );
         // Note: This is the opposite of pattern behavior!
-        assert_eq!(triggered.len(), 1, "Note at new_pos should trigger (inclusive)");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Note at new_pos should trigger (inclusive)"
+        );
     }
 
     #[test]
@@ -549,7 +580,11 @@ mod tests {
             Beat::from_f64(0.5),
             Beat::from_f64(4.0),
         );
-        assert_eq!(triggered.len(), 1, "Only exact match should trigger on first tick");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Only exact match should trigger on first tick"
+        );
         assert_eq!(triggered[0].to_f64(), 0.5);
     }
 
@@ -582,7 +617,11 @@ mod tests {
             Beat::from_f64(0.25),
             Beat::from_f64(4.0),
         );
-        assert_eq!(triggered.len(), 1, "Note near end should trigger during wrap");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Note near end should trigger during wrap"
+        );
     }
 
     #[test]
@@ -596,7 +635,11 @@ mod tests {
             Beat::from_f64(0.25),
             Beat::from_f64(4.0),
         );
-        assert_eq!(triggered.len(), 1, "Note at new_pos should trigger during wrap");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Note at new_pos should trigger during wrap"
+        );
     }
 
     #[test]
@@ -610,7 +653,11 @@ mod tests {
             Beat::from_f64(0.25),
             Beat::from_f64(4.0),
         );
-        assert_eq!(triggered.len(), 0, "Note past new_pos should NOT trigger during wrap");
+        assert_eq!(
+            triggered.len(),
+            0,
+            "Note past new_pos should NOT trigger during wrap"
+        );
     }
 
     #[test]
@@ -655,7 +702,11 @@ mod tests {
             Beat::from_f64(4.0),
         );
         // In melody, new_pos is INCLUSIVE
-        assert_eq!(triggered.len(), 1, "Melody should trigger at new_pos (inclusive)");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Melody should trigger at new_pos (inclusive)"
+        );
     }
 
     /// And the note at last_pos should NOT trigger in melody (but WOULD in pattern).
@@ -669,7 +720,11 @@ mod tests {
             Beat::from_f64(4.0),
         );
         // In melody, last_pos is EXCLUSIVE
-        assert_eq!(triggered.len(), 0, "Melody should NOT trigger at last_pos (exclusive)");
+        assert_eq!(
+            triggered.len(),
+            0,
+            "Melody should NOT trigger at last_pos (exclusive)"
+        );
     }
 
     // =========================================================================
@@ -695,7 +750,11 @@ mod tests {
             Beat::from_f64(0.25),
             Beat::from_f64(4.0),
         );
-        assert_eq!(second_tick.len(), 0, "Should NOT re-trigger on second tick (exclusive start)");
+        assert_eq!(
+            second_tick.len(),
+            0,
+            "Should NOT re-trigger on second tick (exclusive start)"
+        );
     }
 
     // =========================================================================
@@ -766,7 +825,11 @@ mod tests {
             Beat::from_f64(4.0),
         );
         // new_pos is INCLUSIVE in melody (unlike pattern)
-        assert_eq!(triggered.len(), 1, "Boundary should be INCLUSIVE in normal tick");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Boundary should be INCLUSIVE in normal tick"
+        );
     }
 
     #[test]
@@ -780,6 +843,10 @@ mod tests {
             Beat::from_f64(4.0),
         );
         // last_pos is EXCLUSIVE in melody, so note at 1.0 won't trigger again
-        assert_eq!(triggered.len(), 0, "Note should NOT re-trigger when it becomes last_pos");
+        assert_eq!(
+            triggered.len(),
+            0,
+            "Note should NOT re-trigger when it becomes last_pos"
+        );
     }
 }

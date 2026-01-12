@@ -33,7 +33,7 @@ define_synthdef("fade_test")
             .build();
         let sig = saw_ar(freq);
         let filtered = lpf_ar(sig, 200.0 + filter * 10000.0);
-        pan2(filtered * env * amp, pan)
+        pan2_ar(filtered * env * amp, pan)
     });
 
 define_synthdef("test_reverb")
@@ -42,7 +42,7 @@ define_synthdef("test_reverb")
     .param("room", 0.5)
     .body(|in_bus, mix, room| {
         let input = in_ar(in_bus, 2);
-        let reverb = free_verb(input, mix, room, 0.5);
+        let reverb = free_verb_ar(input, mix, room, 0.5);
         replace_out(in_bus, reverb)
     });
 

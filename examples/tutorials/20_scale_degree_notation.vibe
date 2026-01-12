@@ -1,0 +1,121 @@
+// Tutorial: Scale Degree Notation for Melodies
+// Difficulty: intermediate | Duration: 5 min
+// Description: Write melodies using scale degrees instead of note names.
+
+// Scale degree notation lets you write melodies that automatically
+// stay in key - just use numbers 1-7 instead of note names!
+
+import "stdlib/drums/kicks/kick_808.vibe";
+import "stdlib/drums/claps/clap_808.vibe";
+import "stdlib/leads/synth/lead_saw.vibe";
+import "stdlib/bass/sub/sub_deep.vibe";
+
+set_tempo(110);
+
+define_group("Drums", || {
+    let kick = voice("kick").synth("kick_808").gain(db(-6));
+    let snare = voice("snare").synth("clap_808").gain(db(-9));
+
+    pattern("kick").on(kick).step("x... x... x... x...").start();
+    pattern("snare").on(snare).step(".... x... .... x...").start();
+});
+
+define_group("Music", || {
+    let lead = voice("lead").synth("lead_saw").gain(db(-12));
+    let bass = voice("bass").synth("sub_deep").gain(db(-6));
+
+    // --------------------------------------------------------
+    // SCALE DEGREE BASICS
+    // --------------------------------------------------------
+    // Instead of writing "C4 D4 E4 F4 G4", you can write:
+    // .root("C4").scale("major").notes("1 2 3 4 5")
+    //
+    // Scale degrees:
+    //   1 = root (tonic)
+    //   2 = 2nd
+    //   3 = 3rd
+    //   4 = 4th
+    //   5 = 5th (dominant)
+    //   6 = 6th
+    //   7 = 7th
+
+    // A simple ascending scale
+    melody("scale_up")
+        .on(lead)
+        .root("C4")
+        .scale("major")
+        .notes("1 2 3 4 | 5 6 7 1'")  // 1' = root one octave up
+        .gate(0.5)
+        .start();
+
+    // --------------------------------------------------------
+    // OCTAVE MODIFIERS
+    // --------------------------------------------------------
+    // ' (apostrophe) = octave UP
+    // , (comma) = octave DOWN
+    //
+    // Examples:
+    //   1' = root, one octave up
+    //   1'' = root, two octaves up
+    //   5, = 5th, one octave down
+    //   3,, = 3rd, two octaves down
+
+    // Bass using octave modifiers
+    melody("bass_line")
+        .on(bass)
+        .root("C3")
+        .scale("major")
+        .notes("1 - - 1' | 5, - 5 . | 4 - - 3 | 2 - 5, .")
+        .start();
+});
+
+// ============================================================
+// AVAILABLE SCALES
+// ============================================================
+//
+// Major modes (7 notes):
+//   "major" / "ionian"     - Happy, bright (W-W-H-W-W-W-H)
+//   "dorian"               - Minor with bright 6th
+//   "phrygian"             - Dark, Spanish flavor
+//   "lydian"               - Dreamy, raised 4th
+//   "mixolydian"           - Major with flat 7th (rock/blues)
+//   "minor" / "aeolian"    - Natural minor, sad
+//   "locrian"              - Diminished, unstable
+//
+// Minor variants:
+//   "harmonic_minor"       - Minor with raised 7th
+//   "melodic_minor"        - Minor with raised 6th and 7th
+//
+// Pentatonic (5 notes):
+//   "pentatonic"           - Major pentatonic (can't go wrong!)
+//   "minor_pentatonic"     - Minor pentatonic (blues/rock)
+//
+// Other:
+//   "blues"                - Minor pentatonic + blue note
+//   "chromatic"            - All 12 semitones
+//   "whole_tone"           - Dreamy, no half steps
+//
+// ============================================================
+// CHANGING KEYS
+// ============================================================
+// Just change .root() to transpose your melody!
+//
+// Same melody in different keys:
+//   .root("C4") -> C major
+//   .root("G4") -> G major
+//   .root("D4") -> D major
+//   .root("A3") -> A major (lower octave)
+//
+// Minor keys:
+//   .root("A3").scale("minor") -> A minor
+//   .root("E3").scale("minor") -> E minor
+//
+// ============================================================
+// TRY THIS
+// ============================================================
+// 1. Change .root("C4") to .root("G4") - instant key change!
+// 2. Change .scale("major") to .scale("minor") - different mood
+// 3. Try .scale("pentatonic") - always sounds good
+// 4. Use 1' and 1, for octave jumps
+// 5. Write chord progressions: "1 3 5" = major triad
+// ============================================================

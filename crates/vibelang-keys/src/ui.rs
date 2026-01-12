@@ -97,7 +97,12 @@ pub fn render_keyboard_with_theme(
     // Create the block with title showing port name and input mode
     let input_mode = if os_keyboard_active { "OS" } else { "Terminal" };
     let title = if let Some(port) = port_name {
-        format!(" Piano [{}] ({}) -> {} ", keyboard.octave_name(), input_mode, port)
+        format!(
+            " Piano [{}] ({}) -> {} ",
+            keyboard.octave_name(),
+            input_mode,
+            port
+        )
     } else {
         format!(" Piano [{}] (MIDI not connected) ", keyboard.octave_name())
     };
@@ -144,17 +149,17 @@ fn render_keyboard_full(frame: &mut Frame, inner: Rect, keyboard: &VirtualKeyboa
 
     // All black keys with their positions (after_white_index, key_char, note_offset)
     let black_keys: [(usize, char, i8); 11] = [
-        (0, 'S', -2),   // A#2
-        (2, 'F', 1),    // C#3
-        (3, 'G', 3),    // D#3
-        (5, 'J', 6),    // F#3
-        (6, 'K', 8),    // G#3
-        (7, 'L', 10),   // A#3
-        (9, '1', 13),   // C#4
-        (10, '2', 15),  // D#4
-        (12, '4', 18),  // F#4
-        (13, '5', 20),  // G#4
-        (14, '6', 22),  // A#4
+        (0, 'S', -2),  // A#2
+        (2, 'F', 1),   // C#3
+        (3, 'G', 3),   // D#3
+        (5, 'J', 6),   // F#3
+        (6, 'K', 8),   // G#3
+        (7, 'L', 10),  // A#3
+        (9, '1', 13),  // C#4
+        (10, '2', 15), // D#4
+        (12, '4', 18), // F#4
+        (13, '5', 20), // G#4
+        (14, '6', 22), // A#4
     ];
 
     let mut lines: Vec<Line> = Vec::new();
@@ -188,7 +193,10 @@ fn render_keyboard_full(frame: &mut Frame, inner: Rect, keyboard: &VirtualKeyboa
     }
     for (after_idx, key_char, offset) in black_keys.iter() {
         let bstyle = if is_note_pressed(*offset) {
-            Style::default().fg(Color::White).bg(Color::Magenta).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Magenta)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Gray).bg(theme.black_key())
         };
@@ -203,15 +211,27 @@ fn render_keyboard_full(frame: &mut Frame, inner: Rect, keyboard: &VirtualKeyboa
     let mut row1_spans = vec![Span::raw(padding_str.clone())];
     row1_spans.extend(build_spans_from_chars(&row1_chars));
     row1_spans.push(Span::raw("  "));
-    row1_spans.push(Span::styled("Playing: ", Style::default().fg(Color::DarkGray)));
+    row1_spans.push(Span::styled(
+        "Playing: ",
+        Style::default().fg(Color::DarkGray),
+    ));
     let pressed_str = if keyboard.pressed_notes.is_empty() {
         "-".to_string()
     } else {
         let mut notes: Vec<_> = keyboard.pressed_notes.iter().copied().collect();
         notes.sort();
-        notes.iter().map(|n| note_name(*n)).collect::<Vec<_>>().join(" ")
+        notes
+            .iter()
+            .map(|n| note_name(*n))
+            .collect::<Vec<_>>()
+            .join(" ")
     };
-    row1_spans.push(Span::styled(pressed_str, Style::default().fg(theme.pressed_key()).add_modifier(Modifier::BOLD)));
+    row1_spans.push(Span::styled(
+        pressed_str,
+        Style::default()
+            .fg(theme.pressed_key())
+            .add_modifier(Modifier::BOLD),
+    ));
     lines.push(Line::from(row1_spans));
 
     // Row 2: Black key bottoms
@@ -258,14 +278,20 @@ fn render_keyboard_full(frame: &mut Frame, inner: Rect, keyboard: &VirtualKeyboa
     for (idx, wk) in white_keys.iter().enumerate() {
         let is_pressed = is_note_pressed(wk.note_offset);
         let wstyle = if is_pressed {
-            Style::default().fg(Color::Black).bg(theme.pressed_key()).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Black)
+                .bg(theme.pressed_key())
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Black).bg(theme.white_key())
         };
         if idx == 0 {
             row3_spans.push(Span::styled(format!("  {}   ", wk.display_char), wstyle));
         } else {
-            row3_spans.push(Span::styled("|", Style::default().fg(Color::Black).bg(theme.white_key())));
+            row3_spans.push(Span::styled(
+                "|",
+                Style::default().fg(Color::Black).bg(theme.white_key()),
+            ));
             row3_spans.push(Span::styled(format!("  {}  ", wk.display_char), wstyle));
         }
     }
@@ -290,7 +316,10 @@ fn render_keyboard_full(frame: &mut Frame, inner: Rect, keyboard: &VirtualKeyboa
         if idx == 0 {
             row4_spans.push(Span::styled(format!(" {:^3}  ", note_str), wstyle));
         } else {
-            row4_spans.push(Span::styled("|", Style::default().fg(Color::Black).bg(theme.white_key())));
+            row4_spans.push(Span::styled(
+                "|",
+                Style::default().fg(Color::Black).bg(theme.white_key()),
+            ));
             row4_spans.push(Span::styled(format!(" {:^3} ", note_str), wstyle));
         }
     }
@@ -312,7 +341,12 @@ fn render_keyboard_to_buffer(
     // Create the block with title
     let input_mode = if os_keyboard_active { "OS" } else { "Terminal" };
     let title = if let Some(port) = port_name {
-        format!(" Piano [{}] ({}) -> {} ", keyboard.octave_name(), input_mode, port)
+        format!(
+            " Piano [{}] ({}) -> {} ",
+            keyboard.octave_name(),
+            input_mode,
+            port
+        )
     } else {
         format!(" Piano [{}] (MIDI not connected) ", keyboard.octave_name())
     };
@@ -356,7 +390,10 @@ pub fn render_keyboard_compact(frame: &mut Frame, area: Rect, keyboard: &Virtual
         let note = (base as i16 + *offset as i16).clamp(0, 127) as u8;
         let is_pressed = keyboard.pressed_notes.contains(&note);
         let style = if is_pressed {
-            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White).bg(Color::DarkGray)
         };
@@ -379,7 +416,10 @@ pub fn render_keyboard_compact(frame: &mut Frame, area: Rect, keyboard: &Virtual
         let note = (base as i16 + wk.note_offset as i16).clamp(0, 127) as u8;
         let is_pressed = keyboard.pressed_notes.contains(&note);
         let style = if is_pressed {
-            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Black).bg(Color::White)
         };
@@ -393,11 +433,18 @@ pub fn render_keyboard_compact(frame: &mut Frame, area: Rect, keyboard: &Virtual
     } else {
         let mut notes: Vec<_> = keyboard.pressed_notes.iter().copied().collect();
         notes.sort();
-        notes.iter().map(|n| note_name(*n)).collect::<Vec<_>>().join(" ")
+        notes
+            .iter()
+            .map(|n| note_name(*n))
+            .collect::<Vec<_>>()
+            .join(" ")
     };
     lines.push(Line::from(vec![
         Span::raw(" "),
-        Span::styled(format!("[{}] ", keyboard.octave_name()), Style::default().fg(Color::Yellow)),
+        Span::styled(
+            format!("[{}] ", keyboard.octave_name()),
+            Style::default().fg(Color::Yellow),
+        ),
         Span::styled(pressed_str, Style::default().fg(Color::Cyan)),
     ]));
 
@@ -425,13 +472,23 @@ pub fn render_keyboard_standalone(
 
     // All black keys with their positions
     let black_keys: [(usize, char, i8); 11] = [
-        (0, 'S', -2), (2, 'F', 1), (3, 'G', 3), (5, 'J', 6), (6, 'K', 8), (7, 'L', 10),
-        (9, '1', 13), (10, '2', 15), (12, '4', 18), (13, '5', 20), (14, '6', 22),
+        (0, 'S', -2),
+        (2, 'F', 1),
+        (3, 'G', 3),
+        (5, 'J', 6),
+        (6, 'K', 8),
+        (7, 'L', 10),
+        (9, '1', 13),
+        (10, '2', 15),
+        (12, '4', 18),
+        (13, '5', 20),
+        (14, '6', 22),
     ];
 
     // Use full available space (small margin for aesthetics)
     let margin = 1u16;
-    let keyboard_width = (total_width + 30).min(area.width.saturating_sub(margin * 2) as usize) as u16;
+    let keyboard_width =
+        (total_width + 30).min(area.width.saturating_sub(margin * 2) as usize) as u16;
     let keyboard_height = area.height.saturating_sub(margin * 2);
 
     // Center horizontally only
@@ -447,7 +504,12 @@ pub fn render_keyboard_standalone(
     // Create the block with title
     let input_mode = if os_keyboard_active { "OS" } else { "Terminal" };
     let title = if let Some(port) = port_name {
-        format!(" Piano [{}] ({}) -> {} ", keyboard.octave_name(), input_mode, port)
+        format!(
+            " Piano [{}] ({}) -> {} ",
+            keyboard.octave_name(),
+            input_mode,
+            port
+        )
     } else {
         format!(" Piano [{}] (MIDI not connected) ", keyboard.octave_name())
     };
@@ -526,16 +588,17 @@ pub fn render_keyboard_standalone(
             let is_pressed = is_note_pressed(*offset);
             let bstyle = if is_pressed {
                 if show_labels {
-                    Style::default().fg(Color::White).bg(Color::Magenta).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::White)
+                        .bg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().bg(Color::Magenta)
                 }
+            } else if show_labels {
+                Style::default().fg(Color::Gray).bg(theme.black_key())
             } else {
-                if show_labels {
-                    Style::default().fg(Color::Gray).bg(theme.black_key())
-                } else {
-                    Style::default().bg(theme.black_key())
-                }
+                Style::default().bg(theme.black_key())
             };
             let boundary = (*after_idx + 1) * key_width;
             let start = boundary.saturating_sub(1);
@@ -574,7 +637,10 @@ pub fn render_keyboard_standalone(
 
             let wstyle = if show_labels {
                 if is_pressed {
-                    Style::default().fg(Color::Black).bg(theme.pressed_key()).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(theme.pressed_key())
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::Black).bg(theme.white_key())
                 }
@@ -584,18 +650,19 @@ pub fn render_keyboard_standalone(
                 } else {
                     Style::default().fg(Color::DarkGray).bg(theme.white_key())
                 }
+            } else if is_pressed {
+                Style::default().bg(theme.pressed_key())
             } else {
-                if is_pressed {
-                    Style::default().bg(theme.pressed_key())
-                } else {
-                    Style::default().bg(theme.white_key())
-                }
+                Style::default().bg(theme.white_key())
             };
 
             if idx == 0 {
                 spans.push(Span::styled(content, wstyle));
             } else {
-                spans.push(Span::styled("|", Style::default().fg(Color::Black).bg(theme.white_key())));
+                spans.push(Span::styled(
+                    "|",
+                    Style::default().fg(Color::Black).bg(theme.white_key()),
+                ));
                 // Adjust content width for non-first keys
                 let content = if show_labels {
                     format!("  {}  ", wk.display_char)
@@ -632,12 +699,21 @@ pub fn render_keyboard_standalone(
     } else {
         let mut notes: Vec<_> = keyboard.pressed_notes.iter().copied().collect();
         notes.sort();
-        notes.iter().map(|n| note_name(*n)).collect::<Vec<_>>().join(" ")
+        notes
+            .iter()
+            .map(|n| note_name(*n))
+            .collect::<Vec<_>>()
+            .join(" ")
     };
     lines.push(Line::from(vec![
         Span::raw(padding_str.clone()),
         Span::styled("Playing: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(pressed_str, Style::default().fg(theme.pressed_key()).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            pressed_str,
+            Style::default()
+                .fg(theme.pressed_key())
+                .add_modifier(Modifier::BOLD),
+        ),
     ]));
 
     let paragraph = Paragraph::new(lines);

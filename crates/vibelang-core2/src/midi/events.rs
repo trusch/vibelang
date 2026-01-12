@@ -330,7 +330,10 @@ impl MidiMessage {
 
     /// Check if this is a note message (Note On or Note Off).
     pub fn is_note(&self) -> bool {
-        matches!(self, MidiMessage::NoteOn { .. } | MidiMessage::NoteOff { .. })
+        matches!(
+            self,
+            MidiMessage::NoteOn { .. } | MidiMessage::NoteOff { .. }
+        )
     }
 
     /// Check if this is a system realtime message.

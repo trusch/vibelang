@@ -35,12 +35,12 @@ mod ugens {
 }
 
 pub use api::{
-    register_synthdef_api, set_deploy_callback, synthdef_exists, effect_exists,
-    modulator_synthdef_exists, synthdef_or_effect_exists, get_synthdef_param_defaults,
-    get_effect_param_defaults, get_modulator_param_defaults, register_synthdef_ir,
-    get_all_synthdefs_encoded, get_all_effects_encoded, get_all_modulators_encoded,
-    clear_synthdef_registry, clear_effect_registry, clear_modulator_registry,
-    SynthDefBuilderHandle, FxBuilderHandle, ModulatorBuilderHandle,
+    clear_effect_registry, clear_modulator_registry, clear_synthdef_registry, effect_exists,
+    get_all_effects_encoded, get_all_modulators_encoded, get_all_synthdefs_encoded,
+    get_effect_param_defaults, get_modulator_param_defaults, get_synthdef_param_defaults,
+    modulator_synthdef_exists, register_synthdef_api, register_synthdef_ir, set_deploy_callback,
+    synthdef_exists, synthdef_or_effect_exists, FxBuilderHandle, ModulatorBuilderHandle,
+    SynthDefBuilderHandle,
 };
 pub use builder::SynthDef;
 pub use encoder::encode_synthdef;

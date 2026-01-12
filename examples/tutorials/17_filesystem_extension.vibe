@@ -1,0 +1,173 @@
+// Tutorial: Filesystem Extension (ext-fs)
+// Difficulty: intermediate | Duration: 5 min
+// Description: Use file system operations in your VibeLang scripts.
+//
+// NOTE: This extension must be enabled with the `ext-fs` feature flag.
+// Run with: vibelang run --ext-fs example.vibe
+
+// ============================================================
+// READING FILES
+// ============================================================
+
+// Read entire file as a string
+let content = read_file("my_notes.txt");
+print("File contents: " + content);
+
+// Read file as array of lines
+let lines = read_lines("song_list.txt");
+for line in lines {
+    print("Song: " + line);
+}
+
+// ============================================================
+// WRITING FILES
+// ============================================================
+
+// Write content to a file (creates or overwrites)
+write_file("output.txt", "Hello from VibeLang!\n");
+
+// Append content to a file
+append_file("output.txt", "Adding more content...\n");
+
+// ============================================================
+// FILE INFORMATION
+// ============================================================
+
+// Check if a file exists
+if file_exists("config.json") {
+    print("Config file found!");
+}
+
+// Check if path is a directory
+if is_dir("samples") {
+    print("Samples directory exists");
+}
+
+// Check if path is a file
+if is_file("main.vibe") {
+    print("Main script exists");
+}
+
+// Get file size in bytes
+let size = file_size("audio.wav");
+print("Audio file size: " + size + " bytes");
+
+// ============================================================
+// DIRECTORY OPERATIONS
+// ============================================================
+
+// List directory contents
+let files = list_dir("samples");
+for file in files {
+    print("Found: " + file);
+}
+
+// Create a directory
+create_dir("output");
+
+// Create nested directories
+create_dir_all("output/renders/2024");
+
+// Remove an empty directory
+remove_dir("temp_folder");
+
+// ============================================================
+// FILE OPERATIONS
+// ============================================================
+
+// Copy a file
+let bytes_copied = copy_file("source.wav", "backup.wav");
+print("Copied " + bytes_copied + " bytes");
+
+// Rename or move a file
+rename_file("old_name.txt", "new_name.txt");
+
+// Remove a file
+remove_file("temp_file.txt");
+
+// ============================================================
+// GLOB PATTERN MATCHING
+// ============================================================
+
+// Find all .wav files in current directory
+let wav_files = glob("*.wav");
+for f in wav_files {
+    print("WAV file: " + f);
+}
+
+// Find all .vibe files recursively
+let all_vibes = glob("**/*.vibe");
+print("Found " + all_vibes.len() + " vibe files");
+
+// Find files with wildcards
+let tracks = glob("track_??.wav");  // Matches track_01.wav, track_02.wav, etc.
+
+// ============================================================
+// PATH UTILITIES
+// ============================================================
+
+// Join path components
+let full_path = path_join("samples", "kicks/kick_01.wav");
+print("Full path: " + full_path);
+
+// Get parent directory
+let parent = path_parent("/home/user/music/song.vibe");
+print("Parent: " + parent);  // /home/user/music
+
+// Get filename
+let name = path_filename("/path/to/my_sample.wav");
+print("Filename: " + name);  // my_sample.wav
+
+// Get file extension
+let ext = path_extension("song.vibe");
+print("Extension: " + ext);  // vibe
+
+// Get filename without extension (stem)
+let stem = path_stem("my_song.vibe");
+print("Stem: " + stem);  // my_song
+
+// ============================================================
+// PRACTICAL EXAMPLE: Load samples from a directory
+// ============================================================
+
+import "stdlib/drums/kicks/kick_808.vibe";
+
+set_tempo(120);
+
+// Find all kick samples in a directory and load them
+let kick_files = glob("samples/kicks/*.wav");
+
+for file in kick_files {
+    let name = path_stem(file);
+    print("Loading kick: " + name);
+
+    // Create a sample from each file
+    let smp = sample(name, file);
+
+    // Create a voice for it
+    voice(name)
+        .on(smp)
+        .gain(db(-6))
+        .group("kicks");
+}
+
+// ============================================================
+// PRACTICAL EXAMPLE: Save session state to JSON
+// ============================================================
+
+let session = #{
+    tempo: 120,
+    time_signature: "4/4",
+    tracks: ["drums", "bass", "lead"],
+    last_modified: "2024-01-15"
+};
+
+// Convert to JSON and save
+let json = json_stringify(session);
+write_file("session.json", json);
+
+// Later, load it back
+if file_exists("session.json") {
+    let loaded = json_parse(read_file("session.json"));
+    print("Loaded session at tempo: " + loaded.tempo);
+}

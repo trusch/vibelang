@@ -65,9 +65,9 @@ pub use script_state::{EffectConfig, GroupConfig, ScriptState};
 
 #[cfg(feature = "midi")]
 pub use script_state::{
-    AdvancedMidiCcRoute, AdvancedMidiKeyboardRoute, AdvancedMidiNoteRoute,
-    MidiCallbackConfig, MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute,
-    MidiOutputMessage, MidiRecordingRequest,
+    AdvancedMidiCcRoute, AdvancedMidiKeyboardRoute, AdvancedMidiNoteRoute, MidiCallbackConfig,
+    MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute, MidiOutputMessage,
+    MidiRecordingRequest,
 };
 
 // Types available on all platforms (for order_group_creations)
@@ -149,7 +149,10 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
     // Samples
     let current_sample_ids: HashSet<SampleId> = current.samples.keys().copied().collect();
     diff.samples = diff_entities(&current_sample_ids, &new.samples, |id| {
-        current.samples.get(id).map(|s| SampleConfig::new(s.path.clone()))
+        current
+            .samples
+            .get(id)
+            .map(|s| SampleConfig::new(s.path.clone()))
     });
 
     diff
@@ -211,7 +214,9 @@ pub fn order_group_deletions(
 /// Order group creations so parents are created before children.
 ///
 /// This ensures parent groups exist before children try to reference them.
-pub fn order_group_creations(configs: &std::collections::HashMap<GroupId, GroupConfig>) -> Vec<GroupId> {
+pub fn order_group_creations(
+    configs: &std::collections::HashMap<GroupId, GroupConfig>,
+) -> Vec<GroupId> {
     let all_ids: HashSet<GroupId> = configs.keys().copied().collect();
     let mut ordered = Vec::new();
     let mut remaining: HashSet<GroupId> = all_ids.clone();
@@ -238,6 +243,51 @@ pub fn order_group_creations(configs: &std::collections::HashMap<GroupId, GroupC
         // If no progress made, there's a cycle
         if batch.is_empty() && !remaining.is_empty() {
             // Cycle detected - add remaining anyway (will error on apply)
+            batch.extend(remaining.iter().copied());
+        }
+
+        for id in &batch {
+            remaining.remove(id);
+        }
+        ordered.extend(batch);
+    }
+
+    ordered
+}
+
+/// Order modulator creations so dependencies are created before dependents.
+///
+/// This ensures source modulators exist before dependent modulators try to reference them.
+/// Modulators with nested modulation (param mapped to another modulator's control bus)
+/// must be created after their source modulators.
+pub fn order_modulator_creations(
+    configs: &std::collections::HashMap<ModulatorId, crate::traits::ModulatorConfig>,
+) -> Vec<ModulatorId> {
+    let all_ids: HashSet<ModulatorId> = configs.keys().copied().collect();
+    let mut ordered = Vec::new();
+    let mut remaining: HashSet<ModulatorId> = all_ids.clone();
+
+    while !remaining.is_empty() {
+        let mut batch = Vec::new();
+
+        for &id in &remaining {
+            if let Some(config) = configs.get(&id) {
+                // Can create if all modulation sources are:
+                // - Not being created in this batch, or
+                // - Already created (not remaining)
+                let can_create = config.modulations.values().all(|source_id| {
+                    !all_ids.contains(source_id) || !remaining.contains(source_id)
+                });
+
+                if can_create {
+                    batch.push(id);
+                }
+            }
+        }
+
+        // If no progress made, there's a cycle
+        if batch.is_empty() && !remaining.is_empty() {
+            // Cycle detected - add remaining anyway (will error on apply due to circular dependency check)
             batch.extend(remaining.iter().copied());
         }
 
@@ -315,8 +365,14 @@ mod tests {
         let ordered = order_group_deletions(&groups, &to_delete);
 
         // Child (2) should come before parent (1)
-        let pos_1 = ordered.iter().position(|&id| id == GroupId::new(1)).unwrap();
-        let pos_2 = ordered.iter().position(|&id| id == GroupId::new(2)).unwrap();
+        let pos_1 = ordered
+            .iter()
+            .position(|&id| id == GroupId::new(1))
+            .unwrap();
+        let pos_2 = ordered
+            .iter()
+            .position(|&id| id == GroupId::new(2))
+            .unwrap();
         assert!(pos_2 < pos_1);
     }
 
@@ -339,8 +395,14 @@ mod tests {
         let ordered = order_group_creations(&configs);
 
         // Parent (1) should come before child (2)
-        let pos_1 = ordered.iter().position(|&id| id == GroupId::new(1)).unwrap();
-        let pos_2 = ordered.iter().position(|&id| id == GroupId::new(2)).unwrap();
+        let pos_1 = ordered
+            .iter()
+            .position(|&id| id == GroupId::new(1))
+            .unwrap();
+        let pos_2 = ordered
+            .iter()
+            .position(|&id| id == GroupId::new(2))
+            .unwrap();
         assert!(pos_1 < pos_2);
     }
 
@@ -373,11 +435,133 @@ mod tests {
 
         let ordered = order_group_creations(&configs);
 
-        let pos_1 = ordered.iter().position(|&id| id == GroupId::new(1)).unwrap();
-        let pos_2 = ordered.iter().position(|&id| id == GroupId::new(2)).unwrap();
-        let pos_3 = ordered.iter().position(|&id| id == GroupId::new(3)).unwrap();
+        let pos_1 = ordered
+            .iter()
+            .position(|&id| id == GroupId::new(1))
+            .unwrap();
+        let pos_2 = ordered
+            .iter()
+            .position(|&id| id == GroupId::new(2))
+            .unwrap();
+        let pos_3 = ordered
+            .iter()
+            .position(|&id| id == GroupId::new(3))
+            .unwrap();
 
         assert!(pos_1 < pos_2);
         assert!(pos_2 < pos_3);
+    }
+
+    // =========================================================================
+    // Modulator Ordering Tests
+    // =========================================================================
+
+    #[test]
+    fn test_order_modulator_creations_no_deps() {
+        use crate::traits::ModulatorConfig;
+
+        let mut configs = std::collections::HashMap::new();
+        configs.insert(
+            ModulatorId::new(1),
+            ModulatorConfig::new("mod1", "lfo_sine"),
+        );
+        configs.insert(ModulatorId::new(2), ModulatorConfig::new("mod2", "lfo_saw"));
+
+        let ordered = order_modulator_creations(&configs);
+        assert_eq!(ordered.len(), 2);
+    }
+
+    #[test]
+    fn test_order_modulator_creations_chain() {
+        use crate::traits::ModulatorConfig;
+
+        let mut configs = std::collections::HashMap::new();
+        // mod1 has no deps
+        configs.insert(
+            ModulatorId::new(1),
+            ModulatorConfig::new("mod1", "lfo_sine"),
+        );
+        // mod2 depends on mod1
+        configs.insert(
+            ModulatorId::new(2),
+            ModulatorConfig::new("mod2", "lfo_sine").with_modulation("rate", ModulatorId::new(1)),
+        );
+        // mod3 depends on mod2
+        configs.insert(
+            ModulatorId::new(3),
+            ModulatorConfig::new("mod3", "lfo_sine").with_modulation("rate", ModulatorId::new(2)),
+        );
+
+        let ordered = order_modulator_creations(&configs);
+
+        let pos_1 = ordered
+            .iter()
+            .position(|&id| id == ModulatorId::new(1))
+            .unwrap();
+        let pos_2 = ordered
+            .iter()
+            .position(|&id| id == ModulatorId::new(2))
+            .unwrap();
+        let pos_3 = ordered
+            .iter()
+            .position(|&id| id == ModulatorId::new(3))
+            .unwrap();
+
+        assert!(pos_1 < pos_2, "mod1 should be created before mod2");
+        assert!(pos_2 < pos_3, "mod2 should be created before mod3");
+    }
+
+    #[test]
+    fn test_order_modulator_creations_diamond() {
+        use crate::traits::ModulatorConfig;
+
+        let mut configs = std::collections::HashMap::new();
+        // mod1 has no deps
+        configs.insert(
+            ModulatorId::new(1),
+            ModulatorConfig::new("mod1", "lfo_sine"),
+        );
+        // mod2 depends on mod1
+        configs.insert(
+            ModulatorId::new(2),
+            ModulatorConfig::new("mod2", "lfo_sine").with_modulation("rate", ModulatorId::new(1)),
+        );
+        // mod3 depends on mod1
+        configs.insert(
+            ModulatorId::new(3),
+            ModulatorConfig::new("mod3", "lfo_sine").with_modulation("rate", ModulatorId::new(1)),
+        );
+        // mod4 depends on mod2 and mod3
+        configs.insert(
+            ModulatorId::new(4),
+            ModulatorConfig::new("mod4", "lfo_sine")
+                .with_modulation("rate", ModulatorId::new(2))
+                .with_modulation("hi", ModulatorId::new(3)),
+        );
+
+        let ordered = order_modulator_creations(&configs);
+
+        let pos_1 = ordered
+            .iter()
+            .position(|&id| id == ModulatorId::new(1))
+            .unwrap();
+        let pos_2 = ordered
+            .iter()
+            .position(|&id| id == ModulatorId::new(2))
+            .unwrap();
+        let pos_3 = ordered
+            .iter()
+            .position(|&id| id == ModulatorId::new(3))
+            .unwrap();
+        let pos_4 = ordered
+            .iter()
+            .position(|&id| id == ModulatorId::new(4))
+            .unwrap();
+
+        assert!(pos_1 < pos_2 && pos_1 < pos_3, "mod1 should be first");
+        assert!(
+            pos_2 < pos_4 && pos_3 < pos_4,
+            "mod2 and mod3 should be before mod4"
+        );
     }
 }

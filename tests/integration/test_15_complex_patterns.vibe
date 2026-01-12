@@ -29,7 +29,7 @@ define_synthdef("pattern_test")
             .cleanup_on_finish()
             .build();
         let sig = sin_osc_ar(freq) * env * amp;
-        pan2(sig, pan)
+        pan2_ar(sig, pan)
     });
 
 // =============================================================================

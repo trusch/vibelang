@@ -3,14 +3,15 @@
 //! Provides thread-local storage for the current script state during execution.
 //! Builder APIs use this context to collect their configuration.
 
+#[cfg(feature = "midi")]
+use rhai::FnPtr;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-#[cfg(feature = "midi")]
-use rhai::FnPtr;
 use vibelang_core2::reload::ScriptState;
 use vibelang_core2::types::{
-    EffectId, GroupId, MelodyId, ModulatorId, PatternId, RecordingId, SampleId, SequenceId, SfzId, VoiceId,
+    EffectId, GroupId, MelodyId, ModulatorId, PatternId, RecordingId, SampleId, SequenceId, SfzId,
+    VoiceId,
 };
 
 /// Macro to generate get_or_create_*_id and get_*_id functions.
@@ -261,7 +262,7 @@ pub fn get_or_create_group_id(name: &str) -> GroupId {
             };
 
             let config = GroupConfig {
-                name: name.split('/').last().unwrap_or(name).to_string(),
+                name: name.rsplit('/').next().unwrap_or(name).to_string(),
                 parent: parent_id,
                 params: Default::default(),
                 effects: Vec::new(),
@@ -298,64 +299,91 @@ pub fn get_group_id(name: &str) -> Option<GroupId> {
 }
 
 define_id_accessors!(
-    get_or_create_voice_id, get_voice_id, VoiceId,
-    next_voice_id, voice_ids,
+    get_or_create_voice_id,
+    get_voice_id,
+    VoiceId,
+    next_voice_id,
+    voice_ids,
     "Get or create a voice ID by name.",
     "Get a voice ID by name (if it exists)."
 );
 
 define_id_accessors!(
-    get_or_create_pattern_id, get_pattern_id, PatternId,
-    next_pattern_id, pattern_ids,
+    get_or_create_pattern_id,
+    get_pattern_id,
+    PatternId,
+    next_pattern_id,
+    pattern_ids,
     "Get or create a pattern ID by name.",
     "Get a pattern ID by name (if it exists)."
 );
 
 define_id_accessors!(
-    get_or_create_melody_id, get_melody_id, MelodyId,
-    next_melody_id, melody_ids,
+    get_or_create_melody_id,
+    get_melody_id,
+    MelodyId,
+    next_melody_id,
+    melody_ids,
     "Get or create a melody ID by name.",
     "Get a melody ID by name (if it exists)."
 );
 
 define_id_accessors!(
-    get_or_create_sequence_id, get_sequence_id, SequenceId,
-    next_sequence_id, sequence_ids,
+    get_or_create_sequence_id,
+    get_sequence_id,
+    SequenceId,
+    next_sequence_id,
+    sequence_ids,
     "Get or create a sequence ID by name.",
     "Get a sequence ID by name (if it exists)."
 );
 
 define_id_accessors!(
-    get_or_create_effect_id, get_effect_id, EffectId,
-    next_effect_id, effect_ids,
+    get_or_create_effect_id,
+    get_effect_id,
+    EffectId,
+    next_effect_id,
+    effect_ids,
     "Get or create an effect ID by name.",
     "Get an effect ID by name (if it exists)."
 );
 
 define_id_accessors!(
-    get_or_create_sample_id, get_sample_id, SampleId,
-    next_sample_id, sample_ids,
+    get_or_create_sample_id,
+    get_sample_id,
+    SampleId,
+    next_sample_id,
+    sample_ids,
     "Get or create a sample ID by name.",
     "Get a sample ID by name (if it exists)."
 );
 
 define_id_accessors!(
-    get_or_create_sfz_id, get_sfz_id, SfzId,
-    next_sfz_id, sfz_ids,
+    get_or_create_sfz_id,
+    get_sfz_id,
+    SfzId,
+    next_sfz_id,
+    sfz_ids,
     "Get or create an SFZ instrument ID by name.",
     "Get an SFZ ID by name (if it exists)."
 );
 
 define_id_accessors!(
-    get_or_create_recording_id, get_recording_id, RecordingId,
-    next_recording_id, recording_ids,
+    get_or_create_recording_id,
+    get_recording_id,
+    RecordingId,
+    next_recording_id,
+    recording_ids,
     "Get or create a recording ID by name.",
     "Get a recording ID by name (if it exists)."
 );
 
 define_id_accessors!(
-    get_or_create_modulator_id, get_modulator_id, ModulatorId,
-    next_modulator_id, modulator_ids,
+    get_or_create_modulator_id,
+    get_modulator_id,
+    ModulatorId,
+    next_modulator_id,
+    modulator_ids,
     "Get or create a modulator ID by name.",
     "Get a modulator ID by name (if it exists)."
 );

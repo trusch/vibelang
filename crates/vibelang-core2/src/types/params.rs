@@ -205,7 +205,7 @@ mod tests {
     fn test_param_string_key() {
         let params = ParamBuilder::new()
             .param(String::from("freq"), 440.0)
-            .param("amp", 0.5)  // &str also works
+            .param("amp", 0.5) // &str also works
             .build();
 
         assert_eq!(params.len(), 2);

@@ -123,7 +123,10 @@ pub struct MidiDeviceSender {
 impl MidiDeviceSender {
     /// Create a new device sender.
     pub fn new(device_id: u32, event_tx: Sender<QueuedMidiEvent>) -> Self {
-        Self { device_id, event_tx }
+        Self {
+            device_id,
+            event_tx,
+        }
     }
 
     /// Send a MIDI event with minimal overhead.

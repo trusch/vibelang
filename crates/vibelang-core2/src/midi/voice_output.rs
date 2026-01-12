@@ -58,12 +58,7 @@ pub fn value_to_cc(value: f32) -> u8 {
 ///     |device_id| output_channels.get(&device_id).cloned()
 /// );
 /// ```
-pub fn send_cc_for_param<F>(
-    config: &VoiceConfig,
-    param: &str,
-    value: f32,
-    get_sender: F,
-) -> bool
+pub fn send_cc_for_param<F>(config: &VoiceConfig, param: &str, value: f32, get_sender: F) -> bool
 where
     F: FnOnce(MidiDeviceId) -> Option<Sender<QueuedMidiEvent>>,
 {
@@ -142,11 +137,14 @@ pub fn get_modulator_cc_mappings(config: &VoiceConfig) -> Vec<ModulatorCcMapping
         .iter()
         .filter_map(|(param, modulator_id)| {
             // Only include if there's a CC mapping for this param
-            config.param_cc_map.get(param).map(|&cc| ModulatorCcMapping {
-                param: param.clone(),
-                cc,
-                modulator_id: modulator_id.0.to_string(),
-            })
+            config
+                .param_cc_map
+                .get(param)
+                .map(|&cc| ModulatorCcMapping {
+                    param: param.clone(),
+                    cc,
+                    modulator_id: modulator_id.0.to_string(),
+                })
         })
         .collect()
 }
@@ -285,9 +283,15 @@ mod tests {
     #[test]
     fn test_get_modulator_cc_mappings() {
         let mut config = make_midi_voice_config();
-        config.modulations.insert("cutoff".to_string(), ModulatorId::new(1));
-        config.modulations.insert("resonance".to_string(), ModulatorId::new(2));
-        config.modulations.insert("freq".to_string(), ModulatorId::new(3)); // No CC mapping
+        config
+            .modulations
+            .insert("cutoff".to_string(), ModulatorId::new(1));
+        config
+            .modulations
+            .insert("resonance".to_string(), ModulatorId::new(2));
+        config
+            .modulations
+            .insert("freq".to_string(), ModulatorId::new(3)); // No CC mapping
 
         let mappings = get_modulator_cc_mappings(&config);
         assert_eq!(mappings.len(), 2); // cutoff and resonance, but not freq
@@ -298,10 +302,14 @@ mod tests {
         let mut config = make_midi_voice_config();
         assert!(!has_modulator_cc_mappings(&config)); // No modulations yet
 
-        config.modulations.insert("freq".to_string(), ModulatorId::new(1)); // No CC mapping
+        config
+            .modulations
+            .insert("freq".to_string(), ModulatorId::new(1)); // No CC mapping
         assert!(!has_modulator_cc_mappings(&config));
 
-        config.modulations.insert("cutoff".to_string(), ModulatorId::new(2)); // Has CC mapping
+        config
+            .modulations
+            .insert("cutoff".to_string(), ModulatorId::new(2)); // Has CC mapping
         assert!(has_modulator_cc_mappings(&config));
     }
 }

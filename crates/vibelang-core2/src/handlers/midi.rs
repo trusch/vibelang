@@ -24,14 +24,26 @@
 //! - `add_cc_route()` - Route CCs with parameter curves
 
 use crate::backend::Backend;
+use crate::compat::RwLock;
 use crate::midi::{
-    CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder, MidiCallbacks,
-    NoteRouteBuilder, QueuedMidiEvent,
+    parse_midi_bytes as new_parse_midi_bytes,
+    CallbackData,
+    CallbackType,
+    CcRouteBuilder,
+    JitterCompensator,
+    KeyboardRouteBuilder,
+    MidiCallbacks,
+    MidiClock,
     // New infrastructure
-    MidiEventQueue, MidiEventSender, TimestampedMidiEvent, MidiClock, JitterCompensator,
-    MidiMessage as NewMidiMessage, parse_midi_bytes as new_parse_midi_bytes,
+    MidiEventQueue,
+    MidiEventSender,
+    MidiMessage as NewMidiMessage,
     // Recording
-    MidiRecording, MidiRecordingInfo,
+    MidiRecording,
+    MidiRecordingInfo,
+    NoteRouteBuilder,
+    QueuedMidiEvent,
+    TimestampedMidiEvent,
 };
 use crate::state::State;
 use crate::traits::{FadeTarget, Midi, MidiDeviceInfo};
@@ -45,17 +57,30 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use crate::compat::RwLock;
 use tokio::sync::mpsc;
 
 /// A parsed MIDI message.
 #[derive(Clone, Debug)]
 #[allow(dead_code)] // All fields intentionally kept for future routing features
 pub enum MidiMessage {
-    NoteOn { channel: u8, note: u8, velocity: u8 },
-    NoteOff { channel: u8, note: u8 },
-    ControlChange { channel: u8, cc: u8, value: u8 },
-    PitchBend { channel: u8, value: i16 },
+    NoteOn {
+        channel: u8,
+        note: u8,
+        velocity: u8,
+    },
+    NoteOff {
+        channel: u8,
+        note: u8,
+    },
+    ControlChange {
+        channel: u8,
+        cc: u8,
+        value: u8,
+    },
+    PitchBend {
+        channel: u8,
+        value: i16,
+    },
     /// MIDI Clock (0xF8) - 24 pulses per quarter note.
     Clock,
     /// MIDI Start (0xFA) - Start playback from beginning.
@@ -71,7 +96,11 @@ pub enum MidiMessage {
 /// Returns None for message types that the legacy system doesn't support.
 fn convert_new_to_legacy_message(msg: &NewMidiMessage) -> Option<MidiMessage> {
     match msg {
-        NewMidiMessage::NoteOn { channel, note, velocity } => {
+        NewMidiMessage::NoteOn {
+            channel,
+            note,
+            velocity,
+        } => {
             let vel = velocity.to_midi1();
             if vel > 0 {
                 Some(MidiMessage::NoteOn {
@@ -86,25 +115,23 @@ fn convert_new_to_legacy_message(msg: &NewMidiMessage) -> Option<MidiMessage> {
                 })
             }
         }
-        NewMidiMessage::NoteOff { channel, note, .. } => {
-            Some(MidiMessage::NoteOff {
-                channel: channel.get(),
-                note: *note,
-            })
-        }
-        NewMidiMessage::ControlChange { channel, controller, value } => {
-            Some(MidiMessage::ControlChange {
-                channel: channel.get(),
-                cc: *controller,
-                value: *value,
-            })
-        }
-        NewMidiMessage::PitchBend { channel, value } => {
-            Some(MidiMessage::PitchBend {
-                channel: channel.get(),
-                value: *value,
-            })
-        }
+        NewMidiMessage::NoteOff { channel, note, .. } => Some(MidiMessage::NoteOff {
+            channel: channel.get(),
+            note: *note,
+        }),
+        NewMidiMessage::ControlChange {
+            channel,
+            controller,
+            value,
+        } => Some(MidiMessage::ControlChange {
+            channel: channel.get(),
+            cc: *controller,
+            value: *value,
+        }),
+        NewMidiMessage::PitchBend { channel, value } => Some(MidiMessage::PitchBend {
+            channel: channel.get(),
+            value: *value,
+        }),
         NewMidiMessage::Clock => Some(MidiMessage::Clock),
         NewMidiMessage::Start => Some(MidiMessage::Start),
         NewMidiMessage::Continue => Some(MidiMessage::Continue),
@@ -221,7 +248,6 @@ pub struct MidiHandler<B: Backend> {
     // ========================================================================
     // New Infrastructure
     // ========================================================================
-
     /// Lock-free event queue for high-performance MIDI processing.
     event_queue: Arc<MidiEventQueue>,
 
@@ -236,14 +262,12 @@ pub struct MidiHandler<B: Backend> {
     // ========================================================================
     // Recording
     // ========================================================================
-
     /// Active recordings by device ID.
     recordings: Arc<RwLock<HashMap<MidiDeviceId, MidiRecording>>>,
 
     // ========================================================================
     // Clock Output
     // ========================================================================
-
     /// Devices with clock output enabled.
     clock_output_devices: Arc<RwLock<std::collections::HashSet<MidiDeviceId>>>,
 
@@ -438,7 +462,10 @@ impl<B: Backend> MidiHandler<B> {
             routing.advanced_keyboard_routes.remove(index);
             tracing::info!("Removed keyboard route at index {}", index);
         } else {
-            tracing::warn!("Attempted to remove keyboard route at invalid index {}", index);
+            tracing::warn!(
+                "Attempted to remove keyboard route at invalid index {}",
+                index
+            );
         }
     }
 
@@ -547,13 +574,10 @@ impl<B: Backend> MidiHandler<B> {
 
         // Store the sender and thread state
         self.output_channels.lock().unwrap().insert(id, tx.clone());
-        self.output_threads.lock().unwrap().insert(
-            id,
-            OutputThreadState {
-                handle,
-                running,
-            },
-        );
+        self.output_threads
+            .lock()
+            .unwrap()
+            .insert(id, OutputThreadState { handle, running });
 
         tracing::info!(
             "Created MIDI output channel for {} (id={})",
@@ -616,7 +640,11 @@ impl<B: Backend> MidiHandler<B> {
         let routing = self.routing.read().await;
 
         match &msg {
-            MidiMessage::NoteOn { channel, note, velocity } => {
+            MidiMessage::NoteOn {
+                channel,
+                note,
+                velocity,
+            } => {
                 // Process basic keyboard routes
                 for route in &routing.keyboard_routes {
                     if route.device_id == device_id
@@ -683,11 +711,7 @@ impl<B: Backend> MidiHandler<B> {
 
                                 // Handle velocity-to-parameter mapping
                                 if let Some((param, value)) = route.velocity_to_param(*velocity) {
-                                    tracing::debug!(
-                                        "MIDI velocity mapping: {} = {}",
-                                        param,
-                                        value
-                                    );
+                                    tracing::debug!("MIDI velocity mapping: {} = {}", param, value);
                                     // TODO: Apply parameter to voice
                                 }
                             }
@@ -794,7 +818,10 @@ impl<B: Backend> MidiHandler<B> {
                         route.max_value
                     );
 
-                    if let Err(e) = self.apply_cc_to_target(&route.target, &route.param, scaled).await {
+                    if let Err(e) = self
+                        .apply_cc_to_target(&route.target, &route.param, scaled)
+                        .await
+                    {
                         tracing::warn!("Failed to apply CC to {:?}: {}", route.target, e);
                     }
                 }
@@ -803,7 +830,8 @@ impl<B: Backend> MidiHandler<B> {
                 for route in advanced_routes {
                     let param_value = route.cc_to_param(*value);
 
-                    if let (Some(voice_id), Some(param)) = (route.target_voice, &route.target_param) {
+                    if let (Some(voice_id), Some(param)) = (route.target_voice, &route.target_param)
+                    {
                         tracing::debug!(
                             "MIDI advanced CC: voice={}, param={}, value={}",
                             voice_id.0,
@@ -813,7 +841,11 @@ impl<B: Backend> MidiHandler<B> {
 
                         let target = FadeTarget::Voice(voice_id);
                         if let Err(e) = self.apply_cc_to_target(&target, param, param_value).await {
-                            tracing::warn!("Failed to apply advanced CC to voice {}: {}", voice_id.0, e);
+                            tracing::warn!(
+                                "Failed to apply advanced CC to voice {}: {}",
+                                voice_id.0,
+                                e
+                            );
                         }
                     }
                 }
@@ -822,14 +854,20 @@ impl<B: Backend> MidiHandler<B> {
                 let basic_routes: Vec<_> = routing
                     .keyboard_routes
                     .iter()
-                    .filter(|r| r.device_id == device_id && (r.channel.is_none() || r.channel == Some(*channel)))
+                    .filter(|r| {
+                        r.device_id == device_id
+                            && (r.channel.is_none() || r.channel == Some(*channel))
+                    })
                     .cloned()
                     .collect();
 
                 let advanced_routes: Vec<_> = routing
                     .advanced_keyboard_routes
                     .iter()
-                    .filter(|r| r.device_id == device_id && (r.channel.is_none() || r.channel == Some(*channel)))
+                    .filter(|r| {
+                        r.device_id == device_id
+                            && (r.channel.is_none() || r.channel == Some(*channel))
+                    })
                     .cloned()
                     .collect();
 
@@ -839,14 +877,22 @@ impl<B: Backend> MidiHandler<B> {
 
                 for route in basic_routes {
                     if let Err(e) = self.apply_pitch_bend(route.voice_id, bend_semitones).await {
-                        tracing::warn!("Failed to apply pitch bend to voice {}: {}", route.voice_id.0, e);
+                        tracing::warn!(
+                            "Failed to apply pitch bend to voice {}: {}",
+                            route.voice_id.0,
+                            e
+                        );
                     }
                 }
 
                 for route in advanced_routes {
                     if let Some(voice_id) = route.target_voice {
                         if let Err(e) = self.apply_pitch_bend(voice_id, bend_semitones).await {
-                            tracing::warn!("Failed to apply pitch bend to voice {}: {}", voice_id.0, e);
+                            tracing::warn!(
+                                "Failed to apply pitch bend to voice {}: {}",
+                                voice_id.0,
+                                e
+                            );
                         }
                     }
                 }
@@ -1008,25 +1054,37 @@ impl<B: Backend> MidiHandler<B> {
                 };
 
                 match msg {
-                    MidiMessage::NoteOn { channel, note, velocity } => {
+                    MidiMessage::NoteOn {
+                        channel,
+                        note,
+                        velocity,
+                    } => {
                         recording.record_note_on(*note, *velocity, *channel, current_beat);
                         tracing::debug!(
                             "Recorded note_on: device={}, note={}, velocity={}, beat={}",
-                            device_id.0, note, velocity, current_beat.to_f64()
+                            device_id.0,
+                            note,
+                            velocity,
+                            current_beat.to_f64()
                         );
                     }
                     MidiMessage::NoteOff { channel, note } => {
                         recording.record_note_off(*note, *channel, current_beat);
                         tracing::debug!(
                             "Recorded note_off: device={}, note={}, beat={}",
-                            device_id.0, note, current_beat.to_f64()
+                            device_id.0,
+                            note,
+                            current_beat.to_f64()
                         );
                     }
                     MidiMessage::ControlChange { channel, cc, value } => {
                         recording.record_cc(*cc, *value, *channel, current_beat);
                         tracing::trace!(
                             "Recorded CC: device={}, cc={}, value={}, beat={}",
-                            device_id.0, cc, value, current_beat.to_f64()
+                            device_id.0,
+                            cc,
+                            value,
+                            current_beat.to_f64()
                         );
                     }
                     _ => {} // Don't record other message types
@@ -1103,7 +1161,11 @@ impl<B: Backend> MidiHandler<B> {
                     for _ in 0..ticks_to_send {
                         // MIDI Clock message is 0xF8
                         if let Err(e) = conn.send(&[0xF8]) {
-                            tracing::warn!("Failed to send MIDI clock to device {}: {}", device_id.0, e);
+                            tracing::warn!(
+                                "Failed to send MIDI clock to device {}: {}",
+                                device_id.0,
+                                e
+                            );
                         }
                     }
                 }
@@ -1273,10 +1335,7 @@ impl<B: Backend> Midi for MidiHandler<B> {
         if removed {
             Ok(())
         } else {
-            Err(Error::MidiError(format!(
-                "MIDI device {} not open",
-                id.0
-            )))
+            Err(Error::MidiError(format!("MIDI device {} not open", id.0)))
         }
     }
 
@@ -1312,13 +1371,7 @@ impl<B: Backend> Midi for MidiHandler<B> {
         Ok(())
     }
 
-    async fn send_cc(
-        &self,
-        device: MidiDeviceId,
-        channel: u8,
-        cc: u8,
-        value: u8,
-    ) -> Result<()> {
+    async fn send_cc(&self, device: MidiDeviceId, channel: u8, cc: u8, value: u8) -> Result<()> {
         let mut outputs = self.outputs.lock().unwrap();
         let conn = outputs
             .get_mut(&device)
@@ -1339,11 +1392,7 @@ impl<B: Backend> Midi for MidiHandler<B> {
             voice_id: voice,
         });
 
-        tracing::info!(
-            "Routed MIDI keyboard {} to voice {}",
-            device.0,
-            voice.0
-        );
+        tracing::info!("Routed MIDI keyboard {} to voice {}", device.0, voice.0);
 
         Ok(())
     }
@@ -1420,8 +1469,7 @@ impl<B: Backend> Midi for MidiHandler<B> {
             )));
         }
 
-        let recording = MidiRecording::new(device, current_beat)
-            .with_channel_filter(channel);
+        let recording = MidiRecording::new(device, current_beat).with_channel_filter(channel);
         recordings.insert(device, recording);
 
         tracing::info!(
@@ -1460,7 +1508,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
 
     async fn is_recording(&self, device: MidiDeviceId) -> bool {
         let recordings = self.recordings.read().await;
-        recordings.get(&device).map(|r| r.is_recording).unwrap_or(false)
+        recordings
+            .get(&device)
+            .map(|r| r.is_recording)
+            .unwrap_or(false)
     }
 
     async fn recording_info(&self, device: MidiDeviceId) -> Option<MidiRecordingInfo> {
@@ -1508,9 +1559,9 @@ impl<B: Backend> Midi for MidiHandler<B> {
 
     async fn send_start(&self, device: MidiDeviceId) -> Result<()> {
         let mut outputs = self.outputs.lock().unwrap();
-        let conn = outputs.get_mut(&device).ok_or_else(|| {
-            Error::MidiError(format!("MIDI output {} not open", device.0))
-        })?;
+        let conn = outputs
+            .get_mut(&device)
+            .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
 
         // MIDI Start message is 0xFA
         conn.send(&[0xFA])
@@ -1523,9 +1574,9 @@ impl<B: Backend> Midi for MidiHandler<B> {
 
     async fn send_stop(&self, device: MidiDeviceId) -> Result<()> {
         let mut outputs = self.outputs.lock().unwrap();
-        let conn = outputs.get_mut(&device).ok_or_else(|| {
-            Error::MidiError(format!("MIDI output {} not open", device.0))
-        })?;
+        let conn = outputs
+            .get_mut(&device)
+            .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
 
         // MIDI Stop message is 0xFC
         conn.send(&[0xFC])
@@ -1538,9 +1589,9 @@ impl<B: Backend> Midi for MidiHandler<B> {
 
     async fn send_continue(&self, device: MidiDeviceId) -> Result<()> {
         let mut outputs = self.outputs.lock().unwrap();
-        let conn = outputs.get_mut(&device).ok_or_else(|| {
-            Error::MidiError(format!("MIDI output {} not open", device.0))
-        })?;
+        let conn = outputs
+            .get_mut(&device)
+            .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
 
         // MIDI Continue message is 0xFB
         conn.send(&[0xFB])

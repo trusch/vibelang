@@ -168,10 +168,7 @@ impl MidiEventQueue {
     /// Blocking receive with timeout.
     ///
     /// Returns `None` if the timeout expires or the channel is disconnected.
-    pub fn recv_timeout(
-        &self,
-        timeout: std::time::Duration,
-    ) -> Option<TimestampedMidiEvent> {
+    pub fn recv_timeout(&self, timeout: std::time::Duration) -> Option<TimestampedMidiEvent> {
         match self.rx.recv_timeout(timeout) {
             Ok(event) => {
                 self.stats.events_received.fetch_add(1, Ordering::Relaxed);
@@ -362,10 +359,16 @@ mod tests {
         assert!(sender.try_send(make_test_event(64)));
 
         let event1 = queue.try_recv().unwrap();
-        assert!(matches!(event1.message, MidiMessage::NoteOn { note: 60, .. }));
+        assert!(matches!(
+            event1.message,
+            MidiMessage::NoteOn { note: 60, .. }
+        ));
 
         let event2 = queue.try_recv().unwrap();
-        assert!(matches!(event2.message, MidiMessage::NoteOn { note: 64, .. }));
+        assert!(matches!(
+            event2.message,
+            MidiMessage::NoteOn { note: 64, .. }
+        ));
 
         assert!(queue.try_recv().is_none());
     }
