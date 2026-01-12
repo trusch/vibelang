@@ -56,3 +56,4 @@ CLAUDE.md
 .parcel-cache
 dist
 landing-page/dist
+landing-page/.parcel-cache/*
