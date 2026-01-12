@@ -1,16 +1,13 @@
 [workspace]
 members = [
     "crates/vibelang-core",
-    "crates/vibelang-core2",
     "crates/vibelang-dsp",
     "crates/vibelang-sfz",
     "crates/vibelang-std",
     "crates/vibelang-cli",
-    "crates/vibelang-cli2",
     "crates/vibelang-keys",
     "crates/vibelang-lsp",
     "crates/vibelang-http",
-    "crates/vibelang-http2",
     "crates/vibelang-rhai",
     "crates/vibelang-wasm",
 ]
@@ -30,3 +27,4 @@ vibelang-sfz = { path = "crates/vibelang-sfz" }
 vibelang-std = { path = "crates/vibelang-std" }
 vibelang-lsp = { path = "crates/vibelang-lsp" }
 vibelang-http = { path = "crates/vibelang-http" }
+vibelang-rhai = { path = "crates/vibelang-rhai" }
