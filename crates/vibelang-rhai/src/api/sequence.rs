@@ -6,9 +6,9 @@ use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Positi
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Range;
-use vibelang_core2::reload::EffectConfig;
-use vibelang_core2::traits::{Clip, FadeConfig, FadeCurve, SequenceConfig};
-use vibelang_core2::types::Beat;
+use vibelang_core::reload::EffectConfig;
+use vibelang_core::traits::{Clip, FadeConfig, FadeCurve, SequenceConfig};
+use vibelang_core::types::Beat;
 
 use super::melody::Melody;
 use super::pattern::Pattern;
@@ -190,8 +190,8 @@ impl Sequence {
                 }
                 ClipInfo::Fade { fade, start } => {
                     // Convert Fade to FadeConfig based on target type
-                    use vibelang_core2::traits::FadeTarget;
-                    use vibelang_core2::types::Duration;
+                    use vibelang_core::traits::FadeTarget;
+                    use vibelang_core::types::Duration;
 
                     let target = match fade.target_type {
                         FadeTargetType::Group => {

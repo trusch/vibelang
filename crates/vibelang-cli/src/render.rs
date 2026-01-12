@@ -8,13 +8,26 @@
 //! - `synthdefs/*.scsyndef`: Individual synthdef files
 //! - `samples/*.wav`: Sample files referenced by b_allocRead
 
-use crate::RenderArgs;
 use anyhow::{Context, Result};
 use std::fs::{self, File};
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, Write};
 use std::path::Path;
 use std::process::Command;
 use tar::Archive;
+
+/// Arguments for the render command
+pub struct RenderArgs {
+    /// Input .vibescore file
+    pub score_file: std::path::PathBuf,
+    /// Output audio file
+    pub output: std::path::PathBuf,
+    /// Output format (wav, mp3, flac, ogg)
+    pub format: Option<String>,
+    /// Sample rate (default: 48000)
+    pub sample_rate: u32,
+    /// Bit depth (16, 24, 32)
+    pub bit_depth: u8,
+}
 
 /// Render a score file to an audio file (standalone command with logger init).
 pub fn render(args: RenderArgs) -> Result<()> {
@@ -56,25 +69,31 @@ pub fn render_score(args: RenderArgs) -> Result<()> {
     };
 
     // Validate input file extension
-    let is_vibescore = args.score_file.extension()
+    let is_vibescore = args
+        .score_file
+        .extension()
         .map(|e| e == "vibescore")
         .unwrap_or(false);
 
     if !is_vibescore {
         anyhow::bail!(
             "Invalid input file: expected .vibescore format\n\
-            Record a .vibescore file using: vibe run <file.vibe> --record output.vibescore"
+            Record a .vibescore file using: vibe2 run <file.vibe> --record output.vibescore"
         );
     }
 
-    log::info!("Score file size: {} bytes", fs::metadata(&args.score_file)?.len());
+    log::info!(
+        "Score file size: {} bytes",
+        fs::metadata(&args.score_file)?.len()
+    );
 
     // Create temp directory for extraction
-    let temp_dir = tempfile::tempdir().context("Failed to create temp directory")?;
+    let extract_dir = tempfile::tempdir().context("Failed to create temp directory")?;
 
     // Extract vibescore archive
     log::info!("\nExtracting vibescore archive...");
-    let (score_path, synthdef_dir, samples_dir) = extract_vibescore(&args.score_file, temp_dir.path())?;
+    let (score_path, synthdef_dir, samples_dir) =
+        extract_vibescore(&args.score_file, extract_dir.path())?;
 
     // Render with scsynth
     log::info!("\n[1/2] Rendering audio with scsynth...");
@@ -84,7 +103,14 @@ pub fn render_score(args: RenderArgs) -> Result<()> {
         32 => "float",
         _ => "int24",
     };
-    run_scsynth_nrt(&score_path, &synthdef_dir, &samples_dir, &wav_path, args.sample_rate, bit_depth_str)?;
+    run_scsynth_nrt(
+        &score_path,
+        &synthdef_dir,
+        &samples_dir,
+        &wav_path,
+        args.sample_rate,
+        bit_depth_str,
+    )?;
 
     // Convert to final format if needed
     if output_format != "wav" {
@@ -110,9 +136,8 @@ fn run_scsynth_nrt(
     bit_depth: &str,
 ) -> Result<()> {
     // Find scsynth
-    let scsynth = which::which("scsynth").context(
-        "scsynth not found in PATH. Please install SuperCollider."
-    )?;
+    let scsynth = which::which("scsynth")
+        .context("scsynth not found in PATH. Please install SuperCollider.")?;
 
     log::info!("       Using scsynth: {}", scsynth.display());
     log::info!("       Sample rate: {}", sample_rate);
@@ -123,15 +148,21 @@ fn run_scsynth_nrt(
 
     // Count synthdefs
     let synthdef_count = fs::read_dir(synthdef_dir)
-        .map(|entries| entries.filter(|e| {
-            if let Ok(entry) = e {
-                entry.path().extension()
-                    .map(|ext| ext == "scsyndef")
-                    .unwrap_or(false)
-            } else {
-                false
-            }
-        }).count())
+        .map(|entries| {
+            entries
+                .filter(|e| {
+                    if let Ok(entry) = e {
+                        entry
+                            .path()
+                            .extension()
+                            .map(|ext| ext == "scsyndef")
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    }
+                })
+                .count()
+        })
         .unwrap_or(0);
     log::info!("       Found {} synthdefs", synthdef_count);
 
@@ -150,13 +181,13 @@ fn run_scsynth_nrt(
     let output = Command::new(&scsynth)
         .arg("-N")
         .arg(&filtered_score_path)
-        .arg("_")  // No input file
+        .arg("_") // No input file
         .arg(output_path)
         .arg(sample_rate.to_string())
         .arg("WAV")
         .arg(bit_depth)
         .arg("-o")
-        .arg("2")  // Stereo output
+        .arg("2") // Stereo output
         .output()
         .context("Failed to run scsynth")?;
 
@@ -174,7 +205,7 @@ fn run_scsynth_nrt(
 
 /// Create an OSC bundle with /d_loadDir command at time 0.
 fn create_loaddir_bundle(synthdef_dir: &Path) -> Result<Vec<u8>> {
-    use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
+    use rosc::{encoder, OscBundle, OscMessage, OscPacket, OscTime, OscType};
 
     let dir_path = synthdef_dir.to_string_lossy().to_string();
 
@@ -194,7 +225,10 @@ fn create_loaddir_bundle(synthdef_dir: &Path) -> Result<Vec<u8>> {
 
 /// Extract a bundled .vibescore archive to a temporary directory.
 /// Returns (score_path, synthdef_dir, samples_dir).
-fn extract_vibescore(archive_path: &Path, dest_dir: &Path) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf)> {
+fn extract_vibescore(
+    archive_path: &Path,
+    dest_dir: &Path,
+) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf)> {
     let file = File::open(archive_path).context("Failed to open vibescore archive")?;
     let mut archive = Archive::new(file);
 
@@ -207,7 +241,10 @@ fn extract_vibescore(archive_path: &Path, dest_dir: &Path) -> Result<(std::path:
     let mut synthdef_count = 0;
     let mut sample_count = 0;
 
-    for entry in archive.entries().context("Failed to read archive entries")? {
+    for entry in archive
+        .entries()
+        .context("Failed to read archive entries")?
+    {
         let mut entry = entry.context("Failed to read archive entry")?;
         let path = entry.path().context("Failed to get entry path")?;
         let path_str = path.to_string_lossy();
@@ -221,7 +258,8 @@ fn extract_vibescore(archive_path: &Path, dest_dir: &Path) -> Result<(std::path:
             log::info!("       Extracted score.osc");
         } else if path_str.starts_with("synthdefs/") && path_str.ends_with(".scsyndef") {
             // Extract synthdef file
-            let filename = path.file_name()
+            let filename = path
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             if !filename.is_empty() {
@@ -233,7 +271,8 @@ fn extract_vibescore(archive_path: &Path, dest_dir: &Path) -> Result<(std::path:
             }
         } else if path_str.starts_with("samples/") {
             // Extract sample file
-            let filename = path.file_name()
+            let filename = path
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             if !filename.is_empty() {
@@ -254,15 +293,12 @@ fn extract_vibescore(archive_path: &Path, dest_dir: &Path) -> Result<(std::path:
 }
 
 /// Add /d_loadDir command to the beginning of a score file and resolve sample paths.
-/// This is used for clean score files (from .vibescore) that don't have embedded synthdefs.
 fn add_loaddir_to_score(
     input_path: &Path,
     synthdef_dir: &Path,
     samples_dir: &Path,
     output_path: &Path,
 ) -> Result<()> {
-    use std::io::Write;
-
     let input_file = File::open(input_path).context("Failed to open score file")?;
     let mut reader = BufReader::new(input_file);
 
@@ -288,7 +324,7 @@ fn add_loaddir_to_score(
 
         let len = i32::from_be_bytes(len_buf);
 
-        // Skip zero length terminator (for backward compatibility with old score files)
+        // Skip zero length terminator
         if len == 0 {
             break;
         }
@@ -330,7 +366,6 @@ fn add_loaddir_to_score(
         }
     }
 
-    // scsynth NRT mode expects EOF to signal end of file, not a zero-length marker
     writer.flush()?;
     Ok(())
 }
@@ -346,8 +381,15 @@ fn resolve_sample_paths(packet: &rosc::OscPacket, samples_dir: &str) -> rosc::Os
                     if path.contains("{SAMPLES_DIR}") {
                         let resolved = path.replace("{SAMPLES_DIR}", samples_dir);
                         new_args[1] = rosc::OscType::String(resolved);
-                        log::debug!("       Resolved sample path: {} -> {}", path,
-                            if let rosc::OscType::String(ref s) = new_args[1] { s } else { "?" });
+                        log::debug!(
+                            "       Resolved sample path: {} -> {}",
+                            path,
+                            if let rosc::OscType::String(ref s) = new_args[1] {
+                                s
+                            } else {
+                                "?"
+                            }
+                        );
                     }
                 }
                 rosc::OscPacket::Message(rosc::OscMessage {
@@ -358,42 +400,44 @@ fn resolve_sample_paths(packet: &rosc::OscPacket, samples_dir: &str) -> rosc::Os
                 rosc::OscPacket::Message(msg.clone())
             }
         }
-        rosc::OscPacket::Bundle(bundle) => {
-            rosc::OscPacket::Bundle(rosc::OscBundle {
-                timetag: bundle.timetag,
-                content: bundle.content.iter().map(|p| resolve_sample_paths(p, samples_dir)).collect(),
-            })
-        }
+        rosc::OscPacket::Bundle(bundle) => rosc::OscPacket::Bundle(rosc::OscBundle {
+            timetag: bundle.timetag,
+            content: bundle
+                .content
+                .iter()
+                .map(|p| resolve_sample_paths(p, samples_dir))
+                .collect(),
+        }),
     }
 }
 
 /// Convert audio file using ffmpeg.
 fn convert_with_ffmpeg(input: &Path, output: &Path, format: &str) -> Result<()> {
     // Check if ffmpeg is available
-    let ffmpeg = which::which("ffmpeg").context(
-        "ffmpeg not found in PATH. Please install ffmpeg for format conversion."
-    )?;
+    let ffmpeg = which::which("ffmpeg")
+        .context("ffmpeg not found in PATH. Please install ffmpeg for format conversion.")?;
 
     let mut cmd = Command::new(&ffmpeg);
-    cmd.arg("-y")  // Overwrite output
-       .arg("-i").arg(input);
+    cmd.arg("-y") // Overwrite output
+        .arg("-i")
+        .arg(input);
 
     // Format-specific options
     match format {
         "mp3" => {
-            cmd.arg("-codec:a").arg("libmp3lame")
-               .arg("-b:a").arg("320k");
+            cmd.arg("-codec:a")
+                .arg("libmp3lame")
+                .arg("-b:a")
+                .arg("320k");
         }
         "flac" => {
             cmd.arg("-codec:a").arg("flac");
         }
         "ogg" => {
-            cmd.arg("-codec:a").arg("libvorbis")
-               .arg("-q:a").arg("8");
+            cmd.arg("-codec:a").arg("libvorbis").arg("-q:a").arg("8");
         }
         "aac" | "m4a" => {
-            cmd.arg("-codec:a").arg("aac")
-               .arg("-b:a").arg("256k");
+            cmd.arg("-codec:a").arg("aac").arg("-b:a").arg("256k");
         }
         _ => {
             log::warn!("Unknown format '{}', using default settings", format);

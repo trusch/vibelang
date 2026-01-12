@@ -8,8 +8,8 @@ use rhai::FnPtr;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use vibelang_core2::reload::ScriptState;
-use vibelang_core2::types::{
+use vibelang_core::reload::ScriptState;
+use vibelang_core::types::{
     EffectId, GroupId, MelodyId, ModulatorId, PatternId, RecordingId, SampleId, SequenceId, SfzId,
     VoiceId,
 };
@@ -231,7 +231,7 @@ pub fn set_import_paths(paths: Vec<PathBuf>) {
 /// This is important for implicit groups like "main" that are referenced
 /// but not explicitly defined via define_group().
 pub fn get_or_create_group_id(name: &str) -> GroupId {
-    use vibelang_core2::reload::GroupConfig;
+    use vibelang_core::reload::GroupConfig;
 
     CONTEXT.with(|ctx| {
         let mut borrow = ctx.borrow_mut();

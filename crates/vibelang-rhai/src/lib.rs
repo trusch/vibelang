@@ -14,7 +14,7 @@
 //!
 //! ```ignore
 //! use vibelang_rhai::ScriptEngine;
-//! use vibelang_core2::Runtime;
+//! use vibelang_core::Runtime;
 //!
 //! let backend = /* create backend */;
 //! let runtime = Runtime::new(backend).await?;

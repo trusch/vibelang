@@ -1,6 +1,6 @@
 [package]
 name = "vibelang-lsp"
-version = "0.1.1"
+version = "0.3.0"
 edition = "2021"
 description = "Language Server Protocol implementation for VibeLang"
 license = "MIT OR Apache-2.0"
@@ -10,10 +10,19 @@ categories = ["development-tools"]
 
 [dependencies]
 # Core runtime (for validation)
-vibelang-core = "0.2.0"
+vibelang-core = "0.3.0"
+
+# Rhai scripting layer
+vibelang-rhai = "0.3.0"
+
+# Rhai engine (for error types)
+rhai = { version = "1", features = ["sync"] }
+
+# DSP for UGen manifests and synthdef validation
+vibelang-dsp = "0.3.0"
 
 # Standard library (for stdlib path)
-vibelang-std = "0.1.5"
+vibelang-std = "0.3.0"
 
 # LSP server
 tower-lsp = "0.20"
@@ -25,7 +34,7 @@ dashmap = "6"
 regex = "1"
 
 # Async runtime
-tokio = { version = "1", features = ["io-std"] }
+tokio = { version = "1", features = ["io-std", "sync", "rt-multi-thread"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -33,3 +42,17 @@ serde_json = "1.0"
 
 # Error handling
 anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+
+[features]
+default = []
+
+# Script extensions (disabled by default for LSP - validation shouldn't have side effects)
+# These can be enabled if the LSP needs to validate scripts that use extensions
+extensions = ["ext-fs", "ext-exec", "ext-net"]
+ext-fs = ["vibelang-rhai/ext-fs"]
+ext-exec = ["vibelang-rhai/ext-exec"]
+ext-net = ["vibelang-rhai/ext-net"]

@@ -17,8 +17,8 @@
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use vibelang_core2::traits::{MelodyConfig, NoteEvent};
-use vibelang_core2::types::Beat;
+use vibelang_core::traits::{MelodyConfig, NoteEvent};
+use vibelang_core::types::Beat;
 
 use super::helpers::parse_note_name;
 use super::voice::Voice;

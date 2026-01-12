@@ -1,71 +1,43 @@
 [package]
 name = "vibelang-core"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
-description = "Core types and state management for VibeLang"
+description = "Clean, trait-based runtime for VibeLang - generic over synthesis backends"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/trusch/vibelang"
-keywords = ["music", "audio", "supercollider", "livecoding"]
-categories = ["multimedia::audio"]
 
 [features]
-default = ["native"]
-native = ["rosc", "jack", "midir", "cpal", "aubio-rs", "libc"]
+default = ["native", "midi"]
+native = ["rosc"]
+midi = ["dep:midir"]
 
 [dependencies]
-# SFZ support
-vibelang-sfz = "0.1.1"
-
-# DSP/Synthdef generation
-vibelang-dsp = "0.1.3"
-
-# Error handling
-anyhow = "1.0"
-thiserror = "2.0"
-
-# Concurrency
-crossbeam-channel = "0.5"
+async-trait = "0.1"
+thiserror = "1"
+tracing = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+vibelang-dsp = "0.3.0"
+vibelang-sfz = "0.3.0"
 parking_lot = "0.12"
-
-# OSC for SuperCollider communication (native only)
-rosc = { version = "0.11", optional = true }
-
-# Randomness for patterns
-rand = { version = "0.9", features = ["std", "std_rng"] }
-
-# Logging
-log = "0.4"
-
-# Time parsing for durations
-humantime = "2.1"
-
-# Regex for step parsing
-regex = "1.10"
-
-# Scripting engine
-rhai = { version = "1.17", default-features = false, features = ["std", "sync", "internals"] }
-
-# Audio analysis (BPM detection) - native only
-# Note: "bindgen" feature is required on macOS for compilation
-aubio-rs = { version = "0.2", features = ["builtin", "bindgen"], optional = true }
-
-# WAV file reading for BPM analysis
-hound = "3.5"
-
-# Tar archive for .vibescore format
-tar = "0.4"
-
-# MIDI input support (native only)
-midir = { version = "0.10", optional = true }
-
-# JACK audio/MIDI support (native only)
-jack = { version = "0.13", optional = true }
-
-# Audio device enumeration (native only)
-cpal = { version = "0.17", optional = true }
-
-# System calls for realtime thread priority (native only)
-libc = { version = "0.2", optional = true }
+crossbeam-channel = "0.5"
+futures = "0.3"
 
 [dev-dependencies]
-env_logger = "0.11"
+tokio = { version = "1", features = ["sync", "rt", "time", "macros", "rt-multi-thread"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
+tokio-util = "0.7"
+rosc = { version = "0.10", optional = true }
+midir = { version = "0.9", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-time = "1.1"
+gloo-timers = { version = "0.3", features = ["futures"] }
+js-sys = "0.3"
+getrandom = { version = "0.3", features = ["wasm_js"] }

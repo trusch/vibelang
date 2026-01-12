@@ -38,11 +38,11 @@
 
 use serde::{Deserialize, Serialize};
 #[cfg(target_arch = "wasm32")]
-use vibelang_core2::backends::WebScsynthBackend;
+use vibelang_core::backends::WebScsynthBackend;
 #[cfg(target_arch = "wasm32")]
-use vibelang_core2::message::TransportMessage;
+use vibelang_core::message::TransportMessage;
 #[cfg(target_arch = "wasm32")]
-use vibelang_core2::{Message, Runtime};
+use vibelang_core::{Message, Runtime};
 use vibelang_dsp::{
     clear_effect_registry, clear_synthdef_registry, get_all_effects_encoded,
     get_all_synthdefs_encoded, set_deploy_callback, system_synthdefs,
@@ -229,7 +229,7 @@ impl VibelangRuntime {
 
                     // Send reload message to apply the new state
                     let handle = runtime.handle();
-                    let reload_msg = vibelang_core2::message::ReloadMessage::Apply { state };
+                    let reload_msg = vibelang_core::message::ReloadMessage::Apply { state };
                     if let Err(e) = handle.send(Message::Reload(Box::new(reload_msg))).await {
                         web_sys::console::warn_1(&JsValue::from_str(&format!(
                             "Failed to apply state: {}",
@@ -398,7 +398,7 @@ async fn load_synthdef_to_supersonic(name: &str, data: &[u8]) -> Result<(), JsVa
 #[wasm_bindgen]
 pub struct VibelangEngine {
     engine: ScriptEngine,
-    last_state: Option<vibelang_core2::reload::ScriptState>,
+    last_state: Option<vibelang_core::reload::ScriptState>,
 }
 
 #[cfg(target_arch = "wasm32")]

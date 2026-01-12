@@ -18,7 +18,7 @@
 
 use rhai::{CustomType, Engine, TypeBuilder};
 use std::path::PathBuf;
-use vibelang_core2::traits::SampleConfig;
+use vibelang_core::traits::SampleConfig;
 
 use crate::context;
 

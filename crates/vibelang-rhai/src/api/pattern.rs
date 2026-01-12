@@ -5,8 +5,8 @@
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use vibelang_core2::traits::{PatternConfig, Step};
-use vibelang_core2::types::Beat;
+use vibelang_core::traits::{PatternConfig, Step};
+use vibelang_core::types::Beat;
 
 use super::voice::Voice;
 use crate::context;

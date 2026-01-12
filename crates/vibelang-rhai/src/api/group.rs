@@ -4,7 +4,7 @@
 
 use rhai::{CustomType, Engine, FnPtr, NativeCallContext, TypeBuilder};
 use std::collections::HashMap;
-use vibelang_core2::reload::GroupConfig;
+use vibelang_core::reload::GroupConfig;
 
 use crate::context;
 

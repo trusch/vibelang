@@ -27,17 +27,11 @@ impl SizeCategory {
 
 /// Simplified layout slots - header, main (full width), log, footer, optional keyboard
 pub struct LayoutSlots {
-    pub size: SizeCategory,
     pub header: Rect,
     pub main: Rect,
     pub log: Rect,
     pub footer: Rect,
     pub keyboard: Option<Rect>,
-}
-
-/// Create the main layout - simplified to just header/main/log/footer
-pub fn create_layout(area: Rect) -> LayoutSlots {
-    create_layout_with_keyboard(area, false)
 }
 
 /// Create the main layout with optional keyboard area
@@ -71,10 +65,10 @@ pub fn create_layout_with_keyboard(area: Rect, show_keyboard: bool) -> LayoutSlo
         ]
     } else {
         vec![
-            Constraint::Length(header_height),   // Header with stats
-            Constraint::Min(8),                  // Main hierarchy (takes all remaining)
-            Constraint::Length(log_height),      // Log
-            Constraint::Length(3),               // Footer (needs 3 for borders + content)
+            Constraint::Length(header_height), // Header with stats
+            Constraint::Min(8),                // Main hierarchy (takes all remaining)
+            Constraint::Length(log_height),    // Log
+            Constraint::Length(3),             // Footer (needs 3 for borders + content)
         ]
     };
 
@@ -85,7 +79,6 @@ pub fn create_layout_with_keyboard(area: Rect, show_keyboard: bool) -> LayoutSlo
 
     if show_keyboard {
         LayoutSlots {
-            size,
             header: sections[0],
             main: sections[1],
             log: sections[2],
@@ -94,7 +87,6 @@ pub fn create_layout_with_keyboard(area: Rect, show_keyboard: bool) -> LayoutSlo
         }
     } else {
         LayoutSlots {
-            size,
             header: sections[0],
             main: sections[1],
             log: sections[2],

@@ -6,90 +6,253 @@ use axum::{
     Json,
 };
 use std::sync::Arc;
-use vibelang_core::api::context::SourceLocation;
-use vibelang_core::state::{LoopStatus as InternalLoopStatus, StateMessage};
+use vibelang_core::{
+    traits::{PatternConfig, Step},
+    types::Beat,
+    PatternId, PatternMessage, VoiceId,
+};
 
 use crate::{
-    models::{ErrorResponse, LoopStatus, Pattern, PatternCreate, PatternEvent, PatternUpdate, SourceLocation as ApiSourceLocation, StartRequest, StopRequest},
+    models::{
+        ErrorResponse, LoopState, LoopStatus, Pattern, PatternCreate, PatternEvent, PatternUpdate,
+        StartRequest, StopRequest,
+    },
     AppState,
 };
 
-/// Convert internal SourceLocation to API model
-fn source_location_to_api(sl: &vibelang_core::api::context::SourceLocation) -> Option<ApiSourceLocation> {
-    if sl.file.is_some() || sl.line.is_some() {
-        Some(ApiSourceLocation {
-            file: sl.file.clone(),
-            line: sl.line.map(|l| l as usize),
-            column: sl.column.map(|c| c as usize),
-        })
-    } else {
-        None
+/// Resolve a pattern identifier (either numeric ID or string name) to a PatternId.
+async fn resolve_pattern_id(
+    state: &Arc<AppState>,
+    identifier: &str,
+) -> Result<PatternId, (StatusCode, Json<ErrorResponse>)> {
+    // First, try to parse as a numeric ID
+    if let Ok(num_id) = identifier.parse::<u32>() {
+        let pattern_id = PatternId::new(num_id);
+        let exists = state
+            .with_state(|s| s.patterns.contains_key(&pattern_id))
+            .await;
+        if exists {
+            return Ok(pattern_id);
+        }
+        // Fall through to try as name if numeric ID not found
     }
-}
 
-/// Convert internal LoopStatus to API model
-fn loop_status_to_api(status: &InternalLoopStatus) -> LoopStatus {
-    match status {
-        InternalLoopStatus::Stopped => LoopStatus {
-            state: "stopped".to_string(),
-            start_beat: None,
-            stop_beat: None,
-        },
-        InternalLoopStatus::Queued { start_beat } => LoopStatus {
-            state: "queued".to_string(),
-            start_beat: Some(*start_beat),
-            stop_beat: None,
-        },
-        InternalLoopStatus::Playing { start_beat } => LoopStatus {
-            state: "playing".to_string(),
-            start_beat: Some(*start_beat),
-            stop_beat: None,
-        },
-        InternalLoopStatus::QueuedStop { start_beat, stop_beat } => LoopStatus {
-            state: "queued_stop".to_string(),
-            start_beat: Some(*start_beat),
-            stop_beat: Some(*stop_beat),
-        },
+    // Try to find by name
+    let found = state
+        .with_state(|s| {
+            s.patterns
+                .iter()
+                .find(|(_, ps)| ps.config.name == identifier)
+                .map(|(id, _)| *id)
+        })
+        .await;
+
+    match found {
+        Some(id) => Ok(id),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found(&format!(
+                "Pattern '{}' not found",
+                identifier
+            ))),
+        )),
     }
 }
 
 /// Convert internal PatternState to API Pattern model
-fn pattern_to_api(ps: &vibelang_core::state::PatternState) -> Pattern {
-    let (events, loop_beats) = if let Some(ref lp) = ps.loop_pattern {
-        let evts = lp.events.iter().map(|e| {
-            PatternEvent {
-                beat: e.beat,
-                params: e.controls.iter().cloned().collect(),
-            }
-        }).collect();
-        (evts, lp.loop_length_beats)
-    } else {
-        (vec![], 4.0)
+fn pattern_to_api(
+    _id: &PatternId,
+    state: &vibelang_core::PatternState,
+    voices: &std::collections::HashMap<vibelang_core::VoiceId, vibelang_core::VoiceState>,
+) -> Pattern {
+    // Use the actual name from config
+    let name = state.config.name.clone();
+    // Get voice name from the voice state
+    let voice_name = state
+        .config
+        .voice
+        .and_then(|vid| voices.get(&vid))
+        .map(|vs| vs.config.name.clone())
+        .unwrap_or_default();
+
+    // Get group path from the voice if available
+    let group_path = state
+        .config
+        .voice
+        .and_then(|vid| voices.get(&vid))
+        .map(|vs| vs.config.group.raw().to_string())
+        .unwrap_or_else(|| "0".to_string());
+
+    // Convert playing state to LoopStatus
+    let status = LoopStatus {
+        state: if state.playing {
+            LoopState::Playing
+        } else {
+            LoopState::Stopped
+        },
+        start_beat: None,
+        stop_beat: None,
     };
 
     Pattern {
-        name: ps.name.clone(),
-        voice_name: ps.voice_name.clone().unwrap_or_default(),
-        group_path: ps.group_path.clone(),
-        loop_beats,
-        events,
-        params: ps.params.clone(),
-        status: loop_status_to_api(&ps.status),
-        is_looping: ps.is_looping,
-        source_location: source_location_to_api(&ps.source_location),
-        step_pattern: ps.step_pattern.clone(),
+        name,
+        voice_name,
+        group_path,
+        loop_beats: state.config.length.to_f64(),
+        events: state
+            .config
+            .steps
+            .iter()
+            .map(|s| PatternEvent {
+                beat: s.beat.to_f64(),
+                params: if s.params.is_empty() {
+                    None
+                } else {
+                    Some(s.params.iter().map(|(k, v)| (k.clone(), *v)).collect())
+                },
+            })
+            .collect(),
+        params: None,
+        status,
+        is_looping: true, // Patterns are always looping
+        source_location: None,
+        step_pattern: None,
     }
 }
 
 /// GET /patterns - List all patterns
-pub async fn list_patterns(
-    State(state): State<Arc<AppState>>,
-) -> Json<Vec<Pattern>> {
-    let patterns = state.handle.with_state(|s| {
-        s.patterns.values().map(pattern_to_api).collect::<Vec<_>>()
-    });
+pub async fn list_patterns(State(state): State<Arc<AppState>>) -> Json<Vec<Pattern>> {
+    let patterns = state
+        .with_state(|s| {
+            s.patterns
+                .iter()
+                .map(|(id, ps)| pattern_to_api(id, ps, &s.voices))
+                .collect::<Vec<_>>()
+        })
+        .await;
 
     Json(patterns)
+}
+
+/// GET /patterns/:id - Get pattern by ID or name
+pub async fn get_pattern(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<Pattern>, (StatusCode, Json<ErrorResponse>)> {
+    let pattern_id = resolve_pattern_id(&state, &id).await?;
+
+    let pattern = state
+        .with_state(|s| {
+            s.patterns
+                .get(&pattern_id)
+                .map(|ps| pattern_to_api(&pattern_id, ps, &s.voices))
+        })
+        .await;
+
+    match pattern {
+        Some(p) => Ok(Json(p)),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found(&format!(
+                "Pattern '{}' not found",
+                id
+            ))),
+        )),
+    }
+}
+
+/// PATCH /patterns/:id - Update pattern by ID or name
+///
+/// Note: `steps` and `loop_beats` updates are not supported via API and require
+/// script reload. Only `params` can be updated at runtime, which sets the param
+/// value on all pattern steps.
+pub async fn update_pattern(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(update): Json<PatternUpdate>,
+) -> Result<Json<Pattern>, (StatusCode, Json<ErrorResponse>)> {
+    let pattern_id = resolve_pattern_id(&state, &id).await?;
+
+    // Apply param updates (sets param on all steps)
+    for (param, value) in update.params {
+        if let Err(e) = state
+            .send(
+                PatternMessage::SetParam {
+                    id: pattern_id,
+                    param,
+                    value,
+                }
+                .into(),
+            )
+            .await
+        {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal(&format!(
+                    "Failed to update pattern params: {}",
+                    e
+                ))),
+            ));
+        }
+    }
+
+    // Note: events and loop_beats updates require script reload
+    if update.events.is_some() || update.loop_beats.is_some() {
+        tracing::warn!(
+            "Pattern {} update requested events or loop_beats change, which requires script reload",
+            id
+        );
+    }
+
+    get_pattern(State(state), Path(id)).await
+}
+
+/// POST /patterns/:id/start - Start a pattern by ID or name
+pub async fn start_pattern(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(_req): Json<Option<StartRequest>>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let pattern_id = resolve_pattern_id(&state, &id).await?;
+
+    if let Err(e) = state
+        .send(PatternMessage::Start { id: pattern_id }.into())
+        .await
+    {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::internal(&format!(
+                "Failed to start pattern: {}",
+                e
+            ))),
+        ));
+    }
+
+    Ok(StatusCode::OK)
+}
+
+/// POST /patterns/:id/stop - Stop a pattern by ID or name
+pub async fn stop_pattern(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(_req): Json<Option<StopRequest>>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let pattern_id = resolve_pattern_id(&state, &id).await?;
+
+    if let Err(e) = state
+        .send(PatternMessage::Stop { id: pattern_id }.into())
+        .await
+    {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::internal(&format!(
+                "Failed to stop pattern: {}",
+                e
+            ))),
+        ));
+    }
+
+    Ok(StatusCode::OK)
 }
 
 /// POST /patterns - Create a new pattern
@@ -97,359 +260,139 @@ pub async fn create_pattern(
     State(state): State<Arc<AppState>>,
     Json(req): Json<PatternCreate>,
 ) -> Result<(StatusCode, Json<Pattern>), (StatusCode, Json<ErrorResponse>)> {
-    // Check if pattern already exists
-    let exists = state.handle.with_state(|s| s.patterns.contains_key(&req.name));
-    if exists {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(ErrorResponse::conflict(&format!("Pattern '{}' already exists", req.name))),
-        ));
-    }
-
-    // Check if voice exists
-    let voice_exists = state.handle.with_state(|s| s.voices.contains_key(&req.voice_name));
-    if !voice_exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("Voice '{}' not found", req.voice_name))),
-        ));
-    }
-
-    // Get group path from voice if not specified
-    let group_path = req.group_path.unwrap_or_else(|| {
-        state.handle.with_state(|s| {
-            s.voices.get(&req.voice_name)
-                .map(|v| v.group_path.clone())
-                .unwrap_or_else(|| "main".to_string())
+    // Find voice by name
+    let voice_id = state
+        .with_state(|s| {
+            s.voices
+                .iter()
+                .find(|(_, v)| v.config.name == req.voice_name)
+                .map(|(id, _)| *id)
         })
-    });
+        .await;
 
-    // Get synthdef name from voice
-    let synthdef_name = state.handle.with_state(|s| {
-        s.voices.get(&req.voice_name)
-            .and_then(|v| v.synth_name.clone())
-            .unwrap_or_default()
-    });
-
-    // Build events from either events array or pattern_string
-    let beat_events: Vec<vibelang_core::events::BeatEvent> = if let Some(pattern_str) = &req.pattern_string {
-        // Parse pattern string (e.g., "x...x...x...x...")
-        parse_pattern_string(pattern_str, req.loop_beats, &synthdef_name)
-    } else {
-        req.events.iter().map(|e| {
-            let mut evt = vibelang_core::events::BeatEvent::new(e.beat, &synthdef_name);
-            evt.controls = e.params.iter().map(|(k, v)| (k.clone(), *v)).collect();
-            evt
-        }).collect()
+    let voice_id = match voice_id {
+        Some(id) => id,
+        None => {
+            // Try parsing as numeric ID
+            match req.voice_name.parse::<u32>() {
+                Ok(n) => VoiceId::new(n),
+                Err(_) => {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request(&format!(
+                            "Voice '{}' not found",
+                            req.voice_name
+                        ))),
+                    ));
+                }
+            }
+        }
     };
 
-    // Create the Pattern object
-    let pattern = vibelang_core::events::Pattern {
+    // Generate pattern ID from name hash or next available
+    let pattern_id = state
+        .with_state(|s| {
+            // Use a simple hash of the name for ID
+            let id = req
+                .name
+                .bytes()
+                .fold(1u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+            // Make sure it doesn't conflict
+            let mut id = id % 10000 + 1;
+            while s.patterns.contains_key(&PatternId::new(id)) {
+                id += 1;
+            }
+            PatternId::new(id)
+        })
+        .await;
+
+    // Convert events to Steps
+    let steps: Vec<Step> = req
+        .events
+        .iter()
+        .map(|e| {
+            let mut step = Step::new(Beat::from_f64(e.beat));
+            if let Some(params) = &e.params {
+                for (k, v) in params {
+                    step.params.insert(k.clone(), *v);
+                }
+            }
+            // Also add default params
+            for (k, v) in &req.params {
+                if !step.params.contains_key(k) {
+                    step.params.insert(k.clone(), *v);
+                }
+            }
+            step
+        })
+        .collect();
+
+    let config = PatternConfig {
         name: req.name.clone(),
-        events: beat_events,
-        loop_length_beats: req.loop_beats,
-        phase_offset: 0.0,
+        voice: Some(voice_id),
+        steps,
+        length: Beat::from_f64(req.loop_beats),
+        swing: req.swing,
     };
 
-    // Create the pattern
-    if let Err(e) = state.handle.send(StateMessage::CreatePattern {
-        name: req.name.clone(),
-        group_path: group_path.clone(),
-        voice_name: Some(req.voice_name.clone()),
-        pattern,
-        source_location: SourceLocation::new(None, None, None),
-        step_pattern: req.pattern_string.clone(),
-    }) {
+    if let Err(e) = state
+        .send(
+            PatternMessage::Create {
+                id: pattern_id,
+                config,
+            }
+            .into(),
+        )
+        .await
+    {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to create pattern: {}", e))),
+            Json(ErrorResponse::internal(&format!(
+                "Failed to create pattern: {}",
+                e
+            ))),
         ));
-    }
-
-    // Set any params
-    for (param_name, value) in &req.params {
-        let _ = state.handle.send(StateMessage::SetPatternParam {
-            name: req.name.clone(),
-            param: param_name.clone(),
-            value: *value,
-        });
     }
 
     // Return the created pattern
-    let pattern = state.handle.with_state(|s| s.patterns.get(&req.name).map(pattern_to_api));
+    let pattern = state
+        .with_state(|s| {
+            s.patterns
+                .get(&pattern_id)
+                .map(|ps| pattern_to_api(&pattern_id, ps, &s.voices))
+        })
+        .await;
 
     match pattern {
         Some(p) => Ok((StatusCode::CREATED, Json(p))),
         None => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal("Pattern created but not found in state")),
+            Json(ErrorResponse::internal(
+                "Pattern created but not found in state",
+            )),
         )),
     }
 }
 
-/// Parse a pattern string like "x...x...|x.x.x.x." with bar separators
-/// Supports: x/X = hit, 1-9 = velocity levels, . = rest, | = bar separator
-/// Each bar is 4 beats. Steps per bar determined by character count in each bar.
-fn parse_pattern_string(pattern: &str, loop_beats: f64, synthdef_name: &str) -> Vec<vibelang_core::events::BeatEvent> {
-    log::debug!("[HTTP] parse_pattern_string: pattern='{}', loop_beats={}, synthdef='{}'",
-        pattern, loop_beats, synthdef_name);
-
-    // Split by bar separator
-    let bars: Vec<&str> = pattern.split('|').collect();
-    let num_bars = bars.len();
-
-    log::debug!("[HTTP] Split into {} bars: {:?}", num_bars, bars);
-
-    if num_bars == 0 {
-        return vec![];
-    }
-
-    // Calculate beats per bar
-    let beats_per_bar = loop_beats / num_bars as f64;
-
-    let mut events = Vec::new();
-    let mut current_beat = 0.0;
-
-    for bar in &bars {
-        // Get characters for this bar, filtering whitespace
-        let chars: Vec<char> = bar.chars().filter(|c| !c.is_whitespace()).collect();
-
-        if chars.is_empty() {
-            // Empty bar, just advance the beat
-            current_beat += beats_per_bar;
-            continue;
-        }
-
-        let steps_in_bar = chars.len();
-        let beat_per_step = beats_per_bar / steps_in_bar as f64;
-
-        for (step_idx, c) in chars.iter().enumerate() {
-            let velocity = match c {
-                'x' => Some(1.0),
-                'X' | 'o' | 'O' => Some(1.0), // Accents treated as full velocity for now
-                '1'..='9' => {
-                    let digit = c.to_digit(10).unwrap() as f64;
-                    Some(0.1 + (digit / 9.0) * 0.9)
-                }
-                _ => None, // '.', '-', '_', '0' = rest
-            };
-
-            if let Some(vel) = velocity {
-                let beat = current_beat + (step_idx as f64 * beat_per_step);
-                let mut evt = vibelang_core::events::BeatEvent::new(beat, synthdef_name);
-                evt.controls.push(("amp".to_string(), vel as f32));
-                events.push(evt);
-            }
-        }
-
-        current_beat += beats_per_bar;
-    }
-
-    log::info!("[HTTP] Parsed {} events: {:?}",
-        events.len(),
-        events.iter().map(|e| format!("beat={:.3}", e.beat)).collect::<Vec<_>>());
-
-    events
-}
-
-/// GET /patterns/:name - Get pattern by name
-pub async fn get_pattern(
-    State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
-) -> Result<Json<Pattern>, (StatusCode, Json<ErrorResponse>)> {
-    let pattern = state.handle.with_state(|s| s.patterns.get(&name).map(pattern_to_api));
-
-    match pattern {
-        Some(p) => Ok(Json(p)),
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("Pattern '{}' not found", name))),
-        )),
-    }
-}
-
-/// PATCH /patterns/:name - Update pattern
-pub async fn update_pattern(
-    State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
-    Json(update): Json<PatternUpdate>,
-) -> Result<Json<Pattern>, (StatusCode, Json<ErrorResponse>)> {
-    log::info!("[HTTP] PATCH /patterns/{}: pattern_string={:?}, loop_beats={:?}",
-        name, update.pattern_string, update.loop_beats);
-
-    // Check if pattern exists and get current data
-    let current = state.handle.with_state(|s| s.patterns.get(&name).cloned());
-    let current = match current {
-        Some(p) => p,
-        None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse::not_found(&format!("Pattern '{}' not found", name))),
-            ));
-        }
-    };
-
-    // Remember if pattern was actually playing so we can restart it
-    // Note: is_looping is a config flag (should loop when played), NOT whether it's currently playing
-    let was_playing = matches!(current.status, InternalLoopStatus::Playing { .. } | InternalLoopStatus::QueuedStop { .. });
-
-    // Get current loop_length_beats from loop_pattern
-    let current_loop_beats = current.loop_pattern.as_ref().map(|lp| lp.loop_length_beats).unwrap_or(4.0);
-    let loop_beats = update.loop_beats.unwrap_or(current_loop_beats);
-
-    // Get synthdef name from original events (we need to preserve this)
-    let synthdef_name = current.loop_pattern.as_ref()
-        .and_then(|lp| lp.events.first())
-        .map(|e| e.synth_def.clone())
-        .unwrap_or_default();
-
-    // Build new events
-    let beat_events: Vec<vibelang_core::events::BeatEvent> = if let Some(pattern_str) = &update.pattern_string {
-        parse_pattern_string(pattern_str, loop_beats, &synthdef_name)
-    } else if let Some(evts) = &update.events {
-        evts.iter().map(|e| {
-            let mut evt = vibelang_core::events::BeatEvent::new(e.beat, &synthdef_name);
-            evt.controls = e.params.iter().map(|(k, v)| (k.clone(), *v)).collect();
-            evt
-        }).collect()
-    } else if let Some(ref lp) = current.loop_pattern {
-        lp.events.clone()
-    } else {
-        vec![]
-    };
-
-    // Create the Pattern object
-    let pattern = vibelang_core::events::Pattern {
-        name: name.clone(),
-        events: beat_events,
-        loop_length_beats: loop_beats,
-        phase_offset: 0.0,
-    };
-
-    // Delete and recreate the pattern with new data
-    let _ = state.handle.send(StateMessage::DeletePattern { name: name.clone() });
-
-    // Preserve source location from original pattern
-    let source_location = SourceLocation::new(
-        current.source_location.file.clone(),
-        current.source_location.line,
-        current.source_location.column,
-    );
-
-    if let Err(e) = state.handle.send(StateMessage::CreatePattern {
-        name: name.clone(),
-        group_path: current.group_path,
-        voice_name: current.voice_name,
-        pattern,
-        source_location,
-        step_pattern: update.pattern_string.clone().or(current.step_pattern),
-    }) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to update pattern: {}", e))),
-        ));
-    }
-
-    // Set params
-    let params_to_set = if update.params.is_empty() {
-        current.params.clone()
-    } else {
-        update.params.iter().map(|(k, v)| (k.clone(), *v)).collect()
-    };
-    for (param_name, value) in params_to_set {
-        let _ = state.handle.send(StateMessage::SetPatternParam {
-            name: name.clone(),
-            param: param_name,
-            value,
-        });
-    }
-
-    // Check if there's an active sequence for this pattern (created when pattern.start() is called from code)
-    // If so, the sequence will continue to play the pattern automatically - don't start it directly.
-    // If there's no sequence, we need to restart the pattern directly.
-    let seq_name = format!("_seq_{}", name);
-    let has_active_sequence = state.handle.with_state(|s| s.active_sequences.contains_key(&seq_name));
-
-    log::info!("[HTTP] Pattern '{}' update complete: was_playing={}, has_active_sequence '{}' = {}",
-        name, was_playing, seq_name, has_active_sequence);
-
-    if was_playing && !has_active_sequence {
-        // Pattern was playing directly (not via a sequence), restart it
-        log::info!("[HTTP] Restarting pattern '{}' directly (no active sequence)", name);
-        let _ = state.handle.send(StateMessage::StartPattern { name: name.clone() });
-    }
-    // If was_playing && has_active_sequence: the sequence will pick up the updated pattern automatically
-
-    get_pattern(State(state), Path(name)).await
-}
-
-/// DELETE /patterns/:name - Delete a pattern
+/// DELETE /patterns/:id - Delete a pattern by ID or name
 pub async fn delete_pattern(
     State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
+    Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let exists = state.handle.with_state(|s| s.patterns.contains_key(&name));
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("Pattern '{}' not found", name))),
-        ));
-    }
+    let pattern_id = resolve_pattern_id(&state, &id).await?;
 
-    if let Err(e) = state.handle.send(StateMessage::DeletePattern { name: name.clone() }) {
+    if let Err(e) = state
+        .send(PatternMessage::Delete { id: pattern_id }.into())
+        .await
+    {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to delete pattern: {}", e))),
+            Json(ErrorResponse::internal(&format!(
+                "Failed to delete pattern: {}",
+                e
+            ))),
         ));
     }
 
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// POST /patterns/:name/start - Start a pattern
-pub async fn start_pattern(
-    State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
-    Json(_req): Json<Option<StartRequest>>,
-) -> Result<Json<Pattern>, (StatusCode, Json<ErrorResponse>)> {
-    let exists = state.handle.with_state(|s| s.patterns.contains_key(&name));
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("Pattern '{}' not found", name))),
-        ));
-    }
-
-    if let Err(e) = state.handle.send(StateMessage::StartPattern { name: name.clone() }) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to start pattern: {}", e))),
-        ));
-    }
-
-    get_pattern(State(state), Path(name)).await
-}
-
-/// POST /patterns/:name/stop - Stop a pattern
-pub async fn stop_pattern(
-    State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
-    Json(_req): Json<Option<StopRequest>>,
-) -> Result<Json<Pattern>, (StatusCode, Json<ErrorResponse>)> {
-    let exists = state.handle.with_state(|s| s.patterns.contains_key(&name));
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("Pattern '{}' not found", name))),
-        ));
-    }
-
-    if let Err(e) = state.handle.send(StateMessage::StopPattern { name: name.clone() }) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to stop pattern: {}", e))),
-        ));
-    }
-
-    get_pattern(State(state), Path(name)).await
 }

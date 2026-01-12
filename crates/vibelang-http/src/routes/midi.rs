@@ -1,539 +1,700 @@
-//! MIDI endpoint handlers.
+//! MIDI HTTP API endpoints.
+//!
+//! Provides endpoints for:
+//! - Device discovery and management
+//! - MIDI input/output routing
+//! - Recording control
+//! - Clock output control
 
-use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use vibelang_core::state::StateMessage;
+use vibelang_core::types::MidiDeviceId;
 
-use crate::{
-    models::{
-        CcRoute, ErrorResponse, ExportQuery, KeyboardRoute, MidiCallback, MidiConnectRequest,
-        MidiDeviceInfo, MidiDeviceState, MidiDevicesResponse, MidiRecordingState,
-        MidiRecordingUpdate, MidiRouting, MonitorRequest, NoteRoute, RecordedMidiNote,
-        RecordedNotesQuery,
-    },
-    AppState,
-};
+use crate::AppState;
 
-/// GET /midi/devices - List available and connected MIDI devices
-pub async fn list_devices(
-    State(state): State<Arc<AppState>>,
-) -> Json<MidiDevicesResponse> {
-    let (available, connected) = state.handle.with_state(|s| {
-        // Get connected devices from state
-        let connected: Vec<MidiDeviceState> = s.midi_config.devices.values().map(|d| {
-            MidiDeviceState {
-                id: d.id,
-                info: MidiDeviceInfo {
-                    name: d.info.name.clone(),
-                    port_index: d.info.port_index,
-                    backend: format!("{:?}", d.backend).to_lowercase(),
-                },
-                backend: format!("{:?}", d.backend).to_lowercase(),
-            }
-        }).collect();
+// ============================================================================
+// DTOs
+// ============================================================================
 
-        // For available devices, we'd need to scan - for now return connected as available too
-        let available: Vec<MidiDeviceInfo> = connected.iter().map(|d| d.info.clone()).collect();
-
-        (available, connected)
-    });
-
-    Json(MidiDevicesResponse { available, connected })
+/// Information about a MIDI device.
+#[derive(Debug, Serialize)]
+pub struct MidiDeviceDto {
+    pub id: u32,
+    pub name: String,
+    pub has_input: bool,
+    pub has_output: bool,
 }
 
-/// POST /midi/devices/:id - Connect to a MIDI device
-pub async fn connect_device(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<u32>,
-    Json(req): Json<Option<MidiConnectRequest>>,
-) -> Result<Json<MidiDeviceState>, (StatusCode, Json<ErrorResponse>)> {
-    let backend_str = req.map(|r| r.backend).unwrap_or_else(|| "alsa".to_string());
+/// Request to open a MIDI device.
+#[derive(Debug, Deserialize)]
+pub struct OpenDeviceRequest {
+    pub device_id: u32,
+}
 
-    // Parse backend
-    let midi_backend = match backend_str.to_lowercase().as_str() {
-        "alsa" => vibelang_core::midi::MidiBackend::Alsa,
-        "jack" => vibelang_core::midi::MidiBackend::Jack,
-        _ => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::bad_request("Invalid backend. Must be 'alsa' or 'jack'")),
-            ));
+/// Request to send a MIDI note.
+#[derive(Debug, Deserialize)]
+pub struct SendNoteRequest {
+    pub device_id: u32,
+    pub channel: u8,
+    pub note: u8,
+    pub velocity: Option<u8>,
+}
+
+/// Request to send a MIDI CC.
+#[derive(Debug, Deserialize)]
+pub struct SendCcRequest {
+    pub device_id: u32,
+    pub channel: u8,
+    pub cc: u8,
+    pub value: u8,
+}
+
+/// Request to start recording.
+#[derive(Debug, Deserialize)]
+pub struct StartRecordingRequest {
+    pub device_id: u32,
+    pub channel: Option<u8>,
+}
+
+/// Request to stop recording.
+#[derive(Debug, Deserialize)]
+pub struct StopRecordingRequest {
+    pub device_id: u32,
+    /// Quantization value for recorded notes (not yet implemented in backend).
+    #[allow(dead_code)]
+    pub quantize: Option<f64>,
+}
+
+/// Recorded note DTO.
+/// Reserved for future use when stop_recording returns recording data.
+#[derive(Debug, Serialize)]
+#[allow(dead_code)]
+pub struct RecordedNoteDto {
+    pub beat: f64,
+    pub note: u8,
+    pub velocity: u8,
+    pub duration: Option<f64>,
+}
+
+/// Recording result DTO.
+/// Reserved for future use when stop_recording returns recording data.
+#[derive(Debug, Serialize)]
+#[allow(dead_code)]
+pub struct RecordingResultDto {
+    pub device_id: u32,
+    pub note_count: usize,
+    pub cc_count: usize,
+    pub duration_beats: f64,
+    pub notes: Vec<RecordedNoteDto>,
+}
+
+/// Request to enable/disable clock output.
+/// Reserved for future unified clock control endpoint (currently enable/disable are separate endpoints).
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ClockOutputRequest {
+    pub device_id: u32,
+    pub enabled: bool,
+}
+
+/// Response for clock output status.
+/// Reserved for future GET /midi/clock/status endpoint.
+#[derive(Debug, Serialize)]
+#[allow(dead_code)]
+pub struct ClockStatusDto {
+    pub device_id: u32,
+    pub enabled: bool,
+}
+
+/// Error response.
+#[derive(Debug, Serialize)]
+pub struct ErrorResponse {
+    pub error: String,
+}
+
+// ============================================================================
+// Device Endpoints
+// ============================================================================
+
+/// List all available MIDI devices.
+///
+/// GET /midi/devices
+pub async fn list_devices(State(_state): State<Arc<AppState>>) -> Json<Vec<MidiDeviceDto>> {
+    // Note: This requires direct access to the MIDI handler.
+    // For now, we'll use the midir crate directly here.
+    use midir::{MidiInput, MidiOutput};
+
+    let mut devices = Vec::new();
+    let mut seen_names = std::collections::HashMap::new();
+
+    // List input devices
+    if let Ok(midi_in) = MidiInput::new("vibelang-http2-list") {
+        for (idx, port) in midi_in.ports().iter().enumerate() {
+            if let Ok(name) = midi_in.port_name(port) {
+                devices.push(MidiDeviceDto {
+                    id: idx as u32,
+                    name: name.clone(),
+                    has_input: true,
+                    has_output: false,
+                });
+                seen_names.insert(name, idx);
+            }
         }
-    };
-
-    // Create MidiDeviceInfo for the message
-    let info = vibelang_core::midi::MidiDeviceInfo {
-        name: format!("Device {}", id),
-        port_index: id as usize,
-        backend: midi_backend,
-    };
-
-    // Send connect message
-    if let Err(e) = state.handle.send(StateMessage::MidiOpenDevice {
-        device_id: id,
-        info,
-        backend: midi_backend,
-    }) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to connect device: {}", e))),
-        ));
     }
 
-    // Wait a bit for connection
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-    // Return device state
-    let device = state.handle.with_state(|s| {
-        s.midi_config.devices.get(&id).map(|d| MidiDeviceState {
-            id: d.id,
-            info: MidiDeviceInfo {
-                name: d.info.name.clone(),
-                port_index: d.info.port_index,
-                backend: format!("{:?}", d.backend).to_lowercase(),
-            },
-            backend: format!("{:?}", d.backend).to_lowercase(),
-        })
-    });
-
-    match device {
-        Some(d) => Ok(Json(d)),
-        None => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal("Device connect message sent but device not found in state")),
-        )),
-    }
-}
-
-/// DELETE /midi/devices/:id - Disconnect a MIDI device
-pub async fn disconnect_device(
-    State(_state): State<Arc<AppState>>,
-    Path(_id): Path<u32>,
-) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    // Note: MidiCloseDevice message would need to be implemented
-    // For now, just return OK
-    Ok(StatusCode::NO_CONTENT)
-}
-
-/// Extract target type and name from CcTarget
-fn cc_target_to_parts(target: &vibelang_core::midi::CcTarget) -> (String, String) {
-    match target {
-        vibelang_core::midi::CcTarget::Voice(name) => ("voice".to_string(), name.clone()),
-        vibelang_core::midi::CcTarget::Effect(name) => ("effect".to_string(), name.clone()),
-        vibelang_core::midi::CcTarget::Group(name) => ("group".to_string(), name.clone()),
-        vibelang_core::midi::CcTarget::Global(name) => ("global".to_string(), name.clone()),
-    }
-}
-
-/// GET /midi/routing - Get MIDI routing configuration
-pub async fn get_routing(
-    State(state): State<Arc<AppState>>,
-) -> Json<MidiRouting> {
-    let routing = state.handle.with_state(|s| {
-        let keyboard_routes: Vec<KeyboardRoute> = s.midi_config.routing.keyboard_routes.iter().map(|r| {
-            let (low, high) = r.note_range.unwrap_or((0, 127));
-            KeyboardRoute {
-                channel: r.channel,
-                voice_name: r.voice_name.clone(),
-                transpose: r.transpose as i32,
-                velocity_curve: "linear".to_string(), // Simplified
-                note_range_low: low,
-                note_range_high: high,
-            }
-        }).collect();
-
-        let note_routes: Vec<NoteRoute> = s.midi_config.routing.note_routes.iter().map(|((ch, note), r)| {
-            NoteRoute {
-                channel: *ch,
-                note: *note,
-                voice_name: r.voice_name.clone(),
-                choke_group: r.choke_group.clone(),
-            }
-        }).collect();
-
-        let cc_routes: Vec<CcRoute> = s.midi_config.routing.cc_routes.iter().flat_map(|((ch, cc), routes)| {
-            routes.iter().map(move |r| {
-                let (target_type, target_name) = cc_target_to_parts(&r.target);
-                CcRoute {
-                    channel: *ch,
-                    cc_number: *cc,
-                    target_type,
-                    target_name,
-                    param_name: r.param_name.clone(),
-                    min_value: r.min_value,
-                    max_value: r.max_value,
+    // List output devices
+    if let Ok(midi_out) = MidiOutput::new("vibelang-http2-list") {
+        for port in midi_out.ports().iter() {
+            if let Ok(name) = midi_out.port_name(port) {
+                // Check if we already have this device from input
+                if let Some(&existing_idx) = seen_names.get(&name) {
+                    devices[existing_idx].has_output = true;
+                } else {
+                    let id = devices.len() as u32;
+                    devices.push(MidiDeviceDto {
+                        id,
+                        name,
+                        has_input: false,
+                        has_output: true,
+                    });
                 }
-            })
-        }).collect();
-
-        MidiRouting {
-            keyboard_routes,
-            note_routes,
-            cc_routes,
-            pitch_bend_routes: vec![],
-            aftertouch_routes: vec![],
-            choke_groups: s.midi_config.routing.choke_groups.iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-        }
-    });
-
-    Json(routing)
-}
-
-/// GET /midi/routing/keyboard - List keyboard routes
-pub async fn list_keyboard_routes(
-    State(state): State<Arc<AppState>>,
-) -> Json<Vec<KeyboardRoute>> {
-    let routes = state.handle.with_state(|s| {
-        s.midi_config.routing.keyboard_routes.iter().map(|r| {
-            let (low, high) = r.note_range.unwrap_or((0, 127));
-            KeyboardRoute {
-                channel: r.channel,
-                voice_name: r.voice_name.clone(),
-                transpose: r.transpose as i32,
-                velocity_curve: "linear".to_string(),
-                note_range_low: low,
-                note_range_high: high,
             }
-        }).collect::<Vec<_>>()
-    });
+        }
+    }
 
-    Json(routes)
+    Json(devices)
 }
 
-/// POST /midi/routing/keyboard - Add a keyboard route
+/// Open a MIDI input device.
+///
+/// POST /midi/input/open
+pub async fn open_input(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<OpenDeviceRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::OpenInput { device: device_id }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to open MIDI input: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Open a MIDI output device.
+///
+/// POST /midi/output/open
+pub async fn open_output(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<OpenDeviceRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::OpenOutput { device: device_id }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to open MIDI output: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Close a MIDI device.
+///
+/// POST /midi/close
+pub async fn close_device(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<OpenDeviceRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::CloseDevice {
+            device: device_id,
+        }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to close MIDI device: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+// ============================================================================
+// Note/CC Output Endpoints
+// ============================================================================
+
+/// Send a MIDI note-on message.
+///
+/// POST /midi/note/on
+pub async fn send_note_on(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SendNoteRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::SendNoteOn {
+            device: device_id,
+            channel: req.channel,
+            note: req.note,
+            velocity: req.velocity.unwrap_or(100),
+        }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to send note on: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Send a MIDI note-off message.
+///
+/// POST /midi/note/off
+pub async fn send_note_off(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SendNoteRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::SendNoteOff {
+            device: device_id,
+            channel: req.channel,
+            note: req.note,
+        }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to send note off: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Send a MIDI CC message.
+///
+/// POST /midi/cc
+pub async fn send_cc(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SendCcRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::SendCC {
+            device: device_id,
+            channel: req.channel,
+            cc: req.cc,
+            value: req.value,
+        }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to send CC: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+// ============================================================================
+// Recording Endpoints
+// ============================================================================
+
+/// Start MIDI recording.
+///
+/// POST /midi/record/start
+pub async fn start_recording(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<StartRecordingRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+
+    let msg = if let Some(channel) = req.channel {
+        Message::Midi(MidiMessage::StartRecordingChannel {
+            device: device_id,
+            channel,
+        })
+    } else {
+        Message::Midi(MidiMessage::StartRecording { device: device_id })
+    };
+
+    state.handle.send(msg).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to start recording: {}", e),
+            }),
+        )
+    })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Stop MIDI recording.
+///
+/// POST /midi/record/stop
+///
+/// Note: This stops recording but doesn't return the recording data.
+/// The recording is stored and can be retrieved via other means (e.g., WebSocket events).
+pub async fn stop_recording(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<StopRecordingRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::StopRecording {
+            device: device_id,
+        }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to stop recording: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+// ============================================================================
+// Clock Output Endpoints
+// ============================================================================
+
+/// Enable MIDI clock output.
+///
+/// POST /midi/clock/enable
+pub async fn enable_clock_output(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<OpenDeviceRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::EnableClockOutput {
+            device: device_id,
+        }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to enable clock output: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Disable MIDI clock output.
+///
+/// POST /midi/clock/disable
+pub async fn disable_clock_output(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<OpenDeviceRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::DisableClockOutput {
+            device: device_id,
+        }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to disable clock output: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Send MIDI start message.
+///
+/// POST /midi/transport/start
+pub async fn send_midi_start(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<OpenDeviceRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::SendStart { device: device_id }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to send MIDI start: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Send MIDI stop message.
+///
+/// POST /midi/transport/stop
+pub async fn send_midi_stop(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<OpenDeviceRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::SendStop { device: device_id }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to send MIDI stop: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Send MIDI continue message.
+///
+/// POST /midi/transport/continue
+pub async fn send_midi_continue(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<OpenDeviceRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    let device_id = MidiDeviceId::new(req.device_id);
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::SendContinue {
+            device: device_id,
+        }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to send MIDI continue: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+// ============================================================================
+// Route Management Endpoints
+// ============================================================================
+
+/// Request to add a keyboard route.
+#[derive(Debug, Deserialize)]
+pub struct AddKeyboardRouteRequest {
+    pub device_id: u32,
+    pub voice_id: u32,
+    pub channel: Option<u8>,
+    pub note_min: Option<u8>,
+    pub note_max: Option<u8>,
+    pub transpose: Option<i8>,
+}
+
+/// Response for keyboard route creation.
+#[derive(Debug, Serialize)]
+pub struct AddKeyboardRouteResponse {
+    pub message: String,
+}
+
+/// Route info DTO.
+#[derive(Debug, Serialize)]
+pub struct RouteInfoDto {
+    /// Note: Route listing is informational only. Routes are primarily managed via Rhai scripts.
+    pub message: String,
+    pub keyboard_route_count: usize,
+}
+
+/// List MIDI routes.
+///
+/// GET /midi/routes
+///
+/// Note: This returns basic route info. Routes are primarily managed via Rhai scripts.
+pub async fn list_routes(State(_state): State<Arc<AppState>>) -> Json<RouteInfoDto> {
+    // Routes are managed by the MidiHandler which isn't directly accessible from HTTP.
+    // This returns informational status only.
+    Json(RouteInfoDto {
+        message: "MIDI routes are managed via Rhai scripts. Use POST /midi/route/keyboard to add a simple route.".to_string(),
+        keyboard_route_count: 0, // Can't query directly without state access
+    })
+}
+
+/// Add a keyboard route.
+///
+/// POST /midi/route/keyboard
 pub async fn add_keyboard_route(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<KeyboardRoute>,
-) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let route = vibelang_core::midi::KeyboardRoute {
-        voice_name: req.voice_name,
-        channel: req.channel,
-        note_range: Some((req.note_range_low, req.note_range_high)),
-        transpose: req.transpose as i8,
-        velocity_curve: vibelang_core::midi::VelocityCurve::Linear,
-    };
+    Json(req): Json<AddKeyboardRouteRequest>,
+) -> Result<Json<AddKeyboardRouteResponse>, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::types::VoiceId;
+    use vibelang_core::Message;
 
-    if let Err(e) = state.handle.send(StateMessage::MidiAddKeyboardRoute { route }) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to add keyboard route: {}", e))),
-        ));
-    }
+    let device_id = MidiDeviceId::new(req.device_id);
+    let voice_id = VoiceId::new(req.voice_id);
 
-    Ok(StatusCode::CREATED)
-}
-
-/// GET /midi/routing/note - List note routes
-pub async fn list_note_routes(
-    State(state): State<Arc<AppState>>,
-) -> Json<Vec<NoteRoute>> {
-    let routes = state.handle.with_state(|s| {
-        s.midi_config.routing.note_routes.iter().map(|((ch, note), r)| {
-            NoteRoute {
-                channel: *ch,
-                note: *note,
-                voice_name: r.voice_name.clone(),
-                choke_group: r.choke_group.clone(),
-            }
-        }).collect::<Vec<_>>()
-    });
-
-    Json(routes)
-}
-
-/// POST /midi/routing/note - Add a note route
-pub async fn add_note_route(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<NoteRoute>,
-) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let route = vibelang_core::midi::NoteRoute {
-        voice_name: req.voice_name,
-        channel: Some(req.channel),
-        choke_group: req.choke_group,
-        velocity_curve: vibelang_core::midi::VelocityCurve::Linear,
-        velocity_params: vec![],
-    };
-
-    if let Err(e) = state.handle.send(StateMessage::MidiAddNoteRoute {
-        channel: Some(req.channel),
-        note: req.note,
-        route,
-    }) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to add note route: {}", e))),
-        ));
-    }
-
-    Ok(StatusCode::CREATED)
-}
-
-/// GET /midi/routing/cc - List CC routes
-pub async fn list_cc_routes(
-    State(state): State<Arc<AppState>>,
-) -> Json<Vec<CcRoute>> {
-    let routes = state.handle.with_state(|s| {
-        s.midi_config.routing.cc_routes.iter().flat_map(|((ch, cc), routes)| {
-            routes.iter().map(move |r| {
-                let (target_type, target_name) = cc_target_to_parts(&r.target);
-                CcRoute {
-                    channel: *ch,
-                    cc_number: *cc,
-                    target_type,
-                    target_name,
-                    param_name: r.param_name.clone(),
-                    min_value: r.min_value,
-                    max_value: r.max_value,
-                }
-            })
-        }).collect::<Vec<_>>()
-    });
-
-    Json(routes)
-}
-
-/// POST /midi/routing/cc - Add a CC route
-pub async fn add_cc_route(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<CcRoute>,
-) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    // Parse target type
-    let target = match req.target_type.to_lowercase().as_str() {
-        "group" => vibelang_core::midi::CcTarget::Group(req.target_name.clone()),
-        "voice" => vibelang_core::midi::CcTarget::Voice(req.target_name.clone()),
-        "effect" => vibelang_core::midi::CcTarget::Effect(req.target_name.clone()),
-        "global" => vibelang_core::midi::CcTarget::Global(req.target_name.clone()),
-        _ => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::bad_request("Invalid target_type")),
-            ));
-        }
-    };
-
-    let route = vibelang_core::midi::CcRoute {
-        target,
-        param_name: req.param_name,
-        min_value: req.min_value,
-        max_value: req.max_value,
-        curve: vibelang_core::midi::ParameterCurve::Linear,
-        channel: Some(req.channel),
-    };
-
-    if let Err(e) = state.handle.send(StateMessage::MidiAddCcRoute {
-        channel: Some(req.channel),
-        cc_number: req.cc_number,
-        route,
-    }) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to add CC route: {}", e))),
-        ));
-    }
-
-    Ok(StatusCode::CREATED)
-}
-
-/// GET /midi/callbacks - List MIDI callbacks
-pub async fn list_callbacks(
-    State(state): State<Arc<AppState>>,
-) -> Json<Vec<MidiCallback>> {
-    let callbacks = state.handle.with_state(|s| {
-        s.midi_config.callbacks.values().map(|c| {
-            let (callback_type, channel, note, cc_number, threshold, above_threshold) = match &c.callback_type {
-                vibelang_core::state::MidiCallbackType::Note { channel, note, on_note_on, .. } => {
-                    ("note".to_string(), *channel, Some(*note), None, None, Some(*on_note_on))
-                }
-                vibelang_core::state::MidiCallbackType::Cc { channel, cc_number, threshold, above_threshold } => {
-                    ("cc".to_string(), *channel, None, Some(*cc_number), *threshold, Some(*above_threshold))
-                }
-            };
-
-            MidiCallback {
-                id: c.id,
-                callback_type,
-                channel,
-                note,
-                cc_number,
-                threshold,
-                above_threshold,
-            }
-        }).collect::<Vec<_>>()
-    });
-
-    Json(callbacks)
-}
-
-/// GET /midi/recording - Get MIDI recording state
-pub async fn get_recording_state(
-    State(state): State<Arc<AppState>>,
-) -> Json<MidiRecordingState> {
-    let recording = state.handle.with_state(|s| MidiRecordingState {
-        recording_enabled: s.midi_recording.recording_enabled,
-        quantization: s.midi_recording.quantization,
-        max_history_bars: s.midi_recording.max_history_bars,
-        note_count: s.midi_recording.notes.len(),
-        oldest_beat: s.midi_recording.oldest_beat,
-        pending_notes: s.midi_recording.pending_notes.len(),
-    });
-
-    Json(recording)
-}
-
-/// PATCH /midi/recording - Update MIDI recording settings
-pub async fn update_recording_settings(
-    State(state): State<Arc<AppState>>,
-    Json(update): Json<MidiRecordingUpdate>,
-) -> Result<Json<MidiRecordingState>, (StatusCode, Json<ErrorResponse>)> {
-    if let Some(enabled) = update.recording_enabled {
-        if let Err(e) = state.handle.send(StateMessage::MidiSetRecordingEnabled { enabled }) {
-            return Err((
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::AddKeyboardRoute {
+            device: device_id,
+            voice: voice_id,
+            channel: req.channel,
+            note_min: req.note_min,
+            note_max: req.note_max,
+            transpose: req.transpose,
+        }))
+        .await
+        .map_err(|e| {
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::internal(&format!("Failed to update recording: {}", e))),
-            ));
-        }
-    }
+                Json(ErrorResponse {
+                    error: format!("Failed to add keyboard route: {}", e),
+                }),
+            )
+        })?;
 
-    if let Some(quantization) = update.quantization {
-        if ![4, 8, 16, 32, 64].contains(&quantization) {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::bad_request("Quantization must be 4, 8, 16, 32, or 64")),
-            ));
-        }
-        if let Err(e) = state.handle.send(StateMessage::MidiSetRecordingQuantization {
-            positions_per_bar: quantization,
-        }) {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::internal(&format!("Failed to update quantization: {}", e))),
-            ));
-        }
-    }
-
-    // Note: max_history_bars is not currently supported via StateMessage
-    // if let Some(_max_bars) = update.max_history_bars { }
-
-    Ok(get_recording_state(State(state)).await)
+    Ok(Json(AddKeyboardRouteResponse {
+        message: format!(
+            "Keyboard route added: device {} -> voice {}",
+            req.device_id, req.voice_id
+        ),
+    }))
 }
 
-/// GET /midi/recording/notes - Get recorded MIDI notes
-pub async fn get_recorded_notes(
+/// Remove a keyboard route by index.
+///
+/// DELETE /midi/route/:index
+pub async fn remove_keyboard_route(
     State(state): State<Arc<AppState>>,
-    Query(query): Query<RecordedNotesQuery>,
-) -> Json<Vec<RecordedMidiNote>> {
-    let notes = state.handle.with_state(|s| {
-        s.midi_recording.notes.iter()
-            .filter(|n| {
-                if let Some(start) = query.start_beat {
-                    if n.beat < start {
-                        return false;
-                    }
-                }
-                if let Some(end) = query.end_beat {
-                    if n.beat >= end {
-                        return false;
-                    }
-                }
-                if let Some(ref voice) = query.voice {
-                    if &n.voice_name != voice {
-                        return false;
-                    }
-                }
-                true
-            })
-            .map(|n| RecordedMidiNote {
-                beat: n.beat,
-                note: n.note,
-                velocity: n.velocity,
-                duration: n.duration,
-                raw_beat: n.raw_beat,
-                channel: n.channel,
-                voice_name: n.voice_name.clone(),
-            })
-            .collect::<Vec<_>>()
-    });
-
-    Json(notes)
-}
-
-/// GET /midi/recording/export - Export recorded notes as VibeLang syntax
-pub async fn export_recording(
-    State(state): State<Arc<AppState>>,
-    Query(query): Query<ExportQuery>,
-) -> String {
-    let bars = query.bars.unwrap_or(4);
-    let beats_per_bar = state.handle.with_state(|s| s.time_signature.beats_per_bar());
-
-    let notes = state.handle.with_state(|s| {
-        let current_beat = s.current_beat;
-        let start_beat = query.start_beat.unwrap_or(current_beat - (bars as f64 * beats_per_bar));
-        let end_beat = start_beat + (bars as f64 * beats_per_bar);
-
-        s.midi_recording.notes.iter()
-            .filter(|n| {
-                n.beat >= start_beat && n.beat < end_beat &&
-                query.voice.as_ref().map(|v| &n.voice_name == v).unwrap_or(true)
-            })
-            .map(|n| RecordedMidiNote {
-                beat: n.beat - start_beat, // Normalize to 0-based
-                note: n.note,
-                velocity: n.velocity,
-                duration: n.duration,
-                raw_beat: n.raw_beat,
-                channel: n.channel,
-                voice_name: n.voice_name.clone(),
-            })
-            .collect::<Vec<_>>()
-    });
-
-    if query.format == "pattern" {
-        // Export as pattern syntax
-        export_as_pattern(&notes, bars as f64 * beats_per_bar)
-    } else {
-        // Export as melody syntax
-        export_as_melody(&notes, bars as f64 * beats_per_bar)
-    }
-}
-
-fn export_as_pattern(notes: &[RecordedMidiNote], _loop_beats: f64) -> String {
-    let mut output = String::from("// Pattern export\n");
-    for note in notes {
-        output.push_str(&format!("// beat {:.2}: note={}, vel={}\n", note.beat, note.note, note.velocity));
-    }
-    output
-}
-
-fn export_as_melody(notes: &[RecordedMidiNote], _loop_beats: f64) -> String {
-    let note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-
-    let mut output = String::from("// Melody export\n\"");
-    for note in notes {
-        let octave = (note.note / 12) as i32 - 1;
-        let note_idx = (note.note % 12) as usize;
-        output.push_str(&format!("{}{} ", note_names[note_idx], octave));
-    }
-    output.push('"');
-    output
-}
-
-/// POST /midi/monitor - Enable/disable MIDI monitoring
-pub async fn set_monitor(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<MonitorRequest>,
+    axum::extract::Path(index): axum::extract::Path<usize>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    if let Err(e) = state.handle.send(StateMessage::MidiSetMonitoring { enabled: req.enabled }) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to set monitor: {}", e))),
-        ));
-    }
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::RemoveKeyboardRoute { index }))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to remove keyboard route: {}", e),
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Clear all MIDI routes.
+///
+/// DELETE /midi/routes
+pub async fn clear_routes(
+    State(state): State<Arc<AppState>>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    use vibelang_core::message::MidiMessage;
+    use vibelang_core::Message;
+
+    state
+        .handle
+        .send(Message::Midi(MidiMessage::ClearRoutes))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to clear routes: {}", e),
+                }),
+            )
+        })?;
 
     Ok(StatusCode::OK)
 }

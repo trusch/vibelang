@@ -1,257 +1,442 @@
-//! Fades endpoint handlers.
+//! Fade endpoint handlers.
 
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     Json,
 };
+use serde::Deserialize;
 use std::sync::Arc;
-use vibelang_core::state::StateMessage;
-use vibelang_core::FadeTargetType;
+use vibelang_core::{
+    traits::{FadeConfig, FadeCurve, FadeTarget},
+    types::Duration,
+    EffectId, FadeMessage, GroupId, VoiceId,
+};
 
 use crate::{
-    models::{ActiveFade, ErrorResponse, FadeCreate},
+    models::{ErrorResponse, FadeCreate, FadeTargetType},
     AppState,
 };
 
-/// Convert internal ActiveFadeJob to API ActiveFade model
-fn fade_to_api(id: &str, fo: &vibelang_core::state::ActiveFadeJob, tempo: f64) -> ActiveFade {
-    // Convert duration from seconds to beats using the current tempo
-    let duration_beats = fo.duration_seconds * tempo / 60.0;
-    // Calculate progress based on elapsed time
-    let elapsed = fo.start_time.elapsed().as_secs_f64();
-    let progress = if fo.duration_seconds > 0.0 {
-        (elapsed / fo.duration_seconds).clamp(0.0, 1.0) as f32
-    } else {
-        1.0
-    };
+/// Curve specification that can be a simple string name or a complex curve definition.
+///
+/// # Examples (JSON)
+/// ```json
+/// // Simple string curve
+/// {"curve": "ease_in_out"}
+///
+/// // Exponential with custom exponent
+/// {"curve": {"exp": 3.0}}
+///
+/// // Cubic spline with control points
+/// {"curve": {"spline": [[0.25, 0.1], [0.5, 0.9], [0.75, 0.3]]}}
+/// ```
+#[derive(Debug, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum CurveSpec {
+    /// Simple curve name (backward compatible).
+    Name(String),
+    /// Exponential curve with custom exponent.
+    Exponential { exp: f64 },
+    /// Cubic spline with control points.
+    Spline { spline: Vec<[f64; 2]> },
+}
 
-    let current_value = fo.start_value + (fo.target_value - fo.start_value) * progress;
-
-    let target_type = match fo.target_type {
-        FadeTargetType::Group => "group",
-        FadeTargetType::Voice => "voice",
-        FadeTargetType::Effect => "effect",
-        FadeTargetType::Pattern => "pattern",
-        FadeTargetType::Melody => "melody",
-    };
-
-    ActiveFade {
-        id: id.to_string(),
-        name: None,
-        target_type: target_type.to_string(),
-        target_name: fo.target_name.clone(),
-        param_name: fo.param_name.clone(),
-        start_value: fo.start_value,
-        target_value: fo.target_value,
-        current_value,
-        duration_beats,
-        start_beat: 0.0, // We don't have the start beat, so use 0
-        progress,
+impl Default for CurveSpec {
+    fn default() -> Self {
+        CurveSpec::Name("linear".to_string())
     }
 }
 
-/// Generate a unique ID for a fade based on its properties
-fn generate_fade_id(fo: &vibelang_core::state::ActiveFadeJob, index: usize) -> String {
-    format!("fade_{}_{}_{}_{}", index, fo.target_name, fo.param_name,
-            fo.start_time.elapsed().as_millis() % 10000)
+/// Request body for starting a fade on a voice.
+#[derive(Debug, Deserialize)]
+pub struct VoiceFadeRequest {
+    /// Parameter name to fade.
+    pub param: String,
+    /// Target value.
+    pub to: f32,
+    /// Duration in beats.
+    pub duration_beats: f64,
+    /// Optional starting value (defaults to current value).
+    #[serde(default)]
+    pub from: Option<f32>,
+    /// Interpolation curve specification.
+    #[serde(default)]
+    pub curve: CurveSpec,
 }
 
-/// GET /fades - List all active fades
-pub async fn list_fades(
-    State(state): State<Arc<AppState>>,
-) -> Json<Vec<ActiveFade>> {
-    let fades = state.handle.with_state(|s| {
-        s.fades.iter()
-            .enumerate()
-            .map(|(i, fo)| {
-                let id = generate_fade_id(fo, i);
-                fade_to_api(&id, fo, s.tempo)
-            })
-            .collect::<Vec<_>>()
-    });
-
-    Json(fades)
+/// Request body for starting a fade on a group.
+#[derive(Debug, Deserialize)]
+pub struct GroupFadeRequest {
+    /// Parameter name to fade.
+    pub param: String,
+    /// Target value.
+    pub to: f32,
+    /// Duration in beats.
+    pub duration_beats: f64,
+    /// Optional starting value (defaults to current value).
+    #[serde(default)]
+    pub from: Option<f32>,
+    /// Interpolation curve specification.
+    #[serde(default)]
+    pub curve: CurveSpec,
 }
 
-/// POST /fades - Create a new fade
-pub async fn create_fade(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<FadeCreate>,
-) -> Result<(StatusCode, Json<ActiveFade>), (StatusCode, Json<ErrorResponse>)> {
-    // Parse target type
-    let target_type = match req.target_type.to_lowercase().as_str() {
-        "group" => FadeTargetType::Group,
-        "voice" => FadeTargetType::Voice,
-        "effect" => FadeTargetType::Effect,
-        "pattern" => FadeTargetType::Pattern,
-        "melody" => FadeTargetType::Melody,
-        _ => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::bad_request("Invalid target_type. Must be 'group', 'voice', 'effect', 'pattern', or 'melody'")),
-            ));
-        }
-    };
+/// Request body for starting a fade on an effect.
+#[derive(Debug, Deserialize)]
+pub struct EffectFadeRequest {
+    /// Parameter name to fade.
+    pub param: String,
+    /// Target value.
+    pub to: f32,
+    /// Duration in beats.
+    pub duration_beats: f64,
+    /// Optional starting value (defaults to current value).
+    #[serde(default)]
+    pub from: Option<f32>,
+    /// Interpolation curve specification.
+    #[serde(default)]
+    pub curve: CurveSpec,
+}
 
-    // Get current value if start_value not specified
-    let start_value = req.start_value.unwrap_or_else(|| {
-        state.handle.with_state(|s| {
-            match target_type {
-                FadeTargetType::Group => {
-                    s.groups.get(&req.target_name)
-                        .and_then(|g| g.params.get(&req.param_name).copied())
-                        .unwrap_or(0.0)
-                }
-                FadeTargetType::Voice => {
-                    s.voices.get(&req.target_name)
-                        .and_then(|v| v.params.get(&req.param_name).copied())
-                        .unwrap_or(0.0)
-                }
-                FadeTargetType::Effect => {
-                    s.effects.get(&req.target_name)
-                        .and_then(|e| e.params.get(&req.param_name).copied())
-                        .unwrap_or(0.0)
-                }
-                FadeTargetType::Pattern => {
-                    s.patterns.get(&req.target_name)
-                        .and_then(|p| p.params.get(&req.param_name).copied())
-                        .unwrap_or(0.0)
-                }
-                FadeTargetType::Melody => {
-                    s.melodies.get(&req.target_name)
-                        .and_then(|m| m.params.get(&req.param_name).copied())
-                        .unwrap_or(0.0)
+/// Parse a curve name string into a FadeCurve.
+fn parse_curve_name(curve: &str) -> FadeCurve {
+    match curve.to_lowercase().as_str() {
+        // Ease (quadratic)
+        "ease_in" | "easein" | "ease-in" => FadeCurve::EaseIn,
+        "ease_out" | "easeout" | "ease-out" => FadeCurve::EaseOut,
+        "ease_in_out" | "easeinout" | "ease-in-out" | "ease" => FadeCurve::EaseInOut,
+
+        // Sine
+        "sine_in" | "sinein" | "sine-in" => FadeCurve::SineIn,
+        "sine_out" | "sineout" | "sine-out" => FadeCurve::SineOut,
+        "sine" | "sine_in_out" | "sineinout" | "sin" | "smooth" => FadeCurve::SineInOut,
+
+        // Cubic
+        "cubic_in" | "cubicin" | "cubic-in" => FadeCurve::CubicIn,
+        "cubic_out" | "cubicout" | "cubic-out" => FadeCurve::CubicOut,
+        "cubic_in_out" | "cubicinout" | "cubic-in-out" | "cubic" => FadeCurve::CubicInOut,
+
+        // Exponential (default exponent 2.0)
+        "exponential" | "exp" => FadeCurve::Exponential { exponent: 2.0 },
+
+        // Logarithmic
+        "log" | "logarithmic" => FadeCurve::Logarithmic,
+
+        // Step
+        "step" | "instant" => FadeCurve::Step,
+
+        // Default to linear
+        _ => FadeCurve::Linear,
+    }
+}
+
+/// Convert a CurveSpec into a FadeCurve.
+fn parse_curve_spec(spec: &CurveSpec) -> FadeCurve {
+    match spec {
+        CurveSpec::Name(name) => parse_curve_name(name),
+        CurveSpec::Exponential { exp } => FadeCurve::Exponential {
+            exponent: *exp as f32,
+        },
+        CurveSpec::Spline { spline } => FadeCurve::CubicSpline {
+            points: spline.iter().map(|[t, v]| (*t as f32, *v as f32)).collect(),
+        },
+    }
+}
+
+/// POST /fades/voice/:name - Start a fade on a voice parameter.
+pub async fn fade_voice(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Json(req): Json<VoiceFadeRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    // Find the voice by name
+    let voice_id = state
+        .with_state(|s| {
+            s.voices
+                .iter()
+                .find(|(_, v)| v.id.raw().to_string() == name || v.config.name == name)
+                .map(|(id, _)| *id)
+        })
+        .await;
+
+    let voice_id = match voice_id {
+        Some(id) => id,
+        None => {
+            // Try parsing as numeric ID
+            match name.parse::<u32>() {
+                Ok(n) => VoiceId::new(n),
+                Err(_) => {
+                    return Err((
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse::not_found(&format!(
+                            "Voice '{}' not found",
+                            name
+                        ))),
+                    ));
                 }
             }
-        })
-    });
-
-    // Convert duration to string format (e.g., "4b" for 4 beats)
-    let duration_str = format!("{}b", req.duration_beats);
-
-    // Send the appropriate fade message based on target type
-    let result = match target_type {
-        FadeTargetType::Group => {
-            state.handle.send(StateMessage::FadeGroupParam {
-                path: req.target_name.clone(),
-                param: req.param_name.clone(),
-                target: req.target_value,
-                duration: duration_str.clone(),
-                delay: None,
-                quantize: None,
-            })
-        }
-        FadeTargetType::Voice => {
-            state.handle.send(StateMessage::FadeVoiceParam {
-                name: req.target_name.clone(),
-                param: req.param_name.clone(),
-                target: req.target_value,
-                duration: duration_str.clone(),
-                delay: None,
-                quantize: None,
-            })
-        }
-        FadeTargetType::Effect => {
-            state.handle.send(StateMessage::FadeEffectParam {
-                id: req.target_name.clone(),
-                param: req.param_name.clone(),
-                target: req.target_value,
-                duration: duration_str.clone(),
-                delay: None,
-                quantize: None,
-            })
-        }
-        FadeTargetType::Pattern => {
-            state.handle.send(StateMessage::FadePatternParam {
-                name: req.target_name.clone(),
-                param: req.param_name.clone(),
-                target: req.target_value,
-                duration: duration_str.clone(),
-                delay: None,
-                quantize: None,
-            })
-        }
-        FadeTargetType::Melody => {
-            state.handle.send(StateMessage::FadeMelodyParam {
-                name: req.target_name.clone(),
-                param: req.param_name.clone(),
-                target: req.target_value,
-                duration: duration_str.clone(),
-                delay: None,
-                quantize: None,
-            })
         }
     };
 
-    if let Err(e) = result {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to create fade: {}", e))),
-        ));
-    }
+    let mut config = FadeConfig::new(
+        FadeTarget::Voice(voice_id),
+        &req.param,
+        req.to,
+        Duration::from_beats(req.duration_beats),
+    );
+    config.from = req.from;
+    config.curve = parse_curve_spec(&req.curve);
 
-    // Generate a fake fade for the response (the actual fade will have a system-generated ID)
-    let fake_id = format!("fade_{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or(""));
-    let current_beat = state.handle.with_state(|s| s.current_beat);
+    state
+        .send(FadeMessage::Start { config }.into())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal(&e.to_string())),
+            )
+        })?;
 
-    let fade = ActiveFade {
-        id: fake_id,
-        name: None,
-        target_type: req.target_type,
-        target_name: req.target_name,
-        param_name: req.param_name,
-        start_value,
-        target_value: req.target_value,
-        current_value: start_value,
-        duration_beats: req.duration_beats,
-        start_beat: current_beat,
-        progress: 0.0,
-    };
-
-    Ok((StatusCode::CREATED, Json(fade)))
+    Ok(StatusCode::NO_CONTENT)
 }
 
-/// DELETE /fades/:id - Cancel an active fade
-/// The ID format is: fade_{index}_{target_name}_{param_name}_{timestamp}
-/// We extract the fade by index and cancel matching fades.
-pub async fn cancel_fade(
+/// POST /fades/group/:path - Start a fade on a group parameter.
+pub async fn fade_group(
+    State(state): State<Arc<AppState>>,
+    Path(path): Path<String>,
+    Json(req): Json<GroupFadeRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    // Find the group by path or name
+    let group_id = state
+        .with_state(|s| {
+            s.groups
+                .iter()
+                .find(|(_, g)| g.id.raw().to_string() == path || format!("{}", g.id) == path)
+                .map(|(id, _)| *id)
+        })
+        .await;
+
+    let group_id = match group_id {
+        Some(id) => id,
+        None => {
+            // Try parsing as numeric ID
+            match path.parse::<u32>() {
+                Ok(n) => GroupId::new(n),
+                Err(_) => {
+                    return Err((
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse::not_found(&format!(
+                            "Group '{}' not found",
+                            path
+                        ))),
+                    ));
+                }
+            }
+        }
+    };
+
+    let mut config = FadeConfig::new(
+        FadeTarget::Group(group_id),
+        &req.param,
+        req.to,
+        Duration::from_beats(req.duration_beats),
+    );
+    config.from = req.from;
+    config.curve = parse_curve_spec(&req.curve);
+
+    state
+        .send(FadeMessage::Start { config }.into())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal(&e.to_string())),
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /fades/effect/:id - Start a fade on an effect parameter.
+pub async fn fade_effect(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
+    Json(req): Json<EffectFadeRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    // Parse the ID to extract the index
-    // Format: fade_{index}_{target_name}_{param_name}_{timestamp}
-    let parts: Vec<&str> = id.split('_').collect();
-    if parts.len() < 2 {
-        return Err((
+    let effect_id = id.parse::<u32>().map(EffectId::new).map_err(|_| {
+        (
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::bad_request("Invalid fade ID format")),
-        ));
-    }
+            Json(ErrorResponse::bad_request(&format!(
+                "Invalid effect ID '{}': must be a number",
+                id
+            ))),
+        )
+    })?;
 
-    // Try to find the fade by index
-    let index: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(usize::MAX);
+    let mut config = FadeConfig::new(
+        FadeTarget::Effect(effect_id),
+        &req.param,
+        req.to,
+        Duration::from_beats(req.duration_beats),
+    );
+    config.from = req.from;
+    config.curve = parse_curve_spec(&req.curve);
 
-    let fade_info = state.handle.with_state(|s| {
-        s.fades.get(index).map(|f| (f.target_type.clone(), f.target_name.clone(), f.param_name.clone()))
-    });
-
-    if let Some((target_type, target_name, param_name)) = fade_info {
-        if let Err(e) = state.handle.send(StateMessage::CancelFade {
-            target_type,
-            target_name,
-            param_name,
-        }) {
-            return Err((
+    state
+        .send(FadeMessage::Start { config }.into())
+        .await
+        .map_err(|e| {
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::internal(&format!("Failed to cancel fade: {}", e))),
-            ));
+                Json(ErrorResponse::internal(&e.to_string())),
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Request to cancel a fade.
+#[derive(Debug, Deserialize)]
+pub struct CancelFadeRequest {
+    /// Target type: "group", "voice", or "effect".
+    pub target_type: FadeTargetType,
+    /// Target name/ID.
+    pub target_name: String,
+    /// Parameter name.
+    pub param: String,
+}
+
+/// DELETE /fades - Cancel a fade.
+pub async fn cancel_fade(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CancelFadeRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let target = match req.target_type {
+        FadeTargetType::Group => {
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(GroupId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid group ID")),
+                    )
+                })?;
+            FadeTarget::Group(id)
         }
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found("Fade not found")),
-        ))
-    }
+        FadeTargetType::Voice => {
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(VoiceId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid voice ID")),
+                    )
+                })?;
+            FadeTarget::Voice(id)
+        }
+        FadeTargetType::Effect => {
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(EffectId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid effect ID")),
+                    )
+                })?;
+            FadeTarget::Effect(id)
+        }
+    };
+
+    state
+        .send(
+            FadeMessage::Cancel {
+                target,
+                param: req.param,
+            }
+            .into(),
+        )
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal(&e.to_string())),
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /fades - Start a fade (generic endpoint).
+pub async fn start_fade(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<FadeCreate>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let target = match req.target_type {
+        FadeTargetType::Group => {
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(GroupId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid group ID")),
+                    )
+                })?;
+            FadeTarget::Group(id)
+        }
+        FadeTargetType::Voice => {
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(VoiceId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid voice ID")),
+                    )
+                })?;
+            FadeTarget::Voice(id)
+        }
+        FadeTargetType::Effect => {
+            let id = req
+                .target_name
+                .parse::<u32>()
+                .map(EffectId::new)
+                .map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse::bad_request("Invalid effect ID")),
+                    )
+                })?;
+            FadeTarget::Effect(id)
+        }
+    };
+
+    let mut config = FadeConfig::new(
+        target,
+        &req.param_name,
+        req.target_value,
+        Duration::from_beats(req.duration_beats),
+    );
+    config.from = req.start_value;
+
+    state
+        .send(FadeMessage::Start { config }.into())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal(&e.to_string())),
+            )
+        })?;
+
+    Ok(StatusCode::CREATED)
 }

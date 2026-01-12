@@ -1,64 +1,56 @@
 //! Transport endpoint handlers.
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use vibelang_core::state::StateMessage;
+use vibelang_core::{Beat, TimeSignature as CoreTimeSignature, TransportMessage};
 
 use crate::{
     models::{ErrorResponse, SeekRequest, TimeSignature, TransportState, TransportUpdate},
     AppState,
 };
 
-/// GET /transport - Get current transport state
-pub async fn get_transport(
-    State(state): State<Arc<AppState>>,
-) -> Json<TransportState> {
-    let transport = state.handle.with_state(|s| {
-        // Find the longest active sequence's loop_beats for display purposes
-        let loop_beats: Option<f64> = s.active_sequences.iter()
-            .filter(|(_, active)| !active.paused && !active.completed)
-            .filter_map(|(seq_name, _)| {
-                s.sequences.get(seq_name)
-                    .filter(|seq| seq.loop_beats > 0.0)
-                    .map(|seq| seq.loop_beats)
-            })
-            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+/// Helper to build TransportState from core state
+fn build_transport_state(s: &vibelang_core::State) -> TransportState {
+    let server_time_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
 
-        // Calculate loop position if we have a loop
-        let loop_beat = loop_beats.map(|lb| {
-            if lb > 0.0 {
-                s.current_beat % lb
-            } else {
-                s.current_beat
-            }
-        });
+    // Calculate loop info from active sequences
+    let loop_beats = s
+        .sequences
+        .values()
+        .filter(|seq| seq.playing)
+        .map(|seq| seq.config.length.to_f64())
+        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Get server timestamp for client-side latency compensation
-        let server_time_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-
-        TransportState {
-            bpm: s.tempo as f32,
-            time_signature: TimeSignature {
-                numerator: s.time_signature.numerator as u8,
-                denominator: s.time_signature.denominator as u8,
-            },
-            running: s.transport_running,
-            current_beat: s.current_beat,
-            quantization_beats: s.quantization_beats,
-            loop_beats,
-            loop_beat,
-            server_time_ms,
+    let loop_beat = loop_beats.map(|lb| {
+        if lb > 0.0 {
+            s.current_beat.to_f64() % lb
+        } else {
+            0.0
         }
     });
 
+    TransportState {
+        bpm: s.tempo,
+        time_signature: TimeSignature {
+            numerator: s.time_sig.numerator,
+            denominator: s.time_sig.denominator,
+        },
+        running: s.playing,
+        current_beat: s.current_beat.to_f64(),
+        quantization_beats: 1.0, // Default quantization
+        loop_beats,
+        loop_beat,
+        server_time_ms: Some(server_time_ms),
+    }
+}
+
+/// GET /transport - Get current transport state
+pub async fn get_transport(State(state): State<Arc<AppState>>) -> Json<TransportState> {
+    let transport = state.with_state(build_transport_state).await;
     Json(transport)
 }
 
@@ -75,33 +67,33 @@ pub async fn update_transport(
                 Json(ErrorResponse::bad_request("BPM must be between 20 and 999")),
             ));
         }
-        if let Err(e) = state.handle.send(StateMessage::SetBpm { bpm: bpm as f64 }) {
+        if let Err(e) = state.send(TransportMessage::SetTempo { bpm }.into()).await {
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::internal(&format!("Failed to set BPM: {}", e))),
+                Json(ErrorResponse::internal(&format!(
+                    "Failed to set BPM: {}",
+                    e
+                ))),
             ));
         }
     }
 
     // Apply time signature change
     if let Some(ts) = update.time_signature {
-        if let Err(e) = state.handle.send(StateMessage::SetTimeSignature {
-            numerator: ts.numerator as u32,
-            denominator: ts.denominator as u32,
-        }) {
+        let time_sig = CoreTimeSignature {
+            numerator: ts.numerator,
+            denominator: ts.denominator,
+        };
+        if let Err(e) = state
+            .send(TransportMessage::SetTimeSignature { time_sig }.into())
+            .await
+        {
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::internal(&format!("Failed to set time signature: {}", e))),
-            ));
-        }
-    }
-
-    // Apply quantization change
-    if let Some(q) = update.quantization_beats {
-        if let Err(e) = state.handle.send(StateMessage::SetQuantization { beats: q }) {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::internal(&format!("Failed to set quantization: {}", e))),
+                Json(ErrorResponse::internal(&format!(
+                    "Failed to set time signature: {}",
+                    e
+                ))),
             ));
         }
     }
@@ -114,10 +106,13 @@ pub async fn update_transport(
 pub async fn start_transport(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<TransportState>, (StatusCode, Json<ErrorResponse>)> {
-    if let Err(e) = state.handle.send(StateMessage::StartScheduler) {
+    if let Err(e) = state.send(TransportMessage::Start.into()).await {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to start transport: {}", e))),
+            Json(ErrorResponse::internal(&format!(
+                "Failed to start transport: {}",
+                e
+            ))),
         ));
     }
 
@@ -128,10 +123,13 @@ pub async fn start_transport(
 pub async fn stop_transport(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<TransportState>, (StatusCode, Json<ErrorResponse>)> {
-    if let Err(e) = state.handle.send(StateMessage::StopScheduler) {
+    if let Err(e) = state.send(TransportMessage::Stop.into()).await {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to stop transport: {}", e))),
+            Json(ErrorResponse::internal(&format!(
+                "Failed to stop transport: {}",
+                e
+            ))),
         ));
     }
 
@@ -146,11 +144,21 @@ pub async fn seek_transport(
     if req.beat < 0.0 {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::bad_request("Beat position cannot be negative")),
+            Json(ErrorResponse::bad_request(
+                "Beat position cannot be negative",
+            )),
         ));
     }
 
-    if let Err(e) = state.handle.send(StateMessage::SeekTransport { beat: req.beat }) {
+    if let Err(e) = state
+        .send(
+            TransportMessage::Seek {
+                beat: Beat::from_f64(req.beat),
+            }
+            .into(),
+        )
+        .await
+    {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse::internal(&format!("Failed to seek: {}", e))),

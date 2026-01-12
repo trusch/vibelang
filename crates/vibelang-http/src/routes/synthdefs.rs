@@ -8,56 +8,24 @@ use axum::{
 use std::sync::Arc;
 
 use crate::{
-    models::{ErrorResponse, SynthDef, SynthDefParam},
+    models::{ErrorResponse, SynthDefInfo},
     AppState,
 };
 
-/// Convert internal SynthDefInfo to API SynthDef model
-fn synthdef_to_api(name: &str, _bytes: &[u8]) -> SynthDef {
-    // Note: We can't easily extract params from compiled synthdef bytes
-    // In a full implementation, we'd store param metadata separately
-    SynthDef {
-        name: name.to_string(),
-        params: vec![
-            // Common params that most synthdefs have
-            SynthDefParam {
-                name: "freq".to_string(),
-                default_value: 440.0,
-                min_value: Some(20.0),
-                max_value: Some(20000.0),
-            },
-            SynthDefParam {
-                name: "amp".to_string(),
-                default_value: 0.5,
-                min_value: Some(0.0),
-                max_value: Some(1.0),
-            },
-            SynthDefParam {
-                name: "gate".to_string(),
-                default_value: 1.0,
-                min_value: Some(0.0),
-                max_value: Some(1.0),
-            },
-            SynthDefParam {
-                name: "out".to_string(),
-                default_value: 0.0,
-                min_value: None,
-                max_value: None,
-            },
-        ],
-        source: "user".to_string(),
-    }
-}
-
-/// GET /synthdefs - List all synthdefs
-pub async fn list_synthdefs(
-    State(state): State<Arc<AppState>>,
-) -> Json<Vec<SynthDef>> {
-    let synthdefs = state.handle.with_state(|s| {
-        s.synthdefs.iter()
-            .map(|(name, bytes)| synthdef_to_api(name, bytes))
-            .collect::<Vec<_>>()
-    });
+/// GET /synthdefs - List all loaded synthdefs
+pub async fn list_synthdefs(State(state): State<Arc<AppState>>) -> Json<Vec<SynthDefInfo>> {
+    let synthdefs = state
+        .with_state(|s| {
+            s.synthdefs
+                .iter()
+                .map(|name| SynthDefInfo {
+                    name: name.clone(),
+                    params: Vec::new(), // Params not tracked in core state
+                    source: None,       // Source not tracked in core state
+                })
+                .collect::<Vec<_>>()
+        })
+        .await;
 
     Json(synthdefs)
 }
@@ -66,16 +34,22 @@ pub async fn list_synthdefs(
 pub async fn get_synthdef(
     State(state): State<Arc<AppState>>,
     Path(name): Path<String>,
-) -> Result<Json<SynthDef>, (StatusCode, Json<ErrorResponse>)> {
-    let synthdef = state.handle.with_state(|s| {
-        s.synthdefs.get(&name).map(|bytes| synthdef_to_api(&name, bytes))
-    });
+) -> Result<Json<SynthDefInfo>, (StatusCode, Json<ErrorResponse>)> {
+    let exists = state.with_state(|s| s.synthdefs.contains(&name)).await;
 
-    match synthdef {
-        Some(sd) => Ok(Json(sd)),
-        None => Err((
+    if exists {
+        Ok(Json(SynthDefInfo {
+            name,
+            params: Vec::new(), // Params not tracked in core state
+            source: None,       // Source not tracked in core state
+        }))
+    } else {
+        Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("SynthDef '{}' not found", name))),
-        )),
+            Json(ErrorResponse::not_found(&format!(
+                "SynthDef '{}' not found",
+                name
+            ))),
+        ))
     }
 }

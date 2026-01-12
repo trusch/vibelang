@@ -5,8 +5,8 @@
 
 use rhai::{CustomType, Engine, NativeCallContext, TypeBuilder};
 use std::collections::HashMap;
-use vibelang_core2::traits::ModulatorConfig;
-use vibelang_core2::types::ModulatorId;
+use vibelang_core::traits::ModulatorConfig;
+use vibelang_core::types::ModulatorId;
 
 use crate::context;
 
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn test_modulator_handle_getters() {
         let mut handle = ModulatorHandle {
-            id: vibelang_core2::types::ModulatorId::new(42),
+            id: vibelang_core::types::ModulatorId::new(42),
             name: "test_mod".to_string(),
         };
 

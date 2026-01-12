@@ -3,7 +3,7 @@
 //! These functions control global runtime state like tempo and time signature.
 
 use rhai::Engine;
-use vibelang_core2::types::TimeSignature;
+use vibelang_core::types::TimeSignature;
 
 use crate::context;
 

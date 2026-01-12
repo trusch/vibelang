@@ -6,87 +6,272 @@ use axum::{
     Json,
 };
 use std::sync::Arc;
-use vibelang_core::state::StateMessage;
+use vibelang_core::{
+    traits::SequenceConfig, types::Beat, Clip, MelodyId, PatternId, SequenceId, SequenceMessage,
+};
 
 use crate::{
-    models::{ErrorResponse, Sequence, SequenceClip, SequenceCreate, SequenceStartRequest, SequenceUpdate, SourceLocation as ApiSourceLocation},
+    models::{
+        ErrorResponse, Sequence, SequenceClip, SequenceCreate, SequenceStartRequest, SequenceUpdate,
+    },
     AppState,
 };
 
-/// Convert internal SourceLocation to API model
-fn source_location_to_api(sl: &vibelang_core::api::context::SourceLocation) -> Option<ApiSourceLocation> {
-    if sl.file.is_some() || sl.line.is_some() {
-        Some(ApiSourceLocation {
-            file: sl.file.clone(),
-            line: sl.line.map(|l| l as usize),
-            column: sl.column.map(|c| c as usize),
-        })
-    } else {
-        None
-    }
-}
-
-/// Convert internal SequenceDefinition to API Sequence model
-fn sequence_to_api(sd: &vibelang_core::sequences::SequenceDefinition, active: bool) -> Sequence {
-    let clips = sd.clips.iter().map(|c| {
-        let (clip_type, name) = match &c.source {
-            vibelang_core::sequences::ClipSource::Pattern(n) => ("pattern", n.clone()),
-            vibelang_core::sequences::ClipSource::Melody(n) => ("melody", n.clone()),
-            vibelang_core::sequences::ClipSource::Fade(n) => ("fade", n.clone()),
-            vibelang_core::sequences::ClipSource::Sequence(n) => ("sequence", n.clone()),
-        };
-
-        let mode = match &c.mode {
-            vibelang_core::sequences::ClipMode::Loop => "loop".to_string(),
-            vibelang_core::sequences::ClipMode::Once => "once".to_string(),
-            vibelang_core::sequences::ClipMode::LoopCount(n) => format!("loop:{}", n),
-        };
-
-        SequenceClip {
-            clip_type: clip_type.to_string(),
-            name,
-            start_beat: c.start,
-            end_beat: c.end,
-            mode,
+/// Resolve a sequence identifier (either numeric ID or string name) to a SequenceId.
+async fn resolve_sequence_id(
+    state: &Arc<AppState>,
+    identifier: &str,
+) -> Result<SequenceId, (StatusCode, Json<ErrorResponse>)> {
+    // First, try to parse as a numeric ID
+    if let Ok(num_id) = identifier.parse::<u32>() {
+        let sequence_id = SequenceId::new(num_id);
+        let exists = state
+            .with_state(|s| s.sequences.contains_key(&sequence_id))
+            .await;
+        if exists {
+            return Ok(sequence_id);
         }
-    }).collect();
+        // Fall through to try as name if numeric ID not found
+    }
 
-    Sequence {
-        name: sd.name.clone(),
-        loop_beats: sd.loop_beats,
-        clips,
-        play_once: sd.play_once,
-        active,
-        source_location: source_location_to_api(&sd.source_location),
+    // Try to find by name
+    let found = state
+        .with_state(|s| {
+            s.sequences
+                .iter()
+                .find(|(_, ss)| ss.config.name == identifier)
+                .map(|(id, _)| *id)
+        })
+        .await;
+
+    match found {
+        Some(id) => Ok(id),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found(&format!(
+                "Sequence '{}' not found",
+                identifier
+            ))),
+        )),
     }
 }
 
-/// Parse clip mode string to ClipMode enum
-fn parse_clip_mode(mode: &str) -> vibelang_core::sequences::ClipMode {
-    if mode == "loop" {
-        vibelang_core::sequences::ClipMode::Loop
-    } else if mode == "once" {
-        vibelang_core::sequences::ClipMode::Once
-    } else if let Some(count_str) = mode.strip_prefix("loop:") {
-        let count = count_str.parse().unwrap_or(1);
-        vibelang_core::sequences::ClipMode::LoopCount(count)
-    } else {
-        vibelang_core::sequences::ClipMode::Once
+/// Convert a Clip enum to API model
+fn clip_to_api(clip: &Clip) -> SequenceClip {
+    match clip {
+        Clip::Pattern { id, start, end } => SequenceClip {
+            clip_type: "pattern".to_string(),
+            name: id.raw().to_string(),
+            start_beat: start.to_f64(),
+            end_beat: Some(end.to_f64()),
+            duration_beats: Some((end.to_f64() - start.to_f64()).max(0.0)),
+            once: None,
+        },
+        Clip::Melody { id, start, end } => SequenceClip {
+            clip_type: "melody".to_string(),
+            name: id.raw().to_string(),
+            start_beat: start.to_f64(),
+            end_beat: Some(end.to_f64()),
+            duration_beats: Some((end.to_f64() - start.to_f64()).max(0.0)),
+            once: None,
+        },
+        Clip::Fade { start, .. } => SequenceClip {
+            clip_type: "fade".to_string(),
+            name: String::new(),
+            start_beat: start.to_f64(),
+            end_beat: None,
+            duration_beats: None,
+            once: Some(true),
+        },
+        Clip::Sequence { id, start } => SequenceClip {
+            clip_type: "sequence".to_string(),
+            name: id.raw().to_string(),
+            start_beat: start.to_f64(),
+            end_beat: None,
+            duration_beats: None,
+            once: None,
+        },
+    }
+}
+
+/// Convert internal SequenceState to API Sequence model
+fn sequence_to_api(_id: &SequenceId, state: &vibelang_core::SequenceState) -> Sequence {
+    Sequence {
+        // Use the actual name from config
+        name: state.config.name.clone(),
+        loop_beats: state.config.length.to_f64(),
+        clips: state.config.clips.iter().map(clip_to_api).collect(),
+        play_once: Some(!state.looping),
+        active: Some(state.playing),
+        source_location: None,
     }
 }
 
 /// GET /sequences - List all sequences
-pub async fn list_sequences(
-    State(state): State<Arc<AppState>>,
-) -> Json<Vec<Sequence>> {
-    let sequences = state.handle.with_state(|s| {
-        s.sequences.values().map(|sd| {
-            let active = s.active_sequences.contains_key(&sd.name);
-            sequence_to_api(sd, active)
-        }).collect::<Vec<_>>()
-    });
+pub async fn list_sequences(State(state): State<Arc<AppState>>) -> Json<Vec<Sequence>> {
+    let sequences = state
+        .with_state(|s| {
+            s.sequences
+                .iter()
+                .map(|(id, ss)| sequence_to_api(id, ss))
+                .collect::<Vec<_>>()
+        })
+        .await;
 
     Json(sequences)
+}
+
+/// GET /sequences/:id - Get sequence by ID or name
+pub async fn get_sequence(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<Sequence>, (StatusCode, Json<ErrorResponse>)> {
+    let sequence_id = resolve_sequence_id(&state, &id).await?;
+
+    let sequence = state
+        .with_state(|s| {
+            s.sequences
+                .get(&sequence_id)
+                .map(|ss| sequence_to_api(&sequence_id, ss))
+        })
+        .await;
+
+    match sequence {
+        Some(seq) => Ok(Json(seq)),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found(&format!(
+                "Sequence '{}' not found",
+                id
+            ))),
+        )),
+    }
+}
+
+/// PATCH /sequences/:id - Update sequence by ID or name
+///
+/// Note: Sequence updates (`clips` and `loop_beats`) are not supported via API
+/// and require script reload. This endpoint currently returns the current state.
+pub async fn update_sequence(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(update): Json<SequenceUpdate>,
+) -> Result<Json<Sequence>, (StatusCode, Json<ErrorResponse>)> {
+    let _sequence_id = resolve_sequence_id(&state, &id).await?;
+
+    // Note: clips and loop_beats updates require script reload
+    if update.clips.is_some() || update.loop_beats.is_some() {
+        tracing::warn!(
+            "Sequence {} update requested clips or loop_beats change, which requires script reload",
+            id
+        );
+    }
+
+    get_sequence(State(state), Path(id)).await
+}
+
+/// POST /sequences/:id/start - Start a sequence by ID or name
+pub async fn start_sequence(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<Option<SequenceStartRequest>>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let sequence_id = resolve_sequence_id(&state, &id).await?;
+
+    let looping = !req.map(|r| r.play_once).unwrap_or(false);
+
+    if let Err(e) = state
+        .send(
+            SequenceMessage::Start {
+                id: sequence_id,
+                looping,
+            }
+            .into(),
+        )
+        .await
+    {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::internal(&format!(
+                "Failed to start sequence: {}",
+                e
+            ))),
+        ));
+    }
+
+    Ok(StatusCode::OK)
+}
+
+/// POST /sequences/:id/stop - Stop a sequence by ID or name
+pub async fn stop_sequence(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let sequence_id = resolve_sequence_id(&state, &id).await?;
+
+    if let Err(e) = state
+        .send(SequenceMessage::Stop { id: sequence_id }.into())
+        .await
+    {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::internal(&format!(
+                "Failed to stop sequence: {}",
+                e
+            ))),
+        ));
+    }
+
+    Ok(StatusCode::OK)
+}
+
+/// POST /sequences/:id/pause - Pause a sequence by ID or name
+pub async fn pause_sequence(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let sequence_id = resolve_sequence_id(&state, &id).await?;
+
+    if let Err(e) = state
+        .send(SequenceMessage::Pause { id: sequence_id }.into())
+        .await
+    {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::internal(&format!(
+                "Failed to pause sequence: {}",
+                e
+            ))),
+        ));
+    }
+
+    Ok(StatusCode::OK)
+}
+
+/// Convert API SequenceClip to internal Clip
+fn api_clip_to_clip(clip: &SequenceClip) -> Option<Clip> {
+    let start = Beat::from_f64(clip.start_beat);
+    let end = clip
+        .end_beat
+        .or(clip.duration_beats.map(|d| clip.start_beat + d))
+        .map(Beat::from_f64)
+        .unwrap_or_else(|| Beat::from_f64(clip.start_beat + 4.0));
+
+    match clip.clip_type.to_lowercase().as_str() {
+        "pattern" => {
+            let id = clip.name.parse::<u32>().ok().map(PatternId::new)?;
+            Some(Clip::Pattern { id, start, end })
+        }
+        "melody" => {
+            let id = clip.name.parse::<u32>().ok().map(MelodyId::new)?;
+            Some(Clip::Melody { id, start, end })
+        }
+        "sequence" => {
+            let id = clip.name.parse::<u32>().ok().map(SequenceId::new)?;
+            Some(Clip::Sequence { id, start })
+        }
+        _ => None,
+    }
 }
 
 /// POST /sequences - Create a new sequence
@@ -94,253 +279,88 @@ pub async fn create_sequence(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SequenceCreate>,
 ) -> Result<(StatusCode, Json<Sequence>), (StatusCode, Json<ErrorResponse>)> {
-    // Check if sequence already exists
-    let exists = state.handle.with_state(|s| s.sequences.contains_key(&req.name));
-    if exists {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(ErrorResponse::conflict(&format!("Sequence '{}' already exists", req.name))),
-        ));
-    }
+    // Generate sequence ID from name hash
+    let sequence_id = state
+        .with_state(|s| {
+            let id = req
+                .name
+                .bytes()
+                .fold(1u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+            let mut id = id % 10000 + 1;
+            while s.sequences.contains_key(&SequenceId::new(id)) {
+                id += 1;
+            }
+            SequenceId::new(id)
+        })
+        .await;
 
-    // Build clips
-    let clips: Vec<vibelang_core::sequences::SequenceClip> = req.clips.iter().map(|c| {
-        let source = match c.clip_type.as_str() {
-            "pattern" => vibelang_core::sequences::ClipSource::Pattern(c.name.clone()),
-            "melody" => vibelang_core::sequences::ClipSource::Melody(c.name.clone()),
-            "fade" => vibelang_core::sequences::ClipSource::Fade(c.name.clone()),
-            "sequence" => vibelang_core::sequences::ClipSource::Sequence(c.name.clone()),
-            _ => vibelang_core::sequences::ClipSource::Pattern(c.name.clone()),
-        };
+    // Convert API clips to internal Clips
+    let clips: Vec<Clip> = req.clips.iter().filter_map(api_clip_to_clip).collect();
 
-        let mode = parse_clip_mode(&c.mode);
-
-        vibelang_core::sequences::SequenceClip {
-            start: c.start_beat,
-            end: c.end_beat,
-            source,
-            mode,
-        }
-    }).collect();
-
-    // Create the sequence definition
-    let sequence = vibelang_core::sequences::SequenceDefinition {
+    let config = SequenceConfig {
         name: req.name.clone(),
-        loop_beats: req.loop_beats,
+        length: Beat::from_f64(req.loop_beats),
         clips,
-        generation: 0,
-        play_once: false,
-        source_location: vibelang_core::api::context::SourceLocation::unknown(),
     };
 
-    // Create the sequence
-    if let Err(e) = state.handle.send(StateMessage::CreateSequence { sequence }) {
+    if let Err(e) = state
+        .send(
+            SequenceMessage::Create {
+                id: sequence_id,
+                config,
+            }
+            .into(),
+        )
+        .await
+    {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to create sequence: {}", e))),
+            Json(ErrorResponse::internal(&format!(
+                "Failed to create sequence: {}",
+                e
+            ))),
         ));
     }
 
     // Return the created sequence
-    let sequence = state.handle.with_state(|s| {
-        s.sequences.get(&req.name).map(|sd| {
-            let active = s.active_sequences.contains_key(&sd.name);
-            sequence_to_api(sd, active)
+    let sequence = state
+        .with_state(|s| {
+            s.sequences
+                .get(&sequence_id)
+                .map(|ss| sequence_to_api(&sequence_id, ss))
         })
-    });
+        .await;
 
     match sequence {
         Some(seq) => Ok((StatusCode::CREATED, Json(seq))),
         None => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal("Sequence created but not found in state")),
+            Json(ErrorResponse::internal(
+                "Sequence created but not found in state",
+            )),
         )),
     }
 }
 
-/// GET /sequences/:name - Get sequence by name
-pub async fn get_sequence(
-    State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
-) -> Result<Json<Sequence>, (StatusCode, Json<ErrorResponse>)> {
-    let sequence = state.handle.with_state(|s| {
-        s.sequences.get(&name).map(|sd| {
-            let active = s.active_sequences.contains_key(&sd.name);
-            sequence_to_api(sd, active)
-        })
-    });
-
-    match sequence {
-        Some(seq) => Ok(Json(seq)),
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("Sequence '{}' not found", name))),
-        )),
-    }
-}
-
-/// PATCH /sequences/:name - Update sequence
-pub async fn update_sequence(
-    State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
-    Json(update): Json<SequenceUpdate>,
-) -> Result<Json<Sequence>, (StatusCode, Json<ErrorResponse>)> {
-    // Check if sequence exists and get current data
-    let current = state.handle.with_state(|s| s.sequences.get(&name).cloned());
-    let current = match current {
-        Some(s) => s,
-        None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse::not_found(&format!("Sequence '{}' not found", name))),
-            ));
-        }
-    };
-
-    let loop_beats = update.loop_beats.unwrap_or(current.loop_beats);
-    let clips: Vec<vibelang_core::sequences::SequenceClip> = if let Some(new_clips) = &update.clips {
-        new_clips.iter().map(|c| {
-            let source = match c.clip_type.as_str() {
-                "pattern" => vibelang_core::sequences::ClipSource::Pattern(c.name.clone()),
-                "melody" => vibelang_core::sequences::ClipSource::Melody(c.name.clone()),
-                "fade" => vibelang_core::sequences::ClipSource::Fade(c.name.clone()),
-                "sequence" => vibelang_core::sequences::ClipSource::Sequence(c.name.clone()),
-                _ => vibelang_core::sequences::ClipSource::Pattern(c.name.clone()),
-            };
-
-            let mode = parse_clip_mode(&c.mode);
-
-            vibelang_core::sequences::SequenceClip {
-                start: c.start_beat,
-                end: c.end_beat,
-                source,
-                mode,
-            }
-        }).collect()
-    } else {
-        current.clips.clone()
-    };
-
-    // Delete and recreate
-    let _ = state.handle.send(StateMessage::DeleteSequence { name: name.clone() });
-
-    // Create the sequence definition
-    let sequence = vibelang_core::sequences::SequenceDefinition {
-        name: name.clone(),
-        loop_beats,
-        clips,
-        generation: 0,
-        play_once: current.play_once,
-        source_location: current.source_location.clone(),
-    };
-
-    if let Err(e) = state.handle.send(StateMessage::CreateSequence { sequence }) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to update sequence: {}", e))),
-        ));
-    }
-
-    get_sequence(State(state), Path(name)).await
-}
-
-/// DELETE /sequences/:name - Delete a sequence
+/// DELETE /sequences/:id - Delete a sequence by ID or name
 pub async fn delete_sequence(
     State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
+    Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let exists = state.handle.with_state(|s| s.sequences.contains_key(&name));
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("Sequence '{}' not found", name))),
-        ));
-    }
+    let sequence_id = resolve_sequence_id(&state, &id).await?;
 
-    if let Err(e) = state.handle.send(StateMessage::DeleteSequence { name: name.clone() }) {
+    if let Err(e) = state
+        .send(SequenceMessage::Delete { id: sequence_id }.into())
+        .await
+    {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to delete sequence: {}", e))),
+            Json(ErrorResponse::internal(&format!(
+                "Failed to delete sequence: {}",
+                e
+            ))),
         ));
     }
 
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// POST /sequences/:name/start - Start a sequence
-pub async fn start_sequence(
-    State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
-    Json(req): Json<Option<SequenceStartRequest>>,
-) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let exists = state.handle.with_state(|s| s.sequences.contains_key(&name));
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("Sequence '{}' not found", name))),
-        ));
-    }
-
-    let play_once = req.map(|r| r.play_once).unwrap_or(false);
-
-    let msg = if play_once {
-        StateMessage::StartSequenceOnce { name: name.clone() }
-    } else {
-        StateMessage::StartSequence { name: name.clone() }
-    };
-
-    if let Err(e) = state.handle.send(msg) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to start sequence: {}", e))),
-        ));
-    }
-
-    Ok(StatusCode::OK)
-}
-
-/// POST /sequences/:name/stop - Stop a sequence
-pub async fn stop_sequence(
-    State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
-) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let exists = state.handle.with_state(|s| s.sequences.contains_key(&name));
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("Sequence '{}' not found", name))),
-        ));
-    }
-
-    if let Err(e) = state.handle.send(StateMessage::StopSequence { name: name.clone() }) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to stop sequence: {}", e))),
-        ));
-    }
-
-    Ok(StatusCode::OK)
-}
-
-/// POST /sequences/:name/pause - Pause a sequence
-pub async fn pause_sequence(
-    State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
-) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let exists = state.handle.with_state(|s| s.sequences.contains_key(&name));
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!("Sequence '{}' not found", name))),
-        ));
-    }
-
-    if let Err(e) = state.handle.send(StateMessage::PauseSequence { name: name.clone() }) {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::internal(&format!("Failed to pause sequence: {}", e))),
-        ));
-    }
-
-    Ok(StatusCode::OK)
 }

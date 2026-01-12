@@ -22,7 +22,7 @@
 
 use rhai::{CustomType, Engine, TypeBuilder};
 use std::path::PathBuf;
-use vibelang_core2::traits::SfzConfig;
+use vibelang_core::traits::SfzConfig;
 
 use crate::context;
 

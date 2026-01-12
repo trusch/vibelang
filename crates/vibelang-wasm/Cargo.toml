@@ -1,17 +1,18 @@
 [package]
 name = "vibelang-wasm"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 description = "WASM bindings for VibeLang - browser-based music programming"
-license = "MIT"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/trusch/vibelang"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-vibelang-core2 = { path = "../vibelang-core2", default-features = false }
-vibelang-rhai = { path = "../vibelang-rhai", default-features = false }
-vibelang-dsp = { path = "../vibelang-dsp", features = ["wasm"] }
+vibelang-core = { version = "0.3.0", default-features = false }
+vibelang-rhai = { version = "0.3.0", default-features = false }
+vibelang-dsp = { version = "0.3.0", features = ["wasm"] }
 
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"

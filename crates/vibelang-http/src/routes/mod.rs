@@ -6,6 +6,7 @@ pub mod fades;
 pub mod groups;
 pub mod live;
 pub mod melodies;
+#[cfg(feature = "midi")]
 pub mod midi;
 pub mod patterns;
 pub mod samples;

@@ -5,7 +5,7 @@
 use rhai::Engine;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
-use vibelang_core2::reload::ScriptState;
+use vibelang_core::reload::ScriptState;
 
 use crate::api;
 use crate::context;

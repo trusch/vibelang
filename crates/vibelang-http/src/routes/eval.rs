@@ -1,10 +1,6 @@
 //! Eval endpoint handler for executing Rhai code dynamically.
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -85,7 +81,11 @@ pub async fn eval_code(
     // Wait for the result
     match response_rx.await {
         Ok(result) => (
-            if result.success { StatusCode::OK } else { StatusCode::BAD_REQUEST },
+            if result.success {
+                StatusCode::OK
+            } else {
+                StatusCode::BAD_REQUEST
+            },
             Json(EvalResponse {
                 success: result.success,
                 result: result.result,

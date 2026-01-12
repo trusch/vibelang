@@ -4,12 +4,12 @@
 
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::collections::HashMap;
-use vibelang_core2::traits::VoiceConfig;
+use vibelang_core::traits::VoiceConfig;
 #[cfg(feature = "midi")]
-use vibelang_core2::types::MidiDeviceId;
-use vibelang_core2::types::ModulatorId;
+use vibelang_core::types::MidiDeviceId;
+use vibelang_core::types::ModulatorId;
 #[cfg(not(target_arch = "wasm32"))]
-use vibelang_core2::types::SfzId;
+use vibelang_core::types::SfzId;
 
 #[cfg(feature = "midi")]
 use super::midi::MidiDevice;
@@ -615,7 +615,7 @@ mod tests {
     // because the modulate() method requires script context which isn't
     // available in unit tests.
 
-    use vibelang_core2::types::ModulatorId;
+    use vibelang_core::types::ModulatorId;
 
     /// Helper to test modulation storage directly without context
     fn test_voice_with_modulation(name: &str, param: &str, mod_id: u32) -> Voice {

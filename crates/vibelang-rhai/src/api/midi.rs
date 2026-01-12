@@ -41,16 +41,16 @@
 // Note: This module is already gated by #[cfg(feature = "midi")] in mod.rs
 
 use rhai::{Array, CustomType, Dynamic, Engine, FnPtr, TypeBuilder};
-use vibelang_core2::midi::{
+use vibelang_core::midi::{
     parse_note_name, CcRouteBuilder, KeyboardRouteBuilder, NoteRouteBuilder, ParameterCurve,
     VelocityCurve,
 };
-use vibelang_core2::reload::{
+use vibelang_core::reload::{
     MidiCallbackConfig, MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute, MidiOutputMessage,
     MidiRecordingRequest,
 };
-use vibelang_core2::traits::FadeTarget;
-use vibelang_core2::types::MidiDeviceId;
+use vibelang_core::traits::FadeTarget;
+use vibelang_core::types::MidiDeviceId;
 
 use super::voice::Voice;
 use crate::context;
@@ -610,7 +610,7 @@ impl KeyboardRoute {
 
     /// Route to a voice and apply the configuration.
     pub fn to(self, voice: Voice) {
-        use vibelang_core2::reload::AdvancedMidiKeyboardRoute;
+        use vibelang_core::reload::AdvancedMidiKeyboardRoute;
 
         let voice_id = context::get_or_create_voice_id(&voice.name);
         let mut builder = self.builder;
@@ -641,7 +641,7 @@ impl KeyboardRoute {
 
     /// Route to a voice by name.
     pub fn to_name(self, voice_name: String) {
-        use vibelang_core2::reload::AdvancedMidiKeyboardRoute;
+        use vibelang_core::reload::AdvancedMidiKeyboardRoute;
 
         let voice_id = context::get_or_create_voice_id(&voice_name);
         let builder = self.builder;
@@ -709,7 +709,7 @@ impl NoteRoute {
 
     /// Route to a voice and apply the configuration.
     pub fn to(self, voice: Voice) {
-        use vibelang_core2::reload::AdvancedMidiNoteRoute;
+        use vibelang_core::reload::AdvancedMidiNoteRoute;
 
         let voice_id = context::get_or_create_voice_id(&voice.name);
 
@@ -771,7 +771,7 @@ impl CcRoute {
     /// * `min` - Value when CC is 0
     /// * `max` - Value when CC is 127
     pub fn to_param(self, voice: Voice, param: String, min: f64, max: f64) {
-        use vibelang_core2::reload::AdvancedMidiCcRoute;
+        use vibelang_core::reload::AdvancedMidiCcRoute;
 
         let voice_id = context::get_or_create_voice_id(&voice.name);
 
@@ -798,7 +798,7 @@ impl CcRoute {
 
     /// Route to a voice parameter by name with range.
     pub fn to_param_name(self, voice_name: String, param: String, min: f64, max: f64) {
-        use vibelang_core2::reload::AdvancedMidiCcRoute;
+        use vibelang_core::reload::AdvancedMidiCcRoute;
 
         let voice_id = context::get_or_create_voice_id(&voice_name);
 

@@ -22,7 +22,7 @@
 
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::path::PathBuf;
-use vibelang_core2::traits::RecordingConfig as CoreRecordingConfig;
+use vibelang_core::traits::RecordingConfig as CoreRecordingConfig;
 
 use super::sample::SampleHandle;
 use crate::context;

@@ -1,16 +1,20 @@
-//! Language Server Protocol implementation for VibeLang.
+//! Language Server Protocol implementation for VibeLang (core2-based).
 //!
-//! This crate provides a full-featured LSP server that can be used by
-//! any editor supporting the Language Server Protocol.
+//! This crate provides a full-featured LSP server for VibeLang, built on top of
+//! vibelang-core2 for modern, async validation.
 //!
 //! # Features
 //!
 //! - Syntax error diagnostics (via Rhai compilation)
-//! - Unknown synthdef/effect validation
+//! - Semantic diagnostics (undefined synthdefs, voices, etc.)
 //! - Auto-completion for API functions, synthdefs, and stdlib imports
-//! - Hover documentation
-//! - Go-to-definition for imports
-//! - Auto-import suggestions
+//! - Hover documentation for API, UGens, and synthdefs
+//! - Go-to-definition for imports and variables
+//! - Signature help for function parameters
+//! - Document symbols (outline view)
+//! - Code actions (quick fixes)
+//! - Semantic tokens (syntax highlighting)
+//! - Inlay hints (inline annotations)
 //!
 //! # Usage
 //!
@@ -23,15 +27,14 @@
 //! }
 //! ```
 
-mod analysis;
-mod backend;
-mod completion;
-mod definition;
-mod diagnostics;
-mod document;
-mod hover;
+pub mod analysis;
+pub mod data;
+pub mod features;
+pub mod server;
+pub mod utils;
+pub mod validation;
 
-pub use backend::VibeLangServer;
+pub use server::VibeLangServer;
 
 use tower_lsp::{LspService, Server};
 

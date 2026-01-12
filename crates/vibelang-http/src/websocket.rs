@@ -11,8 +11,8 @@ use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::broadcast;
-use vibelang_core::RuntimeHandle;
+use tokio::sync::{broadcast, RwLock};
+use vibelang_core::State as RuntimeState;
 
 use crate::AppState;
 
@@ -121,7 +121,7 @@ fn is_subscribed(event_type: &str, subscriptions: &[String]) -> bool {
         if pattern == "*" {
             return true;
         }
-        if pattern.ends_with("*") {
+        if pattern.ends_with('*') {
             let prefix = &pattern[..pattern.len() - 1];
             if event_type.starts_with(prefix) {
                 return true;
@@ -134,7 +134,10 @@ fn is_subscribed(event_type: &str, subscriptions: &[String]) -> bool {
 }
 
 /// Background task that polls state and broadcasts events.
-pub async fn run_event_broadcaster(handle: RuntimeHandle, tx: broadcast::Sender<WebSocketEvent>) {
+pub async fn run_event_broadcaster(
+    state: Arc<RwLock<RuntimeState>>,
+    tx: broadcast::Sender<WebSocketEvent>,
+) {
     let mut last_beat: Option<f64> = None;
     let mut last_running: Option<bool> = None;
     let mut last_bpm: Option<f64> = None;
@@ -145,9 +148,10 @@ pub async fn run_event_broadcaster(handle: RuntimeHandle, tx: broadcast::Sender<
         interval.tick().await;
 
         // Read current state
-        let (current_beat, running, bpm) = handle.with_state(|s| {
-            (s.current_beat, s.transport_running, s.tempo)
-        });
+        let (current_beat, running, bpm) = {
+            let guard = state.read().await;
+            (guard.current_beat.to_f64(), guard.playing, guard.tempo)
+        };
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -172,7 +176,11 @@ pub async fn run_event_broadcaster(handle: RuntimeHandle, tx: broadcast::Sender<
 
         // Check for transport state changes
         if last_running != Some(running) {
-            let event_type = if running { "transport.started" } else { "transport.stopped" };
+            let event_type = if running {
+                "transport.started"
+            } else {
+                "transport.stopped"
+            };
             let _ = tx.send(WebSocketEvent {
                 event_type: event_type.to_string(),
                 timestamp: now,
