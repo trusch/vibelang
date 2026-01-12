@@ -1,0 +1,99 @@
+.tips-widget {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 24px;
+  background: var(--tips-bg, rgba(203, 166, 247, 0.08));
+  border-radius: 8px;
+  max-width: 600px;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.tips-widget.animating {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.tips-icon {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.tips-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.tips-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent-color, #cba6f7);
+  flex-shrink: 0;
+}
+
+.tips-text {
+  font-size: 12px;
+  color: var(--text-color, #a6adc8);
+  line-height: 1.4;
+}
+
+.tips-next {
+  background: none;
+  border: none;
+  padding: 6px 10px;
+  cursor: pointer;
+  color: var(--muted-color, #6c7086);
+  font-size: 14px;
+  border-radius: 4px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.tips-next:hover {
+  background: var(--hover-bg, rgba(203, 166, 247, 0.15));
+  color: var(--text-color, #cdd6f4);
+}
+
+.tips-next-icon {
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.tips-next:hover .tips-next-icon {
+  transform: translateX(2px);
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .tips-widget {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .tips-content {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .tips-next {
+    margin-left: auto;
+  }
+}
+
+/* Light theme */
+[data-theme="light"] .tips-widget {
+  --tips-bg: rgba(136, 57, 239, 0.06);
+  --border-color: #ccd0da;
+  --accent-color: #8839ef;
+  --text-color: #5c5f77;
+  --muted-color: #7c7f93;
+  --hover-bg: rgba(136, 57, 239, 0.1);
+}

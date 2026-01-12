@@ -143,6 +143,20 @@ define_id!(
     RecordingId
 );
 
+define_id!(
+    /// ID for a modulator (LFO, envelope, follower, etc.).
+    ///
+    /// Modulators output control-rate signals that can be routed to voice parameters.
+    ModulatorId
+);
+
+define_id!(
+    /// ID for a control bus.
+    ///
+    /// Control buses carry control-rate signals for modulation.
+    ControlBusId
+);
+
 #[cfg(feature = "midi")]
 define_id!(
     /// ID for a MIDI device.

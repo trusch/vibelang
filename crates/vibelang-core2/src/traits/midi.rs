@@ -2,8 +2,7 @@
 //!
 //! This module is only available with the `midi` feature.
 
-#![cfg(feature = "midi")]
-
+use crate::midi::{MidiRecording, MidiRecordingInfo};
 use crate::traits::FadeTarget;
 use crate::types::ids::MidiDeviceId;
 use crate::types::VoiceId;
@@ -82,4 +81,55 @@ pub trait Midi: Send + Sync {
         target: FadeTarget,
         param: &str,
     ) -> Result<()>;
+
+    // =========================================================================
+    // Recording
+    // =========================================================================
+
+    /// Start recording MIDI input from a device.
+    ///
+    /// Records all incoming note and CC events with beat timestamps.
+    /// Returns an error if already recording from this device.
+    async fn start_recording(&self, device: MidiDeviceId) -> Result<()>;
+
+    /// Start recording MIDI input with a channel filter.
+    ///
+    /// Only events on the specified channel (0-15) will be recorded.
+    async fn start_recording_channel(&self, device: MidiDeviceId, channel: u8) -> Result<()>;
+
+    /// Stop recording from a device and return the recording.
+    ///
+    /// Returns an error if not currently recording from this device.
+    async fn stop_recording(&self, device: MidiDeviceId) -> Result<MidiRecording>;
+
+    /// Check if currently recording from a device.
+    async fn is_recording(&self, device: MidiDeviceId) -> bool;
+
+    /// Get information about an active recording.
+    async fn recording_info(&self, device: MidiDeviceId) -> Option<MidiRecordingInfo>;
+
+    // =========================================================================
+    // Clock Output
+    // =========================================================================
+
+    /// Enable MIDI clock output to a device.
+    ///
+    /// When enabled, MIDI clock messages (24 PPQN) will be sent to the device
+    /// synchronized with the transport.
+    async fn enable_clock_output(&self, device: MidiDeviceId) -> Result<()>;
+
+    /// Disable MIDI clock output to a device.
+    async fn disable_clock_output(&self, device: MidiDeviceId) -> Result<()>;
+
+    /// Check if MIDI clock output is enabled for a device.
+    async fn is_clock_output_enabled(&self, device: MidiDeviceId) -> bool;
+
+    /// Send MIDI start message to a device.
+    async fn send_start(&self, device: MidiDeviceId) -> Result<()>;
+
+    /// Send MIDI stop message to a device.
+    async fn send_stop(&self, device: MidiDeviceId) -> Result<()>;
+
+    /// Send MIDI continue message to a device.
+    async fn send_continue(&self, device: MidiDeviceId) -> Result<()>;
 }

@@ -26,27 +26,37 @@
 //! ```
 
 use crate::backend::Backend;
+use crate::compat::{
+    channel, Instant, Receiver, ReceiverExt, RwLock, Sender, SenderExt,
+};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::compat::{timeout, Duration};
 use crate::handlers::{
-    EffectsHandler, FadesHandler, GroupsHandler, MelodiesHandler, PatternsHandler, RecordingsHandler,
+    EffectsHandler, FadesHandler, GroupsHandler, MelodiesHandler, ModulatorsHandler, PatternsHandler,
     SamplesHandler, SequencesHandler, SfzHandler, SynthDefsHandler, TransportHandler, VoicesHandler,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::handlers::RecordingsHandler;
 use crate::message::{
-    EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, PatternMessage, RecordingMessage,
-    ReloadMessage, SampleMessage, SequenceMessage, SfzMessage, SynthDefMessage, TransportMessage, VoiceMessage,
+    EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, ModulatorMessage, PatternMessage,
+    SampleMessage, SequenceMessage, SfzMessage, SyncMessage, SynthDefMessage, TransportMessage, VoiceMessage,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::message::RecordingMessage;
+use crate::message::ReloadMessage;
 #[cfg(feature = "midi")]
 use crate::message::MidiMessage;
 use crate::reload;
 use crate::state::State;
 use crate::traits::{
-    Effects, Fades, Groups, Melodies, Patterns, Recordings, Samples, Sequences, Sfz, SynthDefs, Transport, Voices,
+    Effects, Fades, Groups, Melodies, Modulators, Patterns, Samples, Sequences, Sfz, SynthDefs, Transport, Voices,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::traits::Recordings;
 #[cfg(feature = "midi")]
 use crate::traits::Midi;
 use crate::{Error, Result};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, RwLock};
 
 #[cfg(feature = "midi")]
 use crate::handlers::MidiHandler;
@@ -83,10 +93,10 @@ pub struct Runtime<B: Backend> {
     state: Arc<RwLock<State>>,
 
     /// Message sender (cloned for handles).
-    tx: mpsc::Sender<Message>,
+    tx: Sender<Message>,
 
     /// Message receiver.
-    rx: mpsc::Receiver<Message>,
+    rx: Receiver<Message>,
 
     // =========================================================================
     // Feature Handlers
@@ -99,8 +109,10 @@ pub struct Runtime<B: Backend> {
     sequences: SequencesHandler<B>,
     fades: FadesHandler<B>,
     effects: EffectsHandler<B>,
+    modulators: ModulatorsHandler<B>,
     samples: SamplesHandler<B>,
     sfz: SfzHandler<B>,
+    #[cfg(not(target_arch = "wasm32"))]
     recordings: RecordingsHandler<B>,
     synthdefs: SynthDefsHandler<B>,
 
@@ -114,7 +126,7 @@ impl<B: Backend> Runtime<B> {
     /// The runtime creates an internal message channel with a buffer of 1024
     /// messages. Use [`Runtime::handle()`] to get a cloneable sender.
     pub fn new(backend: B) -> Self {
-        let (tx, rx) = mpsc::channel(1024);
+        let (tx, rx) = channel(1024);
         let backend = Arc::new(backend);
         let state = Arc::new(RwLock::new(State::default()));
 
@@ -131,8 +143,10 @@ impl<B: Backend> Runtime<B> {
             sequences: SequencesHandler::new(backend.clone(), state.clone()),
             fades: FadesHandler::new(backend.clone(), state.clone()),
             effects: EffectsHandler::new(backend.clone(), state.clone()),
+            modulators: ModulatorsHandler::new(backend.clone(), state.clone()),
             samples: SamplesHandler::new(backend.clone(), state.clone()),
             sfz: SfzHandler::new(backend.clone(), state.clone()),
+            #[cfg(not(target_arch = "wasm32"))]
             recordings: RecordingsHandler::new(backend.clone(), state.clone()),
             synthdefs: SynthDefsHandler::new(backend.clone(), state.clone()),
             #[cfg(feature = "midi")]
@@ -153,19 +167,23 @@ impl<B: Backend> Runtime<B> {
     ///
     /// Equivalent to `runtime.handle().send(msg).await`.
     pub async fn send(&self, msg: Message) -> Result<()> {
-        self.tx.send(msg).await.map_err(|_| Error::ChannelClosed)
+        self.tx.send_async(msg).await.map_err(|_| Error::ChannelClosed)
     }
 
     /// Run the main loop until the channel is closed.
     ///
     /// This is the primary way to run the runtime on native platforms.
     /// The loop processes messages and ticks handlers at regular intervals.
+    ///
+    /// Note: This method is only available on native platforms. For WASM,
+    /// use [`Runtime::tick()`] in a requestAnimationFrame loop.
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn run(&mut self) {
         let tick_interval = Duration::from_millis(10); // 100 Hz
 
         loop {
             // Process available messages
-            while let Ok(msg) = self.rx.try_recv() {
+            while let Some(msg) = self.rx.try_recv_compat() {
                 if let Err(e) = self.handle_message(msg).await {
                     tracing::warn!("Message handling error: {}", e);
                 }
@@ -175,7 +193,7 @@ impl<B: Backend> Runtime<B> {
             self.tick_internal().await;
 
             // Wait for next message or timeout
-            match tokio::time::timeout(tick_interval, self.rx.recv()).await {
+            match timeout(tick_interval, self.rx.recv()).await {
                 Ok(Some(msg)) => {
                     if let Err(e) = self.handle_message(msg).await {
                         tracing::warn!("Message handling error: {}", e);
@@ -198,7 +216,7 @@ impl<B: Backend> Runtime<B> {
     /// Use this in WASM or game loops where you control the main loop.
     pub async fn tick(&mut self) {
         // Process all pending messages
-        while let Ok(msg) = self.rx.try_recv() {
+        while let Some(msg) = self.rx.try_recv_compat() {
             if let Err(e) = self.handle_message(msg).await {
                 tracing::warn!("Message handling error: {}", e);
             }
@@ -221,22 +239,41 @@ impl<B: Backend> Runtime<B> {
             state.current_beat
         };
 
-        // Tick schedulers
-        self.patterns.tick(current_beat).await;
-        self.melodies.tick(current_beat).await;
+        // Process sequences first - they may start fades and nested patterns/melodies
         self.sequences.tick(current_beat).await;
 
-        // Tick recordings (start/stop based on beat position)
+        // Tick fades before patterns/melodies so triggered notes get the current fade values
+        self.fades.tick().await;
+
+        // Tick schedulers (patterns and melodies now use updated fade values)
+        self.patterns.tick(current_beat).await;
+        self.melodies.tick(current_beat).await;
+
+        // Tick recordings (start/stop based on beat position) - native only
+        #[cfg(not(target_arch = "wasm32"))]
         if let Err(e) = self.recordings.tick(current_beat).await {
             tracing::warn!("Recording tick error: {}", e);
         }
 
-        // Tick fades
-        self.fades.tick().await;
-
         // Tick MIDI (process incoming messages)
         #[cfg(feature = "midi")]
         self.midi.tick().await;
+
+        // Tick MIDI clock output
+        #[cfg(feature = "midi")]
+        {
+            let (beat, playing) = {
+                let state = self.state.read().await;
+                (state.current_beat.to_f64(), state.playing)
+            };
+            if let Err(e) = self.midi.tick_clock(beat, playing).await {
+                tracing::warn!("MIDI clock tick error: {}", e);
+            }
+        }
+
+        // Tick MIDI voice modulator outputs (poll modulator values and send CC)
+        #[cfg(feature = "midi")]
+        self.voices.tick_modulators().await;
     }
 
     /// Handle a single message.
@@ -271,7 +308,7 @@ impl<B: Backend> Runtime<B> {
 
             // Groups
             Message::Group(group_msg) => match group_msg {
-                GroupMessage::Create { id, parent } => self.groups.create(id, parent).await,
+                GroupMessage::Create { id, name, parent } => self.groups.create(id, &name, parent).await,
                 GroupMessage::Delete { id } => self.groups.delete(id).await,
                 GroupMessage::SetParam { id, param, value } => {
                     self.groups.set_param(id, &param, value).await
@@ -342,22 +379,49 @@ impl<B: Backend> Runtime<B> {
                 }
             },
 
+            // Modulators
+            Message::Modulator(modulator_msg) => match modulator_msg {
+                ModulatorMessage::Create { id, config } => self.modulators.create(id, config).await,
+                ModulatorMessage::Delete { id } => self.modulators.delete(id).await,
+                ModulatorMessage::SetParam { id, param, value } => {
+                    self.modulators.set_param(id, &param, value).await
+                }
+            },
+
             // Fades
             Message::Fade(fade_msg) => match fade_msg {
                 FadeMessage::Start { config } => self.fades.fade(config).await,
                 FadeMessage::Cancel { target, param } => self.fades.cancel(&target, &param).await,
             },
 
-            // Reload - live hot-reloading
+            // Reload - apply new script state
             Message::Reload(reload_msg) => match *reload_msg {
                 ReloadMessage::Apply { state: new_state } => {
                     self.apply_reload(new_state).await
                 }
             },
 
+            // Sync - synchronize with backend and notify caller
+            Message::Sync(sync_msg) => match sync_msg {
+                SyncMessage::SyncAndNotify { notify } => {
+                    tracing::info!("Processing sync request, syncing with backend...");
+                    let result = self.backend.sync().await;
+                    tracing::info!("Backend sync complete, notifying caller");
+                    // Send notification regardless of sync result
+                    let _ = notify.send(());
+                    result.map_err(Error::backend)
+                }
+            },
+
             // MIDI - send to external devices
             #[cfg(feature = "midi")]
             Message::Midi(midi_msg) => match midi_msg {
+                // Device management
+                MidiMessage::OpenInput { device } => self.midi.open_input(device).await,
+                MidiMessage::OpenOutput { device } => self.midi.open_output(device).await,
+                MidiMessage::CloseDevice { device } => self.midi.close(device).await,
+
+                // Note/CC output
                 MidiMessage::NoteOn {
                     device,
                     channel,
@@ -375,6 +439,84 @@ impl<B: Backend> Runtime<B> {
                     cc,
                     value,
                 } => self.midi.send_cc(device, channel, cc, value).await,
+                MidiMessage::SendNoteOn {
+                    device,
+                    channel,
+                    note,
+                    velocity,
+                } => self.midi.send_note_on(device, channel, note, velocity).await,
+                MidiMessage::SendNoteOff {
+                    device,
+                    channel,
+                    note,
+                } => self.midi.send_note_off(device, channel, note).await,
+                MidiMessage::SendCC {
+                    device,
+                    channel,
+                    cc,
+                    value,
+                } => self.midi.send_cc(device, channel, cc, value).await,
+
+                // Recording
+                MidiMessage::StartRecording { device } => {
+                    self.midi.start_recording(device).await
+                }
+                MidiMessage::StartRecordingChannel { device, channel } => {
+                    self.midi.start_recording_channel(device, channel).await
+                }
+                MidiMessage::StopRecording { device } => {
+                    // Stop recording and discard the recording
+                    // The HTTP API will need to use a different approach with shared state
+                    let _ = self.midi.stop_recording(device).await;
+                    Ok(())
+                }
+
+                // Clock output
+                MidiMessage::EnableClockOutput { device } => {
+                    self.midi.enable_clock_output(device).await
+                }
+                MidiMessage::DisableClockOutput { device } => {
+                    self.midi.disable_clock_output(device).await
+                }
+                MidiMessage::SendStart { device } => self.midi.send_start(device).await,
+                MidiMessage::SendStop { device } => self.midi.send_stop(device).await,
+                MidiMessage::SendContinue { device } => self.midi.send_continue(device).await,
+
+                // Route management
+                MidiMessage::AddKeyboardRoute {
+                    device,
+                    voice,
+                    channel,
+                    note_min,
+                    note_max,
+                    transpose,
+                } => {
+                    use crate::midi::KeyboardRouteBuilder;
+                    let mut route = KeyboardRouteBuilder::new(device);
+                    route.target_voice = Some(voice);
+                    if let Some(ch) = channel {
+                        route.channel = Some(ch);
+                    }
+                    if let Some(min) = note_min {
+                        route.note_min = min;
+                    }
+                    if let Some(max) = note_max {
+                        route.note_max = max;
+                    }
+                    if let Some(tr) = transpose {
+                        route.transpose = tr;
+                    }
+                    self.midi.add_keyboard_route(route).await;
+                    Ok(())
+                }
+                MidiMessage::RemoveKeyboardRoute { index } => {
+                    self.midi.remove_keyboard_route(index).await;
+                    Ok(())
+                }
+                MidiMessage::ClearRoutes => {
+                    self.midi.clear_routes().await;
+                    Ok(())
+                }
             },
 
             // SFZ - instrument loading
@@ -383,7 +525,8 @@ impl<B: Backend> Runtime<B> {
                 SfzMessage::Unload { id } => self.sfz.unload(id).await,
             },
 
-            // Recording - audio capture
+            // Recording - audio capture (native only)
+            #[cfg(not(target_arch = "wasm32"))]
             Message::Recording(recording_msg) => match recording_msg {
                 RecordingMessage::Start { id, config } => {
                     self.recordings.start(id, config).await?;
@@ -417,7 +560,13 @@ impl<B: Backend> Runtime<B> {
     /// synthdefs are available for sample playback, SFZ instruments,
     /// MIDI output, recording, and audio routing.
     pub async fn load_builtins(&self) -> Result<()> {
-        self.synthdefs.load_builtins().await
+        self.synthdefs.load_builtins().await?;
+
+        // Sync with backend to ensure all synthdefs are loaded before continuing
+        tracing::debug!("Syncing with backend after loading builtins");
+        let _ = self.backend.sync().await;
+
+        Ok(())
     }
 
     /// Apply a live reload from a new script state.
@@ -429,6 +578,8 @@ impl<B: Backend> Runtime<B> {
     /// 3. Update tempo/time signature
     /// 4. Create entities (parents before children for groups)
     /// 5. Restart patterns/melodies/sequences
+    ///
+    /// Applies state from a newly executed script to the runtime.
     async fn apply_reload(&mut self, new_state: reload::ScriptState) -> Result<()> {
         // Calculate diff
         let diff = {
@@ -436,8 +587,10 @@ impl<B: Backend> Runtime<B> {
             reload::calculate_diff(&current, &new_state)
         };
 
+        // If no changes, return early - patterns continue playing seamlessly
+        // (Phase 6 only starts patterns that aren't already playing)
         if !diff.has_changes() {
-            tracing::debug!("Reload: no changes detected");
+            tracing::debug!("Reload: no changes detected, playback continues");
             return Ok(());
         }
 
@@ -487,7 +640,13 @@ impl<B: Backend> Runtime<B> {
         // Phase 2: Delete entities (children before parents for groups)
         // =========================================================================
 
-        // Delete effects first (they depend on groups)
+        // Delete modulators first (voices may depend on them)
+        for id in &diff.modulators.deleted {
+            tracing::debug!("Reload: deleting modulator {:?}", id);
+            let _ = self.modulators.delete(*id).await;
+        }
+
+        // Delete effects (they depend on groups)
         for id in &diff.effects.deleted {
             tracing::debug!("Reload: deleting effect {:?}", id);
             let _ = self.effects.remove(*id).await;
@@ -548,55 +707,90 @@ impl<B: Backend> Runtime<B> {
         for id in ordered_group_creations {
             if let Some(config) = diff.groups.created.get(&id) {
                 tracing::debug!("Reload: creating group {:?}", id);
-                let _ = self.groups.create(id, config.parent).await;
+                let _ = self.groups.create(id, &config.name, config.parent).await;
                 // Apply initial params
                 for (param, value) in &config.params {
                     let _ = self.groups.set_param(id, param, *value).await;
                 }
+                // Apply initial mute/solo state
+                if config.muted {
+                    let _ = self.groups.mute(id, true).await;
+                }
+                if config.soloed {
+                    let _ = self.groups.solo(id, true).await;
+                }
+            }
+        }
+
+        // Sync with backend to ensure groups are created before we create synths targeting them
+        if !diff.groups.created.is_empty() {
+            tracing::debug!("Reload: syncing with backend after group creation");
+            let _ = self.backend.sync().await;
+        }
+
+        // Create new modulators (before voices so modulations can reference them)
+        for (id, config) in &diff.modulators.created {
+            tracing::debug!("Reload: creating modulator {:?} with synthdef '{}'", id, config.synthdef);
+            if let Err(e) = self.modulators.create(*id, config.clone()).await {
+                tracing::error!("Reload: failed to create modulator {:?}: {}", id, e);
             }
         }
 
         // Create new voices
         for (id, config) in &diff.voices.created {
             tracing::debug!("Reload: creating voice {:?}", id);
-            let _ = self.voices.create(*id, config.clone()).await;
+            if let Err(e) = self.voices.create(*id, config.clone()).await {
+                tracing::error!("Reload: failed to create voice {:?}: {}", id, e);
+            }
         }
 
         // Create new patterns
         for (id, config) in &diff.patterns.created {
             tracing::debug!("Reload: creating pattern {:?}", id);
-            let _ = self.patterns.create(*id, config.clone()).await;
+            if let Err(e) = self.patterns.create(*id, config.clone()).await {
+                tracing::error!("Reload: failed to create pattern {:?}: {}", id, e);
+            }
         }
 
         // Create new melodies
         for (id, config) in &diff.melodies.created {
             tracing::debug!("Reload: creating melody {:?}", id);
-            let _ = self.melodies.create(*id, config.clone()).await;
+            if let Err(e) = self.melodies.create(*id, config.clone()).await {
+                tracing::error!("Reload: failed to create melody {:?}: {}", id, e);
+            }
         }
 
         // Create new sequences
         for (id, config) in &diff.sequences.created {
             tracing::debug!("Reload: creating sequence {:?}", id);
-            let _ = self.sequences.create(*id, config.clone()).await;
+            if let Err(e) = self.sequences.create(*id, config.clone()).await {
+                tracing::error!("Reload: failed to create sequence {:?}: {}", id, e);
+            }
         }
 
         // Create new effects
         for (id, config) in &diff.effects.created {
             tracing::debug!("Reload: creating effect {:?}", id);
-            let _ = self.effects.add(*id, config.group, &config.synthdef, &config.params).await;
+            if let Err(e) = self.effects.add(*id, config.group, &config.synthdef, &config.params).await {
+                tracing::error!("Reload: failed to create effect {:?}: {}", id, e);
+            }
         }
 
         // =========================================================================
         // Phase 4: Update existing entities
         // =========================================================================
 
-        // Update groups (params only, parent changes not supported during reload)
+        // Update groups (params and mute/solo, parent changes not supported during reload)
         for (id, new_config) in &diff.groups.updated {
             // Apply all params from the new config
             for (param, value) in &new_config.params {
                 tracing::debug!("Reload: updating group {:?} param {} to {}", id, param, value);
                 let _ = self.groups.set_param(*id, param, *value).await;
             }
+            // Apply mute/solo state
+            tracing::debug!("Reload: updating group {:?} muted={} soloed={}", id, new_config.muted, new_config.soloed);
+            let _ = self.groups.mute(*id, new_config.muted).await;
+            let _ = self.groups.solo(*id, new_config.soloed).await;
         }
 
         // Update voices - recreate with new config
@@ -607,25 +801,103 @@ impl<B: Backend> Runtime<B> {
             let _ = self.voices.create(*id, config.clone()).await;
         }
 
-        // Update patterns - recreate with new config
+        // Update patterns - update config in place, preserving playback state
+        // This ensures seamless live reload without glitches
         for (id, config) in &diff.patterns.updated {
             tracing::debug!("Reload: updating pattern {:?}", id);
+            // Save current playback state
+            let was_playing = {
+                let state = self.state.read().await;
+                state.patterns.get(id).is_some_and(|p| p.playing)
+            };
+            // Recreate with new config
             let _ = self.patterns.delete(*id).await;
             let _ = self.patterns.create(*id, config.clone()).await;
+            // Restore playback state - sync loop_position to current beat to avoid re-triggering
+            if was_playing {
+                let mut state = self.state.write().await;
+                // Use current_beat % new_length + small epsilon to sync with transport
+                // The epsilon ensures steps at exactly this position don't re-trigger
+                // (tick logic uses >= for last_pos, so we need to be past any triggered steps)
+                let base_position = state.current_beat % config.length;
+                let synced_position = base_position + crate::types::Beat::from_f64(0.001);
+                // Wrap if we exceeded length
+                let synced_position = if synced_position >= config.length {
+                    synced_position - config.length
+                } else {
+                    synced_position
+                };
+                if let Some(pattern) = state.patterns.get_mut(id) {
+                    pattern.playing = true;
+                    pattern.loop_position = synced_position;
+                }
+            }
         }
 
-        // Update melodies - recreate with new config
+        // Update melodies - update config in place, preserving playback state
         for (id, config) in &diff.melodies.updated {
             tracing::debug!("Reload: updating melody {:?}", id);
+            // Save current playback state
+            let was_playing = {
+                let state = self.state.read().await;
+                state.melodies.get(id).is_some_and(|m| m.playing)
+            };
+            // Recreate with new config
             let _ = self.melodies.delete(*id).await;
             let _ = self.melodies.create(*id, config.clone()).await;
+            // Restore playback state - sync loop_position to current beat to avoid re-triggering
+            if was_playing {
+                let mut state = self.state.write().await;
+                // Use current_beat % new_length + small epsilon to sync with transport
+                let base_position = state.current_beat % config.length;
+                let synced_position = base_position + crate::types::Beat::from_f64(0.001);
+                let synced_position = if synced_position >= config.length {
+                    synced_position - config.length
+                } else {
+                    synced_position
+                };
+                if let Some(melody) = state.melodies.get_mut(id) {
+                    melody.playing = true;
+                    melody.loop_position = synced_position;
+                }
+            }
         }
 
-        // Update sequences - recreate with new config
+        // Update sequences - update config in place, preserving playback state
         for (id, config) in &diff.sequences.updated {
             tracing::debug!("Reload: updating sequence {:?}", id);
+            // Save current playback state
+            let (was_playing, looping) = {
+                let state = self.state.read().await;
+                state.sequences.get(id)
+                    .map(|s| (s.playing, s.looping))
+                    .unwrap_or((false, false))
+            };
+            // Recreate with new config
             let _ = self.sequences.delete(*id).await;
             let _ = self.sequences.create(*id, config.clone()).await;
+            // Restore playback state - sync position to current beat to avoid re-triggering clips
+            if was_playing {
+                let mut state = self.state.write().await;
+                // For looping sequences, use modulo + epsilon; for non-looping, clamp to length
+                let base_position = if looping {
+                    state.current_beat % config.length
+                } else {
+                    state.current_beat.min(config.length)
+                };
+                // Add small epsilon to avoid re-triggering clips at exactly this position
+                let synced_position = base_position + crate::types::Beat::from_f64(0.001);
+                let synced_position = if looping && synced_position >= config.length {
+                    synced_position - config.length
+                } else {
+                    synced_position
+                };
+                if let Some(sequence) = state.sequences.get_mut(id) {
+                    sequence.playing = true;
+                    sequence.position = synced_position;
+                    sequence.looping = looping;
+                }
+            }
         }
 
         // Update effects - apply all params from new config
@@ -636,18 +908,124 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
+        // Update modulators - apply all params from new config
+        for (id, new_config) in &diff.modulators.updated {
+            for (param, value) in &new_config.params {
+                tracing::debug!("Reload: updating modulator {:?} param {} to {}", id, param, value);
+                let _ = self.modulators.set_param(*id, param, *value).await;
+            }
+        }
+
         // =========================================================================
         // Phase 5: Finalize groups (create link synths)
         // =========================================================================
 
-        // Only finalize if we created new groups
-        if !diff.groups.created.is_empty() {
-            tracing::debug!("Reload: finalizing groups");
-            let _ = self.groups.finalize().await;
+        // Always finalize groups to ensure proper audio routing
+        // This is idempotent - link synths won't be recreated if they exist
+        tracing::debug!("Reload: finalizing groups");
+        let _ = self.groups.finalize().await;
+
+        // Sync to ensure link synths are created before patterns start
+        tracing::debug!("Reload: syncing with backend after finalize");
+        let _ = self.backend.sync().await;
+
+        // =========================================================================
+        // Phase 6: Start patterns/melodies/sequences that should be playing
+        //
+        // Important: Only start entities that aren't already playing.
+        // This ensures seamless live reload - unchanged patterns continue
+        // from their current position without glitching.
+        // =========================================================================
+
+        // Start patterns that should be playing (only if not already playing)
+        // Also sync their position to current_beat to avoid triggering past steps
+        for id in &new_state.playing_patterns {
+            let (should_start, pattern_length) = {
+                let state = self.state.read().await;
+                let should_start = state.patterns.get(id).is_some_and(|p| !p.playing);
+                let length = state.patterns.get(id).map(|p| p.config.length).unwrap_or(crate::types::Beat::from_f64(4.0));
+                (should_start, length)
+            };
+            if should_start {
+                tracing::debug!("Reload: starting pattern {:?}", id);
+                let _ = self.patterns.start(*id).await;
+                // Sync position to current beat + epsilon to avoid re-triggering past steps
+                // BUT: don't add epsilon when starting at beat 0, as this causes wrap-around bugs
+                let mut state = self.state.write().await;
+                let base_position = state.current_beat % pattern_length;
+                let synced_position = if base_position == crate::types::Beat::ZERO {
+                    base_position
+                } else {
+                    let pos = base_position + crate::types::Beat::from_f64(0.001);
+                    if pos >= pattern_length { pos - pattern_length } else { pos }
+                };
+                if let Some(pattern) = state.patterns.get_mut(id) {
+                    pattern.loop_position = synced_position;
+                }
+            }
+        }
+
+        // Start melodies that should be playing (only if not already playing)
+        // Also sync their position to current_beat to avoid triggering past notes
+        for id in &new_state.playing_melodies {
+            let (should_start, melody_length) = {
+                let state = self.state.read().await;
+                let should_start = state.melodies.get(id).is_some_and(|m| !m.playing);
+                let length = state.melodies.get(id).map(|m| m.config.length).unwrap_or(crate::types::Beat::from_f64(4.0));
+                (should_start, length)
+            };
+            if should_start {
+                tracing::debug!("Reload: starting melody {:?}", id);
+                let _ = self.melodies.start(*id).await;
+                // Sync position to current beat + epsilon to avoid re-triggering past notes
+                // BUT: don't add epsilon when starting at beat 0, as this causes wrap-around bugs
+                let mut state = self.state.write().await;
+                let base_position = state.current_beat % melody_length;
+                let synced_position = if base_position == crate::types::Beat::ZERO {
+                    // Starting fresh at beat 0 - don't add epsilon
+                    base_position
+                } else {
+                    // Mid-song reload - add epsilon to avoid re-triggering
+                    let pos = base_position + crate::types::Beat::from_f64(0.001);
+                    if pos >= melody_length { pos - melody_length } else { pos }
+                };
+                if let Some(melody) = state.melodies.get_mut(id) {
+                    melody.loop_position = synced_position;
+                }
+            }
+        }
+
+        // Start sequences that should be playing (only if not already playing)
+        // Also sync their position to current_beat to avoid re-triggering past clips
+        for id in &new_state.playing_sequences {
+            let (should_start, sequence_length) = {
+                let state = self.state.read().await;
+                let should_start = state.sequences.get(id).is_some_and(|s| !s.playing);
+                let length = state.sequences.get(id).map(|s| s.config.length).unwrap_or(crate::types::Beat::from_f64(16.0));
+                (should_start, length)
+            };
+            if should_start {
+                tracing::debug!("Reload: starting sequence {:?}", id);
+                // Default to looping for sequences started via script
+                let _ = self.sequences.start(*id, true).await;
+                // Sync position to current beat + epsilon to avoid re-triggering past clips
+                // BUT: don't add epsilon when starting at beat 0, as this causes wrap-around bugs
+                let mut state = self.state.write().await;
+                let base_position = state.current_beat % sequence_length;
+                let synced_position = if base_position == crate::types::Beat::ZERO {
+                    base_position
+                } else {
+                    let pos = base_position + crate::types::Beat::from_f64(0.001);
+                    if pos >= sequence_length { pos - sequence_length } else { pos }
+                };
+                if let Some(sequence) = state.sequences.get_mut(id) {
+                    sequence.position = synced_position;
+                }
+            }
         }
 
         // =========================================================================
-        // Phase 6: Apply MIDI routes from script state
+        // Phase 7: Apply MIDI routes from script state
         // =========================================================================
 
         #[cfg(feature = "midi")]
@@ -671,7 +1049,7 @@ impl<B: Backend> Runtime<B> {
 /// Handles are cheap to clone and can be shared across threads.
 #[derive(Clone)]
 pub struct RuntimeHandle {
-    tx: mpsc::Sender<Message>,
+    tx: Sender<Message>,
 }
 
 impl RuntimeHandle {
@@ -679,14 +1057,50 @@ impl RuntimeHandle {
     ///
     /// Returns an error if the runtime has been dropped.
     pub async fn send(&self, msg: Message) -> Result<()> {
-        self.tx.send(msg).await.map_err(|_| Error::ChannelClosed)
+        self.tx.send_async(msg).await.map_err(|_| Error::ChannelClosed)
     }
 
     /// Try to send a message without waiting.
     ///
     /// Returns an error if the channel is full or closed.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn try_send(&self, msg: Message) -> Result<()> {
         self.tx.try_send(msg).map_err(|_| Error::ChannelClosed)
+    }
+
+    /// Try to send a message without waiting.
+    ///
+    /// Returns an error if the channel is full or closed.
+    #[cfg(target_arch = "wasm32")]
+    pub fn try_send(&self, msg: Message) -> Result<()> {
+        use futures::Sink;
+        let mut tx = self.tx.clone();
+        // In WASM, try_send is not directly available, but we can use start_send
+        std::pin::Pin::new(&mut tx).start_send(msg).map_err(|_| Error::ChannelClosed)
+    }
+
+    /// Send a message, blocking the current thread until it's queued.
+    ///
+    /// This is useful when calling from synchronous code (like Rhai callbacks)
+    /// where async is not available.
+    ///
+    /// Returns an error if the channel is closed.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn blocking_send(&self, msg: Message) -> Result<()> {
+        self.tx.blocking_send(msg).map_err(|_| Error::ChannelClosed)
+    }
+
+    /// Send a sync message and wait for the backend to complete all pending operations.
+    ///
+    /// This is a barrier that ensures:
+    /// 1. All previously sent messages have been processed by the runtime
+    /// 2. The backend has synced with scsynth (all d_recv, s_new, etc. completed)
+    ///
+    /// Use this after queueing synthdefs to ensure they're loaded before creating synths.
+    pub async fn sync_and_wait(&self) -> Result<()> {
+        let (tx, rx) = crate::compat::oneshot();
+        self.send(Message::Sync(SyncMessage::SyncAndNotify { notify: tx })).await?;
+        rx.await.map_err(|_| Error::ChannelClosed)
     }
 }
 
@@ -712,7 +1126,8 @@ mod tests {
     /// A mock backend for testing.
     struct MockBackend;
 
-    #[async_trait::async_trait]
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
     impl Backend for MockBackend {
         type Error = MockError;
 
@@ -753,6 +1168,15 @@ mod tests {
             _node: NodeId,
             _param: &str,
             _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
         ) -> std::result::Result<(), Self::Error> {
             Ok(())
         }
@@ -844,7 +1268,7 @@ mod tests {
 
         // Create a group
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), parent: None }.into())
+            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
             .await
             .unwrap();
         runtime.tick().await;
@@ -871,35 +1295,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_voice_creation_and_triggering() {
-        use crate::message::{GroupMessage, VoiceMessage};
+        use crate::message::{GroupMessage, SynthDefMessage, VoiceMessage};
         use crate::traits::VoiceConfig;
         use crate::types::{GroupId, VoiceId};
 
         let mut runtime = Runtime::new(MockBackend);
 
-        // First create a group
+        // First register the synthdef
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), parent: None }.into())
+            .send(SynthDefMessage::Load { name: "simple_sine".to_string(), data: vec![] }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        // Create a group
+        runtime
+            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
             .await
             .unwrap();
         runtime.tick().await;
 
         // Create a voice
-        let config = VoiceConfig {
-            synthdef: "simple_sine".to_string(),
-            group: GroupId::new(1),
-            polyphony: 8,
-            params: ParamMap::new(),
-            muted: false,
-            soloed: false,
-            sfz_instrument: None,
-            round_robin_count: 0,
-            choke_group: None,
-            #[cfg(feature = "midi")]
-            midi_output: None,
-            #[cfg(feature = "midi")]
-            midi_channel: 0,
-        };
+        let config = VoiceConfig::new("test_voice", "simple_sine", GroupId::new(1));
         runtime
             .send(VoiceMessage::Create { id: VoiceId::new(1), config }.into())
             .await
@@ -974,14 +1391,14 @@ mod tests {
 
         // Create parent group
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), parent: None }.into())
+            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
             .await
             .unwrap();
         runtime.tick().await;
 
         // Create child group
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(2), parent: Some(GroupId::new(1)) }.into())
+            .send(GroupMessage::Create { id: GroupId::new(2), name: "child_group".to_string(), parent: Some(GroupId::new(1)) }.into())
             .await
             .unwrap();
         runtime.tick().await;
@@ -999,41 +1416,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_pattern_lifecycle() {
-        use crate::message::{GroupMessage, PatternMessage, VoiceMessage};
+        use crate::message::{GroupMessage, PatternMessage, SynthDefMessage, VoiceMessage};
         use crate::traits::{PatternConfig, VoiceConfig};
         use crate::types::{Beat, GroupId, PatternId, VoiceId};
 
         let mut runtime = Runtime::new(MockBackend);
 
+        // First register the synthdef
+        runtime.send(SynthDefMessage::Load { name: "test".to_string(), data: vec![] }.into()).await.unwrap();
+        runtime.tick().await;
+
         // Setup: create group and voice
-        runtime.send(GroupMessage::Create { id: GroupId::new(1), parent: None }.into()).await.unwrap();
+        runtime.send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into()).await.unwrap();
         runtime.send(VoiceMessage::Create {
             id: VoiceId::new(1),
-            config: VoiceConfig {
-                synthdef: "test".to_string(),
-                group: GroupId::new(1),
-                polyphony: 4,
-                params: ParamMap::new(),
-                muted: false,
-                soloed: false,
-                sfz_instrument: None,
-                round_robin_count: 0,
-                choke_group: None,
-                #[cfg(feature = "midi")]
-                midi_output: None,
-                #[cfg(feature = "midi")]
-                midi_channel: 0,
-            }
+            config: VoiceConfig::new("test_voice", "test", GroupId::new(1))
         }.into()).await.unwrap();
         runtime.tick().await;
 
         // Create pattern
-        let config = PatternConfig {
-            voice: Some(VoiceId::new(1)),
-            steps: vec![],
-            length: Beat::from_f64(4.0),
-            swing: 0.0,
-        };
+        let config = PatternConfig::new("test_pattern", VoiceId::new(1), Beat::from_f64(4.0));
         runtime.send(PatternMessage::Create { id: PatternId::new(1), config }.into()).await.unwrap();
         runtime.tick().await;
 
@@ -1107,11 +1509,11 @@ mod tests {
 
         // Create two groups
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), parent: None }.into())
+            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
             .await
             .unwrap();
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(2), parent: None }.into())
+            .send(GroupMessage::Create { id: GroupId::new(2), name: "test_group2".to_string(), parent: None }.into())
             .await
             .unwrap();
         runtime.tick().await;
@@ -1156,7 +1558,7 @@ mod tests {
 
         // Create a group
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), parent: None }.into())
+            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
             .await
             .unwrap();
         runtime.tick().await;
@@ -1230,7 +1632,7 @@ mod tests {
 
         // First create a group normally
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), parent: None }.into())
+            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
             .await
             .unwrap();
         runtime.tick().await;
@@ -1272,7 +1674,7 @@ mod tests {
 
         // First create a group
         runtime
-            .send(GroupMessage::Create { id: GroupId::new(1), parent: None }.into())
+            .send(GroupMessage::Create { id: GroupId::new(1), name: "test_group".to_string(), parent: None }.into())
             .await
             .unwrap();
         runtime.tick().await;

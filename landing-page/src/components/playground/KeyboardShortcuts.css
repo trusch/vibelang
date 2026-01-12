@@ -1,0 +1,193 @@
+.shortcuts-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: backdropFadeIn 0.15s ease-out;
+}
+
+@keyframes backdropFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.shortcuts-modal {
+  background: var(--modal-bg, #1e1e2e);
+  border: 1px solid var(--border-color, #313244);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  animation: modalSlideIn 0.2s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Header */
+.shortcuts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color, #313244);
+}
+
+.shortcuts-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-color, #cdd6f4);
+}
+
+.shortcuts-close {
+  background: none;
+  border: none;
+  color: var(--muted-color, #6c7086);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.shortcuts-close:hover {
+  background: var(--hover-bg, rgba(203, 166, 247, 0.15));
+  color: var(--text-color, #cdd6f4);
+}
+
+/* Content */
+.shortcuts-content {
+  padding: 16px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.shortcuts-category {
+  margin-bottom: 20px;
+}
+
+.shortcuts-category:last-child {
+  margin-bottom: 0;
+}
+
+.shortcuts-category-title {
+  margin: 0 0 12px 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent-color, #cba6f7);
+}
+
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shortcuts-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.shortcuts-keys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.shortcuts-key {
+  display: inline-block;
+  padding: 4px 8px;
+  background: var(--key-bg, #313244);
+  border: 1px solid var(--key-border, #45475a);
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-color, #cdd6f4);
+  min-width: 28px;
+  text-align: center;
+  box-shadow: 0 2px 0 var(--key-shadow, #181825);
+}
+
+.shortcuts-plus {
+  color: var(--muted-color, #6c7086);
+  font-size: 12px;
+}
+
+.shortcuts-desc {
+  color: var(--secondary-text, #a6adc8);
+  font-size: 13px;
+}
+
+/* Footer */
+.shortcuts-footer {
+  padding: 12px 24px;
+  border-top: 1px solid var(--border-color, #313244);
+  text-align: center;
+}
+
+.shortcuts-hint {
+  font-size: 11px;
+  color: var(--muted-color, #6c7086);
+}
+
+/* Scrollbar */
+.shortcuts-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.shortcuts-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.shortcuts-content::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, #45475a);
+  border-radius: 3px;
+}
+
+/* Light theme */
+[data-theme="light"] .shortcuts-backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="light"] .shortcuts-modal {
+  --modal-bg: #eff1f5;
+  --border-color: #ccd0da;
+  --text-color: #4c4f69;
+  --secondary-text: #5c5f77;
+  --muted-color: #7c7f93;
+  --hover-bg: rgba(136, 57, 239, 0.1);
+  --accent-color: #8839ef;
+  --key-bg: #e6e9ef;
+  --key-border: #bcc0cc;
+  --key-shadow: #ccd0da;
+  --scrollbar-thumb: #bcc0cc;
+}

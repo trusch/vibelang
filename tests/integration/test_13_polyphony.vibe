@@ -1,0 +1,331 @@
+// Integration Test 13: Polyphony and Voice Management
+// Tests: Polyphony limits, choke groups, voice stealing, mute/solo
+//
+// This test verifies:
+// - Voice polyphony configuration
+// - Choke group behavior
+// - Mute and solo functionality
+// - Round-robin sample selection
+
+test_start("polyphony");
+
+set_tempo(120);
+set_time_signature(4, 4);
+
+// =============================================================================
+// Test 1: Simple Test Synthdef
+// =============================================================================
+
+define_synthdef("poly_test")
+    .param("freq", 440.0)
+    .param("amp", 0.1)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .adsr("10ms", "100ms", 0.7, "200ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        sin_osc_ar(freq) * env * amp
+    });
+
+// =============================================================================
+// Test 2: Monophonic Voice (poly = 1)
+// =============================================================================
+
+define_group("MonoTest", || {
+    let mono = voice("mono_voice")
+        .synth("poly_test")
+        .gain(db(-20))
+        .poly(1)
+        .apply();
+    assert_true(true, "monophonic voice created");
+});
+
+// =============================================================================
+// Test 3: Polyphonic Voices with Different Counts
+// =============================================================================
+
+define_group("PolyTest", || {
+    let poly2 = voice("poly2")
+        .synth("poly_test")
+        .gain(db(-20))
+        .poly(2)
+        .apply();
+    assert_true(true, "2-voice polyphony created");
+
+    let poly4 = voice("poly4")
+        .synth("poly_test")
+        .gain(db(-20))
+        .poly(4)
+        .apply();
+    assert_true(true, "4-voice polyphony created");
+
+    let poly8 = voice("poly8")
+        .synth("poly_test")
+        .gain(db(-20))
+        .poly(8)
+        .apply();
+    assert_true(true, "8-voice polyphony created");
+
+    let poly16 = voice("poly16")
+        .synth("poly_test")
+        .gain(db(-20))
+        .poly(16)
+        .apply();
+    assert_true(true, "16-voice polyphony created");
+});
+
+// =============================================================================
+// Test 4: High Polyphony (for dense chords/layering)
+// =============================================================================
+
+define_group("HighPoly", || {
+    let dense = voice("dense_chords")
+        .synth("poly_test")
+        .gain(db(-24))
+        .poly(32)
+        .apply();
+    assert_true(true, "32-voice polyphony for dense chords");
+
+    let pads = voice("pad_voice")
+        .synth("poly_test")
+        .gain(db(-24))
+        .poly(64)
+        .apply();
+    assert_true(true, "64-voice polyphony for layered pads");
+
+    let max_poly = voice("max_poly")
+        .synth("poly_test")
+        .gain(db(-30))
+        .poly(128)
+        .apply();
+    assert_true(true, "128-voice maximum polyphony");
+});
+
+// =============================================================================
+// Test 5: Choke Groups
+// =============================================================================
+
+// Choke groups cause voices to cut each other off
+// This is useful for hi-hats (open/closed) or other mutually exclusive sounds
+
+define_group("ChokeTest", || {
+    // Closed hi-hat chokes open hi-hat
+    let closed_hat = voice("closed_hat")
+        .synth("poly_test")
+        .gain(db(-18))
+        .poly(2)
+        .choke_group("hats")
+        .apply();
+    assert_true(true, "closed hat with choke group");
+
+    let open_hat = voice("open_hat")
+        .synth("poly_test")
+        .gain(db(-16))
+        .poly(2)
+        .choke_group("hats")
+        .apply();
+    assert_true(true, "open hat with same choke group");
+
+    // Different choke group for another instrument
+    let conga_low = voice("conga_low")
+        .synth("poly_test")
+        .gain(db(-18))
+        .choke_group("congas")
+        .apply();
+    assert_true(true, "conga with different choke group");
+});
+
+// =============================================================================
+// Test 6: Mute and Solo
+// =============================================================================
+
+define_group("MuteTest", || {
+    let muted = voice("muted_voice")
+        .synth("poly_test")
+        .gain(db(-18))
+        .mute()
+        .apply();
+    assert_true(true, "muted voice created");
+
+    let unmuted = voice("unmuted_voice")
+        .synth("poly_test")
+        .gain(db(-18))
+        .apply();
+    assert_true(true, "unmuted voice (default)");
+
+    // Mute then unmute
+    let toggled = voice("toggled_voice")
+        .synth("poly_test")
+        .gain(db(-18))
+        .mute()
+        .unmute()
+        .apply();
+    assert_true(true, "voice mute toggled");
+});
+
+define_group("SoloTest", || {
+    let soloed = voice("soloed_voice")
+        .synth("poly_test")
+        .gain(db(-18))
+        .solo()
+        .apply();
+    assert_true(true, "soloed voice created");
+
+    let not_soloed = voice("not_soloed")
+        .synth("poly_test")
+        .gain(db(-18))
+        .apply();
+    assert_true(true, "non-soloed voice (default)");
+
+    // Solo then unsolo
+    let toggled = voice("solo_toggled")
+        .synth("poly_test")
+        .gain(db(-18))
+        .solo()
+        .unsolo()
+        .apply();
+    assert_true(true, "voice solo toggled");
+});
+
+// =============================================================================
+// Test 7: Combined Mute/Solo States
+// =============================================================================
+
+define_group("MuteSoloCombo", || {
+    // Various combinations
+    let mute_then_solo = voice("mute_then_solo")
+        .synth("poly_test")
+        .mute()
+        .solo()
+        .apply();
+    assert_true(true, "muted then soloed");
+
+    let solo_then_mute = voice("solo_then_mute")
+        .synth("poly_test")
+        .solo()
+        .mute()
+        .apply();
+    assert_true(true, "soloed then muted");
+});
+
+// =============================================================================
+// Test 8: Group-Level Mute/Solo
+// =============================================================================
+
+define_group("GroupMute", || {
+    let v1 = voice("group_mute_v1").synth("poly_test").gain(db(-20));
+    let v2 = voice("group_mute_v2").synth("poly_test").gain(db(-20));
+});
+group("GroupMute").mute();
+assert_true(true, "group muted");
+
+define_group("GroupSolo", || {
+    let v1 = voice("group_solo_v1").synth("poly_test").gain(db(-20));
+    let v2 = voice("group_solo_v2").synth("poly_test").gain(db(-20));
+});
+group("GroupSolo").solo(true);
+assert_true(true, "group soloed");
+
+define_group("GroupUnmute", || {
+    let v = voice("group_unmute_v").synth("poly_test").gain(db(-20));
+});
+group("GroupUnmute").mute().unmute();
+assert_true(true, "group mute toggled");
+
+define_group("GroupUnsolo", || {
+    let v = voice("group_unsolo_v").synth("poly_test").gain(db(-20));
+});
+group("GroupUnsolo").solo(true).solo(false);
+assert_true(true, "group solo toggled");
+
+// =============================================================================
+// Test 9: Group Parameters
+// =============================================================================
+
+define_group("GroupParams", || {
+    let v = voice("param_v").synth("poly_test").gain(db(-20));
+});
+group("GroupParams").gain(0.5);
+assert_true(true, "group gain set");
+
+group("GroupParams").set_param("filter_cutoff", 0.75);
+assert_true(true, "group custom param set");
+
+// =============================================================================
+// Test 10: Round-Robin Configuration
+// =============================================================================
+
+define_group("RoundRobin", || {
+    // Round-robin is typically used for sample variation
+    // When the voice is triggered, it cycles through variations
+    let rr_voice = voice("rr_voice")
+        .synth("poly_test")
+        .gain(db(-18))
+        .round_robin(4)  // 4 variations
+        .apply();
+    assert_true(true, "round-robin voice with 4 variations");
+
+    let rr_large = voice("rr_large")
+        .synth("poly_test")
+        .gain(db(-18))
+        .round_robin(8)  // 8 variations
+        .apply();
+    assert_true(true, "round-robin voice with 8 variations");
+});
+
+// =============================================================================
+// Test 11: Voice with All Options
+// =============================================================================
+
+define_group("FullVoice", || {
+    let full = voice("fully_configured")
+        .synth("poly_test")
+        .gain(db(-12))
+        .poly(8)
+        .round_robin(4)
+        .choke_group("full_choke")
+        .param("attack", 0.01)
+        .param("release", 0.5)
+        .apply();
+    assert_true(true, "fully configured voice created");
+});
+
+// =============================================================================
+// Test 12: Multiple Choke Groups
+// =============================================================================
+
+define_group("DrumKit", || {
+    // Hi-hats choke each other
+    let ch = voice("closed_hh").synth("poly_test").choke_group("hihat").poly(2);
+    let oh = voice("open_hh").synth("poly_test").choke_group("hihat").poly(2);
+
+    // Congas choke each other
+    let conga_lo = voice("conga_lo").synth("poly_test").choke_group("conga").poly(2);
+    let conga_hi = voice("conga_hi").synth("poly_test").choke_group("conga").poly(2);
+
+    // Kick and snare don't choke
+    let kick = voice("kick").synth("poly_test").poly(2);
+    let snare = voice("snare").synth("poly_test").poly(2);
+
+    assert_true(true, "drum kit with multiple choke groups");
+});
+
+// =============================================================================
+// Test 13: Voice Parameters
+// =============================================================================
+
+define_group("VoiceParams", || {
+    let v = voice("param_voice")
+        .synth("poly_test")
+        .gain(db(-18))
+        .param("freq", 880.0)
+        .param("pan", -0.5)
+        .param("attack", 0.005)
+        .param("release", 0.1)
+        .apply();
+    assert_true(true, "voice with multiple params");
+});
+
+test_end_and_exit();

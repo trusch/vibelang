@@ -153,7 +153,7 @@ impl MidiCallbacks {
                     || cb.callback_type == CallbackType::AllData;
 
                 // Match channel filter
-                let channel_matches = cb.channel.map_or(true, |ch| ch == channel);
+                let channel_matches = cb.channel.is_none_or(|ch| ch == channel);
 
                 type_matches && channel_matches
             })
@@ -603,7 +603,7 @@ pub fn parse_note_name(name: &str) -> Option<u8> {
                 // Could be 'B' note or 'b' for flat
                 // Check if followed by a digit
                 let temp: String = chars.clone().collect();
-                if temp.len() > 1 && temp.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+                if temp.len() > 1 && temp.chars().nth(1).is_some_and(|c| c.is_ascii_digit()) {
                     modifier = -1;
                     chars.next();
                 }
@@ -619,7 +619,7 @@ pub fn parse_note_name(name: &str) -> Option<u8> {
     // MIDI note = (octave + 1) * 12 + base + modifier
     let note = ((octave + 1) as i16) * 12 + base as i16 + modifier as i16;
 
-    if note >= 0 && note <= 127 {
+    if (0..=127).contains(&note) {
         Some(note as u8)
     } else {
         None

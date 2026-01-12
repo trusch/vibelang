@@ -135,6 +135,7 @@ impl Default for SfzTriggerMode {
 /// - Round-robin sample alternation
 /// - Release triggers for key-off samples
 /// - Full opcode support for envelopes, filters, and modulation
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait Sfz: Send + Sync {
     /// Load an SFZ instrument from a file.
@@ -173,6 +174,26 @@ pub trait Sfz: Send + Sync {
     ///
     /// A vector of trigger info for each matching region.
     /// Usually returns 1 region, but can return multiple for layered samples.
+    async fn find_regions(
+        &self,
+        id: SfzId,
+        note: u8,
+        velocity: u8,
+        trigger_mode: SfzTriggerMode,
+    ) -> Result<Vec<SfzTriggerInfo>>;
+}
+
+/// SFZ instrument management (WASM version).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait Sfz {
+    /// Load an SFZ instrument from a file.
+    async fn load(&self, id: SfzId, path: &Path) -> Result<()>;
+
+    /// Unload an SFZ instrument.
+    async fn unload(&self, id: SfzId) -> Result<()>;
+
+    /// Find matching regions for a note trigger.
     async fn find_regions(
         &self,
         id: SfzId,

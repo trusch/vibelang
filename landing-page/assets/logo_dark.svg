@@ -1,0 +1,31 @@
+<svg viewBox="0 0 340 80" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=VT323&amp;display=swap');
+    </style>
+  </defs>
+
+  <!-- Left brace -->
+  <text x="20" y="52"
+        font-family="'VT323', ui-monospace, monospace"
+        font-size="40"
+        fill="#1a1a2e">
+    {
+  </text>
+
+  <!-- Wordmark -->
+  <text x="70" y="52"
+        font-family="'VT323', ui-monospace, monospace"
+        font-size="34"
+        fill="#1a1a2e">
+    vibelang
+  </text>
+
+  <!-- Right brace -->
+  <text x="265" y="52"
+        font-family="'VT323', ui-monospace, monospace"
+        font-size="40"
+        fill="#1a1a2e">
+    }
+  </text>
+</svg>

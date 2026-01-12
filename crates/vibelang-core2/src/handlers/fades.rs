@@ -7,7 +7,7 @@ use crate::types::NodeId;
 use crate::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use crate::compat::RwLock;
 
 /// Handler for fade operations.
 pub struct FadesHandler<B: Backend> {
@@ -107,16 +107,20 @@ impl<B: Backend> FadesHandler<B> {
                     }
                 };
 
+                if data.is_complete {
+                    tracing::debug!(
+                        "Fade completed on {:?}/{}: final value={}",
+                        &data.target, &data.param, data.value
+                    );
+                    completed_indices.push(data.index);
+                }
+
                 if !nodes.is_empty() {
                     updates.push(FadeUpdate {
                         nodes,
                         param: data.param,
                         value: data.value,
                     });
-                }
-
-                if data.is_complete {
-                    completed_indices.push(data.index);
                 }
             }
 
@@ -140,7 +144,8 @@ impl<B: Backend> FadesHandler<B> {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<B: Backend> Fades for FadesHandler<B> {
     async fn fade(&self, config: FadeConfig) -> Result<()> {
         let mut state = self.state.write().await;

@@ -170,7 +170,7 @@ fn generate_record_synthdef(name: &str, num_channels: i32) -> Option<(String, Ve
 
     match encode_synthdef(&ir) {
         Ok(bytes) => {
-            log::info!("[RECORDING] Generated {} synthdef ({} bytes)", name, bytes.len());
+            log::debug!("[RECORDING] Generated {} synthdef ({} bytes)", name, bytes.len());
             Some((name.to_string(), bytes))
         }
         Err(e) => {
@@ -345,7 +345,7 @@ fn generate_metronome_synthdef() -> Option<(String, Vec<u8>)> {
     let ir = GraphIR::from_builder(name.to_string(), builder);
     match encode_synthdef(&ir) {
         Ok(bytes) => {
-            log::info!("[RECORDING] Generated {} synthdef ({} bytes)", name, bytes.len());
+            log::debug!("[RECORDING] Generated {} synthdef ({} bytes)", name, bytes.len());
             Some((name.to_string(), bytes))
         }
         Err(e) => {

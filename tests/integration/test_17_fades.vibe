@@ -1,0 +1,625 @@
+// Integration Test 17: Fades and Automation
+// Tests: Parameter automation and fade curves
+//
+// This test verifies:
+// - Fade handle creation
+// - Target configuration (groups, voices, effects)
+// - Parameter selection
+// - Value ranges (from, to)
+// - Duration configuration (beats, bars)
+// - Interpolation curves
+// - Fade integration with sequences
+
+test_start("fades");
+
+set_tempo(120);
+set_time_signature(4, 4);
+
+// =============================================================================
+// Test 1: Test Synthdefs
+// =============================================================================
+
+define_synthdef("fade_test")
+    .param("freq", 440.0)
+    .param("amp", 0.3)
+    .param("gate", 1.0)
+    .param("pan", 0.0)
+    .param("filter", 0.5)
+    .body(|freq, amp, gate, pan, filter| {
+        let env = envelope()
+            .adsr("10ms", "50ms", 0.7, "200ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let sig = saw_ar(freq);
+        let filtered = lpf_ar(sig, 200.0 + filter * 10000.0);
+        pan2(filtered * env * amp, pan)
+    });
+
+define_synthdef("test_reverb")
+    .param("in_bus", 0.0)
+    .param("mix", 0.3)
+    .param("room", 0.5)
+    .body(|in_bus, mix, room| {
+        let input = in_ar(in_bus, 2);
+        let reverb = free_verb(input, mix, room, 0.5);
+        replace_out(in_bus, reverb)
+    });
+
+// =============================================================================
+// Test 2: Basic Fade Creation
+// =============================================================================
+
+// Create a basic fade
+let basic_fade = fade("fade1");
+assert_true(true, "basic fade handle created");
+
+// Multiple fade handles
+let fade_a = fade("fade_a");
+let fade_b = fade("fade_b");
+let fade_c = fade("fade_c");
+assert_true(true, "multiple fade handles created");
+
+// =============================================================================
+// Test 3: Fade Target - Group
+// =============================================================================
+
+define_group("FadeTargetGroup", || {
+    let v = voice("target_voice").synth("fade_test").gain(db(-18));
+
+    // Fade targeting this group
+    let group_fade = fade("group_fade")
+        .on_group("FadeTargetGroup");
+
+    assert_true(true, "fade targeting group configured");
+});
+
+// =============================================================================
+// Test 4: Fade Target - Voice
+// =============================================================================
+
+define_group("VoiceFadeGroup", || {
+    let v = voice("fade_voice").synth("fade_test").gain(db(-18));
+
+    // Fade targeting a voice by name
+    let voice_fade = fade("voice_fade")
+        .on_voice("fade_voice");
+
+    assert_true(true, "fade targeting voice configured");
+
+    // Fade targeting a voice by handle
+    let v2 = voice("handle_voice").synth("fade_test");
+    let handle_fade = fade("handle_fade")
+        .on_voice(v2);
+
+    assert_true(true, "fade targeting voice handle configured");
+});
+
+// =============================================================================
+// Test 5: Fade Target - Effect
+// =============================================================================
+
+define_group("EffectFadeGroup", || {
+    let v = voice("fx_voice").synth("fade_test").gain(db(-18));
+
+    // Add an effect
+    fx("reverb_fx")
+        .synth("test_reverb")
+        .param("mix", 0.2)
+        .apply();
+
+    // Fade targeting the effect
+    let fx_fade = fade("effect_fade")
+        .on_effect("reverb_fx");
+
+    assert_true(true, "fade targeting effect configured");
+});
+
+// =============================================================================
+// Test 6: Parameter Selection
+// =============================================================================
+
+define_group("ParamFadeGroup", || {
+    let v = voice("param_voice").synth("fade_test").gain(db(-18));
+
+    // Default parameter is "amp"
+    let amp_fade = fade("amp_fade")
+        .on_voice("param_voice");
+
+    // Explicit parameter selection
+    let freq_fade = fade("freq_fade")
+        .on_voice("param_voice")
+        .param("freq");
+
+    let pan_fade = fade("pan_fade")
+        .on_voice("param_voice")
+        .param("pan");
+
+    let filter_fade = fade("filter_fade")
+        .on_voice("param_voice")
+        .param("filter");
+
+    assert_true(true, "various fade parameters configured");
+});
+
+// =============================================================================
+// Test 7: Value Ranges - From/To
+// =============================================================================
+
+define_group("ValueRangeGroup", || {
+    let v = voice("value_voice").synth("fade_test").gain(db(-18));
+
+    // Fade from 0 to 1 (default-like)
+    let fade_up = fade("fade_up")
+        .on_voice("value_voice")
+        .param("amp")
+        .from(0.0)
+        .to(1.0);
+
+    assert_true(true, "fade up (0 to 1) configured");
+
+    // Fade from 1 to 0
+    let fade_down = fade("fade_down")
+        .on_voice("value_voice")
+        .param("amp")
+        .from(1.0)
+        .to(0.0);
+
+    assert_true(true, "fade down (1 to 0) configured");
+
+    // Partial fades
+    let partial = fade("partial")
+        .on_voice("value_voice")
+        .param("amp")
+        .from(0.3)
+        .to(0.7);
+
+    assert_true(true, "partial fade configured");
+
+    // Negative value range (for pan)
+    let pan_fade = fade("pan_lr")
+        .on_voice("value_voice")
+        .param("pan")
+        .from(-1.0)
+        .to(1.0);
+
+    assert_true(true, "pan fade (-1 to 1) configured");
+
+    // Large value range (for frequency)
+    let freq_fade = fade("freq_sweep")
+        .on_voice("value_voice")
+        .param("freq")
+        .from(100.0)
+        .to(1000.0);
+
+    assert_true(true, "frequency sweep fade configured");
+});
+
+// =============================================================================
+// Test 8: Duration in Beats
+// =============================================================================
+
+define_group("BeatDurationGroup", || {
+    let v = voice("beat_voice").synth("fade_test").gain(db(-18));
+
+    // Short fade (1 beat)
+    let short = fade("short_beat")
+        .on_voice("beat_voice")
+        .over(1.0);
+
+    assert_true(true, "1 beat fade configured");
+
+    // Medium fade (4 beats)
+    let medium = fade("medium_beat")
+        .on_voice("beat_voice")
+        .over(4.0);
+
+    assert_true(true, "4 beat fade configured");
+
+    // Long fade (16 beats)
+    let long = fade("long_beat")
+        .on_voice("beat_voice")
+        .over(16.0);
+
+    assert_true(true, "16 beat fade configured");
+
+    // Fractional beats
+    let fractional = fade("fractional_beat")
+        .on_voice("beat_voice")
+        .over(2.5);
+
+    assert_true(true, "fractional beat fade configured");
+});
+
+// =============================================================================
+// Test 9: Duration in Bars
+// =============================================================================
+
+define_group("BarDurationGroup", || {
+    let v = voice("bar_voice").synth("fade_test").gain(db(-18));
+
+    // 1 bar fade
+    let one_bar = fade("one_bar")
+        .on_voice("bar_voice")
+        .over_bars(1);
+
+    assert_true(true, "1 bar fade configured");
+
+    // 2 bar fade
+    let two_bars = fade("two_bars")
+        .on_voice("bar_voice")
+        .over_bars(2);
+
+    assert_true(true, "2 bar fade configured");
+
+    // 4 bar fade
+    let four_bars = fade("four_bars")
+        .on_voice("bar_voice")
+        .over_bars(4);
+
+    assert_true(true, "4 bar fade configured");
+
+    // 8 bar fade
+    let eight_bars = fade("eight_bars")
+        .on_voice("bar_voice")
+        .over_bars(8);
+
+    assert_true(true, "8 bar fade configured");
+});
+
+// =============================================================================
+// Test 10: Interpolation Curves
+// =============================================================================
+
+define_group("CurveGroup", || {
+    let v = voice("curve_voice").synth("fade_test").gain(db(-18));
+
+    // Linear curve (default)
+    let linear = fade("linear_fade")
+        .on_voice("curve_voice")
+        .from(0.0)
+        .to(1.0)
+        .over(4.0)
+        .curve("linear");
+
+    assert_true(true, "linear curve fade configured");
+
+    // Exponential curve
+    let exponential = fade("exp_fade")
+        .on_voice("curve_voice")
+        .from(0.0)
+        .to(1.0)
+        .over(4.0)
+        .curve("exponential");
+
+    assert_true(true, "exponential curve fade configured");
+
+    // Sine/smooth curve
+    let sine = fade("sine_fade")
+        .on_voice("curve_voice")
+        .from(0.0)
+        .to(1.0)
+        .over(4.0)
+        .curve("sine");
+
+    assert_true(true, "sine curve fade configured");
+
+    // Alternative curve names
+    let exp_alt = fade("exp_alt").on_voice("curve_voice").curve("exp");
+    let sin_alt = fade("sin_alt").on_voice("curve_voice").curve("sin");
+    let smooth_alt = fade("smooth_alt").on_voice("curve_voice").curve("smooth");
+
+    assert_true(true, "alternative curve names work");
+});
+
+// =============================================================================
+// Test 11: Complete Fade Configurations
+// =============================================================================
+
+define_group("CompleteFadeGroup", || {
+    let v = voice("complete_voice").synth("fade_test").gain(db(-18));
+
+    // Complete fade in
+    let fade_in = fade("complete_fade_in")
+        .on_voice("complete_voice")
+        .param("amp")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(2)
+        .curve("exponential")
+        .apply();
+
+    assert_true(true, "complete fade in configured");
+
+    // Complete fade out
+    let fade_out = fade("complete_fade_out")
+        .on_voice("complete_voice")
+        .param("amp")
+        .from(1.0)
+        .to(0.0)
+        .over_bars(4)
+        .curve("sine")
+        .apply();
+
+    assert_true(true, "complete fade out configured");
+
+    // Filter sweep
+    let filter_sweep = fade("filter_sweep")
+        .on_voice("complete_voice")
+        .param("filter")
+        .from(0.1)
+        .to(0.9)
+        .over(8.0)
+        .curve("linear")
+        .apply();
+
+    assert_true(true, "filter sweep fade configured");
+});
+
+// =============================================================================
+// Test 12: Fade in Sequence
+// =============================================================================
+
+define_group("SequenceFadeGroup", || {
+    let v = voice("seq_voice").synth("fade_test").gain(db(-18));
+
+    // Create a pattern
+    let p = pattern("seq_pattern")
+        .on(v)
+        .step("x... x... x... x...")
+        .apply();
+
+    // Create fades
+    let intro_fade = fade("intro")
+        .on_voice("seq_voice")
+        .param("amp")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(2);
+
+    let outro_fade = fade("outro")
+        .on_voice("seq_voice")
+        .param("amp")
+        .from(1.0)
+        .to(0.0)
+        .over_bars(2);
+
+    // Create sequence with fade clips
+    let seq = sequence("fade_sequence")
+        .loop_bars(16)
+        .clip(0..8, p)
+        .clip(0..8, intro_fade)
+        .clip(8..16, p)
+        .clip(14..16, outro_fade)
+        .apply();
+
+    assert_true(true, "sequence with fades configured");
+});
+
+// =============================================================================
+// Test 13: Multiple Simultaneous Fades
+// =============================================================================
+
+define_group("MultiFadeGroup", || {
+    let v = voice("multi_voice").synth("fade_test").gain(db(-18));
+
+    // Multiple fades on different parameters
+    let amp_fade = fade("multi_amp")
+        .on_voice("multi_voice")
+        .param("amp")
+        .from(0.0)
+        .to(1.0)
+        .over(4.0)
+        .apply();
+
+    let freq_fade = fade("multi_freq")
+        .on_voice("multi_voice")
+        .param("freq")
+        .from(200.0)
+        .to(800.0)
+        .over(8.0)
+        .apply();
+
+    let pan_fade = fade("multi_pan")
+        .on_voice("multi_voice")
+        .param("pan")
+        .from(-1.0)
+        .to(1.0)
+        .over(16.0)
+        .apply();
+
+    let filter_fade = fade("multi_filter")
+        .on_voice("multi_voice")
+        .param("filter")
+        .from(0.0)
+        .to(1.0)
+        .over(4.0)
+        .apply();
+
+    assert_true(true, "multiple simultaneous fades configured");
+});
+
+// =============================================================================
+// Test 14: Group-Level Fades
+// =============================================================================
+
+define_group("GroupFadeContainer", || {
+    let v1 = voice("gf_voice1").synth("fade_test").gain(db(-18));
+    let v2 = voice("gf_voice2").synth("fade_test").gain(db(-18));
+    let v3 = voice("gf_voice3").synth("fade_test").gain(db(-18));
+
+    // Fade the entire group
+    let group_fade = fade("group_level_fade")
+        .on_group("GroupFadeContainer")
+        .param("amp")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(4)
+        .apply();
+
+    assert_true(true, "group-level fade configured (affects all voices)");
+});
+
+// =============================================================================
+// Test 15: Effect Parameter Fades
+// =============================================================================
+
+define_group("EffectFadeContainer", || {
+    let v = voice("efx_voice").synth("fade_test").gain(db(-18));
+
+    // Add effect
+    fx("fadetest_reverb")
+        .synth("test_reverb")
+        .param("mix", 0.0)
+        .param("room", 0.3)
+        .apply();
+
+    // Fade the effect's mix parameter
+    let mix_fade = fade("reverb_mix_fade")
+        .on_effect("fadetest_reverb")
+        .param("mix")
+        .from(0.0)
+        .to(0.8)
+        .over_bars(4)
+        .curve("sine")
+        .apply();
+
+    // Fade the effect's room parameter
+    let room_fade = fade("reverb_room_fade")
+        .on_effect("fadetest_reverb")
+        .param("room")
+        .from(0.2)
+        .to(0.9)
+        .over_bars(8)
+        .curve("exponential")
+        .apply();
+
+    assert_true(true, "effect parameter fades configured");
+});
+
+// =============================================================================
+// Test 16: Crossfade Pattern
+// =============================================================================
+
+define_group("CrossfadeGroup", || {
+    let v1 = voice("cf_voice1").synth("fade_test").gain(db(-18)).param("freq", 220.0);
+    let v2 = voice("cf_voice2").synth("fade_test").gain(db(0)).param("freq", 440.0);
+
+    // Voice 1 fades out
+    let v1_out = fade("cf_v1_out")
+        .on_voice("cf_voice1")
+        .param("amp")
+        .from(1.0)
+        .to(0.0)
+        .over_bars(4);
+
+    // Voice 2 fades in
+    let v2_in = fade("cf_v2_in")
+        .on_voice("cf_voice2")
+        .param("amp")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(4);
+
+    // Sequence them to happen at the same time
+    let crossfade_seq = sequence("crossfade_seq")
+        .loop_bars(8)
+        .clip(0..4, v1_out)
+        .clip(0..4, v2_in)
+        .apply();
+
+    assert_true(true, "crossfade pattern configured");
+});
+
+// =============================================================================
+// Test 17: Automation Envelope (Multiple Fades in Sequence)
+// =============================================================================
+
+define_group("AutomationGroup", || {
+    let v = voice("auto_voice").synth("fade_test").gain(db(-18));
+
+    // Create automation envelope: attack -> sustain -> release
+    let attack = fade("auto_attack")
+        .on_voice("auto_voice")
+        .param("filter")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(2)
+        .curve("exponential");
+
+    let sustain = fade("auto_sustain")
+        .on_voice("auto_voice")
+        .param("filter")
+        .from(1.0)
+        .to(0.8)
+        .over_bars(4)
+        .curve("linear");
+
+    let release = fade("auto_release")
+        .on_voice("auto_voice")
+        .param("filter")
+        .from(0.8)
+        .to(0.0)
+        .over_bars(2)
+        .curve("sine");
+
+    // Chain them in a sequence
+    let auto_seq = sequence("automation_envelope")
+        .loop_bars(8)
+        .clip(0..2, attack)
+        .clip(2..6, sustain)
+        .clip(6..8, release)
+        .apply();
+
+    assert_true(true, "automation envelope configured");
+});
+
+// =============================================================================
+// Test 18: Very Short and Very Long Fades
+// =============================================================================
+
+define_group("ExtremeDurations", || {
+    let v = voice("extreme_voice").synth("fade_test").gain(db(-18));
+
+    // Very short fade (quarter beat)
+    let quick = fade("quick_fade")
+        .on_voice("extreme_voice")
+        .over(0.25)
+        .apply();
+
+    assert_true(true, "very short fade (0.25 beats) configured");
+
+    // Short fade (half beat)
+    let half_beat = fade("half_beat_fade")
+        .on_voice("extreme_voice")
+        .over(0.5)
+        .apply();
+
+    assert_true(true, "half beat fade configured");
+
+    // Very long fade (32 bars)
+    let long_fade = fade("very_long_fade")
+        .on_voice("extreme_voice")
+        .over_bars(32)
+        .apply();
+
+    assert_true(true, "very long fade (32 bars) configured");
+});
+
+// =============================================================================
+// Test 19: Builder Method Chaining
+// =============================================================================
+
+// Verify all builder methods return Self and are chainable
+let chained = fade("chain_test")
+    .on_group("main")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over(4.0)
+    .curve("linear")
+    .apply();
+
+assert_true(true, "all fade builder methods are chainable");
+
+test_end_and_exit();

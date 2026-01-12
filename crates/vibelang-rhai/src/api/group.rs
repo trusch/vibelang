@@ -116,6 +116,39 @@ impl GroupHandle {
             state.groups.get(&group_id).map(|c| c.effects.len() as i64).unwrap_or(0)
         })
     }
+
+    /// Remove an effect from this group by name/ID.
+    ///
+    /// Returns true if the effect was found and removed, false otherwise.
+    pub fn remove_effect(self, effect_name: String) -> Self {
+        let group_id = context::get_or_create_group_id(&self.path);
+        let effect_id = context::get_or_create_effect_id(&effect_name);
+
+        context::with_state(|state| {
+            // Remove from group's effects list
+            if let Some(config) = state.groups.get_mut(&group_id) {
+                config.effects.retain(|&e| e != effect_id);
+            }
+            // Also remove from the effects map
+            state.effects.remove(&effect_id);
+        });
+        self
+    }
+
+    /// Clear all effects from this group.
+    pub fn clear_effects(self) -> Self {
+        let group_id = context::get_or_create_group_id(&self.path);
+
+        context::with_state(|state| {
+            if let Some(config) = state.groups.get_mut(&group_id) {
+                // Remove all effect configs
+                for effect_id in config.effects.drain(..) {
+                    state.effects.remove(&effect_id);
+                }
+            }
+        });
+        self
+    }
 }
 
 /// Define a group with a closure.
@@ -205,6 +238,10 @@ pub fn register(engine: &mut Engine) {
     // Parameters
     engine.register_fn("set_param", GroupHandle::set_param);
     engine.register_fn("effect_count", GroupHandle::effect_count);
+
+    // Effect management
+    engine.register_fn("remove_effect", GroupHandle::remove_effect);
+    engine.register_fn("clear_effects", GroupHandle::clear_effects);
 }
 
 #[cfg(test)]

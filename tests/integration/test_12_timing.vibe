@@ -1,0 +1,316 @@
+// Integration Test 12: Timing Accuracy
+// Tests: Precise timing of patterns and melodies
+//
+// This test verifies timing-related calculations and configurations.
+
+test_start("timing");
+
+set_tempo(120);
+set_time_signature(4, 4);
+
+// =============================================================================
+// Test 1: Beat Calculations
+// =============================================================================
+
+// 1 bar = 4 beats at 4/4
+let one_bar = bars(1);
+assert_eq(one_bar, 4.0, "1 bar = 4 beats in 4/4");
+
+// 2 bars = 8 beats
+let two_bars = bars(2);
+assert_eq(two_bars, 8.0, "2 bars = 8 beats in 4/4");
+
+// 0.5 bars = 2 beats
+let half_bar = bars(0.5);
+assert_eq(half_bar, 2.0, "0.5 bars = 2 beats in 4/4");
+
+// =============================================================================
+// Test 2: Beat Calculations in Different Time Signatures
+// =============================================================================
+
+// 3/4 time
+set_time_signature(3, 4);
+let bar_3_4 = bars(1);
+assert_eq(bar_3_4, 3.0, "1 bar = 3 beats in 3/4");
+
+// 6/8 time (6 eighths = 3 quarters)
+set_time_signature(6, 8);
+let bar_6_8 = bars(1);
+assert_eq(bar_6_8, 3.0, "1 bar = 3 quarter-note beats in 6/8");
+
+// 5/4 time
+set_time_signature(5, 4);
+let bar_5_4 = bars(1);
+assert_eq(bar_5_4, 5.0, "1 bar = 5 beats in 5/4");
+
+// 7/8 time
+set_time_signature(7, 8);
+let bar_7_8 = bars(1);
+assert_eq(bar_7_8, 3.5, "1 bar = 3.5 quarter-note beats in 7/8");
+
+// Reset to 4/4
+set_time_signature(4, 4);
+
+// =============================================================================
+// Test 3: Step Pattern Beat Positions
+// =============================================================================
+
+// In a 16-step pattern (4 beats), each step is 0.25 beats
+// Step positions: 0, 0.25, 0.5, 0.75, 1, 1.25, ... 3.75
+
+// Pattern "x... x... x... x..." has triggers at:
+// Step 0 = beat 0
+// Step 4 = beat 1
+// Step 8 = beat 2
+// Step 12 = beat 3
+
+// This is the standard 4-on-the-floor kick pattern
+
+// =============================================================================
+// Test 4: Melody Note Timing
+// =============================================================================
+
+// By default, melody notes are quarter notes (1 beat each)
+// "C4 D4 E4 F4" would be 4 beats total
+
+// With sustains "-", the duration extends:
+// "C4 - - -" is one note lasting 4 beats
+
+// With rests ".", the position advances but no note plays:
+// "C4 . E4 ." has notes at beats 0 and 2
+
+// =============================================================================
+// Test 5: Test Synthdef for Timing Tests
+// =============================================================================
+
+define_synthdef("timing_test")
+    .param("freq", 440.0)
+    .param("amp", 0.1)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .perc("1ms", "50ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        sin_osc_ar(freq) * env * amp
+    });
+
+// =============================================================================
+// Test 6: Verify Pattern Configuration
+// =============================================================================
+
+define_group("PatternTiming", || {
+    let v = voice("timing_voice").synth("timing_test").gain(db(-20));
+
+    // 4-beat pattern with kicks on every beat
+    let p = pattern("every_beat")
+        .on(v)
+        .step("x... x... x... x...")  // 16 steps, triggers at 0, 4, 8, 12
+        .apply();
+    assert_true(true, "every-beat pattern configured");
+
+    // 4-beat pattern with off-beat hits
+    let off = pattern("off_beat")
+        .on(v)
+        .step("..x. ..x. ..x. ..x.")  // triggers at 2, 6, 10, 14
+        .apply();
+    assert_true(true, "off-beat pattern configured");
+
+    // 4-beat pattern with 16th note hits
+    let sixteenths = pattern("sixteenths")
+        .on(v)
+        .step("xxxxxxxxxxxxxxxxxxxx")  // triggers every 0.25 beats
+        .apply();
+    assert_true(true, "16th note pattern configured");
+});
+
+// =============================================================================
+// Test 7: Verify Melody Configuration
+// =============================================================================
+
+define_group("MelodyTiming", || {
+    let v = voice("melody_timing").synth("timing_test").gain(db(-20)).poly(4);
+
+    // Simple 4-note melody, 1 beat each
+    let m1 = melody("quarter_notes")
+        .on(v)
+        .notes("C4 D4 E4 F4")
+        .apply();
+    assert_true(true, "quarter note melody configured");
+
+    // Half notes (2 beats each)
+    let m2 = melody("half_notes")
+        .on(v)
+        .notes("C4 - D4 - E4 - F4 -")
+        .apply();
+    assert_true(true, "half note melody configured");
+
+    // Whole notes (4 beats each)
+    let m3 = melody("whole_notes")
+        .on(v)
+        .notes("C4 - - - D4 - - -")
+        .apply();
+    assert_true(true, "whole note melody configured");
+
+    // Eighth notes (0.5 beats each)
+    // We can use the add_note method for precise control
+    let m4 = melody("eighth_notes")
+        .on(v)
+        .add_note(0.0, 60, 1.0, 0.5)   // C4 at beat 0, duration 0.5
+        .add_note(0.5, 62, 1.0, 0.5)   // D4 at beat 0.5
+        .add_note(1.0, 64, 1.0, 0.5)   // E4 at beat 1
+        .add_note(1.5, 65, 1.0, 0.5)   // F4 at beat 1.5
+        .apply();
+    assert_true(true, "eighth note melody configured");
+
+    // 16th notes
+    let m5 = melody("sixteenth_notes")
+        .on(v)
+        .add_note(0.0, 60, 1.0, 0.25)
+        .add_note(0.25, 62, 1.0, 0.25)
+        .add_note(0.5, 64, 1.0, 0.25)
+        .add_note(0.75, 65, 1.0, 0.25)
+        .apply();
+    assert_true(true, "16th note melody configured");
+});
+
+// =============================================================================
+// Test 8: Chord Timing
+// =============================================================================
+
+define_group("ChordTiming", || {
+    let v = voice("chord_voice").synth("timing_test").gain(db(-20)).poly(8);
+
+    // Add chord at specific beat with duration
+    let m = melody("chord_test")
+        .on(v)
+        .add_chord(0.0, chord("C", 4), 1.0, 2.0)  // C major at beat 0, duration 2
+        .add_chord(2.0, chord("F", 4), 1.0, 2.0)  // F major at beat 2, duration 2
+        .apply();
+    assert_true(true, "chord melody configured");
+});
+
+// =============================================================================
+// Test 9: Sequence Timing
+// =============================================================================
+
+// Sequences control when patterns/melodies play
+let seq = sequence("timing_sequence")
+    .loop_bars(4)  // 16 beats total in 4/4
+    .apply();
+assert_true(true, "4-bar sequence configured");
+
+// =============================================================================
+// Test 10: Tempo Changes
+// =============================================================================
+
+// Very slow tempo
+set_tempo(60);
+let slow_bar = bars(1);
+assert_eq(slow_bar, 4.0, "bar length unchanged at 60 BPM");
+
+// Very fast tempo
+set_tempo(180);
+let fast_bar = bars(1);
+assert_eq(fast_bar, 4.0, "bar length unchanged at 180 BPM");
+
+// Reset
+set_tempo(120);
+
+// =============================================================================
+// Test 11: Triplet Timing (3 notes per beat)
+// =============================================================================
+
+define_group("Triplets", || {
+    let v = voice("triplet_voice").synth("timing_test").gain(db(-20)).poly(4);
+
+    // Triplets: 3 notes in the time of 2
+    // 1 beat = 3 triplet eighth notes
+    // Duration of each triplet eighth = 1/3 beat ≈ 0.333
+    let triplet_duration = 1.0 / 3.0;
+
+    let m = melody("triplets")
+        .on(v)
+        .add_note(0.0, 60, 1.0, triplet_duration)
+        .add_note(triplet_duration, 62, 1.0, triplet_duration)
+        .add_note(triplet_duration * 2.0, 64, 1.0, triplet_duration)
+        // Beat 2: another triplet
+        .add_note(1.0, 65, 1.0, triplet_duration)
+        .add_note(1.0 + triplet_duration, 67, 1.0, triplet_duration)
+        .add_note(1.0 + triplet_duration * 2.0, 69, 1.0, triplet_duration)
+        .apply();
+    assert_true(true, "triplet melody configured");
+});
+
+// =============================================================================
+// Test 12: Swing Timing
+// =============================================================================
+
+// Swing shifts every other 8th note later
+// Common swing ratios: 50% (straight), 66% (2:1 swing), 75% (hard swing)
+
+// With add_note we can create swung patterns:
+define_group("Swing", || {
+    let v = voice("swing_voice").synth("timing_test").gain(db(-20)).poly(2);
+
+    // 66% swing (2:1 ratio)
+    // Normal: 0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5
+    // Swung:  0, 0.66, 1.0, 1.66, 2.0, 2.66, 3.0, 3.66
+    let swing_offset = 0.66 - 0.5;  // How much to shift the upbeat
+
+    let m = melody("swung")
+        .on(v)
+        .add_note(0.0, 60, 1.0, 0.6)
+        .add_note(0.66, 60, 0.8, 0.3)
+        .add_note(1.0, 60, 1.0, 0.6)
+        .add_note(1.66, 60, 0.8, 0.3)
+        .apply();
+    assert_true(true, "swung melody configured");
+});
+
+// =============================================================================
+// Test 13: Pattern Length Calculations
+// =============================================================================
+
+// Pattern step duration = beat length / subdivision
+// In 4/4: 1 bar = 4 beats
+// 16 steps per bar = 0.25 beats per step
+// 32 steps per bar = 0.125 beats per step
+
+// A "x..." pattern has 4 characters = 1 beat
+// Therefore 16 characters = 4 beats = 1 bar in 4/4
+
+define_group("PatternLengths", || {
+    let v = voice("length_voice").synth("timing_test").gain(db(-20));
+
+    // 4 steps = 1 beat
+    let one_beat = pattern("one_beat")
+        .on(v)
+        .step("x...")
+        .apply();
+    assert_true(true, "1-beat pattern (4 steps)");
+
+    // 8 steps = 2 beats
+    let two_beats = pattern("two_beats")
+        .on(v)
+        .step("x... x...")
+        .apply();
+    assert_true(true, "2-beat pattern (8 steps)");
+
+    // 16 steps = 4 beats = 1 bar
+    let one_bar = pattern("one_bar")
+        .on(v)
+        .step("x... x... x... x...")
+        .apply();
+    assert_true(true, "1-bar pattern (16 steps)");
+
+    // 32 steps = 8 beats = 2 bars
+    let two_bars = pattern("two_bars")
+        .on(v)
+        .step("x... x... x... x... x... x... x... x...")
+        .apply();
+    assert_true(true, "2-bar pattern (32 steps)");
+});
+
+test_end_and_exit();

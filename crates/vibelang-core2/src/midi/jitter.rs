@@ -53,6 +53,8 @@ struct TimingSample {
     /// MIDI timestamp (μs).
     midi_timestamp_us: u64,
     /// System time when received.
+    /// Kept for potential future analysis of absolute timing.
+    #[allow(dead_code)]
     received_at: Instant,
     /// Calculated latency (received_at - midi_timestamp in our reference frame).
     latency_us: i64,
@@ -327,12 +329,15 @@ impl Default for JitterCompensator {
 // ============================================================================
 
 /// Simple moving average filter for smoothing timing values.
+/// Reserved for future use in advanced timing analysis.
+#[allow(dead_code)]
 pub struct MovingAverage {
     values: VecDeque<f64>,
     window_size: usize,
     sum: f64,
 }
 
+#[allow(dead_code)]
 impl MovingAverage {
     /// Create a new moving average filter.
     pub fn new(window_size: usize) -> Self {

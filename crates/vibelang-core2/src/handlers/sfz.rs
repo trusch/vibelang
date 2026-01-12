@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use crate::compat::RwLock;
 
 /// Handler for SFZ instrument management.
 ///
@@ -86,7 +86,8 @@ impl<B: Backend> SfzHandler<B> {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<B: Backend> Sfz for SfzHandler<B> {
     async fn load(&self, id: SfzId, path: &Path) -> Result<()> {
         tracing::info!("Loading SFZ instrument {} from {}", id.0, path.display());

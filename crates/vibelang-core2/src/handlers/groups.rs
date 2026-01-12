@@ -7,7 +7,7 @@ use crate::types::{BusId, GroupId, NodeId, ParamMap};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use crate::compat::RwLock;
 
 /// Handler for group operations.
 pub struct GroupsHandler<B: Backend> {
@@ -58,9 +58,10 @@ impl<B: Backend> GroupsHandler<B> {
 
             // Create the link synth
             // It reads from in_bus and writes to out_bus
+            // Note: system_link_audio uses "inbus" and "outbus" parameter names
             let mut params = ParamMap::new();
-            params.insert("in".to_string(), in_bus.0 as f32);
-            params.insert("out".to_string(), out_bus.0 as f32);
+            params.insert("inbus".to_string(), in_bus.0 as f32);
+            params.insert("outbus".to_string(), out_bus.0 as f32);
             params.insert("amp".to_string(), 1.0);
 
             self.backend
@@ -82,8 +83,8 @@ impl<B: Backend> GroupsHandler<B> {
                 }
             }
 
-            tracing::debug!(
-                "Created link synth for group {} (node_id={}, in_bus={}, out_bus={})",
+            tracing::info!(
+                "Created link synth for group {} (node_id={}, inbus={}, outbus={})",
                 group_id.0,
                 link_node_id.0,
                 in_bus.0,
@@ -96,9 +97,10 @@ impl<B: Backend> GroupsHandler<B> {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<B: Backend> Groups for GroupsHandler<B> {
-    async fn create(&self, id: GroupId, parent: Option<GroupId>) -> Result<()> {
+    async fn create(&self, id: GroupId, name: &str, parent: Option<GroupId>) -> Result<()> {
         let mut state = self.state.write().await;
 
         if state.groups.contains_key(&id) {
@@ -132,6 +134,7 @@ impl<B: Backend> Groups for GroupsHandler<B> {
             id,
             GroupState {
                 id,
+                name: name.to_string(),
                 parent,
                 node_id,
                 audio_bus,
@@ -142,10 +145,12 @@ impl<B: Backend> Groups for GroupsHandler<B> {
             },
         );
 
-        tracing::debug!(
-            "Created group {} (node_id={}, audio_bus={})",
+        tracing::info!(
+            "Created group {} '{}' (node_id={}, audio_bus={}) - voices should output to bus {}",
             id.0,
+            name,
             node_id.0,
+            audio_bus.0,
             audio_bus.0
         );
 
@@ -269,5 +274,493 @@ impl<B: Backend> Groups for GroupsHandler<B> {
 
         tracing::debug!("Group {} solo set to {}", id.0, solo);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::BufferInfo;
+    use crate::compat::Instant;
+    use crate::types::BufferId;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    // =========================================================================
+    // Mock Backend for Testing
+    // =========================================================================
+
+    #[derive(Debug)]
+    struct MockError;
+
+    impl std::fmt::Display for MockError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "mock error")
+        }
+    }
+
+    impl std::error::Error for MockError {}
+
+    struct MockBackend {
+        groups_created: AtomicU32,
+        synths_created: AtomicU32,
+        nodes_freed: AtomicU32,
+        params_set: AtomicU32,
+        run_node_calls: AtomicU32,
+    }
+
+    impl MockBackend {
+        fn new() -> Self {
+            Self {
+                groups_created: AtomicU32::new(0),
+                synths_created: AtomicU32::new(0),
+                nodes_freed: AtomicU32::new(0),
+                params_set: AtomicU32::new(0),
+                run_node_calls: AtomicU32::new(0),
+            }
+        }
+
+        fn groups_created(&self) -> u32 {
+            self.groups_created.load(Ordering::Relaxed)
+        }
+
+        fn synths_created(&self) -> u32 {
+            self.synths_created.load(Ordering::Relaxed)
+        }
+
+        fn nodes_freed(&self) -> u32 {
+            self.nodes_freed.load(Ordering::Relaxed)
+        }
+
+        fn params_set(&self) -> u32 {
+            self.params_set.load(Ordering::Relaxed)
+        }
+
+        fn run_node_calls(&self) -> u32 {
+            self.run_node_calls.load(Ordering::Relaxed)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Backend for MockBackend {
+        type Error = MockError;
+
+        async fn load_synthdef(&self, _name: &str, _data: &[u8]) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_synth(
+            &self,
+            _def: &str,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+            _params: &ParamMap,
+        ) -> std::result::Result<(), Self::Error> {
+            self.synths_created.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn create_group(
+            &self,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+        ) -> std::result::Result<(), Self::Error> {
+            self.groups_created.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+            self.nodes_freed.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn run_node(&self, _node: NodeId, _running: bool) -> std::result::Result<(), Self::Error> {
+            self.run_node_calls.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> std::result::Result<(), Self::Error> {
+            self.params_set.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn load_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames: 44100,
+                channels: 2,
+                sample_rate: 44100.0,
+            })
+        }
+
+        async fn alloc_buffer(
+            &self,
+            _id: BufferId,
+            frames: u32,
+            channels: u16,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames,
+                channels,
+                sample_rate: 44100.0,
+            })
+        }
+
+        async fn write_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn current_time(&self) -> Instant {
+            Instant::now()
+        }
+    }
+
+    // =========================================================================
+    // Helper Functions
+    // =========================================================================
+
+    fn create_handler() -> (GroupsHandler<MockBackend>, Arc<MockBackend>, Arc<RwLock<State>>) {
+        let backend = Arc::new(MockBackend::new());
+        let state = Arc::new(RwLock::new(State::default()));
+        let handler = GroupsHandler::new(backend.clone(), state.clone());
+        (handler, backend, state)
+    }
+
+    // =========================================================================
+    // Group Creation Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_create_group() {
+        let (handler, backend, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        let result = handler.create(group_id, "TestGroup", None).await;
+
+        assert!(result.is_ok(), "Creating group should succeed");
+        assert_eq!(backend.groups_created(), 1, "One group should be created in backend");
+
+        let state_read = state.read().await;
+        assert!(state_read.groups.contains_key(&group_id));
+        let group = state_read.groups.get(&group_id).unwrap();
+        assert_eq!(group.name, "TestGroup");
+        assert!(group.parent.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_create_group_duplicate_fails() {
+        let (handler, _, _state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+
+        let result = handler.create(group_id, "TestGroup2", None).await;
+        assert!(result.is_err(), "Duplicate group creation should fail");
+    }
+
+    #[tokio::test]
+    async fn test_create_group_with_parent() {
+        let (handler, backend, state) = create_handler();
+
+        let parent_id = GroupId::new(1);
+        let child_id = GroupId::new(2);
+
+        handler.create(parent_id, "Parent", None).await.unwrap();
+        let result = handler.create(child_id, "Child", Some(parent_id)).await;
+
+        assert!(result.is_ok(), "Creating child group should succeed");
+        assert_eq!(backend.groups_created(), 2);
+
+        let state_read = state.read().await;
+        let child = state_read.groups.get(&child_id).unwrap();
+        assert_eq!(child.parent, Some(parent_id));
+    }
+
+    #[tokio::test]
+    async fn test_create_group_with_nonexistent_parent_fails() {
+        let (handler, _, _state) = create_handler();
+
+        let result = handler.create(GroupId::new(1), "Child", Some(GroupId::new(999))).await;
+        assert!(result.is_err(), "Should fail with non-existent parent");
+    }
+
+    #[tokio::test]
+    async fn test_create_group_allocates_node_and_bus() {
+        let (handler, _, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+
+        let state_read = state.read().await;
+        let group = state_read.groups.get(&group_id).unwrap();
+
+        // Node ID should be > 0 (0 is reserved for root)
+        assert!(group.node_id.0 > 0, "Node ID should be allocated");
+        // Audio bus should be in the group bus range (>= 16)
+        assert!(group.audio_bus.0 >= 16, "Audio bus should be in group range");
+    }
+
+    // =========================================================================
+    // Group Deletion Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_delete_group() {
+        let (handler, backend, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+
+        let result = handler.delete(group_id).await;
+        assert!(result.is_ok(), "Deleting group should succeed");
+        assert_eq!(backend.nodes_freed(), 1, "Node should be freed");
+
+        let state_read = state.read().await;
+        assert!(!state_read.groups.contains_key(&group_id));
+    }
+
+    #[tokio::test]
+    async fn test_delete_nonexistent_group_fails() {
+        let (handler, _, _state) = create_handler();
+
+        let result = handler.delete(GroupId::new(999)).await;
+        assert!(result.is_err(), "Deleting non-existent group should fail");
+    }
+
+    // =========================================================================
+    // Group Set Param Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_set_param() {
+        let (handler, backend, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+
+        let result = handler.set_param(group_id, "gain", 0.8).await;
+        assert!(result.is_ok(), "Setting param should succeed");
+        assert_eq!(backend.params_set(), 1);
+
+        let state_read = state.read().await;
+        let group = state_read.groups.get(&group_id).unwrap();
+        assert_eq!(*group.params.get("gain").unwrap(), 0.8);
+    }
+
+    #[tokio::test]
+    async fn test_set_param_nonexistent_group_fails() {
+        let (handler, _, _state) = create_handler();
+
+        let result = handler.set_param(GroupId::new(999), "gain", 0.5).await;
+        assert!(result.is_err(), "Setting param on non-existent group should fail");
+    }
+
+    // =========================================================================
+    // Group Mute Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_mute_group() {
+        let (handler, backend, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+
+        let result = handler.mute(group_id, true).await;
+        assert!(result.is_ok(), "Muting group should succeed");
+        assert_eq!(backend.run_node_calls(), 1, "run_node should be called");
+
+        let state_read = state.read().await;
+        let group = state_read.groups.get(&group_id).unwrap();
+        assert!(group.muted);
+    }
+
+    #[tokio::test]
+    async fn test_unmute_group() {
+        let (handler, _, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+
+        handler.mute(group_id, true).await.unwrap();
+        handler.mute(group_id, false).await.unwrap();
+
+        let state_read = state.read().await;
+        let group = state_read.groups.get(&group_id).unwrap();
+        assert!(!group.muted);
+    }
+
+    #[tokio::test]
+    async fn test_mute_nonexistent_group_fails() {
+        let (handler, _, _state) = create_handler();
+
+        let result = handler.mute(GroupId::new(999), true).await;
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Group Solo Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_solo_group() {
+        let (handler, backend, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+
+        let result = handler.solo(group_id, true).await;
+        assert!(result.is_ok(), "Soloing group should succeed");
+        assert!(backend.run_node_calls() >= 1, "run_node should be called");
+
+        let state_read = state.read().await;
+        let group = state_read.groups.get(&group_id).unwrap();
+        assert!(group.soloed);
+    }
+
+    #[tokio::test]
+    async fn test_unsolo_group() {
+        let (handler, _, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+
+        handler.solo(group_id, true).await.unwrap();
+        handler.solo(group_id, false).await.unwrap();
+
+        let state_read = state.read().await;
+        let group = state_read.groups.get(&group_id).unwrap();
+        assert!(!group.soloed);
+    }
+
+    #[tokio::test]
+    async fn test_solo_nonexistent_group_fails() {
+        let (handler, _, _state) = create_handler();
+
+        let result = handler.solo(GroupId::new(999), true).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_solo_affects_multiple_groups() {
+        let (handler, backend, _state) = create_handler();
+
+        let group1 = GroupId::new(1);
+        let group2 = GroupId::new(2);
+
+        handler.create(group1, "Group1", None).await.unwrap();
+        handler.create(group2, "Group2", None).await.unwrap();
+
+        // Solo group1 - should update run state for both groups
+        handler.solo(group1, true).await.unwrap();
+
+        // Should have called run_node for both groups
+        assert!(backend.run_node_calls() >= 2, "run_node should be called for all groups");
+    }
+
+    // =========================================================================
+    // Finalize Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_finalize_creates_link_synths() {
+        let (handler, backend, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+
+        let result = handler.finalize().await;
+        assert!(result.is_ok(), "Finalize should succeed");
+        assert_eq!(backend.synths_created(), 1, "Link synth should be created");
+
+        let state_read = state.read().await;
+        let group = state_read.groups.get(&group_id).unwrap();
+        assert!(group.link_synth_node_id.is_some(), "Link synth node ID should be set");
+    }
+
+    #[tokio::test]
+    async fn test_finalize_multiple_groups() {
+        let (handler, backend, _state) = create_handler();
+
+        let group1 = GroupId::new(1);
+        let group2 = GroupId::new(2);
+
+        handler.create(group1, "Group1", None).await.unwrap();
+        handler.create(group2, "Group2", None).await.unwrap();
+
+        handler.finalize().await.unwrap();
+
+        assert_eq!(backend.synths_created(), 2, "Link synth for each group");
+    }
+
+    #[tokio::test]
+    async fn test_finalize_idempotent() {
+        let (handler, backend, _state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+
+        // Finalize twice
+        handler.finalize().await.unwrap();
+        handler.finalize().await.unwrap();
+
+        // Should only create one link synth (the second finalize is a no-op)
+        assert_eq!(backend.synths_created(), 1, "Should only create link synth once");
+    }
+
+    // =========================================================================
+    // Multiple Operations Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_create_delete_create() {
+        let (handler, backend, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+        handler.delete(group_id).await.unwrap();
+        handler.create(group_id, "TestGroup2", None).await.unwrap();
+
+        assert_eq!(backend.groups_created(), 2);
+        assert_eq!(backend.nodes_freed(), 1);
+
+        let state_read = state.read().await;
+        let group = state_read.groups.get(&group_id).unwrap();
+        assert_eq!(group.name, "TestGroup2");
+    }
+
+    #[tokio::test]
+    async fn test_multiple_params() {
+        let (handler, backend, state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+
+        handler.set_param(group_id, "gain", 0.8).await.unwrap();
+        handler.set_param(group_id, "pan", -0.5).await.unwrap();
+        handler.set_param(group_id, "filter", 0.6).await.unwrap();
+
+        assert_eq!(backend.params_set(), 3);
+
+        let state_read = state.read().await;
+        let group = state_read.groups.get(&group_id).unwrap();
+        assert_eq!(*group.params.get("gain").unwrap(), 0.8);
+        assert_eq!(*group.params.get("pan").unwrap(), -0.5);
+        assert_eq!(*group.params.get("filter").unwrap(), 0.6);
     }
 }

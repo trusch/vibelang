@@ -3,15 +3,19 @@
 //! Voices are the primary way to produce sound. They wrap a synthdef
 //! and can be triggered by patterns, melodies, or direct MIDI input.
 
-use crate::types::{GroupId, ParamMap, SfzId, VoiceId};
+use crate::types::{GroupId, ModulatorId, ParamMap, SfzId, VoiceId};
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
 use crate::Result;
 use async_trait::async_trait;
+use std::collections::HashMap;
 
 /// Configuration for creating a voice.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VoiceConfig {
+    /// Voice name (for display in TUI/API).
+    pub name: String,
+
     /// Name of the synthdef to use.
     pub synthdef: String,
 
@@ -50,6 +54,12 @@ pub struct VoiceConfig {
     /// where an open hi-hat should be stopped when a closed hi-hat is triggered.
     pub choke_group: Option<String>,
 
+    /// Modulation mappings (param_name -> modulator_id).
+    ///
+    /// When set, the specified parameters will be modulated by control buses
+    /// written to by the corresponding modulators (LFOs, envelopes, etc.).
+    pub modulations: HashMap<String, ModulatorId>,
+
     /// MIDI output device (if routing to external MIDI).
     #[cfg(feature = "midi")]
     pub midi_output: Option<MidiDeviceId>,
@@ -57,12 +67,21 @@ pub struct VoiceConfig {
     /// MIDI channel for output (0-15).
     #[cfg(feature = "midi")]
     pub midi_channel: u8,
+
+    /// Parameter to MIDI CC mapping.
+    ///
+    /// Maps parameter names to MIDI CC numbers (0-127).
+    /// When set_param is called on a MIDI voice, the value is sent as CC.
+    /// Also used for modulator output when the voice has modulations.
+    #[cfg(feature = "midi")]
+    pub param_cc_map: HashMap<String, u8>,
 }
 
 impl VoiceConfig {
     /// Create a new voice configuration.
-    pub fn new(synthdef: impl Into<String>, group: GroupId) -> Self {
+    pub fn new(name: impl Into<String>, synthdef: impl Into<String>, group: GroupId) -> Self {
         Self {
+            name: name.into(),
             synthdef: synthdef.into(),
             group,
             polyphony: 8,
@@ -72,10 +91,13 @@ impl VoiceConfig {
             sfz_instrument: None,
             round_robin_count: 0,
             choke_group: None,
+            modulations: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_output: None,
             #[cfg(feature = "midi")]
             midi_channel: 0,
+            #[cfg(feature = "midi")]
+            param_cc_map: HashMap::new(),
         }
     }
 
@@ -90,6 +112,21 @@ impl VoiceConfig {
     pub fn with_midi_output(mut self, device: MidiDeviceId, channel: u8) -> Self {
         self.midi_output = Some(device);
         self.midi_channel = channel.min(15);
+        self
+    }
+
+    /// Map a parameter name to a MIDI CC number.
+    ///
+    /// When set_param is called on a MIDI voice, the value is sent as CC.
+    /// Also used for modulator output when the voice has modulations.
+    ///
+    /// # Arguments
+    ///
+    /// * `param` - Parameter name (e.g., "cutoff", "resonance")
+    /// * `cc` - MIDI CC number (0-127)
+    #[cfg(feature = "midi")]
+    pub fn with_param_cc(mut self, param: impl Into<String>, cc: u8) -> Self {
+        self.param_cc_map.insert(param.into(), cc.min(127));
         self
     }
 
@@ -124,12 +161,22 @@ impl VoiceConfig {
         self.params.insert(name.into(), value);
         self
     }
+
+    /// Add a modulation mapping from a parameter to a modulator.
+    ///
+    /// The specified parameter will read its value from the modulator's
+    /// control bus output instead of a static value.
+    pub fn with_modulation(mut self, param: impl Into<String>, modulator: ModulatorId) -> Self {
+        self.modulations.insert(param.into(), modulator);
+        self
+    }
 }
 
 /// Voice management for sound production.
 ///
 /// Voices wrap synthdefs and handle polyphony, providing a high-level
 /// interface for triggering sounds from patterns and melodies.
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait Voices: Send + Sync {
     /// Create a new voice.
@@ -167,5 +214,34 @@ pub trait Voices: Send + Sync {
     ///
     /// This updates the parameter on already-playing synths and stores
     /// the new value as the default for future triggers.
+    async fn set_param(&self, id: VoiceId, param: &str, value: f32) -> Result<()>;
+}
+
+/// Voice management for sound production (WASM version).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait Voices {
+    /// Create a new voice.
+    async fn create(&self, id: VoiceId, config: VoiceConfig) -> Result<()>;
+
+    /// Delete a voice.
+    async fn delete(&self, id: VoiceId) -> Result<()>;
+
+    /// Trigger a voice with parameters.
+    async fn trigger(&self, id: VoiceId, params: &ParamMap) -> Result<()>;
+
+    /// Stop all playing notes on a voice.
+    async fn stop(&self, id: VoiceId) -> Result<()>;
+
+    /// Send a note-on to a voice.
+    async fn note_on(&self, id: VoiceId, note: u8, velocity: f32) -> Result<()>;
+
+    /// Send a note-off to a voice.
+    async fn note_off(&self, id: VoiceId, note: u8) -> Result<()>;
+
+    /// Mute or unmute a voice.
+    async fn mute(&self, id: VoiceId, muted: bool) -> Result<()>;
+
+    /// Set a parameter on all active synths of a voice.
     async fn set_param(&self, id: VoiceId, param: &str, value: f32) -> Result<()>;
 }

@@ -15,12 +15,36 @@
 //! Example: `.notes("1 2 3 4 | 5 6 7 1'")`  // Scale up, then root one octave up
 
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
+use std::cell::RefCell;
+use std::collections::HashMap;
 use vibelang_core2::traits::{MelodyConfig, NoteEvent};
 use vibelang_core2::types::Beat;
 
 use crate::context;
 use super::helpers::parse_note_name;
 use super::voice::Voice;
+
+// Global registry for melodies - allows looking up melodies by name
+thread_local! {
+    static MELODY_REGISTRY: RefCell<HashMap<String, Melody>> = RefCell::new(HashMap::new());
+}
+
+/// Clear the melody registry (called when context is cleared).
+pub fn clear_registry() {
+    MELODY_REGISTRY.with(|r| r.borrow_mut().clear());
+}
+
+/// Get a melody from the registry by name.
+fn get_melody(name: &str) -> Option<Melody> {
+    MELODY_REGISTRY.with(|r| r.borrow().get(name).cloned())
+}
+
+/// Store a melody in the registry.
+fn store_melody(melody: &Melody) {
+    MELODY_REGISTRY.with(|r| {
+        r.borrow_mut().insert(melody.name.clone(), melody.clone());
+    });
+}
 
 /// A Melody builder for creating melodic patterns.
 #[derive(Debug, Clone, CustomType)]
@@ -311,7 +335,8 @@ impl Melody {
     }
 
     /// Sync melody to script state.
-    fn sync_to_state(&self) {
+    pub fn sync_to_state(&self) {
+        tracing::debug!("Melody::sync_to_state called for '{}'", self.name);
         let melody_id = context::get_or_create_melody_id(&self.name);
         let voice_id = self
             .voice_name
@@ -337,6 +362,7 @@ impl Melody {
             .collect();
 
         let config = MelodyConfig {
+            name: self.name.clone(),
             voice: voice_id,
             notes,
             length: Beat::from_f64(self.length),
@@ -351,6 +377,8 @@ impl Melody {
     /// Register and apply the melody (chainable).
     pub fn apply(self) -> Self {
         self.sync_to_state();
+        // Store in registry for later lookup
+        store_melody(&self);
         self
     }
 
@@ -421,6 +449,7 @@ fn split_into_bars(pattern: &str) -> Vec<String> {
 ///
 /// Supports:
 /// - Absolute notes: `C4`, `D#5`, `Eb3`
+/// - Chord brackets: `[C4 E4 G4]` (multiple notes played together)
 /// - Scale degrees: `1` through `7` (1 = root)
 /// - Octave up: `'` (can stack: `1''` = two octaves up)
 /// - Octave down: `,` (can stack: `1,,` = two octaves down)
@@ -434,6 +463,40 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
         match c {
             // Whitespace is ignored
             ' ' | '\t' | '\n' | '\r' => {}
+
+            // Chord bracket notation: [C4 E4 G4]
+            '[' => {
+                let mut chord_notes = Vec::new();
+                let mut current_note = String::new();
+
+                while let Some(&next) = chars.peek() {
+                    if next == ']' {
+                        chars.next(); // consume ']'
+                        // Parse the last note if any
+                        if !current_note.is_empty() {
+                            if let Some(midi) = parse_note_name(&current_note) {
+                                chord_notes.push(midi);
+                            }
+                        }
+                        break;
+                    } else if next == ' ' || next == '\t' {
+                        chars.next(); // consume whitespace
+                        // Parse accumulated note
+                        if !current_note.is_empty() {
+                            if let Some(midi) = parse_note_name(&current_note) {
+                                chord_notes.push(midi);
+                            }
+                            current_note.clear();
+                        }
+                    } else {
+                        current_note.push(chars.next().unwrap());
+                    }
+                }
+
+                if !chord_notes.is_empty() {
+                    tokens.push(NoteToken::Notes(chord_notes));
+                }
+            }
 
             // Tie/hold marker
             '-' => tokens.push(NoteToken::Tie),
@@ -464,7 +527,7 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
                 tokens.push(NoteToken::ScaleDegree { degree, octave_offset });
             }
 
-            // Absolute note names (A-G)
+            // Absolute note names (A-G), with optional chord suffix
             'A'..='G' | 'a'..='g' => {
                 let mut note_str = String::new();
                 note_str.push(c.to_ascii_uppercase());
@@ -479,8 +542,30 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
                     }
                 }
 
-                if let Some(midi) = parse_note_name(&note_str) {
-                    tokens.push(NoteToken::Notes(vec![midi]));
+                // Check for chord suffix (e.g., :m7, :maj7, :dim)
+                let chord_suffix = if chars.peek() == Some(&':') {
+                    chars.next(); // consume ':'
+                    let mut suffix = String::new();
+                    while let Some(&next) = chars.peek() {
+                        // Chord suffixes can contain letters and numbers (m7, maj7, dim7, etc.)
+                        if next.is_alphanumeric() {
+                            suffix.push(chars.next().unwrap());
+                        } else {
+                            break;
+                        }
+                    }
+                    Some(suffix)
+                } else {
+                    None
+                };
+
+                if let Some(root_midi) = parse_note_name(&note_str) {
+                    let midi_notes = if let Some(suffix) = chord_suffix {
+                        expand_chord(root_midi, &suffix)
+                    } else {
+                        vec![root_midi]
+                    };
+                    tokens.push(NoteToken::Notes(midi_notes));
                 }
             }
 
@@ -490,6 +575,93 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
     }
 
     tokens
+}
+
+/// Expand a chord suffix to a list of MIDI notes.
+///
+/// Supports common chord types:
+/// - Major: (no suffix), maj, M
+/// - Minor: m, min
+/// - Dominant 7: 7, dom7
+/// - Major 7: maj7, M7
+/// - Minor 7: m7, min7
+/// - Diminished: dim, o
+/// - Diminished 7: dim7, o7
+/// - Augmented: aug, +
+/// - Suspended 2: sus2
+/// - Suspended 4: sus4
+/// - Add 9: add9
+/// - Minor 9: m9, min9
+/// - Major 9: maj9, M9
+/// - 9: 9 (dominant 9)
+fn expand_chord(root: u8, suffix: &str) -> Vec<u8> {
+    let intervals: Vec<i8> = match suffix.to_lowercase().as_str() {
+        // Major triads
+        "" | "maj" | "major" => vec![0, 4, 7],
+
+        // Minor triads
+        "m" | "min" | "minor" => vec![0, 3, 7],
+
+        // Dominant 7th
+        "7" | "dom7" => vec![0, 4, 7, 10],
+
+        // Major 7th
+        "maj7" | "m7" if suffix.starts_with("M") => vec![0, 4, 7, 11], // M7
+        "maj7" => vec![0, 4, 7, 11],
+
+        // Minor 7th
+        "m7" | "min7" => vec![0, 3, 7, 10],
+
+        // Diminished
+        "dim" | "o" => vec![0, 3, 6],
+
+        // Diminished 7th
+        "dim7" | "o7" => vec![0, 3, 6, 9],
+
+        // Half-diminished (minor 7 flat 5)
+        "m7b5" | "min7b5" | "ø" | "ø7" => vec![0, 3, 6, 10],
+
+        // Augmented
+        "aug" | "+" => vec![0, 4, 8],
+
+        // Augmented 7th
+        "aug7" | "+7" => vec![0, 4, 8, 10],
+
+        // Suspended
+        "sus2" => vec![0, 2, 7],
+        "sus4" | "sus" => vec![0, 5, 7],
+
+        // Add chords
+        "add9" => vec![0, 4, 7, 14],
+        "madd9" | "minadd9" => vec![0, 3, 7, 14],
+
+        // 9th chords
+        "9" => vec![0, 4, 7, 10, 14],
+        "m9" | "min9" => vec![0, 3, 7, 10, 14],
+        "maj9" => vec![0, 4, 7, 11, 14],
+
+        // 6th chords
+        "6" => vec![0, 4, 7, 9],
+        "m6" | "min6" => vec![0, 3, 7, 9],
+
+        // Power chord
+        "5" => vec![0, 7],
+
+        // Default to major triad for unknown suffixes
+        _ => vec![0, 4, 7],
+    };
+
+    intervals
+        .iter()
+        .filter_map(|&interval| {
+            let note = root as i16 + interval as i16;
+            if (0..=127).contains(&note) {
+                Some(note as u8)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Get scale intervals for a given scale type.
@@ -570,8 +742,16 @@ fn resolve_scale_degree(
     }
 }
 
-/// Create a new melody builder.
+/// Create a new melody builder or return an existing one.
+///
+/// If a melody with this name already exists in the registry,
+/// returns a clone of it. Otherwise creates a new empty melody.
 pub fn melody(ctx: NativeCallContext, name: String) -> Melody {
+    // Check if melody already exists in registry
+    if let Some(existing) = get_melody(&name) {
+        return existing;
+    }
+    // Create new melody
     Melody::new(ctx, name)
 }
 
@@ -709,6 +889,50 @@ mod tests {
         assert!(matches!(&tokens[3], NoteToken::Tie));
         assert!(matches!(&tokens[4], NoteToken::Rest));
         assert!(matches!(&tokens[5], NoteToken::Rest));
+    }
+
+    #[test]
+    fn test_tokenize_bracket_chords() {
+        // Simple chord: C major triad
+        let tokens = tokenize_bar("[C4 E4 G4]");
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0] {
+            NoteToken::Notes(notes) => {
+                assert_eq!(notes.len(), 3);
+                assert_eq!(notes[0], 60); // C4
+                assert_eq!(notes[1], 64); // E4
+                assert_eq!(notes[2], 67); // G4
+            }
+            _ => panic!("Expected Notes"),
+        }
+
+        // Chord followed by ties
+        let tokens = tokenize_bar("[A3 C4 E4] - - -");
+        assert_eq!(tokens.len(), 4);
+        assert!(matches!(&tokens[0], NoteToken::Notes(_)));
+        assert!(matches!(&tokens[1], NoteToken::Tie));
+        assert!(matches!(&tokens[2], NoteToken::Tie));
+        assert!(matches!(&tokens[3], NoteToken::Tie));
+
+        // Multiple chords
+        let tokens = tokenize_bar("[C4 E4] [G4 B4]");
+        assert_eq!(tokens.len(), 2);
+        match &tokens[0] {
+            NoteToken::Notes(notes) => {
+                assert_eq!(notes.len(), 2);
+                assert_eq!(notes[0], 60); // C4
+                assert_eq!(notes[1], 64); // E4
+            }
+            _ => panic!("Expected Notes"),
+        }
+        match &tokens[1] {
+            NoteToken::Notes(notes) => {
+                assert_eq!(notes.len(), 2);
+                assert_eq!(notes[0], 67); // G4
+                assert_eq!(notes[1], 71); // B4
+            }
+            _ => panic!("Expected Notes"),
+        }
     }
 
     // ==================== Scale Degree Resolution Tests ====================

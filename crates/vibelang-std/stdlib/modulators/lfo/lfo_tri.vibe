@@ -1,0 +1,15 @@
+// Triangle wave LFO modulator
+// Outputs: Linear rise and fall, symmetric movement
+// Use for: Smooth parameter sweeps, panning
+define_modulator("lfo_tri")
+    .param("rate", 1.0)   // LFO rate in Hz
+    .param("lo", 0.0)     // Minimum output value
+    .param("hi", 1.0)     // Maximum output value
+    .param("phase", 0.0)  // Initial phase offset (0-4)
+    .body(|rate, lo, hi, phase| {
+        // Generate triangle wave at control rate (-1 to 1)
+        let osc = lf_tri_kr(rate, phase);
+        // Map from bipolar (-1 to 1) to user-specified range using basic math
+        let normalized = osc * 0.5 + 0.5;  // Map to 0-1
+        normalized * (hi - lo) + lo        // Map to lo-hi range
+    });

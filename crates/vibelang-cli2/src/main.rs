@@ -23,8 +23,8 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 use vibelang_core2::{
-    Message, ReloadMessage, Runtime, RuntimeHandle, ScsynthBackend, ScsynthConfig, ScsynthProcess,
-    State, TransportMessage,
+    setup_metering, setup_node_tracking, Message, ReloadMessage, Runtime, RuntimeHandle, ScsynthBackend, ScsynthConfig,
+    ScsynthProcess, State, TransportMessage,
 };
 use vibelang_rhai::ScriptEngine;
 
@@ -46,9 +46,9 @@ enum Commands {
         /// The .vibe file to run
         file: PathBuf,
 
-        /// Watch for file changes and reload
-        #[arg(short, long)]
-        watch: bool,
+        /// Disable watching for file changes (watch is enabled by default)
+        #[arg(long)]
+        no_watch: bool,
 
         /// Use TUI mode (terminal user interface)
         #[arg(long)]
@@ -75,6 +75,51 @@ enum Commands {
         /// Don't start scsynth automatically
         #[arg(long)]
         no_boot: bool,
+
+        /// Don't auto-connect JACK/PipeWire ports to system audio output
+        #[arg(long)]
+        no_jack_connect: bool,
+
+        /// Audio device name (e.g., "default", "hw:0", "Focusrite USB ASIO")
+        #[arg(long)]
+        device: Option<String>,
+
+        /// Sample rate (e.g., 44100, 48000, 96000). 0 = hardware default.
+        #[arg(long, default_value = "0")]
+        sample_rate: u32,
+
+        /// Number of input channels (default: 2)
+        #[arg(long, default_value = "2")]
+        input_channels: u32,
+
+        /// Number of output channels (default: 2)
+        #[arg(long, default_value = "2")]
+        output_channels: u32,
+
+        /// Disable all script extensions (filesystem, exec, networking)
+        #[arg(long)]
+        #[cfg_attr(not(feature = "extensions"), arg(hide = true))]
+        no_extensions: bool,
+
+        /// Disable filesystem extension (read_file, write_file, etc.)
+        #[arg(long)]
+        #[cfg_attr(not(feature = "ext-fs"), arg(hide = true))]
+        no_fs: bool,
+
+        /// Disable shell command execution extension
+        #[arg(long)]
+        #[cfg_attr(not(feature = "ext-exec"), arg(hide = true))]
+        no_exec: bool,
+
+        /// Disable networking extension (HTTP fetch)
+        #[arg(long)]
+        #[cfg_attr(not(feature = "ext-net"), arg(hide = true))]
+        no_net: bool,
+
+        /// Base directory for filesystem sandboxing (restricts file operations to this directory)
+        #[arg(long)]
+        #[cfg_attr(not(feature = "ext-fs"), arg(hide = true))]
+        fs_sandbox: Option<String>,
     },
 
     /// Render a .vibescore file to audio
@@ -115,13 +160,23 @@ async fn main() -> Result<()> {
     let command = if let Some(file) = cli.file {
         Commands::Run {
             file,
-            watch: true,
+            no_watch: false,
             tui: false,
             api: false,
+            no_jack_connect: false,
             api_port: 1606,
             include_paths: Vec::new(),
             scsynth_addr: "127.0.0.1:57110".to_string(),
             no_boot: false,
+            device: None,
+            sample_rate: 0,
+            input_channels: 2,
+            output_channels: 2,
+            no_extensions: false,
+            no_fs: false,
+            no_exec: false,
+            no_net: false,
+            fs_sandbox: None,
         }
     } else {
         cli.command.unwrap_or_else(|| {
@@ -134,18 +189,32 @@ async fn main() -> Result<()> {
     match command {
         Commands::Run {
             file,
-            watch,
+            no_watch,
             tui,
             api,
             api_port,
             include_paths,
             scsynth_addr,
             no_boot,
+            no_jack_connect,
+            device,
+            sample_rate,
+            input_channels,
+            output_channels,
+            no_extensions,
+            no_fs,
+            no_exec,
+            no_net,
+            fs_sandbox,
         } => {
+            // Build extension config
+            let ext_config = build_extension_config(no_extensions, no_fs, no_exec, no_net, fs_sandbox);
+
+            let watch = !no_watch;
             if tui {
-                run_tui_mode(file, watch, api, api_port, include_paths, scsynth_addr, no_boot).await
+                run_tui_mode(file, watch, api, api_port, include_paths, scsynth_addr, no_boot, no_jack_connect, device, sample_rate, input_channels, output_channels, ext_config).await
             } else {
-                run_simple_mode(file, watch, api, api_port, include_paths, scsynth_addr, no_boot).await
+                run_simple_mode(file, watch, api, api_port, include_paths, scsynth_addr, no_boot, no_jack_connect, device, sample_rate, input_channels, output_channels, ext_config).await
             }
         }
         Commands::Render {
@@ -182,6 +251,12 @@ async fn run_simple_mode(
     include_paths: Vec<PathBuf>,
     scsynth_addr: String,
     no_boot: bool,
+    no_jack_connect: bool,
+    device: Option<String>,
+    sample_rate: u32,
+    input_channels: u32,
+    output_channels: u32,
+    ext_config: ExtensionSettings,
 ) -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
@@ -206,10 +281,22 @@ async fn run_simple_mode(
         None
     } else {
         info!("Starting scsynth...");
-        let config = ScsynthConfig::default();
+        let mut config = ScsynthConfig::default()
+            .auto_connect_jack(!no_jack_connect)
+            .sample_rate(sample_rate)
+            .input_channels(input_channels)
+            .output_channels(output_channels)
+            .verbose(true);  // Enable verbose mode for debugging
+        if let Some(dev) = &device {
+            config = config.device(dev);
+        }
         let process = ScsynthProcess::spawn(config).context("Failed to start scsynth")?;
         process.wait_startup(Duration::from_secs(3)).await;
         info!("scsynth started");
+
+        // Auto-connect JACK/PipeWire ports to system audio output
+        process.auto_connect_jack_ports();
+
         Some(process)
     };
 
@@ -222,6 +309,13 @@ async fn run_simple_mode(
     let mut runtime = Runtime::new(backend);
     let handle = runtime.handle();
 
+    // Set up metering callback to receive SendTrig messages from link synths
+    setup_metering(runtime.backend(), runtime.state().clone());
+
+    // Set up node tracking callback to remove ended nodes from voice state
+    // This prevents "node not found" errors when synths free themselves via doneAction=2
+    setup_node_tracking(runtime.backend(), runtime.state().clone());
+
     // Load built-in synthdefs
     info!("Loading built-in synthdefs...");
     runtime
@@ -232,14 +326,19 @@ async fn run_simple_mode(
     // Set up deploy callback for custom synthdefs defined in scripts
     let deploy_handle = handle.clone();
     vibelang_dsp::set_deploy_callback(move |bytes| {
+        let name = extract_synthdef_name(&bytes).unwrap_or_else(|| "unknown".to_string());
+        tracing::debug!("Deploy callback: queuing synthdef '{}' ({} bytes)", name, bytes.len());
         deploy_handle
             .try_send(vibelang_core2::Message::SynthDef(
                 vibelang_core2::SynthDefMessage::Load {
-                    name: extract_synthdef_name(&bytes).unwrap_or_else(|| "unknown".to_string()),
+                    name,
                     data: bytes,
                 },
             ))
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                tracing::error!("Deploy callback: failed to queue synthdef: {}", e);
+                e.to_string()
+            })
     });
 
     // Get state handle before spawning runtime (needed for HTTP API)
@@ -248,12 +347,52 @@ async fn run_simple_mode(
     // Start HTTP API server if requested (before spawning runtime task since runtime is moved)
     #[cfg(feature = "api")]
     if api {
+        // Create eval channel for code evaluation
+        let (eval_tx, eval_rx) = std::sync::mpsc::channel::<vibelang_http2::EvalJob>();
+
         let api_handle = handle.clone();
         let api_state = state_handle.clone();
         tokio::spawn(async move {
-            vibelang_http2::start_server(api_handle, api_state, api_port, None).await;
+            vibelang_http2::start_server(api_handle, api_state, api_port, Some(eval_tx)).await;
         });
         info!("HTTP API server started on port {}", api_port);
+
+        // Spawn eval handler task
+        let eval_include_paths = include_paths.clone();
+        let eval_ext_config = ext_config.clone();
+        let eval_handle = handle.clone();
+        tokio::spawn(async move {
+            loop {
+                match eval_rx.recv() {
+                    Ok(job) => {
+                        let result = match evaluate_code(&job.code, &eval_include_paths, &eval_ext_config) {
+                            Ok(state) => {
+                                // Apply the state
+                                match eval_handle.send(ReloadMessage::Apply { state }.into()).await {
+                                    Ok(_) => vibelang_http2::EvalResult {
+                                        success: true,
+                                        result: Some("Code executed successfully".to_string()),
+                                        error: None,
+                                    },
+                                    Err(e) => vibelang_http2::EvalResult {
+                                        success: false,
+                                        result: None,
+                                        error: Some(format!("Failed to apply: {}", e)),
+                                    },
+                                }
+                            }
+                            Err(e) => vibelang_http2::EvalResult {
+                                success: false,
+                                result: None,
+                                error: Some(e.to_string()),
+                            },
+                        };
+                        let _ = job.response_tx.send(result);
+                    }
+                    Err(_) => break, // Channel closed
+                }
+            }
+        });
     }
 
     // Spawn runtime task
@@ -267,7 +406,25 @@ async fn run_simple_mode(
 
     // Execute initial script
     info!("Loading script: {}", file.display());
-    let state = execute_script(&file, &include_paths)?;
+    let state = execute_script(&file, &include_paths, &ext_config)?;
+
+    // Wait for all synthdefs queued during script execution to be loaded
+    // This ensures modulators and voices can find their synthdefs
+    info!("Waiting for synthdefs to be loaded...");
+    handle.sync_and_wait().await?;
+    info!("Synthdefs loaded, applying state...");
+
+    // Check if script requested early exit (for integration tests)
+    if let Some(exit_code) = vibelang_rhai::get_exit_code() {
+        info!("Script requested exit with code {}", exit_code);
+        // Apply state before exiting (for any cleanup)
+        let _ = handle.send(ReloadMessage::Apply { state }.into()).await;
+        // Stop the running flag so the runtime task exits
+        running.store(false, Ordering::SeqCst);
+        // Exit with the requested code
+        std::process::exit(exit_code);
+    }
+
     handle
         .send(ReloadMessage::Apply { state }.into())
         .await?;
@@ -279,10 +436,12 @@ async fn run_simple_mode(
     info!("Transport started");
 
     // Watch for changes if requested
-    if watch {
+    // Keep watcher alive until end of function, otherwise it gets dropped and stops watching
+    let _watcher: Option<RecommendedWatcher> = if watch {
         let (tx, mut rx) = mpsc::channel::<PathBuf>(16);
         let file_clone = file.clone();
         let include_paths_clone = include_paths.clone();
+        let ext_config_clone = ext_config.clone();
         let handle_clone = handle.clone();
 
         // Setup file watcher
@@ -314,7 +473,7 @@ async fn run_simple_mode(
                     while rx.try_recv().is_ok() {}
 
                     info!("File changed, reloading...");
-                    match execute_script(&file_clone, &include_paths_clone) {
+                    match execute_script(&file_clone, &include_paths_clone, &ext_config_clone) {
                         Ok(state) => {
                             if let Err(e) = handle_clone
                                 .send(ReloadMessage::Apply { state }.into())
@@ -332,7 +491,11 @@ async fn run_simple_mode(
                 }
             }
         });
-    }
+
+        Some(watcher)
+    } else {
+        None
+    };
 
     // Wait for shutdown
     while running.load(Ordering::SeqCst) {
@@ -361,6 +524,12 @@ async fn run_tui_mode(
     include_paths: Vec<PathBuf>,
     scsynth_addr: String,
     no_boot: bool,
+    no_jack_connect: bool,
+    device: Option<String>,
+    sample_rate: u32,
+    input_channels: u32,
+    output_channels: u32,
+    ext_config: ExtensionSettings,
 ) -> Result<()> {
     // Initialize TUI event channel
     let mut tui_events = tui::init_tui_channel();
@@ -388,11 +557,22 @@ async fn run_tui_mode(
         None
     } else {
         log::info!("Starting scsynth...");
-        let config = ScsynthConfig::default();
+        let mut config = ScsynthConfig::default()
+            .auto_connect_jack(!no_jack_connect)
+            .sample_rate(sample_rate)
+            .input_channels(input_channels)
+            .output_channels(output_channels);
+        if let Some(dev) = &device {
+            config = config.device(dev);
+        }
         match ScsynthProcess::spawn(config) {
             Ok(process) => {
                 process.wait_startup(Duration::from_secs(3)).await;
                 log::info!("scsynth started");
+
+                // Auto-connect JACK/PipeWire ports to system audio output
+                process.auto_connect_jack_ports();
+
                 Some(process)
             }
             Err(e) => {
@@ -426,6 +606,13 @@ async fn run_tui_mode(
     let mut runtime = Runtime::new(osc_backend);
     let handle = runtime.handle();
 
+    // Set up metering callback to receive SendTrig messages from link synths
+    setup_metering(runtime.backend(), runtime.state().clone());
+
+    // Set up node tracking callback to remove ended nodes from voice state
+    // This prevents "node not found" errors when synths free themselves via doneAction=2
+    setup_node_tracking(runtime.backend(), runtime.state().clone());
+
     // Load built-in synthdefs
     log::info!("Loading built-in synthdefs...");
     if let Err(e) = runtime.load_builtins().await {
@@ -435,14 +622,19 @@ async fn run_tui_mode(
     // Set up deploy callback for custom synthdefs
     let deploy_handle = handle.clone();
     vibelang_dsp::set_deploy_callback(move |bytes| {
+        let name = extract_synthdef_name(&bytes).unwrap_or_else(|| "unknown".to_string());
+        log::info!("Deploy callback: queuing synthdef '{}' ({} bytes)", name, bytes.len());
         deploy_handle
             .try_send(vibelang_core2::Message::SynthDef(
                 vibelang_core2::SynthDefMessage::Load {
-                    name: extract_synthdef_name(&bytes).unwrap_or_else(|| "unknown".to_string()),
+                    name,
                     data: bytes,
                 },
             ))
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                log::error!("Deploy callback: failed to queue synthdef: {}", e);
+                e.to_string()
+            })
     });
 
     // Get state handle before spawning runtime (needed for HTTP API)
@@ -494,7 +686,7 @@ async fn run_tui_mode(
     };
 
     // Run initial script
-    match execute_script(&file, &include_paths) {
+    match execute_script(&file, &include_paths, &ext_config) {
         Ok(state) => {
             if let Err(e) = handle
                 .send(ReloadMessage::Apply { state }.into())
@@ -542,6 +734,7 @@ async fn run_tui_mode(
     // Handle reload requests in a separate task
     let reload_handle = handle.clone();
     let include_paths_clone = include_paths.clone();
+    let ext_config_clone = ext_config.clone();
     let reload_running = running.clone();
     let reload_task = tokio::spawn(async move {
         let mut last_reload = Instant::now();
@@ -554,8 +747,13 @@ async fn run_tui_mode(
                 last_reload = Instant::now();
 
                 log::info!("Reloading: {}", changed_file.display());
-                match execute_script(&changed_file, &include_paths_clone) {
+                match execute_script(&changed_file, &include_paths_clone, &ext_config_clone) {
                     Ok(state) => {
+                        // Wait for synthdefs queued during script execution to be loaded
+                        if let Err(e) = reload_handle.sync_and_wait().await {
+                            log::error!("Failed to sync before reload: {}", e);
+                            continue;
+                        }
                         if let Err(e) = reload_handle
                             .send(ReloadMessage::Apply { state }.into())
                             .await
@@ -878,29 +1076,139 @@ async fn run_tui_mode(
     Ok(())
 }
 
+/// Extension configuration for scripts.
+/// This is a simple struct that mirrors vibelang_rhai::ExtensionConfig
+/// but is always available regardless of feature flags.
+#[derive(Debug, Clone, Default)]
+struct ExtensionSettings {
+    pub filesystem: bool,
+    pub exec: bool,
+    pub networking: bool,
+    pub fs_base_path: Option<String>,
+}
+
+/// Build extension configuration from CLI flags.
+fn build_extension_config(
+    no_extensions: bool,
+    no_fs: bool,
+    no_exec: bool,
+    no_net: bool,
+    fs_sandbox: Option<String>,
+) -> ExtensionSettings {
+    if no_extensions {
+        // All extensions disabled
+        ExtensionSettings::default()
+    } else {
+        ExtensionSettings {
+            filesystem: !no_fs,
+            exec: !no_exec,
+            networking: !no_net,
+            fs_base_path: fs_sandbox,
+        }
+    }
+}
+
 fn execute_script(
     file: &PathBuf,
     include_paths: &[PathBuf],
+    ext_settings: &ExtensionSettings,
 ) -> Result<vibelang_core2::reload::ScriptState> {
     let mut engine = ScriptEngine::new();
+
+    // Register extensions if enabled
+    #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+    {
+        let mut config = vibelang_rhai::ExtensionConfig::new();
+        if ext_settings.filesystem {
+            config.filesystem = true;
+        }
+        if ext_settings.exec {
+            config.exec = true;
+        }
+        if ext_settings.networking {
+            config.networking = true;
+        }
+        if let Some(ref base_path) = ext_settings.fs_base_path {
+            config.fs_base_path = Some(base_path.clone());
+        }
+        engine.register_extensions(&config);
+    }
+    #[cfg(not(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net")))]
+    {
+        let _ = ext_settings; // Suppress unused warning
+    }
 
     // Add import paths
     for path in include_paths {
         engine.add_import_path(path.clone());
     }
 
-    // Add script directory to import paths
-    if let Some(parent) = file.parent() {
+    // Add stdlib path (auto-extracts if needed)
+    let stdlib_path = PathBuf::from(vibelang_std::stdlib_path());
+    engine.add_import_path(stdlib_path.clone());
+    // Also add parent so "stdlib/..." imports work
+    if let Some(parent) = stdlib_path.parent() {
         engine.add_import_path(parent.to_path_buf());
     }
 
-    // Read and execute script
-    let script = std::fs::read_to_string(file)
-        .with_context(|| format!("Failed to read script: {}", file.display()))?;
+    // Use execute_file which sets up the module resolver properly
+    let state = engine
+        .execute_file(file)
+        .map_err(|e| anyhow::anyhow!("Script error: {}", e))?;
 
-    engine
-        .execute(&script)
-        .map_err(|e| anyhow::anyhow!("Script error: {}", e))
+    Ok(state)
+}
+
+/// Evaluate a code string dynamically (for /eval endpoint).
+#[cfg(feature = "api")]
+fn evaluate_code(
+    code: &str,
+    include_paths: &[PathBuf],
+    ext_settings: &ExtensionSettings,
+) -> Result<vibelang_core2::reload::ScriptState> {
+    let mut engine = ScriptEngine::new();
+
+    // Register extensions if enabled
+    #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+    {
+        let mut config = vibelang_rhai::ExtensionConfig::new();
+        if ext_settings.filesystem {
+            config.filesystem = true;
+        }
+        if ext_settings.exec {
+            config.exec = true;
+        }
+        if ext_settings.networking {
+            config.networking = true;
+        }
+        if let Some(ref base_path) = ext_settings.fs_base_path {
+            config.fs_base_path = Some(base_path.clone());
+        }
+        engine.register_extensions(&config);
+    }
+    #[cfg(not(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net")))]
+    {
+        let _ = ext_settings;
+    }
+
+    // Add import paths
+    for path in include_paths {
+        engine.add_import_path(path.clone());
+    }
+
+    // Add stdlib path (auto-extracts if needed)
+    let stdlib_path = PathBuf::from(vibelang_std::stdlib_path());
+    engine.add_import_path(stdlib_path.clone());
+    if let Some(parent) = stdlib_path.parent() {
+        engine.add_import_path(parent.to_path_buf());
+    }
+
+    // Execute the code string
+    let state = engine
+        .execute(code)
+        .map_err(|e| anyhow::anyhow!("Eval error: {}", e))?;
+
+    Ok(state)
 }
 
 /// Extract the synthdef name from SuperCollider synthdef bytes.

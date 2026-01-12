@@ -865,7 +865,7 @@ fn collect_group_entries(
                     entries.push(HierarchyEntry {
                         id: format!("voice:{}", voice_id),
                         depth: depth + 1,
-                        label: voice_id.to_string(),
+                        label: if voice_state.config.name.is_empty() { voice_id.to_string() } else { voice_state.config.name.clone() },
                         detail: detail_parts.join(" \u{2022} "),
                         params,
                         kind: HierarchyKind::Voice,
@@ -893,13 +893,21 @@ fn collect_group_entries(
                 if let Some(pattern_state) = state.patterns.get(pattern_id) {
                     let status = if pattern_state.playing { "\u{25B6}" } else { "\u{23F8}" };
                     let voice_name = pattern_state.config.voice
-                        .map(|v| v.to_string())
+                        .and_then(|vid| state.voices.get(&vid).map(|v| {
+                            if v.config.name.is_empty() { vid.to_string() } else { v.config.name.clone() }
+                        }))
                         .unwrap_or_else(|| "?".to_string());
+
+                    let label = if pattern_state.config.name.is_empty() {
+                        pattern_id.to_string()
+                    } else {
+                        pattern_state.config.name.clone()
+                    };
 
                     entries.push(HierarchyEntry {
                         id: format!("pattern:{}", pattern_id),
                         depth: depth + 1,
-                        label: pattern_id.to_string(),
+                        label,
                         detail: format!("{} \u{2192}{}", status, voice_name),
                         params: Vec::new(),
                         kind: HierarchyKind::Pattern,
@@ -927,13 +935,21 @@ fn collect_group_entries(
                 if let Some(melody_state) = state.melodies.get(melody_id) {
                     let status = if melody_state.playing { "\u{25B6}" } else { "\u{23F8}" };
                     let voice_name = melody_state.config.voice
-                        .map(|v| v.to_string())
+                        .and_then(|vid| state.voices.get(&vid).map(|v| {
+                            if v.config.name.is_empty() { vid.to_string() } else { v.config.name.clone() }
+                        }))
                         .unwrap_or_else(|| "?".to_string());
+
+                    let label = if melody_state.config.name.is_empty() {
+                        melody_id.to_string()
+                    } else {
+                        melody_state.config.name.clone()
+                    };
 
                     entries.push(HierarchyEntry {
                         id: format!("melody:{}", melody_id),
                         depth: depth + 1,
-                        label: melody_id.to_string(),
+                        label,
                         detail: format!("{} \u{2192}{}", status, voice_name),
                         params: Vec::new(),
                         kind: HierarchyKind::Melody,

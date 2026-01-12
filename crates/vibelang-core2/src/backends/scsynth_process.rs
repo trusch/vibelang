@@ -62,6 +62,10 @@ pub struct ScsynthConfig {
 
     /// Audio device name (None = default).
     pub device: Option<String>,
+
+    /// Whether to automatically connect JACK/PipeWire ports to system output.
+    /// Default: true (auto-connect for best out-of-box experience).
+    pub auto_connect_jack: bool,
 }
 
 impl Default for ScsynthConfig {
@@ -83,6 +87,7 @@ impl Default for ScsynthConfig {
             realtime_memory: 8192,
             verbose: false,
             device: None,
+            auto_connect_jack: true, // Auto-connect by default for best UX
         }
     }
 }
@@ -132,6 +137,15 @@ impl ScsynthConfig {
     /// Set the path to the scsynth executable.
     pub fn executable(mut self, path: impl Into<PathBuf>) -> Self {
         self.executable = Some(path.into());
+        self
+    }
+
+    /// Enable or disable automatic JACK/PipeWire port connection.
+    ///
+    /// When enabled (default), vibelang will automatically connect
+    /// SuperCollider's audio outputs to the system's default audio output.
+    pub fn auto_connect_jack(mut self, auto_connect: bool) -> Self {
+        self.auto_connect_jack = auto_connect;
         self
     }
 
@@ -276,8 +290,40 @@ impl ScsynthProcess {
         Err(ProcessError::ExecutableNotFound)
     }
 
+    /// Kill any existing scsynth process that might be using the same port.
+    ///
+    /// This prevents "duplicate node ID" errors caused by connecting to a stale
+    /// scsynth instance from a previous run.
+    fn kill_stale_scsynth(port: u16) {
+        // Try to find and kill any scsynth using this port
+        // Use lsof on Unix to find processes using the UDP port
+        #[cfg(unix)]
+        {
+            // Try lsof first (more reliable for finding UDP ports)
+            if let Ok(output) = Command::new("lsof")
+                .args(["-i", &format!("UDP:{}", port), "-t"])
+                .output()
+            {
+                if output.status.success() {
+                    let pids = String::from_utf8_lossy(&output.stdout);
+                    for pid in pids.split_whitespace() {
+                        if let Ok(pid) = pid.parse::<u32>() {
+                            tracing::debug!("Killing stale process on port {}: PID {}", port, pid);
+                            let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
+                        }
+                    }
+                    // Give the OS time to clean up
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
+    }
+
     /// Spawn a new scsynth process with the given configuration.
     pub fn spawn(config: ScsynthConfig) -> Result<Self, ProcessError> {
+        // Kill any stale scsynth that might be using the same port
+        Self::kill_stale_scsynth(config.port);
+
         let executable = Self::find_executable(&config)?;
         let args = config.build_args();
 
@@ -289,6 +335,9 @@ impl ScsynthProcess {
 
         let child = Command::new(&executable)
             .args(&args)
+            // Set JACK connection hints (helps with auto-connection on some systems)
+            .env("SC_JACK_DEFAULT_INPUTS", "system")
+            .env("SC_JACK_DEFAULT_OUTPUTS", "system")
             .stdin(Stdio::null())
             .stdout(if config.verbose {
                 Stdio::inherit()
@@ -344,6 +393,212 @@ impl ScsynthProcess {
         // Give scsynth time to start up
         let startup_delay = Duration::from_millis(500).min(timeout);
         tokio::time::sleep(startup_delay).await;
+    }
+
+    /// Check if auto JACK connection is enabled.
+    pub fn should_auto_connect(&self) -> bool {
+        self.config.auto_connect_jack
+    }
+
+    /// Automatically connect SuperCollider's JACK/PipeWire ports to system output.
+    ///
+    /// This function discovers the default audio output and connects SuperCollider's
+    /// output ports to it. Works with both PipeWire (using pw-link) and JACK.
+    ///
+    /// Call this after scsynth has started and JACK ports are available.
+    pub fn auto_connect_jack_ports(&self) {
+        if !self.config.auto_connect_jack {
+            tracing::debug!("JACK auto-connect disabled by configuration");
+            return;
+        }
+
+        #[cfg(unix)]
+        {
+            // Give JACK a moment to register the ports
+            std::thread::sleep(Duration::from_millis(200));
+
+            // Try PipeWire first (pw-link), then fall back to JACK (jack_connect)
+            if self.try_pipewire_connect() {
+                return;
+            }
+
+            if self.try_jack_connect() {
+                return;
+            }
+
+            tracing::warn!(
+                "Could not auto-connect JACK ports. \
+                 Audio may not be audible. \
+                 Try connecting SuperCollider outputs manually using a tool like qjackctl or helvum."
+            );
+        }
+
+        #[cfg(not(unix))]
+        {
+            tracing::debug!("JACK auto-connect not supported on this platform");
+        }
+    }
+
+    /// Try to connect using PipeWire's pw-link command.
+    #[cfg(unix)]
+    fn try_pipewire_connect(&self) -> bool {
+        // First, discover available output ports using pw-link -o
+        let output = match Command::new("pw-link").arg("-o").output() {
+            Ok(o) if o.status.success() => o,
+            _ => return false,
+        };
+
+        let outputs = String::from_utf8_lossy(&output.stdout);
+
+        // Find SuperCollider output ports
+        let sc_out_1 = outputs.lines().find(|l| l.contains("SuperCollider:out_1"));
+        let sc_out_2 = outputs.lines().find(|l| l.contains("SuperCollider:out_2"));
+
+        if sc_out_1.is_none() || sc_out_2.is_none() {
+            tracing::debug!("SuperCollider JACK ports not found yet");
+            return false;
+        }
+
+        // Discover input (playback) ports using pw-link -i
+        let input = match Command::new("pw-link").arg("-i").output() {
+            Ok(o) if o.status.success() => o,
+            _ => return false,
+        };
+
+        let inputs = String::from_utf8_lossy(&input.stdout);
+
+        // Look for a suitable audio output - prefer headphones, then speakers, then any sink
+        let (playback_l, playback_r) = self.find_best_audio_output(&inputs);
+
+        if let (Some(left), Some(right)) = (playback_l, playback_r) {
+            tracing::info!("Auto-connecting SuperCollider to: {}", left.split(':').next().unwrap_or(&left));
+
+            // Connect left channel
+            let result_l = Command::new("pw-link")
+                .args(["SuperCollider:out_1", &left])
+                .output();
+
+            // Connect right channel
+            let result_r = Command::new("pw-link")
+                .args(["SuperCollider:out_2", &right])
+                .output();
+
+            match (result_l, result_r) {
+                (Ok(l), Ok(r)) if l.status.success() && r.status.success() => {
+                    tracing::info!("JACK audio ports connected successfully");
+                    return true;
+                }
+                (Ok(l), Ok(r)) => {
+                    // Check if already connected (not an error)
+                    let l_err = String::from_utf8_lossy(&l.stderr);
+                    let r_err = String::from_utf8_lossy(&r.stderr);
+                    if l_err.contains("already") || r_err.contains("already") {
+                        tracing::debug!("JACK ports already connected");
+                        return true;
+                    }
+                    tracing::debug!("pw-link failed: L={} R={}", l_err.trim(), r_err.trim());
+                }
+                _ => {
+                    tracing::debug!("pw-link command failed to execute");
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Find the best audio output from available PipeWire/JACK inputs.
+    ///
+    /// Priority: Headphones > Speakers > HDMI > Any sink
+    #[cfg(unix)]
+    fn find_best_audio_output(&self, inputs: &str) -> (Option<String>, Option<String>) {
+        let lines: Vec<&str> = inputs.lines().collect();
+
+        // Priority patterns to search for (in order)
+        let patterns = [
+            ("Headphones", "playback_FL", "playback_FR"),
+            ("Speaker", "playback_FL", "playback_FR"),
+            ("Analog", "playback_FL", "playback_FR"),
+            ("HDMI", "playback_FL", "playback_FR"),
+            ("sink", "playback_FL", "playback_FR"),
+        ];
+
+        for (device_pattern, left_suffix, right_suffix) in patterns {
+            // Find matching device
+            for line in &lines {
+                if line.contains(device_pattern) && line.contains(left_suffix) {
+                    // Found left channel, look for matching right channel
+                    let base = line.trim_end_matches(left_suffix);
+                    let right_port = format!("{}{}", base, right_suffix);
+
+                    if lines.iter().any(|l| l.trim() == right_port) {
+                        return (Some(line.trim().to_string()), Some(right_port));
+                    }
+                }
+            }
+        }
+
+        // Fallback: find any playback_FL/FR pair
+        for line in &lines {
+            if line.contains("playback_FL") && !line.contains("SuperCollider") {
+                let left = line.trim().to_string();
+                let right = left.replace("playback_FL", "playback_FR");
+                if lines.iter().any(|l| l.trim() == right) {
+                    return (Some(left), Some(right));
+                }
+            }
+        }
+
+        (None, None)
+    }
+
+    /// Try to connect using JACK's jack_connect command.
+    #[cfg(unix)]
+    fn try_jack_connect(&self) -> bool {
+        // List JACK ports
+        let output = match Command::new("jack_lsp").output() {
+            Ok(o) if o.status.success() => o,
+            _ => return false,
+        };
+
+        let ports = String::from_utf8_lossy(&output.stdout);
+
+        // Check if SuperCollider ports exist
+        if !ports.contains("SuperCollider:out_1") {
+            return false;
+        }
+
+        // Find system playback ports (standard JACK naming)
+        let system_l = ports.lines().find(|l| {
+            l.contains("system:playback_1") || l.contains("playback_FL")
+        });
+        let system_r = ports.lines().find(|l| {
+            l.contains("system:playback_2") || l.contains("playback_FR")
+        });
+
+        if let (Some(left), Some(right)) = (system_l, system_r) {
+            tracing::info!("Auto-connecting SuperCollider via JACK to: {}", left);
+
+            let result_l = Command::new("jack_connect")
+                .args(["SuperCollider:out_1", left.trim()])
+                .output();
+
+            let result_r = Command::new("jack_connect")
+                .args(["SuperCollider:out_2", right.trim()])
+                .output();
+
+            match (result_l, result_r) {
+                (Ok(l), Ok(r)) if l.status.success() && r.status.success() => {
+                    tracing::info!("JACK audio ports connected successfully");
+                    return true;
+                }
+                _ => {
+                    tracing::debug!("jack_connect failed");
+                }
+            }
+        }
+
+        false
     }
 
     /// Stop the scsynth process gracefully.

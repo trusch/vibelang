@@ -3,12 +3,142 @@
 //! The [`ScriptEngine`] wraps a Rhai engine with all VibeLang API functions registered.
 
 use rhai::Engine;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 use vibelang_core2::reload::ScriptState;
 
 use crate::api;
 use crate::context;
 use crate::error::{Error, Result};
+
+// ============================================================================
+// In-memory module resolver for WASM
+// ============================================================================
+
+#[cfg(target_arch = "wasm32")]
+mod wasm_resolver {
+    use rhai::module_resolvers::ModuleResolver;
+    use rhai::{Engine, Module, Position, AST, Scope};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    /// In-memory module resolver for WASM.
+    ///
+    /// This resolver looks up module source code from an in-memory HashMap
+    /// instead of the filesystem.
+    #[derive(Clone)]
+    pub struct InMemoryModuleResolver {
+        /// Map of module path -> source code
+        modules: Arc<HashMap<String, String>>,
+        /// File extension to add (default: "vibe")
+        extension: String,
+    }
+
+    impl InMemoryModuleResolver {
+        /// Create a new in-memory resolver with the given modules.
+        pub fn new(modules: HashMap<String, String>) -> Self {
+            Self {
+                modules: Arc::new(modules),
+                extension: "vibe".to_string(),
+            }
+        }
+
+        /// Normalize a module path for lookup.
+        fn normalize_path(&self, path: &str) -> String {
+            let mut normalized = path.to_string();
+
+            // Remove leading "./" or "/"
+            if normalized.starts_with("./") {
+                normalized = normalized[2..].to_string();
+            } else if normalized.starts_with('/') {
+                normalized = normalized[1..].to_string();
+            }
+
+            // Remove "stdlib/" prefix if present (we store without it)
+            if normalized.starts_with("stdlib/") {
+                normalized = normalized[7..].to_string();
+            }
+
+            // Add extension if not present
+            if !normalized.ends_with(&format!(".{}", self.extension)) {
+                normalized = format!("{}.{}", normalized, self.extension);
+            }
+
+            normalized
+        }
+    }
+
+    impl ModuleResolver for InMemoryModuleResolver {
+        fn resolve(
+            &self,
+            engine: &Engine,
+            _source: Option<&str>,
+            path: &str,
+            pos: Position,
+        ) -> Result<rhai::Shared<Module>, Box<rhai::EvalAltResult>> {
+            let normalized = self.normalize_path(path);
+
+            // Look up the module source
+            let source = self.modules.get(&normalized).ok_or_else(|| {
+                Box::new(rhai::EvalAltResult::ErrorModuleNotFound(
+                    format!("Module not found: {} (looked for: {})", path, normalized),
+                    pos,
+                ))
+            })?;
+
+            // Compile and create module
+            let ast = engine.compile(source).map_err(|e| {
+                Box::new(rhai::EvalAltResult::ErrorInModule(
+                    path.to_string(),
+                    e.into(),
+                    pos,
+                ))
+            })?;
+
+            // Create module from AST
+            let module = Module::eval_ast_as_new(Scope::new(), &ast, engine).map_err(|e| {
+                Box::new(rhai::EvalAltResult::ErrorInModule(
+                    path.to_string(),
+                    e,
+                    pos,
+                ))
+            })?;
+
+            Ok(rhai::Shared::new(module))
+        }
+
+        fn resolve_ast(
+            &self,
+            engine: &Engine,
+            _source: Option<&str>,
+            path: &str,
+            pos: Position,
+        ) -> Option<Result<AST, Box<rhai::EvalAltResult>>> {
+            let normalized = self.normalize_path(path);
+
+            // Look up the module source
+            let source = match self.modules.get(&normalized) {
+                Some(s) => s,
+                None => return Some(Err(Box::new(rhai::EvalAltResult::ErrorModuleNotFound(
+                    format!("Module not found: {} (looked for: {})", path, normalized),
+                    pos,
+                )))),
+            };
+
+            // Compile the source
+            Some(engine.compile(source).map_err(|e| {
+                Box::new(rhai::EvalAltResult::ErrorInModule(
+                    path.to_string(),
+                    e.into(),
+                    pos,
+                ))
+            }))
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub use wasm_resolver::InMemoryModuleResolver;
 
 /// Script engine for executing VibeLang scripts.
 ///
@@ -26,6 +156,7 @@ use crate::error::{Error, Result};
 /// ```
 pub struct ScriptEngine {
     engine: Engine,
+    #[cfg(not(target_arch = "wasm32"))]
     import_paths: Vec<PathBuf>,
 }
 
@@ -60,13 +191,23 @@ impl ScriptEngine {
         // Register vibelang-dsp API for define_synthdef
         vibelang_dsp::register_dsp_api(&mut engine);
 
+        // Set up stdlib module resolver for WASM
+        #[cfg(target_arch = "wasm32")]
+        {
+            let stdlib_files = vibelang_std::get_stdlib_files();
+            let resolver = InMemoryModuleResolver::new(stdlib_files);
+            engine.set_module_resolver(resolver);
+        }
+
         Self {
             engine,
+            #[cfg(not(target_arch = "wasm32"))]
             import_paths: Vec::new(),
         }
     }
 
-    /// Add import paths for module resolution.
+    /// Add import paths for module resolution (native only).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn add_import_path(&mut self, path: impl Into<PathBuf>) {
         self.import_paths.push(path.into());
     }
@@ -75,6 +216,12 @@ impl ScriptEngine {
     ///
     /// Returns the collected ScriptState that can be applied to a runtime.
     pub fn execute(&mut self, script: &str) -> Result<ScriptState> {
+        // Clear object registries before each execution
+        api::clear_all_registries();
+
+        // Reset exit code before execution
+        crate::reset_exit_code();
+
         // Initialize context
         context::init_context();
 
@@ -85,15 +232,22 @@ impl ScriptEngine {
         let state = context::take_state();
         context::clear_context();
 
-        // Return error if script failed
+        // Check if script exited via exit() - this is not an error
+        if crate::get_exit_code().is_some() {
+            // Script requested exit, return state normally
+            return Ok(state);
+        }
+
+        // Return error if script failed for other reasons
         result?;
 
         Ok(state)
     }
 
-    /// Execute a script from a file.
+    /// Execute a script from a file (native only).
     ///
     /// Returns the collected ScriptState that can be applied to a runtime.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn execute_file(&mut self, path: impl AsRef<Path>) -> Result<ScriptState> {
         let path = path.as_ref();
 
@@ -103,6 +257,12 @@ impl ScriptEngine {
         // Set up module resolver
         let base_path = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         self.setup_module_resolver(base_path);
+
+        // Clear object registries before each execution
+        api::clear_all_registries();
+
+        // Reset exit code before execution
+        crate::reset_exit_code();
 
         // Initialize context
         context::init_context();
@@ -116,7 +276,13 @@ impl ScriptEngine {
         let state = context::take_state();
         context::clear_context();
 
-        // Return error if script failed
+        // Check if script exited via exit() - this is not an error
+        if crate::get_exit_code().is_some() {
+            // Script requested exit, return state normally
+            return Ok(state);
+        }
+
+        // Return error if script failed for other reasons
         result?;
 
         Ok(state)
@@ -124,6 +290,9 @@ impl ScriptEngine {
 
     /// Execute an AST (pre-compiled script).
     pub fn execute_ast(&mut self, ast: &rhai::AST) -> Result<ScriptState> {
+        // Clear object registries before each execution
+        api::clear_all_registries();
+
         // Initialize context
         context::init_context();
 
@@ -144,13 +313,15 @@ impl ScriptEngine {
         self.engine.compile(script).map_err(Error::from)
     }
 
-    /// Compile a script file to AST.
+    /// Compile a script file to AST (native only).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn compile_file(&self, path: impl AsRef<Path>) -> Result<rhai::AST> {
         let path = path.as_ref();
         self.engine.compile_file(path.to_path_buf()).map_err(Error::from)
     }
 
-    /// Set up module resolver for import statements.
+    /// Set up module resolver for import statements (native only).
+    #[cfg(not(target_arch = "wasm32"))]
     fn setup_module_resolver(&mut self, base_path: PathBuf) {
         let mut collection = rhai::module_resolvers::ModuleResolversCollection::new();
 
@@ -184,6 +355,45 @@ impl ScriptEngine {
     /// Get a mutable reference to the underlying Rhai engine.
     pub fn engine_mut(&mut self) -> &mut Engine {
         &mut self.engine
+    }
+
+    /// Register optional extensions with the script engine.
+    ///
+    /// Extensions provide additional capabilities like filesystem access,
+    /// shell command execution, and networking. These are disabled by default
+    /// and must be explicitly enabled.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use vibelang_rhai::{ScriptEngine, ExtensionConfig};
+    ///
+    /// let mut engine = ScriptEngine::new();
+    ///
+    /// // Enable specific extensions
+    /// let config = ExtensionConfig::new()
+    ///     .with_filesystem()
+    ///     .with_exec();
+    /// engine.register_extensions(&config);
+    /// ```
+    ///
+    /// # Security
+    ///
+    /// These extensions provide powerful capabilities. Only enable them
+    /// in trusted environments where script authors are trusted.
+    #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+    pub fn register_extensions(&mut self, config: &crate::extensions::ExtensionConfig) {
+        crate::extensions::register_extensions(&mut self.engine, config);
+    }
+
+    /// Register all available extensions.
+    ///
+    /// This is a convenience method that enables all compiled-in extensions.
+    /// Use with caution in production environments.
+    #[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+    pub fn register_all_extensions(&mut self) {
+        let config = crate::extensions::ExtensionConfig::enable_all();
+        crate::extensions::register_extensions(&mut self.engine, &config);
     }
 }
 

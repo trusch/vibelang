@@ -3,11 +3,13 @@ import Header from './components/Header';
 import Hero from './components/Hero';
 import Features from './components/Features';
 import CodeDemo from './components/CodeDemo';
+import ExtensionShowcase from './components/ExtensionShowcase';
 import SoundLibrary from './components/SoundLibrary';
 import Workflow from './components/Workflow';
 import GetStarted from './components/GetStarted';
 import Footer from './components/Footer';
 import Documentation from './components/Documentation';
+import Playground from './components/Playground';
 
 function App() {
   const [theme, setTheme] = useState(() => {
@@ -19,7 +21,10 @@ function App() {
 
   const [currentPage, setCurrentPage] = useState(() => {
     if (typeof window !== 'undefined') {
-      return window.location.hash === '#/docs' ? 'docs' : 'home';
+      const hash = window.location.hash;
+      if (hash === '#/docs') return 'docs';
+      if (hash === '#/playground') return 'playground';
+      return 'home';
     }
     return 'home';
   });
@@ -38,7 +43,14 @@ function App() {
   // Handle browser navigation (hash-based routing)
   useEffect(() => {
     const handleHashChange = () => {
-      setCurrentPage(window.location.hash === '#/docs' ? 'docs' : 'home');
+      const hash = window.location.hash;
+      if (hash === '#/docs') {
+        setCurrentPage('docs');
+      } else if (hash === '#/playground') {
+        setCurrentPage('playground');
+      } else {
+        setCurrentPage('home');
+      }
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -51,6 +63,11 @@ function App() {
       return 'system';
     });
   };
+
+  // Render playground page
+  if (currentPage === 'playground') {
+    return <Playground theme={theme} onToggleTheme={toggleTheme} />;
+  }
 
   // Render docs page
   if (currentPage === 'docs') {
@@ -65,6 +82,7 @@ function App() {
         <Hero />
         <Features />
         <CodeDemo />
+        <ExtensionShowcase />
         <SoundLibrary />
         <Workflow />
         <GetStarted />

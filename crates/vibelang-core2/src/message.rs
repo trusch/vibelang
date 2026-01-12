@@ -9,13 +9,17 @@
 //! - Deterministic behavior
 
 use crate::traits::{
-    FadeConfig, FadeTarget, MelodyConfig, PatternConfig, RecordingConfig, SampleConfig,
+    FadeConfig, FadeTarget, MelodyConfig, ModulatorConfig, PatternConfig, SampleConfig,
     SequenceConfig, VoiceConfig,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::traits::RecordingConfig;
 use crate::types::{
-    Beat, EffectId, GroupId, MelodyId, ParamMap, PatternId, RecordingId, SampleId, SequenceId,
+    Beat, EffectId, GroupId, MelodyId, ModulatorId, ParamMap, PatternId, SampleId, SequenceId,
     SfzId, TimeSignature, VoiceId,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::types::RecordingId;
 use std::path::PathBuf;
 
 // =============================================================================
@@ -85,10 +89,11 @@ pub enum SfzMessage {
 }
 
 // =============================================================================
-// Recording Messages
+// Recording Messages (native only - recording requires filesystem)
 // =============================================================================
 
 /// Audio recording messages for capturing audio to buffers/files.
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug)]
 pub enum RecordingMessage {
     /// Start a new recording session.
@@ -125,7 +130,7 @@ pub enum RecordingMessage {
 #[derive(Clone, Debug)]
 pub enum GroupMessage {
     /// Create a new group.
-    Create { id: GroupId, parent: Option<GroupId> },
+    Create { id: GroupId, name: String, parent: Option<GroupId> },
 
     /// Delete a group.
     Delete { id: GroupId },
@@ -278,6 +283,33 @@ pub enum EffectMessage {
 }
 
 // =============================================================================
+// Modulator Messages
+// =============================================================================
+
+/// Modulator messages for control-rate signal generators.
+///
+/// Modulators output control-rate signals to control buses, which can be
+/// routed to voice parameters for dynamic modulation (LFOs, envelopes, etc.).
+#[derive(Clone, Debug)]
+pub enum ModulatorMessage {
+    /// Create a new modulator.
+    Create {
+        id: ModulatorId,
+        config: ModulatorConfig,
+    },
+
+    /// Delete a modulator.
+    Delete { id: ModulatorId },
+
+    /// Set a modulator parameter.
+    SetParam {
+        id: ModulatorId,
+        param: String,
+        value: f32,
+    },
+}
+
+// =============================================================================
 // Fade Messages
 // =============================================================================
 
@@ -321,6 +353,23 @@ pub enum ReloadMessage {
 #[cfg(feature = "midi")]
 #[derive(Clone, Debug)]
 pub enum MidiMessage {
+    // =========================================================================
+    // Device Management
+    // =========================================================================
+
+    /// Open a MIDI input device.
+    OpenInput { device: crate::types::ids::MidiDeviceId },
+
+    /// Open a MIDI output device.
+    OpenOutput { device: crate::types::ids::MidiDeviceId },
+
+    /// Close a MIDI device (input or output).
+    CloseDevice { device: crate::types::ids::MidiDeviceId },
+
+    // =========================================================================
+    // Note/CC Output
+    // =========================================================================
+
     /// Send a MIDI note-on.
     NoteOn {
         device: crate::types::ids::MidiDeviceId,
@@ -343,6 +392,112 @@ pub enum MidiMessage {
         cc: u8,
         value: u8,
     },
+
+    /// Send a MIDI note-on (alternate naming for HTTP API).
+    SendNoteOn {
+        device: crate::types::ids::MidiDeviceId,
+        channel: u8,
+        note: u8,
+        velocity: u8,
+    },
+
+    /// Send a MIDI note-off (alternate naming for HTTP API).
+    SendNoteOff {
+        device: crate::types::ids::MidiDeviceId,
+        channel: u8,
+        note: u8,
+    },
+
+    /// Send a MIDI CC (alternate naming for HTTP API).
+    SendCC {
+        device: crate::types::ids::MidiDeviceId,
+        channel: u8,
+        cc: u8,
+        value: u8,
+    },
+
+    // =========================================================================
+    // Recording
+    // =========================================================================
+
+    /// Start recording MIDI input from a device.
+    StartRecording { device: crate::types::ids::MidiDeviceId },
+
+    /// Start recording MIDI input from a device on a specific channel.
+    StartRecordingChannel {
+        device: crate::types::ids::MidiDeviceId,
+        channel: u8,
+    },
+
+    /// Stop recording.
+    /// The recording can be retrieved via a separate query or handled asynchronously.
+    StopRecording {
+        device: crate::types::ids::MidiDeviceId,
+    },
+
+    // =========================================================================
+    // Clock Output
+    // =========================================================================
+
+    /// Enable MIDI clock output to a device.
+    EnableClockOutput { device: crate::types::ids::MidiDeviceId },
+
+    /// Disable MIDI clock output from a device.
+    DisableClockOutput { device: crate::types::ids::MidiDeviceId },
+
+    /// Send MIDI Start message.
+    SendStart { device: crate::types::ids::MidiDeviceId },
+
+    /// Send MIDI Stop message.
+    SendStop { device: crate::types::ids::MidiDeviceId },
+
+    /// Send MIDI Continue message.
+    SendContinue { device: crate::types::ids::MidiDeviceId },
+
+    // =========================================================================
+    // Route Management
+    // =========================================================================
+
+    /// Add a keyboard route mapping MIDI input to a voice.
+    AddKeyboardRoute {
+        device: crate::types::ids::MidiDeviceId,
+        voice: crate::types::VoiceId,
+        channel: Option<u8>,
+        note_min: Option<u8>,
+        note_max: Option<u8>,
+        transpose: Option<i8>,
+    },
+
+    /// Remove a keyboard route by index.
+    RemoveKeyboardRoute { index: usize },
+
+    /// Clear all MIDI routes.
+    ClearRoutes,
+}
+
+// =============================================================================
+// Sync Messages
+// =============================================================================
+
+/// Synchronization messages for ensuring operations complete.
+#[derive(Debug)]
+pub enum SyncMessage {
+    /// Synchronize with the backend and notify when complete.
+    ///
+    /// This ensures all prior messages have been processed and the backend
+    /// is synced (scsynth has processed all pending commands).
+    /// The oneshot sender is used to signal completion.
+    SyncAndNotify {
+        /// Sender to notify when sync is complete.
+        notify: crate::compat::OneshotSender<()>,
+    },
+}
+
+// Manual Clone implementation that panics (SyncMessage shouldn't be cloned)
+impl Clone for SyncMessage {
+    fn clone(&self) -> Self {
+        panic!("SyncMessage cannot be cloned - it contains a oneshot sender")
+    }
 }
 
 // =============================================================================
@@ -367,6 +522,7 @@ pub enum MidiMessage {
 /// - **Sequence**: Arrangements of clips
 /// - **Effect**: Audio processing
 /// - **Fade**: Parameter automation
+/// - **Sync**: Backend synchronization
 /// - **Midi**: External MIDI device control (feature-gated)
 #[derive(Clone, Debug)]
 pub enum Message {
@@ -382,7 +538,8 @@ pub enum Message {
     /// SFZ instrument management messages.
     Sfz(SfzMessage),
 
-    /// Recording control messages.
+    /// Recording control messages (native only).
+    #[cfg(not(target_arch = "wasm32"))]
     Recording(RecordingMessage),
 
     /// Group management messages.
@@ -403,6 +560,9 @@ pub enum Message {
     /// Effect control messages.
     Effect(EffectMessage),
 
+    /// Modulator control messages.
+    Modulator(ModulatorMessage),
+
     /// Fade control messages.
     Fade(FadeMessage),
 
@@ -411,6 +571,9 @@ pub enum Message {
     /// Boxed because ScriptState is large (~600 bytes), and we want to keep
     /// the Message enum small for efficient passing through channels.
     Reload(Box<ReloadMessage>),
+
+    /// Synchronization messages for backend sync operations.
+    Sync(SyncMessage),
 
     /// MIDI control messages (feature-gated).
     #[cfg(feature = "midi")]
@@ -439,6 +602,7 @@ impl Message {
                 SfzMessage::Load { .. } => "Sfz::Load",
                 SfzMessage::Unload { .. } => "Sfz::Unload",
             },
+            #[cfg(not(target_arch = "wasm32"))]
             Message::Recording(msg) => match msg {
                 RecordingMessage::Start { .. } => "Recording::Start",
                 RecordingMessage::Stop { .. } => "Recording::Stop",
@@ -490,6 +654,11 @@ impl Message {
                 EffectMessage::Remove { .. } => "Effect::Remove",
                 EffectMessage::SetParam { .. } => "Effect::SetParam",
             },
+            Message::Modulator(msg) => match msg {
+                ModulatorMessage::Create { .. } => "Modulator::Create",
+                ModulatorMessage::Delete { .. } => "Modulator::Delete",
+                ModulatorMessage::SetParam { .. } => "Modulator::SetParam",
+            },
             Message::Fade(msg) => match msg {
                 FadeMessage::Start { .. } => "Fade::Start",
                 FadeMessage::Cancel { .. } => "Fade::Cancel",
@@ -497,11 +666,31 @@ impl Message {
             Message::Reload(msg) => match msg.as_ref() {
                 ReloadMessage::Apply { .. } => "Reload::Apply",
             },
+            Message::Sync(msg) => match msg {
+                SyncMessage::SyncAndNotify { .. } => "Sync::SyncAndNotify",
+            },
             #[cfg(feature = "midi")]
             Message::Midi(msg) => match msg {
+                MidiMessage::OpenInput { .. } => "Midi::OpenInput",
+                MidiMessage::OpenOutput { .. } => "Midi::OpenOutput",
+                MidiMessage::CloseDevice { .. } => "Midi::CloseDevice",
                 MidiMessage::NoteOn { .. } => "Midi::NoteOn",
                 MidiMessage::NoteOff { .. } => "Midi::NoteOff",
                 MidiMessage::Cc { .. } => "Midi::Cc",
+                MidiMessage::SendNoteOn { .. } => "Midi::SendNoteOn",
+                MidiMessage::SendNoteOff { .. } => "Midi::SendNoteOff",
+                MidiMessage::SendCC { .. } => "Midi::SendCC",
+                MidiMessage::StartRecording { .. } => "Midi::StartRecording",
+                MidiMessage::StartRecordingChannel { .. } => "Midi::StartRecordingChannel",
+                MidiMessage::StopRecording { .. } => "Midi::StopRecording",
+                MidiMessage::EnableClockOutput { .. } => "Midi::EnableClockOutput",
+                MidiMessage::DisableClockOutput { .. } => "Midi::DisableClockOutput",
+                MidiMessage::SendStart { .. } => "Midi::SendStart",
+                MidiMessage::SendStop { .. } => "Midi::SendStop",
+                MidiMessage::SendContinue { .. } => "Midi::SendContinue",
+                MidiMessage::AddKeyboardRoute { .. } => "Midi::AddKeyboardRoute",
+                MidiMessage::RemoveKeyboardRoute { .. } => "Midi::RemoveKeyboardRoute",
+                MidiMessage::ClearRoutes => "Midi::ClearRoutes",
             },
         }
     }
@@ -535,6 +724,7 @@ impl From<SfzMessage> for Message {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<RecordingMessage> for Message {
     fn from(msg: RecordingMessage) -> Self {
         Message::Recording(msg)
@@ -577,6 +767,12 @@ impl From<EffectMessage> for Message {
     }
 }
 
+impl From<ModulatorMessage> for Message {
+    fn from(msg: ModulatorMessage) -> Self {
+        Message::Modulator(msg)
+    }
+}
+
 impl From<FadeMessage> for Message {
     fn from(msg: FadeMessage) -> Self {
         Message::Fade(msg)
@@ -586,6 +782,12 @@ impl From<FadeMessage> for Message {
 impl From<ReloadMessage> for Message {
     fn from(msg: ReloadMessage) -> Self {
         Message::Reload(Box::new(msg))
+    }
+}
+
+impl From<SyncMessage> for Message {
+    fn from(msg: SyncMessage) -> Self {
+        Message::Sync(msg)
     }
 }
 
@@ -653,7 +855,7 @@ mod tests {
     #[test]
     fn test_all_group_messages() {
         let msgs = vec![
-            GroupMessage::Create { id: GroupId::new(1), parent: None },
+            GroupMessage::Create { id: GroupId::new(1), name: "test".to_string(), parent: None },
             GroupMessage::Delete { id: GroupId::new(1) },
             GroupMessage::SetParam { id: GroupId::new(1), param: "amp".to_string(), value: 0.5 },
             GroupMessage::Mute { id: GroupId::new(1), muted: true },
@@ -674,21 +876,7 @@ mod tests {
         let msgs = vec![
             VoiceMessage::Create {
                 id: VoiceId::new(1),
-                config: VoiceConfig {
-                    synthdef: "sine".to_string(),
-                    group: GroupId::new(1),
-                    polyphony: 8,
-                    params: ParamBuilder::new().build(),
-                    muted: false,
-                    soloed: false,
-                    sfz_instrument: None,
-                    round_robin_count: 0,
-                    choke_group: None,
-                    #[cfg(feature = "midi")]
-                    midi_output: None,
-                    #[cfg(feature = "midi")]
-                    midi_channel: 0,
-                }
+                config: VoiceConfig::new("test_voice", "sine", GroupId::new(1))
             },
             VoiceMessage::Delete { id: VoiceId::new(1) },
             VoiceMessage::Trigger { id: VoiceId::new(1), params: ParamBuilder::new().build() },
@@ -709,12 +897,7 @@ mod tests {
         let msgs = vec![
             PatternMessage::Create {
                 id: PatternId::new(1),
-                config: PatternConfig {
-                    voice: Some(VoiceId::new(1)),
-                    steps: vec![],
-                    length: Beat::from_f64(4.0),
-                    swing: 0.0,
-                }
+                config: PatternConfig::new("test_pattern", VoiceId::new(1), Beat::from_f64(4.0))
             },
             PatternMessage::Delete { id: PatternId::new(1) },
             PatternMessage::Start { id: PatternId::new(1) },
@@ -733,10 +916,7 @@ mod tests {
         let msgs = vec![
             SequenceMessage::Create {
                 id: SequenceId::new(1),
-                config: SequenceConfig {
-                    length: Beat::from_f64(16.0),
-                    clips: vec![],
-                }
+                config: SequenceConfig::new("test_sequence", Beat::from_f64(16.0))
             },
             SequenceMessage::Delete { id: SequenceId::new(1) },
             SequenceMessage::Start { id: SequenceId::new(1), looping: true },
@@ -776,6 +956,7 @@ mod tests {
             target: FadeTarget::Group(GroupId::new(1)),
             param: "amp".to_string()
         }.into();
+        #[cfg(not(target_arch = "wasm32"))]
         let _: Message = RecordingMessage::Stop { id: RecordingId::new(1) }.into();
     }
 
@@ -792,6 +973,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_all_recording_messages() {
         use crate::traits::RecordingConfig;

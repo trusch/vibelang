@@ -7,7 +7,7 @@ use crate::traits::SynthDefs;
 use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use crate::compat::RwLock;
 
 /// Handler for synthdef operations.
 pub struct SynthDefsHandler<B: Backend> {
@@ -40,14 +40,26 @@ impl<B: Backend> SynthDefsHandler<B> {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<B: Backend> SynthDefs for SynthDefsHandler<B> {
     async fn load(&self, name: &str, data: &[u8]) -> Result<()> {
+        tracing::debug!("SynthDefsHandler: loading synthdef '{}' ({} bytes)", name, data.len());
+
         // Load in backend
         self.backend
             .load_synthdef(name, data)
             .await
             .map_err(Error::backend)?;
+
+        tracing::debug!("SynthDefsHandler: sent d_recv for '{}', now syncing", name);
+
+        // Sync with backend to ensure synthdef is loaded before continuing.
+        // This prevents race conditions where we try to create synths before
+        // the synthdef is available.
+        self.backend.sync().await.map_err(Error::backend)?;
+
+        tracing::debug!("SynthDefsHandler: sync completed for '{}', registered in state", name);
 
         // Track in state
         let mut state = self.state.write().await;

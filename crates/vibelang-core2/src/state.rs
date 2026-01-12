@@ -8,22 +8,29 @@
 //! - Active playback state (running synths, active fades)
 
 use crate::traits::{
-    FadeConfig, MelodyConfig, PatternConfig, RecordingInfo, SampleInfo, SequenceConfig,
+    FadeConfig, MelodyConfig, ModulatorConfig, PatternConfig, SampleInfo, SequenceConfig,
     VoiceConfig,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::traits::RecordingInfo;
 use crate::types::{
-    Beat, BufferId, BusId, EffectId, GroupId, MelodyId, NodeId, ParamMap, PatternId, RecordingId,
-    SampleId, SequenceId, SfzId, TimeSignature, VoiceId,
+    Beat, BufferId, BusId, ControlBusId, EffectId, GroupId, MelodyId, ModulatorId, NodeId,
+    ParamMap, PatternId, SampleId, SequenceId, SfzId, TimeSignature, VoiceId,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::types::RecordingId;
+use crate::compat::Instant;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::time::Instant;
 
 /// Internal state for a group.
 #[derive(Clone, Debug)]
 pub struct GroupState {
     /// Group ID.
     pub id: GroupId,
+
+    /// Group name (for display and API lookup).
+    pub name: String,
 
     /// Parent group (None for root).
     pub parent: Option<GroupId>,
@@ -126,8 +133,12 @@ pub struct SequenceState {
     /// Whether to loop.
     pub looping: bool,
 
-    /// Current position.
+    /// Current position within the sequence.
     pub position: Beat,
+
+    /// Global beat when this sequence started playing.
+    /// Used to calculate elapsed time for proper position tracking.
+    pub start_beat: Option<Beat>,
 }
 
 /// Internal state for an effect.
@@ -150,6 +161,73 @@ pub struct EffectState {
 
     /// Current parameter values.
     pub params: ParamMap,
+}
+
+/// Internal state for a modulator.
+///
+/// Modulators are control-rate synths that output to control buses,
+/// which can then be routed to voice parameters for modulation.
+#[derive(Clone, Debug)]
+pub struct ModulatorState {
+    /// Modulator ID.
+    pub id: ModulatorId,
+
+    /// Configuration.
+    pub config: ModulatorConfig,
+
+    /// Control bus ID this modulator writes to.
+    pub control_bus: ControlBusId,
+
+    /// SuperCollider node ID for the modulator synth.
+    pub synth_node: NodeId,
+}
+
+/// Allocator for control buses.
+///
+/// Control buses are used for modulation signals (LFOs, envelopes, etc.).
+/// SuperCollider has 16384 control buses by default. We start allocation
+/// at a safe offset to avoid conflicts with any internal usage.
+#[derive(Clone, Debug)]
+pub struct ControlBusAllocator {
+    /// Next control bus ID to allocate.
+    next_bus: u32,
+    /// Starting bus ID (to avoid conflicts).
+    start_bus: u32,
+}
+
+impl Default for ControlBusAllocator {
+    fn default() -> Self {
+        Self::new(1000) // Start at bus 1000 to avoid conflicts
+    }
+}
+
+impl ControlBusAllocator {
+    /// Create a new control bus allocator starting at the given bus ID.
+    pub fn new(start: u32) -> Self {
+        Self {
+            next_bus: start,
+            start_bus: start,
+        }
+    }
+
+    /// Allocate a new control bus.
+    pub fn allocate(&mut self) -> ControlBusId {
+        let bus = ControlBusId::new(self.next_bus);
+        self.next_bus += 1;
+        bus
+    }
+
+    /// Reset the allocator to its initial state.
+    ///
+    /// Useful when reloading scripts and all modulators are being recreated.
+    pub fn reset(&mut self) {
+        self.next_bus = self.start_bus;
+    }
+
+    /// Get the number of buses allocated.
+    pub fn allocated_count(&self) -> u32 {
+        self.next_bus - self.start_bus
+    }
 }
 
 /// Internal state for a loaded SFZ instrument.
@@ -265,6 +343,56 @@ impl Default for SfzRegionState {
     }
 }
 
+/// Meter level for a group's audio output.
+///
+/// Updated at ~20Hz by SendTrig messages from the link synth.
+#[derive(Clone, Debug)]
+pub struct MeterLevel {
+    /// Peak level for left channel (0.0 to 1.0+, can exceed for clipping).
+    pub peak_left: f32,
+    /// Peak level for right channel.
+    pub peak_right: f32,
+    /// RMS level for left channel.
+    pub rms_left: f32,
+    /// RMS level for right channel.
+    pub rms_right: f32,
+    /// When this meter was last updated.
+    pub last_update: Option<Instant>,
+}
+
+impl Default for MeterLevel {
+    fn default() -> Self {
+        Self {
+            peak_left: 0.0,
+            peak_right: 0.0,
+            rms_left: 0.0,
+            rms_right: 0.0,
+            last_update: None,
+        }
+    }
+}
+
+impl MeterLevel {
+    /// Check if the meter data is stale (not updated recently).
+    ///
+    /// Returns true if no update in the last 200ms (~4 missed updates at 20Hz).
+    pub fn is_stale(&self) -> bool {
+        match self.last_update {
+            Some(t) => t.elapsed() > std::time::Duration::from_millis(200),
+            None => true,
+        }
+    }
+
+    /// Get decayed meter values (returns zeros if stale).
+    pub fn decayed(&self) -> (f32, f32, f32, f32) {
+        if self.is_stale() {
+            (0.0, 0.0, 0.0, 0.0)
+        } else {
+            (self.peak_left, self.peak_right, self.rms_left, self.rms_right)
+        }
+    }
+}
+
 /// An active fade operation.
 #[derive(Clone, Debug)]
 pub struct ActiveFade {
@@ -289,18 +417,11 @@ impl ActiveFade {
         }
 
         let t = (elapsed_secs / duration_secs) as f32;
-        let t = t.clamp(0.0, 1.0);
 
-        // Apply curve
-        let t = match self.config.curve {
-            crate::traits::FadeCurve::Linear => t,
-            crate::traits::FadeCurve::Exponential => t * t,
-            crate::traits::FadeCurve::Sine => {
-                (1.0 - (t * std::f32::consts::PI).cos()) / 2.0
-            }
-        };
+        // Apply curve transformation using FadeCurve::apply()
+        let curved_t = self.config.curve.apply(t);
 
-        self.start_value + (self.config.to - self.start_value) * t
+        self.start_value + (self.config.to - self.start_value) * curved_t
     }
 
     /// Check if the fade is complete.
@@ -365,14 +486,39 @@ pub struct State {
     /// Effects.
     pub effects: HashMap<EffectId, EffectState>,
 
+    /// Modulators.
+    pub modulators: HashMap<ModulatorId, ModulatorState>,
+
+    // =========================================================================
+    // Control Buses
+    // =========================================================================
+    /// Control bus allocator for modulation signals.
+    pub control_buses: ControlBusAllocator,
+
+    /// Node ID of the modulator group (runs before voice groups).
+    ///
+    /// All modulator synths are placed in this group to ensure they
+    /// are processed before voices read from their control buses.
+    pub modulator_group: Option<NodeId>,
+
     // =========================================================================
     // Active Playback
     // =========================================================================
     /// Active fade operations.
     pub active_fades: Vec<ActiveFade>,
 
-    /// Active audio recordings.
+    /// Active audio recordings (native only).
+    #[cfg(not(target_arch = "wasm32"))]
     pub recordings: HashMap<RecordingId, RecordingInfo>,
+
+    // =========================================================================
+    // Metering
+    // =========================================================================
+    /// Meter levels for groups, keyed by link synth node ID.
+    ///
+    /// The link synth sends SendTrig messages with meter data at ~20Hz.
+    /// The key is the node ID of the link synth (not the group ID).
+    pub meter_levels: HashMap<NodeId, MeterLevel>,
 
     // =========================================================================
     // ID Allocation
@@ -406,8 +552,13 @@ impl Default for State {
             melodies: HashMap::new(),
             sequences: HashMap::new(),
             effects: HashMap::new(),
+            modulators: HashMap::new(),
+            control_buses: ControlBusAllocator::default(),
+            modulator_group: None,
             active_fades: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             recordings: HashMap::new(),
+            meter_levels: HashMap::new(),
             next_node_id: 1000, // Reserve low IDs for system nodes
             next_buffer_id: 0,
             next_bus_id: 16, // Reserve buses 0-15 for hardware I/O

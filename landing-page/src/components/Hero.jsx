@@ -79,8 +79,12 @@ pattern("beat")
               <span className="hero__stat-label">Hot Reload</span>
             </div>
             <div className="hero__stat">
-              <span className="hero__stat-number">100%</span>
-              <span className="hero__stat-label">Git-friendly</span>
+              <span className="hero__stat-number">MIDI</span>
+              <span className="hero__stat-label">In & Out</span>
+            </div>
+            <div className="hero__stat">
+              <span className="hero__stat-number">REST</span>
+              <span className="hero__stat-label">API</span>
             </div>
           </div>
         </div>

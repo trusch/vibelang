@@ -66,13 +66,18 @@ pub use script_state::{EffectConfig, GroupConfig, ScriptState};
 #[cfg(feature = "midi")]
 pub use script_state::{
     AdvancedMidiCcRoute, AdvancedMidiKeyboardRoute, AdvancedMidiNoteRoute,
-    MidiCallbackConfig, MidiCcRoute, MidiKeyboardRoute, MidiOutputMessage,
+    MidiCallbackConfig, MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute,
+    MidiOutputMessage, MidiRecordingRequest,
 };
 
+// Types available on all platforms (for order_group_creations)
+use crate::types::GroupId;
+use std::collections::HashSet;
+
+// Imports for calculate_diff and order_group_deletions
 use crate::state::State;
 use crate::traits::SampleConfig;
-use crate::types::{EffectId, GroupId, MelodyId, PatternId, SampleId, SequenceId, VoiceId};
-use std::collections::HashSet;
+use crate::types::{EffectId, MelodyId, ModulatorId, PatternId, SampleId, SequenceId, VoiceId};
 
 /// Calculate the diff between current runtime state and new script state.
 pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
@@ -133,6 +138,12 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
             synthdef: e.synthdef.clone(),
             params: e.params.clone(),
         })
+    });
+
+    // Modulators
+    let current_modulator_ids: HashSet<ModulatorId> = current.modulators.keys().copied().collect();
+    diff.modulators = diff_entities(&current_modulator_ids, &new.modulators, |id| {
+        current.modulators.get(id).map(|m| m.config.clone())
     });
 
     // Samples
@@ -239,7 +250,7 @@ pub fn order_group_creations(configs: &std::collections::HashMap<GroupId, GroupC
     ordered
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::state::GroupState;
@@ -247,6 +258,7 @@ mod tests {
 
     fn make_group_state(id: GroupId, parent: Option<GroupId>) -> GroupState {
         GroupState {
+            name: String::new(),
             id,
             parent,
             node_id: NodeId::new(id.0 + 100),

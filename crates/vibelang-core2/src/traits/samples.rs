@@ -135,6 +135,7 @@ impl SampleConfig {
 /// They can optionally be time-stretched to match the tempo.
 ///
 /// All methods are async for WASM compatibility.
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait Samples: Send + Sync {
     /// Load a sample from a file.
@@ -142,6 +143,20 @@ pub trait Samples: Send + Sync {
     /// # Returns
     ///
     /// Information about the loaded sample.
+    async fn load(&self, id: SampleId, config: SampleConfig) -> Result<SampleInfo>;
+
+    /// Unload a sample.
+    async fn unload(&self, id: SampleId) -> Result<()>;
+
+    /// Get information about a loaded sample.
+    async fn info(&self, id: SampleId) -> Option<SampleInfo>;
+}
+
+/// Sample management for audio files (WASM version).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait Samples {
+    /// Load a sample from a file.
     async fn load(&self, id: SampleId, config: SampleConfig) -> Result<SampleInfo>;
 
     /// Unload a sample.

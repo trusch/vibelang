@@ -6,25 +6,27 @@ description = "Clean, trait-based runtime for VibeLang - generic over synthesis 
 license = "MIT"
 
 [features]
-default = ["native"]
+default = ["native", "midi"]
 native = ["rosc"]
 midi = ["dep:midir"]
 
 [dependencies]
 async-trait = "0.1"
-tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
-tokio-util = "0.7"
 thiserror = "1"
 tracing = "0.1"
+serde = { version = "1.0", features = ["derive"] }
 vibelang-dsp = { path = "../vibelang-dsp" }
 vibelang-sfz = { path = "../vibelang-sfz" }
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
+futures = "0.3"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
+tokio = { version = "1", features = ["sync", "rt", "time", "macros", "rt-multi-thread"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
+tokio-util = "0.7"
 rosc = { version = "0.10", optional = true }
 midir = { version = "0.9", optional = true }
 
@@ -32,4 +34,9 @@ midir = { version = "0.9", optional = true }
 libc = "0.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
+web-time = "1.1"
+gloo-timers = { version = "0.3", features = ["futures"] }
+js-sys = "0.3"
+getrandom = { version = "0.3", features = ["wasm_js"] }

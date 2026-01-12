@@ -45,7 +45,10 @@ use vibelang_core2::midi::{
     parse_note_name, CcRouteBuilder, KeyboardRouteBuilder, NoteRouteBuilder, ParameterCurve,
     VelocityCurve,
 };
-use vibelang_core2::reload::{MidiCallbackConfig, MidiCcRoute, MidiKeyboardRoute, MidiOutputMessage};
+use vibelang_core2::reload::{
+    MidiCallbackConfig, MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute, MidiOutputMessage,
+    MidiRecordingRequest,
+};
 use vibelang_core2::traits::FadeTarget;
 use vibelang_core2::types::MidiDeviceId;
 
@@ -484,6 +487,65 @@ impl MidiDevice {
 
         self.clone()
     }
+
+    // === MIDI Recording Methods ===
+
+    /// Mark this device for MIDI recording.
+    ///
+    /// The runtime will start recording when the script is applied.
+    /// Use `midi_stop_recording(device_id)` to stop and get the recording.
+    pub fn start_recording(&self) -> Self {
+        context::with_state(|state| {
+            state.midi_inputs.insert(self.id);
+            state.midi_recording_requests.push(MidiRecordingRequest {
+                device_id: self.id,
+                channel: None,
+                start: true,
+            });
+        });
+        self.clone()
+    }
+
+    /// Mark this device for MIDI recording on a specific channel.
+    pub fn start_recording_channel(&self, channel: i64) -> Self {
+        context::with_state(|state| {
+            state.midi_inputs.insert(self.id);
+            state.midi_recording_requests.push(MidiRecordingRequest {
+                device_id: self.id,
+                channel: Some(channel.clamp(1, 16) as u8 - 1), // Convert to 0-indexed
+                start: true,
+            });
+        });
+        self.clone()
+    }
+
+    // === MIDI Clock Output Methods ===
+
+    /// Enable MIDI clock output to this device.
+    ///
+    /// When enabled, MIDI clock messages (24 PPQN) will be sent to the device
+    /// synchronized with the transport.
+    pub fn enable_clock(&self) -> Self {
+        context::with_state(|state| {
+            state.midi_outputs.insert(self.id);
+            state.midi_clock_outputs.push(MidiClockOutputRequest {
+                device_id: self.id,
+                enabled: true,
+            });
+        });
+        self.clone()
+    }
+
+    /// Disable MIDI clock output to this device.
+    pub fn disable_clock(&self) -> Self {
+        context::with_state(|state| {
+            state.midi_clock_outputs.push(MidiClockOutputRequest {
+                device_id: self.id,
+                enabled: false,
+            });
+        });
+        self.clone()
+    }
 }
 
 // ============================================================================
@@ -882,6 +944,102 @@ pub fn midi_device_by_id(id: i64) -> MidiDevice {
     midi_device(id.to_string())
 }
 
+// ============================================================================
+// MIDI Recording Handle
+// ============================================================================
+
+/// Handle to a MIDI recording for use in Rhai scripts.
+#[derive(Debug, Clone, CustomType)]
+pub struct MidiRecordingHandle {
+    /// Device ID.
+    pub device_id: MidiDeviceId,
+
+    /// Number of notes recorded.
+    pub note_count: i64,
+
+    /// Number of CC events recorded.
+    pub cc_count: i64,
+
+    /// Duration in beats.
+    pub duration_beats: f64,
+
+    /// The actual note events: (beat, note, velocity, duration).
+    pub notes: Vec<(f64, i64, i64, f64)>,
+}
+
+impl MidiRecordingHandle {
+    /// Get the number of notes.
+    pub fn get_note_count(&mut self) -> i64 {
+        self.note_count
+    }
+
+    /// Get the number of CC events.
+    pub fn get_cc_count(&mut self) -> i64 {
+        self.cc_count
+    }
+
+    /// Get the duration in beats.
+    pub fn get_duration(&mut self) -> f64 {
+        self.duration_beats
+    }
+
+    /// Get the note events as an array.
+    pub fn get_notes(&mut self) -> Array {
+        use rhai::Map;
+        self.notes.iter().map(|(beat, note, vel, dur)| {
+            let mut map = Map::new();
+            map.insert("beat".into(), Dynamic::from(*beat));
+            map.insert("note".into(), Dynamic::from(*note));
+            map.insert("velocity".into(), Dynamic::from(*vel));
+            map.insert("duration".into(), Dynamic::from(*dur));
+            Dynamic::from(map)
+        }).collect()
+    }
+
+    /// Convert to a pattern string (quantized).
+    ///
+    /// # Arguments
+    /// * `quantize` - Grid size in beats (e.g., 0.25 for 16th notes)
+    ///
+    /// Returns a pattern string like "x..x..x." where digits represent velocity levels.
+    pub fn to_pattern_string(&self, quantize: f64) -> String {
+        if self.notes.is_empty() {
+            return ".".to_string();
+        }
+
+        // Use 16th notes by default
+        let grid = if quantize > 0.0 { quantize } else { 0.25 };
+
+        // Calculate total steps (round up to nearest bar)
+        let duration = self.duration_beats.max(4.0);
+        let bars = (duration / 4.0).ceil();
+        let num_steps = (bars * 4.0 / grid) as usize;
+
+        // Create step array
+        let mut steps: Vec<u8> = vec![0; num_steps];
+
+        // Place notes at their quantized positions
+        for (beat, _note, vel, _dur) in &self.notes {
+            let step_idx = ((beat / grid).round() as usize).min(num_steps.saturating_sub(1));
+            // Convert velocity (0-127) to level (1-9)
+            let level = ((*vel as f32 / 127.0) * 9.0).round() as u8;
+            // Take maximum velocity if multiple notes on same step
+            steps[step_idx] = steps[step_idx].max(level.max(1));
+        }
+
+        // Convert to pattern string
+        steps.iter()
+            .map(|&v| {
+                if v == 0 {
+                    '.'
+                } else {
+                    char::from_digit(v as u32, 10).unwrap_or('x')
+                }
+            })
+            .collect()
+    }
+}
+
 /// Register MIDI API with the Rhai engine.
 pub fn register(engine: &mut Engine) {
     // Register MidiDevice type
@@ -931,6 +1089,26 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("on_cc_num", MidiDevice::on_cc_num);
     engine.register_fn("on_clock_sync", MidiDevice::on_clock_sync);
     engine.register_fn("on_midi", MidiDevice::on_midi);
+
+    // Recording methods
+    engine.register_fn("start_recording", MidiDevice::start_recording);
+    engine.register_fn("start_recording_channel", MidiDevice::start_recording_channel);
+
+    // Clock output methods
+    engine.register_fn("enable_clock", MidiDevice::enable_clock);
+    engine.register_fn("disable_clock", MidiDevice::disable_clock);
+
+    // Register MidiRecordingHandle type
+    engine.build_type::<MidiRecordingHandle>();
+    engine.register_fn("note_count", MidiRecordingHandle::get_note_count);
+    engine.register_get("note_count", MidiRecordingHandle::get_note_count);
+    engine.register_fn("cc_count", MidiRecordingHandle::get_cc_count);
+    engine.register_get("cc_count", MidiRecordingHandle::get_cc_count);
+    engine.register_fn("duration", MidiRecordingHandle::get_duration);
+    engine.register_get("duration", MidiRecordingHandle::get_duration);
+    engine.register_fn("notes", MidiRecordingHandle::get_notes);
+    engine.register_get("notes", MidiRecordingHandle::get_notes);
+    engine.register_fn("to_pattern", MidiRecordingHandle::to_pattern_string);
 
     // Register KeyboardRoute type
     engine.build_type::<KeyboardRoute>();

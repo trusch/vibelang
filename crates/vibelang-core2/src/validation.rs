@@ -12,9 +12,11 @@
 
 use crate::error::{Error, Result};
 use crate::traits::{
-    Clip, FadeConfig, MelodyConfig, NoteEvent, PatternConfig, RecordingConfig, SampleConfig,
+    Clip, FadeConfig, MelodyConfig, NoteEvent, PatternConfig, SampleConfig,
     SequenceConfig, VoiceConfig,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::traits::RecordingConfig;
 use crate::types::Beat;
 
 /// Validation constants
@@ -392,6 +394,7 @@ fn validate_clip(clip: &Clip, index: usize, sequence_length: f64) -> Result<()> 
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Validate for RecordingConfig {
     fn validate(&self) -> Result<()> {
         // Validate duration - either beats or seconds must be set
@@ -604,7 +607,7 @@ pub fn validate_midi_channel(channel: u8) -> Result<()> {
 
 /// Validate velocity value.
 pub fn validate_velocity(velocity: f32) -> Result<()> {
-    if velocity < limits::MIN_VELOCITY || velocity > limits::MAX_VELOCITY {
+    if !(limits::MIN_VELOCITY..=limits::MAX_VELOCITY).contains(&velocity) {
         return Err(Error::invalid_param(
             "velocity",
             format!(
@@ -636,19 +639,19 @@ mod tests {
     #[test]
     fn test_voice_config_validation() {
         // Valid config
-        let config = VoiceConfig::new("sine", GroupId::new(0));
+        let config = VoiceConfig::new("test_voice", "sine", GroupId::new(0));
         assert!(config.validate().is_ok());
 
         // Empty synthdef
-        let mut config = VoiceConfig::new("sine", GroupId::new(0));
+        let mut config = VoiceConfig::new("test_voice", "sine", GroupId::new(0));
         config.synthdef = String::new();
         assert!(config.validate().is_err());
 
         // Invalid polyphony
-        let config = VoiceConfig::new("sine", GroupId::new(0)).with_polyphony(0);
+        let config = VoiceConfig::new("test_voice", "sine", GroupId::new(0)).with_polyphony(0);
         assert!(config.validate().is_err());
 
-        let config = VoiceConfig::new("sine", GroupId::new(0)).with_polyphony(255);
+        let config = VoiceConfig::new("test_voice", "sine", GroupId::new(0)).with_polyphony(255);
         assert!(config.validate().is_err());
     }
 
@@ -657,40 +660,40 @@ mod tests {
         use crate::traits::Step;
 
         // Valid config
-        let config = PatternConfig::with_length(crate::types::VoiceId::new(0), 4.0)
+        let config = PatternConfig::with_length("test_pattern", crate::types::VoiceId::new(0), 4.0)
             .with_step(Step::at(0.0))
             .with_step(Step::at(1.0));
         assert!(config.validate().is_ok());
 
         // Zero length
-        let config = PatternConfig::with_length(crate::types::VoiceId::new(0), 0.0);
+        let config = PatternConfig::with_length("test_pattern", crate::types::VoiceId::new(0), 0.0);
         assert!(config.validate().is_err());
 
         // Step outside pattern
-        let config = PatternConfig::with_length(crate::types::VoiceId::new(0), 4.0)
+        let config = PatternConfig::with_length("test_pattern", crate::types::VoiceId::new(0), 4.0)
             .with_step(Step::at(5.0));
         assert!(config.validate().is_err());
 
         // Invalid swing
         let config =
-            PatternConfig::with_length(crate::types::VoiceId::new(0), 4.0).with_swing(1.5);
+            PatternConfig::with_length("test_pattern", crate::types::VoiceId::new(0), 4.0).with_swing(1.5);
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_melody_config_validation() {
         // Valid config
-        let config = MelodyConfig::with_length(crate::types::VoiceId::new(0), 4.0)
+        let config = MelodyConfig::with_length("test_melody", crate::types::VoiceId::new(0), 4.0)
             .with_note(NoteEvent::quarter(0.0, 60, 0.8));
         assert!(config.validate().is_ok());
 
         // Invalid note number
-        let config = MelodyConfig::with_length(crate::types::VoiceId::new(0), 4.0)
+        let config = MelodyConfig::with_length("test_melody", crate::types::VoiceId::new(0), 4.0)
             .with_note(NoteEvent::quarter(0.0, 200, 0.8));
         assert!(config.validate().is_err());
 
         // Invalid velocity
-        let config = MelodyConfig::with_length(crate::types::VoiceId::new(0), 4.0)
+        let config = MelodyConfig::with_length("test_melody", crate::types::VoiceId::new(0), 4.0)
             .with_note(NoteEvent::quarter(0.0, 60, 1.5));
         assert!(config.validate().is_err());
     }

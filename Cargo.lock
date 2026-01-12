@@ -617,6 +617,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "const-random"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1415,8 +1425,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "335ff9f135e4384c8150d6f27c6daed433577f86b4750418338c01a1a2528592"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1426,9 +1438,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi",
  "wasip2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1436,6 +1450,18 @@ name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+
+[[package]]
+name = "gloo-timers"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbb143cf96099802033e0d4f4963b19fd2e0b728bcf076cd9cf7f6634f092994"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "js-sys",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "half"
@@ -3235,6 +3261,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4206,22 +4243,33 @@ dependencies = [
 
 [[package]]
 name = "vibelang-cli2"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
+ "arboard",
+ "chrono",
  "clap 4.5.53",
+ "crossterm 0.29.0",
  "ctrlc",
  "env_logger 0.11.8",
  "log",
  "midir 0.10.3",
  "notify",
- "rosc 0.10.1",
+ "ratatui 0.30.0",
+ "rdev",
+ "rosc 0.11.4",
+ "tar",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "vibelang-core2",
  "vibelang-dsp",
+ "vibelang-http2",
+ "vibelang-lsp2",
  "vibelang-rhai",
+ "vibelang-std",
+ "which 8.0.0",
 ]
 
 [[package]]
@@ -4236,8 +4284,10 @@ dependencies = [
  "hound",
  "humantime",
  "jack",
+ "libc",
  "log",
  "midir 0.10.3",
+ "parking_lot",
  "rand 0.9.2",
  "regex",
  "rhai",
@@ -4253,13 +4303,25 @@ name = "vibelang-core2"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "crossbeam-channel",
+ "futures",
+ "getrandom 0.3.4",
+ "gloo-timers",
+ "js-sys",
  "libc",
  "midir 0.9.1",
+ "parking_lot",
  "rosc 0.10.1",
+ "serde",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-util",
  "tracing",
+ "vibelang-dsp",
+ "vibelang-sfz",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-time",
 ]
 
 [[package]]
@@ -4289,6 +4351,22 @@ dependencies = [
  "tower-http",
  "uuid",
  "vibelang-core",
+]
+
+[[package]]
+name = "vibelang-http2"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "futures",
+ "midir 0.9.1",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "uuid",
+ "vibelang-core2",
 ]
 
 [[package]]
@@ -4329,9 +4407,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "vibelang-lsp2"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "dashmap 6.1.0",
+ "regex",
+ "rhai",
+ "ropey",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tower-lsp",
+ "tracing",
+ "vibelang-core2",
+ "vibelang-dsp",
+ "vibelang-rhai",
+ "vibelang-std",
+]
+
+[[package]]
 name = "vibelang-rhai"
 version = "0.1.0"
 dependencies = [
+ "getrandom 0.3.4",
  "log",
  "midir 0.10.3",
  "rhai",
@@ -4339,6 +4440,8 @@ dependencies = [
  "tracing",
  "vibelang-core2",
  "vibelang-dsp",
+ "vibelang-std",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -4359,6 +4462,24 @@ version = "0.1.5"
 dependencies = [
  "dirs",
  "include_dir",
+]
+
+[[package]]
+name = "vibelang-wasm"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "getrandom 0.2.16",
+ "getrandom 0.3.4",
+ "js-sys",
+ "serde",
+ "serde-wasm-bindgen",
+ "vibelang-core2",
+ "vibelang-dsp",
+ "vibelang-rhai",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
@@ -4458,6 +4579,16 @@ name = "web-sys"
 version = "0.3.82"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a1f95c0d03a47f4ae1f7a64643a6bb97465d9b740f0fa8f90ea33915c99a9a1"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "web-time"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",

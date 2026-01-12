@@ -641,6 +641,218 @@ impl SynthDef {
         let ir = self.build_effect_closure(closure, num_channels)?;
         encode_synthdef(&ir)
     }
+
+    /// Execute a modulator body closure.
+    ///
+    /// Modulators are control-rate synthdefs that output to control buses.
+    /// The closure should return a single NodeRef representing the control signal.
+    /// An "out" parameter is automatically added for the control bus number.
+    pub fn build_modulator_closure(self, closure: rhai::FnPtr) -> Result<GraphIR> {
+        // Create a new graph builder
+        let mut builder = GraphBuilderInner::new();
+
+        // Use explicitly declared parameters
+        let params = self.params.clone();
+
+        // Check if "out" parameter exists, if not add it automatically
+        let has_out_param = params.iter().any(|(name, _, _)| name == "out");
+
+        // Add all parameters first (as single-value arrays)
+        for (name, default, lag_ms) in &params {
+            builder.add_param(name.clone(), vec![*default], *lag_ms);
+        }
+
+        // Add automatic "out" parameter if not explicitly defined
+        if !has_out_param {
+            builder.add_param("out".to_string(), vec![0.0], None);
+        }
+
+        // Create the Control UGen node for parameters (must be first node, at index 0)
+        builder.create_control_ugen();
+
+        // Create NodeRefs for parameters
+        let mut param_nodes = Vec::new();
+        for (i, _) in params.iter().enumerate() {
+            let slot_index = builder.params[i].index;
+            param_nodes.push(rhai::Dynamic::from(NodeRef(0xFFFFFFFF - slot_index as u32)));
+        }
+
+        // Set as active
+        set_active_builder(builder);
+
+        // Create engine with DSP components
+        let mut engine = rhai::Engine::new();
+        rhainodes::register_node_ref(&mut engine);
+        register_generated_ugens(&mut engine);
+        helpers::register_helpers(&mut engine);
+        engine.register_type::<GraphIR>();
+
+        // Create empty AST for closure call
+        let empty_ast = rhai::AST::empty();
+
+        // Call closure with parameters
+        let result: rhai::Dynamic = match param_nodes.len() {
+            0 => closure.call(&engine, &empty_ast, ()),
+            1 => closure.call(&engine, &empty_ast, (param_nodes[0].clone(),)),
+            2 => closure.call(
+                &engine,
+                &empty_ast,
+                (param_nodes[0].clone(), param_nodes[1].clone()),
+            ),
+            3 => closure.call(
+                &engine,
+                &empty_ast,
+                (
+                    param_nodes[0].clone(),
+                    param_nodes[1].clone(),
+                    param_nodes[2].clone(),
+                ),
+            ),
+            4 => closure.call(
+                &engine,
+                &empty_ast,
+                (
+                    param_nodes[0].clone(),
+                    param_nodes[1].clone(),
+                    param_nodes[2].clone(),
+                    param_nodes[3].clone(),
+                ),
+            ),
+            5 => closure.call(
+                &engine,
+                &empty_ast,
+                (
+                    param_nodes[0].clone(),
+                    param_nodes[1].clone(),
+                    param_nodes[2].clone(),
+                    param_nodes[3].clone(),
+                    param_nodes[4].clone(),
+                ),
+            ),
+            6 => closure.call(
+                &engine,
+                &empty_ast,
+                (
+                    param_nodes[0].clone(),
+                    param_nodes[1].clone(),
+                    param_nodes[2].clone(),
+                    param_nodes[3].clone(),
+                    param_nodes[4].clone(),
+                    param_nodes[5].clone(),
+                ),
+            ),
+            7 => closure.call(
+                &engine,
+                &empty_ast,
+                (
+                    param_nodes[0].clone(),
+                    param_nodes[1].clone(),
+                    param_nodes[2].clone(),
+                    param_nodes[3].clone(),
+                    param_nodes[4].clone(),
+                    param_nodes[5].clone(),
+                    param_nodes[6].clone(),
+                ),
+            ),
+            8 => closure.call(
+                &engine,
+                &empty_ast,
+                (
+                    param_nodes[0].clone(),
+                    param_nodes[1].clone(),
+                    param_nodes[2].clone(),
+                    param_nodes[3].clone(),
+                    param_nodes[4].clone(),
+                    param_nodes[5].clone(),
+                    param_nodes[6].clone(),
+                    param_nodes[7].clone(),
+                ),
+            ),
+            9 => closure.call(
+                &engine,
+                &empty_ast,
+                (
+                    param_nodes[0].clone(),
+                    param_nodes[1].clone(),
+                    param_nodes[2].clone(),
+                    param_nodes[3].clone(),
+                    param_nodes[4].clone(),
+                    param_nodes[5].clone(),
+                    param_nodes[6].clone(),
+                    param_nodes[7].clone(),
+                    param_nodes[8].clone(),
+                ),
+            ),
+            10 => closure.call(
+                &engine,
+                &empty_ast,
+                (
+                    param_nodes[0].clone(),
+                    param_nodes[1].clone(),
+                    param_nodes[2].clone(),
+                    param_nodes[3].clone(),
+                    param_nodes[4].clone(),
+                    param_nodes[5].clone(),
+                    param_nodes[6].clone(),
+                    param_nodes[7].clone(),
+                    param_nodes[8].clone(),
+                    param_nodes[9].clone(),
+                ),
+            ),
+            _ => {
+                clear_active_builder();
+                return Err(SynthDefError::RhaiError(
+                    "Too many parameters (max 10)".to_string(),
+                ));
+            }
+        }
+        .map_err(|e| {
+            clear_active_builder();
+            SynthDefError::RhaiError(format!("Modulator body closure error: {}", e))
+        })?;
+
+        // Get the result - must be a single NodeRef (control signal)
+        let result_node = if let Some(node) = result.clone().try_cast::<NodeRef>() {
+            node
+        } else {
+            clear_active_builder();
+            return Err(SynthDefError::ValidationError(format!(
+                "Modulator body must return a single control signal (NodeRef), got {}",
+                result.type_name()
+            )));
+        };
+
+        // Get the builder back
+        let mut builder = clear_active_builder().ok_or(SynthDefError::NoActiveBuilder)?;
+
+        // Find the "out" parameter index
+        let out_param_idx = builder
+            .params
+            .iter()
+            .position(|p| p.name == "out")
+            .expect("'out' parameter should exist");
+
+        // Add Out.kr node for control-rate output to control bus
+        let out_inputs = vec![
+            Input::Node {
+                node_id: 0,
+                output_index: out_param_idx as u32,
+            },
+            result_node.to_input(),
+        ];
+        builder.add_node("Out".to_string(), Rate::Control, out_inputs, 0, 0);
+
+        // Convert to GraphIR
+        let ir = GraphIR::from_builder(self.name, builder);
+
+        Ok(ir)
+    }
+
+    /// Build a modulator synthdef and return the encoded bytes.
+    pub fn build_modulator_and_encode(self, closure: rhai::FnPtr) -> Result<Vec<u8>> {
+        let ir = self.build_modulator_closure(closure)?;
+        encode_synthdef(&ir)
+    }
 }
 
 /// Get default parameter values from a GraphIR.

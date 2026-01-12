@@ -1,0 +1,70 @@
+// Tutorial: Sequences & Arrangement
+// Difficulty: intermediate | Duration: 5 min
+// Description: Arrange patterns over time to create song structures.
+
+// Sequences let you place patterns on a timeline!
+
+import "stdlib/drums/kicks/kick_909.vibe";
+import "stdlib/drums/snares/snare_909.vibe";
+import "stdlib/drums/hihats/hihat_909_closed.vibe";
+
+set_tempo(128);
+
+define_group("Drums", || {
+    let kick = voice("kick").synth("kick_909").gain(db(-6));
+    let snare = voice("snare").synth("snare_909").gain(db(-9));
+    let hat = voice("hat").synth("hihat_909_closed").gain(db(-12));
+
+    // --------------------------------------------------------
+    // STEP 1: Create patterns with .apply() (don't start them!)
+    // --------------------------------------------------------
+    let kick_pat = pattern("kick")
+        .on(kick)
+        .step("x... x...")
+        .apply();  // Register but don't play yet
+
+    let snare_pat = pattern("snare")
+        .on(snare)
+        .step(".... x...")
+        .apply();
+
+    let hat_pat = pattern("hat")
+        .on(hat)
+        .step(".x.x .x.x")
+        .apply();
+
+    // --------------------------------------------------------
+    // STEP 2: Arrange patterns on a timeline
+    // --------------------------------------------------------
+    // .clip(start..end, pattern) places a pattern in that range
+    //
+    // Timeline (4 bars total):
+    //   Bar 0-1: hats only
+    //   Bar 1-2: hats + kick
+    //   Bar 2-4: hats + kick + snare (full beat)
+
+    sequence("arrangement")
+        .loop_bars(4)
+        .clip(0..bars(4), hat_pat)         // Hats: all 4 bars
+        .clip(bars(1)..bars(4), kick_pat)  // Kick: bars 1-4
+        .clip(bars(2)..bars(4), snare_pat) // Snare: bars 2-4
+        .start();
+});
+
+// ============================================================
+// SEQUENCE SYNTAX:
+//
+// sequence("name")
+//     .loop_bars(N)              // Total length in bars
+//     .clip(start..end, pattern) // Place pattern in time range
+//     .start();                  // Start playing
+//
+// TIMING:
+//   bars(N) converts bars to beats (bars(1) = 4 beats)
+//   0..bars(2) means "from beat 0 to beat 8"
+//
+// TRY THIS:
+// - Change when instruments enter/exit
+// - Add more patterns with different rhythms
+// - Create a breakdown by removing the kick for a bar
+// ============================================================

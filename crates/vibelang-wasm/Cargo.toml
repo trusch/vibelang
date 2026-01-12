@@ -1,0 +1,31 @@
+[package]
+name = "vibelang-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM bindings for VibeLang - browser-based music programming"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+vibelang-core2 = { path = "../vibelang-core2", default-features = false }
+vibelang-rhai = { path = "../vibelang-rhai", default-features = false }
+vibelang-dsp = { path = "../vibelang-dsp", features = ["wasm"] }
+
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console"] }
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"
+
+# Enable JavaScript random source for WASM
+getrandom02 = { package = "getrandom", version = "0.2", features = ["js"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+[profile.release]
+# Optimize for small code size
+opt-level = "s"
+lto = true

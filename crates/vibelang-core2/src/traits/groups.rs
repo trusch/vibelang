@@ -10,6 +10,7 @@ use async_trait::async_trait;
 ///
 /// Groups contain voices and effects, and can be nested to create
 /// complex mixing hierarchies (e.g., drums.kicks, drums.snares).
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait Groups: Send + Sync {
     /// Create a new group.
@@ -17,8 +18,9 @@ pub trait Groups: Send + Sync {
     /// # Arguments
     ///
     /// * `id` - Unique ID for the new group
+    /// * `name` - Display name for the group
     /// * `parent` - Optional parent group (None for root-level)
-    async fn create(&self, id: GroupId, parent: Option<GroupId>) -> Result<()>;
+    async fn create(&self, id: GroupId, name: &str, parent: Option<GroupId>) -> Result<()>;
 
     /// Delete a group and all its contents.
     async fn delete(&self, id: GroupId) -> Result<()>;
@@ -36,5 +38,25 @@ pub trait Groups: Send + Sync {
     /// Solo a group.
     ///
     /// When any group is soloed, only soloed groups produce audio.
+    async fn solo(&self, id: GroupId, solo: bool) -> Result<()>;
+}
+
+/// Group management for hierarchical audio routing (WASM version).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait Groups {
+    /// Create a new group.
+    async fn create(&self, id: GroupId, name: &str, parent: Option<GroupId>) -> Result<()>;
+
+    /// Delete a group and all its contents.
+    async fn delete(&self, id: GroupId) -> Result<()>;
+
+    /// Set a parameter on a group.
+    async fn set_param(&self, id: GroupId, param: &str, value: f32) -> Result<()>;
+
+    /// Mute or unmute a group.
+    async fn mute(&self, id: GroupId, muted: bool) -> Result<()>;
+
+    /// Solo a group.
     async fn solo(&self, id: GroupId, solo: bool) -> Result<()>;
 }

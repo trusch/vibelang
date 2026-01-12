@@ -13,16 +13,23 @@ name = "vibe2"
 path = "src/main.rs"
 
 [features]
-default = ["midi", "api", "lsp"]
+default = ["midi", "api", "lsp", "extensions"]
 midi = ["vibelang-core2/midi", "vibelang-rhai/midi", "dep:midir"]
 api = ["dep:vibelang-http2"]
 lsp = ["dep:vibelang-lsp2"]
+
+# Script extensions (filesystem, exec, networking)
+extensions = ["ext-fs", "ext-exec", "ext-net"]
+ext-fs = ["vibelang-rhai/ext-fs"]
+ext-exec = ["vibelang-rhai/ext-exec"]
+ext-net = ["vibelang-rhai/ext-net"]
 
 [dependencies]
 # Core runtime (new async architecture)
 vibelang-core2 = { path = "../vibelang-core2", features = ["native"] }
 vibelang-rhai = { path = "../vibelang-rhai" }
 vibelang-dsp = { path = "../vibelang-dsp" }
+vibelang-std = { path = "../vibelang-std" }
 
 # LSP server (new core2-based)
 vibelang-lsp2 = { path = "../vibelang-lsp2", optional = true }

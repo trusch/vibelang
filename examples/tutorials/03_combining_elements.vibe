@@ -1,0 +1,82 @@
+// Tutorial: Combining Elements
+// Difficulty: beginner | Duration: 5 min
+// Description: Build a complete track with drums, bass, and lead.
+
+// Let's build a complete mini-track!
+
+// Import all the sounds we'll use
+import "stdlib/drums/kicks/kick_909.vibe";
+import "stdlib/drums/claps/clap_808.vibe";
+import "stdlib/drums/hihats/hihat_909_closed.vibe";
+import "stdlib/drums/hihats/hihat_909_open.vibe";
+import "stdlib/bass/genre/bass_house.vibe";
+import "stdlib/pads/ambient/pad_warm.vibe";
+
+set_tempo(124);
+
+// ------------------------------------------------------------
+// DRUMS
+// ------------------------------------------------------------
+define_group("Drums", || {
+    let kick = voice("kick").synth("kick_909").gain(db(-6));
+    let snare = voice("snare").synth("clap_808").gain(db(-9));
+    let ch = voice("ch").synth("hihat_909_closed").gain(db(-15));
+    let oh = voice("oh").synth("hihat_909_open").gain(db(-18));
+
+    // Four-on-the-floor kick
+    pattern("kick").on(kick).step("x... x... x... x...").start();
+
+    // Clap on 2 and 4
+    pattern("snare").on(snare).step(".... x... .... x...").start();
+
+    // Closed hats on offbeats
+    pattern("ch").on(ch).step(".x.x .x.x .x.x .x.x").start();
+
+    // Open hat for accent
+    pattern("oh").on(oh).step(".... .... .... ...x").start();
+});
+
+// ------------------------------------------------------------
+// BASS
+// ------------------------------------------------------------
+define_group("Bass", || {
+    let bass = voice("bass").synth("bass_house").gain(db(-9));
+
+    melody("bassline")
+        .on(bass)
+        .notes("A2 - . . | F2 . A2 . | C2 - . . | F2 . G2 .")
+        .start();
+});
+
+// ------------------------------------------------------------
+// PADS
+// ------------------------------------------------------------
+define_group("Pads", || {
+    // Polyphonic synth for chords (.poly(4) = 4 notes at once)
+    let pad = voice("pad")
+        .synth("pad_warm")
+        .poly(4)
+        .gain(db(-12));
+
+    // Chord progression using chord notation (Am - F - C - G)
+    // Each chord lasts one bar (4 beats), the pattern loops every 16 beats
+    melody("chords")
+        .on(pad)
+        .notes("A3:m - - - | F3:maj - - - | C4:maj - - - | G3:maj - - -")
+        .start();
+});
+
+// ============================================================
+// WHAT WE LEARNED:
+// - Groups organize sounds (Drums, Bass, Pads)
+// - Voices play synthdefs from the stdlib
+// - Patterns trigger drum hits
+// - Melodies play note sequences
+// - .poly() enables playing multiple notes
+// - Chord notation: C4:m (minor), C4:maj (major), C4:7 (dominant 7)
+//
+// TRY THIS:
+// - Change the progression: "D3:m - - - | G3:maj - - - | C4:maj - - - | A3:m - - -"
+// - Try 7th chords: "A3:m7 - - - | F3:maj7 - - -"
+// - Different pad: "pad_analog", "pad_bright", "pad_dark"
+// ============================================================

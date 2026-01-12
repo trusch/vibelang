@@ -26,12 +26,18 @@ pub const DEFAULT_PITCH_BEND_RANGE: u8 = 48;
 pub const CC_TIMBRE: u8 = 74;
 
 /// CC number for MPE configuration.
+/// Standard MIDI constant, reserved for future MPE configuration implementation.
+#[allow(dead_code)]
 pub const CC_MPE_CONFIGURATION: u8 = 127; // RPN MSB for MPE
 
 /// RPN for pitch bend sensitivity.
+/// Standard MIDI constant, reserved for future MPE implementation.
+#[allow(dead_code)]
 pub const RPN_PITCH_BEND_SENSITIVITY: u16 = 0x0000;
 
 /// RPN for MPE configuration.
+/// Standard MIDI constant, reserved for future MPE implementation.
+#[allow(dead_code)]
 pub const RPN_MPE_CONFIGURATION: u16 = 0x0006;
 
 // ============================================================================

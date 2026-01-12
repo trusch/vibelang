@@ -23,8 +23,6 @@
 //! - `add_note_route()` - Route single notes with choke groups
 //! - `add_cc_route()` - Route CCs with parameter curves
 
-#![cfg(feature = "midi")]
-
 use crate::backend::Backend;
 use crate::midi::{
     CallbackData, CallbackType, CcRouteBuilder, KeyboardRouteBuilder, MidiCallbacks,
@@ -32,6 +30,8 @@ use crate::midi::{
     // New infrastructure
     MidiEventQueue, MidiEventSender, TimestampedMidiEvent, MidiClock, JitterCompensator,
     MidiMessage as NewMidiMessage, parse_midi_bytes as new_parse_midi_bytes,
+    // Recording
+    MidiRecording, MidiRecordingInfo,
 };
 use crate::state::State;
 use crate::traits::{FadeTarget, Midi, MidiDeviceInfo};
@@ -45,7 +45,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use tokio::sync::{mpsc, RwLock};
+use crate::compat::RwLock;
+use tokio::sync::mpsc;
 
 /// A parsed MIDI message.
 #[derive(Clone, Debug)]
@@ -228,7 +229,27 @@ pub struct MidiHandler<B: Backend> {
     midi_clock: Arc<MidiClock>,
 
     /// Jitter compensator for stable timing.
+    /// Reserved for advanced MIDI timing compensation - not yet integrated into event processing.
+    #[allow(dead_code)]
     jitter_compensator: Arc<parking_lot::RwLock<JitterCompensator>>,
+
+    // ========================================================================
+    // Recording
+    // ========================================================================
+
+    /// Active recordings by device ID.
+    recordings: Arc<RwLock<HashMap<MidiDeviceId, MidiRecording>>>,
+
+    // ========================================================================
+    // Clock Output
+    // ========================================================================
+
+    /// Devices with clock output enabled.
+    clock_output_devices: Arc<RwLock<std::collections::HashSet<MidiDeviceId>>>,
+
+    /// Last beat position at which we sent a MIDI clock tick.
+    /// Used to calculate how many clock ticks to send on each tick.
+    last_clock_beat: Arc<RwLock<f64>>,
 }
 
 impl<B: Backend> MidiHandler<B> {
@@ -259,6 +280,11 @@ impl<B: Backend> MidiHandler<B> {
             event_queue,
             midi_clock,
             jitter_compensator,
+            // Recording
+            recordings: Arc::new(RwLock::new(HashMap::new())),
+            // Clock output
+            clock_output_devices: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            last_clock_beat: Arc::new(RwLock::new(0.0)),
         }
     }
 
@@ -403,6 +429,23 @@ impl<B: Backend> MidiHandler<B> {
         );
         routing.advanced_cc_routes.push(route);
         idx
+    }
+
+    /// Remove a keyboard route by index.
+    pub async fn remove_keyboard_route(&self, index: usize) {
+        let mut routing = self.routing.write().await;
+        if index < routing.advanced_keyboard_routes.len() {
+            routing.advanced_keyboard_routes.remove(index);
+            tracing::info!("Removed keyboard route at index {}", index);
+        } else {
+            tracing::warn!("Attempted to remove keyboard route at invalid index {}", index);
+        }
+    }
+
+    /// Get the number of active keyboard routes.
+    pub async fn keyboard_route_count(&self) -> usize {
+        let routing = self.routing.read().await;
+        routing.advanced_keyboard_routes.len() + routing.keyboard_routes.len()
     }
 
     /// Clear all MIDI routes (both basic and advanced).
@@ -566,6 +609,9 @@ impl<B: Backend> MidiHandler<B> {
         // First, invoke callbacks
         self.invoke_callbacks(device_id, &msg).await;
 
+        // Record events if recording is active for this device
+        self.record_message(device_id, &msg).await;
+
         // Then process routing
         let routing = self.routing.read().await;
 
@@ -573,19 +619,19 @@ impl<B: Backend> MidiHandler<B> {
             MidiMessage::NoteOn { channel, note, velocity } => {
                 // Process basic keyboard routes
                 for route in &routing.keyboard_routes {
-                    if route.device_id == device_id {
-                        if route.channel.is_none() || route.channel == Some(*channel) {
-                            let mut state = self.state.write().await;
-                            let node_id = state.alloc_node_id();
-                            if let Some(voice) = state.voices.get_mut(&route.voice_id) {
-                                tracing::debug!(
-                                    "MIDI note_on: voice={}, note={}, velocity={}",
-                                    route.voice_id.0,
-                                    note,
-                                    velocity
-                                );
-                                voice.note_nodes.insert(*note, node_id);
-                            }
+                    if route.device_id == device_id
+                        && (route.channel.is_none() || route.channel == Some(*channel))
+                    {
+                        let mut state = self.state.write().await;
+                        let node_id = state.alloc_node_id();
+                        if let Some(voice) = state.voices.get_mut(&route.voice_id) {
+                            tracing::debug!(
+                                "MIDI note_on: voice={}, note={}, velocity={}",
+                                route.voice_id.0,
+                                note,
+                                velocity
+                            );
+                            voice.note_nodes.insert(*note, node_id);
                         }
                     }
                 }
@@ -652,17 +698,17 @@ impl<B: Backend> MidiHandler<B> {
             MidiMessage::NoteOff { channel, note } => {
                 // Process basic keyboard routes
                 for route in &routing.keyboard_routes {
-                    if route.device_id == device_id {
-                        if route.channel.is_none() || route.channel == Some(*channel) {
-                            let mut state = self.state.write().await;
-                            if let Some(voice) = state.voices.get_mut(&route.voice_id) {
-                                tracing::debug!(
-                                    "MIDI note_off: voice={}, note={}",
-                                    route.voice_id.0,
-                                    note
-                                );
-                                voice.note_nodes.remove(note);
-                            }
+                    if route.device_id == device_id
+                        && (route.channel.is_none() || route.channel == Some(*channel))
+                    {
+                        let mut state = self.state.write().await;
+                        if let Some(voice) = state.voices.get_mut(&route.voice_id) {
+                            tracing::debug!(
+                                "MIDI note_off: voice={}, note={}",
+                                route.voice_id.0,
+                                note
+                            );
+                            voice.note_nodes.remove(note);
                         }
                     }
                 }
@@ -771,7 +817,6 @@ impl<B: Backend> MidiHandler<B> {
                         }
                     }
                 }
-                return;
             }
             MidiMessage::PitchBend { channel, value } => {
                 let basic_routes: Vec<_> = routing
@@ -805,24 +850,19 @@ impl<B: Backend> MidiHandler<B> {
                         }
                     }
                 }
-                return;
             }
             MidiMessage::Clock => {
                 // MIDI Clock pulse (24 ppqn) - handled via callbacks only
                 tracing::trace!("MIDI Clock pulse from device {}", device_id.0);
-                return;
             }
             MidiMessage::Start => {
                 tracing::debug!("MIDI Start from device {}", device_id.0);
-                return;
             }
             MidiMessage::Stop => {
                 tracing::debug!("MIDI Stop from device {}", device_id.0);
-                return;
             }
             MidiMessage::Continue => {
                 tracing::debug!("MIDI Continue from device {}", device_id.0);
-                return;
             }
         }
     }
@@ -955,9 +995,136 @@ impl<B: Backend> MidiHandler<B> {
 
         Ok(())
     }
+
+    /// Record a MIDI message if recording is active for this device.
+    async fn record_message(&self, device_id: MidiDeviceId, msg: &MidiMessage) {
+        let mut recordings = self.recordings.write().await;
+        if let Some(recording) = recordings.get_mut(&device_id) {
+            if recording.is_recording {
+                // Get current beat from state
+                let current_beat = {
+                    let state = self.state.read().await;
+                    state.current_beat
+                };
+
+                match msg {
+                    MidiMessage::NoteOn { channel, note, velocity } => {
+                        recording.record_note_on(*note, *velocity, *channel, current_beat);
+                        tracing::debug!(
+                            "Recorded note_on: device={}, note={}, velocity={}, beat={}",
+                            device_id.0, note, velocity, current_beat.to_f64()
+                        );
+                    }
+                    MidiMessage::NoteOff { channel, note } => {
+                        recording.record_note_off(*note, *channel, current_beat);
+                        tracing::debug!(
+                            "Recorded note_off: device={}, note={}, beat={}",
+                            device_id.0, note, current_beat.to_f64()
+                        );
+                    }
+                    MidiMessage::ControlChange { channel, cc, value } => {
+                        recording.record_cc(*cc, *value, *channel, current_beat);
+                        tracing::trace!(
+                            "Recorded CC: device={}, cc={}, value={}, beat={}",
+                            device_id.0, cc, value, current_beat.to_f64()
+                        );
+                    }
+                    _ => {} // Don't record other message types
+                }
+            }
+        }
+    }
+
+    /// Send MIDI clock tick to all devices with clock output enabled.
+    pub async fn send_clock_tick(&self) -> Result<()> {
+        let clock_devices = self.clock_output_devices.read().await;
+        if clock_devices.is_empty() {
+            return Ok(());
+        }
+
+        let mut outputs = self.outputs.lock().unwrap();
+        for device_id in clock_devices.iter() {
+            if let Some(conn) = outputs.get_mut(device_id) {
+                // MIDI Clock message is 0xF8
+                if let Err(e) = conn.send(&[0xF8]) {
+                    tracing::warn!("Failed to send MIDI clock to device {}: {}", device_id.0, e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Get a reference to the recordings map for direct access.
+    pub fn recordings(&self) -> Arc<RwLock<HashMap<MidiDeviceId, MidiRecording>>> {
+        Arc::clone(&self.recordings)
+    }
+
+    /// Tick MIDI clock output based on current beat position.
+    ///
+    /// Sends the appropriate number of clock ticks (24 PPQN) based on
+    /// the beat position change since the last tick.
+    pub async fn tick_clock(&self, current_beat: f64, is_playing: bool) -> Result<()> {
+        let clock_devices = self.clock_output_devices.read().await;
+        if clock_devices.is_empty() {
+            return Ok(());
+        }
+
+        // Only send clock when transport is playing
+        if !is_playing {
+            // Reset clock position when stopped
+            let mut last_beat = self.last_clock_beat.write().await;
+            *last_beat = current_beat;
+            return Ok(());
+        }
+
+        let mut last_beat = self.last_clock_beat.write().await;
+
+        // Calculate how many clock ticks to send
+        // 24 PPQN = 24 pulses per quarter note = 24 pulses per beat
+        const PPQN: f64 = 24.0;
+
+        // Calculate ticks since last position
+        let beat_diff = current_beat - *last_beat;
+
+        // Handle negative beat diff (e.g., seek backwards)
+        if beat_diff < 0.0 {
+            *last_beat = current_beat;
+            return Ok(());
+        }
+
+        let ticks_to_send = (beat_diff * PPQN).floor() as u32;
+
+        if ticks_to_send > 0 {
+            let mut outputs = self.outputs.lock().unwrap();
+
+            for device_id in clock_devices.iter() {
+                if let Some(conn) = outputs.get_mut(device_id) {
+                    for _ in 0..ticks_to_send {
+                        // MIDI Clock message is 0xF8
+                        if let Err(e) = conn.send(&[0xF8]) {
+                            tracing::warn!("Failed to send MIDI clock to device {}: {}", device_id.0, e);
+                        }
+                    }
+                }
+            }
+
+            // Update last beat position based on ticks sent
+            *last_beat += (ticks_to_send as f64) / PPQN;
+        }
+
+        Ok(())
+    }
+
+    /// Reset the clock output position (e.g., when transport seeks).
+    pub async fn reset_clock_position(&self, beat: f64) {
+        let mut last_beat = self.last_clock_beat.write().await;
+        *last_beat = beat;
+    }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<B: Backend> Midi for MidiHandler<B> {
     fn list_devices(&self) -> Vec<MidiDeviceInfo> {
         let mut devices = Vec::new();
@@ -981,7 +1148,7 @@ impl<B: Backend> Midi for MidiHandler<B> {
 
         // List output devices
         if let Ok(midi_out) = MidiOutput::new("vibelang-core2-list") {
-            for (_idx, port) in midi_out.ports().iter().enumerate() {
+            for port in midi_out.ports().iter() {
                 if let Ok(name) = midi_out.port_name(port) {
                     // Check if we already have this device from input
                     if let Some(&existing_idx) = seen_names.get(&name) {
@@ -1205,6 +1372,181 @@ impl<B: Backend> Midi for MidiHandler<B> {
             target,
             param
         );
+
+        Ok(())
+    }
+
+    // =========================================================================
+    // Recording
+    // =========================================================================
+
+    async fn start_recording(&self, device: MidiDeviceId) -> Result<()> {
+        let current_beat = {
+            let state = self.state.read().await;
+            state.current_beat
+        };
+
+        let mut recordings = self.recordings.write().await;
+        if recordings.contains_key(&device) {
+            return Err(Error::MidiError(format!(
+                "Already recording from MIDI device {}",
+                device.0
+            )));
+        }
+
+        let recording = MidiRecording::new(device, current_beat);
+        recordings.insert(device, recording);
+
+        tracing::info!(
+            "Started MIDI recording from device {} at beat {}",
+            device.0,
+            current_beat.to_f64()
+        );
+
+        Ok(())
+    }
+
+    async fn start_recording_channel(&self, device: MidiDeviceId, channel: u8) -> Result<()> {
+        let current_beat = {
+            let state = self.state.read().await;
+            state.current_beat
+        };
+
+        let mut recordings = self.recordings.write().await;
+        if recordings.contains_key(&device) {
+            return Err(Error::MidiError(format!(
+                "Already recording from MIDI device {}",
+                device.0
+            )));
+        }
+
+        let recording = MidiRecording::new(device, current_beat)
+            .with_channel_filter(channel);
+        recordings.insert(device, recording);
+
+        tracing::info!(
+            "Started MIDI recording from device {} channel {} at beat {}",
+            device.0,
+            channel,
+            current_beat.to_f64()
+        );
+
+        Ok(())
+    }
+
+    async fn stop_recording(&self, device: MidiDeviceId) -> Result<MidiRecording> {
+        let current_beat = {
+            let state = self.state.read().await;
+            state.current_beat
+        };
+
+        let mut recordings = self.recordings.write().await;
+        let mut recording = recordings.remove(&device).ok_or_else(|| {
+            Error::MidiError(format!("Not recording from MIDI device {}", device.0))
+        })?;
+
+        recording.stop(current_beat);
+
+        tracing::info!(
+            "Stopped MIDI recording from device {}: {} notes, {} CCs, {} beats",
+            device.0,
+            recording.note_count(),
+            recording.cc_count(),
+            recording.duration().to_f64()
+        );
+
+        Ok(recording)
+    }
+
+    async fn is_recording(&self, device: MidiDeviceId) -> bool {
+        let recordings = self.recordings.read().await;
+        recordings.get(&device).map(|r| r.is_recording).unwrap_or(false)
+    }
+
+    async fn recording_info(&self, device: MidiDeviceId) -> Option<MidiRecordingInfo> {
+        let recordings = self.recordings.read().await;
+        recordings.get(&device).map(MidiRecordingInfo::from)
+    }
+
+    // =========================================================================
+    // Clock Output
+    // =========================================================================
+
+    async fn enable_clock_output(&self, device: MidiDeviceId) -> Result<()> {
+        // Ensure output device is open
+        {
+            let outputs = self.outputs.lock().unwrap();
+            if !outputs.contains_key(&device) {
+                return Err(Error::MidiError(format!(
+                    "MIDI output device {} not open",
+                    device.0
+                )));
+            }
+        }
+
+        let mut clock_devices = self.clock_output_devices.write().await;
+        clock_devices.insert(device);
+
+        tracing::info!("Enabled MIDI clock output to device {}", device.0);
+
+        Ok(())
+    }
+
+    async fn disable_clock_output(&self, device: MidiDeviceId) -> Result<()> {
+        let mut clock_devices = self.clock_output_devices.write().await;
+        clock_devices.remove(&device);
+
+        tracing::info!("Disabled MIDI clock output to device {}", device.0);
+
+        Ok(())
+    }
+
+    async fn is_clock_output_enabled(&self, device: MidiDeviceId) -> bool {
+        let clock_devices = self.clock_output_devices.read().await;
+        clock_devices.contains(&device)
+    }
+
+    async fn send_start(&self, device: MidiDeviceId) -> Result<()> {
+        let mut outputs = self.outputs.lock().unwrap();
+        let conn = outputs.get_mut(&device).ok_or_else(|| {
+            Error::MidiError(format!("MIDI output {} not open", device.0))
+        })?;
+
+        // MIDI Start message is 0xFA
+        conn.send(&[0xFA])
+            .map_err(|e| Error::MidiError(format!("Failed to send MIDI Start: {}", e)))?;
+
+        tracing::debug!("Sent MIDI Start to device {}", device.0);
+
+        Ok(())
+    }
+
+    async fn send_stop(&self, device: MidiDeviceId) -> Result<()> {
+        let mut outputs = self.outputs.lock().unwrap();
+        let conn = outputs.get_mut(&device).ok_or_else(|| {
+            Error::MidiError(format!("MIDI output {} not open", device.0))
+        })?;
+
+        // MIDI Stop message is 0xFC
+        conn.send(&[0xFC])
+            .map_err(|e| Error::MidiError(format!("Failed to send MIDI Stop: {}", e)))?;
+
+        tracing::debug!("Sent MIDI Stop to device {}", device.0);
+
+        Ok(())
+    }
+
+    async fn send_continue(&self, device: MidiDeviceId) -> Result<()> {
+        let mut outputs = self.outputs.lock().unwrap();
+        let conn = outputs.get_mut(&device).ok_or_else(|| {
+            Error::MidiError(format!("MIDI output {} not open", device.0))
+        })?;
+
+        // MIDI Continue message is 0xFB
+        conn.send(&[0xFB])
+            .map_err(|e| Error::MidiError(format!("Failed to send MIDI Continue: {}", e)))?;
+
+        tracing::debug!("Sent MIDI Continue to device {}", device.0);
 
         Ok(())
     }

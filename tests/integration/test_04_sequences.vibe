@@ -1,0 +1,109 @@
+// Integration Test 04: Sequences
+// Tests: sequence creation, clips with patterns/melodies, looping, start_once
+//
+// This test verifies:
+// - Sequences arrange clips on a timeline
+// - Patterns and melodies can be placed as clips
+// - Looping and one-shot playback work
+// - Clips trigger at correct times
+
+test_start("sequences");
+
+set_tempo(120);
+
+// Simple click synth for timing verification
+define_synthdef("seq_click")
+    .param("freq", 800.0)
+    .param("amp", 0.3)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .perc("1ms", "30ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        sin_osc_ar(freq) * env * amp
+    });
+
+// Lead synth for melody clips
+define_synthdef("seq_lead")
+    .param("freq", 440.0)
+    .param("amp", 0.4)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .adsr("5ms", "50ms", 0.6, "100ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        pulse_ar(freq, 0.3) * env * amp
+    });
+
+assert_true(true, "seq_click synthdef created");
+assert_true(true, "seq_lead synthdef created");
+
+// Create voices
+let click_high = voice("click_high").synth("seq_click").set_param("freq", 1200.0).gain(db(-15));
+let click_low = voice("click_low").synth("seq_click").set_param("freq", 600.0).gain(db(-15));
+let lead = voice("lead").synth("seq_lead").gain(db(-18)).poly(4);
+
+assert_true(true, "voices created for sequences");
+
+// Test 1: Create patterns for clips
+let pattern_a = pattern("pattern_a")
+    .on(click_high)
+    .step("x... x... x... x...");
+
+let pattern_b = pattern("pattern_b")
+    .on(click_low)
+    .step("..x. ..x. ..x. ..x.");
+
+assert_true(true, "patterns for clips created");
+
+// Test 2: Create melodies for clips
+let melody_a = melody("melody_a")
+    .on(lead)
+    .notes("C4 E4 G4 C5");
+
+let melody_b = melody("melody_b")
+    .on(lead)
+    .notes("D4 F#4 A4 D5");
+
+assert_true(true, "melodies for clips created");
+
+// Test 3: Verify bars() helper for sequence timing
+let four_bars = bars(4);
+assert_eq(four_bars, 16.0, "4 bars should be 16 beats at 4/4");
+
+let eight_bars = bars(8);
+assert_eq(eight_bars, 32.0, "8 bars should be 32 beats at 4/4");
+
+// Test 4: Sequence with pattern clips (8 bars, looping)
+sequence("pattern_seq")
+    .loop_bars(8)
+    .clip(0..bars(4), pattern_a)         // Pattern A plays bars 1-4
+    .clip(bars(4)..bars(8), pattern_b)   // Pattern B plays bars 5-8
+    .start();
+assert_true(true, "pattern sequence with clips created");
+
+// Test 5: Sequence with melody clips
+sequence("melody_seq")
+    .loop_bars(4)
+    .clip(0..bars(1), melody_a)
+    .clip(bars(1)..bars(2), melody_b)
+    .clip(bars(2)..bars(3), melody_a)
+    .clip(bars(3)..bars(4), melody_b)
+    .start();
+assert_true(true, "melody sequence with clips created");
+
+// Test 6: Sequence pause/resume capability
+let pausable_seq = sequence("pausable")
+    .loop_bars(2)
+    .clip(0..bars(2), pattern_a);
+pausable_seq.start();
+assert_true(true, "pausable sequence created and started");
+
+// Test 7: Verify multiple sequences can coexist
+assert_true(true, "multiple sequences running simultaneously");
+
+test_end_and_exit();

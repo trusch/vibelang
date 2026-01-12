@@ -61,7 +61,7 @@
 //!
 //!     // 4. Send messages to control audio
 //!     handle.send(TransportMessage::SetTempo { bpm: 128.0 }.into()).await?;
-//!     handle.send(GroupMessage::Create { id: GroupId::new(1), parent: None }.into()).await?;
+//!     handle.send(GroupMessage::Create { id: GroupId::new(1), name: "main".to_string(), parent: None }.into()).await?;
 //!     handle.send(TransportMessage::Start.into()).await?;
 //!
 //!     Ok(())
@@ -114,6 +114,7 @@
 // Core modules
 mod backend;
 mod clock;
+pub mod compat;
 mod error;
 mod runtime;
 mod state;
@@ -134,19 +135,25 @@ pub mod midi;
 // Re-exports for convenience
 pub use backend::{AddAction, Backend, BufferInfo};
 pub use error::{Error, Result};
+
 pub use message::{
     EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, PatternMessage,
-    ReloadMessage, SampleMessage, SequenceMessage, SynthDefMessage, TransportMessage, VoiceMessage,
+    ReloadMessage, SampleMessage, SequenceMessage, SyncMessage, SynthDefMessage, TransportMessage,
+    VoiceMessage,
 };
 pub use runtime::{Runtime, RuntimeHandle};
 pub use state::{
-    ActiveFade, EffectState, GroupState, MelodyState, PatternState, SequenceState, SfzInstrumentState,
-    SfzRegionState, State, VoiceState,
+    ActiveFade, EffectState, GroupState, MelodyState, MeterLevel, PatternState, SequenceState,
+    SfzInstrumentState, SfzRegionState, State, VoiceState,
 };
 
-// Re-export the scsynth backend when available
+// Re-export the scsynth backend when available (native only)
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-pub use backends::{ScsynthBackend, ScsynthConfig, ScsynthProcess, ProcessError};
+pub use backends::{setup_metering, setup_node_tracking, ScsynthBackend, ScsynthConfig, ScsynthProcess, ProcessError};
+
+// Re-export the web backend for WASM
+#[cfg(target_arch = "wasm32")]
+pub use backends::{WebScsynthBackend, WebScsynthError};
 
 // Re-export types at crate root for convenience
 pub use types::{
@@ -158,18 +165,20 @@ pub use types::{
 #[cfg(feature = "midi")]
 pub use types::ids::MidiDeviceId;
 
-// Re-export traits at crate root
+// Re-export config types (always available)
+pub use traits::{
+    Clip, FadeConfig, FadeCurve, FadeTarget, MelodyConfig, NoteEvent, PatternConfig, SampleConfig,
+    SampleInfo, SequenceConfig, SfzConfig, Step, VoiceConfig,
+};
+
+// Re-export traits at crate root (native only, as they require Send+Sync)
+#[cfg(not(target_arch = "wasm32"))]
 pub use traits::{
     Effects, Fades, Groups, Melodies, Patterns, Samples, Sequences, SynthDefs, Transport, Voices,
 };
 
-// Re-export config types
-pub use traits::{
-    Clip, FadeConfig, FadeCurve, FadeTarget, MelodyConfig, NoteEvent, PatternConfig, SampleConfig,
-    SampleInfo, SequenceConfig, Step, VoiceConfig,
-};
-
-// Re-export validation
+// Re-export validation (native only)
+#[cfg(not(target_arch = "wasm32"))]
 pub use validation::{limits, Validate};
 
 #[cfg(feature = "midi")]
@@ -184,5 +193,5 @@ pub use midi::{
     VelocityCurve, VelocityMapping, parse_note_name,
 };
 
-#[cfg(feature = "midi")]
+#[cfg(all(feature = "midi", not(target_arch = "wasm32")))]
 pub use handlers::{MidiEventNotification, MidiHandler, MidiMessage};

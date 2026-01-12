@@ -5,18 +5,28 @@
   "source": "src/index.html",
   "scripts": {
     "generate-docs": "node scripts/generate-docs.js",
-    "start": "npm run generate-docs && parcel",
-    "build": "npm run generate-docs && parcel build",
-    "clean": "rm -rf dist .parcel-cache src/generated"
+    "generate-tutorials": "node scripts/generate-tutorials.js",
+    "generate": "npm run generate-docs && npm run generate-tutorials",
+    "build:wasm": "cd .. && wasm-pack build crates/vibelang-wasm --target web --out-dir ../landing-page/src/wasm",
+    "start": "npm run generate && parcel",
+    "build": "npm run generate && npm run build:wasm && parcel build",
+    "clean": "rm -rf dist .parcel-cache src/generated src/wasm"
   },
   "dependencies": {
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "supersonic-scsynth": "^0.25.5"
   },
   "devDependencies": {
     "@parcel/transformer-svg-react": "^2.12.0",
+    "buffer": "^6.0.3",
     "parcel": "^2.12.0",
-    "process": "^0.11.10"
+    "process": "^0.11.10",
+    "puppeteer": "^24.34.0"
+  },
+  "alias": {
+    "vibelang-wasm": "./src/wasm/vibelang_wasm.js",
+    "env": "./src/wasm/env.js"
   },
   "browserslist": "> 0.5%, last 2 versions, not dead"
 }

@@ -1,0 +1,17 @@
+{
+  "name": "vibelang-wasm",
+  "type": "module",
+  "description": "WASM bindings for VibeLang - browser-based music programming",
+  "version": "0.1.0",
+  "license": "MIT",
+  "files": [
+    "vibelang_wasm_bg.wasm",
+    "vibelang_wasm.js",
+    "vibelang_wasm.d.ts"
+  ],
+  "main": "vibelang_wasm.js",
+  "types": "vibelang_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

@@ -8,6 +8,10 @@ repository = "https://github.com/trusch/vibelang"
 keywords = ["music", "audio", "supercollider", "synthesizer"]
 categories = ["multimedia::audio"]
 
+[features]
+default = []
+wasm = []
+
 [dependencies]
 # Error handling
 anyhow = "1.0"

@@ -98,8 +98,12 @@ pub struct MidiDeviceManager {
     /// Event queue for incoming MIDI messages.
     event_queue: Arc<MidiEventQueue>,
     /// Next input ID to assign.
+    /// Reserved for future dynamic device ID allocation.
+    #[allow(dead_code)]
     next_input_id: RwLock<u32>,
     /// Next output ID to assign.
+    /// Reserved for future dynamic device ID allocation.
+    #[allow(dead_code)]
     next_output_id: RwLock<u32>,
 }
 

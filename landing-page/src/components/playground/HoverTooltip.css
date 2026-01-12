@@ -1,0 +1,137 @@
+.hover-tooltip {
+  z-index: 1000;
+  background: var(--tooltip-bg, #1e1e2e);
+  border: 1px solid var(--border-color, #45475a);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  padding: 12px;
+  max-width: 320px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+  pointer-events: none;
+  animation: tooltipFadeIn 0.15s ease-out;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hover-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.hover-type {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.hover-name {
+  font-weight: 600;
+  color: var(--text-color, #cdd6f4);
+  font-size: 13px;
+}
+
+.hover-signature {
+  display: block;
+  padding: 8px;
+  margin: 8px 0;
+  background: var(--code-bg, rgba(0, 0, 0, 0.3));
+  border-radius: 4px;
+  color: var(--syntax-method, #f9e2af);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.hover-description {
+  margin: 0 0 8px 0;
+  color: var(--muted-color, #a6adc8);
+  line-height: 1.5;
+}
+
+.hover-params {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color, #313244);
+}
+
+.hover-params-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted-color, #6c7086);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hover-params ul {
+  list-style: none;
+  margin: 6px 0 0 0;
+  padding: 0;
+}
+
+.hover-params li {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.param-name {
+  color: var(--syntax-identifier, #cdd6f4);
+}
+
+.param-default {
+  color: var(--syntax-number, #fab387);
+}
+
+.param-more {
+  color: var(--muted-color, #6c7086);
+  font-style: italic;
+}
+
+.hover-category,
+.hover-genre,
+.hover-context {
+  display: block;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color, #313244);
+  font-size: 10px;
+  color: var(--muted-color, #6c7086);
+}
+
+.hover-genre {
+  border-top: none;
+  padding-top: 4px;
+  margin-top: 0;
+}
+
+.hover-context {
+  font-style: italic;
+}
+
+/* Light theme */
+[data-theme="light"] .hover-tooltip {
+  --tooltip-bg: #eff1f5;
+  --border-color: #ccd0da;
+  --text-color: #4c4f69;
+  --muted-color: #7c7f93;
+  --code-bg: rgba(0, 0, 0, 0.05);
+  --syntax-method: #df8e1d;
+  --syntax-identifier: #4c4f69;
+  --syntax-number: #fe640b;
+}

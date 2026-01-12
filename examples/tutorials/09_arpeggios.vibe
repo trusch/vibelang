@@ -1,0 +1,69 @@
+// Tutorial: Arpeggios
+// Difficulty: intermediate | Duration: 5 min
+// Description: Create flowing arpeggiated sequences.
+
+// Arpeggios play chord notes one at a time!
+
+// Import the sounds
+import "stdlib/drums/kicks/kick_909.vibe";
+import "stdlib/drums/hihats/hihat_909_closed.vibe";
+import "stdlib/leads/pluck/pluck_bright.vibe";
+import "stdlib/bass/genre/bass_house.vibe";
+
+set_tempo(128);
+
+define_group("Rhythm", || {
+    let kick = voice("kick").synth("kick_909").gain(db(-6));
+    let ch = voice("ch").synth("hihat_909_closed").gain(db(-15));
+
+    pattern("kick").on(kick).step("x... x... x... x...").start();
+    pattern("ch").on(ch).step("..x. ..x. ..x. ..x.").start();
+});
+
+define_group("Arpeggio", || {
+    let arp = voice("arp")
+        .synth("lead_pluck_bright")
+        .gain(db(-15));
+
+    let bass = voice("bass")
+        .synth("bass_house")
+        .gain(db(-6));
+
+    // --------------------------------------------------------
+    // ARPEGGIO PATTERN
+    // --------------------------------------------------------
+    // Instead of playing chord notes together,
+    // play them one after another!
+
+    // Am chord arpeggio: A-C-E-A (one octave up)
+    // Each note gets 1/16th note duration
+    melody("arp_am")
+        .on(arp)
+        .notes("A4 C5 E5 A5 | E5 C5 A4 E4 | A4 C5 E5 A5 | E5 C5 A4 E4")
+        .start();
+
+    // Bass provides the root
+    melody("bass")
+        .on(bass)
+        .notes("A2 - - - - - - - | A2 - - - - - - -")
+        .start();
+});
+
+// ============================================================
+// ARPEGGIO PATTERNS:
+//
+// Up:        A4 C5 E5 A5
+// Down:      A5 E5 C5 A4
+// Up-Down:   A4 C5 E5 A5 E5 C5
+// Random:    Mix up the order!
+//
+// CLASSIC ARPEGGIOS:
+// Trance gate: Fast 16ths, same note: "E4 E4 E4 E4"
+// House stab: Chord + silence: "[A4 C5 E5] . . ."
+// Synthwave: Slow, wide: "A3 . E4 . A4 . E5 ."
+//
+// TRY THIS:
+// - Different synth: "lead_cs80", "lead_prophet"
+// - Wider range: Add A3 at start: "A3 A4 C5 E5 A5"
+// - Faster: Remove spaces: "A4C5E5A5E5C5A4E4"
+// ============================================================

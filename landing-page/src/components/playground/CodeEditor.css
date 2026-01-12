@@ -1,0 +1,211 @@
+.code-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--editor-bg, #1e1e2e);
+  border: 1px solid var(--border-color, #313244);
+}
+
+.code-editor-main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Line numbers */
+.code-editor-line-numbers {
+  flex-shrink: 0;
+  width: 50px;
+  padding-top: 8px;
+  background: var(--line-numbers-bg, #181825);
+  border-right: 1px solid var(--border-color, #313244);
+  overflow: hidden;
+  user-select: none;
+}
+
+.line-number {
+  height: 21px;
+  line-height: 21px;
+  padding: 0 12px 0 8px;
+  text-align: right;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 14px;
+  color: var(--line-number-color, #6c7086);
+}
+
+.line-number.active {
+  color: var(--line-number-active, #cdd6f4);
+  background: var(--line-number-active-bg, rgba(203, 166, 247, 0.1));
+}
+
+.line-number.error {
+  color: var(--error-color, #f38ba8);
+  background: var(--error-bg, rgba(243, 139, 168, 0.15));
+}
+
+/* Editor container */
+.code-editor-container {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+}
+
+/*
+ * CRITICAL: Both layers must have IDENTICAL text rendering.
+ * Using a shared base and explicit resets for everything.
+ */
+.code-editor-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 8px 12px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 14px;
+  font-weight: 400;
+  font-style: normal;
+  font-variant: normal;
+  font-stretch: normal;
+  line-height: 21px;
+  letter-spacing: 0px;
+  word-spacing: 0px;
+  text-align: left;
+  text-indent: 0;
+  text-transform: none;
+  text-decoration: none;
+  text-shadow: none;
+  white-space: pre;
+  word-wrap: normal;
+  word-break: normal;
+  overflow-wrap: normal;
+  tab-size: 4;
+  hyphens: none;
+  overflow: auto;
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: auto;
+}
+
+/* Textarea - handles input, text is transparent */
+.code-editor-textarea {
+  resize: none;
+  color: transparent;
+  caret-color: var(--caret-color, #cba6f7);
+  z-index: 2;
+}
+
+.code-editor-textarea::placeholder {
+  color: var(--placeholder-color, #6c7086);
+}
+
+.code-editor-textarea::selection {
+  background: var(--selection-bg, rgba(203, 166, 247, 0.3));
+  color: transparent;
+}
+
+/* Highlight layer - shows colored text, no interaction */
+.code-editor-highlight {
+  color: var(--text-color, #cdd6f4);
+  pointer-events: none;
+  z-index: 1;
+  /* Must match textarea overflow exactly to prevent scroll misalignment */
+  overflow: auto;
+}
+
+/* Syntax highlighting colors */
+.hl-comment { color: #6c7086; font-style: italic; }
+.hl-string { color: #a6e3a1; }
+.hl-number { color: #fab387; }
+.hl-keyword { color: #cba6f7; }
+.hl-builtin { color: #89b4fa; }
+.hl-ugen { color: #74c7ec; }
+.hl-method { color: #f9e2af; }
+.hl-operator { color: #89dceb; }
+.hl-bracket { color: #f5c2e7; }
+.hl-punctuation { color: #9399b2; }
+.hl-identifier { color: #cdd6f4; }
+
+/* Status bar */
+.code-editor-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 24px;
+  padding: 0 12px;
+  background: var(--status-bar-bg, #181825);
+  border-top: 1px solid var(--border-color, #313244);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--status-bar-color, #6c7086);
+}
+
+.status-item {
+  white-space: nowrap;
+}
+
+.status-hint {
+  margin-left: auto;
+  opacity: 0.7;
+}
+
+/* Light theme */
+[data-theme="light"] .code-editor-wrapper {
+  --editor-bg: #eff1f5;
+  --line-numbers-bg: #e6e9ef;
+  --border-color: #ccd0da;
+  --line-number-color: #8c8fa1;
+  --line-number-active: #4c4f69;
+  --line-number-active-bg: rgba(136, 57, 239, 0.1);
+  --text-color: #4c4f69;
+  --caret-color: #8839ef;
+  --placeholder-color: #9ca0b0;
+  --selection-bg: rgba(136, 57, 239, 0.2);
+  --status-bar-bg: #e6e9ef;
+  --status-bar-color: #7c7f93;
+}
+
+[data-theme="light"] .hl-comment { color: #8c8fa1; }
+[data-theme="light"] .hl-string { color: #40a02b; }
+[data-theme="light"] .hl-number { color: #fe640b; }
+[data-theme="light"] .hl-keyword { color: #8839ef; }
+[data-theme="light"] .hl-builtin { color: #1e66f5; }
+[data-theme="light"] .hl-ugen { color: #04a5e5; }
+[data-theme="light"] .hl-method { color: #df8e1d; }
+[data-theme="light"] .hl-operator { color: #179299; }
+[data-theme="light"] .hl-bracket { color: #ea76cb; }
+[data-theme="light"] .hl-punctuation { color: #7c7f93; }
+[data-theme="light"] .hl-identifier { color: #4c4f69; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .code-editor-line-numbers {
+    width: 40px;
+  }
+
+  .line-number {
+    padding: 0 8px 0 4px;
+    font-size: 12px;
+  }
+
+  .code-editor-layer {
+    font-size: 13px;
+    padding: 6px 8px;
+    line-height: 19px;
+  }
+
+  .code-editor-status-bar {
+    font-size: 10px;
+  }
+
+  .status-hint {
+    display: none;
+  }
+}

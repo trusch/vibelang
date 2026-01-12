@@ -1,0 +1,116 @@
+// Tutorial: Custom Synthesizers
+// Difficulty: advanced | Duration: 10 min
+// Description: Build your own instruments with DSP code.
+
+// For ultimate control, you can build your own instruments!
+// This uses Unit Generators (UGens) - the building blocks of sound.
+
+set_tempo(120);
+
+// ============================================================
+// SYNTHDEF ANATOMY
+// ============================================================
+// define_synthdef("name")
+//   .param("name", default_value)  // Parameters you can control
+//   .body(|param1, param2| {       // DSP code that makes sound
+//       // Your synthesis code here
+//   });
+
+// ------------------------------------------------------------
+// Classic Subtractive Synth
+// ------------------------------------------------------------
+define_synthdef("my_synth")
+    .param("freq", 440.0)     // Pitch in Hz
+    .param("amp", 0.5)        // Volume
+    .param("gate", 1.0)       // Note on/off
+    .param("cutoff", 2000.0)  // Filter cutoff
+    .param("res", 0.3)        // Filter resonance
+    .body(|freq, amp, gate, cutoff, res| {
+        // 1. OSCILLATORS - generate raw waveforms
+        let osc1 = saw_ar(freq);           // Bright sawtooth
+        let osc2 = saw_ar(freq * 1.005);   // Slightly detuned
+        let mix = (osc1 + osc2) * 0.5;     // Mix together
+
+        // 2. FILTER - shape the tone
+        let filt = rlpf_ar(mix, cutoff, res);
+
+        // 3. ENVELOPE - shape over time
+        let env = envelope()
+            .adsr(0.01, 0.2, 0.7, 0.3)  // Attack, Decay, Sustain, Release
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+
+        // 4. OUTPUT
+        filt * env * amp
+    });
+
+// ------------------------------------------------------------
+// FM Bell (Frequency Modulation)
+// ------------------------------------------------------------
+define_synthdef("fm_bell")
+    .param("freq", 440.0)
+    .param("amp", 0.4)
+    .body(|freq, amp| {
+        // FM: One oscillator modulates another's frequency
+        let mod_ratio = 3.0;   // Frequency ratio (integer = harmonic)
+        let mod_index = 4.0;   // Modulation depth
+
+        // Modulator with decaying envelope
+        let mod_env = envelope().perc(0.001, 0.5).build();
+        let modulator = sin_osc_ar(freq * mod_ratio) * mod_index * freq * mod_env;
+
+        // Carrier is modulated by the modulator
+        let carrier = sin_osc_ar(freq + modulator);
+
+        // Output envelope
+        let env = envelope().perc(0.001, 1.5).cleanup_on_finish().build();
+        carrier * env * amp
+    });
+
+// ------------------------------------------------------------
+// Use our custom synths!
+// ------------------------------------------------------------
+define_group("Demo", || {
+    let synth = voice("synth").synth("my_synth").gain(db(-6));
+    let bell = voice("bell").synth("fm_bell").gain(db(-9));
+
+    melody("synth_line")
+        .on(synth)
+        .notes("C4 . E4 . | G4 . E4 . | C4 - - -")
+        .gate(0.3)
+        .start();
+
+    // Trigger a bell sound using melody
+    melody("bell_ring")
+        .on(bell)
+        .notes("C5 - - -")
+        .start();
+});
+
+// ============================================================
+// KEY UGENS:
+//
+// OSCILLATORS (generate waveforms):
+//   sin_osc_ar(freq)         - Pure sine wave
+//   saw_ar(freq)             - Bright sawtooth
+//   pulse_ar(freq, width)    - Square/pulse
+//   tri_ar(freq)             - Triangle wave
+//   white_noise_ar()         - White noise
+//
+// FILTERS (shape tone):
+//   lpf_ar(input, freq)      - Low pass (removes highs)
+//   hpf_ar(input, freq)      - High pass (removes lows)
+//   rlpf_ar(input, freq, q)  - Resonant low pass
+//   bpf_ar(input, freq, q)   - Band pass
+//
+// ENVELOPES (shape over time):
+//   envelope().perc(atk, rel)         - Percussive
+//   envelope().adsr(a, d, s, r)       - Classic ADSR
+//   envelope().asr(atk, sus, rel)     - Attack-sustain-release
+//
+// TRY THIS:
+// - Change mod_ratio to 2.0, 4.0, 5.0 for different bell tones
+// - Add more oscillators for thickness
+// - Try different filter types
+// ============================================================

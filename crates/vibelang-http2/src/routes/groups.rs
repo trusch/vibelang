@@ -13,32 +13,78 @@ use crate::{
     AppState,
 };
 
-/// Parse a group ID from a string path parameter.
-fn parse_group_id(id: &str) -> Result<GroupId, (StatusCode, Json<ErrorResponse>)> {
-    id.parse::<u32>()
-        .map(GroupId::new)
-        .map_err(|_| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::bad_request(&format!(
-                    "Invalid group ID '{}': must be a number",
-                    id
-                ))),
-            )
+/// Resolve a group identifier (either numeric ID or string name) to a GroupId.
+async fn resolve_group_id(
+    state: &Arc<AppState>,
+    identifier: &str,
+) -> Result<GroupId, (StatusCode, Json<ErrorResponse>)> {
+    // First, try to parse as a numeric ID
+    if let Ok(num_id) = identifier.parse::<u32>() {
+        let group_id = GroupId::new(num_id);
+        let exists = state.with_state(|s| s.groups.contains_key(&group_id)).await;
+        if exists {
+            return Ok(group_id);
+        }
+        // Fall through to try as name if numeric ID not found
+    }
+
+    // Try to find by name
+    let found = state
+        .with_state(|s| {
+            s.groups
+                .iter()
+                .find(|(_, gs)| gs.name == identifier)
+                .map(|(id, _)| *id)
         })
+        .await;
+
+    match found {
+        Some(id) => Ok(id),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found(&format!(
+                "Group '{}' not found",
+                identifier
+            ))),
+        )),
+    }
 }
 
 /// Convert internal GroupState to API Group model
-fn group_to_api(id: &GroupId, state: &vibelang_core2::GroupState) -> Group {
+fn group_to_api(
+    _id: &GroupId,
+    state: &vibelang_core2::GroupState,
+    all_groups: &std::collections::HashMap<GroupId, vibelang_core2::GroupState>,
+) -> Group {
+    // Use the actual name from state
+    let name = state.name.clone();
+    let path = name.clone();
+
+    // Find children by looking for groups whose parent matches this ID
+    let children: Vec<String> = all_groups
+        .iter()
+        .filter(|(_, gs)| gs.parent.as_ref() == Some(&state.id))
+        .map(|(_, child_state)| child_state.name.clone())
+        .collect();
+
+    // Get parent name from parent state
+    let parent_path = state.parent.as_ref().and_then(|parent_id| {
+        all_groups.get(parent_id).map(|gs| gs.name.clone())
+    });
+
     Group {
-        id: id.raw().to_string(),
-        parent_id: state.parent.as_ref().map(|p| p.raw().to_string()),
+        name,
+        path,
+        parent_path,
+        children,
         node_id: state.node_id.raw() as i32,
         audio_bus: state.audio_bus.raw() as i32,
         link_synth_node_id: state.link_synth_node_id.map(|n| n.raw() as i32),
         muted: state.muted,
         soloed: state.soloed,
         params: state.params.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+        synth_node_ids: None, // Not tracked in core state
+        source_location: None, // Not tracked in core state
     }
 }
 
@@ -48,7 +94,7 @@ pub async fn list_groups(State(state): State<Arc<AppState>>) -> Json<Vec<Group>>
         .with_state(|s| {
             s.groups
                 .iter()
-                .map(|(id, gs)| group_to_api(id, gs))
+                .map(|(id, gs)| group_to_api(id, gs, &s.groups))
                 .collect::<Vec<_>>()
         })
         .await;
@@ -56,15 +102,15 @@ pub async fn list_groups(State(state): State<Arc<AppState>>) -> Json<Vec<Group>>
     Json(groups)
 }
 
-/// GET /groups/:id - Get group by ID
+/// GET /groups/:id - Get group by ID or name
 pub async fn get_group(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<Group>, (StatusCode, Json<ErrorResponse>)> {
-    let group_id = parse_group_id(&id)?;
+    let group_id = resolve_group_id(&state, &id).await?;
 
     let group = state
-        .with_state(|s| s.groups.get(&group_id).map(|gs| group_to_api(&group_id, gs)))
+        .with_state(|s| s.groups.get(&group_id).map(|gs| group_to_api(&group_id, gs, &s.groups)))
         .await;
 
     match group {
@@ -79,25 +125,13 @@ pub async fn get_group(
     }
 }
 
-/// PATCH /groups/:id - Update group
+/// PATCH /groups/:id - Update group by ID or name
 pub async fn update_group(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(update): Json<GroupUpdate>,
 ) -> Result<Json<Group>, (StatusCode, Json<ErrorResponse>)> {
-    let group_id = parse_group_id(&id)?;
-
-    // Check if group exists
-    let exists = state.with_state(|s| s.groups.contains_key(&group_id)).await;
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Group '{}' not found",
-                id
-            ))),
-        ));
-    }
+    let group_id = resolve_group_id(&state, &id).await?;
 
     // Update params
     for (param_name, value) in update.params {
@@ -126,23 +160,12 @@ pub async fn update_group(
     get_group(State(state), Path(id)).await
 }
 
-/// POST /groups/:id/mute - Mute a group
+/// POST /groups/:id/mute - Mute a group by ID or name
 pub async fn mute_group(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let group_id = parse_group_id(&id)?;
-
-    let exists = state.with_state(|s| s.groups.contains_key(&group_id)).await;
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Group '{}' not found",
-                id
-            ))),
-        ));
-    }
+    let group_id = resolve_group_id(&state, &id).await?;
 
     if let Err(e) = state
         .send(GroupMessage::Mute { id: group_id, muted: true }.into())
@@ -160,23 +183,12 @@ pub async fn mute_group(
     Ok(StatusCode::OK)
 }
 
-/// POST /groups/:id/unmute - Unmute a group
+/// POST /groups/:id/unmute - Unmute a group by ID or name
 pub async fn unmute_group(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let group_id = parse_group_id(&id)?;
-
-    let exists = state.with_state(|s| s.groups.contains_key(&group_id)).await;
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Group '{}' not found",
-                id
-            ))),
-        ));
-    }
+    let group_id = resolve_group_id(&state, &id).await?;
 
     if let Err(e) = state
         .send(GroupMessage::Mute { id: group_id, muted: false }.into())
@@ -194,23 +206,12 @@ pub async fn unmute_group(
     Ok(StatusCode::OK)
 }
 
-/// POST /groups/:id/solo - Solo a group
+/// POST /groups/:id/solo - Solo a group by ID or name
 pub async fn solo_group(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let group_id = parse_group_id(&id)?;
-
-    let exists = state.with_state(|s| s.groups.contains_key(&group_id)).await;
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Group '{}' not found",
-                id
-            ))),
-        ));
-    }
+    let group_id = resolve_group_id(&state, &id).await?;
 
     if let Err(e) = state
         .send(GroupMessage::Solo { id: group_id, solo: true }.into())
@@ -228,23 +229,12 @@ pub async fn solo_group(
     Ok(StatusCode::OK)
 }
 
-/// POST /groups/:id/unsolo - Unsolo a group
+/// POST /groups/:id/unsolo - Unsolo a group by ID or name
 pub async fn unsolo_group(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let group_id = parse_group_id(&id)?;
-
-    let exists = state.with_state(|s| s.groups.contains_key(&group_id)).await;
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Group '{}' not found",
-                id
-            ))),
-        ));
-    }
+    let group_id = resolve_group_id(&state, &id).await?;
 
     if let Err(e) = state
         .send(GroupMessage::Solo { id: group_id, solo: false }.into())
@@ -262,25 +252,13 @@ pub async fn unsolo_group(
     Ok(StatusCode::OK)
 }
 
-/// PUT /groups/:id/params/:param - Set a group parameter
+/// PUT /groups/:id/params/:param - Set a group parameter by ID or name
 pub async fn set_group_param(
     State(state): State<Arc<AppState>>,
     Path((id, param)): Path<(String, String)>,
     Json(req): Json<ParamSet>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let group_id = parse_group_id(&id)?;
-
-    // Check if group exists
-    let exists = state.with_state(|s| s.groups.contains_key(&group_id)).await;
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(&format!(
-                "Group '{}' not found",
-                id
-            ))),
-        ));
-    }
+    let group_id = resolve_group_id(&state, &id).await?;
 
     // For now, just set the param directly (fades can be added later)
     if let Err(e) = state

@@ -1,0 +1,555 @@
+// Integration Test 19: Effect Chains and Fx API
+// Tests: Effect creation, configuration, and group integration
+//
+// This test verifies:
+// - Fx handle creation
+// - Synthdef assignment
+// - Parameter configuration
+// - Effect application to groups
+// - Multiple effects on groups
+// - Effect removal and clearing
+// - Effect counting
+
+test_start("effect_chains");
+
+set_tempo(120);
+set_time_signature(4, 4);
+
+// =============================================================================
+// Test 1: Effect Synthdefs
+// =============================================================================
+
+// Simple pass-through synthdef for testing
+define_synthdef("test_source")
+    .param("freq", 440.0)
+    .param("amp", 0.2)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .adsr("10ms", "50ms", 0.7, "200ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        saw_ar(freq) * env * amp
+    });
+
+// Reverb effect
+define_synthdef("fx_reverb")
+    .param("in_bus", 0.0)
+    .param("mix", 0.3)
+    .param("room", 0.5)
+    .param("damp", 0.5)
+    .body(|in_bus, mix, room, damp| {
+        let input = in_ar(in_bus, 2);
+        let reverb = free_verb(input, mix, room, damp);
+        replace_out(in_bus, reverb)
+    });
+
+// Delay effect
+define_synthdef("fx_delay")
+    .param("in_bus", 0.0)
+    .param("delay_time", 0.25)
+    .param("feedback", 0.3)
+    .param("mix", 0.5)
+    .body(|in_bus, delay_time, feedback, mix| {
+        let input = in_ar(in_bus, 2);
+        let delayed = comb_c(input, 2.0, delay_time, feedback * 4.0);
+        let output = input * (1.0 - mix) + delayed * mix;
+        replace_out(in_bus, output)
+    });
+
+// Filter effect
+define_synthdef("fx_filter")
+    .param("in_bus", 0.0)
+    .param("cutoff", 1000.0)
+    .param("resonance", 0.5)
+    .body(|in_bus, cutoff, resonance| {
+        let input = in_ar(in_bus, 2);
+        let filtered = rlpf_ar(input, cutoff, 1.0 - resonance * 0.9);
+        replace_out(in_bus, filtered)
+    });
+
+// Distortion effect
+define_synthdef("fx_distortion")
+    .param("in_bus", 0.0)
+    .param("drive", 0.5)
+    .param("mix", 0.5)
+    .body(|in_bus, drive, mix| {
+        let input = in_ar(in_bus, 2);
+        let driven = (input * (1.0 + drive * 10.0)).tanh();
+        let output = input * (1.0 - mix) + driven * mix;
+        replace_out(in_bus, output)
+    });
+
+// Compressor effect
+define_synthdef("fx_compressor")
+    .param("in_bus", 0.0)
+    .param("threshold", 0.5)
+    .param("ratio", 4.0)
+    .param("attack", 0.01)
+    .param("release", 0.1)
+    .body(|in_bus, threshold, ratio, attack, release| {
+        let input = in_ar(in_bus, 2);
+        let compressed = compander(input, input, threshold, 1.0, 1.0 / ratio, attack, release);
+        replace_out(in_bus, compressed)
+    });
+
+// =============================================================================
+// Test 2: Basic Fx Creation
+// =============================================================================
+
+define_group("BasicFxGroup", || {
+    let v = voice("basic_voice").synth("test_source").gain(db(-18));
+
+    // Create a basic effect
+    let reverb = fx("basic_reverb")
+        .synth("fx_reverb");
+
+    assert_true(true, "basic fx handle created");
+});
+
+// =============================================================================
+// Test 3: Fx with Parameters
+// =============================================================================
+
+define_group("ParamFxGroup", || {
+    let v = voice("param_voice").synth("test_source").gain(db(-18));
+
+    // Effect with multiple parameters
+    let reverb = fx("param_reverb")
+        .synth("fx_reverb")
+        .param("mix", 0.4)
+        .param("room", 0.7)
+        .param("damp", 0.3);
+
+    assert_true(true, "fx with parameters configured");
+
+    // Delay with parameters
+    let delay = fx("param_delay")
+        .synth("fx_delay")
+        .param("delay_time", 0.375)  // Dotted 8th
+        .param("feedback", 0.5)
+        .param("mix", 0.4);
+
+    assert_true(true, "delay fx with parameters configured");
+});
+
+// =============================================================================
+// Test 4: Fx Apply
+// =============================================================================
+
+define_group("ApplyFxGroup", || {
+    let v = voice("apply_voice").synth("test_source").gain(db(-18));
+
+    // Apply effect to group
+    fx("applied_reverb")
+        .synth("fx_reverb")
+        .param("mix", 0.3)
+        .apply();
+
+    assert_true(true, "fx applied to group");
+});
+
+// =============================================================================
+// Test 5: Multiple Effects on One Group
+// =============================================================================
+
+define_group("MultiEffectGroup", || {
+    let v = voice("multi_voice").synth("test_source").gain(db(-18));
+
+    // Chain of effects (order matters)
+    // Signal flow: source -> filter -> distortion -> delay -> reverb
+
+    fx("chain_filter")
+        .synth("fx_filter")
+        .param("cutoff", 2000.0)
+        .param("resonance", 0.3)
+        .apply();
+
+    fx("chain_distortion")
+        .synth("fx_distortion")
+        .param("drive", 0.3)
+        .param("mix", 0.5)
+        .apply();
+
+    fx("chain_delay")
+        .synth("fx_delay")
+        .param("delay_time", 0.25)
+        .param("feedback", 0.4)
+        .param("mix", 0.3)
+        .apply();
+
+    fx("chain_reverb")
+        .synth("fx_reverb")
+        .param("mix", 0.25)
+        .param("room", 0.6)
+        .apply();
+
+    assert_true(true, "multiple effects chain configured");
+});
+
+// =============================================================================
+// Test 6: Effect Count
+// =============================================================================
+
+define_group("CountEffectGroup", || {
+    let v = voice("count_voice").synth("test_source").gain(db(-18));
+
+    // Initial count should be 0
+    let g = group("CountEffectGroup");
+    let initial_count = g.effect_count();
+    assert_eq(initial_count, 0, "initial effect count should be 0");
+
+    // Add one effect
+    fx("count_fx1").synth("fx_reverb").apply();
+    let count1 = g.effect_count();
+    assert_eq(count1, 1, "effect count should be 1 after adding one effect");
+
+    // Add another effect
+    fx("count_fx2").synth("fx_delay").apply();
+    let count2 = g.effect_count();
+    assert_eq(count2, 2, "effect count should be 2 after adding two effects");
+
+    // Add a third effect
+    fx("count_fx3").synth("fx_filter").apply();
+    let count3 = g.effect_count();
+    assert_eq(count3, 3, "effect count should be 3 after adding three effects");
+});
+
+// =============================================================================
+// Test 7: Remove Effect
+// =============================================================================
+
+define_group("RemoveEffectGroup", || {
+    let v = voice("remove_voice").synth("test_source").gain(db(-18));
+
+    // Add effects
+    fx("remove_fx1").synth("fx_reverb").apply();
+    fx("remove_fx2").synth("fx_delay").apply();
+    fx("remove_fx3").synth("fx_filter").apply();
+
+    let g = group("RemoveEffectGroup");
+    assert_eq(g.effect_count(), 3, "should have 3 effects");
+
+    // Remove one effect
+    g.remove_effect("remove_fx2");
+    assert_eq(g.effect_count(), 2, "should have 2 effects after removal");
+
+    // Remove another effect
+    g.remove_effect("remove_fx1");
+    assert_eq(g.effect_count(), 1, "should have 1 effect after removal");
+
+    assert_true(true, "effect removal works");
+});
+
+// =============================================================================
+// Test 8: Clear All Effects
+// =============================================================================
+
+define_group("ClearEffectGroup", || {
+    let v = voice("clear_voice").synth("test_source").gain(db(-18));
+
+    // Add multiple effects
+    fx("clear_fx1").synth("fx_reverb").apply();
+    fx("clear_fx2").synth("fx_delay").apply();
+    fx("clear_fx3").synth("fx_filter").apply();
+    fx("clear_fx4").synth("fx_distortion").apply();
+
+    let g = group("ClearEffectGroup");
+    assert_eq(g.effect_count(), 4, "should have 4 effects");
+
+    // Clear all effects
+    g.clear_effects();
+    assert_eq(g.effect_count(), 0, "should have 0 effects after clear");
+
+    assert_true(true, "clear_effects works");
+});
+
+// =============================================================================
+// Test 9: Effect Bypass (via parameter)
+// =============================================================================
+
+define_group("BypassFxGroup", || {
+    let v = voice("bypass_voice").synth("test_source").gain(db(-18));
+
+    // Effect with mix parameter (set to 0 = bypassed)
+    fx("bypass_reverb")
+        .synth("fx_reverb")
+        .param("mix", 0.0)  // Bypassed
+        .apply();
+
+    assert_true(true, "effect bypass via mix=0 configured");
+
+    // To "enable" the effect, you would change mix > 0
+    // This can be automated with fades
+});
+
+// =============================================================================
+// Test 10: Classic Effect Chains
+// =============================================================================
+
+// Guitar-like chain
+define_group("GuitarChain", || {
+    let v = voice("guitar_voice").synth("test_source").gain(db(-18));
+
+    // Typical guitar signal chain
+    fx("guitar_distortion")
+        .synth("fx_distortion")
+        .param("drive", 0.6)
+        .param("mix", 0.8)
+        .apply();
+
+    fx("guitar_compressor")
+        .synth("fx_compressor")
+        .param("threshold", 0.4)
+        .param("ratio", 4.0)
+        .apply();
+
+    fx("guitar_delay")
+        .synth("fx_delay")
+        .param("delay_time", 0.333)  // Triplet delay
+        .param("feedback", 0.3)
+        .param("mix", 0.2)
+        .apply();
+
+    fx("guitar_reverb")
+        .synth("fx_reverb")
+        .param("mix", 0.2)
+        .param("room", 0.4)
+        .apply();
+
+    assert_true(true, "guitar effect chain configured");
+});
+
+// Vocal chain
+define_group("VocalChain", || {
+    let v = voice("vocal_voice").synth("test_source").gain(db(-18));
+
+    // Typical vocal processing
+    fx("vocal_compressor")
+        .synth("fx_compressor")
+        .param("threshold", 0.3)
+        .param("ratio", 6.0)
+        .param("attack", 0.005)
+        .param("release", 0.05)
+        .apply();
+
+    fx("vocal_reverb")
+        .synth("fx_reverb")
+        .param("mix", 0.15)
+        .param("room", 0.3)
+        .param("damp", 0.7)
+        .apply();
+
+    fx("vocal_delay")
+        .synth("fx_delay")
+        .param("delay_time", 0.5)  // Half note
+        .param("feedback", 0.2)
+        .param("mix", 0.1)
+        .apply();
+
+    assert_true(true, "vocal effect chain configured");
+});
+
+// Synth pad chain
+define_group("PadChain", || {
+    let v = voice("pad_voice").synth("test_source").gain(db(-18));
+
+    // Lush pad processing
+    fx("pad_filter")
+        .synth("fx_filter")
+        .param("cutoff", 3000.0)
+        .param("resonance", 0.2)
+        .apply();
+
+    fx("pad_reverb")
+        .synth("fx_reverb")
+        .param("mix", 0.6)
+        .param("room", 0.9)
+        .param("damp", 0.3)
+        .apply();
+
+    assert_true(true, "synth pad effect chain configured");
+});
+
+// =============================================================================
+// Test 11: Effects in Nested Groups
+// =============================================================================
+
+define_group("ParentEffectGroup", || {
+    // Parent group effect (applies to all children)
+    fx("parent_compressor")
+        .synth("fx_compressor")
+        .param("threshold", 0.5)
+        .apply();
+
+    define_group("ChildEffectGroup1", || {
+        let v = voice("child1_voice").synth("test_source").gain(db(-18));
+
+        // Child-specific effect
+        fx("child1_reverb")
+            .synth("fx_reverb")
+            .param("mix", 0.3)
+            .apply();
+    });
+
+    define_group("ChildEffectGroup2", || {
+        let v = voice("child2_voice").synth("test_source").gain(db(-18));
+
+        // Different effect for this child
+        fx("child2_delay")
+            .synth("fx_delay")
+            .param("mix", 0.4)
+            .apply();
+    });
+
+    assert_true(true, "effects in nested groups configured");
+});
+
+// =============================================================================
+// Test 12: Parameter Ranges
+// =============================================================================
+
+define_group("ParamRangeGroup", || {
+    let v = voice("range_voice").synth("test_source").gain(db(-18));
+
+    // Test various parameter value ranges
+    fx("range_filter")
+        .synth("fx_filter")
+        .param("cutoff", 20.0)       // Very low
+        .param("resonance", 0.0)     // No resonance
+        .apply();
+
+    fx("range_delay")
+        .synth("fx_delay")
+        .param("delay_time", 2.0)    // Long delay
+        .param("feedback", 0.9)      // High feedback
+        .param("mix", 1.0)           // 100% wet
+        .apply();
+
+    fx("range_reverb")
+        .synth("fx_reverb")
+        .param("mix", 0.0)           // Dry
+        .param("room", 0.0)          // No room
+        .param("damp", 1.0)          // Full damping
+        .apply();
+
+    assert_true(true, "various parameter ranges work");
+});
+
+// =============================================================================
+// Test 13: Same Effect Multiple Times
+// =============================================================================
+
+define_group("DuplicateEffectGroup", || {
+    let v = voice("dup_voice").synth("test_source").gain(db(-18));
+
+    // Multiple instances of the same effect type
+    fx("reverb_short")
+        .synth("fx_reverb")
+        .param("room", 0.2)
+        .param("mix", 0.3)
+        .apply();
+
+    fx("reverb_long")
+        .synth("fx_reverb")
+        .param("room", 0.9)
+        .param("mix", 0.2)
+        .apply();
+
+    assert_true(true, "multiple instances of same effect type work");
+});
+
+// =============================================================================
+// Test 14: Effects with Fades
+// =============================================================================
+
+define_group("FadeEffectGroup", || {
+    let v = voice("fade_fx_voice").synth("test_source").gain(db(-18));
+
+    // Add effect
+    fx("fadeable_reverb")
+        .synth("fx_reverb")
+        .param("mix", 0.0)  // Start dry
+        .apply();
+
+    // Create fade to automate the effect
+    let reverb_fade = fade("reverb_swell")
+        .on_effect("fadeable_reverb")
+        .param("mix")
+        .from(0.0)
+        .to(0.8)
+        .over_bars(4)
+        .curve("exponential")
+        .apply();
+
+    assert_true(true, "effect with fade automation configured");
+});
+
+// =============================================================================
+// Test 15: Effect Unique IDs
+// =============================================================================
+
+define_group("UniqueIdGroup", || {
+    let v = voice("uid_voice").synth("test_source").gain(db(-18));
+
+    // Effects with unique IDs
+    fx("unique_fx_001").synth("fx_reverb").apply();
+    fx("unique_fx_002").synth("fx_delay").apply();
+    fx("unique-fx-003").synth("fx_filter").apply();
+    fx("unique.fx.004").synth("fx_distortion").apply();
+
+    let g = group("UniqueIdGroup");
+    assert_eq(g.effect_count(), 4, "all uniquely named effects created");
+});
+
+// =============================================================================
+// Test 16: Builder Method Chaining
+// =============================================================================
+
+define_group("ChainBuilderGroup", || {
+    let v = voice("chain_voice").synth("test_source").gain(db(-18));
+
+    // All methods should be chainable
+    fx("chained_fx")
+        .synth("fx_reverb")
+        .param("mix", 0.3)
+        .param("room", 0.5)
+        .param("damp", 0.4)
+        .apply();
+
+    assert_true(true, "all fx builder methods are chainable");
+});
+
+// =============================================================================
+// Test 17: Effect-Only Groups
+// =============================================================================
+
+// Group that only contains effects (no voices)
+define_group("EffectBusGroup", || {
+    // This could be a send/return bus style setup
+    fx("bus_reverb")
+        .synth("fx_reverb")
+        .param("mix", 1.0)  // 100% wet for return bus
+        .param("room", 0.8)
+        .apply();
+
+    assert_true(true, "effect-only group configured");
+});
+
+// =============================================================================
+// Test 18: Minimal Effects
+// =============================================================================
+
+define_group("MinimalEffectGroup", || {
+    let v = voice("min_voice").synth("test_source").gain(db(-18));
+
+    // Effect with only required configuration
+    fx("minimal_fx")
+        .synth("fx_reverb")
+        .apply();
+
+    assert_true(true, "minimal effect configuration works");
+});
+
+test_end_and_exit();

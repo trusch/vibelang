@@ -271,11 +271,15 @@ impl SampleHandle {
     }
 }
 
-/// Load a sample from a file.
+/// Load a sample from a file or URL.
+///
+/// On native platforms, the path is resolved relative to the current script file.
+/// On WASM, the path is used as-is (typically a URL or identifier).
 pub fn sample(id: String, path: String) -> SampleHandle {
     let sample_id = context::get_or_create_sample_id(&id);
 
-    // Resolve path relative to current script file
+    // Resolve path relative to current script file (native only)
+    #[cfg(not(target_arch = "wasm32"))]
     let resolved_path = if let Some(current_file) = context::get_current_file() {
         if let Some(parent) = current_file.parent() {
             let p = parent.join(&path);
@@ -290,6 +294,10 @@ pub fn sample(id: String, path: String) -> SampleHandle {
     } else {
         PathBuf::from(&path)
     };
+
+    // On WASM, just use the path as-is (could be URL or identifier)
+    #[cfg(target_arch = "wasm32")]
+    let resolved_path = PathBuf::from(&path);
 
     let config = SampleConfig::new(resolved_path.clone());
 

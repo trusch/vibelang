@@ -1,0 +1,26 @@
+// Vibelang Modulators Standard Library
+//
+// Control-rate modulators for dynamic parameter modulation.
+// Use with voice.modulate("param", modulator) to connect
+// modulator outputs to voice parameters.
+//
+// Example usage:
+//   import "stdlib/modulators/index.vibe";
+//
+//   let cutoff_lfo = modulator("cutoff_lfo")
+//       .synth("lfo_sine")
+//       .param("rate", 4.0)
+//       .param("lo", 200.0)
+//       .param("hi", 2000.0)
+//       .apply();
+//
+//   let bass = voice("bass")
+//       .on("moog_bass")
+//       .modulate("cutoff", cutoff_lfo)
+//       .apply();
+
+// LFO modulators (sine, saw, tri, square, random)
+import "stdlib/modulators/lfo/index.vibe";
+
+// Envelope followers
+import "stdlib/modulators/envelope/index.vibe";

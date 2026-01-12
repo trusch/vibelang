@@ -3,8 +3,12 @@
 //! Utility functions for common operations like dB conversion, note parsing, etc.
 
 use rhai::{Array, Dynamic, Engine};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::context;
+
+// Simple RNG state (xorshift64)
+static RNG_STATE: AtomicU64 = AtomicU64::new(0);
 
 /// Register helper functions with the Rhai engine.
 pub fn register(engine: &mut Engine) {
@@ -35,6 +39,45 @@ pub fn register(engine: &mut Engine) {
 
     // Array utilities
     engine.register_fn("zip", array_zip);
+    engine.register_fn("shuffle", array_shuffle);
+    engine.register_fn("rotate", array_rotate);
+    engine.register_fn("reverse", array_reverse);
+    engine.register_fn("flatten", array_flatten);
+    engine.register_fn("repeat", array_repeat);
+    engine.register_fn("take", array_take);
+    engine.register_fn("skip", array_skip);
+
+    // Random functions
+    engine.register_fn("random", random);
+    engine.register_fn("random_range", random_range_ff);
+    engine.register_fn("random_range", random_range_ii);
+    engine.register_fn("random_int", random_int);
+    engine.register_fn("random_choice", random_choice);
+    engine.register_fn("random_seed", random_seed);
+
+    // Math utilities
+    engine.register_fn("clamp", clamp_fff);
+    engine.register_fn("clamp", clamp_iii);
+    engine.register_fn("lerp", lerp);
+    engine.register_fn("map_range", map_range);
+    engine.register_fn("smoothstep", smoothstep);
+    engine.register_fn("wrap", wrap);
+    engine.register_fn("quantize", quantize);
+    engine.register_fn("mtof", midi_to_freq);
+    engine.register_fn("ftom", freq_to_midi);
+
+    // Time utilities (native only)
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        engine.register_fn("timestamp", timestamp);
+        engine.register_fn("timestamp_ms", timestamp_ms);
+    }
+
+    // Type conversion utilities
+    engine.register_fn("to_int", to_int);
+    engine.register_fn("to_float", to_float_from_int);
+    engine.register_fn("to_string", to_string_int);
+    engine.register_fn("to_string", to_string_float);
 }
 
 /// Convert decibels to linear amplitude.
@@ -287,6 +330,248 @@ pub fn array_zip(arr1: Array, arr2: Array) -> Array {
         .zip(arr2)
         .map(|(a, b)| Dynamic::from(vec![a, b]))
         .collect()
+}
+
+/// Shuffle an array randomly.
+pub fn array_shuffle(mut arr: Array) -> Array {
+    let len = arr.len();
+    for i in (1..len).rev() {
+        let j = (next_random() as usize) % (i + 1);
+        arr.swap(i, j);
+    }
+    arr
+}
+
+/// Rotate array elements by n positions (positive = right, negative = left).
+pub fn array_rotate(arr: Array, n: i64) -> Array {
+    if arr.is_empty() {
+        return arr;
+    }
+    let len = arr.len() as i64;
+    let n = ((n % len) + len) % len; // Normalize to positive
+    let n = n as usize;
+    let mut result = Array::new();
+    result.extend(arr[len as usize - n..].iter().cloned());
+    result.extend(arr[..len as usize - n].iter().cloned());
+    result
+}
+
+/// Reverse an array.
+pub fn array_reverse(arr: Array) -> Array {
+    arr.into_iter().rev().collect()
+}
+
+/// Flatten nested arrays into a single array.
+pub fn array_flatten(arr: Array) -> Array {
+    let mut result = Array::new();
+    for item in arr {
+        if item.is_array() {
+            let nested: Array = item.cast();
+            result.extend(array_flatten(nested));
+        } else {
+            result.push(item);
+        }
+    }
+    result
+}
+
+/// Repeat an array n times.
+pub fn array_repeat(arr: Array, n: i64) -> Array {
+    let mut result = Array::new();
+    for _ in 0..n.max(0) {
+        result.extend(arr.clone());
+    }
+    result
+}
+
+/// Take first n elements from array.
+pub fn array_take(arr: Array, n: i64) -> Array {
+    arr.into_iter().take(n.max(0) as usize).collect()
+}
+
+/// Skip first n elements from array.
+pub fn array_skip(arr: Array, n: i64) -> Array {
+    arr.into_iter().skip(n.max(0) as usize).collect()
+}
+
+// ============================================================================
+// Random Number Generation
+// ============================================================================
+
+/// Initialize RNG state if needed, using a time-based seed.
+fn init_rng_if_needed() {
+    if RNG_STATE.load(Ordering::Relaxed) == 0 {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(12345678);
+            RNG_STATE.store(seed, Ordering::Relaxed);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            // In WASM, use a simple constant seed (can be changed via random_seed)
+            RNG_STATE.store(88172645463325252, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Simple xorshift64 PRNG.
+fn next_random() -> u64 {
+    init_rng_if_needed();
+    let mut x = RNG_STATE.load(Ordering::Relaxed);
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    RNG_STATE.store(x, Ordering::Relaxed);
+    x
+}
+
+/// Generate a random float between 0.0 and 1.0.
+pub fn random() -> f64 {
+    (next_random() as f64) / (u64::MAX as f64)
+}
+
+/// Generate a random float in range [min, max).
+pub fn random_range_ff(min: f64, max: f64) -> f64 {
+    min + random() * (max - min)
+}
+
+/// Generate a random integer in range [min, max].
+pub fn random_range_ii(min: i64, max: i64) -> i64 {
+    if min >= max {
+        return min;
+    }
+    min + ((next_random() as i64).abs() % (max - min + 1))
+}
+
+/// Generate a random integer in range [0, max).
+pub fn random_int(max: i64) -> i64 {
+    if max <= 0 {
+        return 0;
+    }
+    (next_random() as i64).abs() % max
+}
+
+/// Choose a random element from an array.
+pub fn random_choice(arr: Array) -> Dynamic {
+    if arr.is_empty() {
+        return Dynamic::UNIT;
+    }
+    let idx = (next_random() as usize) % arr.len();
+    arr[idx].clone()
+}
+
+/// Seed the random number generator.
+pub fn random_seed(seed: i64) {
+    RNG_STATE.store(seed as u64, Ordering::Relaxed);
+}
+
+// ============================================================================
+// Math Utilities
+// ============================================================================
+
+/// Clamp a float value between min and max.
+pub fn clamp_fff(value: f64, min: f64, max: f64) -> f64 {
+    value.clamp(min, max)
+}
+
+/// Clamp an integer value between min and max.
+pub fn clamp_iii(value: i64, min: i64, max: i64) -> i64 {
+    value.clamp(min, max)
+}
+
+/// Linear interpolation between a and b.
+pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
+    a + (b - a) * t
+}
+
+/// Map a value from one range to another.
+pub fn map_range(value: f64, in_min: f64, in_max: f64, out_min: f64, out_max: f64) -> f64 {
+    let normalized = (value - in_min) / (in_max - in_min);
+    out_min + normalized * (out_max - out_min)
+}
+
+/// Smoothstep interpolation (eases in and out).
+pub fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Wrap a value within a range [0, max).
+pub fn wrap(value: f64, max: f64) -> f64 {
+    if max <= 0.0 {
+        return 0.0;
+    }
+    ((value % max) + max) % max
+}
+
+/// Quantize a value to the nearest multiple of step.
+pub fn quantize(value: f64, step: f64) -> f64 {
+    if step <= 0.0 {
+        return value;
+    }
+    (value / step).round() * step
+}
+
+/// Convert MIDI note number to frequency in Hz.
+pub fn midi_to_freq(note: f64) -> f64 {
+    440.0 * 2.0_f64.powf((note - 69.0) / 12.0)
+}
+
+/// Convert frequency in Hz to MIDI note number.
+pub fn freq_to_midi(freq: f64) -> f64 {
+    if freq <= 0.0 {
+        return 0.0;
+    }
+    69.0 + 12.0 * (freq / 440.0).log2()
+}
+
+// ============================================================================
+// Time Utilities (native only)
+// ============================================================================
+
+#[cfg(not(target_arch = "wasm32"))]
+/// Get current Unix timestamp in seconds.
+pub fn timestamp() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+/// Get current Unix timestamp in milliseconds.
+pub fn timestamp_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+// ============================================================================
+// Type Conversion Utilities
+// ============================================================================
+
+/// Convert float to integer.
+pub fn to_int(value: f64) -> i64 {
+    value as i64
+}
+
+/// Convert integer to float.
+pub fn to_float_from_int(value: i64) -> f64 {
+    value as f64
+}
+
+/// Convert integer to string.
+pub fn to_string_int(value: i64) -> String {
+    value.to_string()
+}
+
+/// Convert float to string.
+pub fn to_string_float(value: f64) -> String {
+    value.to_string()
 }
 
 /// Parse a note name to MIDI note number.

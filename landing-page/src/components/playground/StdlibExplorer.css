@@ -1,0 +1,341 @@
+.stdlib-explorer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel-bg, #1e1e2e);
+  border-left: 1px solid var(--border-color, #313244);
+}
+
+/* Search */
+.stdlib-search {
+  position: relative;
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color, #313244);
+}
+
+.stdlib-search-input {
+  width: 100%;
+  padding: 8px 32px 8px 12px;
+  background: var(--input-bg, #181825);
+  border: 1px solid var(--border-color, #45475a);
+  border-radius: 6px;
+  color: var(--text-color, #cdd6f4);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.stdlib-search-input:focus {
+  outline: none;
+  border-color: var(--accent-color, #cba6f7);
+}
+
+.stdlib-search-input::placeholder {
+  color: var(--placeholder-color, #6c7086);
+}
+
+.stdlib-search-clear {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--muted-color, #6c7086);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 8px;
+}
+
+.stdlib-search-clear:hover {
+  color: var(--text-color, #cdd6f4);
+}
+
+/* Tree */
+.stdlib-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.stdlib-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--muted-color, #6c7086);
+  font-style: italic;
+}
+
+/* Category */
+.stdlib-category {
+  margin-bottom: 2px;
+}
+
+.stdlib-category-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.stdlib-category-header:hover {
+  background: var(--hover-bg, rgba(203, 166, 247, 0.1));
+}
+
+.stdlib-chevron {
+  color: var(--muted-color, #6c7086);
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.stdlib-category-header.expanded .stdlib-chevron {
+  transform: rotate(90deg);
+}
+
+.stdlib-category-name {
+  font-weight: 600;
+  color: var(--text-color, #cdd6f4);
+  font-size: 13px;
+}
+
+.stdlib-category-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted-color, #6c7086);
+  background: var(--count-bg, rgba(255, 255, 255, 0.05));
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+/* Subcategory */
+.stdlib-subcategories {
+  margin-left: 12px;
+  border-left: 1px solid var(--border-color, #313244);
+}
+
+.stdlib-subcategory-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.stdlib-subcategory-header:hover {
+  background: var(--hover-bg, rgba(203, 166, 247, 0.05));
+}
+
+.stdlib-chevron-small {
+  color: var(--muted-color, #585b70);
+  font-size: 10px;
+  width: 12px;
+  text-align: center;
+}
+
+.stdlib-subcategory-name {
+  color: var(--secondary-text, #a6adc8);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.stdlib-subcategory-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted-color, #585b70);
+}
+
+/* Items */
+.stdlib-items {
+  margin-left: 12px;
+}
+
+.stdlib-item {
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-radius: 4px;
+  margin: 1px 4px;
+}
+
+.stdlib-item:hover {
+  background: var(--hover-bg, rgba(203, 166, 247, 0.1));
+}
+
+.stdlib-item.selected {
+  background: var(--selected-bg, rgba(203, 166, 247, 0.2));
+}
+
+.stdlib-item-name {
+  font-size: 12px;
+  color: var(--text-color, #cdd6f4);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace;
+}
+
+/* Detail panel */
+.stdlib-detail {
+  padding: 12px;
+  border-top: 1px solid var(--border-color, #313244);
+  background: var(--detail-bg, #181825);
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.stdlib-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.stdlib-detail-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-color, #cdd6f4);
+}
+
+.stdlib-detail-type {
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  background: var(--type-bg, rgba(166, 227, 161, 0.2));
+  color: var(--type-color, #a6e3a1);
+  border-radius: 3px;
+}
+
+.stdlib-detail-desc {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: var(--secondary-text, #a6adc8);
+  line-height: 1.4;
+}
+
+.stdlib-detail-genre {
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--muted-color, #6c7086);
+}
+
+.stdlib-label {
+  font-weight: 600;
+  color: var(--secondary-text, #9399b2);
+}
+
+.stdlib-detail-params {
+  margin-bottom: 12px;
+}
+
+.stdlib-detail-params ul {
+  list-style: none;
+  margin: 6px 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.stdlib-detail-params li {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace;
+}
+
+.stdlib-detail-params .param-name {
+  color: var(--param-name-color, #cdd6f4);
+}
+
+.stdlib-detail-params .param-value {
+  color: var(--param-value-color, #fab387);
+}
+
+.stdlib-detail-params .param-more {
+  color: var(--muted-color, #6c7086);
+  font-style: italic;
+}
+
+/* Actions */
+.stdlib-detail-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.stdlib-preview-btn,
+.stdlib-insert-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: none;
+}
+
+.stdlib-preview-btn {
+  background: var(--preview-btn-bg, #89b4fa);
+  color: var(--preview-btn-color, #1e1e2e);
+}
+
+.stdlib-preview-btn:hover {
+  background: var(--preview-btn-hover, #74a8f8);
+}
+
+.stdlib-preview-btn.playing {
+  background: var(--stop-btn-bg, #f38ba8);
+}
+
+.stdlib-insert-btn {
+  background: var(--insert-btn-bg, #a6e3a1);
+  color: var(--insert-btn-color, #1e1e2e);
+}
+
+.stdlib-insert-btn:hover {
+  background: var(--insert-btn-hover, #94e090);
+}
+
+/* Scrollbar */
+.stdlib-tree::-webkit-scrollbar,
+.stdlib-detail::-webkit-scrollbar {
+  width: 6px;
+}
+
+.stdlib-tree::-webkit-scrollbar-track,
+.stdlib-detail::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.stdlib-tree::-webkit-scrollbar-thumb,
+.stdlib-detail::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, #45475a);
+  border-radius: 3px;
+}
+
+/* Light theme */
+[data-theme="light"] .stdlib-explorer {
+  --panel-bg: #eff1f5;
+  --border-color: #ccd0da;
+  --input-bg: #e6e9ef;
+  --text-color: #4c4f69;
+  --secondary-text: #5c5f77;
+  --muted-color: #7c7f93;
+  --placeholder-color: #9ca0b0;
+  --hover-bg: rgba(136, 57, 239, 0.1);
+  --selected-bg: rgba(136, 57, 239, 0.15);
+  --count-bg: rgba(0, 0, 0, 0.05);
+  --detail-bg: #e6e9ef;
+  --type-bg: rgba(64, 160, 43, 0.2);
+  --type-color: #40a02b;
+  --param-name-color: #4c4f69;
+  --param-value-color: #fe640b;
+  --preview-btn-bg: #1e66f5;
+  --preview-btn-color: white;
+  --preview-btn-hover: #2c71f5;
+  --stop-btn-bg: #d20f39;
+  --insert-btn-bg: #40a02b;
+  --insert-btn-color: white;
+  --insert-btn-hover: #369b26;
+  --scrollbar-thumb: #bcc0cc;
+  --accent-color: #8839ef;
+}

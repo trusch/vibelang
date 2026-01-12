@@ -53,3 +53,6 @@ import "stdlib/modular/index.vibe";
 
 // Music theory and patterns
 import "stdlib/theory/index.vibe";
+
+// Control-rate modulators (LFOs, envelope followers)
+import "stdlib/modulators/index.vibe";

@@ -36,14 +36,17 @@ mod effects;
 mod fades;
 mod groups;
 mod melodies;
+mod modulators;
 mod patterns;
-mod recordings;
 mod samples;
 mod sequences;
 mod sfz;
 mod synthdefs;
 mod transport;
 mod voices;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod recordings;
 
 #[cfg(feature = "midi")]
 mod midi;
@@ -53,14 +56,17 @@ pub use effects::Effects;
 pub use fades::{FadeCurve, FadeConfig, FadeTarget, Fades};
 pub use groups::Groups;
 pub use melodies::{Melodies, MelodyConfig, NoteEvent};
+pub use modulators::{ModulatorConfig, Modulators};
 pub use patterns::{PatternConfig, Patterns, Step};
-pub use recordings::{RecordingConfig, RecordingInfo, RecordingStatus, Recordings};
 pub use samples::{SampleConfig, SampleInfo, Samples};
 pub use sequences::{Clip, SequenceConfig, Sequences};
 pub use sfz::{Sfz, SfzConfig, SfzTriggerInfo, SfzTriggerMode};
 pub use synthdefs::SynthDefs;
 pub use transport::Transport;
 pub use voices::{VoiceConfig, Voices};
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use recordings::{RecordingConfig, RecordingInfo, RecordingStatus, Recordings};
 
 #[cfg(feature = "midi")]
 pub use midi::{Midi, MidiDeviceInfo};

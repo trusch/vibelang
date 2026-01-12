@@ -1,0 +1,73 @@
+// Tutorial: Notes & Scales
+// Difficulty: intermediate | Duration: 5 min
+// Description: Write melodies in any key.
+
+// Let's explore melody writing in VibeLang!
+
+// Import the sounds
+import "stdlib/drums/kicks/kick_909.vibe";
+import "stdlib/drums/claps/clap_808.vibe";
+import "stdlib/leads/synth/lead_saw.vibe";
+import "stdlib/bass/sub/sub_deep.vibe";
+
+set_tempo(115);
+
+define_group("Rhythm", || {
+    let kick = voice("kick").synth("kick_909").gain(db(-6));
+    let snare = voice("snare").synth("clap_808").gain(db(-9));
+
+    pattern("kick").on(kick).step("x... x... x... x...").start();
+    pattern("snare").on(snare).step(".... x... .... x...").start();
+});
+
+define_group("Music", || {
+    let lead = voice("lead")
+        .synth("lead_saw")
+        .gain(db(-9));
+
+    let bass = voice("bass")
+        .synth("sub_deep")
+        .gain(db(-6));
+
+    // --------------------------------------------------------
+    // NOTE NAMES
+    // --------------------------------------------------------
+    // Notes: C D E F G A B
+    // Sharps: C# D# F# G# A#
+    // Flats: Db Eb Gb Ab Bb
+    // Octave: number (2=bass, 4=middle, 6=high)
+
+    // Lead melody in A minor
+    // A minor scale: A B C D E F G
+    melody("lead_melody")
+        .on(lead)
+        .notes("A4 . C5 . | E5 . D5 . | C5 . B4 . | A4 - - .")
+        .gate(0.3)  // Note duration (30% of step)
+        .start();
+
+    // Bass follows the chord roots
+    melody("bassline")
+        .on(bass)
+        .notes("A2 - - - | A2 - G2 . | F2 - - - | E2 - - .")
+        .start();
+});
+
+// ============================================================
+// A MINOR SCALE: A B C D E F G (no sharps/flats!)
+//
+// NOTE DURATION:
+// .gate(0.3) = staccato (short, punchy)
+// .gate(0.7) = normal (connected)
+// .gate(0.95) = legato (smooth, overlapping)
+//
+// SCALES CHEAT SHEET:
+// Major:      C D E F G A B (happy, bright)
+// Minor:      A B C D E F G (sad, dark)
+// Dorian:     D E F G A B C (minor but brighter)
+// Pentatonic: A C D E G (can't go wrong!)
+//
+// TRY THIS:
+// - Major feel: Change F to F# and G to G#
+// - Pentatonic: Only use A C D E G
+// - Octave jump: "A4 . . . | A5 - - ."
+// ============================================================

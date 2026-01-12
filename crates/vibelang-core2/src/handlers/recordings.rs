@@ -34,7 +34,7 @@ use crate::types::{Beat, BufferId, RecordingId};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use crate::compat::RwLock;
 
 /// Handler for audio recording sessions.
 ///
@@ -236,7 +236,8 @@ impl<B: Backend> RecordingsHandler<B> {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<B: Backend> Recordings for RecordingsHandler<B> {
     async fn start(&self, id: RecordingId, config: RecordingConfig) -> Result<BufferId> {
         let (buffer_id, info) = {

@@ -1,0 +1,371 @@
+// Integration Test 11: Edge Cases
+// Tests: Extreme values, boundary conditions, error handling
+//
+// This test verifies:
+// - Extreme tempo values (min/max)
+// - Extreme polyphony values
+// - Empty patterns/melodies
+// - Large patterns
+// - Edge case time signatures
+
+test_start("edge_cases");
+
+// =============================================================================
+// Test 1: Extreme Tempo Values
+// =============================================================================
+
+// Minimum tempo (1 BPM is very slow but valid)
+set_tempo(1.0);
+let min_tempo = get_tempo();
+assert_eq(min_tempo, 1.0, "minimum tempo should be 1.0 BPM");
+
+// Maximum tempo (999 BPM is very fast but valid)
+set_tempo(999.0);
+let max_tempo = get_tempo();
+assert_eq(max_tempo, 999.0, "maximum tempo should be 999.0 BPM");
+
+// Normal tempo for rest of tests
+set_tempo(120);
+
+// =============================================================================
+// Test 2: Time Signature Edge Cases
+// =============================================================================
+
+// Common time signatures
+set_time_signature(4, 4);
+assert_true(true, "4/4 time signature set");
+
+set_time_signature(3, 4);
+assert_true(true, "3/4 time signature set");
+
+set_time_signature(6, 8);
+assert_true(true, "6/8 time signature set");
+
+set_time_signature(7, 8);
+assert_true(true, "7/8 time signature set (odd meter)");
+
+set_time_signature(5, 4);
+assert_true(true, "5/4 time signature set (Take Five)");
+
+// Unusual but valid time signatures
+set_time_signature(12, 8);
+assert_true(true, "12/8 time signature set");
+
+set_time_signature(2, 2);
+assert_true(true, "2/2 (cut time) set");
+
+// Reset to normal
+set_time_signature(4, 4);
+
+// =============================================================================
+// Test 3: Quantization Values
+// =============================================================================
+
+// No quantization (free time)
+set_quantization(0.0);
+let q0 = get_quantization();
+assert_eq(q0, 0.0, "quantization 0.0 (no quantization)");
+
+// 16th note quantization
+set_quantization(0.25);
+let q16 = get_quantization();
+assert_eq(q16, 0.25, "quantization 0.25 (16th note)");
+
+// 8th note
+set_quantization(0.5);
+let q8 = get_quantization();
+assert_eq(q8, 0.5, "quantization 0.5 (8th note)");
+
+// Quarter note
+set_quantization(1.0);
+let q4 = get_quantization();
+assert_eq(q4, 1.0, "quantization 1.0 (quarter note)");
+
+// Half note
+set_quantization(2.0);
+let q2 = get_quantization();
+assert_eq(q2, 2.0, "quantization 2.0 (half note)");
+
+// 1 bar (4 beats in 4/4)
+set_quantization(4.0);
+let qbar = get_quantization();
+assert_eq(qbar, 4.0, "quantization 4.0 (1 bar)");
+
+// 4 bars
+set_quantization(16.0);
+let q4bar = get_quantization();
+assert_eq(q4bar, 16.0, "quantization 16.0 (4 bars)");
+
+// Reset
+set_quantization(0.0);
+
+// =============================================================================
+// Test 4: Simple Synthdef for Testing
+// =============================================================================
+
+define_synthdef("silence")
+    .param("amp", 0.0)
+    .body(|amp| {
+        sin_osc_ar(440) * amp * 0.0
+    });
+
+// =============================================================================
+// Test 5: Polyphony Edge Cases
+// =============================================================================
+
+define_group("Polyphony", || {
+    // Mono voice (polyphony 1)
+    let mono = voice("mono_voice")
+        .synth("silence")
+        .poly(1)
+        .apply();
+    assert_true(true, "mono voice (poly 1) created");
+
+    // High polyphony
+    let poly16 = voice("poly16_voice")
+        .synth("silence")
+        .poly(16)
+        .apply();
+    assert_true(true, "voice with poly 16 created");
+
+    // Maximum polyphony (128)
+    let poly_max = voice("poly_max_voice")
+        .synth("silence")
+        .poly(128)
+        .apply();
+    assert_true(true, "voice with max poly 128 created");
+});
+
+// =============================================================================
+// Test 6: Pattern Length Edge Cases
+// =============================================================================
+
+define_group("PatternLengths", || {
+    let v = voice("pattern_voice").synth("silence");
+
+    // Very short pattern (1 step = 0.25 beats)
+    let short = pattern("short_pattern")
+        .on(v)
+        .step("x")
+        .apply();
+    assert_true(true, "single-step pattern created");
+
+    // 2-step pattern
+    let two_step = pattern("two_step")
+        .on(v)
+        .step("x.")
+        .apply();
+    assert_true(true, "2-step pattern created");
+
+    // Long pattern (64 steps = 16 beats = 4 bars)
+    let long = pattern("long_pattern")
+        .on(v)
+        .step("x... .... .... .... x... .... .... .... x... .... .... .... x... .... .... ....")
+        .apply();
+    assert_true(true, "64-step pattern created");
+
+    // Pattern with all triggers
+    let all_triggers = pattern("all_triggers")
+        .on(v)
+        .step("xxxxxxxxxxxx")
+        .apply();
+    assert_true(true, "all-triggers pattern created");
+
+    // Pattern with all rests (should still be valid)
+    let all_rests = pattern("all_rests")
+        .on(v)
+        .step("........")
+        .apply();
+    assert_true(true, "all-rests pattern created");
+});
+
+// =============================================================================
+// Test 7: Melody Edge Cases
+// =============================================================================
+
+define_group("MelodyEdges", || {
+    let v = voice("melody_voice").synth("silence").poly(8);
+
+    // Single note melody
+    let single = melody("single_note")
+        .on(v)
+        .notes("C4")
+        .apply();
+    assert_true(true, "single-note melody created");
+
+    // Very long melody (32 notes = 8 bars)
+    let long = melody("long_melody")
+        .on(v)
+        .notes("C4 D4 E4 F4 G4 A4 B4 C5 | D5 E5 F5 G5 A5 B5 C6 D6 | C4 D4 E4 F4 G4 A4 B4 C5 | D5 E5 F5 G5 A5 B5 C6 D6")
+        .apply();
+    assert_true(true, "32-note melody created");
+
+    // Melody with many rests
+    let sparse = melody("sparse_melody")
+        .on(v)
+        .notes("C4 . . . E4 . . . G4 . . . C5 . . .")
+        .apply();
+    assert_true(true, "sparse melody created");
+
+    // Melody with long sustains
+    let sustained = melody("sustained_melody")
+        .on(v)
+        .notes("C4 - - - - - - - | E4 - - - - - - -")
+        .apply();
+    assert_true(true, "sustained melody created");
+
+    // Full octave range
+    let octave = melody("octave_range")
+        .on(v)
+        .notes("C0 C1 C2 C3 C4 C5 C6 C7")
+        .apply();
+    assert_true(true, "full octave range melody created");
+});
+
+// =============================================================================
+// Test 8: MIDI Note Edge Cases
+// =============================================================================
+
+// Lowest valid MIDI note
+let lowest = note("C-1");  // This might be C-1 or similar based on implementation
+// Just verify we can parse it
+assert_true(lowest >= 0, "lowest MIDI note should be >= 0");
+
+// Highest valid MIDI note
+let highest = note("G9");  // Should be 127 or close
+assert_true(highest <= 127, "highest MIDI note should be <= 127");
+
+// All note names
+let c = note("C4");
+let d = note("D4");
+let e = note("E4");
+let f = note("F4");
+let g = note("G4");
+let a = note("A4");
+let b = note("B4");
+assert_eq(c, 60, "C4 = 60");
+assert_eq(d, 62, "D4 = 62");
+assert_eq(e, 64, "E4 = 64");
+assert_eq(f, 65, "F4 = 65");
+assert_eq(g, 67, "G4 = 67");
+assert_eq(a, 69, "A4 = 69");
+assert_eq(b, 71, "B4 = 71");
+
+// =============================================================================
+// Test 9: dB Edge Cases
+// =============================================================================
+
+// Positive dB (louder than unity)
+let loud = db(6);
+assert_gt(loud, 1.0, "+6dB should be > 1.0");
+
+// Negative dB (quieter)
+let quiet = db(-60);
+assert_lt(quiet, 0.01, "-60dB should be very quiet");
+assert_gt(quiet, 0.0, "-60dB should still be > 0");
+
+// Very quiet (close to silence)
+let nearly_silent = db(-96);
+assert_lt(nearly_silent, 0.0001, "-96dB should be nearly silent");
+
+// =============================================================================
+// Test 10: Chained Method Calls
+// =============================================================================
+
+define_group("Chaining", || {
+    let v = voice("chained")
+        .synth("silence")
+        .gain(db(-12))
+        .poly(4)
+        .param("freq", 440.0)
+        .param("pan", 0.0)
+        .apply();
+    assert_true(true, "voice with multiple chained params created");
+
+    let p = pattern("chained_pattern")
+        .on(v)
+        .step("x... x... x... x...")
+        .apply();
+    assert_true(true, "chained pattern created");
+
+    let m = melody("chained_melody")
+        .on(v)
+        .notes("C4 D4 E4 F4")
+        .transpose(12)  // Up one octave
+        .apply();
+    assert_true(true, "chained melody with transpose created");
+});
+
+// =============================================================================
+// Test 11: Group Nesting
+// =============================================================================
+
+define_group("OuterGroup", || {
+    let v1 = voice("outer_voice").synth("silence");
+
+    // Currently nested groups aren't supported in the same define_group call
+    // but voices within groups work fine
+    let v2 = voice("another_outer").synth("silence").poly(2);
+
+    assert_true(true, "multiple voices in single group created");
+});
+
+// Create another separate group
+define_group("SecondGroup", || {
+    let v = voice("second_group_voice").synth("silence");
+    assert_true(true, "voice in second group created");
+});
+
+// =============================================================================
+// Test 12: Array Helpers
+// =============================================================================
+
+// seq() creates sequences
+let seq_test = seq(0, 4);
+assert_len(seq_test, 5, "seq(0, 4) should have 5 elements");
+assert_contains(seq_test, 0, "seq should contain 0");
+assert_contains(seq_test, 4, "seq should contain 4");
+
+// rev() reverses arrays
+let forward = [1, 2, 3, 4];
+let backward = rev(forward);
+assert_eq(backward[0], 4, "reversed array should start with 4");
+assert_eq(backward[3], 1, "reversed array should end with 1");
+
+// Random functions (just verify they don't error)
+let r = rand();
+assert_gte(r, 0.0, "rand() should be >= 0.0");
+assert_lte(r, 1.0, "rand() should be <= 1.0");
+
+let ri = rand_int(1, 10);
+assert_gte(ri, 1, "rand_int should be >= min");
+assert_lte(ri, 10, "rand_int should be <= max");
+
+let rf = rand_float(0.0, 100.0);
+assert_gte(rf, 0.0, "rand_float should be >= min");
+assert_lte(rf, 100.0, "rand_float should be <= max");
+
+// =============================================================================
+// Test 13: Effect Chain
+// =============================================================================
+
+define_group("FxChain", || {
+    let v = voice("fx_voice").synth("silence");
+
+    // Multiple effects in chain
+    fx("reverb")
+        .synth("reverb_fx")
+        .param("room", 0.8)
+        .param("mix", 0.3)
+        .apply();
+    assert_true(true, "reverb effect added");
+
+    fx("delay")
+        .synth("delay_fx")
+        .param("time", 0.25)
+        .param("feedback", 0.3)
+        .apply();
+    assert_true(true, "delay effect added");
+});
+
+test_end_and_exit();

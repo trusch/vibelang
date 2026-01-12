@@ -1,0 +1,10 @@
+// LFO (Low Frequency Oscillator) Modulators
+//
+// Standard waveform LFOs for parameter modulation.
+// All LFOs output control-rate signals with configurable range.
+
+import "stdlib/modulators/lfo/lfo_sine.vibe";
+import "stdlib/modulators/lfo/lfo_saw.vibe";
+import "stdlib/modulators/lfo/lfo_tri.vibe";
+import "stdlib/modulators/lfo/lfo_square.vibe";
+import "stdlib/modulators/lfo/lfo_random.vibe";

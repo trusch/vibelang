@@ -92,6 +92,19 @@
   border-radius: var(--border-radius);
   padding: var(--space-xl);
   box-shadow: var(--shadow-retro);
+  margin-bottom: var(--space-xl);
+}
+
+.features__highlight:last-child {
+  margin-bottom: 0;
+}
+
+.features__highlight--reverse {
+  direction: rtl;
+}
+
+.features__highlight--reverse > * {
+  direction: ltr;
 }
 
 .features__highlight-label {

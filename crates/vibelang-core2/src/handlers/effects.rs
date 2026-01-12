@@ -14,7 +14,7 @@ use crate::types::{EffectId, GroupId, NodeId, ParamMap};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use crate::compat::RwLock;
 
 /// Handler for effect operations.
 pub struct EffectsHandler<B: Backend> {
@@ -29,7 +29,8 @@ impl<B: Backend> EffectsHandler<B> {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<B: Backend> Effects for EffectsHandler<B> {
     async fn add(
         &self,
@@ -44,6 +45,11 @@ impl<B: Backend> Effects for EffectsHandler<B> {
 
             if state.effects.contains_key(&id) {
                 return Err(Error::EffectExists(id));
+            }
+
+            // Verify the synthdef exists
+            if !state.synthdefs.contains(synthdef) {
+                return Err(Error::SynthDefNotFound(synthdef.to_string()));
             }
 
             let group_state = state.groups.get(&group).ok_or(Error::GroupNotFound(group))?;
@@ -140,5 +146,434 @@ impl<B: Backend> Effects for EffectsHandler<B> {
             .map_err(Error::backend)?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::BufferInfo;
+    use crate::compat::Instant;
+    use crate::state::GroupState;
+    use crate::types::{BufferId, BusId};
+    use std::path::Path;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    // =========================================================================
+    // Mock Backend for Testing
+    // =========================================================================
+
+    #[derive(Debug)]
+    struct MockError;
+
+    impl std::fmt::Display for MockError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "mock error")
+        }
+    }
+
+    impl std::error::Error for MockError {}
+
+    struct MockBackend {
+        synths_created: AtomicU32,
+        nodes_freed: AtomicU32,
+        params_set: AtomicU32,
+    }
+
+    impl MockBackend {
+        fn new() -> Self {
+            Self {
+                synths_created: AtomicU32::new(0),
+                nodes_freed: AtomicU32::new(0),
+                params_set: AtomicU32::new(0),
+            }
+        }
+
+        fn synths_created(&self) -> u32 {
+            self.synths_created.load(Ordering::Relaxed)
+        }
+
+        fn nodes_freed(&self) -> u32 {
+            self.nodes_freed.load(Ordering::Relaxed)
+        }
+
+        fn params_set(&self) -> u32 {
+            self.params_set.load(Ordering::Relaxed)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Backend for MockBackend {
+        type Error = MockError;
+
+        async fn load_synthdef(&self, _name: &str, _data: &[u8]) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_synth(
+            &self,
+            _def: &str,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+            _params: &ParamMap,
+        ) -> std::result::Result<(), Self::Error> {
+            self.synths_created.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn create_group(
+            &self,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+            self.nodes_freed.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn run_node(&self, _node: NodeId, _running: bool) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> std::result::Result<(), Self::Error> {
+            self.params_set.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn load_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames: 44100,
+                channels: 2,
+                sample_rate: 44100.0,
+            })
+        }
+
+        async fn alloc_buffer(
+            &self,
+            _id: BufferId,
+            frames: u32,
+            channels: u16,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames,
+                channels,
+                sample_rate: 44100.0,
+            })
+        }
+
+        async fn write_buffer(&self, _id: BufferId, _path: &Path) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn current_time(&self) -> Instant {
+            Instant::now()
+        }
+    }
+
+    // =========================================================================
+    // Helper Functions
+    // =========================================================================
+
+    fn create_handler() -> (EffectsHandler<MockBackend>, Arc<MockBackend>, Arc<RwLock<State>>) {
+        let backend = Arc::new(MockBackend::new());
+        let state = Arc::new(RwLock::new(State::default()));
+        let handler = EffectsHandler::new(backend.clone(), state.clone());
+        (handler, backend, state)
+    }
+
+    async fn setup_state_with_group(state: &Arc<RwLock<State>>) {
+        let mut state_write = state.write().await;
+
+        // Register the synthdef
+        state_write.synthdefs.insert("reverb".to_string());
+        state_write.synthdefs.insert("delay".to_string());
+
+        // Create a group
+        let group_id = GroupId::new(1);
+        state_write.groups.insert(
+            group_id,
+            GroupState {
+                id: group_id,
+                name: "TestGroup".to_string(),
+                parent: None,
+                node_id: NodeId(100),
+                audio_bus: BusId(16),
+                link_synth_node_id: None,
+                muted: false,
+                soloed: false,
+                params: ParamMap::new(),
+            },
+        );
+    }
+
+    // =========================================================================
+    // Effect Add Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_add_effect() {
+        let (handler, backend, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect_id = EffectId::new(1);
+        let result = handler
+            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .await;
+
+        assert!(result.is_ok(), "Adding effect should succeed");
+        assert_eq!(backend.synths_created(), 1, "One synth should be created");
+
+        let state_read = state.read().await;
+        assert!(state_read.effects.contains_key(&effect_id));
+    }
+
+    #[tokio::test]
+    async fn test_add_effect_duplicate_fails() {
+        let (handler, _, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect_id = EffectId::new(1);
+        handler
+            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .await
+            .unwrap();
+
+        let result = handler
+            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .await;
+
+        assert!(result.is_err(), "Duplicate effect should fail");
+    }
+
+    #[tokio::test]
+    async fn test_add_effect_group_not_found() {
+        let (handler, _, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect_id = EffectId::new(1);
+        let result = handler
+            .add(effect_id, GroupId::new(999), "reverb", &ParamMap::new())
+            .await;
+
+        assert!(result.is_err(), "Should fail with non-existent group");
+    }
+
+    #[tokio::test]
+    async fn test_add_effect_synthdef_not_found() {
+        let (handler, _, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect_id = EffectId::new(1);
+        let result = handler
+            .add(effect_id, GroupId::new(1), "nonexistent_fx", &ParamMap::new())
+            .await;
+
+        assert!(result.is_err(), "Should fail with non-existent synthdef");
+    }
+
+    #[tokio::test]
+    async fn test_add_effect_with_params() {
+        let (handler, backend, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect_id = EffectId::new(1);
+        let mut params = ParamMap::new();
+        params.insert("room".to_string(), 0.8);
+        params.insert("mix".to_string(), 0.3);
+
+        let result = handler
+            .add(effect_id, GroupId::new(1), "reverb", &params)
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(backend.synths_created(), 1);
+
+        let state_read = state.read().await;
+        let effect = state_read.effects.get(&effect_id).unwrap();
+        assert_eq!(*effect.params.get("room").unwrap(), 0.8);
+        assert_eq!(*effect.params.get("mix").unwrap(), 0.3);
+    }
+
+    #[tokio::test]
+    async fn test_add_multiple_effects_to_group() {
+        let (handler, backend, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect1 = EffectId::new(1);
+        let effect2 = EffectId::new(2);
+
+        handler
+            .add(effect1, GroupId::new(1), "reverb", &ParamMap::new())
+            .await
+            .unwrap();
+        handler
+            .add(effect2, GroupId::new(1), "delay", &ParamMap::new())
+            .await
+            .unwrap();
+
+        assert_eq!(backend.synths_created(), 2, "Two effects should be created");
+
+        let state_read = state.read().await;
+        assert!(state_read.effects.contains_key(&effect1));
+        assert!(state_read.effects.contains_key(&effect2));
+    }
+
+    // =========================================================================
+    // Effect Remove Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_remove_effect() {
+        let (handler, backend, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect_id = EffectId::new(1);
+        handler
+            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .await
+            .unwrap();
+
+        let result = handler.remove(effect_id).await;
+        assert!(result.is_ok(), "Removing effect should succeed");
+        assert_eq!(backend.nodes_freed(), 1, "Node should be freed");
+
+        let state_read = state.read().await;
+        assert!(!state_read.effects.contains_key(&effect_id));
+    }
+
+    #[tokio::test]
+    async fn test_remove_nonexistent_effect_fails() {
+        let (handler, _, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let result = handler.remove(EffectId::new(999)).await;
+        assert!(result.is_err(), "Removing non-existent effect should fail");
+    }
+
+    // =========================================================================
+    // Effect Set Param Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_set_param() {
+        let (handler, backend, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect_id = EffectId::new(1);
+        handler
+            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .await
+            .unwrap();
+
+        let result = handler.set_param(effect_id, "room", 0.9).await;
+        assert!(result.is_ok(), "Setting param should succeed");
+        assert_eq!(backend.params_set(), 1, "Param should be set on backend");
+
+        let state_read = state.read().await;
+        let effect = state_read.effects.get(&effect_id).unwrap();
+        assert_eq!(*effect.params.get("room").unwrap(), 0.9);
+    }
+
+    #[tokio::test]
+    async fn test_set_param_nonexistent_effect_fails() {
+        let (handler, _, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let result = handler.set_param(EffectId::new(999), "room", 0.5).await;
+        assert!(result.is_err(), "Setting param on non-existent effect should fail");
+    }
+
+    #[tokio::test]
+    async fn test_set_multiple_params() {
+        let (handler, backend, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect_id = EffectId::new(1);
+        handler
+            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .await
+            .unwrap();
+
+        handler.set_param(effect_id, "room", 0.8).await.unwrap();
+        handler.set_param(effect_id, "mix", 0.4).await.unwrap();
+        handler.set_param(effect_id, "damp", 0.6).await.unwrap();
+
+        assert_eq!(backend.params_set(), 3, "Three params should be set");
+
+        let state_read = state.read().await;
+        let effect = state_read.effects.get(&effect_id).unwrap();
+        assert_eq!(*effect.params.get("room").unwrap(), 0.8);
+        assert_eq!(*effect.params.get("mix").unwrap(), 0.4);
+        assert_eq!(*effect.params.get("damp").unwrap(), 0.6);
+    }
+
+    // =========================================================================
+    // Effect Placement Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_effect_stores_group_audio_bus() {
+        let (handler, _, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect_id = EffectId::new(1);
+        handler
+            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .await
+            .unwrap();
+
+        let state_read = state.read().await;
+        let effect = state_read.effects.get(&effect_id).unwrap();
+        assert_eq!(effect.audio_bus, BusId(16), "Effect should use group's audio bus");
+    }
+
+    #[tokio::test]
+    async fn test_effect_stores_synthdef_name() {
+        let (handler, _, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect_id = EffectId::new(1);
+        handler
+            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .await
+            .unwrap();
+
+        let state_read = state.read().await;
+        let effect = state_read.effects.get(&effect_id).unwrap();
+        assert_eq!(effect.synthdef, "reverb");
+    }
+
+    #[tokio::test]
+    async fn test_effect_stores_group_id() {
+        let (handler, _, state) = create_handler();
+        setup_state_with_group(&state).await;
+
+        let effect_id = EffectId::new(1);
+        handler
+            .add(effect_id, GroupId::new(1), "reverb", &ParamMap::new())
+            .await
+            .unwrap();
+
+        let state_read = state.read().await;
+        let effect = state_read.effects.get(&effect_id).unwrap();
+        assert_eq!(effect.group, GroupId::new(1));
     }
 }

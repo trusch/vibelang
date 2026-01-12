@@ -40,6 +40,9 @@ impl Step {
 /// Configuration for creating a pattern.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PatternConfig {
+    /// Pattern name (for display in TUI/API).
+    pub name: String,
+
     /// Voice to trigger (None if pattern is just for timing).
     pub voice: Option<VoiceId>,
 
@@ -55,8 +58,9 @@ pub struct PatternConfig {
 
 impl PatternConfig {
     /// Create a new pattern configuration.
-    pub fn new(voice: VoiceId, length: Beat) -> Self {
+    pub fn new(name: impl Into<String>, voice: VoiceId, length: Beat) -> Self {
         Self {
+            name: name.into(),
             voice: Some(voice),
             steps: Vec::new(),
             length,
@@ -65,8 +69,9 @@ impl PatternConfig {
     }
 
     /// Create a pattern configuration without a voice.
-    pub fn without_voice(length: Beat) -> Self {
+    pub fn without_voice(name: impl Into<String>, length: Beat) -> Self {
         Self {
+            name: name.into(),
             voice: None,
             steps: Vec::new(),
             length,
@@ -75,8 +80,8 @@ impl PatternConfig {
     }
 
     /// Create a pattern with length in beats as f64.
-    pub fn with_length(voice: VoiceId, length: f64) -> Self {
-        Self::new(voice, Beat::from_f64(length))
+    pub fn with_length(name: impl Into<String>, voice: VoiceId, length: f64) -> Self {
+        Self::new(name, voice, Beat::from_f64(length))
     }
 
     /// Add a step to the pattern.
@@ -95,6 +100,7 @@ impl PatternConfig {
 /// Pattern management for rhythmic sequences.
 ///
 /// Patterns loop continuously, triggering their voice at each step.
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait Patterns: Send + Sync {
     /// Create a new pattern.
@@ -112,5 +118,25 @@ pub trait Patterns: Send + Sync {
     /// Set a pattern parameter.
     ///
     /// This affects all future triggers from this pattern.
+    async fn set_param(&self, id: PatternId, param: &str, value: f32) -> Result<()>;
+}
+
+/// Pattern management for rhythmic sequences (WASM version).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait Patterns {
+    /// Create a new pattern.
+    async fn create(&self, id: PatternId, config: PatternConfig) -> Result<()>;
+
+    /// Delete a pattern.
+    async fn delete(&self, id: PatternId) -> Result<()>;
+
+    /// Start playing a pattern.
+    async fn start(&self, id: PatternId) -> Result<()>;
+
+    /// Stop playing a pattern.
+    async fn stop(&self, id: PatternId) -> Result<()>;
+
+    /// Set a pattern parameter.
     async fn set_param(&self, id: PatternId, param: &str, value: f32) -> Result<()>;
 }

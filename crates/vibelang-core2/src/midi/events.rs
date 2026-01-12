@@ -173,7 +173,7 @@ impl From<u8> for ControlValue {
 // ============================================================================
 
 /// MIDI channel (0-15).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Channel(u8);
 
 impl Channel {
@@ -206,12 +206,6 @@ impl Channel {
 impl From<u8> for Channel {
     fn from(ch: u8) -> Self {
         Self::new_clamped(ch)
-    }
-}
-
-impl Default for Channel {
-    fn default() -> Self {
-        Self(0)
     }
 }
 
@@ -451,7 +445,8 @@ impl TimestampedMidiEvent {
 
 /// Per-note controller for MIDI 2.0.
 /// MIDI 2.0 allows controllers to be applied to individual notes.
-#[cfg(feature = "midi2")]
+// Reserved for future MIDI 2.0 support - feature not yet defined in Cargo.toml
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PerNoteController {
     pub channel: Channel,
@@ -461,7 +456,8 @@ pub struct PerNoteController {
 }
 
 /// Per-note pitch bend for MIDI 2.0.
-#[cfg(feature = "midi2")]
+// Reserved for future MIDI 2.0 support - feature not yet defined in Cargo.toml
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PerNotePitchBend {
     pub channel: Channel,
@@ -471,7 +467,8 @@ pub struct PerNotePitchBend {
 }
 
 /// Per-note management message for MIDI 2.0.
-#[cfg(feature = "midi2")]
+// Reserved for future MIDI 2.0 support - feature not yet defined in Cargo.toml
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PerNoteManagement {
     pub channel: Channel,

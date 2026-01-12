@@ -121,6 +121,13 @@ pub enum OscResponse {
     Done { command: String },
     /// Command failed.
     Fail { command: String, reason: String },
+    /// Trigger message (SendTrig from synth).
+    /// Used for metering and other real-time feedback.
+    Trigger {
+        node_id: NodeId,
+        trig_id: i32,
+        value: f32,
+    },
     /// Unknown response.
     Unknown { path: String, args: Vec<OscType> },
 }
@@ -146,6 +153,12 @@ pub struct ScsynthBackend {
     node_end_tx: mpsc::Sender<NodeId>,
     /// Pending buffer info requests (buffer_id -> oneshot sender).
     pending_buffer_info: Arc<Mutex<HashMap<u32, oneshot::Sender<BufferInfo>>>>,
+    /// Pending sync requests (sync_id -> oneshot sender).
+    pending_sync: Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
+    /// Pending control bus read requests (bus_index -> oneshot sender).
+    pending_control_bus: Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
+    /// Next sync ID for /sync messages.
+    next_sync_id: Arc<std::sync::atomic::AtomicI32>,
     /// General response callbacks.
     callbacks: Arc<Mutex<Vec<OscCallback>>>,
     /// Server status (updated by listener).
@@ -187,6 +200,9 @@ impl ScsynthBackend {
         let server_ready = Arc::new(AtomicBool::new(false));
         let (node_end_tx, _node_end_rx) = mpsc::channel(1024);
         let pending_buffer_info = Arc::new(Mutex::new(HashMap::new()));
+        let pending_sync = Arc::new(Mutex::new(HashMap::new()));
+        let pending_control_bus = Arc::new(Mutex::new(HashMap::new()));
+        let next_sync_id = Arc::new(std::sync::atomic::AtomicI32::new(1));
         let callbacks = Arc::new(Mutex::new(Vec::new()));
 
         let socket = Arc::new(socket);
@@ -198,6 +214,9 @@ impl ScsynthBackend {
             running: running.clone(),
             node_end_tx,
             pending_buffer_info: pending_buffer_info.clone(),
+            pending_sync: pending_sync.clone(),
+            pending_control_bus: pending_control_bus.clone(),
+            next_sync_id,
             callbacks: callbacks.clone(),
             server_ready: server_ready.clone(),
         };
@@ -207,6 +226,8 @@ impl ScsynthBackend {
             socket.clone(),
             running.clone(),
             pending_buffer_info.clone(),
+            pending_sync.clone(),
+            pending_control_bus.clone(),
             callbacks.clone(),
             server_ready.clone(),
         );
@@ -254,6 +275,8 @@ impl ScsynthBackend {
         socket: Arc<UdpSocket>,
         running: Arc<AtomicBool>,
         pending_buffer_info: Arc<Mutex<HashMap<u32, oneshot::Sender<BufferInfo>>>>,
+        pending_sync: Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
+        pending_control_bus: Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
         callbacks: Arc<Mutex<Vec<OscCallback>>>,
         server_ready: Arc<AtomicBool>,
     ) {
@@ -272,6 +295,8 @@ impl ScsynthBackend {
                             Self::handle_packet(
                                 packet,
                                 &pending_buffer_info,
+                                &pending_sync,
+                                &pending_control_bus,
                                 &callbacks,
                                 &server_ready,
                             );
@@ -299,16 +324,18 @@ impl ScsynthBackend {
     fn handle_packet(
         packet: OscPacket,
         pending_buffer_info: &Arc<Mutex<HashMap<u32, oneshot::Sender<BufferInfo>>>>,
+        pending_sync: &Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
+        pending_control_bus: &Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
         callbacks: &Arc<Mutex<Vec<OscCallback>>>,
         server_ready: &Arc<AtomicBool>,
     ) {
         match packet {
             OscPacket::Message(msg) => {
-                Self::handle_message(msg, pending_buffer_info, callbacks, server_ready);
+                Self::handle_message(msg, pending_buffer_info, pending_sync, pending_control_bus, callbacks, server_ready);
             }
             OscPacket::Bundle(bundle) => {
                 for content in bundle.content {
-                    Self::handle_packet(content, pending_buffer_info, callbacks, server_ready);
+                    Self::handle_packet(content, pending_buffer_info, pending_sync, pending_control_bus, callbacks, server_ready);
                 }
             }
         }
@@ -318,6 +345,8 @@ impl ScsynthBackend {
     fn handle_message(
         msg: OscMessage,
         pending_buffer_info: &Arc<Mutex<HashMap<u32, oneshot::Sender<BufferInfo>>>>,
+        pending_sync: &Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
+        pending_control_bus: &Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
         callbacks: &Arc<Mutex<Vec<OscCallback>>>,
         server_ready: &Arc<AtomicBool>,
     ) {
@@ -430,8 +459,72 @@ impl ScsynthBackend {
                 // Command failed
                 let command = Self::get_string(&msg.args, 0).unwrap_or_default();
                 let reason = Self::get_string(&msg.args, 1).unwrap_or_default();
-                tracing::warn!("Fail: {} - {}", command, reason);
+
+                // Node not found on n_free/n_set is expected for synths with doneAction=2
+                // (they free themselves when their envelope completes)
+                let is_expected_node_not_found =
+                    (command == "/n_free" || command == "/n_set") && reason.contains("not found");
+
+                if is_expected_node_not_found {
+                    tracing::trace!("Expected: {} - {} (synth already freed via doneAction)", command, reason);
+                } else {
+                    tracing::warn!("Fail: {} - {}", command, reason);
+                }
                 Some(OscResponse::Fail { command, reason })
+            }
+            "/synced" => {
+                // Sync completed
+                if let Some(sync_id) = Self::get_int(&msg.args, 0) {
+                    tracing::debug!("Synced: {}", sync_id);
+                    // Fulfill pending sync request
+                    if let Ok(mut pending) = pending_sync.lock() {
+                        if let Some(sender) = pending.remove(&sync_id) {
+                            let _ = sender.send(());
+                        }
+                    }
+                }
+                None // Don't propagate to callbacks
+            }
+            "/c_set" => {
+                // Control bus value response (from /c_get)
+                // Format: [bus_index, value] pairs (can have multiple)
+                // We handle one at a time since we send /c_get for single buses
+                if msg.args.len() >= 2 {
+                    let bus_index = Self::get_int(&msg.args, 0).unwrap_or(0) as u32;
+                    let value = Self::get_float(&msg.args, 1).unwrap_or(0.0);
+
+                    tracing::trace!("Control bus {}: {}", bus_index, value);
+
+                    // Fulfill pending request if any
+                    if let Ok(mut pending) = pending_control_bus.lock() {
+                        if let Some(sender) = pending.remove(&bus_index) {
+                            let _ = sender.send(value);
+                        }
+                    }
+                }
+                None // Don't propagate to callbacks
+            }
+            "/tr" => {
+                // Trigger message (SendTrig from synth)
+                // Format: node_id (int), trig_id (int), value (float)
+                if msg.args.len() >= 3 {
+                    let node_id = NodeId::new(Self::get_int(&msg.args, 0).unwrap_or(0) as u32);
+                    let trig_id = Self::get_int(&msg.args, 1).unwrap_or(0);
+                    let value = Self::get_float(&msg.args, 2).unwrap_or(0.0);
+
+                    // Don't log meter triggers (too noisy at 20Hz)
+                    if trig_id >= 100 {
+                        tracing::trace!("Trigger: node={} id={} value={}", node_id.0, trig_id, value);
+                    }
+
+                    Some(OscResponse::Trigger {
+                        node_id,
+                        trig_id,
+                        value,
+                    })
+                } else {
+                    None
+                }
             }
             _ => {
                 tracing::trace!("Unknown OSC message: {} {:?}", msg.addr, msg.args);
@@ -535,6 +628,40 @@ impl ScsynthBackend {
             Err(_) => Err(ScsynthError::Timeout),
         }
     }
+
+    /// Send /sync and wait for scsynth to process all pending commands.
+    ///
+    /// This ensures all previously sent commands have been processed before
+    /// continuing. Useful for ensuring groups exist before creating synths
+    /// that target them.
+    pub async fn sync(&self) -> Result<(), ScsynthError> {
+        // Get a unique sync ID
+        let sync_id = self.next_sync_id.fetch_add(1, Ordering::SeqCst);
+
+        // Create oneshot channel for response
+        let (tx, rx) = oneshot::channel();
+
+        // Register pending request
+        {
+            let mut pending = self.pending_sync.lock().unwrap();
+            pending.insert(sync_id, tx);
+        }
+
+        // Send sync command
+        self.send_msg("/sync", vec![OscType::Int(sync_id)])?;
+
+        // Wait for response with timeout
+        match tokio::time::timeout(Duration::from_secs(5), rx).await {
+            Ok(Ok(())) => {
+                tracing::debug!("Sync {} completed", sync_id);
+                Ok(())
+            }
+            Ok(Err(_)) => Err(ScsynthError::ConnectionFailed(
+                "Sync response channel closed".to_string(),
+            )),
+            Err(_) => Err(ScsynthError::Timeout),
+        }
+    }
 }
 
 impl Drop for ScsynthBackend {
@@ -631,6 +758,132 @@ impl Backend for ScsynthBackend {
         Ok(())
     }
 
+    async fn map_param_to_bus(
+        &self,
+        node: NodeId,
+        param: &str,
+        bus: u32,
+    ) -> Result<(), Self::Error> {
+        tracing::debug!(
+            "n_map: node={}, param='{}', bus={}",
+            node.0,
+            param,
+            bus
+        );
+        self.send_msg(
+            "/n_map",
+            vec![
+                OscType::Int(node.0 as i32),
+                OscType::String(param.to_string()),
+                OscType::Int(bus as i32),
+            ],
+        )?;
+        Ok(())
+    }
+
+    async fn get_control_bus(&self, bus: u32) -> Result<f32, Self::Error> {
+        // Create oneshot channel for the response
+        let (tx, rx) = oneshot::channel();
+
+        // Register pending request
+        {
+            let mut pending = self.pending_control_bus.lock().unwrap();
+            pending.insert(bus, tx);
+        }
+
+        // Send /c_get command
+        // scsynth responds with /c_set [bus_index, value]
+        self.send_msg("/c_get", vec![OscType::Int(bus as i32)])?;
+
+        // Wait for response with a short timeout
+        // Control bus reads should be fast, use 50ms timeout
+        match tokio::time::timeout(Duration::from_millis(50), rx).await {
+            Ok(Ok(value)) => {
+                tracing::trace!("Got control bus {} value: {}", bus, value);
+                Ok(value)
+            }
+            Ok(Err(_)) => {
+                // Channel closed, return default
+                tracing::warn!("Control bus {} read cancelled", bus);
+                Ok(0.0)
+            }
+            Err(_) => {
+                // Timeout - remove pending request and return default
+                {
+                    let mut pending = self.pending_control_bus.lock().unwrap();
+                    pending.remove(&bus);
+                }
+                tracing::trace!("Control bus {} read timeout, returning 0.0", bus);
+                Ok(0.0)
+            }
+        }
+    }
+
+    async fn get_control_buses(&self, buses: &[u32]) -> Result<HashMap<u32, f32>, Self::Error> {
+        if buses.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // Create receivers for all buses
+        let mut receivers: Vec<(u32, oneshot::Receiver<f32>)> = Vec::with_capacity(buses.len());
+
+        // Register all pending requests and send all /c_get commands
+        {
+            let mut pending = self.pending_control_bus.lock().unwrap();
+            for &bus in buses {
+                let (tx, rx) = oneshot::channel();
+                pending.insert(bus, tx);
+                receivers.push((bus, rx));
+            }
+        }
+
+        // Send all /c_get commands (non-blocking, just UDP sends)
+        for &bus in buses {
+            if let Err(e) = self.send_msg("/c_get", vec![OscType::Int(bus as i32)]) {
+                tracing::warn!("Failed to send /c_get for bus {}: {}", bus, e);
+            }
+        }
+
+        // Wait for all responses with a single timeout
+        // Give 10ms base + 2ms per bus (accounts for scsynth processing time)
+        let timeout_ms = 10 + (buses.len() as u64 * 2);
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms);
+
+        let mut results = HashMap::with_capacity(buses.len());
+
+        for (bus, rx) in receivers {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                // Timeout exhausted, clean up remaining
+                let mut pending = self.pending_control_bus.lock().unwrap();
+                pending.remove(&bus);
+                continue;
+            }
+
+            match tokio::time::timeout(remaining, rx).await {
+                Ok(Ok(value)) => {
+                    results.insert(bus, value);
+                }
+                Ok(Err(_)) => {
+                    // Channel closed
+                }
+                Err(_) => {
+                    // Timeout - clean up
+                    let mut pending = self.pending_control_bus.lock().unwrap();
+                    pending.remove(&bus);
+                }
+            }
+        }
+
+        tracing::trace!(
+            "Batch read {} control buses, got {} responses",
+            buses.len(),
+            results.len()
+        );
+
+        Ok(results)
+    }
+
     async fn load_buffer(&self, id: BufferId, path: &Path) -> Result<BufferInfo, Self::Error> {
         let path_str = path.to_str().ok_or_else(|| {
             ScsynthError::Io(io::Error::new(io::ErrorKind::InvalidInput, "Invalid path"))
@@ -657,7 +910,9 @@ impl Backend for ScsynthBackend {
         )?;
 
         // Wait for buffer info response with timeout
-        match tokio::time::timeout(Duration::from_secs(10), rx).await {
+        // Note: scsynth sends /done /b_allocRead but NOT /b_info automatically
+        // So this timeout will usually fire and we'll query manually
+        match tokio::time::timeout(Duration::from_millis(500), rx).await {
             Ok(Ok(info)) => {
                 tracing::debug!(
                     "Loaded buffer {} from {:?} ({} frames, {} channels, {}Hz)",
@@ -784,6 +1039,10 @@ impl Backend for ScsynthBackend {
     fn current_time(&self) -> Instant {
         Instant::now()
     }
+
+    async fn sync(&self) -> Result<(), Self::Error> {
+        ScsynthBackend::sync(self).await
+    }
 }
 
 // Helper trait for AddAction conversion to scsynth integer
@@ -801,6 +1060,97 @@ impl AddActionExt for AddAction {
             AddAction::Replace => 4,
         }
     }
+}
+
+/// Set up node tracking for a scsynth backend.
+///
+/// This registers a callback on the backend that removes ended nodes from
+/// voice state when `/n_end` messages are received. This prevents the voice
+/// handler from trying to free nodes that have already freed themselves
+/// (e.g., via doneAction=2), which causes "node not found" errors.
+///
+/// # Example
+///
+/// ```ignore
+/// let backend = ScsynthBackend::connect("127.0.0.1:57110").await?;
+/// let runtime = Runtime::new(backend);
+///
+/// // Set up node tracking after creating the runtime
+/// setup_node_tracking(runtime.backend(), runtime.state().clone());
+/// ```
+pub fn setup_node_tracking(backend: &ScsynthBackend, state: Arc<tokio::sync::RwLock<crate::State>>) {
+    let state_clone = state;
+
+    backend.on_response(Arc::new(move |response| {
+        if let OscResponse::NodeEnd { node_id, .. } = response {
+            // Use try_write to avoid blocking in the callback
+            // If we can't get the lock, we skip this update (node removal is best-effort)
+            let result = state_clone.try_write();
+            if let Ok(mut guard) = result {
+                // Remove the node from any voice's active_nodes list
+                for voice in guard.voices.values_mut() {
+                    voice.active_nodes.retain(|&n| n != node_id);
+                    voice.note_nodes.retain(|_, &mut n| n != node_id);
+                }
+                tracing::trace!("Node {} ended, removed from voice tracking", node_id.0);
+            }
+        }
+    }));
+
+    tracing::debug!("Node tracking callback registered on scsynth backend");
+}
+
+/// Set up metering for a scsynth backend.
+///
+/// This registers a callback on the backend that updates meter_levels in the
+/// provided state when SendTrig messages are received from link synths.
+///
+/// The system_link_audio synthdef sends SendTrig messages at ~20Hz with meter data:
+/// - trig_id 0: peak left
+/// - trig_id 1: peak right
+/// - trig_id 2: rms left
+/// - trig_id 3: rms right
+///
+/// # Example
+///
+/// ```ignore
+/// let backend = ScsynthBackend::connect("127.0.0.1:57110").await?;
+/// let runtime = Runtime::new(backend);
+///
+/// // Set up metering after creating the runtime
+/// setup_metering(runtime.backend(), runtime.state().clone());
+/// ```
+pub fn setup_metering(backend: &ScsynthBackend, state: Arc<tokio::sync::RwLock<crate::State>>) {
+    let state_clone = state;
+
+    backend.on_response(Arc::new(move |response| {
+        if let OscResponse::Trigger { node_id, trig_id, value } = response {
+            // Only handle meter triggers (IDs 0-3)
+            // Higher IDs (100+) are used for other purposes like MIDI triggers
+            if (0..=3).contains(&trig_id) {
+                // Use try_write to avoid blocking in the callback
+                // If we can't get the lock, we skip this update (meters update frequently)
+                let result = state_clone.try_write();
+                if let Ok(mut guard) = result {
+                    let meter = guard.meter_levels.entry(node_id).or_default();
+                    match trig_id {
+                        0 => meter.peak_left = value,
+                        1 => meter.peak_right = value,
+                        2 => meter.rms_left = value,
+                        3 => {
+                            meter.rms_right = value;
+                            // Update timestamp only after all 4 values are received
+                            // (rms_right is last in the SendTrig sequence)
+                            meter.last_update = Some(std::time::Instant::now());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }));
+
+    tracing::debug!("Metering callback registered on scsynth backend");
 }
 
 #[cfg(test)]

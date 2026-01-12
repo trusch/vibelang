@@ -1,0 +1,74 @@
+// Tutorial: Euclidean Rhythms
+// Difficulty: intermediate | Duration: 5 min
+// Description: Generate world music rhythms algorithmically.
+
+// The Euclidean algorithm distributes N hits evenly across K steps.
+// This creates many traditional rhythms from around the world!
+
+// Import percussion sounds
+import "stdlib/drums/kicks/kick_808.vibe";
+import "stdlib/drums/toms/tom_808.vibe";
+import "stdlib/drums/hihats/hihat_short.vibe";
+import "stdlib/drums/percussion/cowbell.vibe";
+
+set_tempo(118);
+
+define_group("Euclidean", || {
+    let kick = voice("kick").synth("kick_808").gain(db(-6));
+    let conga = voice("conga").synth("tom_808").gain(db(-12));
+    let shaker = voice("shaker").synth("hihat_short").gain(db(-15));
+    let cowbell = voice("cowbell").synth("cowbell").gain(db(-12));
+
+    // --------------------------------------------------------
+    // EUCLIDEAN SYNTAX
+    // --------------------------------------------------------
+    // .euclid(hits, steps)
+    // .euclid(hits, steps, rotation)  // rotation shifts the pattern
+    //
+    // hits = how many triggers
+    // steps = total steps in the pattern
+
+    // Kick: 4 in 16 = quarter notes (standard four-on-the-floor)
+    pattern("kick")
+        .on(kick)
+        .euclid(4, 16)
+        .start();
+
+    // Conga: 3 in 8 = Cuban Tresillo rhythm!
+    pattern("conga")
+        .on(conga)
+        .euclid(3, 8)
+        .start();
+
+    // Shaker: 5 in 8 = Cuban Cinquillo
+    pattern("shaker")
+        .on(shaker)
+        .euclid(5, 8)
+        .start();
+
+    // Cowbell: 7 in 16 with rotation = interesting off-kilter feel
+    pattern("cowbell")
+        .on(cowbell)
+        .euclid(7, 16, 2)  // Rotated by 2 steps
+        .start();
+});
+
+// ============================================================
+// FAMOUS EUCLIDEAN RHYTHMS:
+//
+// (3, 8)  = Cuban Tresillo (x..x..x.)
+// (5, 8)  = Cuban Cinquillo (x.xx.xx.)
+// (5, 16) = Bossa Nova
+// (7, 12) = West African bell pattern
+// (7, 16) = Brazilian Samba
+// (4, 12) = Afro-Cuban 6/8 feel
+//
+// The magic: these patterns sound natural because
+// they maximize the distance between hits!
+//
+// TRY THIS:
+// - Odd meters: .euclid(5, 9)
+// - Dense: .euclid(11, 16)
+// - Sparse: .euclid(3, 16)
+// - Rotate patterns: .euclid(5, 16, 3)
+// ============================================================

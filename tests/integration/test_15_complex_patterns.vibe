@@ -1,0 +1,393 @@
+// Integration Test 15: Complex Patterns
+// Tests: Advanced pattern configurations and combinations
+//
+// This test verifies:
+// - Euclidean rhythm generation
+// - Pattern step notation with params
+// - Multi-bar patterns
+// - Pattern variations
+
+test_start("complex_patterns");
+
+set_tempo(120);
+set_time_signature(4, 4);
+
+// =============================================================================
+// Test 1: Test Synthdef
+// =============================================================================
+
+define_synthdef("pattern_test")
+    .param("freq", 440.0)
+    .param("amp", 0.1)
+    .param("gate", 1.0)
+    .param("pan", 0.0)
+    .param("decay", 0.1)
+    .body(|freq, amp, gate, pan, decay| {
+        let env = envelope()
+            .perc("1ms", decay)
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let sig = sin_osc_ar(freq) * env * amp;
+        pan2(sig, pan)
+    });
+
+// =============================================================================
+// Test 2: Euclidean Rhythm Patterns
+// =============================================================================
+
+define_group("EuclideanRhythms", || {
+    let v = voice("euclid_voice").synth("pattern_test").gain(db(-20));
+
+    // Classic euclidean patterns
+    // E(3,8) - Afro-Cuban tresillo
+    let e_3_8 = pattern("euclid_3_8")
+        .on(v)
+        .euclid(3, 8)
+        .apply();
+    assert_true(true, "euclidean 3/8 pattern created");
+
+    // E(5,8) - Common in West African music
+    let e_5_8 = pattern("euclid_5_8")
+        .on(v)
+        .euclid(5, 8)
+        .apply();
+    assert_true(true, "euclidean 5/8 pattern created");
+
+    // E(7,16) - Brazilian bossa nova
+    let e_7_16 = pattern("euclid_7_16")
+        .on(v)
+        .euclid(7, 16)
+        .apply();
+    assert_true(true, "euclidean 7/16 pattern created");
+
+    // E(5,12) - African bell pattern
+    let e_5_12 = pattern("euclid_5_12")
+        .on(v)
+        .euclid(5, 12)
+        .apply();
+    assert_true(true, "euclidean 5/12 pattern created");
+
+    // E(9,16) - Common in electronic music
+    let e_9_16 = pattern("euclid_9_16")
+        .on(v)
+        .euclid(9, 16)
+        .apply();
+    assert_true(true, "euclidean 9/16 pattern created");
+
+    // Edge case: E(1,4) - single hit every beat
+    let e_1_4 = pattern("euclid_1_4")
+        .on(v)
+        .euclid(1, 4)
+        .apply();
+    assert_true(true, "euclidean 1/4 pattern created");
+
+    // Edge case: E(4,4) - all steps active
+    let e_4_4 = pattern("euclid_4_4")
+        .on(v)
+        .euclid(4, 4)
+        .apply();
+    assert_true(true, "euclidean 4/4 (all steps) pattern created");
+});
+
+// =============================================================================
+// Test 3: Step Patterns with Inline Parameters
+// =============================================================================
+
+define_group("ParamPatterns", || {
+    let v = voice("param_voice").synth("pattern_test").gain(db(-18)).poly(4);
+
+    // Pattern with varying frequencies
+    let freq_pattern = pattern("freq_variation")
+        .on(v)
+        .step("x[freq=220] x[freq=330] x[freq=440] x[freq=550]")
+        .apply();
+    assert_true(true, "frequency variation pattern created");
+
+    // Pattern with varying velocities (amp)
+    let vel_pattern = pattern("velocity_variation")
+        .on(v)
+        .step("x[amp=0.8] x[amp=0.4] x[amp=0.6] x[amp=0.2]")
+        .apply();
+    assert_true(true, "velocity variation pattern created");
+
+    // Pattern with panning
+    let pan_pattern = pattern("pan_variation")
+        .on(v)
+        .step("x[pan=-1] x[pan=-0.5] x[pan=0.5] x[pan=1]")
+        .apply();
+    assert_true(true, "pan variation pattern created");
+
+    // Pattern with decay times
+    let decay_pattern = pattern("decay_variation")
+        .on(v)
+        .step("x[decay=0.05] x[decay=0.1] x[decay=0.2] x[decay=0.5]")
+        .apply();
+    assert_true(true, "decay variation pattern created");
+
+    // Pattern with multiple params per step
+    let multi_param = pattern("multi_param")
+        .on(v)
+        .step("x[freq=220,amp=0.5,pan=-0.5] x[freq=440,amp=0.8,pan=0.5]")
+        .apply();
+    assert_true(true, "multi-param pattern created");
+});
+
+// =============================================================================
+// Test 4: Multi-Bar Patterns
+// =============================================================================
+
+define_group("MultiBarPatterns", || {
+    let v = voice("multibar_voice").synth("pattern_test").gain(db(-18));
+
+    // 2-bar pattern (32 steps)
+    let two_bar = pattern("two_bar")
+        .on(v)
+        .step("x... .... x... .... | x... x... x... x...")
+        .apply();
+    assert_true(true, "2-bar pattern created");
+
+    // 4-bar pattern (64 steps)
+    let four_bar = pattern("four_bar")
+        .on(v)
+        .step("x... .... .... .... | x... .... x... .... | x... x... x... x... | x.x. x.x. x.x. x.x.")
+        .apply();
+    assert_true(true, "4-bar pattern created");
+
+    // Pattern with odd length (13 steps - prime number)
+    let odd_length = pattern("odd_length")
+        .on(v)
+        .step("x..x..x..x...")
+        .apply();
+    assert_true(true, "odd-length pattern created");
+});
+
+// =============================================================================
+// Test 5: Classic Drum Patterns
+// =============================================================================
+
+define_group("DrumPatterns", || {
+    let kick = voice("kick").synth("pattern_test").gain(db(-16)).param("freq", 60.0).param("decay", 0.3);
+    let snare = voice("snare").synth("pattern_test").gain(db(-18)).param("freq", 180.0).param("decay", 0.1);
+    let hihat = voice("hihat").synth("pattern_test").gain(db(-20)).param("freq", 8000.0).param("decay", 0.02);
+
+    // Four-on-the-floor kick
+    let kick_pattern = pattern("four_on_floor")
+        .on(kick)
+        .step("x... x... x... x...")
+        .apply();
+    assert_true(true, "four-on-the-floor kick pattern");
+
+    // Backbeat snare (2 and 4)
+    let snare_pattern = pattern("backbeat")
+        .on(snare)
+        .step(".... x... .... x...")
+        .apply();
+    assert_true(true, "backbeat snare pattern");
+
+    // 8th note hi-hats
+    let hihat_pattern = pattern("eighth_hats")
+        .on(hihat)
+        .step("x.x. x.x. x.x. x.x.")
+        .apply();
+    assert_true(true, "eighth note hi-hat pattern");
+
+    // 16th note hi-hats
+    let hihat_16th = pattern("sixteenth_hats")
+        .on(hihat)
+        .step("xxxx xxxx xxxx xxxx")
+        .apply();
+    assert_true(true, "sixteenth note hi-hat pattern");
+
+    // Off-beat kick (EDM style)
+    let offbeat_kick = pattern("offbeat_kick")
+        .on(kick)
+        .step(".... x... .... x...")
+        .apply();
+    assert_true(true, "off-beat kick pattern");
+});
+
+// =============================================================================
+// Test 6: Syncopated Patterns
+// =============================================================================
+
+define_group("SyncPatterns", || {
+    let v = voice("sync_voice").synth("pattern_test").gain(db(-18));
+
+    // Syncopated funk pattern
+    let funk = pattern("funk_sync")
+        .on(v)
+        .step("x..x ..x. x..x ..x.")
+        .apply();
+    assert_true(true, "funky syncopated pattern");
+
+    // Swing-like pattern (manual placement)
+    let swing = pattern("manual_swing")
+        .on(v)
+        .step("x.. .x. x.. .x.")
+        .apply();
+    assert_true(true, "swing-like pattern");
+
+    // Caribbean-style pattern
+    let caribbean = pattern("caribbean")
+        .on(v)
+        .step("x.x. .x.x x.x. .x..")
+        .apply();
+    assert_true(true, "caribbean-style pattern");
+});
+
+// =============================================================================
+// Test 7: Dynamic Patterns (Velocity Gradients)
+// =============================================================================
+
+define_group("DynamicPatterns", || {
+    let v = voice("dynamic_voice").synth("pattern_test").gain(db(-16));
+
+    // Crescendo pattern
+    let crescendo = pattern("crescendo")
+        .on(v)
+        .step("x[amp=0.2] x[amp=0.3] x[amp=0.5] x[amp=0.7] x[amp=0.8] x[amp=0.9] x[amp=1.0] .")
+        .apply();
+    assert_true(true, "crescendo pattern");
+
+    // Decrescendo pattern
+    let decrescendo = pattern("decrescendo")
+        .on(v)
+        .step("x[amp=1.0] x[amp=0.9] x[amp=0.7] x[amp=0.5] x[amp=0.3] x[amp=0.2] x[amp=0.1] .")
+        .apply();
+    assert_true(true, "decrescendo pattern");
+
+    // Accent pattern (emphasize beat 1)
+    let accent = pattern("accented")
+        .on(v)
+        .step("x[amp=1.0]... x[amp=0.5]... x[amp=0.5]... x[amp=0.5]...")
+        .apply();
+    assert_true(true, "accent pattern");
+});
+
+// =============================================================================
+// Test 8: Pitch Patterns
+// =============================================================================
+
+define_group("PitchPatterns", || {
+    let v = voice("pitch_voice").synth("pattern_test").gain(db(-18)).poly(4);
+
+    // Ascending arpeggio pattern
+    let arp_up = pattern("arp_ascending")
+        .on(v)
+        .step("x[freq=261.63] x[freq=329.63] x[freq=392.00] x[freq=523.25]")  // C4 E4 G4 C5
+        .apply();
+    assert_true(true, "ascending arpeggio pattern");
+
+    // Descending arpeggio pattern
+    let arp_down = pattern("arp_descending")
+        .on(v)
+        .step("x[freq=523.25] x[freq=392.00] x[freq=329.63] x[freq=261.63]")  // C5 G4 E4 C4
+        .apply();
+    assert_true(true, "descending arpeggio pattern");
+
+    // Alternating pattern
+    let alternate = pattern("alternating")
+        .on(v)
+        .step("x[freq=261.63] x[freq=523.25] x[freq=329.63] x[freq=392.00]")
+        .apply();
+    assert_true(true, "alternating pitch pattern");
+});
+
+// =============================================================================
+// Test 9: Sparse Patterns
+// =============================================================================
+
+define_group("SparsePatterns", || {
+    let v = voice("sparse_voice").synth("pattern_test").gain(db(-18));
+
+    // Very sparse - one hit per bar
+    let one_per_bar = pattern("sparse_1_bar")
+        .on(v)
+        .step("x... .... .... ....")
+        .apply();
+    assert_true(true, "one hit per bar pattern");
+
+    // One hit every 2 bars
+    let one_per_2bars = pattern("sparse_2_bars")
+        .on(v)
+        .step("x... .... .... .... | .... .... .... ....")
+        .apply();
+    assert_true(true, "one hit per 2 bars pattern");
+
+    // Single step pattern
+    let single = pattern("single_step")
+        .on(v)
+        .step("x")
+        .apply();
+    assert_true(true, "single step pattern");
+});
+
+// =============================================================================
+// Test 10: Dense Patterns
+// =============================================================================
+
+define_group("DensePatterns", || {
+    let v = voice("dense_voice").synth("pattern_test").gain(db(-24));  // Quieter because many hits
+
+    // All 16th notes
+    let all_16th = pattern("all_sixteenths")
+        .on(v)
+        .step("xxxx xxxx xxxx xxxx")
+        .apply();
+    assert_true(true, "all sixteenth notes pattern");
+
+    // Alternating very dense pattern
+    let alternate_dense = pattern("alternate_dense")
+        .on(v)
+        .step("x.x.x.x. x.x.x.x.")
+        .apply();
+    assert_true(true, "alternating dense pattern");
+});
+
+// =============================================================================
+// Test 11: Polyrhythmic Setup
+// =============================================================================
+
+define_group("Polyrhythms", || {
+    let v3 = voice("poly_3").synth("pattern_test").gain(db(-18)).param("freq", 330.0);
+    let v4 = voice("poly_4").synth("pattern_test").gain(db(-18)).param("freq", 440.0);
+
+    // 3 hits over 12 steps (even spacing)
+    let p3 = pattern("poly_3_over_12")
+        .on(v3)
+        .step("x... x... x...")
+        .apply();
+    assert_true(true, "3-over-12 polyrhythm pattern");
+
+    // 4 hits over 12 steps (even spacing)
+    let p4 = pattern("poly_4_over_12")
+        .on(v4)
+        .step("x.. x.. x.. x..")
+        .apply();
+    assert_true(true, "4-over-12 polyrhythm pattern");
+});
+
+// =============================================================================
+// Test 12: Pattern with Rests
+// =============================================================================
+
+define_group("RestPatterns", || {
+    let v = voice("rest_voice").synth("pattern_test").gain(db(-18));
+
+    // Heavy rest pattern
+    let heavy_rest = pattern("heavy_rests")
+        .on(v)
+        .step("x... .... .... .... | .... x... .... ....")
+        .apply();
+    assert_true(true, "heavy rest pattern");
+
+    // All rests (silent pattern)
+    let all_rest = pattern("all_rests")
+        .on(v)
+        .step(".... .... .... ....")
+        .apply();
+    assert_true(true, "all-rest pattern (silent)");
+});
+
+test_end_and_exit();

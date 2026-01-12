@@ -89,6 +89,7 @@ function Header({ theme, onToggleTheme, page = 'home' }) {
           <a href="#start" onClick={() => navigateTo('#start')}>Get Started</a>
           <a href="#features" onClick={() => navigateTo('#features')}>Features</a>
           <a href="#demo" onClick={() => navigateTo('#demo')}>Demo</a>
+          <a href="#extension" onClick={() => navigateTo('#extension')}>Extension</a>
           <a href="#sounds" onClick={() => navigateTo('#sounds')}>Sounds</a>
           <a
             href="#/docs"
@@ -96,6 +97,13 @@ function Header({ theme, onToggleTheme, page = 'home' }) {
             onClick={() => setMobileMenuOpen(false)}
           >
             Docs
+          </a>
+          <a
+            href="#/playground"
+            className={`header__playground-link ${page === 'playground' ? 'active' : ''}`}
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            Playground
           </a>
         </nav>
 

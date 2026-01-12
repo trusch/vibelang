@@ -138,8 +138,10 @@ pub async fn start_server(
         )
         // Voices
         .route("/voices", get(routes::voices::list_voices))
+        .route("/voices", post(routes::voices::create_voice))
         .route("/voices/{id}", get(routes::voices::get_voice))
         .route("/voices/{id}", patch(routes::voices::update_voice))
+        .route("/voices/{id}", delete(routes::voices::delete_voice))
         .route("/voices/{id}/trigger", post(routes::voices::trigger_voice))
         .route("/voices/{id}/stop", post(routes::voices::stop_voice))
         .route("/voices/{id}/note-on", post(routes::voices::note_on))
@@ -152,20 +154,26 @@ pub async fn start_server(
         .route("/voices/{id}/unmute", post(routes::voices::unmute_voice))
         // Patterns
         .route("/patterns", get(routes::patterns::list_patterns))
+        .route("/patterns", post(routes::patterns::create_pattern))
         .route("/patterns/{id}", get(routes::patterns::get_pattern))
         .route("/patterns/{id}", patch(routes::patterns::update_pattern))
+        .route("/patterns/{id}", delete(routes::patterns::delete_pattern))
         .route("/patterns/{id}/start", post(routes::patterns::start_pattern))
         .route("/patterns/{id}/stop", post(routes::patterns::stop_pattern))
         // Melodies
         .route("/melodies", get(routes::melodies::list_melodies))
+        .route("/melodies", post(routes::melodies::create_melody))
         .route("/melodies/{id}", get(routes::melodies::get_melody))
         .route("/melodies/{id}", patch(routes::melodies::update_melody))
+        .route("/melodies/{id}", delete(routes::melodies::delete_melody))
         .route("/melodies/{id}/start", post(routes::melodies::start_melody))
         .route("/melodies/{id}/stop", post(routes::melodies::stop_melody))
         // Sequences
         .route("/sequences", get(routes::sequences::list_sequences))
+        .route("/sequences", post(routes::sequences::create_sequence))
         .route("/sequences/{id}", get(routes::sequences::get_sequence))
         .route("/sequences/{id}", patch(routes::sequences::update_sequence))
+        .route("/sequences/{id}", delete(routes::sequences::delete_sequence))
         .route(
             "/sequences/{id}/start",
             post(routes::sequences::start_sequence),
@@ -189,20 +197,56 @@ pub async fn start_server(
         )
         // Samples
         .route("/samples", get(routes::samples::list_samples))
+        .route("/samples", post(routes::samples::load_sample))
         .route("/samples/{id}", get(routes::samples::get_sample))
+        .route("/samples/{id}", delete(routes::samples::delete_sample))
         // SynthDefs
         .route("/synthdefs", get(routes::synthdefs::list_synthdefs))
+        .route("/synthdefs/{name}", get(routes::synthdefs::get_synthdef))
         // Eval
         .route("/eval", post(routes::eval::eval_code))
         // Live state
         .route("/live", get(routes::live::get_live_state))
         .route("/live/transport", get(routes::live::get_transport_state))
         .route("/live/fades", get(routes::live::get_active_fades))
+        .route("/live/meters", get(routes::live::get_meters))
+        // Fades (alias for /live/fades for compatibility)
+        .route("/fades", get(routes::live::get_active_fades))
+        // Fade control
+        .route("/fades", post(routes::fades::start_fade))
+        .route("/fades", delete(routes::fades::cancel_fade))
+        .route("/fades/voice/{name}", post(routes::fades::fade_voice))
+        .route("/fades/group/{path}", post(routes::fades::fade_group))
+        .route("/fades/effect/{id}", post(routes::fades::fade_effect))
         // WebSocket
-        .route("/ws", get(websocket::ws_handler))
-        // Add shared state
+        .route("/ws", get(websocket::ws_handler));
+
+    // Add MIDI routes (feature-gated)
+    #[cfg(feature = "midi")]
+    let app = app
+        .route("/midi/devices", get(routes::midi::list_devices))
+        .route("/midi/input/open", post(routes::midi::open_input))
+        .route("/midi/output/open", post(routes::midi::open_output))
+        .route("/midi/close", post(routes::midi::close_device))
+        .route("/midi/note/on", post(routes::midi::send_note_on))
+        .route("/midi/note/off", post(routes::midi::send_note_off))
+        .route("/midi/cc", post(routes::midi::send_cc))
+        .route("/midi/record/start", post(routes::midi::start_recording))
+        .route("/midi/record/stop", post(routes::midi::stop_recording))
+        .route("/midi/clock/enable", post(routes::midi::enable_clock_output))
+        .route("/midi/clock/disable", post(routes::midi::disable_clock_output))
+        .route("/midi/transport/start", post(routes::midi::send_midi_start))
+        .route("/midi/transport/stop", post(routes::midi::send_midi_stop))
+        .route("/midi/transport/continue", post(routes::midi::send_midi_continue))
+        // Route management
+        .route("/midi/routes", get(routes::midi::list_routes))
+        .route("/midi/routes", delete(routes::midi::clear_routes))
+        .route("/midi/route/keyboard", post(routes::midi::add_keyboard_route))
+        .route("/midi/route/{index}", delete(routes::midi::remove_keyboard_route));
+
+    // Add shared state and CORS middleware
+    let app = app
         .with_state(app_state)
-        // Add CORS middleware
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

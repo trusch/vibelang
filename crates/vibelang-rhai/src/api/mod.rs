@@ -6,12 +6,26 @@ pub mod assert;
 pub mod global;
 pub mod group;
 pub mod helpers;
+pub mod modulator;
 pub mod voice;
 pub mod pattern;
 pub mod melody;
 pub mod sequence;
 pub mod sample;
+
+/// Clear all object registries.
+///
+/// This should be called before each script execution to start with a clean slate.
+pub fn clear_all_registries() {
+    pattern::clear_registry();
+    melody::clear_registry();
+    sequence::clear_registry();
+}
+
+// Native-only modules (require file I/O)
+#[cfg(not(target_arch = "wasm32"))]
 pub mod sfz;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod recording;
 
 #[cfg(feature = "midi")]
@@ -48,10 +62,15 @@ pub fn register_api(engine: &mut Engine) {
     // Register sample API
     sample::register(engine);
 
-    // Register SFZ API
+    // Register modulator API
+    modulator::register(engine);
+
+    // Register SFZ API (native only - requires file I/O)
+    #[cfg(not(target_arch = "wasm32"))]
     sfz::register(engine);
 
-    // Register Recording API
+    // Register Recording API (native only - requires file I/O)
+    #[cfg(not(target_arch = "wasm32"))]
     recording::register(engine);
 
     // Register MIDI API (feature-gated)

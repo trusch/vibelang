@@ -1,0 +1,71 @@
+// Tutorial: Chords & Progressions
+// Difficulty: intermediate | Duration: 6 min
+// Description: Build emotional chord progressions.
+
+// Chords create the emotional foundation of music!
+
+// Import the sounds
+import "stdlib/drums/kicks/kick_soft.vibe";
+import "stdlib/pads/ambient/pad_warm.vibe";
+import "stdlib/bass/sub/sub_deep.vibe";
+
+set_tempo(85);
+
+define_group("Rhythm", || {
+    let kick = voice("kick").synth("kick_soft").gain(db(-6));
+    pattern("kick").on(kick).step("x... x... x.x. x...").start();
+});
+
+define_group("Chords", || {
+    // .poly(4) lets us play 4 notes simultaneously
+    let pad = voice("pad")
+        .synth("pad_warm")
+        .poly(4)
+        .gain(db(-9));
+
+    let bass = voice("bass")
+        .synth("sub_deep")
+        .gain(db(-16));
+
+    // --------------------------------------------------------
+    // CHORD NOTATION
+    // --------------------------------------------------------
+    // [note note note] = play all notes together
+    // Multiple notes in brackets = chord
+
+    // Classic "Sad" progression: Am - F - C - G
+    melody("chords")
+        .on(pad)
+        .notes("[A3 C4 E4] - - - | [F3 A3 C4] - - - | [C3 E3 G3] - - - | [G3 B3 D4] - - -")
+        .gate(0.95)  // Long, sustained notes
+        .start();
+
+    // Bass plays root notes
+    melody("bass")
+        .on(bass)
+        .notes("A2 - - . | F2 - - . | C2 - - . | G2 - - .")
+        .start();
+});
+
+// ============================================================
+// COMMON CHORD PROGRESSIONS:
+//
+// Pop/Sad (Am-F-C-G):
+// "[A3 C4 E4] | [F3 A3 C4] | [C3 E3 G3] | [G3 B3 D4]"
+//
+// Happy (C-G-Am-F):
+// "[C3 E3 G3] | [G3 B3 D4] | [A3 C4 E4] | [F3 A3 C4]"
+//
+// Epic (Cm-Ab-Eb-Bb):
+// "[C3 Eb3 G3] | [Ab2 C3 Eb3] | [Eb3 G3 Bb3] | [Bb2 D3 F3]"
+//
+// CHORD TYPES:
+// Major: root + 4 semitones + 3 semitones (happy)
+// Minor: root + 3 semitones + 4 semitones (sad)
+// 7th: add the note 10 semitones up (jazzy)
+//
+// TRY THIS:
+// - Add 7ths: [A3 C4 E4 G4]
+// - Inversions: [E3 A3 C4] instead of [A3 C4 E4]
+// - Open voicing: [A2 E3 C4]
+// ============================================================

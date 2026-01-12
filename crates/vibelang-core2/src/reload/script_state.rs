@@ -3,12 +3,16 @@
 //! This module defines the state extracted from a `.vibe` script,
 //! without runtime-specific IDs (node IDs, buffer IDs, etc.).
 
-use crate::traits::{MelodyConfig, PatternConfig, RecordingConfig, SampleConfig, SequenceConfig, SfzConfig, VoiceConfig};
+use crate::traits::{MelodyConfig, ModulatorConfig, PatternConfig, SampleConfig, SequenceConfig, SfzConfig, VoiceConfig};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::traits::RecordingConfig;
 #[cfg(feature = "midi")]
 use crate::traits::FadeTarget;
 use crate::types::{
-    EffectId, GroupId, MelodyId, ParamMap, PatternId, RecordingId, SampleId, SequenceId, SfzId, TimeSignature, VoiceId,
+    EffectId, GroupId, MelodyId, ModulatorId, ParamMap, PatternId, SampleId, SequenceId, SfzId, TimeSignature, VoiceId,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::types::RecordingId;
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
 use std::collections::{HashMap, HashSet};
@@ -258,7 +262,11 @@ pub struct ScriptState {
     /// SFZ instruments to load.
     pub sfz_instruments: HashMap<SfzId, SfzConfig>,
 
-    /// Recordings to start.
+    /// Modulators defined in the script.
+    pub modulators: HashMap<ModulatorId, ModulatorConfig>,
+
+    /// Recordings to start (native only).
+    #[cfg(not(target_arch = "wasm32"))]
     pub recordings: HashMap<RecordingId, RecordingConfig>,
 
     /// Patterns that should be playing.
@@ -305,6 +313,39 @@ pub struct ScriptState {
     /// MIDI event callbacks to register.
     #[cfg(feature = "midi")]
     pub midi_callbacks: Vec<MidiCallbackConfig>,
+
+    /// MIDI recording requests.
+    #[cfg(feature = "midi")]
+    pub midi_recording_requests: Vec<MidiRecordingRequest>,
+
+    /// MIDI clock output configurations.
+    #[cfg(feature = "midi")]
+    pub midi_clock_outputs: Vec<MidiClockOutputRequest>,
+}
+
+/// Configuration for a MIDI recording request.
+#[cfg(feature = "midi")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MidiRecordingRequest {
+    /// Device ID to record from.
+    pub device_id: MidiDeviceId,
+
+    /// Optional channel filter.
+    pub channel: Option<u8>,
+
+    /// Start (true) or stop (false) recording.
+    pub start: bool,
+}
+
+/// Configuration for MIDI clock output.
+#[cfg(feature = "midi")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MidiClockOutputRequest {
+    /// Device ID to send clock to.
+    pub device_id: MidiDeviceId,
+
+    /// Enable (true) or disable (false) clock output.
+    pub enabled: bool,
 }
 
 impl ScriptState {
@@ -368,6 +409,11 @@ impl ScriptState {
     pub fn add_sfz(&mut self, id: SfzId, config: SfzConfig) {
         self.sfz_instruments.insert(id, config);
     }
+
+    /// Add a modulator.
+    pub fn add_modulator(&mut self, id: ModulatorId, config: ModulatorConfig) {
+        self.modulators.insert(id, config);
+    }
 }
 
 #[cfg(test)]
@@ -416,6 +462,7 @@ mod tests {
         state.add_voice(
             VoiceId::new(1),
             VoiceConfig {
+                name: "test".to_string(),
                 synthdef: "sine".to_string(),
                 group: GroupId::new(1),
                 polyphony: 8,
@@ -425,10 +472,13 @@ mod tests {
                 sfz_instrument: None,
                 choke_group: None,
                 round_robin_count: 0,
+                modulations: std::collections::HashMap::new(),
                 #[cfg(feature = "midi")]
                 midi_output: None,
                 #[cfg(feature = "midi")]
                 midi_channel: 0,
+                #[cfg(feature = "midi")]
+                param_cc_map: std::collections::HashMap::new(),
             },
         );
 

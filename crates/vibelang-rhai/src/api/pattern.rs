@@ -3,12 +3,35 @@
 //! Patterns are rhythmic sequences that trigger voices.
 
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use vibelang_core2::traits::{PatternConfig, Step};
 use vibelang_core2::types::Beat;
 
 use crate::context;
 use super::voice::Voice;
+
+// Global registry for patterns - allows looking up patterns by name
+thread_local! {
+    static PATTERN_REGISTRY: RefCell<HashMap<String, Pattern>> = RefCell::new(HashMap::new());
+}
+
+/// Clear the pattern registry (called when context is cleared).
+pub fn clear_registry() {
+    PATTERN_REGISTRY.with(|r| r.borrow_mut().clear());
+}
+
+/// Get a pattern from the registry by name.
+fn get_pattern(name: &str) -> Option<Pattern> {
+    PATTERN_REGISTRY.with(|r| r.borrow().get(name).cloned())
+}
+
+/// Store a pattern in the registry.
+fn store_pattern(pattern: &Pattern) {
+    PATTERN_REGISTRY.with(|r| {
+        r.borrow_mut().insert(pattern.name.clone(), pattern.clone());
+    });
+}
 
 /// A Pattern builder for creating rhythmic patterns.
 #[derive(Debug, Clone, CustomType)]
@@ -68,7 +91,14 @@ impl Pattern {
 
     /// Generate a Euclidean rhythm.
     pub fn euclid(mut self, hits: i64, total_steps: i64) -> Self {
-        let pattern = generate_euclidean(hits as usize, total_steps as usize);
+        let pattern = generate_euclidean(hits as usize, total_steps as usize, 0);
+        self.steps = Some(pattern);
+        self
+    }
+
+    /// Generate a Euclidean rhythm with rotation.
+    pub fn euclid_rotated(mut self, hits: i64, total_steps: i64, rotation: i64) -> Self {
+        let pattern = generate_euclidean(hits as usize, total_steps as usize, rotation);
         self.steps = Some(pattern);
         self
     }
@@ -114,6 +144,7 @@ impl Pattern {
         };
 
         let config = PatternConfig {
+            name: self.name.clone(),
             voice: voice_id,
             steps,
             length: Beat::from_f64(loop_length),
@@ -128,6 +159,8 @@ impl Pattern {
     /// Register and apply the pattern (chainable).
     pub fn apply(self) -> Self {
         self.sync_to_state();
+        // Store in registry for later lookup
+        store_pattern(&self);
         self
     }
 
@@ -222,14 +255,18 @@ fn parse_pattern_steps(steps: &str, _length: f64, swing: f32) -> Vec<Step> {
             };
 
             // Parse velocity from token character
+            // x = normal (0.7), X = accent (1.0), o = ghost (0.3)
+            // 1-9 = scaled velocity (0.1 to 1.0)
             let velocity = match ch {
-                'x' => Some(1.0),
-                'X' | 'o' | 'O' => Some(1.2),
+                'x' => Some(0.7),              // Normal hit
+                'X' => Some(1.0),              // Accent/loud
+                'o' | 'O' => Some(0.3),        // Ghost note/soft
                 '1'..='9' => {
+                    // 1 = 0.11, 5 = 0.55, 9 = 1.0
                     let digit = (*ch as u8 - b'0') as f32;
-                    Some(0.1 + (digit / 9.0) * 0.9)
+                    Some(digit / 9.0)
                 }
-                '.' | '_' | '0' | '-' => None,
+                '.' | '_' | '0' | '-' => None, // Rest
                 _ => None,
             };
 
@@ -251,9 +288,9 @@ fn parse_pattern_steps(steps: &str, _length: f64, swing: f32) -> Vec<Step> {
     result
 }
 
-/// Generate a Euclidean rhythm pattern.
+/// Generate a Euclidean rhythm pattern with optional rotation.
 /// Uses a Bresenham-style algorithm for even distribution.
-fn generate_euclidean(hits: usize, steps: usize) -> String {
+fn generate_euclidean(hits: usize, steps: usize, rotation: i64) -> String {
     if steps == 0 {
         return String::new();
     }
@@ -273,11 +310,25 @@ fn generate_euclidean(hits: usize, steps: usize) -> String {
         pattern[pos] = 'x';
     }
 
+    // Apply rotation (positive = shift right, negative = shift left)
+    if rotation != 0 {
+        let rot = rotation.rem_euclid(steps as i64) as usize;
+        pattern.rotate_right(rot);
+    }
+
     pattern.into_iter().collect()
 }
 
-/// Create a new pattern builder.
+/// Create a new pattern builder or return an existing one.
+///
+/// If a pattern with this name already exists in the registry,
+/// returns a clone of it. Otherwise creates a new empty pattern.
 pub fn pattern(ctx: NativeCallContext, name: String) -> Pattern {
+    // Check if pattern already exists in registry
+    if let Some(existing) = get_pattern(&name) {
+        return existing;
+    }
+    // Create new pattern
     Pattern::new(ctx, name)
 }
 
@@ -294,6 +345,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("on", Pattern::on_voice);
     engine.register_fn("step", Pattern::step);
     engine.register_fn("euclid", Pattern::euclid);
+    engine.register_fn("euclid", Pattern::euclid_rotated);
     engine.register_fn("len", Pattern::len);
     engine.register_fn("swing", Pattern::swing);
     engine.register_fn("set_param", Pattern::set_param);
@@ -317,35 +369,35 @@ mod tests {
     #[test]
     fn test_generate_euclidean() {
         // E(3,8) - 3 hits in 8 steps, evenly distributed
-        let pattern = generate_euclidean(3, 8);
+        let pattern = generate_euclidean(3, 8, 0);
         assert_eq!(pattern.chars().filter(|&c| c == 'x').count(), 3);
         assert_eq!(pattern.len(), 8);
 
         // E(4,8) - 4 hits in 8 steps
-        let pattern = generate_euclidean(4, 8);
+        let pattern = generate_euclidean(4, 8, 0);
         assert_eq!(pattern.chars().filter(|&c| c == 'x').count(), 4);
         assert_eq!(pattern.len(), 8);
 
         // Edge cases
-        assert_eq!(generate_euclidean(0, 8), "........");
-        assert_eq!(generate_euclidean(8, 8), "xxxxxxxx");
-        assert_eq!(generate_euclidean(3, 0), "");
+        assert_eq!(generate_euclidean(0, 8, 0), "........");
+        assert_eq!(generate_euclidean(8, 8, 0), "xxxxxxxx");
+        assert_eq!(generate_euclidean(3, 0, 0), "");
     }
 
     #[test]
     fn test_generate_euclidean_common_rhythms() {
         // E(5,8) - common pattern (Cuban tresillo variant)
-        let pattern = generate_euclidean(5, 8);
+        let pattern = generate_euclidean(5, 8, 0);
         assert_eq!(pattern.chars().filter(|&c| c == 'x').count(), 5);
         assert_eq!(pattern.len(), 8);
 
         // E(3,4) - basic on-beat pattern
-        let pattern = generate_euclidean(3, 4);
+        let pattern = generate_euclidean(3, 4, 0);
         assert_eq!(pattern.chars().filter(|&c| c == 'x').count(), 3);
         assert_eq!(pattern.len(), 4);
 
         // E(7,12) - more complex
-        let pattern = generate_euclidean(7, 12);
+        let pattern = generate_euclidean(7, 12, 0);
         assert_eq!(pattern.chars().filter(|&c| c == 'x').count(), 7);
         assert_eq!(pattern.len(), 12);
     }
@@ -353,23 +405,43 @@ mod tests {
     #[test]
     fn test_generate_euclidean_all_hits() {
         // When hits >= steps, all should be 'x'
-        assert_eq!(generate_euclidean(4, 4), "xxxx");
-        assert_eq!(generate_euclidean(5, 4), "xxxx"); // Clamped
-        assert_eq!(generate_euclidean(16, 16), "xxxxxxxxxxxxxxxx");
+        assert_eq!(generate_euclidean(4, 4, 0), "xxxx");
+        assert_eq!(generate_euclidean(5, 4, 0), "xxxx"); // Clamped
+        assert_eq!(generate_euclidean(16, 16, 0), "xxxxxxxxxxxxxxxx");
     }
 
     #[test]
     fn test_generate_euclidean_no_hits() {
-        assert_eq!(generate_euclidean(0, 4), "....");
-        assert_eq!(generate_euclidean(0, 8), "........");
-        assert_eq!(generate_euclidean(0, 16), "................");
+        assert_eq!(generate_euclidean(0, 4, 0), "....");
+        assert_eq!(generate_euclidean(0, 8, 0), "........");
+        assert_eq!(generate_euclidean(0, 16, 0), "................");
     }
 
     #[test]
     fn test_generate_euclidean_single_hit() {
-        let pattern = generate_euclidean(1, 8);
+        let pattern = generate_euclidean(1, 8, 0);
         assert_eq!(pattern.chars().filter(|&c| c == 'x').count(), 1);
         assert_eq!(pattern.len(), 8);
+    }
+
+    #[test]
+    fn test_generate_euclidean_rotation() {
+        // Base pattern: x..x..x. (3 hits in 8 steps)
+        let base = generate_euclidean(3, 8, 0);
+
+        // Rotate by 1: should shift pattern right by 1
+        let rotated1 = generate_euclidean(3, 8, 1);
+        assert_eq!(rotated1.chars().filter(|&c| c == 'x').count(), 3);
+        assert_eq!(rotated1.len(), 8);
+        assert_ne!(base, rotated1);
+
+        // Rotate by steps should give same pattern
+        let rotated_full = generate_euclidean(3, 8, 8);
+        assert_eq!(base, rotated_full);
+
+        // Negative rotation should work
+        let rotated_neg = generate_euclidean(3, 8, -1);
+        assert_eq!(rotated_neg.chars().filter(|&c| c == 'x').count(), 3);
     }
 
     // ==================== Bar Splitting Tests ====================
@@ -465,18 +537,30 @@ mod tests {
 
     #[test]
     fn test_parse_pattern_steps_velocity() {
-        // 'x' = velocity 1.0
+        // 'x' = velocity 0.7 (normal)
         let steps = parse_pattern_steps("x", 4.0, 0.0);
+        assert_eq!(steps[0].params.get("amp"), Some(&0.7));
+
+        // 'X' = velocity 1.0 (accent)
+        let steps = parse_pattern_steps("X", 4.0, 0.0);
         assert_eq!(steps[0].params.get("amp"), Some(&1.0));
 
-        // 'X' or 'o' or 'O' = velocity 1.2 (accent)
-        let steps = parse_pattern_steps("X", 4.0, 0.0);
-        assert_eq!(steps[0].params.get("amp"), Some(&1.2));
+        // 'o' = velocity 0.3 (ghost note)
+        let steps = parse_pattern_steps("o", 4.0, 0.0);
+        assert_eq!(steps[0].params.get("amp"), Some(&0.3));
 
-        // Numeric values 1-9 = scaled velocity
+        // Numeric values 1-9 = scaled velocity (1/9 to 9/9)
+        let steps = parse_pattern_steps("1", 4.0, 0.0);
+        let vel = *steps[0].params.get("amp").unwrap();
+        assert!((vel - 1.0/9.0).abs() < 0.01); // ~0.11
+
         let steps = parse_pattern_steps("5", 4.0, 0.0);
-        let vel = steps[0].params.get("amp").unwrap();
-        assert!(*vel > 0.5 && *vel < 0.7); // Around 0.6
+        let vel = *steps[0].params.get("amp").unwrap();
+        assert!((vel - 5.0/9.0).abs() < 0.01); // ~0.55
+
+        let steps = parse_pattern_steps("9", 4.0, 0.0);
+        let vel = *steps[0].params.get("amp").unwrap();
+        assert!((vel - 1.0).abs() < 0.01); // 1.0
     }
 
     #[test]

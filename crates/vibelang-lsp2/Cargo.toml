@@ -49,3 +49,10 @@ tracing = "0.1"
 
 [features]
 default = []
+
+# Script extensions (disabled by default for LSP - validation shouldn't have side effects)
+# These can be enabled if the LSP needs to validate scripts that use extensions
+extensions = ["ext-fs", "ext-exec", "ext-net"]
+ext-fs = ["vibelang-rhai/ext-fs"]
+ext-exec = ["vibelang-rhai/ext-exec"]
+ext-net = ["vibelang-rhai/ext-net"]

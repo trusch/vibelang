@@ -1,0 +1,70 @@
+// Tutorial: Your First Beat
+// Difficulty: beginner | Duration: 3 min
+// Description: Create a drum pattern using the stdlib sounds.
+
+// Let's make music! VibeLang comes with 600+ built-in sounds.
+// No programming experience needed - just follow along!
+
+// First, import the sounds we'll use
+import "stdlib/drums/kicks/kick_909.vibe";
+import "stdlib/drums/snares/snare_909.vibe";
+import "stdlib/drums/hihats/hihat_909_closed.vibe";
+
+// Set the tempo (beats per minute)
+set_tempo(120);
+
+// ------------------------------------------------------------
+// STEP 1: Create voices (sound slots)
+// ------------------------------------------------------------
+// A "group" organizes sounds together for mixing.
+// A "voice" is a slot that plays a sound.
+
+define_group("Drums", || {
+    // Create voices using stdlib synthdefs
+    // .synth("name") picks the sound to use
+    // .gain(db(-6)) sets volume in decibels
+
+    let kick = voice("kick")
+        .synth("kick_909")      // Classic 909 kick drum
+        .gain(db(-6));
+
+    let snare = voice("snare")
+        .synth("snare_909")     // Classic 909 snare
+        .gain(db(-9));
+
+    let hihat = voice("hihat")
+        .synth("hihat_909_closed")  // Closed hi-hat
+        .gain(db(-12));
+
+    // --------------------------------------------------------
+    // STEP 2: Create patterns
+    // --------------------------------------------------------
+    // Pattern notation:
+    //   x = hit
+    //   . = rest (silence)
+    //   Each character = 1/16th note
+    //   16 characters = 1 bar
+
+    pattern("kick_pat")
+        .on(kick)
+        .step("x... x... x... x...")  // Four-on-the-floor
+        .start();
+
+    pattern("snare_pat")
+        .on(snare)
+        .step(".... x... .... x...")  // Beats 2 and 4
+        .start();
+
+    pattern("hihat_pat")
+        .on(hihat)
+        .step("x.x. x.x. x.x. x.x.")  // Eighth notes
+        .start();
+});
+
+// ============================================================
+// TRY THIS:
+// - Change tempo: set_tempo(140) for faster
+// - Different kick: "kick_808", "kick_techno_deep", "kick_dnb"
+// - Different snare: "snare_808", "snare_acoustic", "clap_808"
+// - Syncopated kick: "x... ..x. x... .x.."
+// ============================================================

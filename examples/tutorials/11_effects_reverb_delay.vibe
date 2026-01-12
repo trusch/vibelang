@@ -1,0 +1,111 @@
+// Tutorial: Effects - Reverb & Delay
+// Difficulty: intermediate | Duration: 6 min
+// Description: Add space and depth with effects.
+
+// Effects add space, depth, and character to your sounds!
+// Import effects and instruments from the stdlib.
+
+// Import instrument sounds
+import "stdlib/drums/kicks/kick_909.vibe";
+import "stdlib/drums/snares/snare_909.vibe";
+import "stdlib/leads/pluck/pluck_bright.vibe";
+import "stdlib/pads/ambient/pad_warm.vibe";
+
+// Import effects
+import "stdlib/effects/reverbs/reverb.vibe";
+import "stdlib/effects/delays/delay.vibe";
+
+set_tempo(118);
+
+// ------------------------------------------------------------
+// DRUMS with subtle room reverb
+// ------------------------------------------------------------
+define_group("Drums", || {
+    let kick = voice("kick").synth("kick_909").gain(db(-6));
+    let snare = voice("snare").synth("snare_909").gain(db(-9));
+
+    pattern("kick").on(kick).step("x... x... x... x...").start();
+    pattern("snare").on(snare).step(".... x... .... x...").start();
+
+    // Add reverb using the fx() builder pattern
+    // Effects go INSIDE the group and apply to all sounds in it
+    fx("drum_verb")
+        .synth("reverb")         // Which effect to use
+        .param("room", 0.2)      // Room size (0-1): small room
+        .param("damp", 0.7)      // Damping: higher = less bright
+        .param("mix", 0.15)      // Wet/dry mix: subtle
+        .apply();
+});
+
+// ------------------------------------------------------------
+// LEAD with delay (echo)
+// ------------------------------------------------------------
+define_group("Lead", || {
+    let lead = voice("lead").synth("lead_pluck_bright").gain(db(-9));
+
+    melody("lead_mel")
+        .on(lead)
+        .notes("E4 . G4 . | B4 . . . | A4 . G4 . | E4 . . .")
+        .gate(0.25)
+        .start();
+
+    // Add delay for rhythmic echoes
+    fx("lead_delay")
+        .synth("delay")
+        .param("time", 0.375)     // Delay time (3/8 note at 118 BPM)
+        .param("feedback", 0.4)   // How much feeds back (0-0.9)
+        .param("mix", 0.35)       // Wet/dry balance
+        .apply();
+});
+
+// ------------------------------------------------------------
+// PAD with lush reverb
+// ------------------------------------------------------------
+define_group("Pad", || {
+    let pad = voice("pad").synth("pad_warm").poly(3).gain(db(-12));
+
+    // Sustained chord using melody with long notes
+    melody("pad_chord")
+        .on(pad)
+        .notes("[E3 G3 B3] - - - - - - -")
+        .start();
+
+    // Large hall reverb for spacious sound
+    fx("pad_verb")
+        .synth("reverb")
+        .param("room", 0.85)   // Large room
+        .param("damp", 0.3)    // Brighter reflections
+        .param("mix", 0.5)     // Equal wet/dry
+        .apply();
+});
+
+// ============================================================
+// EFFECT SYNTAX:
+//
+// fx("unique_name")       // Give each effect a unique ID
+//     .synth("effect")    // Which effect synthdef to use
+//     .param("name", val) // Set parameters
+//     .apply();           // Apply to the current group
+//
+// EFFECT GUIDE:
+//
+// REVERB - Creates space and depth
+//   room: 0.0-1.0 (size of virtual room)
+//   damp: 0.0-1.0 (high frequency absorption)
+//   mix: 0.0-1.0 (wet/dry balance)
+//
+// DELAY - Creates echoes
+//   time: seconds (try syncing to tempo!)
+//   feedback: 0.0-0.9 (echo decay)
+//   mix: 0.0-1.0 (wet/dry balance)
+//
+// TEMPO-SYNCED DELAY TIMES (at 120 BPM):
+//   1/4 note = 0.5s
+//   1/8 note = 0.25s
+//   3/16 note = 0.1875s (triplet feel)
+//
+// TRY THIS:
+// - Huge reverb: room: 0.95, mix: 0.7
+// - Slapback delay: time: 0.1, feedback: 0.2
+// - Dub delay: time: 0.375, feedback: 0.7
+// ============================================================

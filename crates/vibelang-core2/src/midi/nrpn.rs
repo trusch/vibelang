@@ -54,18 +54,28 @@ pub const CC_DATA_DECREMENT: u8 = 97;
 pub const RPN_PITCH_BEND_SENSITIVITY: u16 = 0x0000;
 
 /// RPN for fine tuning.
+/// Standard MIDI constant, reserved for future RPN parameter support.
+#[allow(dead_code)]
 pub const RPN_FINE_TUNING: u16 = 0x0001;
 
 /// RPN for coarse tuning.
+/// Standard MIDI constant, reserved for future RPN parameter support.
+#[allow(dead_code)]
 pub const RPN_COARSE_TUNING: u16 = 0x0002;
 
 /// RPN for tuning program select.
+/// Standard MIDI constant, reserved for future RPN parameter support.
+#[allow(dead_code)]
 pub const RPN_TUNING_PROGRAM: u16 = 0x0003;
 
 /// RPN for tuning bank select.
+/// Standard MIDI constant, reserved for future RPN parameter support.
+#[allow(dead_code)]
 pub const RPN_TUNING_BANK: u16 = 0x0004;
 
 /// RPN for modulation depth range.
+/// Standard MIDI constant, reserved for future RPN parameter support.
+#[allow(dead_code)]
 pub const RPN_MOD_DEPTH_RANGE: u16 = 0x0005;
 
 /// RPN for MPE configuration.
@@ -157,6 +167,8 @@ impl ChannelState {
     }
 
     /// Reset parameter selection.
+    /// Reserved for future RPN/NRPN handling improvements.
+    #[allow(dead_code)]
     fn reset_parameter(&mut self) {
         self.param_msb = None;
         self.param_lsb = None;

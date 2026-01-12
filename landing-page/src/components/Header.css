@@ -86,6 +86,20 @@
   text-decoration: none;
 }
 
+.header__playground-link {
+  background: var(--color-accent);
+  color: white !important;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--border-radius);
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.header__playground-link:hover {
+  background: var(--color-accent-light, #818cf8);
+  color: white !important;
+  transform: translateY(-1px);
+}
+
 .header__actions {
   display: flex;
   align-items: center;

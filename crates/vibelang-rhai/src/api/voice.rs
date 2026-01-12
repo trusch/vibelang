@@ -5,12 +5,16 @@
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::collections::HashMap;
 use vibelang_core2::traits::VoiceConfig;
+use vibelang_core2::types::ModulatorId;
+#[cfg(not(target_arch = "wasm32"))]
 use vibelang_core2::types::SfzId;
 #[cfg(feature = "midi")]
 use vibelang_core2::types::MidiDeviceId;
 
 use crate::context;
+use super::modulator::Modulator;
 use super::sample::SampleHandle;
+#[cfg(not(target_arch = "wasm32"))]
 use super::sfz::SfzHandle;
 #[cfg(feature = "midi")]
 use super::midi::MidiDevice;
@@ -34,18 +38,24 @@ pub struct Voice {
     muted: bool,
     /// Whether this voice is soloed.
     soloed: bool,
-    /// SFZ instrument ID (if this voice uses an SFZ instrument).
+    /// SFZ instrument ID (if this voice uses an SFZ instrument) - native only.
+    #[cfg(not(target_arch = "wasm32"))]
     sfz_instrument: Option<SfzId>,
     /// Round-robin count for cycling through sample variations.
     round_robin_count: u32,
     /// Choke group name for exclusive triggering.
     choke_group: Option<String>,
+    /// Modulation mappings (param_name -> modulator_id).
+    modulations: HashMap<String, ModulatorId>,
     /// MIDI output device (if routing to external MIDI).
     #[cfg(feature = "midi")]
     midi_output_device: Option<MidiDeviceId>,
     /// MIDI output channel (0-15).
     #[cfg(feature = "midi")]
     midi_channel: u8,
+    /// Parameter to MIDI CC mapping.
+    #[cfg(feature = "midi")]
+    param_cc_map: HashMap<String, u8>,
 }
 
 impl Voice {
@@ -60,13 +70,17 @@ impl Voice {
             params: HashMap::new(),
             muted: false,
             soloed: false,
+            #[cfg(not(target_arch = "wasm32"))]
             sfz_instrument: None,
             round_robin_count: 0,
             choke_group: None,
+            modulations: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_output_device: None,
             #[cfg(feature = "midi")]
             midi_channel: 0,
+            #[cfg(feature = "midi")]
+            param_cc_map: HashMap::new(),
         }
     }
 
@@ -134,11 +148,12 @@ impl Voice {
         self
     }
 
-    /// Set the sound source to an SFZ instrument.
+    /// Set the sound source to an SFZ instrument (native only).
     ///
     /// SFZ instruments contain multiple samples mapped across keys and velocities.
     /// When a note is triggered, the appropriate sample(s) are selected based on
     /// the note and velocity.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn on_sfz(mut self, sfz: SfzHandle) -> Self {
         // Get the SFZ ID for this instrument
         let sfz_id = context::get_or_create_sfz_id(&sfz.id);
@@ -160,6 +175,21 @@ impl Voice {
     #[cfg(feature = "midi")]
     pub fn channel(mut self, ch: i64) -> Self {
         self.midi_channel = ch.clamp(0, 15) as u8;
+        self
+    }
+
+    /// Map a parameter name to a MIDI CC number.
+    ///
+    /// When the parameter changes (via set_param or modulation), the value
+    /// is sent as a MIDI CC message to the voice's MIDI output device.
+    ///
+    /// # Arguments
+    ///
+    /// * `param` - Parameter name (e.g., "cutoff", "resonance")
+    /// * `cc` - MIDI CC number (0-127)
+    #[cfg(feature = "midi")]
+    pub fn cc_map(mut self, param: String, cc: i64) -> Self {
+        self.param_cc_map.insert(param, cc.clamp(0, 127) as u8);
         self
     }
 
@@ -198,6 +228,33 @@ impl Voice {
     /// an open hi-hat should be stopped when a closed hi-hat is triggered.
     pub fn choke(mut self, group: String) -> Self {
         self.choke_group = if group.is_empty() { None } else { Some(group) };
+        self
+    }
+
+    /// Connect a modulator to a voice parameter.
+    ///
+    /// The modulator's control bus output will be used as the value for
+    /// the specified parameter. This enables dynamic modulation via LFOs,
+    /// envelopes, envelope followers, etc.
+    ///
+    /// # Example
+    ///
+    /// ```rhai
+    /// let cutoff_lfo = modulator("lfo_sine")
+    ///     .set_param("rate", 4.0)
+    ///     .set_param("lo", 200)
+    ///     .set_param("hi", 2000)
+    ///     .apply();
+    ///
+    /// let bass = voice("bass")
+    ///     .synth("moog_bass")
+    ///     .modulate("cutoff", cutoff_lfo)
+    ///     .apply();
+    /// ```
+    pub fn modulate(mut self, param: String, modulator: Modulator) -> Self {
+        // Get or create the modulator ID from the modulator's name
+        let modulator_id = context::get_or_create_modulator_id(&modulator.name);
+        self.modulations.insert(param, modulator_id);
         self
     }
 
@@ -244,20 +301,34 @@ impl Voice {
         let voice_id = context::get_or_create_voice_id(&self.name);
         let group_id = context::get_or_create_group_id(&self.group_path);
 
+        // Clone params and add gain as "amp" if not explicitly set
+        let mut params = self.params.clone();
+        if !params.contains_key("amp") {
+            params.insert("amp".to_string(), self.gain);
+        }
+        tracing::debug!("Voice sync_to_state: name={}, gain={}, amp in params={:?}", self.name, self.gain, params.get("amp"));
+
         let config = VoiceConfig {
+            name: self.name.clone(),
             synthdef: self.synth_name.clone().unwrap_or_default(),
             group: group_id,
             polyphony: self.polyphony,
-            params: self.params.clone(),
+            params,
             muted: self.muted,
             soloed: self.soloed,
+            #[cfg(not(target_arch = "wasm32"))]
             sfz_instrument: self.sfz_instrument,
+            #[cfg(target_arch = "wasm32")]
+            sfz_instrument: None,
             round_robin_count: self.round_robin_count,
             choke_group: self.choke_group.clone(),
+            modulations: self.modulations.clone(),
             #[cfg(feature = "midi")]
             midi_output: self.midi_output_device,
             #[cfg(feature = "midi")]
             midi_channel: self.midi_channel,
+            #[cfg(feature = "midi")]
+            param_cc_map: self.param_cc_map.clone(),
         };
 
         context::with_state(|state| {
@@ -306,16 +377,20 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("synth", Voice::synth);
     engine.register_fn("on", Voice::on);
     engine.register_fn("on", Voice::on_sample);
+    #[cfg(not(target_arch = "wasm32"))]
     engine.register_fn("on_sfz", Voice::on_sfz);
     #[cfg(feature = "midi")]
     engine.register_fn("on", Voice::on_midi_device);
     #[cfg(feature = "midi")]
     engine.register_fn("channel", Voice::channel);
+    #[cfg(feature = "midi")]
+    engine.register_fn("cc_map", Voice::cc_map);
     engine.register_fn("poly", Voice::poly);
     engine.register_fn("gain", Voice::gain);
     engine.register_fn("set_param", Voice::set_param);
     engine.register_fn("round_robin", Voice::round_robin);
     engine.register_fn("choke", Voice::choke);
+    engine.register_fn("modulate", Voice::modulate);
 
     // Mute/solo
     engine.register_fn("mute", Voice::mute);
@@ -346,9 +421,11 @@ mod tests {
             params: HashMap::new(),
             muted: false,
             soloed: false,
+            #[cfg(not(target_arch = "wasm32"))]
             sfz_instrument: None,
             round_robin_count: 0,
             choke_group: None,
+            modulations: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_output_device: None,
             #[cfg(feature = "midi")]
@@ -506,6 +583,7 @@ mod tests {
         assert!(!v.muted);
         assert!(!v.soloed);
         assert!(v.synth_name.is_none());
+        #[cfg(not(target_arch = "wasm32"))]
         assert!(v.sfz_instrument.is_none());
     }
 
@@ -523,5 +601,90 @@ mod tests {
 
         let v4 = test_voice("test").channel(-5);
         assert_eq!(v4.midi_channel, 0);
+    }
+
+    // ==================== Modulation Tests ====================
+    // Note: These tests use direct manipulation of the modulations HashMap
+    // because the modulate() method requires script context which isn't
+    // available in unit tests.
+
+    use vibelang_core2::types::ModulatorId;
+
+    /// Helper to test modulation storage directly without context
+    fn test_voice_with_modulation(name: &str, param: &str, mod_id: u32) -> Voice {
+        let mut v = test_voice(name);
+        v.modulations.insert(param.to_string(), ModulatorId::new(mod_id));
+        v
+    }
+
+    #[test]
+    fn test_voice_modulate_single_param() {
+        let v = test_voice_with_modulation("test", "cutoff", 1);
+
+        assert_eq!(v.modulations.len(), 1);
+        assert!(v.modulations.contains_key("cutoff"));
+    }
+
+    #[test]
+    fn test_voice_modulate_multiple_params() {
+        let mut v = test_voice("test").synth("my_synth".to_string());
+        v.modulations.insert("cutoff".to_string(), ModulatorId::new(1));
+        v.modulations.insert("resonance".to_string(), ModulatorId::new(2));
+        v.modulations.insert("pan".to_string(), ModulatorId::new(3));
+
+        assert_eq!(v.modulations.len(), 3);
+        assert!(v.modulations.contains_key("cutoff"));
+        assert!(v.modulations.contains_key("resonance"));
+        assert!(v.modulations.contains_key("pan"));
+    }
+
+    #[test]
+    fn test_voice_modulate_override() {
+        // Test that modulating the same param twice uses the last value
+        let mut v = test_voice("test");
+        v.modulations.insert("cutoff".to_string(), ModulatorId::new(1)); // slow_lfo
+        v.modulations.insert("cutoff".to_string(), ModulatorId::new(2)); // fast_lfo
+
+        assert_eq!(v.modulations.len(), 1);
+        assert_eq!(v.modulations.get("cutoff"), Some(&ModulatorId::new(2)));
+    }
+
+    #[test]
+    fn test_voice_modulate_preserves_other_settings() {
+        let mut v = test_voice("test")
+            .synth("my_synth".to_string())
+            .poly(8)
+            .gain(0.5)
+            .set_param("freq".to_string(), 440.0);
+        v.modulations.insert("cutoff".to_string(), ModulatorId::new(1));
+
+        // Verify other settings are preserved
+        assert_eq!(v.synth_name, Some("my_synth".to_string()));
+        assert_eq!(v.polyphony, 8);
+        assert!((v.gain - 0.5).abs() < 0.001);
+        assert_eq!(v.params.get("freq"), Some(&440.0_f32));
+        assert_eq!(v.modulations.len(), 1);
+    }
+
+    #[test]
+    fn test_voice_modulate_empty_initially() {
+        let v = test_voice("test");
+        assert!(v.modulations.is_empty());
+    }
+
+    #[test]
+    fn test_voice_modulate_with_different_ids() {
+        // Test that modulations can store different modulator IDs
+        let mut v = test_voice("test");
+        v.modulations.insert("param1".to_string(), ModulatorId::new(100));
+        v.modulations.insert("param2".to_string(), ModulatorId::new(200));
+        v.modulations.insert("param3".to_string(), ModulatorId::new(300));
+        v.modulations.insert("param4".to_string(), ModulatorId::new(400));
+
+        assert_eq!(v.modulations.len(), 4);
+        assert_eq!(v.modulations.get("param1"), Some(&ModulatorId::new(100)));
+        assert_eq!(v.modulations.get("param2"), Some(&ModulatorId::new(200)));
+        assert_eq!(v.modulations.get("param3"), Some(&ModulatorId::new(300)));
+        assert_eq!(v.modulations.get("param4"), Some(&ModulatorId::new(400)));
     }
 }

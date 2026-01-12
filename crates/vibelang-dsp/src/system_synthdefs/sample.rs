@@ -257,7 +257,7 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
     let ir = GraphIR::from_builder(name.to_string(), builder);
     match encode_synthdef(&ir) {
         Ok(bytes) => {
-            log::info!("[SAMPLE] Generated {} synthdef ({} bytes)", name, bytes.len());
+            log::debug!("[SAMPLE] Generated {} synthdef ({} bytes)", name, bytes.len());
             Some((name.to_string(), bytes))
         }
         Err(e) => {
@@ -517,7 +517,7 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
     let ir = GraphIR::from_builder(name.to_string(), builder);
     match encode_synthdef(&ir) {
         Ok(bytes) => {
-            log::info!("[SAMPLE] Generated {} synthdef ({} bytes)", name, bytes.len());
+            log::debug!("[SAMPLE] Generated {} synthdef ({} bytes)", name, bytes.len());
             Some((name.to_string(), bytes))
         }
         Err(e) => {

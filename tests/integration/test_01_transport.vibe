@@ -1,0 +1,74 @@
+// Integration Test 01: Transport and Timing
+// Tests: set_tempo, get_tempo, set_time_signature, transport controls
+//
+// This test verifies:
+// - Tempo can be set and retrieved
+// - Time signature can be set
+// - Transport state functions work
+// - Pattern timing is correct
+
+test_start("transport");
+
+// Test 1: Set and verify tempo
+set_tempo(120);
+assert_eq(get_tempo(), 120.0, "tempo should be 120 BPM");
+
+// Test 2: Change tempo and verify
+set_tempo(140);
+assert_eq(get_tempo(), 140.0, "tempo should update to 140 BPM");
+
+// Reset to 120 for consistent timing
+set_tempo(120);
+
+// Test 3: Set time signature (4/4)
+set_time_signature(4, 4);
+// Note: No getter for time signature yet, just verify it doesn't error
+
+// Test 4: Verify bars() helper works with time signature
+let four_bars = bars(4);
+assert_eq(four_bars, 16.0, "4 bars in 4/4 should be 16 beats");
+
+// Test 5: Test bar calculation
+let one_bar = bars(1);
+assert_eq(one_bar, 4.0, "1 bar in 4/4 should be 4 beats");
+
+// Test 6: Verify transport state functions exist and return reasonable values
+let current_bar = get_current_bar();
+assert_eq(current_bar, 1, "current bar at script start should be 1");
+
+// Test 7: Quantization settings
+set_quantization(4);
+assert_eq(get_quantization(), 4.0, "quantization should be 4 beats");
+
+set_quantization(0);
+assert_eq(get_quantization(), 0.0, "quantization should be 0 (disabled)");
+
+// Test 8: Define a simple synth (verifies synthdef creation works)
+define_synthdef("test_click")
+    .param("freq", 1000.0)
+    .param("amp", 0.3)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .perc("1ms", "50ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        sin_osc_ar(freq) * env * amp
+    });
+
+// Test 9: Create a voice and pattern (verifies voice/pattern creation)
+let click = voice("click").synth("test_click").gain(db(-10));
+
+// Pattern plays on every beat - should be 2 clicks per second at 120 BPM
+pattern("metronome")
+    .on(click)
+    .step("x... x... x... x...")
+    .start();
+
+// Test 10: Verify dB conversion helper
+assert_approx(db(0), 1.0, "0 dB should be unity gain");
+assert_approx(db(-6), 0.501, 0.01, "-6 dB should be ~0.5");
+assert_approx(db(-20), 0.1, 0.001, "-20 dB should be 0.1");
+
+test_end_and_exit();

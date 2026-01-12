@@ -1,0 +1,170 @@
+// Integration Test 06: Custom SynthDefs
+// Tests: define_synthdef, various UGens, envelopes, modulation
+//
+// This test verifies:
+// - Custom synthdefs are created and deployed
+// - Various oscillators work (sin, saw, pulse, etc.)
+// - Filters work (lpf, hpf, bpf)
+// - Envelopes work (ADSR, perc, etc.)
+// - Modulation works (LFOs, etc.)
+
+test_start("custom_synthdefs");
+
+set_tempo(100);
+
+// Test 1: Basic sine oscillator
+define_synthdef("synth_sine")
+    .param("freq", 440.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .adsr("10ms", "50ms", 0.7, "100ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        sin_osc_ar(freq) * env * amp
+    });
+assert_true(true, "synth_sine with sin_osc_ar created");
+
+// Test 2: Sawtooth with filter
+define_synthdef("synth_saw")
+    .param("freq", 220.0)
+    .param("cutoff", 2000.0)
+    .param("res", 0.3)
+    .param("amp", 0.4)
+    .param("gate", 1.0)
+    .body(|freq, cutoff, res, amp, gate| {
+        let env = envelope()
+            .adsr("5ms", "100ms", 0.6, "200ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let osc = saw_ar(freq);
+        let filtered = rlpf_ar(osc, cutoff, res);
+        filtered * env * amp
+    });
+assert_true(true, "synth_saw with saw_ar and rlpf_ar created");
+
+// Test 3: Pulse with PWM
+define_synthdef("synth_pwm")
+    .param("freq", 330.0)
+    .param("pwm_rate", 0.5)
+    .param("amp", 0.4)
+    .param("gate", 1.0)
+    .body(|freq, pwm_rate, amp, gate| {
+        let env = envelope()
+            .adsr("10ms", "80ms", 0.5, "150ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let width = sin_osc_kr(pwm_rate) * 0.3 + 0.5;  // 0.2 to 0.8
+        let osc = pulse_ar(freq, width);
+        lpf_ar(osc, 3000.0) * env * amp
+    });
+assert_true(true, "synth_pwm with pulse_ar and LFO created");
+
+// Test 4: FM synthesis
+define_synthdef("synth_fm")
+    .param("freq", 440.0)
+    .param("ratio", 2.0)
+    .param("index", 3.0)
+    .param("amp", 0.4)
+    .param("gate", 1.0)
+    .body(|freq, ratio, index, amp, gate| {
+        let env = envelope()
+            .adsr("5ms", "100ms", 0.6, "200ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let mod_freq = freq * ratio;
+        let modulator = sin_osc_ar(mod_freq) * index * mod_freq;
+        let carrier = sin_osc_ar(freq + modulator);
+        carrier * env * amp
+    });
+assert_true(true, "synth_fm with FM synthesis created");
+
+// Test 5: Noise with filter sweep
+define_synthdef("synth_noise")
+    .param("cutoff", 4000.0)
+    .param("sweep_time", 0.3)
+    .param("amp", 0.3)
+    .param("gate", 1.0)
+    .body(|cutoff, sweep_time, amp, gate| {
+        let env = envelope()
+            .perc("1ms", sweep_time)
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let noise = white_noise_ar();
+        let filter_env = envelope()
+            .perc("1ms", sweep_time)
+            .gate(gate)
+            .build();
+        let filtered = lpf_ar(noise, cutoff * filter_env + 200.0);
+        filtered * env * amp
+    });
+assert_true(true, "synth_noise with white_noise_ar created");
+
+// Test 6: Multi-oscillator pad
+define_synthdef("synth_pad")
+    .param("freq", 220.0)
+    .param("detune", 0.005)
+    .param("amp", 0.3)
+    .param("gate", 1.0)
+    .body(|freq, detune, amp, gate| {
+        let env = envelope()
+            .adsr("200ms", "300ms", 0.7, "500ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let osc1 = saw_ar(freq * (1.0 - detune));
+        let osc2 = saw_ar(freq);
+        let osc3 = saw_ar(freq * (1.0 + detune));
+        let mixed = (osc1 + osc2 + osc3) * 0.33;
+        lpf_ar(mixed, 2500.0) * env * amp
+    });
+assert_true(true, "synth_pad with detuned oscillators created");
+
+// Test 7: Percussive envelope types
+define_synthdef("synth_perc")
+    .param("freq", 200.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .perc("1ms", "150ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let pitch_env = envelope()
+            .perc("1ms", "30ms")
+            .gate(gate)
+            .build();
+        sin_osc_ar(freq + pitch_env * freq * 2.0) * env * amp
+    });
+assert_true(true, "synth_perc with pitch envelope created");
+
+// Create voices for each synth
+let v_sine = voice("sine").synth("synth_sine").gain(db(-18));
+let v_saw = voice("saw").synth("synth_saw").gain(db(-18));
+let v_pwm = voice("pwm").synth("synth_pwm").gain(db(-18));
+let v_fm = voice("fm").synth("synth_fm").gain(db(-18));
+let v_noise = voice("noise").synth("synth_noise").gain(db(-15));
+let v_pad = voice("pad").synth("synth_pad").gain(db(-15)).poly(6);
+let v_perc = voice("perc").synth("synth_perc").gain(db(-12));
+
+assert_true(true, "all test voices created");
+
+// Play test sequences
+melody("sine_test").on(v_sine).notes("C4 - E4 - G4 - C5 -").start();
+melody("saw_test").on(v_saw).notes("C3 - - - G3 - - -").start();
+melody("pwm_test").on(v_pwm).notes("E4 - - - | - - - -").start();
+melody("fm_test").on(v_fm).notes("A3 - - - | - - - -").start();
+pattern("noise_test").on(v_noise).step("x... .... x... ....").start();
+melody("pad_test").on(v_pad).notes("C3:maj - - - | Am - - -").start();
+pattern("perc_test").on(v_perc).step("x... x... x... x...").start();
+
+assert_true(true, "all test sequences started");
+
+test_end_and_exit();

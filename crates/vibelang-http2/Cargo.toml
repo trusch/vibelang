@@ -11,7 +11,7 @@ categories = ["multimedia::audio", "web-programming"]
 [features]
 default = ["native", "midi"]
 native = ["vibelang-core2/native"]
-midi = ["vibelang-core2/midi"]
+midi = ["vibelang-core2/midi", "dep:midir"]
 
 [dependencies]
 # Core runtime (core2)
@@ -34,3 +34,6 @@ tracing = "0.1"
 
 # UUID for resource IDs
 uuid = { version = "1.0", features = ["v4"] }
+
+# MIDI (optional, for MIDI API endpoints)
+midir = { version = "0.9", optional = true }

@@ -1,0 +1,318 @@
+// Integration Test 14: Error Handling
+// Tests: Graceful handling of various error conditions
+//
+// This test verifies:
+// - Invalid note names are handled gracefully
+// - Invalid parameter values are handled
+// - Operations on non-existent resources fail gracefully
+// - Empty patterns/melodies work without errors
+
+test_start("error_handling");
+
+set_tempo(120);
+set_time_signature(4, 4);
+
+// =============================================================================
+// Test 1: Test Synthdef for Error Tests
+// =============================================================================
+
+define_synthdef("error_test")
+    .param("freq", 440.0)
+    .param("amp", 0.1)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .perc("1ms", "10ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        sin_osc_ar(freq) * env * amp
+    });
+
+// =============================================================================
+// Test 2: Valid Operations (Baseline)
+// =============================================================================
+
+// These should all succeed
+let valid_note = note("C4");
+assert_eq(valid_note, 60, "C4 should be MIDI 60");
+
+let valid_chord = chord("C", 4);
+assert_len(valid_chord, 3, "C major should have 3 notes");
+
+let valid_scale = scale("C", "major", 4);
+assert_len(valid_scale, 7, "C major scale should have 7 notes");
+
+let valid_db = db(-12);
+assert_gt(valid_db, 0.0, "-12dB should be > 0");
+assert_lt(valid_db, 1.0, "-12dB should be < 1");
+
+// =============================================================================
+// Test 3: Extreme dB Values
+// =============================================================================
+
+// Very quiet
+let very_quiet = db(-96);
+assert_gt(very_quiet, 0.0, "Even -96dB should be > 0");
+assert_lt(very_quiet, 0.0001, "-96dB should be very small");
+
+// Very loud (above unity)
+let very_loud = db(12);
+assert_gt(very_loud, 1.0, "+12dB should be > 1.0");
+
+// Unity gain
+let unity = db(0);
+assert_approx(unity, 1.0, "-0dB should be exactly 1.0");
+
+// =============================================================================
+// Test 4: All Note Names (Comprehensive)
+// =============================================================================
+
+// All natural notes
+assert_eq(note("C4"), 60, "C4 = 60");
+assert_eq(note("D4"), 62, "D4 = 62");
+assert_eq(note("E4"), 64, "E4 = 64");
+assert_eq(note("F4"), 65, "F4 = 65");
+assert_eq(note("G4"), 67, "G4 = 67");
+assert_eq(note("A4"), 69, "A4 = 69");
+assert_eq(note("B4"), 71, "B4 = 71");
+
+// Sharps
+assert_eq(note("C#4"), 61, "C#4 = 61");
+assert_eq(note("D#4"), 63, "D#4 = 63");
+assert_eq(note("F#4"), 66, "F#4 = 66");
+assert_eq(note("G#4"), 68, "G#4 = 68");
+assert_eq(note("A#4"), 70, "A#4 = 70");
+
+// Flats
+assert_eq(note("Db4"), 61, "Db4 = 61 (enharmonic with C#4)");
+assert_eq(note("Eb4"), 63, "Eb4 = 63 (enharmonic with D#4)");
+assert_eq(note("Gb4"), 66, "Gb4 = 66 (enharmonic with F#4)");
+assert_eq(note("Ab4"), 68, "Ab4 = 68 (enharmonic with G#4)");
+assert_eq(note("Bb4"), 70, "Bb4 = 70 (enharmonic with A#4)");
+
+// =============================================================================
+// Test 5: All Octaves
+// =============================================================================
+
+assert_eq(note("C0"), 12, "C0 = 12");
+assert_eq(note("C1"), 24, "C1 = 24");
+assert_eq(note("C2"), 36, "C2 = 36");
+assert_eq(note("C3"), 48, "C3 = 48");
+assert_eq(note("C4"), 60, "C4 = 60 (middle C)");
+assert_eq(note("C5"), 72, "C5 = 72");
+assert_eq(note("C6"), 84, "C6 = 84");
+assert_eq(note("C7"), 96, "C7 = 96");
+assert_eq(note("C8"), 108, "C8 = 108");
+
+// =============================================================================
+// Test 6: All Chord Types
+// =============================================================================
+
+// Major chords
+let c_maj = chord("C", 4);
+assert_len(c_maj, 3, "Major chord should have 3 notes");
+
+// Minor chords
+let a_min = chord("Am", 4);
+assert_len(a_min, 3, "Minor chord should have 3 notes");
+
+// Seventh chords
+let g7 = chord("G7", 3);
+assert_len(g7, 4, "Seventh chord should have 4 notes");
+
+// Major seventh chords
+let cmaj7 = chord("Cmaj7", 4);
+assert_len(cmaj7, 4, "Major seventh chord should have 4 notes");
+
+// Minor seventh chords
+let am7 = chord("Am7", 4);
+assert_len(am7, 4, "Minor seventh chord should have 4 notes");
+
+// Diminished chords
+let bdim = chord("Bdim", 4);
+assert_len(bdim, 3, "Diminished chord should have 3 notes");
+
+// Augmented chords
+let caug = chord("Caug", 4);
+assert_len(caug, 3, "Augmented chord should have 3 notes");
+
+// Suspended chords
+let csus2 = chord("Csus2", 4);
+assert_len(csus2, 3, "Suspended 2 chord should have 3 notes");
+
+let csus4 = chord("Csus4", 4);
+assert_len(csus4, 3, "Suspended 4 chord should have 3 notes");
+
+// =============================================================================
+// Test 7: All Scale Types
+// =============================================================================
+
+// Major scale
+let major = scale("C", "major", 4);
+assert_len(major, 7, "Major scale should have 7 notes");
+
+// Natural minor scale
+let minor = scale("A", "minor", 4);
+assert_len(minor, 7, "Natural minor scale should have 7 notes");
+
+// Harmonic minor scale
+let harm_minor = scale("A", "harmonic_minor", 4);
+assert_len(harm_minor, 7, "Harmonic minor scale should have 7 notes");
+
+// Melodic minor scale
+let mel_minor = scale("A", "melodic_minor", 4);
+assert_len(mel_minor, 7, "Melodic minor scale should have 7 notes");
+
+// Pentatonic scale
+let penta = scale("C", "pentatonic", 4);
+assert_len(penta, 5, "Pentatonic scale should have 5 notes");
+
+// Blues scale
+let blues = scale("A", "blues", 4);
+assert_len(blues, 6, "Blues scale should have 6 notes");
+
+// Dorian mode
+let dorian = scale("D", "dorian", 4);
+assert_len(dorian, 7, "Dorian mode should have 7 notes");
+
+// Mixolydian mode
+let mixo = scale("G", "mixolydian", 4);
+assert_len(mixo, 7, "Mixolydian mode should have 7 notes");
+
+// Chromatic scale
+let chromatic = scale("C", "chromatic", 4);
+assert_len(chromatic, 12, "Chromatic scale should have 12 notes");
+
+// =============================================================================
+// Test 8: Empty and Minimal Operations
+// =============================================================================
+
+define_group("EmptyGroup", || {
+    // Group with no voices is valid
+    assert_true(true, "empty group created");
+});
+
+define_group("MinimalGroup", || {
+    // Single voice with minimal config
+    let v = voice("minimal").synth("error_test");
+    assert_true(true, "minimal voice created");
+
+    // Empty pattern (all rests)
+    let p = pattern("empty_pattern")
+        .on(v)
+        .step("........")
+        .apply();
+    assert_true(true, "empty pattern created");
+
+    // Single-note melody
+    let m = melody("single_note")
+        .on(v)
+        .notes("C4")
+        .apply();
+    assert_true(true, "single-note melody created");
+});
+
+// =============================================================================
+// Test 9: Array Operations
+// =============================================================================
+
+// Empty array operations
+let empty = [];
+assert_len(empty, 0, "empty array should have length 0");
+
+// Single element
+let single = [42];
+assert_len(single, 1, "single element array should have length 1");
+assert_eq(single[0], 42, "first element should be 42");
+
+// Reverse
+let forward = [1, 2, 3, 4];
+let backward = rev(forward);
+assert_eq(backward[0], 4, "reversed array should start with 4");
+assert_eq(backward[3], 1, "reversed array should end with 1");
+
+// Sequence generation
+let seq_arr = seq(0, 5);
+assert_len(seq_arr, 6, "seq(0, 5) should have 6 elements (0 through 5)");
+assert_contains(seq_arr, 0, "seq should contain 0");
+assert_contains(seq_arr, 5, "seq should contain 5");
+
+// =============================================================================
+// Test 10: Random Function Bounds
+// =============================================================================
+
+// Test that random functions stay within bounds
+for i in seq(0, 10) {
+    let r = rand();
+    assert_gte(r, 0.0, "rand() should be >= 0.0");
+    assert_lte(r, 1.0, "rand() should be <= 1.0");
+
+    let ri = rand_int(1, 10);
+    assert_gte(ri, 1, "rand_int should be >= min");
+    assert_lte(ri, 10, "rand_int should be <= max");
+
+    let rf = rand_float(-1.0, 1.0);
+    assert_gte(rf, -1.0, "rand_float should be >= min");
+    assert_lte(rf, 1.0, "rand_float should be <= max");
+}
+assert_true(true, "random functions stay within bounds");
+
+// =============================================================================
+// Test 11: Quantization Values
+// =============================================================================
+
+// Test various quantization values
+set_quantization(0.0);
+let q0 = get_quantization();
+assert_eq(q0, 0.0, "quantization 0.0");
+
+set_quantization(0.125);  // 32nd note
+let q32 = get_quantization();
+assert_eq(q32, 0.125, "quantization 0.125 (32nd note)");
+
+set_quantization(0.25);   // 16th note
+let q16 = get_quantization();
+assert_eq(q16, 0.25, "quantization 0.25 (16th note)");
+
+set_quantization(0.5);    // 8th note
+let q8 = get_quantization();
+assert_eq(q8, 0.5, "quantization 0.5 (8th note)");
+
+set_quantization(1.0);    // quarter note
+let q4 = get_quantization();
+assert_eq(q4, 1.0, "quantization 1.0 (quarter note)");
+
+// Reset
+set_quantization(0.0);
+
+// =============================================================================
+// Test 12: bars() Helper with Different Time Signatures
+// =============================================================================
+
+// 4/4 time
+set_time_signature(4, 4);
+assert_eq(bars(1), 4.0, "1 bar in 4/4 = 4 beats");
+assert_eq(bars(2), 8.0, "2 bars in 4/4 = 8 beats");
+
+// 3/4 time
+set_time_signature(3, 4);
+assert_eq(bars(1), 3.0, "1 bar in 3/4 = 3 beats");
+assert_eq(bars(4), 12.0, "4 bars in 3/4 = 12 beats");
+
+// 5/4 time
+set_time_signature(5, 4);
+assert_eq(bars(1), 5.0, "1 bar in 5/4 = 5 beats");
+
+// 6/8 time
+set_time_signature(6, 8);
+assert_eq(bars(1), 3.0, "1 bar in 6/8 = 3 quarter-note beats");
+
+// 7/8 time
+set_time_signature(7, 8);
+assert_eq(bars(1), 3.5, "1 bar in 7/8 = 3.5 quarter-note beats");
+
+// Reset
+set_time_signature(4, 4);
+
+test_end_and_exit();

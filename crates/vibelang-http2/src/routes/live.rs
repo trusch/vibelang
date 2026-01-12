@@ -1,204 +1,187 @@
 //! Live state endpoint handlers.
 
 use axum::{extract::State, Json};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use vibelang_core2::{Clip, FadeTarget};
+use vibelang_core2::FadeTarget;
 
 use crate::{
     models::{
-        ActiveFade, Effect, Group, LiveState, Melody, MelodyNote, Pattern, PatternStep, Sequence,
-        SequenceClip, TimeSignature, TransportState, Voice,
+        ActiveFade, ActiveSequence, ActiveSynth, FadeTargetType, LiveState, LoopState, LoopStatus,
+        MeterLevel, MeterLevels, TimeSignature, TransportState,
     },
     AppState,
 };
+
+/// Build transport state with loop information
+fn build_transport_state(s: &vibelang_core2::State) -> TransportState {
+    let server_time_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    // Calculate loop_beats from longest active sequence
+    let loop_beats = s
+        .sequences
+        .values()
+        .filter(|seq| seq.playing)
+        .map(|seq| seq.config.length.to_f64())
+        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let loop_beat = loop_beats.map(|lb| s.current_beat.to_f64() % lb);
+
+    TransportState {
+        bpm: s.tempo,
+        time_signature: TimeSignature {
+            numerator: s.time_sig.numerator,
+            denominator: s.time_sig.denominator,
+        },
+        running: s.playing,
+        current_beat: s.current_beat.to_f64(),
+        quantization_beats: 1.0, // Default quantization
+        loop_beats,
+        loop_beat,
+        server_time_ms: Some(server_time_ms),
+    }
+}
 
 /// GET /live - Get complete live state
 pub async fn get_live_state(State(state): State<Arc<AppState>>) -> Json<LiveState> {
     let live = state
         .with_state(|s| {
-            let server_time_ms = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
+            let transport = build_transport_state(s);
 
-            let transport = TransportState {
-                bpm: s.tempo,
-                time_signature: TimeSignature {
-                    numerator: s.time_sig.numerator,
-                    denominator: s.time_sig.denominator,
-                },
-                running: s.playing,
-                current_beat: s.current_beat.to_f64(),
-                server_time_ms,
-            };
-
-            let groups: Vec<Group> = s
-                .groups
-                .iter()
-                .map(|(id, gs)| Group {
-                    id: id.raw().to_string(),
-                    parent_id: gs.parent.as_ref().map(|p| p.raw().to_string()),
-                    node_id: gs.node_id.raw() as i32,
-                    audio_bus: gs.audio_bus.raw() as i32,
-                    link_synth_node_id: gs.link_synth_node_id.map(|n| n.raw() as i32),
-                    muted: gs.muted,
-                    soloed: gs.soloed,
-                    params: gs.params.iter().map(|(k, v)| (k.clone(), *v)).collect(),
-                })
-                .collect();
-
-            let voices: Vec<Voice> = s
+            // Build active synths from all running voice nodes
+            let active_synths: Vec<ActiveSynth> = s
                 .voices
                 .iter()
-                .map(|(id, vs)| Voice {
-                    id: id.raw().to_string(),
-                    synthdef: Some(vs.config.synthdef.clone()),
-                    group_id: vs.config.group.raw().to_string(),
-                    polyphony: vs.config.polyphony,
-                    gain: vs.config.params.get("amp").copied().unwrap_or(1.0),
-                    muted: vs.config.muted,
-                    params: vs.config.params.iter().map(|(k, v)| (k.clone(), *v)).collect(),
-                    sfz_instrument: vs.config.sfz_instrument.map(|s| s.raw().to_string()),
-                    active_notes: vs.note_nodes.keys().copied().collect(),
+                .flat_map(|(voice_id, vs)| {
+                    vs.active_nodes.iter().map(move |node_id| ActiveSynth {
+                        node_id: node_id.raw() as i32,
+                        synthdef_name: vs.config.synthdef.clone(),
+                        voice_name: Some(voice_id.raw().to_string()),
+                        group_path: Some(vs.config.group.raw().to_string()),
+                        created_at_beat: None,
+                    })
                 })
                 .collect();
 
-            let patterns: Vec<Pattern> = s
-                .patterns
-                .iter()
-                .map(|(id, ps)| Pattern {
-                    id: id.raw().to_string(),
-                    voice_id: ps.config.voice.map(|v| v.raw().to_string()).unwrap_or_default(),
-                    loop_beats: ps.config.length.to_f64(),
-                    steps: ps
-                        .config
-                        .steps
-                        .iter()
-                        .map(|step| PatternStep {
-                            beat: step.beat.to_f64(),
-                            params: step.params.iter().map(|(k, v)| (k.clone(), *v)).collect(),
-                        })
-                        .collect(),
-                    playing: ps.playing,
-                    loop_position: ps.loop_position.to_f64(),
-                })
-                .collect();
-
-            let melodies: Vec<Melody> = s
-                .melodies
-                .iter()
-                .map(|(id, ms)| Melody {
-                    id: id.raw().to_string(),
-                    voice_id: ms.config.voice.map(|v| v.raw().to_string()).unwrap_or_default(),
-                    loop_beats: ms.config.length.to_f64(),
-                    notes: ms
-                        .config
-                        .notes
-                        .iter()
-                        .map(|n| MelodyNote {
-                            beat: n.beat.to_f64(),
-                            note: n.note,
-                            velocity: n.velocity,
-                            gate: n.duration.to_f64(),
-                            params: std::collections::HashMap::new(),
-                        })
-                        .collect(),
-                    playing: ms.playing,
-                    loop_position: ms.loop_position.to_f64(),
-                })
-                .collect();
-
-            let sequences: Vec<Sequence> = s
+            // Build active sequences
+            let active_sequences: Vec<ActiveSequence> = s
                 .sequences
                 .iter()
-                .map(|(id, ss)| Sequence {
-                    id: id.raw().to_string(),
+                .filter(|(_, ss)| ss.playing)
+                .map(|(id, ss)| ActiveSequence {
+                    name: id.raw().to_string(),
+                    start_beat: 0.0, // Not tracked in core
+                    current_position: ss.position.to_f64(),
                     loop_beats: ss.config.length.to_f64(),
-                    clips: ss
-                        .config
-                        .clips
-                        .iter()
-                        .map(|c| match c {
-                            Clip::Pattern { id, start, end } => SequenceClip {
-                                clip_type: "pattern".to_string(),
-                                target_id: id.raw().to_string(),
-                                start_beat: start.to_f64(),
-                                end_beat: end.to_f64(),
-                            },
-                            Clip::Melody { id, start, end } => SequenceClip {
-                                clip_type: "melody".to_string(),
-                                target_id: id.raw().to_string(),
-                                start_beat: start.to_f64(),
-                                end_beat: end.to_f64(),
-                            },
-                            Clip::Fade { start, .. } => SequenceClip {
-                                clip_type: "fade".to_string(),
-                                target_id: String::new(),
-                                start_beat: start.to_f64(),
-                                end_beat: start.to_f64(),
-                            },
-                            Clip::Sequence { id, start } => SequenceClip {
-                                clip_type: "sequence".to_string(),
-                                target_id: id.raw().to_string(),
-                                start_beat: start.to_f64(),
-                                end_beat: start.to_f64(),
-                            },
-                        })
-                        .collect(),
-                    playing: ss.playing,
-                    paused: ss.paused,
-                    looping: ss.looping,
-                    position: ss.position.to_f64(),
+                    iteration: None,
+                    play_once: Some(!ss.looping),
                 })
                 .collect();
 
-            let effects: Vec<Effect> = s
-                .effects
-                .iter()
-                .map(|(id, es)| Effect {
-                    id: id.raw().to_string(),
-                    group_id: es.group.raw().to_string(),
-                    synthdef: es.synthdef.clone(),
-                    node_id: es.node_id.raw() as i32,
-                    params: es.params.iter().map(|(k, v)| (k.clone(), *v)).collect(),
-                })
-                .collect();
-
+            // Build active fades
             let now = Instant::now();
             let active_fades: Vec<ActiveFade> = s
                 .active_fades
                 .iter()
-                .map(|af| {
-                    let (target_type, target_id) = match &af.config.target {
-                        FadeTarget::Group(g) => ("group".to_string(), g.raw().to_string()),
-                        FadeTarget::Voice(v) => ("voice".to_string(), v.raw().to_string()),
-                        FadeTarget::Pattern(p) => ("pattern".to_string(), p.raw().to_string()),
-                        FadeTarget::Melody(m) => ("melody".to_string(), m.raw().to_string()),
-                        FadeTarget::Effect(e) => ("effect".to_string(), e.raw().to_string()),
+                .enumerate()
+                .map(|(idx, af)| {
+                    let (target_type, target_name) = match &af.config.target {
+                        FadeTarget::Group(g) => (FadeTargetType::Group, g.raw().to_string()),
+                        FadeTarget::Voice(v) => (FadeTargetType::Voice, v.raw().to_string()),
+                        FadeTarget::Pattern(p) => (FadeTargetType::Group, p.raw().to_string()), // Map to group type
+                        FadeTarget::Melody(m) => (FadeTargetType::Group, m.raw().to_string()),
+                        FadeTarget::Effect(e) => (FadeTargetType::Effect, e.raw().to_string()),
                     };
+
+                    let current = af.current_value(now, s.tempo);
+                    let progress = if af.config.duration.to_beats() > 0.0 {
+                        (current - af.start_value) / (af.config.to - af.start_value)
+                    } else {
+                        1.0
+                    };
+
                     ActiveFade {
+                        id: format!("fade_{}", idx),
+                        name: None,
                         target_type,
-                        target_id,
-                        param: af.config.param.clone(),
-                        from: af.start_value,
-                        to: af.config.to,
+                        target_name,
+                        param_name: af.config.param.clone(),
+                        start_value: af.start_value,
+                        target_value: af.config.to,
+                        current_value: Some(current),
                         duration_beats: af.config.duration.to_beats(),
-                        curve: format!("{:?}", af.config.curve),
-                        current_value: af.current_value(now, s.tempo),
+                        start_beat: None,
+                        progress: progress.clamp(0.0, 1.0) as f64,
                     }
+                })
+                .collect();
+
+            // Build active notes map (voice name -> active note numbers)
+            let active_notes: HashMap<String, Vec<u8>> = s
+                .voices
+                .iter()
+                .filter(|(_, vs)| !vs.note_nodes.is_empty())
+                .map(|(id, vs)| {
+                    (id.raw().to_string(), vs.note_nodes.keys().copied().collect())
+                })
+                .collect();
+
+            // Build patterns status
+            let patterns_status: HashMap<String, LoopStatus> = s
+                .patterns
+                .iter()
+                .map(|(id, ps)| {
+                    (
+                        id.raw().to_string(),
+                        LoopStatus {
+                            state: if ps.playing {
+                                LoopState::Playing
+                            } else {
+                                LoopState::Stopped
+                            },
+                            start_beat: None,
+                            stop_beat: None,
+                        },
+                    )
+                })
+                .collect();
+
+            // Build melodies status
+            let melodies_status: HashMap<String, LoopStatus> = s
+                .melodies
+                .iter()
+                .map(|(id, ms)| {
+                    (
+                        id.raw().to_string(),
+                        LoopStatus {
+                            state: if ms.playing {
+                                LoopState::Playing
+                            } else {
+                                LoopState::Stopped
+                            },
+                            start_beat: None,
+                            stop_beat: None,
+                        },
+                    )
                 })
                 .collect();
 
             LiveState {
                 transport,
-                groups,
-                voices,
-                patterns,
-                melodies,
-                sequences,
-                effects,
+                active_synths,
+                active_sequences,
                 active_fades,
+                active_notes: if active_notes.is_empty() {
+                    None
+                } else {
+                    Some(active_notes)
+                },
+                patterns_status: Some(patterns_status),
+                melodies_status: Some(melodies_status),
             }
         })
         .await;
@@ -208,26 +191,7 @@ pub async fn get_live_state(State(state): State<Arc<AppState>>) -> Json<LiveStat
 
 /// GET /live/transport - Get transport state only
 pub async fn get_transport_state(State(state): State<Arc<AppState>>) -> Json<TransportState> {
-    let transport = state
-        .with_state(|s| {
-            let server_time_ms = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-
-            TransportState {
-                bpm: s.tempo,
-                time_signature: TimeSignature {
-                    numerator: s.time_sig.numerator,
-                    denominator: s.time_sig.denominator,
-                },
-                running: s.playing,
-                current_beat: s.current_beat.to_f64(),
-                server_time_ms,
-            }
-        })
-        .await;
-
+    let transport = state.with_state(build_transport_state).await;
     Json(transport)
 }
 
@@ -238,23 +202,35 @@ pub async fn get_active_fades(State(state): State<Arc<AppState>>) -> Json<Vec<Ac
             let now = Instant::now();
             s.active_fades
                 .iter()
-                .map(|af| {
-                    let (target_type, target_id) = match &af.config.target {
-                        FadeTarget::Group(g) => ("group".to_string(), g.raw().to_string()),
-                        FadeTarget::Voice(v) => ("voice".to_string(), v.raw().to_string()),
-                        FadeTarget::Pattern(p) => ("pattern".to_string(), p.raw().to_string()),
-                        FadeTarget::Melody(m) => ("melody".to_string(), m.raw().to_string()),
-                        FadeTarget::Effect(e) => ("effect".to_string(), e.raw().to_string()),
+                .enumerate()
+                .map(|(idx, af)| {
+                    let (target_type, target_name) = match &af.config.target {
+                        FadeTarget::Group(g) => (FadeTargetType::Group, g.raw().to_string()),
+                        FadeTarget::Voice(v) => (FadeTargetType::Voice, v.raw().to_string()),
+                        FadeTarget::Pattern(p) => (FadeTargetType::Group, p.raw().to_string()),
+                        FadeTarget::Melody(m) => (FadeTargetType::Group, m.raw().to_string()),
+                        FadeTarget::Effect(e) => (FadeTargetType::Effect, e.raw().to_string()),
                     };
+
+                    let current = af.current_value(now, s.tempo);
+                    let progress = if af.config.duration.to_beats() > 0.0 {
+                        (current - af.start_value) / (af.config.to - af.start_value)
+                    } else {
+                        1.0
+                    };
+
                     ActiveFade {
+                        id: format!("fade_{}", idx),
+                        name: None,
                         target_type,
-                        target_id,
-                        param: af.config.param.clone(),
-                        from: af.start_value,
-                        to: af.config.to,
+                        target_name,
+                        param_name: af.config.param.clone(),
+                        start_value: af.start_value,
+                        target_value: af.config.to,
+                        current_value: Some(current),
                         duration_beats: af.config.duration.to_beats(),
-                        curve: format!("{:?}", af.config.curve),
-                        current_value: af.current_value(now, s.tempo),
+                        start_beat: None,
+                        progress: progress.clamp(0.0, 1.0) as f64,
                     }
                 })
                 .collect::<Vec<_>>()
@@ -262,4 +238,39 @@ pub async fn get_active_fades(State(state): State<Arc<AppState>>) -> Json<Vec<Ac
         .await;
 
     Json(fades)
+}
+
+/// GET /live/meters - Get meter levels for all groups
+///
+/// Returns real-time meter levels from the link synths.
+/// The system_link_audio synthdef sends SendTrig messages at ~20Hz with meter data.
+/// If meters haven't been updated in 200ms, they decay to 0.
+pub async fn get_meters(State(state): State<Arc<AppState>>) -> Json<MeterLevels> {
+    let meters = state
+        .with_state(|s| {
+            s.groups
+                .iter()
+                .map(|(group_id, group_state)| {
+                    // Look up meter levels by the link synth node ID
+                    let (peak_l, peak_r, rms_l, rms_r) = group_state
+                        .link_synth_node_id
+                        .and_then(|node_id| s.meter_levels.get(&node_id))
+                        .map(|m| m.decayed())
+                        .unwrap_or((0.0, 0.0, 0.0, 0.0));
+
+                    (
+                        group_id.raw().to_string(),
+                        MeterLevel {
+                            peak_left: peak_l,
+                            peak_right: peak_r,
+                            rms_left: rms_l,
+                            rms_right: rms_r,
+                        },
+                    )
+                })
+                .collect::<HashMap<_, _>>()
+        })
+        .await;
+
+    Json(meters)
 }

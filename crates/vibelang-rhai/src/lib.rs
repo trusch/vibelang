@@ -28,6 +28,17 @@ pub mod context;
 pub mod engine;
 pub mod error;
 
+// Optional extensions module (feature-gated)
+#[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+pub mod extensions;
+
 // Re-exports
 pub use engine::ScriptEngine;
 pub use error::{Error, Result};
+
+// Exit code handling for integration tests
+pub use api::assert::{get_exit_code, reset_exit_code};
+
+// Re-export extension config when any extension is enabled
+#[cfg(any(feature = "ext-fs", feature = "ext-exec", feature = "ext-net"))]
+pub use extensions::ExtensionConfig;

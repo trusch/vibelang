@@ -52,6 +52,9 @@ impl NoteEvent {
 /// Configuration for creating a melody.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MelodyConfig {
+    /// Melody name (for display in TUI/API).
+    pub name: String,
+
     /// Voice to trigger (None if melody is just for MIDI output).
     pub voice: Option<VoiceId>,
 
@@ -67,8 +70,9 @@ pub struct MelodyConfig {
 
 impl MelodyConfig {
     /// Create a new melody configuration.
-    pub fn new(voice: VoiceId, length: Beat) -> Self {
+    pub fn new(name: impl Into<String>, voice: VoiceId, length: Beat) -> Self {
         Self {
+            name: name.into(),
             voice: Some(voice),
             notes: Vec::new(),
             length,
@@ -77,8 +81,9 @@ impl MelodyConfig {
     }
 
     /// Create a melody configuration without a voice.
-    pub fn without_voice(length: Beat) -> Self {
+    pub fn without_voice(name: impl Into<String>, length: Beat) -> Self {
         Self {
+            name: name.into(),
             voice: None,
             notes: Vec::new(),
             length,
@@ -87,8 +92,8 @@ impl MelodyConfig {
     }
 
     /// Create a melody with length in beats as f64.
-    pub fn with_length(voice: VoiceId, length: f64) -> Self {
-        Self::new(voice, Beat::from_f64(length))
+    pub fn with_length(name: impl Into<String>, voice: VoiceId, length: f64) -> Self {
+        Self::new(name, voice, Beat::from_f64(length))
     }
 
     /// Add a note to the melody.
@@ -108,8 +113,26 @@ impl MelodyConfig {
 ///
 /// Melodies loop continuously, sending note-on and note-off events
 /// to their voice based on the note events.
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait Melodies: Send + Sync {
+    /// Create a new melody.
+    async fn create(&self, id: MelodyId, config: MelodyConfig) -> Result<()>;
+
+    /// Delete a melody.
+    async fn delete(&self, id: MelodyId) -> Result<()>;
+
+    /// Start playing a melody.
+    async fn start(&self, id: MelodyId) -> Result<()>;
+
+    /// Stop playing a melody.
+    async fn stop(&self, id: MelodyId) -> Result<()>;
+}
+
+/// Melody management for pitched sequences (WASM version).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait Melodies {
     /// Create a new melody.
     async fn create(&self, id: MelodyId, config: MelodyConfig) -> Result<()>;
 

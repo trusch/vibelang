@@ -1,0 +1,58 @@
+// Tutorial: Your First Melody
+// Difficulty: beginner | Duration: 4 min
+// Description: Add a bassline using note names.
+
+// Let's add a bass line to make it groovy!
+
+// Import the sounds we need
+import "stdlib/drums/kicks/kick_techno_deep.vibe";
+import "stdlib/drums/hihats/hihat_909_closed.vibe";
+import "stdlib/bass/genre/bass_house.vibe";
+
+set_tempo(110);
+
+define_group("Rhythm", || {
+    // Simple drums
+    let kick = voice("kick").synth("kick_techno_deep").gain(db(-6));
+    let hihat = voice("hihat").synth("hihat_909_closed").gain(db(-18));
+
+    pattern("kick").on(kick).step("x... x... x... x...").start();
+    pattern("hihat").on(hihat).step("..x. ..x. ..x. ..x.").start();
+});
+
+define_group("Bass", || {
+    // Use a bass synth from the stdlib
+    let bass = voice("bass")
+        .synth("bass_house")    // Fat house bass
+        .gain(db(-6));
+
+    // --------------------------------------------------------
+    // MELODY NOTATION
+    // --------------------------------------------------------
+    // Note names: C D E F G A B
+    // Octave: number after note (2=low, 4=middle, 6=high)
+    // Sharps/flats: C#, Db, F#, Bb, etc.
+    // . = rest
+    // - = hold (tie) previous note
+    // | = bar line (just for readability)
+
+    melody("bassline")
+        .on(bass)
+        .notes("E2 - - . | G2 - . . | A2 - - . | G2 - . .")
+        .start();
+});
+
+// ============================================================
+// BASS NOTES EXPLAINED:
+//
+// "E2 - - ." means:
+//   E2 = play E in octave 2 (bass range)
+//   -  = hold the note
+//   -  = keep holding
+//   .  = rest (note ends)
+//
+// TRY THIS:
+// - Different bass: "acid_303_classic", "bass_sub", "bass_funk"
+// - Change notes: "C2 - - . | G2 - - . | A2 - - . | E2 - - ."
+// - More rhythm: "E2 E2 . . | G2 . G2 . | A2 - . . | G2 E2 . ."
+// ============================================================

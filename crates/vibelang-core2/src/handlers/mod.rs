@@ -69,14 +69,17 @@ mod effects;
 mod fades;
 mod groups;
 mod melodies;
+mod modulators;
 mod patterns;
-mod recordings;
 mod samples;
 mod sequences;
 mod sfz;
 mod synthdefs;
 mod transport;
 mod voices;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod recordings;
 
 #[cfg(feature = "midi")]
 mod midi;
@@ -85,14 +88,17 @@ pub use effects::EffectsHandler;
 pub use fades::FadesHandler;
 pub use groups::GroupsHandler;
 pub use melodies::MelodiesHandler;
+pub use modulators::{get_modulator_control_bus, ModulatorsHandler};
 pub use patterns::PatternsHandler;
-pub use recordings::RecordingsHandler;
 pub use samples::SamplesHandler;
 pub use sequences::SequencesHandler;
 pub use sfz::SfzHandler;
 pub use synthdefs::SynthDefsHandler;
 pub use transport::TransportHandler;
 pub use voices::VoicesHandler;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use recordings::RecordingsHandler;
 
 #[cfg(feature = "midi")]
 pub use midi::{MidiEventNotification, MidiHandler, MidiMessage};

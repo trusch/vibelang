@@ -1,0 +1,15 @@
+// Square wave LFO modulator
+// Outputs: Instant switch between lo and hi values
+// Use for: Gating, hard tremolo, rhythmic effects
+define_modulator("lfo_square")
+    .param("rate", 1.0)   // LFO rate in Hz
+    .param("lo", 0.0)     // Low value (when pulse is 0)
+    .param("hi", 1.0)     // High value (when pulse is 1)
+    .param("width", 0.5)  // Pulse width (0-1, 0.5 = 50% duty cycle)
+    .param("phase", 0.0)  // Initial phase offset (0-1)
+    .body(|rate, lo, hi, width, phase| {
+        // Generate pulse wave at control rate (0 to 1)
+        let osc = lf_pulse_kr(rate, phase, width);
+        // Map from unipolar (0 to 1) to user-specified range using basic math
+        osc * (hi - lo) + lo  // osc is already 0-1, just scale to lo-hi
+    });

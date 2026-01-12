@@ -263,14 +263,17 @@ impl MidiEventHandler for ChannelHandler {
 // Callback-Based Handler
 // ============================================================================
 
+/// Type alias for MIDI event callback functions to reduce type complexity.
+type MidiEventCallback = Box<dyn Fn(&TimestampedMidiEvent) + Send + Sync>;
+
 /// A handler that invokes callbacks based on message type.
 pub struct CallbackHandler {
     /// Callback for note messages.
-    on_note: Option<Box<dyn Fn(&TimestampedMidiEvent) + Send + Sync>>,
+    on_note: Option<MidiEventCallback>,
     /// Callback for control change messages.
-    on_cc: Option<Box<dyn Fn(&TimestampedMidiEvent) + Send + Sync>>,
+    on_cc: Option<MidiEventCallback>,
     /// Callback for all messages.
-    on_any: Option<Box<dyn Fn(&TimestampedMidiEvent) + Send + Sync>>,
+    on_any: Option<MidiEventCallback>,
 }
 
 impl CallbackHandler {
@@ -431,7 +434,8 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
     impl MidiEventHandler for CountingHandler {
         async fn handle_event(&self, _event: TimestampedMidiEvent) {
             self.count.fetch_add(1, Ordering::SeqCst);

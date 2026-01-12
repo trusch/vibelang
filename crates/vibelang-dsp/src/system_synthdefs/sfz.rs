@@ -29,7 +29,7 @@ pub fn create_sfz_voice_synthdef(num_channels: u32) -> Result<GraphIR, crate::Sy
         "sfz_voice_stereo"
     };
 
-    log::info!(
+    log::debug!(
         "Creating SFZ synthdef '{}' with {} channels and gate-controlled envelope",
         name,
         num_channels

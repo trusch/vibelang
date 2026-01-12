@@ -1,0 +1,165 @@
+// Tutorial: Custom Effects
+// Difficulty: advanced | Duration: 8 min
+// Description: Build your own audio effects processors.
+
+// Create your own effect processors using define_fx!
+
+// Import instrument sounds
+import "stdlib/drums/kicks/kick_909.vibe";
+import "stdlib/drums/snares/snare_909.vibe";
+import "stdlib/leads/synth/lead_saw.vibe";
+
+set_tempo(118);
+
+// ============================================================
+// EFFECT ANATOMY
+// ============================================================
+// Effects process STEREO audio: input is [left, right]
+// and output must also be [left, right].
+//
+// define_fx("name")
+//   .param("name", default)
+//   .body(|input, param| {
+//       // input[0] = left channel, input[1] = right channel
+//       // Return [processed_left, processed_right]
+//   });
+
+// ------------------------------------------------------------
+// Custom Chorus Effect
+// ------------------------------------------------------------
+define_fx("my_chorus")
+    .param("rate", 0.5)      // LFO speed
+    .param("depth", 0.003)   // Delay modulation depth
+    .param("mix", 0.5)       // Wet/dry mix
+    .body(|input, rate, depth, mix| {
+        // LFO modulates delay time
+        let lfo = sin_osc_kr(rate) * depth + 0.01;
+
+        // Delayed copy of each channel
+        let delayed_l = delay_l_ar(input[0], 0.05, lfo);
+        let delayed_r = delay_l_ar(input[1], 0.05, lfo);
+
+        // Mix original and delayed - return stereo array
+        [
+            input[0] * (1.0 - mix) + delayed_l * mix,
+            input[1] * (1.0 - mix) + delayed_r * mix
+        ]
+    });
+
+// ------------------------------------------------------------
+// Custom Distortion
+// ------------------------------------------------------------
+define_fx("my_distortion")
+    .param("drive", 2.0)     // Distortion amount
+    .param("tone", 3000.0)   // Filter after distortion
+    .param("mix", 0.7)
+    .body(|input, drive, tone, mix| {
+        // Apply gain and soft clip with tanh (per channel)
+        let driven_l = (input[0] * drive).tanh();
+        let driven_r = (input[1] * drive).tanh();
+
+        // Tone control (low pass filter)
+        let filtered_l = lpf_ar(driven_l, tone);
+        let filtered_r = lpf_ar(driven_r, tone);
+
+        // Mix - return stereo array
+        [
+            input[0] * (1.0 - mix) + filtered_l * mix,
+            input[1] * (1.0 - mix) + filtered_r * mix
+        ]
+    });
+
+// ------------------------------------------------------------
+// Custom Bitcrusher
+// ------------------------------------------------------------
+define_fx("my_bitcrush")
+    .param("bits", 8.0)       // Bit depth (lower = crunchier)
+    .param("rate", 0.5)       // Sample rate reduction
+    .param("mix", 0.5)
+    .body(|input, bits, rate, mix| {
+        // Quantize to fewer bits
+        let step = 0.5.pow(bits);
+
+        let crushed_l = (input[0] / step).floor() * step;
+        let crushed_r = (input[1] / step).floor() * step;
+
+        // Sample rate reduction via sample-and-hold
+        let trig = impulse_ar(44100.0 * rate);
+        let decimated_l = latch_ar(crushed_l, trig);
+        let decimated_r = latch_ar(crushed_r, trig);
+
+        // Return stereo array
+        [
+            input[0] * (1.0 - mix) + decimated_l * mix,
+            input[1] * (1.0 - mix) + decimated_r * mix
+        ]
+    });
+
+// ------------------------------------------------------------
+// Use custom effects on groups
+// ------------------------------------------------------------
+define_group("Drums", || {
+    let kick = voice("kick").synth("kick_909").gain(db(-6));
+    let snare = voice("snare").synth("snare_909").gain(db(-9));
+
+    pattern("kick").on(kick).step("x... x... x... x...").start();
+    pattern("snare").on(snare).step(".... x... .... x...").start();
+
+    // Add distortion effect to the drum group
+    fx("drum_dist")
+        .synth("my_distortion")
+        .param("drive", 4.5)
+        .param("tone", 4000.0)
+        .param("mix", 0.8)
+        .apply();
+});
+
+define_group("Lead", || {
+    let lead = voice("lead").synth("lead_saw").gain(db(-9));
+
+    melody("lead")
+        .on(lead)
+        .notes("E4 . G4 . | B4 - A4 . | G4 . E4 . | E4 - - .")
+        .gate(0.25)
+        .start();
+
+    // Add chorus effect to the lead group
+    fx("lead_chorus")
+        .synth("my_chorus")
+        .param("rate", 0.8)
+        .param("depth", 0.02)
+        .param("mix", 0.2)
+        .apply();
+});
+
+// ============================================================
+// KEY POINTS:
+//
+// 1. Effects receive STEREO input as [left, right] array
+// 2. Effects must RETURN [left, right] array
+// 3. Add effects INSIDE groups with fx().synth().apply()
+//
+// USEFUL EFFECT UGENS:
+//
+// DELAYS:
+//   delay_n_ar(in, max, time)   - No interpolation
+//   delay_l_ar(in, max, time)   - Linear interpolation
+//   comb_l_ar(in, max, time, decay)  - Comb filter
+//   allpass_l_ar(in, max, time, decay)  - Allpass
+//
+// MODULATION:
+//   sin_osc_kr(freq)  - Control-rate sine LFO
+//   lf_noise1_kr(freq) - Smooth random LFO
+//   impulse_ar(freq)   - Click generator
+//   latch_ar(in, trig) - Sample and hold
+//
+// DISTORTION:
+//   signal.tanh()      - Soft saturation (call on signal)
+//   clip(sig, lo, hi)  - Hard clip
+//   fold(sig, lo, hi)  - Wave folding
+//
+// TRY THIS:
+// - Add bitcrush to drums for lo-fi sound
+// - Chain effects by adding multiple fx() calls
+// - Automate effect params with fade()
+// ============================================================

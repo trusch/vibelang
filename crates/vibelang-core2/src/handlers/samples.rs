@@ -40,7 +40,7 @@ use crate::types::SampleId;
 use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use crate::compat::RwLock;
 
 /// Handler for sample loading and management.
 ///
@@ -64,7 +64,8 @@ impl<B: Backend> SamplesHandler<B> {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<B: Backend> Samples for SamplesHandler<B> {
     async fn load(&self, id: SampleId, config: SampleConfig) -> Result<SampleInfo> {
         let mut state = self.state.write().await;

@@ -1,0 +1,111 @@
+// Tutorial: Fades & Automation
+// Difficulty: intermediate | Duration: 7 min
+// Description: Automate parameters over time with different curves.
+
+// Fades smoothly change a parameter value over time!
+// You can choose different interpolation curves for different feels.
+
+import "stdlib/leads/synth/lead_saw.vibe";
+import "stdlib/effects/filters/moog_filter.vibe";
+
+set_tempo(120);
+
+define_group("Synth", || {
+    let lead = voice("lead").synth("lead_saw").gain(db(-6));
+
+    // A steady repeating note - easier to hear filter changes
+    let melody_pat = melody("lead_mel")
+        .on(lead)
+        .notes("A3 A3 A3 A3 | A3 A3 A3 A3")
+        .gate(0.8)
+        .apply();
+
+    // Add a filter effect with low initial cutoff
+    fx("filter")
+        .synth("moog_filter")
+        .param("cutoff", 200.)
+        .param("resonance", 2.0)
+        .param("mix", 1.0)
+        .apply();
+
+    // --------------------------------------------------------
+    // FILTER SWEEP WITH CURVES
+    // --------------------------------------------------------
+    // Open the filter with an ease-in curve (slow start, fast end)
+    // This sounds more dramatic than linear!
+    let filter_open = fade("filter_open")
+        .on_effect("filter")
+        .param("cutoff")
+        .from(200.)
+        .to(4000.0)
+        .over_bars(4)
+        .curve("ease_in")  // Slow start, accelerates
+        .apply();
+
+    // Close the filter with ease-out (fast start, slow end)
+    // Perfect for fade-outs - starts moving quickly, then settles
+    let filter_close = fade("filter_close")
+        .on_effect("filter")
+        .param("cutoff")
+        .from(4000.0)
+        .to(200.)
+        .over_bars(4)
+        .curve("ease_out")  // Fast start, decelerates
+        .apply();
+
+    // --------------------------------------------------------
+    // USE FADES IN SEQUENCES
+    // --------------------------------------------------------
+    sequence("arrangement")
+        .loop_bars(8)
+        .clip(0..bars(8), melody_pat)
+        .clip(0..bars(4), filter_open)
+        .clip(bars(4)..bars(8), filter_close)
+        .start();
+});
+
+// ============================================================
+// CURVE TYPES:
+//
+// Linear (default):
+//   .curve("linear")      - Constant rate of change
+//
+// Ease curves (quadratic, smooth):
+//   .curve("ease_in")     - Slow start, fast end
+//   .curve("ease_out")    - Fast start, slow end
+//   .curve("ease_in_out") - Smooth S-curve (best for most uses)
+//
+// Sine curves (very smooth):
+//   .curve("sine_in")     - Gentle slow start
+//   .curve("sine_out")    - Gentle slow end
+//   .curve("sine")        - Gentle S-curve
+//
+// Cubic curves (more dramatic):
+//   .curve("cubic_in")    - Very slow start
+//   .curve("cubic_out")   - Very slow end
+//   .curve("cubic")       - Dramatic S-curve
+//
+// Special curves:
+//   .curve("log")         - Logarithmic (fast start, great for volume)
+//   .curve("step")        - Instant jump at end
+//
+// Custom exponential:
+//   .exp(3.0)             - Custom power curve (higher = slower start)
+//
+// Custom spline (advanced):
+//   .point(0.25, 0.8)     - Add control points for complex shapes
+//   .point(0.75, 0.2)
+// ============================================================
+
+// ============================================================
+// FADE TARGETS:
+//
+// .on_voice(voice)       - Fade a voice parameter
+// .on_group("GroupName") - Fade a group parameter
+// .on_effect("fx_name")  - Fade an effect parameter
+//
+// TRY THIS:
+// - Change "ease_in" to "cubic_in" for more drama
+// - Try .exp(4.0) for an even more extreme curve
+// - Use "sine" for the smoothest transitions
+// ============================================================

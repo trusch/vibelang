@@ -516,8 +516,8 @@
         },
         "vibelang.runtime.binaryPath": {
           "type": "string",
-          "default": "vibe",
-          "markdownDescription": "Path to the VibeLang binary (`vibe` command). Can be an absolute path or a command name in PATH.",
+          "default": "vibe2",
+          "markdownDescription": "Path to the VibeLang binary (`vibe2` command). Can be an absolute path or a command name in PATH. Use `vibe` for the legacy runtime.",
           "order": 20
         },
         "vibelang.runtime.host": {

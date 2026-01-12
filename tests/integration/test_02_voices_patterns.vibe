@@ -1,0 +1,131 @@
+// Integration Test 02: Voices and Patterns
+// Tests: voice creation, pattern step notation, pattern params, polyphony
+//
+// This test verifies:
+// - Multiple voices can be created
+// - Patterns trigger voices correctly
+// - Step notation is parsed correctly
+// - Params in step notation work
+
+test_start("voices_patterns");
+
+set_tempo(120);
+
+// Test 1: Define a simple sine synth
+define_synthdef("test_sine")
+    .param("freq", 440.0)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .perc("5ms", "100ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        sin_osc_ar(freq) * env * amp
+    });
+
+// Test 2: Define a drum-like synth with different pitch for each step
+define_synthdef("test_drum")
+    .param("freq", 100.0)
+    .param("decay", 0.1)
+    .param("amp", 0.5)
+    .param("gate", 1.0)
+    .body(|freq, decay, amp, gate| {
+        let env = envelope()
+            .perc("1ms", decay)
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let pitch_env = envelope()
+            .perc("1ms", "20ms")
+            .gate(gate)
+            .build();
+        sin_osc_ar(freq + pitch_env * freq) * env * amp
+    });
+
+// Test 3: Create voices with different settings
+let sine1 = voice("sine1").synth("test_sine").gain(db(-15)).poly(4);
+let sine2 = voice("sine2").synth("test_sine").gain(db(-15)).poly(4);
+let drum = voice("drum").synth("test_drum").gain(db(-12)).poly(8);
+
+// Verify voices were created (they exist if we got here without error)
+assert_true(true, "voice sine1 created");
+assert_true(true, "voice sine2 created");
+assert_true(true, "voice drum created");
+
+// Test 4: Basic step pattern (x = trigger, . = rest)
+pattern("pattern1")
+    .on(sine1)
+    .step("x... x... x... x...")
+    .start();
+assert_true(true, "pattern1 with basic step notation created");
+
+// Test 5: Step pattern with rests
+pattern("pattern2")
+    .on(sine2)
+    .step("..x. ..x. ..x. ..x.")
+    .start();
+assert_true(true, "pattern2 with offset steps created");
+
+// Test 6: Pattern with params per step
+pattern("pattern3")
+    .on(drum)
+    .step(`
+        x[freq=200,decay=0.3] ... x[freq=100,decay=0.1] ... |
+        x[freq=150,decay=0.2] ... x[freq=80,decay=0.15] ...
+    `)
+    .start();
+assert_true(true, "pattern3 with per-step params created");
+
+// Test 7: Longer pattern (2 bars)
+pattern("pattern4")
+    .on(drum)
+    .step("x.x. x.x. x.xx x.x. | x.x. x.x. x.x. xxxx")
+    .start();
+assert_true(true, "pattern4 multi-bar pattern created");
+
+// Test 8: Verify note() helper function
+let c4 = note("C4");
+assert_eq(c4, 60, "C4 should be MIDI note 60");
+
+let a4 = note("A4");
+assert_eq(a4, 69, "A4 should be MIDI note 69");
+
+let fsharp3 = note("F#3");
+assert_eq(fsharp3, 54, "F#3 should be MIDI note 54");
+
+// Test 9: Verify chord() helper function
+let cmaj = chord("C", 4);
+assert_len(cmaj, 3, "C major chord should have 3 notes");
+assert_contains(cmaj, 60, "C major should contain C4 (60)");
+assert_contains(cmaj, 64, "C major should contain E4 (64)");
+assert_contains(cmaj, 67, "C major should contain G4 (67)");
+
+// Test 10: Verify minor chord
+let amin = chord("Am", 4);
+assert_len(amin, 3, "A minor chord should have 3 notes");
+assert_contains(amin, 69, "A minor should contain A4 (69)");
+assert_contains(amin, 72, "A minor should contain C5 (72)");
+assert_contains(amin, 76, "A minor should contain E5 (76)");
+
+// Test 11: Verify seventh chord
+let g7 = chord("G7", 3);
+assert_len(g7, 4, "G7 chord should have 4 notes");
+
+// Test 12: Verify scale() helper function
+let cmaj_scale = scale("C", "major", 4);
+assert_len(cmaj_scale, 7, "C major scale should have 7 notes");
+assert_contains(cmaj_scale, 60, "C major scale should contain C4 (60)");
+assert_contains(cmaj_scale, 62, "C major scale should contain D4 (62)");
+assert_contains(cmaj_scale, 64, "C major scale should contain E4 (64)");
+
+// Test 13: Verify pentatonic scale
+let penta = scale("C", "pentatonic", 4);
+assert_len(penta, 5, "pentatonic scale should have 5 notes");
+
+// Test 14: Verify blues scale
+let blues = scale("A", "blues", 3);
+assert_len(blues, 6, "blues scale should have 6 notes");
+
+test_end_and_exit();

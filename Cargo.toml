@@ -10,10 +10,17 @@ members = [
     "crates/vibelang-keys",
     "crates/vibelang-lsp",
     "crates/vibelang-http",
+    "crates/vibelang-http2",
     "crates/vibelang-rhai",
+    "crates/vibelang-wasm",
 ]
 default-members = ["crates/vibelang-cli"]
 resolver = "2"
+
+# Shared workspace dependencies
+[workspace.dependencies]
+# Enable WASM support for getrandom (used by ahash/rhai)
+getrandom = { version = "0.3", features = ["wasm_js"] }
 
 # Patch crates.io dependencies with local versions for development
 [patch.crates-io]

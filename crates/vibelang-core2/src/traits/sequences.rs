@@ -77,6 +77,9 @@ impl Clip {
 /// Configuration for creating a sequence.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SequenceConfig {
+    /// Sequence name (for display in TUI/API).
+    pub name: String,
+
     /// Length of the sequence in beats.
     pub length: Beat,
 
@@ -86,16 +89,17 @@ pub struct SequenceConfig {
 
 impl SequenceConfig {
     /// Create a new sequence configuration.
-    pub fn new(length: Beat) -> Self {
+    pub fn new(name: impl Into<String>, length: Beat) -> Self {
         Self {
+            name: name.into(),
             length,
             clips: Vec::new(),
         }
     }
 
     /// Create a sequence with length in beats as f64.
-    pub fn with_length(length: f64) -> Self {
-        Self::new(Beat::from_f64(length))
+    pub fn with_length(name: impl Into<String>, length: f64) -> Self {
+        Self::new(name, Beat::from_f64(length))
     }
 
     /// Add a clip to the sequence.
@@ -109,6 +113,7 @@ impl SequenceConfig {
 ///
 /// Sequences can play once or loop, and can contain nested sequences
 /// for complex arrangements.
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait Sequences: Send + Sync {
     /// Create a new sequence.
@@ -123,6 +128,29 @@ pub trait Sequences: Send + Sync {
     ///
     /// * `id` - Sequence ID
     /// * `looping` - Whether to loop or play once
+    async fn start(&self, id: SequenceId, looping: bool) -> Result<()>;
+
+    /// Stop playing a sequence.
+    async fn stop(&self, id: SequenceId) -> Result<()>;
+
+    /// Pause a sequence (retains position).
+    async fn pause(&self, id: SequenceId) -> Result<()>;
+
+    /// Resume a paused sequence.
+    async fn resume(&self, id: SequenceId) -> Result<()>;
+}
+
+/// Sequence management for arrangements (WASM version).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait Sequences {
+    /// Create a new sequence.
+    async fn create(&self, id: SequenceId, config: SequenceConfig) -> Result<()>;
+
+    /// Delete a sequence.
+    async fn delete(&self, id: SequenceId) -> Result<()>;
+
+    /// Start playing a sequence.
     async fn start(&self, id: SequenceId, looping: bool) -> Result<()>;
 
     /// Stop playing a sequence.

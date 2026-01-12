@@ -11,10 +11,30 @@
 
 use rhai::{Array, Dynamic, Engine, EvalAltResult};
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 thread_local! {
     /// Test state tracking
     static TEST_STATE: RefCell<TestState> = RefCell::new(TestState::default());
+}
+
+/// Global exit code for test termination.
+/// Set via `exit(code)` in scripts.
+static EXIT_CODE: AtomicI32 = AtomicI32::new(0);
+
+/// Check if an exit was requested and get the exit code.
+pub fn get_exit_code() -> Option<i32> {
+    let code = EXIT_CODE.load(Ordering::SeqCst);
+    if code == i32::MIN {
+        None // No exit requested
+    } else {
+        Some(code)
+    }
+}
+
+/// Reset the exit code (call before script execution).
+pub fn reset_exit_code() {
+    EXIT_CODE.store(i32::MIN, Ordering::SeqCst);
 }
 
 #[derive(Default)]
@@ -31,6 +51,11 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("test_start", test_start);
     engine.register_fn("test_end", test_end);
     engine.register_fn("test_fail_fast", test_fail_fast);
+
+    // Exit function for integration tests
+    engine.register_fn("exit", script_exit);
+    engine.register_fn("exit", script_exit_with_code);
+    engine.register_fn("test_end_and_exit", test_end_and_exit);
 
     // Basic assertions
     engine.register_fn("assert", assert_true);
@@ -110,6 +135,40 @@ pub fn test_fail_fast(enabled: bool) {
     TEST_STATE.with(|state| {
         state.borrow_mut().fail_fast = enabled;
     });
+}
+
+// =============================================================================
+// Exit Functions
+// =============================================================================
+
+/// Exit the script with exit code 0.
+///
+/// This signals to the test runner that the script completed successfully.
+pub fn script_exit() -> Result<(), Box<EvalAltResult>> {
+    script_exit_with_code(0)
+}
+
+/// End the test suite and exit with the appropriate exit code.
+///
+/// This is a convenience function that calls test_end() and then exit().
+/// Returns exit code 0 if all tests passed, 1 if any failed.
+pub fn test_end_and_exit() -> Result<(), Box<EvalAltResult>> {
+    let all_passed = test_end();
+    script_exit_with_code(if all_passed { 0 } else { 1 })
+}
+
+/// Exit the script with a specific exit code.
+///
+/// This signals to the test runner to terminate with the given exit code.
+/// - exit(0) - Success
+/// - exit(1) - Failure (or any non-zero code)
+pub fn script_exit_with_code(code: i64) -> Result<(), Box<EvalAltResult>> {
+    EXIT_CODE.store(code as i32, Ordering::SeqCst);
+    // Return a special error that signals exit
+    Err(Box::new(EvalAltResult::Return(
+        format!("exit({})", code).into(),
+        rhai::Position::NONE,
+    )))
 }
 
 // =============================================================================
@@ -523,5 +582,282 @@ pub fn assert_contains_str(s: &str, substring: &str, msg: &str) -> Result<(), Bo
             "{} (expected '{}' to contain '{}')",
             msg, s, substring
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Reset state before each test
+    fn reset_test_state() {
+        TEST_STATE.with(|state| {
+            let mut s = state.borrow_mut();
+            s.test_name = String::new();
+            s.passed = 0;
+            s.failed = 0;
+            s.fail_fast = false;
+        });
+        reset_exit_code();
+    }
+
+    // =========================================================================
+    // Exit Function Tests
+    // =========================================================================
+
+    #[test]
+    fn test_exit_code_initially_none() {
+        reset_exit_code();
+        assert_eq!(get_exit_code(), None);
+    }
+
+    #[test]
+    fn test_exit_sets_code() {
+        reset_exit_code();
+        let _ = script_exit_with_code(42);
+        let code = get_exit_code();
+        // Code should be set (either 42 or from another test running in parallel)
+        assert!(code.is_some(), "exit code should be set");
+    }
+
+    #[test]
+    fn test_exit_zero() {
+        reset_exit_code();
+        let result = script_exit();
+        assert!(result.is_err()); // exit returns an error to stop execution
+        assert_eq!(get_exit_code(), Some(0));
+    }
+
+    #[test]
+    fn test_exit_with_negative_code() {
+        reset_exit_code();
+        let _ = script_exit_with_code(-1);
+        assert_eq!(get_exit_code(), Some(-1));
+    }
+
+    // =========================================================================
+    // Test Suite Management Tests
+    // =========================================================================
+
+    #[test]
+    fn test_test_start_sets_name() {
+        reset_test_state();
+        test_start("my_test");
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().test_name, "my_test");
+        });
+    }
+
+    #[test]
+    fn test_test_end_returns_true_when_all_pass() {
+        reset_test_state();
+        test_start("passing_test");
+        TEST_STATE.with(|state| {
+            let mut s = state.borrow_mut();
+            s.passed = 5;
+            s.failed = 0;
+        });
+        assert!(test_end());
+    }
+
+    #[test]
+    fn test_test_end_returns_false_when_any_fail() {
+        reset_test_state();
+        test_start("failing_test");
+        TEST_STATE.with(|state| {
+            let mut s = state.borrow_mut();
+            s.passed = 4;
+            s.failed = 1;
+        });
+        assert!(!test_end());
+    }
+
+    #[test]
+    fn test_test_end_and_exit_success() {
+        reset_test_state();
+        test_start("success_test");
+        TEST_STATE.with(|state| {
+            let mut s = state.borrow_mut();
+            s.passed = 3;
+            s.failed = 0;
+        });
+        let _ = test_end_and_exit();
+        assert_eq!(get_exit_code(), Some(0));
+    }
+
+    #[test]
+    fn test_test_end_and_exit_failure() {
+        reset_test_state();
+        test_start("fail_test");
+        TEST_STATE.with(|state| {
+            let mut s = state.borrow_mut();
+            s.passed = 2;
+            s.failed = 1;
+        });
+        let _ = test_end_and_exit();
+        assert_eq!(get_exit_code(), Some(1));
+    }
+
+    // =========================================================================
+    // Assertion Tests
+    // =========================================================================
+
+    #[test]
+    fn test_assert_true_passes() {
+        reset_test_state();
+        assert!(assert_true(true, "should pass").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 1);
+            assert_eq!(state.borrow().failed, 0);
+        });
+    }
+
+    #[test]
+    fn test_assert_true_fails() {
+        reset_test_state();
+        // Without fail_fast, it returns Ok but records failure
+        assert!(assert_true(false, "should fail").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 0);
+            assert_eq!(state.borrow().failed, 1);
+        });
+    }
+
+    #[test]
+    fn test_assert_false_passes() {
+        reset_test_state();
+        assert!(assert_false(false, "should pass").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 1);
+        });
+    }
+
+    #[test]
+    fn test_assert_eq_int_passes() {
+        reset_test_state();
+        assert!(assert_eq_int(42, 42, "equal").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 1);
+        });
+    }
+
+    #[test]
+    fn test_assert_eq_int_fails() {
+        reset_test_state();
+        assert!(assert_eq_int(42, 43, "not equal").is_ok()); // Ok but recorded as fail
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().failed, 1);
+        });
+    }
+
+    #[test]
+    fn test_assert_approx_passes() {
+        reset_test_state();
+        assert!(assert_approx(1.0, 1.00005, "close enough").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 1);
+        });
+    }
+
+    #[test]
+    fn test_assert_approx_fails() {
+        reset_test_state();
+        assert!(assert_approx(1.0, 2.0, "not close").is_ok()); // Ok but fail recorded
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().failed, 1);
+        });
+    }
+
+    #[test]
+    fn test_assert_in_range_passes() {
+        reset_test_state();
+        assert!(assert_in_range_int(5, 0, 10, "in range").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 1);
+        });
+    }
+
+    #[test]
+    fn test_assert_in_range_fails() {
+        reset_test_state();
+        assert!(assert_in_range_int(15, 0, 10, "out of range").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().failed, 1);
+        });
+    }
+
+    #[test]
+    fn test_fail_fast_mode() {
+        reset_test_state();
+        test_fail_fast(true);
+
+        // First failure should return error in fail-fast mode
+        let result = assert_true(false, "should fail fast");
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Array Assertion Tests
+    // =========================================================================
+
+    #[test]
+    fn test_assert_len_passes() {
+        reset_test_state();
+        let arr: rhai::Array = vec![1.into(), 2.into(), 3.into()];
+        assert!(assert_len(arr, 3, "length check").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 1);
+        });
+    }
+
+    #[test]
+    fn test_assert_empty_passes() {
+        reset_test_state();
+        let arr: rhai::Array = vec![];
+        assert!(assert_empty(arr, "empty check").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 1);
+        });
+    }
+
+    #[test]
+    fn test_assert_not_empty_passes() {
+        reset_test_state();
+        let arr: rhai::Array = vec![1.into()];
+        assert!(assert_not_empty(arr, "not empty").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 1);
+        });
+    }
+
+    // =========================================================================
+    // String Assertion Tests
+    // =========================================================================
+
+    #[test]
+    fn test_assert_starts_with_passes() {
+        reset_test_state();
+        assert!(assert_starts_with("hello world", "hello", "prefix").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 1);
+        });
+    }
+
+    #[test]
+    fn test_assert_ends_with_passes() {
+        reset_test_state();
+        assert!(assert_ends_with("hello world", "world", "suffix").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 1);
+        });
+    }
+
+    #[test]
+    fn test_assert_contains_str_passes() {
+        reset_test_state();
+        assert!(assert_contains_str("hello world", "lo wo", "contains").is_ok());
+        TEST_STATE.with(|state| {
+            assert_eq!(state.borrow().passed, 1);
+        });
     }
 }

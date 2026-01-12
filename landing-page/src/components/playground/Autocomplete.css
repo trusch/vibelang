@@ -1,0 +1,190 @@
+.autocomplete-popup {
+  position: absolute;
+  z-index: 100;
+  display: flex;
+  background: var(--popup-bg, #1e1e2e);
+  border: 1px solid var(--border-color, #45475a);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  max-height: 300px;
+  overflow: hidden;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+}
+
+.autocomplete-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  max-height: 280px;
+  min-width: 200px;
+  max-width: 350px;
+}
+
+.autocomplete-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.autocomplete-item:hover {
+  background: var(--hover-bg, rgba(203, 166, 247, 0.1));
+}
+
+.autocomplete-item.selected {
+  background: var(--selected-bg, rgba(203, 166, 247, 0.2));
+}
+
+.autocomplete-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--icon-bg, rgba(255, 255, 255, 0.05));
+  border-radius: 3px;
+}
+
+.autocomplete-name {
+  color: var(--text-color, #cdd6f4);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.autocomplete-signature {
+  color: var(--muted-color, #6c7086);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.autocomplete-detail {
+  margin-left: auto;
+  color: var(--detail-color, #585b70);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* Detail panel */
+.autocomplete-detail-panel {
+  border-left: 1px solid var(--border-color, #45475a);
+  padding: 12px;
+  width: 280px;
+  overflow-y: auto;
+  background: var(--detail-bg, #181825);
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.detail-type {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.detail-name {
+  font-weight: 600;
+  color: var(--text-color, #cdd6f4);
+}
+
+.detail-signature {
+  display: block;
+  padding: 8px;
+  margin: 8px 0;
+  background: var(--code-bg, rgba(0, 0, 0, 0.3));
+  border-radius: 4px;
+  color: var(--syntax-method, #f9e2af);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.detail-description {
+  margin: 0;
+  color: var(--muted-color, #a6adc8);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Scrollbar styling */
+.autocomplete-list::-webkit-scrollbar,
+.autocomplete-detail-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.autocomplete-list::-webkit-scrollbar-track,
+.autocomplete-detail-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.autocomplete-list::-webkit-scrollbar-thumb,
+.autocomplete-detail-panel::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, #45475a);
+  border-radius: 3px;
+}
+
+.autocomplete-list::-webkit-scrollbar-thumb:hover,
+.autocomplete-detail-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover, #585b70);
+}
+
+/* Light theme */
+[data-theme="light"] .autocomplete-popup {
+  --popup-bg: #eff1f5;
+  --border-color: #ccd0da;
+  --hover-bg: rgba(136, 57, 239, 0.1);
+  --selected-bg: rgba(136, 57, 239, 0.15);
+  --icon-bg: rgba(0, 0, 0, 0.05);
+  --text-color: #4c4f69;
+  --muted-color: #7c7f93;
+  --detail-color: #9ca0b0;
+  --detail-bg: #e6e9ef;
+  --code-bg: rgba(0, 0, 0, 0.05);
+  --scrollbar-thumb: #bcc0cc;
+  --scrollbar-thumb-hover: #9ca0b0;
+}
+
+[data-theme="light"] .autocomplete-popup {
+  --ac-function: #1e66f5;
+  --ac-method: #df8e1d;
+  --ac-synthdef: #40a02b;
+  --ac-ugen: #ea76cb;
+  --ac-keyword: #8839ef;
+  --ac-sample: #fe640b;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .autocomplete-popup {
+    flex-direction: column;
+    max-width: calc(100vw - 80px);
+  }
+
+  .autocomplete-detail-panel {
+    display: none;
+  }
+
+  .autocomplete-list {
+    max-width: none;
+  }
+}

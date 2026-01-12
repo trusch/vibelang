@@ -10,6 +10,7 @@ use async_trait::async_trait;
 /// SynthDefs must be loaded before they can be used by voices and effects.
 ///
 /// All methods are async for WASM compatibility.
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait SynthDefs: Send + Sync {
     /// Load a synthdef from compiled bytes.
@@ -18,6 +19,17 @@ pub trait SynthDefs: Send + Sync {
     ///
     /// * `name` - Name to register the synthdef under
     /// * `data` - Compiled synthdef bytes
+    async fn load(&self, name: &str, data: &[u8]) -> Result<()>;
+
+    /// Check if a synthdef is loaded.
+    async fn is_loaded(&self, name: &str) -> bool;
+}
+
+/// SynthDef management for synthesis definitions (WASM version).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait SynthDefs {
+    /// Load a synthdef from compiled bytes.
     async fn load(&self, name: &str, data: &[u8]) -> Result<()>;
 
     /// Check if a synthdef is loaded.

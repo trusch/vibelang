@@ -76,8 +76,6 @@
 //! - `NoteRouteBuilder` - Map single notes (e.g., drum pads) with choke groups
 //! - `CcRouteBuilder` - Map CCs with parameter curves and ranges
 
-#![cfg(feature = "midi")]
-
 // =============================================================================
 // Legacy modules (existing API)
 // =============================================================================
@@ -100,6 +98,8 @@ mod mpe;
 mod nrpn;
 mod parser;
 mod queue;
+mod recording;
+mod voice_output;
 
 // =============================================================================
 // Legacy re-exports (existing API, maintained for compatibility)
@@ -160,3 +160,12 @@ pub use learn::{LearnManager, LearnTarget, LearnedMapping, MidiLearn};
 
 // Device hot-plug detection
 pub use hotplug::{AutoReconnect, AutoReconnectConfig, HotPlugEvent, HotPlugWatcher};
+
+// MIDI Recording
+pub use recording::{MidiRecording, MidiRecordingInfo, RecordedMidiCc, RecordedMidiNote};
+
+// MIDI Voice Output (for MIDI voices with CC mappings)
+pub use voice_output::{
+    get_modulator_cc_mappings, has_modulator_cc_mappings, is_midi_voice, send_cc_for_param,
+    send_modulator_ccs, value_to_cc, ModulatorCcMapping,
+};

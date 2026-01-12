@@ -10,28 +10,45 @@ use crate::{
     AppState,
 };
 
+/// Helper to build TransportState from core state
+fn build_transport_state(s: &vibelang_core2::State) -> TransportState {
+    let server_time_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    // Calculate loop info from active sequences
+    let loop_beats = s.sequences.values()
+        .filter(|seq| seq.playing)
+        .map(|seq| seq.config.length.to_f64())
+        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let loop_beat = loop_beats.map(|lb| {
+        if lb > 0.0 {
+            s.current_beat.to_f64() % lb
+        } else {
+            0.0
+        }
+    });
+
+    TransportState {
+        bpm: s.tempo,
+        time_signature: TimeSignature {
+            numerator: s.time_sig.numerator,
+            denominator: s.time_sig.denominator,
+        },
+        running: s.playing,
+        current_beat: s.current_beat.to_f64(),
+        quantization_beats: 1.0, // Default quantization
+        loop_beats,
+        loop_beat,
+        server_time_ms: Some(server_time_ms),
+    }
+}
+
 /// GET /transport - Get current transport state
 pub async fn get_transport(State(state): State<Arc<AppState>>) -> Json<TransportState> {
-    let transport = state
-        .with_state(|s| {
-            let server_time_ms = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-
-            TransportState {
-                bpm: s.tempo,
-                time_signature: TimeSignature {
-                    numerator: s.time_sig.numerator,
-                    denominator: s.time_sig.denominator,
-                },
-                running: s.playing,
-                current_beat: s.current_beat.to_f64(),
-                server_time_ms,
-            }
-        })
-        .await;
-
+    let transport = state.with_state(build_transport_state).await;
     Json(transport)
 }
 

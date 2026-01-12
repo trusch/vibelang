@@ -419,6 +419,16 @@
   color: #3b82f6;
 }
 
+.ugen-card__rate--ir {
+  background: rgba(156, 163, 175, 0.2);
+  color: #9ca3af;
+}
+
+.ugen-card__rate--builder {
+  background: rgba(236, 72, 153, 0.2);
+  color: #ec4899;
+}
+
 .stdlib-card__type {
   font-family: var(--font-mono);
   font-size: 0.7rem;

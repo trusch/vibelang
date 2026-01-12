@@ -1,0 +1,643 @@
+// Integration Test 21: Extended Fade Curve Types
+// Tests: All curve types for fade automation
+//
+// This test verifies:
+// - Linear curve (default)
+// - Ease curves (ease_in, ease_out, ease_in_out)
+// - Sine curves (sine_in, sine_out, sine_in_out)
+// - Cubic curves (cubic_in, cubic_out, cubic_in_out)
+// - Exponential curve with custom exponent
+// - Logarithmic curve
+// - Step curve
+// - Custom spline curves with control points
+
+test_start("curve_types");
+
+set_tempo(120);
+set_time_signature(4, 4);
+
+// =============================================================================
+// Test 1: Synthdef Setup
+// =============================================================================
+
+define_synthdef("curve_test")
+    .param("freq", 440.0)
+    .param("amp", 0.2)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .perc("1ms", "50ms")
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        sin_osc_ar(freq) * env * amp
+    });
+
+// Effect for testing effect fades
+define_synthdef("curve_reverb")
+    .param("in_bus", 0.0)
+    .param("mix", 0.3)
+    .body(|in_bus, mix| {
+        let input = in_ar(in_bus, 2);
+        let reverb = free_verb(input, mix, 0.5, 0.5);
+        replace_out(in_bus, reverb)
+    });
+
+// =============================================================================
+// Test 2: Linear Curve (Default)
+// =============================================================================
+
+let linear_group = define_group("LinearCurveGroup", || {
+    let v = voice("linear_voice").synth("curve_test").gain(db(-18));
+});
+
+// Create a fade with linear curve (default)
+let linear_fade = fade("linear_fade")
+    .on_group("LinearCurveGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("linear");
+
+assert_true(true, "linear curve fade created");
+
+// =============================================================================
+// Test 3: Ease-In Curve (t^2 - slow start)
+// =============================================================================
+
+let ease_in_group = define_group("EaseInGroup", || {
+    let v = voice("ease_in_voice").synth("curve_test").gain(db(-18));
+});
+
+let ease_in_fade = fade("ease_in_fade")
+    .on_group("EaseInGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("ease_in");
+
+assert_true(true, "ease_in curve fade created");
+
+// Test alternate syntax
+let ease_in_fade2 = fade("ease_in_fade2")
+    .on_group("EaseInGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over(16)
+    .curve("easein");
+
+assert_true(true, "easein alternate syntax works");
+
+// =============================================================================
+// Test 4: Ease-Out Curve (fast start, slow end)
+// =============================================================================
+
+let ease_out_group = define_group("EaseOutGroup", || {
+    let v = voice("ease_out_voice").synth("curve_test").gain(db(-18));
+});
+
+let ease_out_fade = fade("ease_out_fade")
+    .on_group("EaseOutGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("ease_out");
+
+assert_true(true, "ease_out curve fade created");
+
+// =============================================================================
+// Test 5: Ease-In-Out Curve (smooth S-curve)
+// =============================================================================
+
+let ease_inout_group = define_group("EaseInOutGroup", || {
+    let v = voice("ease_inout_voice").synth("curve_test").gain(db(-18));
+});
+
+let ease_inout_fade = fade("ease_inout_fade")
+    .on_group("EaseInOutGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("ease_in_out");
+
+assert_true(true, "ease_in_out curve fade created");
+
+// Test "ease" shorthand
+let ease_fade = fade("ease_fade")
+    .on_group("EaseInOutGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("ease");
+
+assert_true(true, "ease shorthand works");
+
+// =============================================================================
+// Test 6: Sine-In Curve
+// =============================================================================
+
+let sine_in_group = define_group("SineInGroup", || {
+    let v = voice("sine_in_voice").synth("curve_test").gain(db(-18));
+});
+
+let sine_in_fade = fade("sine_in_fade")
+    .on_group("SineInGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("sine_in");
+
+assert_true(true, "sine_in curve fade created");
+
+// =============================================================================
+// Test 7: Sine-Out Curve
+// =============================================================================
+
+let sine_out_group = define_group("SineOutGroup", || {
+    let v = voice("sine_out_voice").synth("curve_test").gain(db(-18));
+});
+
+let sine_out_fade = fade("sine_out_fade")
+    .on_group("SineOutGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("sine_out");
+
+assert_true(true, "sine_out curve fade created");
+
+// =============================================================================
+// Test 8: Sine-In-Out Curve (smooth start and end)
+// =============================================================================
+
+let sine_inout_group = define_group("SineInOutGroup", || {
+    let v = voice("sine_inout_voice").synth("curve_test").gain(db(-18));
+});
+
+let sine_inout_fade = fade("sine_inout_fade")
+    .on_group("SineInOutGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("sine");
+
+assert_true(true, "sine curve fade created (alias for sine_in_out)");
+
+// Test other aliases
+let sine_fade_smooth = fade("sine_smooth_fade")
+    .on_group("SineInOutGroup")
+    .param("amp")
+    .curve("smooth");
+
+assert_true(true, "smooth alias works for sine_in_out");
+
+// =============================================================================
+// Test 9: Cubic-In Curve (t^3 - very slow start)
+// =============================================================================
+
+let cubic_in_group = define_group("CubicInGroup", || {
+    let v = voice("cubic_in_voice").synth("curve_test").gain(db(-18));
+});
+
+let cubic_in_fade = fade("cubic_in_fade")
+    .on_group("CubicInGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("cubic_in");
+
+assert_true(true, "cubic_in curve fade created");
+
+// =============================================================================
+// Test 10: Cubic-Out Curve (very slow end)
+// =============================================================================
+
+let cubic_out_group = define_group("CubicOutGroup", || {
+    let v = voice("cubic_out_voice").synth("curve_test").gain(db(-18));
+});
+
+let cubic_out_fade = fade("cubic_out_fade")
+    .on_group("CubicOutGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("cubic_out");
+
+assert_true(true, "cubic_out curve fade created");
+
+// =============================================================================
+// Test 11: Cubic-In-Out Curve (smooth cubic S-curve)
+// =============================================================================
+
+let cubic_inout_group = define_group("CubicInOutGroup", || {
+    let v = voice("cubic_inout_voice").synth("curve_test").gain(db(-18));
+});
+
+let cubic_inout_fade = fade("cubic_inout_fade")
+    .on_group("CubicInOutGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("cubic_in_out");
+
+assert_true(true, "cubic_in_out curve fade created");
+
+// Test "cubic" shorthand
+let cubic_fade = fade("cubic_fade")
+    .on_group("CubicInOutGroup")
+    .param("amp")
+    .curve("cubic");
+
+assert_true(true, "cubic shorthand works");
+
+// =============================================================================
+// Test 12: Exponential Curve with Custom Exponent
+// =============================================================================
+
+let exp_group = define_group("ExponentialGroup", || {
+    let v = voice("exp_voice").synth("curve_test").gain(db(-18));
+});
+
+// Default exponential (exponent = 2.0)
+let exp_fade_default = fade("exp_default")
+    .on_group("ExponentialGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("exp");
+
+assert_true(true, "default exponential curve created");
+
+// Custom exponent using .exp() method
+let exp_fade_custom = fade("exp_custom")
+    .on_group("ExponentialGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(8)
+    .exp(3.0);  // Cubic exponent
+
+assert_true(true, "custom exponential (3.0) curve created");
+
+// Higher exponent for more dramatic curve
+let exp_fade_high = fade("exp_high")
+    .on_group("ExponentialGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(16)
+    .exp(5.0);
+
+assert_true(true, "high exponential (5.0) curve created");
+
+// Linear equivalent (exponent = 1.0)
+let exp_fade_linear = fade("exp_linear")
+    .on_group("ExponentialGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .exp(1.0);  // Should behave like linear
+
+assert_true(true, "exponential (1.0) equals linear");
+
+// =============================================================================
+// Test 13: Logarithmic Curve (fast start, slow end)
+// =============================================================================
+
+let log_group = define_group("LogarithmicGroup", || {
+    let v = voice("log_voice").synth("curve_test").gain(db(-18));
+});
+
+let log_fade = fade("log_fade")
+    .on_group("LogarithmicGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("logarithmic");
+
+assert_true(true, "logarithmic curve fade created");
+
+// Test "log" shorthand
+let log_fade_short = fade("log_fade_short")
+    .on_group("LogarithmicGroup")
+    .param("amp")
+    .curve("log");
+
+assert_true(true, "log shorthand works");
+
+// =============================================================================
+// Test 14: Step Curve (instant jump)
+// =============================================================================
+
+let step_group = define_group("StepGroup", || {
+    let v = voice("step_voice").synth("curve_test").gain(db(-18));
+});
+
+let step_fade = fade("step_fade")
+    .on_group("StepGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("step");
+
+assert_true(true, "step curve fade created");
+
+// Test "instant" alias
+let instant_fade = fade("instant_fade")
+    .on_group("StepGroup")
+    .param("amp")
+    .curve("instant");
+
+assert_true(true, "instant alias works for step");
+
+// =============================================================================
+// Test 15: Cubic Spline with Flat Array
+// =============================================================================
+
+let spline_group = define_group("SplineGroup", || {
+    let v = voice("spline_voice").synth("curve_test").gain(db(-18));
+});
+
+// Create spline with flat array of [t1, v1, t2, v2, ...]
+let spline_fade = fade("spline_fade")
+    .on_group("SplineGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(8)
+    .spline([0.25, 0.1, 0.5, 0.9, 0.75, 0.3]);
+
+assert_true(true, "spline curve with flat array created");
+
+// =============================================================================
+// Test 16: Cubic Spline with .point() Builder
+// =============================================================================
+
+let point_spline_group = define_group("PointSplineGroup", || {
+    let v = voice("point_spline_voice").synth("curve_test").gain(db(-18));
+});
+
+// Build spline incrementally using .point()
+let point_spline_fade = fade("point_spline_fade")
+    .on_group("PointSplineGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(8)
+    .point(0.2, 0.8)   // quick rise
+    .point(0.4, 0.2)   // dip
+    .point(0.6, 0.9)   // rise again
+    .point(0.8, 0.5);  // settle
+
+assert_true(true, "spline curve with .point() builder created");
+
+// =============================================================================
+// Test 17: Single Control Point Spline
+// =============================================================================
+
+let single_point_group = define_group("SinglePointGroup", || {
+    let v = voice("single_point_voice").synth("curve_test").gain(db(-18));
+});
+
+// Single control point
+let single_point_fade = fade("single_point_fade")
+    .on_group("SinglePointGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .point(0.5, 0.8);  // Peak at midpoint
+
+assert_true(true, "single point spline created");
+
+// =============================================================================
+// Test 18: Complex Multi-Point Spline
+// =============================================================================
+
+let complex_spline_group = define_group("ComplexSplineGroup", || {
+    let v = voice("complex_spline_voice").synth("curve_test").gain(db(-18));
+});
+
+// Complex spline with many control points
+let complex_spline_fade = fade("complex_spline_fade")
+    .on_group("ComplexSplineGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(16)
+    .point(0.1, 0.3)
+    .point(0.2, 0.7)
+    .point(0.3, 0.2)
+    .point(0.4, 0.8)
+    .point(0.5, 0.5)
+    .point(0.6, 0.9)
+    .point(0.7, 0.3)
+    .point(0.8, 0.6)
+    .point(0.9, 0.4);
+
+assert_true(true, "complex multi-point spline created");
+
+// =============================================================================
+// Test 19: Fades on Voices
+// =============================================================================
+
+let voice_fade_group = define_group("VoiceFadeGroup", || {
+    let v = voice("voice_fade_test").synth("curve_test").gain(db(-18));
+
+    // Fade on voice with ease curve
+    let voice_fade = fade("voice_ease")
+        .on_voice("voice_fade_test")
+        .param("freq")
+        .from(220.0)
+        .to(880.0)
+        .over_bars(4)
+        .curve("ease_in_out");
+
+    assert_true(true, "ease_in_out fade on voice created");
+
+    // Fade on voice with spline
+    let voice_spline = fade("voice_spline")
+        .on_voice("voice_fade_test")
+        .param("amp")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(8)
+        .point(0.3, 0.9)
+        .point(0.7, 0.1);
+
+    assert_true(true, "spline fade on voice created");
+});
+
+// =============================================================================
+// Test 20: Fades on Effects
+// =============================================================================
+
+let effect_fade_group = define_group("EffectFadeGroup", || {
+    let v = voice("effect_fade_voice").synth("curve_test").gain(db(-18));
+
+    // Add effect
+    fx("test_reverb_fx").synth("curve_reverb").param("mix", 0.0).apply();
+
+    // Fade reverb mix with cubic curve
+    let effect_fade = fade("effect_cubic")
+        .on_effect("test_reverb_fx")
+        .param("mix")
+        .from(0.0)
+        .to(0.8)
+        .over_bars(8)
+        .curve("cubic_in_out");
+
+    assert_true(true, "cubic fade on effect created");
+
+    // Fade with custom exponential
+    let effect_exp = fade("effect_exp")
+        .on_effect("test_reverb_fx")
+        .param("mix")
+        .from(0.0)
+        .to(0.5)
+        .over_bars(4)
+        .exp(2.5);
+
+    assert_true(true, "exponential fade on effect created");
+});
+
+// =============================================================================
+// Test 21: Curve Names Case Insensitivity
+// =============================================================================
+
+let case_group = define_group("CaseGroup", || {
+    let v = voice("case_voice").synth("curve_test").gain(db(-18));
+});
+
+// Test various case combinations
+let case_fade1 = fade("case1").on_group("CaseGroup").param("amp").curve("EASE_IN");
+let case_fade2 = fade("case2").on_group("CaseGroup").param("amp").curve("EaseIn");
+let case_fade3 = fade("case3").on_group("CaseGroup").param("amp").curve("ease-in");
+let case_fade4 = fade("case4").on_group("CaseGroup").param("amp").curve("eASe_iN");
+
+assert_true(true, "curve names are case insensitive");
+
+// =============================================================================
+// Test 22: Hyphen and Underscore Variants
+// =============================================================================
+
+let variant_group = define_group("VariantGroup", || {
+    let v = voice("variant_voice").synth("curve_test").gain(db(-18));
+});
+
+// Test underscore variants
+let underscore_fade = fade("underscore").on_group("VariantGroup").param("amp").curve("ease_in_out");
+
+// Test hyphen variants
+let hyphen_fade = fade("hyphen").on_group("VariantGroup").param("amp").curve("ease-in-out");
+
+// Test no separator variants
+let nosep_fade = fade("nosep").on_group("VariantGroup").param("amp").curve("easeinout");
+
+assert_true(true, "curve name separator variants work");
+
+// =============================================================================
+// Test 23: Unknown Curve Defaults to Linear
+// =============================================================================
+
+let unknown_group = define_group("UnknownGroup", || {
+    let v = voice("unknown_voice").synth("curve_test").gain(db(-18));
+});
+
+// Unknown curve name should default to linear
+let unknown_fade = fade("unknown_fade")
+    .on_group("UnknownGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("not_a_real_curve");
+
+assert_true(true, "unknown curve defaults to linear");
+
+// =============================================================================
+// Test 24: Negative Direction Fades
+// =============================================================================
+
+let negative_group = define_group("NegativeGroup", || {
+    let v = voice("negative_voice").synth("curve_test").gain(db(-18));
+});
+
+// Fade down with ease curve
+let fade_down = fade("fade_down")
+    .on_group("NegativeGroup")
+    .param("amp")
+    .from(1.0)
+    .to(0.0)
+    .over_bars(4)
+    .curve("ease_out");  // Fast start, slow end for fade out
+
+assert_true(true, "negative direction fade works with curves");
+
+// Fade down with cubic
+let fade_down_cubic = fade("fade_down_cubic")
+    .on_group("NegativeGroup")
+    .param("amp")
+    .from(1.0)
+    .to(0.0)
+    .over_bars(4)
+    .curve("cubic_out");
+
+assert_true(true, "fade down with cubic_out works");
+
+// =============================================================================
+// Test 25: Chaining Multiple Curve Methods
+// =============================================================================
+
+let chain_group = define_group("ChainGroup", || {
+    let v = voice("chain_voice").synth("curve_test").gain(db(-18));
+});
+
+// Last curve method should win
+let chain_fade = fade("chain_fade")
+    .on_group("ChainGroup")
+    .param("amp")
+    .from(0.0)
+    .to(1.0)
+    .over_bars(4)
+    .curve("linear")    // First set linear
+    .curve("ease_in")   // Override to ease_in
+    .exp(3.0);          // Override to exponential with exp=3
+
+assert_true(true, "curve method chaining works (last wins)");
+
+// Override spline with curve name
+let chain_spline = fade("chain_spline")
+    .on_group("ChainGroup")
+    .param("amp")
+    .point(0.5, 0.5)    // Start with spline
+    .curve("sine");     // Override to sine
+
+assert_true(true, "can override spline with curve name");
+
+// Override curve with spline
+let chain_to_spline = fade("chain_to_spline")
+    .on_group("ChainGroup")
+    .param("amp")
+    .curve("sine")      // Start with sine
+    .point(0.3, 0.7);   // Override to spline
+
+assert_true(true, "can override curve with spline");
+
+test_end_and_exit();

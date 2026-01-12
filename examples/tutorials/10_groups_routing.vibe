@@ -1,0 +1,81 @@
+// Tutorial: Groups & Routing
+// Difficulty: intermediate | Duration: 5 min
+// Description: Organize sounds with mixer groups.
+
+// Groups are like mixer channels - they let you control
+// volume, effects, and routing for multiple sounds at once.
+
+// Import all the sounds
+import "stdlib/drums/kicks/kick_909.vibe";
+import "stdlib/drums/snares/snare_909.vibe";
+import "stdlib/drums/hihats/hihat_909_closed.vibe";
+import "stdlib/bass/sub/sub_deep.vibe";
+import "stdlib/leads/synth/lead_saw.vibe";
+
+set_tempo(124);
+
+// ------------------------------------------------------------
+// DRUM GROUP
+// ------------------------------------------------------------
+// All drums go through one mixer channel
+define_group("Drums", || {
+    let kick = voice("kick").synth("kick_909").gain(db(-6));
+    let snare = voice("snare").synth("snare_909").gain(db(-9));
+    let hihat = voice("hihat").synth("hihat_909_closed").gain(db(-15));
+
+    pattern("kick").on(kick).step("x... x... x... x...").start();
+    pattern("snare").on(snare).step(".... x... .... x...").start();
+    pattern("hihat").on(hihat).step("x.x. x.x. x.x. x.x.").start();
+});
+
+// ------------------------------------------------------------
+// BASS GROUP
+// ------------------------------------------------------------
+define_group("Bass", || {
+    let bass = voice("bass").synth("sub_deep").gain(db(-6));
+
+    melody("bassline")
+        .on(bass)
+        .notes("E2 - - . | E2 - G2 . | A2 - - . | G2 - E2 .")
+        .start();
+});
+
+// ------------------------------------------------------------
+// LEAD GROUP
+// ------------------------------------------------------------
+define_group("Lead", || {
+    let lead = voice("lead").synth("lead_saw").gain(db(-9));
+
+    melody("lead_mel")
+        .on(lead)
+        .notes("E4 . G4 . | B4 . . . | A4 . G4 . | E4 - - .")
+        .gate(0.3)
+        .start();
+});
+
+// ------------------------------------------------------------
+// GROUP CONTROLS
+// ------------------------------------------------------------
+// You can control entire groups after defining them:
+
+// Mute the drums (uncomment to try):
+// group("Drums").mute();
+
+// Solo the bass (hear only bass):
+// group("Bass").solo(true);
+
+// Change group volume:
+// group("Lead").gain(db(-12));
+
+// ============================================================
+// GROUP BENEFITS:
+// - Apply effects to entire groups
+// - Control volume of all sounds in group
+// - Mute/solo for mixing
+// - Keep your code organized!
+//
+// TRY THIS:
+// - Mute different groups to hear parts in isolation
+// - Lower drum volume: group("Drums").gain(db(-9))
+// - Add more groups: "Pads", "FX", etc.
+// ============================================================

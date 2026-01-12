@@ -4,8 +4,8 @@
 //! and musical time (beats). It handles tempo changes while preserving the current
 //! beat position.
 
+use crate::compat::Instant;
 use crate::types::Beat;
-use std::time::Instant;
 
 /// Manages wall-clock to beat-time conversion.
 ///

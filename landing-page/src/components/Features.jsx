@@ -22,6 +22,12 @@ const features = [
     tag: 'Melodies'
   },
   {
+    icon: '|||',
+    title: 'Sequences & Arrangement',
+    description: 'Arrange patterns and melodies on a timeline. Build song structures with sections, loops, and one-shot clips. Compose full tracks.',
+    tag: 'Arrangement'
+  },
+  {
     icon: '()',
     title: 'SynthDef Engine',
     description: 'Design your own synthesizers using SuperCollider UGens directly in code. From simple sine waves to complex FM beasts.',
@@ -34,10 +40,16 @@ const features = [
     tag: 'Samples'
   },
   {
+    icon: '<>',
+    title: 'MIDI Output',
+    description: 'Control external hardware synths, drum machines, and DAWs. Send notes, CCs, and clock sync to any MIDI device.',
+    tag: 'Hardware'
+  },
+  {
     icon: '||',
-    title: 'Bus Mixing',
-    description: 'Group instruments, apply effects, route audio. Professional mixing workflow with reverb, delay, compression, and more.',
-    tag: 'Effects'
+    title: 'Groups & Mixing',
+    description: 'Organize voices into hierarchical groups. Apply effects per-group, control gain and pan. Professional mixing workflow.',
+    tag: 'Mixing'
   }
 ];
 
@@ -82,12 +94,36 @@ define_synthdef("my_bass")
     .param("gate", 1.0)
     .body(|freq, amp, gate| {
         let osc = saw_ar(freq) + saw_ar(freq * 0.5);
-        let env = env_adsr(0.01, 0.1, 0.7, 0.3);
-        let envGen = NewEnvGenBuilder(env, gate)
-            .with_done_action(2.0)
-            .build();
-        rlpf_ar(osc, 800.0, 0.2) * envGen * amp
+        let env = envelope().adsr(0.01, 0.1, 0.7, 0.3)
+            .gate(gate).cleanup_on_finish().build();
+        rlpf_ar(osc, 800.0, 0.2) * env * amp
     });`)}</code></pre>
+          </div>
+        </div>
+
+        <div className="features__highlight features__highlight--reverse">
+          <div className="features__highlight-code">
+            <pre><code>{highlightCode(`# REST API for external control
+curl -X POST localhost:3000/transport/play
+
+# Get all voices
+curl localhost:3000/voices
+
+# Update a parameter in real-time
+curl -X PUT localhost:3000/voices/bass/params/cutoff \\
+  -d '{"value": 800}'
+
+# WebSocket for live updates
+wscat -c ws://localhost:3000/ws`)}</code></pre>
+          </div>
+          <div className="features__highlight-content">
+            <span className="features__highlight-label">REST API & WebSocket</span>
+            <h3>Programmatic control • Live integration • Build tools</h3>
+            <p>
+              Full HTTP REST API and WebSocket support. Control playback,
+              update parameters, and sync state with external tools.
+              Build custom UIs, integrate with OSC controllers, or automate your workflow.
+            </p>
           </div>
         </div>
       </div>

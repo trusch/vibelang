@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use rhai::FnPtr;
 use vibelang_core2::reload::ScriptState;
 use vibelang_core2::types::{
-    EffectId, GroupId, MelodyId, PatternId, RecordingId, SampleId, SequenceId, SfzId, VoiceId,
+    EffectId, GroupId, MelodyId, ModulatorId, PatternId, RecordingId, SampleId, SequenceId, SfzId, VoiceId,
 };
 
 /// Macro to generate get_or_create_*_id and get_*_id functions.
@@ -83,6 +83,7 @@ struct ScriptContext {
     next_sample_id: u32,
     next_sfz_id: u32,
     next_recording_id: u32,
+    next_modulator_id: u32,
     /// Counter for MIDI callback IDs.
     #[cfg(feature = "midi")]
     next_callback_id: u64,
@@ -97,6 +98,7 @@ struct ScriptContext {
     sample_ids: HashMap<String, SampleId>,
     sfz_ids: HashMap<String, SfzId>,
     recording_ids: HashMap<String, RecordingId>,
+    modulator_ids: HashMap<String, ModulatorId>,
 
     /// MIDI callback FnPtr storage (callback_id -> FnPtr).
     #[cfg(feature = "midi")]
@@ -119,6 +121,7 @@ impl Default for ScriptContext {
             next_sample_id: 1,
             next_sfz_id: 1,
             next_recording_id: 1,
+            next_modulator_id: 1,
             #[cfg(feature = "midi")]
             next_callback_id: 1,
             group_ids: HashMap::new(),
@@ -130,6 +133,7 @@ impl Default for ScriptContext {
             sample_ids: HashMap::new(),
             sfz_ids: HashMap::new(),
             recording_ids: HashMap::new(),
+            modulator_ids: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_callbacks: HashMap::new(),
         }
@@ -218,12 +222,80 @@ pub fn set_import_paths(paths: Vec<PathBuf>) {
 }
 
 // Generate ID accessor functions using the macro
-define_id_accessors!(
-    get_or_create_group_id, get_group_id, GroupId,
-    next_group_id, group_ids,
-    "Get or create a group ID by name.",
-    "Get a group ID by name (if it exists)."
-);
+// Note: Groups have a specialized implementation that also creates GroupConfig
+
+/// Get or create a group ID by name.
+///
+/// This also ensures the GroupConfig exists in the ScriptState.
+/// This is important for implicit groups like "main" that are referenced
+/// but not explicitly defined via define_group().
+pub fn get_or_create_group_id(name: &str) -> GroupId {
+    use vibelang_core2::reload::GroupConfig;
+
+    CONTEXT.with(|ctx| {
+        let mut borrow = ctx.borrow_mut();
+        let c = borrow.as_mut().expect("Script context not initialized");
+
+        let group_id = if let Some(&id) = c.group_ids.get(name) {
+            id
+        } else {
+            let id = GroupId::new(c.next_group_id);
+            c.next_group_id += 1;
+            c.group_ids.insert(name.to_string(), id);
+            id
+        };
+
+        // Ensure the group config exists (important for implicit groups like "main")
+        if !c.state.groups.contains_key(&group_id) {
+            // Determine parent from path (e.g., "main/Drums" -> parent is "main")
+            let parent_id = if name.contains('/') {
+                let parts: Vec<&str> = name.rsplitn(2, '/').collect();
+                if parts.len() > 1 {
+                    let parent_path = parts[1];
+                    Some(get_or_create_group_id_inner(c, parent_path))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let config = GroupConfig {
+                name: name.split('/').last().unwrap_or(name).to_string(),
+                parent: parent_id,
+                params: Default::default(),
+                effects: Vec::new(),
+                muted: false,
+                soloed: false,
+            };
+            c.state.groups.insert(group_id, config);
+        }
+
+        group_id
+    })
+}
+
+/// Internal helper to get or create group ID without triggering GroupConfig creation.
+/// Used to avoid infinite recursion when setting up parent groups.
+fn get_or_create_group_id_inner(c: &mut ScriptContext, name: &str) -> GroupId {
+    if let Some(&id) = c.group_ids.get(name) {
+        id
+    } else {
+        let id = GroupId::new(c.next_group_id);
+        c.next_group_id += 1;
+        c.group_ids.insert(name.to_string(), id);
+        id
+    }
+}
+
+/// Get a group ID by name (if it exists).
+pub fn get_group_id(name: &str) -> Option<GroupId> {
+    CONTEXT.with(|ctx| {
+        ctx.borrow()
+            .as_ref()
+            .and_then(|c| c.group_ids.get(name).copied())
+    })
+}
 
 define_id_accessors!(
     get_or_create_voice_id, get_voice_id, VoiceId,
@@ -279,6 +351,13 @@ define_id_accessors!(
     next_recording_id, recording_ids,
     "Get or create a recording ID by name.",
     "Get a recording ID by name (if it exists)."
+);
+
+define_id_accessors!(
+    get_or_create_modulator_id, get_modulator_id, ModulatorId,
+    next_modulator_id, modulator_ids,
+    "Get or create a modulator ID by name.",
+    "Get a modulator ID by name (if it exists)."
 );
 
 /// Access the script state mutably.

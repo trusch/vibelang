@@ -110,6 +110,37 @@ kick.trigger(#{ freq: 55.0 });`
       example: `piano.note_on("C4", 0.8);
 sleep(500);
 piano.note_off("C4");`
+    },
+    {
+      name: '.on (MIDI)',
+      signature: '.on(midi_device)',
+      description: 'Route this voice to an external MIDI device. Notes and parameter changes will be sent as MIDI messages.',
+      params: [{ name: 'midi_device', type: 'MidiDevice', description: 'MIDI output device' }],
+      example: `let midi_out = midi_device("synth").output("My Synth");
+voice("hw_synth").on(midi_out).channel(0);`
+    },
+    {
+      name: '.channel',
+      signature: '.channel(ch)',
+      description: 'Set the MIDI channel (0-15) for a MIDI output voice.',
+      params: [{ name: 'ch', type: 'i64', description: 'MIDI channel (0-15)' }],
+      example: 'voice("hw_synth").on(midi_out).channel(0);'
+    },
+    {
+      name: '.cc_map',
+      signature: '.cc_map(param, cc)',
+      description: 'Map a voice parameter to a MIDI CC number. When the parameter changes, the value is sent as MIDI CC to the output device. Use with .on(midi_device) for hardware synth control.',
+      params: [
+        { name: 'param', type: 'String', description: 'Parameter name (e.g., "cutoff")' },
+        { name: 'cc', type: 'i64', description: 'MIDI CC number (0-127)' }
+      ],
+      example: `// Hardware synth with CC mappings
+let hw = voice("hw_synth")
+    .on(midi_out)
+    .channel(0)
+    .cc_map("cutoff", 74)
+    .cc_map("resonance", 71)
+    .apply();`
     }
   ],
   'Pattern': [
@@ -240,7 +271,7 @@ group("drums").add_effect("verb", "reverb", #{ mix: 0.2 });`
       example: `define_group("drums", || {
     voice("kick").synth("kick_808");
     voice("snare").synth("snare_909");
-    fx("comp").synth("compressor").param("ratio", 4.0);
+    fx("comp").synth("compressor").param("ratio", 4.0).apply();
 });`
     },
     {
@@ -492,6 +523,92 @@ let my_fade = fade("later").on_group("synths").param("cutoff").to(8000.0).over_b
 sequence("song").clip(bars(2)..bars(6), my_fade).start();`
     }
   ],
+  'Modulator': [
+    {
+      name: 'modulator',
+      signature: 'modulator(name) -> Modulator',
+      description: 'Create a modulator instance for real-time parameter modulation. Modulators run on control buses and can modulate any synth parameter continuously.',
+      params: [{ name: 'name', type: 'String', description: 'Unique identifier for this modulator' }],
+      example: `// Create a filter sweep LFO
+let filter_lfo = modulator("filter_lfo")
+    .synth("lfo_tri")       // Triangle wave LFO
+    .param("rate", 0.25)    // 4-second cycle
+    .param("lo", 100.0)     // Min cutoff
+    .param("hi", 4000.0)    // Max cutoff
+    .apply();`
+    },
+    {
+      name: '.synth',
+      signature: '.synth(name) -> Modulator',
+      description: 'Set the modulator synthdef. Use stdlib modulators (lfo_sine, lfo_tri, lfo_saw, lfo_square, lfo_random, envelope_follower) or define custom ones.',
+      params: [{ name: 'name', type: 'String', description: 'Modulator synthdef name' }],
+      example: `modulator("wobble").synth("lfo_sine");
+modulator("tremolo").synth("lfo_square");
+modulator("sweep").synth("lfo_saw");`
+    },
+    {
+      name: '.param',
+      signature: '.param(name, value) -> Modulator',
+      description: 'Set a modulator parameter. Common params: rate (Hz), lo (min output), hi (max output), phase (starting phase 0-1).',
+      params: [
+        { name: 'name', type: 'String', description: 'Parameter name' },
+        { name: 'value', type: 'f64', description: 'Parameter value' }
+      ],
+      example: `modulator("vibrato")
+    .synth("lfo_sine")
+    .param("rate", 5.0)     // 5 Hz vibrato
+    .param("lo", -0.02)     // -2 cents
+    .param("hi", 0.02);     // +2 cents`
+    },
+    {
+      name: '.apply',
+      signature: '.apply() -> Modulator',
+      description: 'Apply the modulator configuration and create it on a control bus. Returns the handle for use with .modulate().',
+      params: [],
+      example: `let lfo = modulator("lfo")
+    .synth("lfo_tri")
+    .param("rate", 0.5)
+    .apply();`
+    },
+    {
+      name: '.modulate',
+      signature: '.modulate(param, modulator) -> Voice',
+      description: 'Connect a modulator to a voice parameter. The parameter will be continuously controlled by the modulator output.',
+      params: [
+        { name: 'param', type: 'String', description: 'Parameter name to modulate' },
+        { name: 'modulator', type: 'Modulator', description: 'The modulator to connect' }
+      ],
+      example: `// Create modulator
+let filter_lfo = modulator("filter_lfo")
+    .synth("lfo_tri")
+    .param("rate", 0.25)
+    .param("lo", 100.0)
+    .param("hi", 4000.0)
+    .apply();
+
+// Connect to voice
+voice("bass")
+    .synth("moog_bass")
+    .modulate("cutoff", filter_lfo)
+    .apply();`
+    },
+    {
+      name: 'define_modulator',
+      signature: 'define_modulator(name) -> ModulatorDef',
+      description: 'Define a custom control-rate modulator synthdef. The body should return a control-rate signal that outputs to a control bus.',
+      params: [{ name: 'name', type: 'String', description: 'Unique modulator synthdef name' }],
+      example: `// Custom triangle LFO
+define_modulator("my_lfo")
+    .param("rate", 1.0)
+    .param("lo", 0.0)
+    .param("hi", 1.0)
+    .body(|rate, lo, hi| {
+        let osc = lf_tri_kr(rate);
+        let normalized = osc * 0.5 + 0.5;
+        normalized * (hi - lo) + lo
+    });`
+    }
+  ],
   'SynthDef': [
     {
       name: 'define_synthdef',
@@ -501,12 +618,52 @@ sequence("song").clip(bars(2)..bars(6), my_fade).start();`
       example: `define_synthdef("my_bass")
     .param("freq", 110.0)
     .param("amp", 0.5)
-    .body(|freq, amp| {
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
         let osc = saw_ar(freq);
         let filt = lpf_ar(osc, 800.0);
-        let env = env_perc(0.01, 0.3);
-        filt * env_gen_ar(env) * amp
+        // Use the fluent envelope builder
+        let env = envelope()
+            .perc(0.01, 0.3)
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        filt * env * amp
     });`
+    },
+    {
+      name: 'envelope',
+      signature: 'envelope() -> EnvelopeBuilder',
+      description: 'Create an envelope using the fluent builder API. Supports perc (percussive), asr (attack-sustain-release), and adsr shapes. Defaults to a constant gate if none specified.',
+      params: [],
+      example: `// Percussive envelope (drums, plucks, piano)
+let env = envelope()
+    .perc(0.01, 0.5)        // attack, release
+    .cleanup_on_finish()
+    .build();
+
+// ASR envelope (pads, brass, sustained sounds)
+let env = envelope()
+    .asr(0.1, 0.8, 0.3)     // attack, sustain_level, release
+    .gate(gate)
+    .cleanup_on_finish()
+    .build();
+
+// Full ADSR envelope
+let env = envelope()
+    .adsr(0.01, 0.1, 0.7, 0.2)  // attack, decay, sustain, release
+    .gate(gate)
+    .cleanup_on_finish()
+    .build();
+
+// With time_scale for pitch-dependent decay
+let decay_time = 2.0 + (1.0 / (freq / 100.0));
+let env = envelope()
+    .perc(0.001, 1.0)
+    .gate(gate)
+    .time_scale(decay_time)  // lower notes decay longer
+    .cleanup_on_finish()
+    .build();`
     },
     {
       name: 'define_fx',
@@ -593,6 +750,8 @@ const categoryDescriptions = {
   'Sequence': `Sequences are timeline arrangers for structuring your music. They combine patterns, melodies, fades, and even other sequences into time-based arrangements. Use clips to place elements at specific bar positions, creating verse/chorus structures or complex arrangements. Sequences can loop or play once, making them perfect for both live performance and composition.`,
 
   'Fade': `Fades provide smooth parameter automation over time. Use them to create filter sweeps, volume swells, effect wet/dry transitions, or any gradual change. Fades can target voices, groups, or effects, and can be started immediately or placed in sequences for precise timing. The builder API lets you specify start value, end value, and duration in beats or bars.`,
+
+  'Modulator': `Modulators provide real-time continuous parameter control using LFOs, envelope followers, and other control-rate signals. Unlike fades which are one-shot automations, modulators run continuously and can create evolving, organic textures. Connect modulators to voice parameters like filter cutoff, oscillator pitch, or amplitude to add movement and life to static sounds. The standard library includes sine, triangle, saw, square, and random LFOs, plus an envelope follower for dynamics-based modulation.`,
 
   'SynthDef': `SynthDefs let you create custom synthesizers and effects at the DSP level. Using VibeLang's UGen library (oscillators, filters, envelopes, and more), you can build anything from simple sine waves to complex FM synthesizers. Effects process input signals and can be added to groups. The standard library includes many ready-to-use synthdefs, but defining your own unlocks unlimited sonic possibilities.`,
 

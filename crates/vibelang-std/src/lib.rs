@@ -158,6 +158,7 @@ pub const CATEGORIES: &[&str] = &[
     "effects",
     "fx",
     "theory",
+    "modulators",
 ];
 
 /// Get the embedded stdlib directory for direct access.
@@ -165,6 +166,36 @@ pub const CATEGORIES: &[&str] = &[
 /// This can be used to list files or read content without extracting.
 pub fn embedded_stdlib() -> &'static Dir<'static> {
     &STDLIB_DIR
+}
+
+/// Get all stdlib files as a HashMap of path -> content.
+///
+/// This is useful for WASM where filesystem access is not available.
+/// The paths are relative to the stdlib root (e.g., "drums/kicks/kick_808.vibe").
+pub fn get_stdlib_files() -> std::collections::HashMap<String, String> {
+    let mut files = std::collections::HashMap::new();
+    collect_files_recursive(&STDLIB_DIR, &mut files);
+    files
+}
+
+/// Recursively collect all files from a directory.
+fn collect_files_recursive(dir: &Dir, files: &mut std::collections::HashMap<String, String>) {
+    // Collect files in this directory
+    for file in dir.files() {
+        if let Some(path) = file.path().to_str() {
+            // Only include .vibe files
+            if path.ends_with(".vibe") {
+                if let Some(content) = file.contents_utf8() {
+                    files.insert(path.to_string(), content.to_string());
+                }
+            }
+        }
+    }
+
+    // Recursively collect from subdirectories
+    for subdir in dir.dirs() {
+        collect_files_recursive(subdir, files);
+    }
 }
 
 #[cfg(test)]
@@ -182,5 +213,15 @@ mod tests {
         let dir = embedded_stdlib();
         // Should have at least some files
         assert!(dir.files().count() > 0 || dir.dirs().count() > 0);
+    }
+
+    #[test]
+    fn test_get_stdlib_files_paths() {
+        let files = get_stdlib_files();
+        println!("Found {} stdlib files:", files.len());
+        for path in files.keys().take(20) {
+            println!("  - {}", path);
+        }
+        assert!(!files.is_empty(), "Should have stdlib files");
     }
 }

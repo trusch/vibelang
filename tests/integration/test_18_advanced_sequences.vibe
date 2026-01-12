@@ -1,0 +1,566 @@
+// Integration Test 18: Advanced Sequences
+// Tests: Complex sequence arrangements and clip management
+//
+// This test verifies:
+// - Sequence creation and loop configuration
+// - Pattern clips
+// - Melody clips
+// - Fade clips
+// - Nested sequence clips
+// - Sequence playback controls
+// - Complex arrangements
+
+test_start("advanced_sequences");
+
+set_tempo(120);
+set_time_signature(4, 4);
+
+// =============================================================================
+// Test 1: Basic Synthdef
+// =============================================================================
+
+define_synthdef("seq_test")
+    .param("freq", 440.0)
+    .param("amp", 0.2)
+    .param("gate", 1.0)
+    .param("decay", 0.1)
+    .body(|freq, amp, gate, decay| {
+        let env = envelope()
+            .perc("1ms", decay)
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        sin_osc_ar(freq) * env * amp
+    });
+
+// =============================================================================
+// Test 2: Basic Sequence Creation
+// =============================================================================
+
+// Create an empty sequence
+let empty_seq = sequence("empty");
+assert_eq(empty_seq.name, "empty", "sequence name should match");
+assert_true(true, "empty sequence created");
+
+// Multiple sequences
+let seq_a = sequence("seq_a");
+let seq_b = sequence("seq_b");
+let seq_c = sequence("seq_c");
+assert_true(true, "multiple sequences created");
+
+// =============================================================================
+// Test 3: Loop Length Configuration - Bars
+// =============================================================================
+
+let bars_seq = sequence("bars_seq")
+    .loop_bars(4);
+assert_true(true, "4 bar sequence configured");
+
+// Various bar lengths
+let seq_1bar = sequence("seq_1bar").loop_bars(1);
+let seq_8bars = sequence("seq_8bars").loop_bars(8);
+let seq_16bars = sequence("seq_16bars").loop_bars(16);
+let seq_32bars = sequence("seq_32bars").loop_bars(32);
+assert_true(true, "various bar length sequences configured");
+
+// Fractional bars
+let seq_half_bar = sequence("seq_half").loop_bars(0.5);
+let seq_frac = sequence("seq_frac").loop_bars(2.5);
+assert_true(true, "fractional bar sequences configured");
+
+// =============================================================================
+// Test 4: Loop Length Configuration - Beats
+// =============================================================================
+
+let beats_seq = sequence("beats_seq")
+    .loop_beats(16.0);
+assert_true(true, "16 beat sequence configured");
+
+// Various beat lengths
+let seq_4beats = sequence("seq_4beats").loop_beats(4.0);
+let seq_12beats = sequence("seq_12beats").loop_beats(12.0);
+let seq_32beats = sequence("seq_32beats").loop_beats(32.0);
+assert_true(true, "various beat length sequences configured");
+
+// =============================================================================
+// Test 5: Pattern Clips
+// =============================================================================
+
+define_group("PatternClipGroup", || {
+    let v = voice("pc_voice").synth("seq_test").gain(db(-18));
+
+    // Create patterns
+    let p1 = pattern("clip_pattern1")
+        .on(v)
+        .step("x... x... x... x...")
+        .apply();
+
+    let p2 = pattern("clip_pattern2")
+        .on(v)
+        .step("..x. ..x. ..x. ..x.")
+        .apply();
+
+    let p3 = pattern("clip_pattern3")
+        .on(v)
+        .step("x.x. x.x. x.x. x.x.")
+        .apply();
+
+    // Sequence with pattern clips
+    let pattern_seq = sequence("pattern_clips")
+        .loop_bars(12)
+        .clip(0..4, p1)
+        .clip(4..8, p2)
+        .clip(8..12, p3)
+        .apply();
+
+    assert_true(true, "sequence with pattern clips configured");
+});
+
+// =============================================================================
+// Test 6: Melody Clips
+// =============================================================================
+
+define_group("MelodyClipGroup", || {
+    let v = voice("mc_voice").synth("seq_test").gain(db(-18)).poly(4);
+
+    // Create melodies
+    let m1 = melody("clip_melody1")
+        .on(v)
+        .notes("C4 E4 G4 C5")
+        .apply();
+
+    let m2 = melody("clip_melody2")
+        .on(v)
+        .notes("D4 F4 A4 D5")
+        .apply();
+
+    let m3 = melody("clip_melody3")
+        .on(v)
+        .notes("E4 G4 B4 E5")
+        .apply();
+
+    // Sequence with melody clips
+    let melody_seq = sequence("melody_clips")
+        .loop_bars(12)
+        .clip(0..4, m1)
+        .clip(4..8, m2)
+        .clip(8..12, m3)
+        .apply();
+
+    assert_true(true, "sequence with melody clips configured");
+});
+
+// =============================================================================
+// Test 7: Fade Clips
+// =============================================================================
+
+define_group("FadeClipGroup", || {
+    let v = voice("fc_voice").synth("seq_test").gain(db(-18));
+
+    let p = pattern("fc_pattern")
+        .on(v)
+        .step("x... x... x... x...")
+        .apply();
+
+    // Create fades
+    let fade_in = fade("seq_fade_in")
+        .on_voice("fc_voice")
+        .param("amp")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(2);
+
+    let fade_out = fade("seq_fade_out")
+        .on_voice("fc_voice")
+        .param("amp")
+        .from(1.0)
+        .to(0.0)
+        .over_bars(2);
+
+    // Sequence with fade clips
+    let fade_seq = sequence("fade_clips")
+        .loop_bars(8)
+        .clip(0..8, p)
+        .clip(0..2, fade_in)
+        .clip(6..8, fade_out)
+        .apply();
+
+    assert_true(true, "sequence with fade clips configured");
+});
+
+// =============================================================================
+// Test 8: Mixed Clip Types
+// =============================================================================
+
+define_group("MixedClipGroup", || {
+    let v = voice("mixed_voice").synth("seq_test").gain(db(-18)).poly(4);
+
+    // Pattern
+    let p = pattern("mixed_pattern")
+        .on(v)
+        .step("x... x... x... x...")
+        .apply();
+
+    // Melody
+    let m = melody("mixed_melody")
+        .on(v)
+        .notes("C4 D4 E4 F4")
+        .apply();
+
+    // Fade
+    let f = fade("mixed_fade")
+        .on_voice("mixed_voice")
+        .from(0.5)
+        .to(1.0)
+        .over_bars(4);
+
+    // Sequence with mixed clip types
+    let mixed_seq = sequence("mixed_clips")
+        .loop_bars(16)
+        .clip(0..4, p)
+        .clip(4..8, m)
+        .clip(8..12, p)
+        .clip(12..16, m)
+        .clip(0..4, f)
+        .apply();
+
+    assert_true(true, "sequence with mixed clip types configured");
+});
+
+// =============================================================================
+// Test 9: Nested Sequences
+// =============================================================================
+
+define_group("NestedSequenceGroup", || {
+    let v = voice("nested_voice").synth("seq_test").gain(db(-18));
+
+    let p1 = pattern("nested_p1")
+        .on(v)
+        .step("x... .... x... ....")
+        .apply();
+
+    let p2 = pattern("nested_p2")
+        .on(v)
+        .step(".... x... .... x...")
+        .apply();
+
+    // Child sequence 1
+    let child1 = sequence("child_seq1")
+        .loop_bars(4)
+        .clip(0..4, p1)
+        .apply();
+
+    // Child sequence 2
+    let child2 = sequence("child_seq2")
+        .loop_bars(4)
+        .clip(0..4, p2)
+        .apply();
+
+    // Parent sequence containing nested sequences
+    let parent = sequence("parent_seq")
+        .loop_bars(16)
+        .clip(0..4, child1)
+        .clip(4..8, child2)
+        .clip(8..12, child1)
+        .clip(12..16, child2)
+        .apply();
+
+    assert_true(true, "nested sequences configured");
+});
+
+// =============================================================================
+// Test 10: Overlapping Clips
+// =============================================================================
+
+define_group("OverlapClipGroup", || {
+    let v1 = voice("overlap_v1").synth("seq_test").gain(db(-18)).param("freq", 220.0);
+    let v2 = voice("overlap_v2").synth("seq_test").gain(db(-18)).param("freq", 330.0);
+    let v3 = voice("overlap_v3").synth("seq_test").gain(db(-18)).param("freq", 440.0);
+
+    let p1 = pattern("overlap_p1").on(v1).step("x... x... x... x...").apply();
+    let p2 = pattern("overlap_p2").on(v2).step("..x. ..x. ..x. ..x.").apply();
+    let p3 = pattern("overlap_p3").on(v3).step(".x.. .x.. .x.. .x..").apply();
+
+    // Sequence with overlapping clips
+    let overlap_seq = sequence("overlapping_clips")
+        .loop_bars(8)
+        .clip(0..8, p1)       // Full length
+        .clip(2..6, p2)       // Middle overlap
+        .clip(4..8, p3)       // End overlap
+        .apply();
+
+    assert_true(true, "overlapping clips configured");
+});
+
+// =============================================================================
+// Test 11: Sequence Playback Controls
+// =============================================================================
+
+define_group("PlaybackControlGroup", || {
+    let v = voice("playback_voice").synth("seq_test").gain(db(-18));
+
+    let p = pattern("playback_pattern")
+        .on(v)
+        .step("x... x... x... x...")
+        .apply();
+
+    let seq = sequence("playback_seq")
+        .loop_bars(4)
+        .clip(0..4, p)
+        .apply();
+
+    // Test is_playing (should be false initially)
+    assert_eq(seq.is_playing(), false, "sequence should not be playing initially");
+
+    // Test start
+    seq.start();
+    assert_eq(seq.is_playing(), true, "sequence should be playing after start");
+
+    // Test stop
+    seq.stop();
+    assert_eq(seq.is_playing(), false, "sequence should not be playing after stop");
+
+    // Test launch (quantized start)
+    seq.launch();
+    assert_eq(seq.is_playing(), true, "sequence should be playing after launch");
+
+    // Stop again
+    seq.stop();
+
+    assert_true(true, "playback controls work");
+});
+
+// =============================================================================
+// Test 12: Sequence Registry
+// =============================================================================
+
+// Create and apply a sequence
+let registry_seq = sequence("registry_test")
+    .loop_bars(4)
+    .apply();
+
+// Retrieve same sequence by name
+let retrieved = sequence("registry_test");
+assert_eq(retrieved.name, "registry_test", "retrieved sequence name should match");
+
+assert_true(true, "sequence registry works");
+
+// =============================================================================
+// Test 13: Complex Arrangement
+// =============================================================================
+
+define_group("ArrangementGroup", || {
+    // Multiple voices
+    let kick = voice("arr_kick").synth("seq_test").gain(db(-16)).param("freq", 60.0).param("decay", 0.3);
+    let snare = voice("arr_snare").synth("seq_test").gain(db(-18)).param("freq", 180.0).param("decay", 0.1);
+    let hat = voice("arr_hat").synth("seq_test").gain(db(-20)).param("freq", 8000.0).param("decay", 0.02);
+    let bass = voice("arr_bass").synth("seq_test").gain(db(-18)).param("decay", 0.15).poly(4);
+
+    // Drum patterns
+    let kick_p = pattern("arr_kick_p").on(kick).step("x... x... x... x...").apply();
+    let snare_p = pattern("arr_snare_p").on(snare).step(".... x... .... x...").apply();
+    let hat_p = pattern("arr_hat_p").on(hat).step("x.x. x.x. x.x. x.x.").apply();
+
+    // Bass melody
+    let bass_m = melody("arr_bass_m")
+        .on(bass)
+        .notes("C2 C2 G2 G2")
+        .apply();
+
+    // Build arrangement
+    let arrangement = sequence("full_arrangement")
+        .loop_bars(32)
+        // Intro: just hats (bars 0-4)
+        .clip(0..16, hat_p)
+        // Build: add kick (bars 4-8)
+        .clip(16..32, kick_p)
+        // Full: add snare and bass (bars 8-24)
+        .clip(32..96, kick_p)
+        .clip(32..96, snare_p)
+        .clip(32..96, hat_p)
+        .clip(32..96, bass_m)
+        // Outro: just kick and hat (bars 24-32)
+        .clip(96..128, kick_p)
+        .clip(96..128, hat_p)
+        .apply();
+
+    assert_true(true, "complex arrangement configured");
+});
+
+// =============================================================================
+// Test 14: Song Structure
+// =============================================================================
+
+define_group("SongStructure", || {
+    let v = voice("song_voice").synth("seq_test").gain(db(-18)).poly(4);
+
+    // Verse pattern
+    let verse_p = pattern("verse_pattern")
+        .on(v)
+        .step("x... ..x. x... ..x.")
+        .apply();
+
+    // Chorus pattern
+    let chorus_p = pattern("chorus_pattern")
+        .on(v)
+        .step("x.x. x.x. x.x. x.x.")
+        .apply();
+
+    // Bridge pattern
+    let bridge_p = pattern("bridge_pattern")
+        .on(v)
+        .step("x... .... x... ....")
+        .apply();
+
+    // Verse melody
+    let verse_m = melody("verse_melody")
+        .on(v)
+        .notes("C4 D4 E4 D4")
+        .apply();
+
+    // Chorus melody
+    let chorus_m = melody("chorus_melody")
+        .on(v)
+        .notes("G4 A4 B4 G4")
+        .apply();
+
+    // Build sections as sequences
+    let verse = sequence("verse")
+        .loop_bars(8)
+        .clip(0..32, verse_p)
+        .clip(0..32, verse_m)
+        .apply();
+
+    let chorus = sequence("chorus")
+        .loop_bars(8)
+        .clip(0..32, chorus_p)
+        .clip(0..32, chorus_m)
+        .apply();
+
+    let bridge = sequence("bridge")
+        .loop_bars(4)
+        .clip(0..16, bridge_p)
+        .apply();
+
+    // Full song structure: Verse - Chorus - Verse - Bridge - Chorus - Chorus
+    let song = sequence("full_song")
+        .loop_bars(44)
+        .clip(0..8, verse)      // Verse 1
+        .clip(8..16, chorus)    // Chorus 1
+        .clip(16..24, verse)    // Verse 2
+        .clip(24..28, bridge)   // Bridge
+        .clip(28..36, chorus)   // Chorus 2
+        .clip(36..44, chorus)   // Chorus 3 (final)
+        .apply();
+
+    assert_true(true, "song structure configured");
+});
+
+// =============================================================================
+// Test 15: Time Signature Changes
+// =============================================================================
+
+// Sequence in 4/4
+set_time_signature(4, 4);
+let seq_44 = sequence("seq_in_44")
+    .loop_bars(4)
+    .apply();
+assert_true(true, "sequence in 4/4 time");
+
+// Sequence in 3/4
+set_time_signature(3, 4);
+let seq_34 = sequence("seq_in_34")
+    .loop_bars(4)
+    .apply();
+assert_true(true, "sequence in 3/4 time");
+
+// Sequence in 6/8
+set_time_signature(6, 8);
+let seq_68 = sequence("seq_in_68")
+    .loop_bars(4)
+    .apply();
+assert_true(true, "sequence in 6/8 time");
+
+// Reset
+set_time_signature(4, 4);
+
+// =============================================================================
+// Test 16: Long Form Sequences
+// =============================================================================
+
+define_group("LongFormGroup", || {
+    let v = voice("long_voice").synth("seq_test").gain(db(-18));
+
+    let p = pattern("long_pattern")
+        .on(v)
+        .step("x... x... x... x...")
+        .apply();
+
+    // Very long sequence (8 minutes at 120 BPM)
+    let long_seq = sequence("long_sequence")
+        .loop_bars(240)  // 240 bars = ~8 minutes at 120 BPM
+        .clip(0..960, p)
+        .apply();
+
+    assert_true(true, "very long sequence configured");
+});
+
+// =============================================================================
+// Test 17: Empty Sections (Silence)
+// =============================================================================
+
+define_group("SilenceGroup", || {
+    let v = voice("silence_voice").synth("seq_test").gain(db(-18));
+
+    let p = pattern("silence_pattern")
+        .on(v)
+        .step("x... x... x... x...")
+        .apply();
+
+    // Sequence with empty sections (silence)
+    let silence_seq = sequence("silence_sequence")
+        .loop_bars(16)
+        .clip(0..4, p)     // Sound
+        // bars 4-8: silence (no clip)
+        .clip(8..12, p)    // Sound
+        // bars 12-16: silence (no clip)
+        .apply();
+
+    assert_true(true, "sequence with silent sections configured");
+});
+
+// =============================================================================
+// Test 18: Builder Method Chaining
+// =============================================================================
+
+define_group("ChainGroup", || {
+    let v = voice("chain_voice").synth("seq_test").gain(db(-18));
+
+    let p = pattern("chain_pattern")
+        .on(v)
+        .step("x... x... x... x...")
+        .apply();
+
+    // All methods should be chainable
+    let chained = sequence("chain_test")
+        .loop_bars(4)
+        .clip(0..16, p)
+        .apply();
+
+    // Property access
+    let name = chained.name;
+    assert_eq(name, "chain_test", "sequence name accessible");
+
+    assert_true(true, "all sequence builder methods are chainable");
+});
+
+// =============================================================================
+// Test 19: Sequence Name Property
+// =============================================================================
+
+let named_seq = sequence("test_name_access");
+assert_eq(named_seq.name, "test_name_access", "sequence name property accessible");
+
+assert_true(true, "sequence name property works");
+
+test_end_and_exit();

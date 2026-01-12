@@ -1,0 +1,102 @@
+// Tutorial: Modulators (LFOs and Envelope Followers)
+// Difficulty: intermediate | Duration: 5 min
+// Description: Add dynamic movement with control-rate modulation.
+
+// Modulators are control-rate signal generators that dynamically
+// change voice parameters over time. Think LFOs, envelope followers,
+// and other modulation sources - the secret to "alive" sounding music!
+
+set_tempo(120);
+
+// ============================================================
+// MODULATOR API
+// ============================================================
+//
+// modulator("my_lfo")           // Name your modulator
+//   .synth("lfo_sine")          // Choose the modulator type
+//   .param("rate", 2.0)         // Speed in Hz
+//   .param("lo", 200.0)         // Minimum output value
+//   .param("hi", 2000.0)        // Maximum output value
+//   .apply();
+//
+// voice("name")
+//   .on("my_synth")
+//   .modulate("cutoff", my_lfo)  // Connect modulator to param
+//   .apply();
+
+// ============================================================
+// EXAMPLE: Filter Sweep with Triangle LFO
+// ============================================================
+// Classic sweeping filter cutoff for that synth movement
+
+// First, define a triangle LFO modulator synthdef
+// Note: We use basic math instead of lin_lin_kr for portability
+define_modulator("lfo_tri")
+    .param("rate", 1.0)
+    .param("lo", 0.0)
+    .param("hi", 1.0)
+    .body(|rate, lo, hi| {
+    let osc = lf_tri_kr(rate); // Triangle wave LFO (-1 to 1)
+    let normalized = osc * 0.5 + 0.5; // Map to [0, 1]
+    normalized * (hi - lo) + lo // Map to [lo, hi]
+});
+
+
+
+// Define a synth with a filter cutoff parameter
+define_synthdef("sweep_synth")
+    .param("freq", 55.0)
+    .param("amp", 0.6)
+    .param("gate", 1.0)
+    .param("cutoff", 100.0) // This gets modulated by the LFO
+    .body(|freq, amp, gate, cutoff| {
+    let osc = saw_ar(freq) + saw_ar(freq * 2.01) * 0.5;
+    let filt = rlpf_ar(osc, cutoff, 0.3);
+    let env = envelope()
+        .adsr(0.01, 0.1, 0.8, 0.3)
+        .gate(gate)
+        .cleanup_on_finish()
+        .build();
+    filt * env * amp
+});
+
+// Create a slow triangle LFO for smooth up/down filter sweep
+let filter_lfo = modulator("filter_lfo")
+    .synth("lfo_tri")
+    .param("rate", 2.) // 1 seconds per cycle
+    .param("lo", 800.0) // Dark (300 Hz cutoff)
+    .param("hi", 3000.0) // Bright (3000 Hz cutoff)
+    .apply();
+    
+// Create voice and connect the modulator
+let bass = voice("bass")
+    .on("sweep_synth")
+    .modulate("cutoff", filter_lfo) // LFO controls filter cutoff
+    .gain(db(-6))
+    .apply();
+
+// Play a sustained bass note to hear the sweep
+melody("bass_line")
+    .on(bass)
+    .notes("E1 - - - - - - - | E2 - - - - - - -")
+    .gate(0.95)
+    .start();
+
+// ============================================================
+// AVAILABLE MODULATOR TYPES:
+//
+// You can define your own modulators using define_modulator()
+// with control-rate UGens like:
+//   sin_osc_kr   - Sine wave
+//   lf_tri_kr    - Triangle wave
+//   lf_saw_kr    - Sawtooth wave
+//   lf_pulse_kr  - Square/pulse wave
+//   lf_noise0_kr - Step random (sample & hold)
+//   lf_noise1_kr - Linear interpolated random
+//   lf_noise2_kr - Smooth random
+//
+// COMMON PARAMETERS:
+//   rate  - Speed in Hz (cycles per second)
+//   lo    - Minimum output value
+//   hi    - Maximum output value
+// ============================================================

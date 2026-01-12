@@ -1,0 +1,85 @@
+// Tutorial: Step Patterns Deep Dive
+// Difficulty: intermediate | Duration: 5 min
+// Description: Master velocity, accents, and complex rhythms.
+
+// Learn velocity notation for dynamic drums!
+
+// Import all the drum sounds
+import "stdlib/drums/kicks/kick_909.vibe";
+import "stdlib/drums/snares/snare_909.vibe";
+import "stdlib/drums/hihats/hihat_909_closed.vibe";
+import "stdlib/drums/hihats/hihat_909_open.vibe";
+import "stdlib/drums/percussion/rim.vibe";
+
+set_tempo(128);
+
+define_group("Drums", || {
+    let kick = voice("kick").synth("kick_909").gain(db(-6));
+    let snare = voice("snare").synth("snare_909").gain(db(-9));
+    let ch = voice("ch").synth("hihat_909_closed").gain(db(-12));
+    let oh = voice("oh").synth("hihat_909_open").gain(db(-15));
+    let rim = voice("rim").synth("rim").gain(db(-12));
+
+    // --------------------------------------------------------
+    // VELOCITY NOTATION
+    // --------------------------------------------------------
+    // x = normal hit (velocity 0.7)
+    // X = accent/loud (velocity 1.0)
+    // o = ghost note/soft (velocity 0.3)
+    // 1-9 = precise velocity (1=0.11, 5=0.55, 9=1.0)
+    // . = rest (also: _ 0 -)
+
+    // Accented kick on beat 1
+    pattern("kick")
+        .on(kick)
+        .step("X... .... x... ....")
+        .start();
+
+    // Snare with ghost notes for groove
+    pattern("snare")
+        .on(snare)
+        .step(".... X..o .... X...")
+        .start();
+
+    // Hats with numeric velocity for precise dynamics
+    // 9=loud, 5=medium, 3=soft - creates a natural sounding pattern
+    pattern("ch")
+        .on(ch)
+        .step("9.53 9.53 9.53 9.53")
+        .start();
+
+    // Open hat at end of phrase
+    pattern("oh")
+        .on(oh)
+        .step(".... .... .... ...X")
+        .start();
+
+    // Rim playing off the grid
+    pattern("rim")
+        .on(rim)
+        .step("..x. .... ..x. ....")
+        .start();
+});
+
+// ============================================================
+// VELOCITY GUIDE:
+//
+// X = accent (1.0) - emphasize important beats
+// x = normal (0.7) - standard hits
+// o = ghost (0.3) - subtle texture, adds groove
+// 1-9 = precise velocity control:
+//       1=0.11  2=0.22  3=0.33  4=0.44  5=0.55
+//       6=0.66  7=0.77  8=0.88  9=1.00
+//
+// COMMON PATTERNS:
+// House:      "x... x... x... x..."
+// Breakbeat:  "X... .... ..X. .x.."
+// Funk:       "X..o ..o. X..o ..o."
+// D&B:        "X....... ..X. ...."
+//
+// TRY THIS:
+// - More ghosts: "Xo.o ..o. xo.o ..o."
+// - Numeric velocity hats: "9.53 7.42 9.53 7.42"
+// - Crescendo: "1234 5678 9..."
+// - Half-time snare: ".... .... X... ...."
+// ============================================================

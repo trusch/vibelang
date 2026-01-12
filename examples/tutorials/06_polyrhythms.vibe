@@ -1,0 +1,76 @@
+// Tutorial: Polyrhythms
+// Difficulty: intermediate | Duration: 5 min
+// Description: Create complex interlocking rhythms.
+
+// Polyrhythms happen when patterns of different lengths loop!
+
+// Import percussion sounds
+import "stdlib/drums/kicks/kick_808.vibe";
+import "stdlib/drums/percussion/rim.vibe";
+import "stdlib/drums/percussion/clave.vibe";
+import "stdlib/drums/toms/tom_808.vibe";
+
+set_tempo(120);
+
+define_group("Polyrhythm", || {
+    let kick = voice("kick").synth("kick_808").gain(db(-6));
+    let rim = voice("rim").synth("rim").gain(db(-12));
+    let clave = voice("clave").synth("clave").gain(db(-12));
+    let conga = voice("conga").synth("tom_808").gain(db(-15));
+
+    // --------------------------------------------------------
+    // POLYRHYTHM TECHNIQUE
+    // --------------------------------------------------------
+    // Use .len(beats) to set different loop lengths!
+    // When loops have different lengths, they create
+    // interlocking patterns that shift over time.
+
+    // Foundation: 4-beat kick pattern
+    pattern("kick")
+        .on(kick)
+        .step("x... x...")  // 8 steps = 2 beats
+        .len(2.0)
+        .start();
+
+    // 3-over-4: Three hits spread over 4 beats
+    // Creates the classic "3 against 4" feel
+    pattern("rim")
+        .on(rim)
+        .step("x..... x..... x.....")  // 18 steps = 3 beats × 6
+        .len(3.0)
+        .start();
+
+    // 5-beat phrase: Shifts against the 4-beat kick
+    pattern("clave")
+        .on(clave)
+        .step("x.... x....")  // 10 steps = 2.5 beats
+        .len(2.5)
+        .start();
+
+    // 7-beat pattern for extra complexity
+    pattern("conga")
+        .on(conga)
+        .euclid(3, 7)
+        .len(3.5)  // 7 16th notes = 1.75 beats, or use 3.5
+        .start();
+});
+
+// ============================================================
+// POLYRHYTHM MATH:
+//
+// 3:4 = The most common polyrhythm
+//       Pattern of 3 against a beat of 4
+//       Resolves every 12 beats
+//
+// 5:4 = Pattern of 5 against 4
+//       Creates a "rolling" feel
+//       Resolves every 20 beats
+//
+// 7:4 = Very complex, almost chaotic
+//       Resolves every 28 beats
+//
+// TRY THIS:
+// - Simple 3:4: Use .len(3.0) and .len(4.0)
+// - African feel: 12/8 patterns with .euclid()
+// - Steve Reich style: Same pattern, slight len difference
+// ============================================================

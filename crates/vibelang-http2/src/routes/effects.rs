@@ -32,10 +32,15 @@ fn parse_effect_id(id: &str) -> Result<EffectId, (StatusCode, Json<ErrorResponse
 fn effect_to_api(id: &EffectId, state: &vibelang_core2::EffectState) -> Effect {
     Effect {
         id: id.raw().to_string(),
-        group_id: state.group.raw().to_string(),
-        synthdef: state.synthdef.clone(),
-        node_id: state.node_id.raw() as i32,
+        synthdef_name: state.synthdef.clone(),
+        group_path: state.group.raw().to_string(),
+        node_id: Some(state.node_id.raw() as i32),
+        bus_in: None,  // Not tracked in core
+        bus_out: None, // Not tracked in core
         params: state.params.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+        position: None, // Not tracked in core
+        vst_plugin: None,
+        source_location: None,
     }
 }
 
