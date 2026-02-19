@@ -11,6 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::audio::{AudioConnector, PortDirection};
+
 /// Configuration for spawning scsynth.
 #[derive(Clone, Debug)]
 pub struct ScsynthConfig {
@@ -66,6 +68,16 @@ pub struct ScsynthConfig {
     /// Whether to automatically connect JACK/PipeWire ports to system output.
     /// Default: true (auto-connect for best out-of-box experience).
     pub auto_connect_jack: bool,
+
+    /// Manual JACK output connection targets (one per output channel).
+    /// If set, these ports are used instead of auto-discovery.
+    /// Example: vec!["Headphones:playback_FL", "Headphones:playback_FR"]
+    pub jack_connect_outputs: Option<Vec<String>>,
+
+    /// Manual JACK input connection sources (one per input channel).
+    /// If set, these ports are connected to SuperCollider's inputs.
+    /// Example: vec!["system:capture_1", "system:capture_2", "system:capture_3", "system:capture_4"]
+    pub jack_connect_inputs: Option<Vec<String>>,
 }
 
 impl Default for ScsynthConfig {
@@ -88,6 +100,8 @@ impl Default for ScsynthConfig {
             verbose: false,
             device: None,
             auto_connect_jack: true, // Auto-connect by default for best UX
+            jack_connect_outputs: None,
+            jack_connect_inputs: None,
         }
     }
 }
@@ -146,6 +160,28 @@ impl ScsynthConfig {
     /// SuperCollider's audio outputs to the system's default audio output.
     pub fn auto_connect_jack(mut self, auto_connect: bool) -> Self {
         self.auto_connect_jack = auto_connect;
+        self
+    }
+
+    /// Set manual JACK output connection targets.
+    ///
+    /// When set, these ports will be used instead of auto-discovering
+    /// the system audio output. One port per output channel.
+    ///
+    /// Example: `jack_connect_outputs(vec!["Headphones:playback_FL", "Headphones:playback_FR"])`
+    pub fn jack_connect_outputs(mut self, ports: Vec<String>) -> Self {
+        self.jack_connect_outputs = Some(ports);
+        self
+    }
+
+    /// Set manual JACK input connection sources.
+    ///
+    /// When set, these ports will be connected to SuperCollider's audio inputs.
+    /// One port per input channel.
+    ///
+    /// Example: `jack_connect_inputs(vec!["system:capture_1", "system:capture_2"])`
+    pub fn jack_connect_inputs(mut self, ports: Vec<String>) -> Self {
+        self.jack_connect_inputs = Some(ports);
         self
     }
 
@@ -333,24 +369,46 @@ impl ScsynthProcess {
             args.join(" ")
         );
 
-        let child = Command::new(&executable)
-            .args(&args)
-            // Set JACK connection hints (helps with auto-connection on some systems)
-            .env("SC_JACK_DEFAULT_INPUTS", "system")
-            .env("SC_JACK_DEFAULT_OUTPUTS", "system")
-            .stdin(Stdio::null())
-            .stdout(if config.verbose {
-                Stdio::inherit()
-            } else {
-                Stdio::null()
-            })
-            .stderr(if config.verbose {
-                Stdio::inherit()
-            } else {
-                Stdio::null()
-            })
-            .spawn()
-            .map_err(ProcessError::SpawnFailed)?;
+        let mut cmd = Command::new(&executable);
+        cmd.args(&args);
+
+        // Control JACK auto-connection behavior.
+        // If manual ports are specified, we want to disable scsynth's auto-connect
+        // so we can make our own connections afterward.
+        let has_manual_outputs = config.jack_connect_outputs.is_some();
+        let has_manual_inputs = config.jack_connect_inputs.is_some();
+
+        if config.auto_connect_jack && !has_manual_outputs {
+            // When auto-connect is enabled and no manual outputs specified,
+            // hint which ports to connect to
+            cmd.env("SC_JACK_DEFAULT_OUTPUTS", "system");
+        } else {
+            // Disable auto-connect for outputs
+            cmd.env("SC_JACK_DEFAULT_OUTPUTS", "");
+        }
+
+        if config.auto_connect_jack && !has_manual_inputs {
+            // When auto-connect is enabled and no manual inputs specified,
+            // hint which ports to connect to
+            cmd.env("SC_JACK_DEFAULT_INPUTS", "system");
+        } else {
+            // Disable auto-connect for inputs
+            cmd.env("SC_JACK_DEFAULT_INPUTS", "");
+        }
+
+        cmd.stdin(Stdio::null());
+        cmd.stdout(if config.verbose {
+            Stdio::inherit()
+        } else {
+            Stdio::null()
+        });
+        cmd.stderr(if config.verbose {
+            Stdio::inherit()
+        } else {
+            Stdio::null()
+        });
+
+        let child = cmd.spawn().map_err(ProcessError::SpawnFailed)?;
 
         tracing::info!("scsynth started with PID {}", child.id());
 
@@ -400,10 +458,53 @@ impl ScsynthProcess {
         self.config.auto_connect_jack
     }
 
+    /// Disconnect all audio ports from SuperCollider.
+    ///
+    /// This is called when `--no-jack-connect` is used to undo any automatic
+    /// connections that scsynth's JACK driver may have made.
+    ///
+    /// Uses AudioConnector which supports both PipeWire and JACK backends.
+    #[cfg(unix)]
+    pub fn disconnect_all_jack_ports(&self) {
+        tracing::debug!("Disconnecting all audio ports from SuperCollider");
+
+        // Get the client name (defaults to "SuperCollider" but can be custom via -H flag)
+        let client_name = self
+            .config
+            .device
+            .as_deref()
+            .unwrap_or("SuperCollider");
+
+        let connector = match AudioConnector::detect() {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("No audio backend available for disconnect: {}", e);
+                return;
+            }
+        };
+
+        match connector.disconnect_client(client_name) {
+            Ok(()) => {
+                tracing::info!("Disconnected all audio ports from {}", client_name);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to disconnect some ports: {}", e);
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    pub fn disconnect_all_jack_ports(&self) {
+        // No-op on non-Unix platforms
+    }
+
     /// Automatically connect SuperCollider's JACK/PipeWire ports to system output.
     ///
     /// This function discovers the default audio output and connects SuperCollider's
     /// output ports to it. Works with both PipeWire (using pw-link) and JACK.
+    ///
+    /// If manual targets are specified via `jack_connect_targets`, those are used
+    /// instead of auto-discovery.
     ///
     /// Call this after scsynth has started and JACK ports are available.
     pub fn auto_connect_jack_ports(&self) {
@@ -417,26 +518,137 @@ impl ScsynthProcess {
             // Give JACK a moment to register the ports
             std::thread::sleep(Duration::from_millis(200));
 
-            // Try PipeWire first (pw-link), then fall back to JACK (jack_connect)
-            if self.try_pipewire_connect() {
-                return;
+            // Get the JACK client name
+            let client_name = self.config.device.as_deref().unwrap_or("SuperCollider");
+
+            // Handle output connections
+            let outputs_connected = if let Some(ref ports) = self.config.jack_connect_outputs {
+                tracing::info!("Connecting outputs to specified JACK ports: {:?}", ports);
+                self.try_connect_outputs_to_ports(client_name, ports)
+            } else {
+                // Auto-discover outputs
+                self.try_pipewire_connect() || self.try_jack_connect()
+            };
+
+            if !outputs_connected {
+                tracing::warn!(
+                    "Could not connect JACK output ports. \
+                     Audio may not be audible. \
+                     Try connecting SuperCollider outputs manually using a tool like qjackctl or helvum."
+                );
             }
 
-            if self.try_jack_connect() {
-                return;
+            // Handle input connections
+            if let Some(ref ports) = self.config.jack_connect_inputs {
+                tracing::info!("Connecting inputs from specified JACK ports: {:?}", ports);
+                if !self.try_connect_inputs_from_ports(client_name, ports) {
+                    tracing::warn!(
+                        "Could not connect from specified input ports: {:?}. \
+                         Check that the port names are correct (use `pw-link -o` or `jack_lsp` to list available ports).",
+                        ports
+                    );
+                }
             }
-
-            tracing::warn!(
-                "Could not auto-connect JACK ports. \
-                 Audio may not be audible. \
-                 Try connecting SuperCollider outputs manually using a tool like qjackctl or helvum."
-            );
         }
 
         #[cfg(not(unix))]
         {
             tracing::debug!("JACK auto-connect not supported on this platform");
         }
+    }
+
+    /// Try to connect SuperCollider outputs to specific ports.
+    ///
+    /// Uses AudioConnector with fuzzy matching support for better UX.
+    /// Supports both PipeWire (pw-link) and JACK (jack_connect) backends.
+    #[cfg(unix)]
+    fn try_connect_outputs_to_ports(&self, client_name: &str, ports: &[String]) -> bool {
+        let connector = match AudioConnector::detect() {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("No audio backend available: {}", e);
+                return false;
+            }
+        };
+
+        tracing::debug!("Using audio backend: {}", connector.backend_name());
+
+        let mut all_success = true;
+
+        for (i, pattern) in ports.iter().enumerate() {
+            let src_port = format!("{}:out_{}", client_name, i + 1);
+
+            // Use the connector's fuzzy matching to resolve the port pattern
+            match connector.resolve_port(pattern, PortDirection::Input) {
+                Ok(resolved_port) => {
+                    match connector.connect(&src_port, &resolved_port) {
+                        Ok(()) => {
+                            tracing::debug!("Connected {} -> {}", src_port, resolved_port);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to connect {} -> {}: {}", src_port, resolved_port, e);
+                            all_success = false;
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Could not resolve port pattern '{}': {}", pattern, e);
+                    all_success = false;
+                }
+            }
+        }
+
+        if all_success {
+            tracing::info!("Output ports connected successfully via {}", connector.backend_name());
+        }
+        all_success
+    }
+
+    /// Try to connect specific ports to SuperCollider inputs.
+    ///
+    /// Uses AudioConnector with fuzzy matching support for better UX.
+    /// Supports both PipeWire (pw-link) and JACK (jack_connect) backends.
+    #[cfg(unix)]
+    fn try_connect_inputs_from_ports(&self, client_name: &str, ports: &[String]) -> bool {
+        let connector = match AudioConnector::detect() {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("No audio backend available: {}", e);
+                return false;
+            }
+        };
+
+        tracing::debug!("Using audio backend: {}", connector.backend_name());
+
+        let mut all_success = true;
+
+        for (i, pattern) in ports.iter().enumerate() {
+            let dst_port = format!("{}:in_{}", client_name, i + 1);
+
+            // Use the connector's fuzzy matching to resolve the port pattern
+            match connector.resolve_port(pattern, PortDirection::Output) {
+                Ok(resolved_port) => {
+                    match connector.connect(&resolved_port, &dst_port) {
+                        Ok(()) => {
+                            tracing::debug!("Connected {} -> {}", resolved_port, dst_port);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to connect {} -> {}: {}", resolved_port, dst_port, e);
+                            all_success = false;
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Could not resolve port pattern '{}': {}", pattern, e);
+                    all_success = false;
+                }
+            }
+        }
+
+        if all_success {
+            tracing::info!("Input ports connected successfully via {}", connector.backend_name());
+        }
+        all_success
     }
 
     /// Try to connect using PipeWire's pw-link command.

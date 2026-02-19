@@ -274,6 +274,27 @@ impl ScriptEngine {
         let state = context::take_state();
         context::clear_context();
 
+        // Debug: log melody state after script execution
+        tracing::debug!(
+            "Script execution complete: {} melodies, {} playing_melodies, {} voices",
+            state.melodies.len(),
+            state.playing_melodies.len(),
+            state.voices.len()
+        );
+        for (id, config) in &state.melodies {
+            tracing::debug!(
+                "  Melody {:?} '{}': voice={:?}, notes={}, length={:.2}",
+                id,
+                config.name,
+                config.voice,
+                config.notes.len(),
+                config.length.to_f64()
+            );
+        }
+        for id in &state.playing_melodies {
+            tracing::debug!("  Playing melody: {:?}", id);
+        }
+
         // Check if script exited via exit() - this is not an error
         if crate::get_exit_code().is_some() {
             // Script requested exit, return state normally

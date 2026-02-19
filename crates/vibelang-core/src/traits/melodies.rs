@@ -5,6 +5,7 @@
 use crate::types::{Beat, MelodyId, VoiceId};
 use crate::Result;
 use async_trait::async_trait;
+use std::sync::Arc;
 
 /// A single note event in a melody.
 #[derive(Clone, Debug, PartialEq)]
@@ -106,6 +107,66 @@ impl MelodyConfig {
     pub fn with_swing(mut self, swing: f32) -> Self {
         self.swing = swing;
         self
+    }
+}
+
+/// The content of a melody that can be swapped during hot reload.
+///
+/// This struct is separate from playback state (playing, loop_position) to enable
+/// seamless hot reload. The content can be atomically swapped while the melody
+/// continues playing, allowing changes to take effect at musical boundaries
+/// without any audio disruption.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MelodyContent {
+    /// Melody name (for display in TUI/API).
+    pub name: String,
+
+    /// Voice to trigger (None if melody is just for MIDI output).
+    pub voice: Option<VoiceId>,
+
+    /// Note events in the melody.
+    pub notes: Vec<NoteEvent>,
+
+    /// Length of the melody in beats.
+    pub length: Beat,
+
+    /// Swing amount (0.0 = none, 1.0 = full).
+    pub swing: f32,
+}
+
+impl MelodyContent {
+    /// Create new melody content from a config.
+    pub fn from_config(config: &MelodyConfig) -> Self {
+        Self {
+            name: config.name.clone(),
+            voice: config.voice,
+            notes: config.notes.clone(),
+            length: config.length,
+            swing: config.swing,
+        }
+    }
+
+    /// Create an Arc-wrapped content from config.
+    pub fn arc_from_config(config: &MelodyConfig) -> Arc<Self> {
+        Arc::new(Self::from_config(config))
+    }
+}
+
+impl From<&MelodyConfig> for MelodyContent {
+    fn from(config: &MelodyConfig) -> Self {
+        Self::from_config(config)
+    }
+}
+
+impl From<MelodyConfig> for MelodyContent {
+    fn from(config: MelodyConfig) -> Self {
+        Self {
+            name: config.name,
+            voice: config.voice,
+            notes: config.notes,
+            length: config.length,
+            swing: config.swing,
+        }
     }
 }
 

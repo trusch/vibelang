@@ -885,6 +885,13 @@ pub mod trigger_ids {
     pub const STOP: i32 = 151;
     pub const CONTINUE: i32 = 152;
 
+    /// Get clock trigger ID for a specific device.
+    ///
+    /// Each device gets its own trigger ID in the range CLOCK..(CLOCK+256).
+    pub fn clock_id(device: u8) -> i32 {
+        CLOCK + device as i32
+    }
+
     /// Get the message type from a trigger ID.
     pub fn message_type(id: i32) -> Option<super::MidiTriggerType> {
         use super::MidiTriggerType;
@@ -893,10 +900,13 @@ pub mod trigger_ids {
             NOTE_OFF => Some(MidiTriggerType::NoteOff),
             CC => Some(MidiTriggerType::CC),
             PITCH_BEND => Some(MidiTriggerType::PitchBend),
-            CLOCK => Some(MidiTriggerType::Clock),
+            // Transport messages must be checked before clock range
             START => Some(MidiTriggerType::Start),
             STOP => Some(MidiTriggerType::Stop),
             CONTINUE => Some(MidiTriggerType::Continue),
+            // Clock range: CLOCK (140) to START-1 (149) - up to 10 devices
+            // The synthdef uses fixed ID 140 with device_id as the value
+            CLOCK..=149 => Some(MidiTriggerType::Clock),
             _ => None,
         }
     }

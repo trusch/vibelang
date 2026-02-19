@@ -114,6 +114,7 @@ pub struct MidiCallbackConfig {
 #[cfg(feature = "midi")]
 #[derive(Clone, Debug, PartialEq)]
 pub enum MidiOutputMessage {
+    // MIDI 1.0 messages
     /// Note on message.
     NoteOn {
         device_id: MidiDeviceId,
@@ -139,6 +140,70 @@ pub enum MidiOutputMessage {
         device_id: MidiDeviceId,
         channel: u8,
         program: u8,
+    },
+    /// Pitch bend message.
+    PitchBend {
+        device_id: MidiDeviceId,
+        channel: u8,
+        value: i16,
+    },
+
+    // MIDI 2.0 messages
+    /// MIDI 2.0 note on with 16-bit velocity.
+    Midi2NoteOn {
+        device_id: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        note: u8,
+        velocity: u16,
+    },
+    /// MIDI 2.0 note off with 16-bit velocity.
+    Midi2NoteOff {
+        device_id: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        note: u8,
+        velocity: u16,
+    },
+    /// MIDI 2.0 control change with 32-bit value.
+    Midi2ControlChange {
+        device_id: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        controller: u8,
+        value: u32,
+    },
+    /// MIDI 2.0 pitch bend with 32-bit value.
+    Midi2PitchBend {
+        device_id: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        value: u32,
+    },
+    /// Per-note pitch bend (MIDI 2.0 only).
+    Midi2PerNotePitchBend {
+        device_id: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        note: u8,
+        value: u32,
+    },
+    /// Per-note controller (MIDI 2.0 only).
+    Midi2PerNoteController {
+        device_id: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        note: u8,
+        controller: u8,
+        value: u32,
+    },
+    /// MIDI 2.0 polyphonic aftertouch with 32-bit value.
+    Midi2PolyPressure {
+        device_id: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        note: u8,
+        pressure: u32,
     },
 }
 
@@ -226,6 +291,121 @@ pub struct AdvancedMidiCcRoute {
     pub max: f32,
 }
 
+// ============================================================================
+// MIDI 2.0 Route Types
+// ============================================================================
+
+/// MIDI 2.0 keyboard routing configuration.
+#[cfg(feature = "midi")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Midi2KeyboardRoute {
+    /// MIDI device ID.
+    pub device_id: MidiDeviceId,
+
+    /// MIDI 2.0 group (0-15).
+    pub group: Option<u8>,
+
+    /// Optional channel filter (None = all channels).
+    pub channel: Option<u8>,
+
+    /// Minimum note (inclusive).
+    pub note_min: u8,
+
+    /// Maximum note (inclusive).
+    pub note_max: u8,
+
+    /// Transpose in semitones.
+    pub transpose: i8,
+
+    /// Velocity curve name.
+    pub velocity_curve: String,
+
+    /// Voice to trigger.
+    pub voice: VoiceId,
+}
+
+/// MIDI 2.0 per-note controller type.
+#[cfg(feature = "midi")]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Midi2PerNoteControllerType {
+    /// Per-note pitch bend with range in semitones.
+    PitchBend { range: u8 },
+    /// Per-note pressure (poly aftertouch).
+    Pressure,
+    /// Per-note timbre (CC 74 equivalent).
+    Timbre,
+    /// Per-note controller by number.
+    Controller(u8),
+    /// Registered per-note controller.
+    RegisteredController(u8),
+    /// Assignable per-note controller.
+    AssignableController(u8),
+}
+
+/// MIDI 2.0 per-note route configuration.
+#[cfg(feature = "midi")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Midi2PerNoteRoute {
+    /// MIDI device ID.
+    pub device_id: MidiDeviceId,
+
+    /// MIDI 2.0 group (0-15).
+    pub group: Option<u8>,
+
+    /// Optional channel filter (None = all channels).
+    pub channel: Option<u8>,
+
+    /// Controller type.
+    pub controller_type: Midi2PerNoteControllerType,
+
+    /// Voice to control.
+    pub voice: VoiceId,
+
+    /// Parameter name.
+    pub param: String,
+
+    /// Min value.
+    pub min_value: f32,
+
+    /// Max value.
+    pub max_value: f32,
+
+    /// Curve type name.
+    pub curve: String,
+}
+
+/// MIDI 2.0 high-resolution CC route configuration.
+#[cfg(feature = "midi")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Midi2CcRoute {
+    /// MIDI device ID.
+    pub device_id: MidiDeviceId,
+
+    /// MIDI 2.0 group (0-15).
+    pub group: Option<u8>,
+
+    /// Optional channel filter (None = all channels).
+    pub channel: Option<u8>,
+
+    /// CC number (0-127).
+    pub cc: u8,
+
+    /// Voice to control.
+    pub voice: VoiceId,
+
+    /// Parameter name.
+    pub param: String,
+
+    /// Min value.
+    pub min_value: f32,
+
+    /// Max value.
+    pub max_value: f32,
+
+    /// Curve type name.
+    pub curve: String,
+}
+
 /// State extracted from a `.vibe` script.
 ///
 /// This represents the desired state without runtime-specific IDs.
@@ -282,6 +462,10 @@ pub struct ScriptState {
     /// Sequences that should be playing.
     pub playing_sequences: HashSet<SequenceId>,
 
+    /// Voices that should be running continuously (e.g., line-in monitors).
+    /// These voices are auto-triggered on startup and after reload.
+    pub running_voices: HashSet<VoiceId>,
+
     /// MIDI keyboard routes.
     #[cfg(feature = "midi")]
     pub midi_keyboard_routes: Vec<MidiKeyboardRoute>,
@@ -325,6 +509,18 @@ pub struct ScriptState {
     /// MIDI clock output configurations.
     #[cfg(feature = "midi")]
     pub midi_clock_outputs: Vec<MidiClockOutputRequest>,
+
+    /// MIDI 2.0 keyboard routes.
+    #[cfg(feature = "midi")]
+    pub midi2_keyboard_routes: Vec<Midi2KeyboardRoute>,
+
+    /// MIDI 2.0 per-note routes.
+    #[cfg(feature = "midi")]
+    pub midi2_per_note_routes: Vec<Midi2PerNoteRoute>,
+
+    /// MIDI 2.0 CC routes.
+    #[cfg(feature = "midi")]
+    pub midi2_cc_routes: Vec<Midi2CcRoute>,
 }
 
 /// Configuration for a MIDI recording request.

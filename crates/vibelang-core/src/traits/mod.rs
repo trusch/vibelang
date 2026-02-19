@@ -55,9 +55,9 @@ mod midi;
 pub use effects::Effects;
 pub use fades::{FadeConfig, FadeCurve, FadeTarget, Fades};
 pub use groups::Groups;
-pub use melodies::{Melodies, MelodyConfig, NoteEvent};
+pub use melodies::{Melodies, MelodyConfig, MelodyContent, NoteEvent};
 pub use modulators::{ModulatorConfig, Modulators};
-pub use patterns::{PatternConfig, Patterns, Step};
+pub use patterns::{PatternConfig, PatternContent, Patterns, Step};
 pub use samples::{SampleConfig, SampleInfo, Samples};
 pub use sequences::{Clip, SequenceConfig, Sequences};
 pub use sfz::{Sfz, SfzConfig, SfzTriggerInfo, SfzTriggerMode};
@@ -69,4 +69,4 @@ pub use voices::{VoiceConfig, Voices};
 pub use recordings::{RecordingConfig, RecordingInfo, RecordingStatus, Recordings};
 
 #[cfg(feature = "midi")]
-pub use midi::{Midi, MidiDeviceInfo};
+pub use midi::{Midi, MidiDeviceInfo, MidiOutputCapability};

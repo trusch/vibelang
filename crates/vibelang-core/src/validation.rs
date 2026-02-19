@@ -70,11 +70,19 @@ pub trait Validate {
 
 impl Validate for VoiceConfig {
     fn validate(&self) -> Result<()> {
-        // Validate synthdef name
-        if self.synthdef.is_empty() && self.sfz_instrument.is_none() {
+        // A voice needs a sound source: synthdef, SFZ instrument, or MIDI output device
+        #[cfg(feature = "midi")]
+        let has_midi_output = self.midi_output.is_some();
+        #[cfg(not(feature = "midi"))]
+        let has_midi_output = false;
+
+        let has_synth = !self.synthdef.is_empty();
+        let has_sfz = self.sfz_instrument.is_some();
+
+        if !has_synth && !has_sfz && !has_midi_output {
             return Err(Error::invalid_param(
-                "synthdef",
-                "voice must have a synthdef or SFZ instrument",
+                "sound_source",
+                "voice must have a sound source: use .on(synth_name), .on(sample), .on(sfz_instrument), or .on(midi_device)",
             ));
         }
 

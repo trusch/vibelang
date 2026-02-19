@@ -2,6 +2,17 @@
 //!
 //! Provides thread-local storage for the current script state during execution.
 //! Builder APIs use this context to collect their configuration.
+//!
+//! ## ID Generation
+//!
+//! Entity IDs (groups, voices, effects, etc.) are generated using a hash of the
+//! entity name. This ensures IDs are **stable across script reloads** - the same
+//! name always produces the same ID, regardless of script order.
+//!
+//! This is critical for live reloading: if IDs shifted based on encounter order,
+//! adding a new entity early in the script would cause all subsequent entities
+//! to be seen as "changed" during diff calculation, leading to unnecessary
+//! recreations and audio glitches.
 
 #[cfg(feature = "midi")]
 use rhai::FnPtr;
@@ -14,12 +25,37 @@ use vibelang_core::types::{
     VoiceId,
 };
 
+/// Generate a stable u32 ID from a name using FNV-1a hash.
+///
+/// FNV-1a is a fast, non-cryptographic hash with good distribution.
+/// This ensures the same name always produces the same ID across script reloads.
+fn hash_name_to_id(name: &str) -> u32 {
+    const FNV_OFFSET_BASIS: u32 = 2166136261;
+    const FNV_PRIME: u32 = 16777619;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for byte in name.bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+
+    // Ensure we never return 0 (reserved for special cases like root node)
+    if hash == 0 {
+        1
+    } else {
+        hash
+    }
+}
+
 /// Macro to generate get_or_create_*_id and get_*_id functions.
 ///
 /// This reduces boilerplate for the 9 nearly-identical ID getter functions.
+/// IDs are generated using a hash of the entity name for stability across reloads.
 macro_rules! define_id_accessors {
     ($get_or_create:ident, $get:ident, $id_type:ty, $counter:ident, $map:ident, $doc_create:literal, $doc_get:literal) => {
         #[doc = $doc_create]
+        ///
+        /// The ID is generated from a hash of the name, ensuring stability across script reloads.
         pub fn $get_or_create(name: &str) -> $id_type {
             CONTEXT.with(|ctx| {
                 let mut borrow = ctx.borrow_mut();
@@ -27,8 +63,8 @@ macro_rules! define_id_accessors {
                 if let Some(&id) = c.$map.get(name) {
                     id
                 } else {
-                    let id = <$id_type>::new(c.$counter);
-                    c.$counter += 1;
+                    // Use hash-based ID for stability across reloads
+                    let id = <$id_type>::new(hash_name_to_id(name));
                     c.$map.insert(name.to_string(), id);
                     id
                 }
@@ -162,10 +198,33 @@ pub fn clear_context() {
 /// Take the built script state.
 pub fn take_state() -> ScriptState {
     CONTEXT.with(|ctx| {
-        ctx.borrow_mut()
+        let state = ctx
+            .borrow_mut()
             .as_mut()
             .map(|c| std::mem::take(&mut c.state))
-            .unwrap_or_default()
+            .unwrap_or_default();
+
+        tracing::debug!(
+            "take_state: melodies={}, playing_melodies={}, voices={}, groups={}",
+            state.melodies.len(),
+            state.playing_melodies.len(),
+            state.voices.len(),
+            state.groups.len()
+        );
+
+        // Log melody details
+        for (id, config) in &state.melodies {
+            tracing::debug!(
+                "take_state: melody {:?} '{}': voice={:?}, notes={}, length={}",
+                id,
+                config.name,
+                config.voice,
+                config.notes.len(),
+                config.length.to_f64()
+            );
+        }
+
+        state
     })
 }
 
@@ -230,6 +289,8 @@ pub fn set_import_paths(paths: Vec<PathBuf>) {
 /// This also ensures the GroupConfig exists in the ScriptState.
 /// This is important for implicit groups like "main" that are referenced
 /// but not explicitly defined via define_group().
+///
+/// The ID is generated from a hash of the name, ensuring stability across script reloads.
 pub fn get_or_create_group_id(name: &str) -> GroupId {
     use vibelang_core::reload::GroupConfig;
 
@@ -240,8 +301,8 @@ pub fn get_or_create_group_id(name: &str) -> GroupId {
         let group_id = if let Some(&id) = c.group_ids.get(name) {
             id
         } else {
-            let id = GroupId::new(c.next_group_id);
-            c.next_group_id += 1;
+            // Use hash-based ID for stability across reloads
+            let id = GroupId::new(hash_name_to_id(name));
             c.group_ids.insert(name.to_string(), id);
             id
         };
@@ -282,8 +343,8 @@ fn get_or_create_group_id_inner(c: &mut ScriptContext, name: &str) -> GroupId {
     if let Some(&id) = c.group_ids.get(name) {
         id
     } else {
-        let id = GroupId::new(c.next_group_id);
-        c.next_group_id += 1;
+        // Use hash-based ID for stability across reloads
+        let id = GroupId::new(hash_name_to_id(name));
         c.group_ids.insert(name.to_string(), id);
         id
     }
@@ -398,6 +459,17 @@ where
         let c = borrow.as_mut().expect("Script context not initialized");
         f(&mut c.state)
     })
+}
+
+/// Mark a voice for auto-triggering (running continuously).
+///
+/// Called by `voice.run()` to indicate this voice should be triggered
+/// automatically on startup and after reloads.
+pub fn mark_voice_for_running(name: &str) {
+    let voice_id = get_or_create_voice_id(name);
+    with_state(|state| {
+        state.running_voices.insert(voice_id);
+    });
 }
 
 /// Get tempo from state.

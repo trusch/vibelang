@@ -122,7 +122,7 @@ impl<B: Backend> SequencesHandler<B> {
                         FadeTarget::Pattern(id) => state
                             .patterns
                             .get(id)
-                            .and_then(|p| p.config.steps.first())
+                            .and_then(|p| p.content.steps.first())
                             .and_then(|s| s.params.get(&config.param).copied()),
                         FadeTarget::Melody(_) => None,
                     };
@@ -165,9 +165,18 @@ impl<B: Backend> SequencesHandler<B> {
                         }
                         FadeTarget::Pattern(id) => {
                             if let Some(pattern) = state.patterns.get_mut(id) {
-                                for step in &mut pattern.config.steps {
+                                // Clone content, modify steps, and replace
+                                let mut new_steps = pattern.content.steps.clone();
+                                for step in &mut new_steps {
                                     step.params.insert(config.param.clone(), start_value);
                                 }
+                                pattern.content = std::sync::Arc::new(crate::traits::PatternContent {
+                                    name: pattern.content.name.clone(),
+                                    voice: pattern.content.voice,
+                                    steps: new_steps,
+                                    length: pattern.content.length,
+                                    swing: pattern.content.swing,
+                                });
                             }
                         }
                         FadeTarget::Melody(_) => {}
@@ -926,16 +935,14 @@ mod tests {
             let mut state_write = state.write().await;
             state_write.patterns.insert(
                 pattern_id,
-                PatternState {
-                    id: pattern_id,
-                    config: PatternConfig::with_length(
+                PatternState::new(
+                    pattern_id,
+                    PatternConfig::with_length(
                         "test_pattern",
                         crate::types::VoiceId::new(1),
                         4.0,
                     ),
-                    playing: false,
-                    loop_position: Beat::ZERO,
-                },
+                ),
             );
         }
 
@@ -967,16 +974,14 @@ mod tests {
             let mut state_write = state.write().await;
             state_write.patterns.insert(
                 pattern_id,
-                PatternState {
-                    id: pattern_id,
-                    config: PatternConfig::with_length(
+                PatternState::new(
+                    pattern_id,
+                    PatternConfig::with_length(
                         "test_pattern",
                         crate::types::VoiceId::new(1),
                         4.0,
                     ),
-                    playing: false,
-                    loop_position: Beat::ZERO,
-                },
+                ),
             );
         }
 

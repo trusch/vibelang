@@ -8,7 +8,7 @@
 //! which are automatically added by `define_fx()` in vibelang-dsp.
 
 use crate::backend::{AddAction, Backend};
-use crate::compat::RwLock;
+use crate::compat::{Instant, RwLock};
 use crate::state::{EffectState, State};
 use crate::traits::Effects;
 use crate::types::{EffectId, GroupId, NodeId, ParamMap};
@@ -16,16 +16,77 @@ use crate::{Error, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::compat::Duration;
+
+/// Grace period before freeing an effect node (in milliseconds).
+/// This allows time for the mix parameter to fade to 0.
+const EFFECT_GRACE_PERIOD_MS: u64 = 50;
+
 /// Handler for effect operations.
 pub struct EffectsHandler<B: Backend> {
     backend: Arc<B>,
     state: Arc<RwLock<State>>,
+    /// Effects pending removal after grace period.
+    /// Each entry is (node_id, instant when removal was requested).
+    pending_frees: Arc<RwLock<Vec<(NodeId, Instant)>>>,
 }
 
 impl<B: Backend> EffectsHandler<B> {
     /// Create a new effects handler.
     pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>) -> Self {
-        Self { backend, state }
+        Self {
+            backend,
+            state,
+            pending_frees: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    /// Process pending effect frees.
+    ///
+    /// Called by the runtime's tick loop to free effects after their grace period.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn tick(&self) {
+        let now = Instant::now();
+        let grace_period = Duration::from_millis(EFFECT_GRACE_PERIOD_MS);
+
+        // Collect nodes to free
+        let nodes_to_free: Vec<NodeId> = {
+            let mut pending = self.pending_frees.write().await;
+            let mut to_free = Vec::new();
+            let mut remaining = Vec::new();
+
+            for (node_id, requested_at) in pending.drain(..) {
+                if now.duration_since(requested_at) >= grace_period {
+                    to_free.push(node_id);
+                } else {
+                    remaining.push((node_id, requested_at));
+                }
+            }
+
+            *pending = remaining;
+            to_free
+        };
+
+        // Free the nodes
+        for node_id in nodes_to_free {
+            tracing::debug!("Effect grace period elapsed, freeing node {:?}", node_id);
+            let _ = self.backend.free_node(node_id).await;
+        }
+    }
+
+    /// Process pending effect frees (WASM version - immediate free).
+    #[cfg(target_arch = "wasm32")]
+    pub async fn tick(&self) {
+        // On WASM, just free immediately (no reliable timing)
+        let nodes_to_free: Vec<NodeId> = {
+            let mut pending = self.pending_frees.write().await;
+            pending.drain(..).map(|(node_id, _)| node_id).collect()
+        };
+
+        for node_id in nodes_to_free {
+            let _ = self.backend.free_node(node_id).await;
+        }
     }
 }
 
@@ -119,11 +180,24 @@ impl<B: Backend> Effects for EffectsHandler<B> {
             effect.node_id
         };
 
-        // Free the effect node (lock released)
-        self.backend
-            .free_node(node_to_free)
-            .await
-            .map_err(Error::backend)?;
+        // Try to fade out by setting mix=0 (effects may or may not have this param)
+        // This is best-effort - if the effect doesn't have a mix param, it's ignored
+        tracing::debug!(
+            "Effect {:?}: setting mix=0 for fade-out before removal",
+            id
+        );
+        let _ = self.backend.set_param(node_to_free, "mix", 0.0).await;
+
+        // Schedule the free after grace period (allows fade-out to complete)
+        {
+            let mut pending = self.pending_frees.write().await;
+            pending.push((node_to_free, Instant::now()));
+            tracing::debug!(
+                "Effect {:?}: scheduled for removal after {}ms grace period",
+                id,
+                EFFECT_GRACE_PERIOD_MS
+            );
+        }
 
         Ok(())
     }

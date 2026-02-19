@@ -23,7 +23,7 @@
 //!                                            └── convert value ──> send MIDI CC
 //! ```
 
-use crate::midi::QueuedMidiEvent;
+use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
 use crate::traits::VoiceConfig;
 use crate::types::MidiDeviceId;
 use crossbeam_channel::Sender;
@@ -60,7 +60,7 @@ pub fn value_to_cc(value: f32) -> u8 {
 /// ```
 pub fn send_cc_for_param<F>(config: &VoiceConfig, param: &str, value: f32, get_sender: F) -> bool
 where
-    F: FnOnce(MidiDeviceId) -> Option<Sender<QueuedMidiEvent>>,
+    F: FnOnce(MidiDeviceId) -> Option<Sender<ScheduledMidiEvent>>,
 {
     // Check if voice has MIDI output
     let device_id = match config.midi_output {
@@ -87,7 +87,7 @@ where
         }
     };
 
-    // Convert and send
+    // Convert and send (immediate - CC changes don't need lookahead)
     let cc_value = value_to_cc(value);
     let event = QueuedMidiEvent::ControlChange {
         channel: config.midi_channel,
@@ -95,7 +95,7 @@ where
         value: cc_value,
     };
 
-    if sender.send(event).is_ok() {
+    if sender.send(event.immediate()).is_ok() {
         tracing::debug!(
             "MIDI CC: voice='{}' param='{}' cc={} value={} (raw={:.3})",
             config.name,
@@ -166,7 +166,7 @@ pub fn get_modulator_cc_mappings(config: &VoiceConfig) -> Vec<ModulatorCcMapping
 pub fn send_modulator_ccs(
     config: &VoiceConfig,
     modulator_values: &HashMap<String, f32>,
-    sender: &Sender<QueuedMidiEvent>,
+    sender: &Sender<ScheduledMidiEvent>,
 ) -> usize {
     let mut sent = 0;
 
@@ -184,7 +184,8 @@ pub fn send_modulator_ccs(
             value: cc_value,
         };
 
-        if sender.send(event).is_ok() {
+        // Send immediately (modulator CC doesn't need lookahead)
+        if sender.send(event.immediate()).is_ok() {
             tracing::trace!(
                 "MIDI mod CC: voice='{}' param='{}' cc={} value={}",
                 config.name,
@@ -266,9 +267,9 @@ mod tests {
         let sent = send_cc_for_param(&config, "cutoff", 0.5, |_| Some(tx.clone()));
         assert!(sent);
 
-        let event = rx.try_recv().unwrap();
+        let scheduled_event = rx.try_recv().unwrap();
         // CC message: 0xB0 + channel, CC number, value
-        assert_eq!(event.to_bytes(), vec![0xB0, 74, 63]); // channel 0, CC 74, value 63
+        assert_eq!(scheduled_event.event.to_bytes(), vec![0xB0, 74, 63]); // channel 0, CC 74, value 63
     }
 
     #[test]

@@ -393,7 +393,7 @@ impl ScsynthBackend {
                     let next_node = NodeId::new(Self::get_int(&msg.args, 3).unwrap_or(-1) as u32);
                     let is_group = Self::get_int(&msg.args, 4).unwrap_or(0) == 1;
 
-                    tracing::debug!("Node {} ended (parent={})", node_id.0, parent_group.0);
+                    tracing::trace!("Node {} ended (parent={})", node_id.0, parent_group.0);
 
                     Some(OscResponse::NodeEnd {
                         node_id,
@@ -417,7 +417,7 @@ impl ScsynthBackend {
                     let next_node = NodeId::new(Self::get_int(&msg.args, 3).unwrap_or(-1) as u32);
                     let is_group = Self::get_int(&msg.args, 4).unwrap_or(0) == 1;
 
-                    tracing::debug!("Node {} started (parent={})", node_id.0, parent_group.0);
+                    tracing::trace!("Node {} started (parent={})", node_id.0, parent_group.0);
 
                     Some(OscResponse::NodeGo {
                         node_id,
@@ -671,16 +671,20 @@ impl ScsynthBackend {
         // Send sync command
         self.send_msg("/sync", vec![OscType::Int(sync_id)])?;
 
-        // Wait for response with timeout
-        match tokio::time::timeout(Duration::from_secs(5), rx).await {
+        // Wait for response with minimal timeout (20ms) to avoid blocking MIDI clock
+        // If scsynth doesn't respond in time, commands will still be processed eventually
+        match tokio::time::timeout(Duration::from_millis(20), rx).await {
             Ok(Ok(())) => {
-                tracing::debug!("Sync {} completed", sync_id);
+                tracing::trace!("Sync {} completed", sync_id);
                 Ok(())
             }
             Ok(Err(_)) => Err(ScsynthError::ConnectionFailed(
                 "Sync response channel closed".to_string(),
             )),
-            Err(_) => Err(ScsynthError::Timeout),
+            Err(_) => {
+                tracing::trace!("Sync {} timed out (20ms), continuing", sync_id);
+                Err(ScsynthError::Timeout)
+            }
         }
     }
 }

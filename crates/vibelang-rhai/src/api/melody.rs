@@ -349,6 +349,15 @@ impl Melody {
             .as_ref()
             .map(|n| context::get_or_create_voice_id(n));
 
+        tracing::debug!(
+            "Melody '{}': melody_id={:?}, voice_name={:?}, voice_id={:?}, internal_notes_count={}",
+            self.name,
+            melody_id,
+            self.voice_name,
+            voice_id,
+            self.notes.len()
+        );
+
         // Convert notes to NoteEvents
         let notes: Vec<NoteEvent> = self
             .notes
@@ -367,6 +376,23 @@ impl Melody {
             })
             .collect();
 
+        tracing::debug!(
+            "Melody '{}': converted to {} NoteEvents, length={} beats",
+            self.name,
+            notes.len(),
+            self.length
+        );
+
+        if !notes.is_empty() {
+            tracing::debug!(
+                "Melody '{}': first note at beat {}, note={}, vel={}",
+                self.name,
+                notes[0].beat.to_f64(),
+                notes[0].note,
+                notes[0].velocity
+            );
+        }
+
         let config = MelodyConfig {
             name: self.name.clone(),
             voice: voice_id,
@@ -377,6 +403,11 @@ impl Melody {
 
         context::with_state(|state| {
             state.melodies.insert(melody_id, config);
+            tracing::debug!(
+                "Melody '{}': inserted into script state, total melodies={}",
+                self.name,
+                state.melodies.len()
+            );
         });
     }
 
@@ -395,6 +426,12 @@ impl Melody {
         let melody_id = context::get_or_create_melody_id(&self.name);
         context::with_state(|state| {
             state.playing_melodies.insert(melody_id);
+            tracing::debug!(
+                "Melody '{}': added to playing_melodies, melody_id={:?}, total playing={}",
+                self.name,
+                melody_id,
+                state.playing_melodies.len()
+            );
         });
 
         self

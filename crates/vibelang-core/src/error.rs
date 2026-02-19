@@ -161,6 +161,11 @@ impl Error {
         Error::Backend(err.to_string())
     }
 
+    /// Create a backend error from a string message.
+    pub fn backend_msg(msg: impl Into<String>) -> Self {
+        Error::Backend(msg.into())
+    }
+
     /// Create an invalid parameter error.
     pub fn invalid_param(param: impl Into<String>, reason: impl Into<String>) -> Self {
         Error::InvalidParam {

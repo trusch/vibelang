@@ -9,6 +9,18 @@ use crate::types::VoiceId;
 use crate::Result;
 use async_trait::async_trait;
 
+/// MIDI output capability of a device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum MidiOutputCapability {
+    /// Device only supports MIDI 1.0.
+    #[default]
+    Midi1Only,
+    /// Device supports MIDI 2.0 (UMP format) natively.
+    Midi2Native,
+    /// Device supports MIDI 2.0 via translation from MIDI 1.0.
+    Midi2ViaTranslation,
+}
+
 /// Information about a MIDI device.
 #[derive(Clone, Debug)]
 pub struct MidiDeviceInfo {
@@ -23,6 +35,9 @@ pub struct MidiDeviceInfo {
 
     /// Whether the device has output capability.
     pub has_output: bool,
+
+    /// MIDI 2.0 capability of the device.
+    pub midi2_capability: MidiOutputCapability,
 }
 
 /// MIDI device management and routing.
@@ -132,4 +147,124 @@ pub trait Midi: Send + Sync {
 
     /// Send MIDI continue message to a device.
     async fn send_continue(&self, device: MidiDeviceId) -> Result<()>;
+
+    /// Update tempo for all MIDI clock outputs.
+    async fn update_clock_tempo(&self, bpm: f64) -> Result<()>;
+
+    /// Send MIDI start to all devices with clock output enabled.
+    async fn send_start_to_all_clock_devices(&self) -> Result<()>;
+
+    /// Send MIDI stop to all devices with clock output enabled.
+    async fn send_stop_to_all_clock_devices(&self) -> Result<()>;
+
+    /// Send a MIDI pitch bend message.
+    async fn send_pitch_bend(&self, device: MidiDeviceId, channel: u8, value: i16) -> Result<()>;
+
+    // =========================================================================
+    // MIDI 2.0 Output
+    // =========================================================================
+
+    /// Get the MIDI 2.0 capability of a device.
+    fn midi2_capability(&self, device: MidiDeviceId) -> MidiOutputCapability;
+
+    /// Send a MIDI 2.0 note on.
+    async fn send_midi2_note_on(
+        &self,
+        device: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        note: u8,
+        velocity: u16,
+    ) -> Result<()>;
+
+    /// Send a MIDI 2.0 note on with attribute.
+    async fn send_midi2_note_on_with_attribute(
+        &self,
+        device: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        note: u8,
+        velocity: u16,
+        attribute_type: u8,
+        attribute_value: u16,
+    ) -> Result<()>;
+
+    /// Send a MIDI 2.0 note off.
+    async fn send_midi2_note_off(
+        &self,
+        device: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        note: u8,
+        velocity: u16,
+    ) -> Result<()>;
+
+    /// Send a MIDI 2.0 control change (32-bit value).
+    async fn send_midi2_cc(
+        &self,
+        device: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        controller: u8,
+        value: u32,
+    ) -> Result<()>;
+
+    /// Send a MIDI 2.0 pitch bend (32-bit value).
+    async fn send_midi2_pitch_bend(
+        &self,
+        device: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        value: u32,
+    ) -> Result<()>;
+
+    /// Send a per-note pitch bend (MIDI 2.0 only).
+    async fn send_per_note_pitch_bend(
+        &self,
+        device: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        note: u8,
+        value: u32,
+    ) -> Result<()>;
+
+    /// Send a per-note controller (MIDI 2.0 only).
+    async fn send_per_note_controller(
+        &self,
+        device: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        note: u8,
+        controller: u8,
+        value: u32,
+    ) -> Result<()>;
+
+    /// Send MIDI 2.0 poly pressure.
+    async fn send_midi2_poly_pressure(
+        &self,
+        device: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        note: u8,
+        pressure: u32,
+    ) -> Result<()>;
+
+    /// Send MIDI 2.0 channel pressure.
+    async fn send_midi2_channel_pressure(
+        &self,
+        device: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        pressure: u32,
+    ) -> Result<()>;
+
+    /// Send MIDI 2.0 program change with optional bank select.
+    async fn send_midi2_program_change(
+        &self,
+        device: MidiDeviceId,
+        group: u8,
+        channel: u8,
+        program: u8,
+        bank: Option<(u8, u8)>,
+    ) -> Result<()>;
 }

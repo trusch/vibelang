@@ -1,7 +1,7 @@
 //! Voices handler implementation.
 
 use crate::backend::{AddAction, Backend};
-use crate::compat::RwLock;
+use crate::compat::{Instant, RwLock};
 use crate::state::{State, VoiceState};
 use crate::traits::{VoiceConfig, Voices};
 use crate::types::{NodeId, ParamMap, VoiceId};
@@ -13,7 +13,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "midi")]
 use crate::midi::{
-    has_modulator_cc_mappings, send_cc_for_param, send_modulator_ccs, QueuedMidiEvent,
+    has_modulator_cc_mappings, pack_note_off, pack_note_on, send_cc_for_param, send_modulator_ccs,
+    QueuedMidiEvent, ScheduledMidiEvent,
 };
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
@@ -26,8 +27,11 @@ use std::sync::Mutex;
 ///
 /// This is passed from the MidiHandler to VoicesHandler so that
 /// voice parameter changes can be sent as MIDI CC when appropriate.
+///
+/// Uses `ScheduledMidiEvent` to support both immediate and timestamp-based
+/// scheduling for sub-millisecond timing precision.
 #[cfg(feature = "midi")]
-pub type MidiOutputChannels = Arc<Mutex<HashMap<MidiDeviceId, Sender<QueuedMidiEvent>>>>;
+pub type MidiOutputChannels = Arc<Mutex<HashMap<MidiDeviceId, Sender<ScheduledMidiEvent>>>>;
 
 /// Handler for voice operations.
 pub struct VoicesHandler<B: Backend> {
@@ -60,11 +64,116 @@ impl<B: Backend> VoicesHandler<B> {
 
     /// Get a MIDI sender for a device ID (if available).
     #[cfg(feature = "midi")]
-    fn get_midi_sender(&self, device_id: MidiDeviceId) -> Option<Sender<QueuedMidiEvent>> {
+    fn get_midi_sender(&self, device_id: MidiDeviceId) -> Option<Sender<ScheduledMidiEvent>> {
         self.midi_outputs
             .as_ref()
             .and_then(|outputs| outputs.lock().ok())
             .and_then(|guard| guard.get(&device_id).cloned())
+    }
+
+    /// Send a note-on scheduled for a specific time.
+    ///
+    /// This is the lookahead-aware version of `note_on`. If `timestamp` is provided,
+    /// the MIDI event will be queued and sent at exactly that wall-clock time.
+    /// If `timestamp` is None, behaves like immediate `note_on`.
+    ///
+    /// For MIDI voices, this achieves sub-millisecond timing precision by scheduling
+    /// events ahead of time. For audio synths, this falls back to immediate triggering
+    /// (audio synths use SC's built-in scheduling for sample-accurate timing).
+    #[cfg(feature = "midi")]
+    pub async fn note_on_at(
+        &self,
+        id: VoiceId,
+        note: u8,
+        velocity: f32,
+        timestamp: Option<Instant>,
+    ) -> Result<()> {
+        // If no timestamp provided, use immediate scheduling
+        let timestamp = timestamp.unwrap_or_else(Instant::now);
+
+        // Check for MIDI output - schedule with timestamp
+        let (midi_output, midi_channel) = {
+            let state = self.state.read().await;
+            let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
+            (voice.config.midi_output, voice.config.midi_channel)
+        };
+
+        if let Some(device_id) = midi_output {
+            let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
+
+            // Try direct path with timestamp
+            if let Some(sender) = self.get_midi_sender(device_id) {
+                let event = QueuedMidiEvent::NoteOn {
+                    channel: midi_channel,
+                    note,
+                    velocity: midi_velocity,
+                };
+                let scheduled = event.at(timestamp);
+                if sender.try_send(scheduled).is_ok() {
+                    tracing::debug!(
+                        "Voice {:?}: scheduled MIDI note-on: ch={}, note={}, vel={}, ts={:?}",
+                        id,
+                        midi_channel,
+                        note,
+                        midi_velocity,
+                        timestamp
+                    );
+                    return Ok(());
+                }
+            }
+            // Fallback to immediate via trait method
+        }
+
+        // For non-MIDI voices or fallback, use immediate note_on
+        self.note_on(id, note, velocity).await
+    }
+
+    /// Send a note-off scheduled for a specific time.
+    ///
+    /// This is the lookahead-aware version of `note_off`. If `timestamp` is provided,
+    /// the MIDI event will be queued and sent at exactly that wall-clock time.
+    /// If `timestamp` is None, behaves like immediate `note_off`.
+    #[cfg(feature = "midi")]
+    pub async fn note_off_at(
+        &self,
+        id: VoiceId,
+        note: u8,
+        timestamp: Option<Instant>,
+    ) -> Result<()> {
+        // If no timestamp provided, use immediate scheduling
+        let timestamp = timestamp.unwrap_or_else(Instant::now);
+
+        // Check for MIDI output - schedule with timestamp
+        let (midi_output, midi_channel) = {
+            let state = self.state.read().await;
+            let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
+            (voice.config.midi_output, voice.config.midi_channel)
+        };
+
+        if let Some(device_id) = midi_output {
+            // Try direct path with timestamp
+            if let Some(sender) = self.get_midi_sender(device_id) {
+                let event = QueuedMidiEvent::NoteOff {
+                    channel: midi_channel,
+                    note,
+                };
+                let scheduled = event.at(timestamp);
+                if sender.try_send(scheduled).is_ok() {
+                    tracing::debug!(
+                        "Voice {:?}: scheduled MIDI note-off: ch={}, note={}, ts={:?}",
+                        id,
+                        midi_channel,
+                        note,
+                        timestamp
+                    );
+                    return Ok(());
+                }
+            }
+            // Fallback to immediate via trait method
+        }
+
+        // For non-MIDI voices or fallback, use immediate note_off
+        self.note_off(id, note).await
     }
 
     /// Tick modulator outputs for MIDI voices.
@@ -211,6 +320,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 active_nodes: Vec::new(),
                 note_nodes: HashMap::new(),
                 round_robin_position: 0,
+                pending_params: HashMap::new(),
             },
         );
 
@@ -227,6 +337,28 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         // Free all active synth nodes (lock released)
         for node_id in nodes_to_free {
             let _ = self.backend.free_node(node_id).await;
+        }
+
+        Ok(())
+    }
+
+    async fn graceful_delete(&self, id: VoiceId) -> Result<()> {
+        let nodes_to_release = {
+            let mut state = self.state.write().await;
+            let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
+            voice.active_nodes
+        };
+
+        // Set gate=0 on all active synth nodes to trigger release envelope.
+        // The synths will free themselves via doneAction=2 when the envelope completes.
+        // This avoids abrupt audio cuts during voice config updates.
+        for node_id in nodes_to_release {
+            tracing::debug!(
+                "Voice {:?}: graceful release - setting gate=0 on node {:?}",
+                id,
+                node_id
+            );
+            let _ = self.backend.set_param(node_id, "gate", 0.0).await;
         }
 
         Ok(())
@@ -410,6 +542,85 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     }
 
     async fn note_on(&self, id: VoiceId, note: u8, velocity: f32) -> Result<()> {
+        // Check for MIDI output first - use sample-accurate timing via synthdef
+        #[cfg(feature = "midi")]
+        {
+            let (midi_output, midi_channel, node_id) = {
+                let mut state = self.state.write().await;
+                let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
+                let midi_output = voice.config.midi_output;
+                let midi_channel = voice.config.midi_channel;
+                let node_id = if midi_output.is_some() {
+                    Some(state.alloc_node_id())
+                } else {
+                    None
+                };
+                (midi_output, midi_channel, node_id)
+            };
+
+            if let Some(device_id) = midi_output {
+                let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
+
+                // Try direct path first (lower latency, ~2ms vs ~20ms)
+                // Uses immediate scheduling - for lookahead scheduling, use try_send with timestamp
+                if let Some(sender) = self.get_midi_sender(device_id) {
+                    let event = QueuedMidiEvent::NoteOn {
+                        channel: midi_channel,
+                        note,
+                        velocity: midi_velocity,
+                    };
+                    // Send immediately (no lookahead for direct note_on calls)
+                    if sender.try_send(event.immediate()).is_ok() {
+                        tracing::debug!(
+                            "Voice {:?}: direct MIDI note-on: ch={}, note={}, vel={}",
+                            id,
+                            midi_channel,
+                            note,
+                            midi_velocity
+                        );
+                        return Ok(());
+                    }
+                }
+
+                // Fallback: Use sample-accurate MIDI output via synthdef
+                // The synthdef fires a SendTrig at creation time, which the
+                // MidiRealtimeService receives and converts to actual MIDI bytes.
+                let packed_data = pack_note_on(device_id.0 as u8, midi_channel, note, midi_velocity);
+
+                let mut params = std::collections::HashMap::new();
+                params.insert("packed_data".to_string(), packed_data);
+
+                // Create synth at root node - it will fire and free itself immediately
+                let node_id = node_id.unwrap();
+                if let Err(e) = self
+                    .backend
+                    .create_synth(
+                        "vibelang_midi_note_on",
+                        node_id,
+                        NodeId::new(0), // root node
+                        AddAction::Tail,
+                        &params,
+                    )
+                    .await
+                {
+                    tracing::warn!(
+                        "Voice {:?}: failed to create MIDI note-on synth: {:?}",
+                        id,
+                        e
+                    );
+                } else {
+                    tracing::debug!(
+                        "Voice {:?}: SC MIDI note-on (fallback): ch={}, note={}, vel={}",
+                        id,
+                        midi_channel,
+                        note,
+                        midi_velocity
+                    );
+                }
+                return Ok(());
+            }
+        }
+
         // Gather info and allocate node while holding lock
         let (node_id, group_node_id, synthdef, params, old_node, modulations_to_apply) = {
             let mut state = self.state.write().await;
@@ -515,6 +726,78 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     }
 
     async fn note_off(&self, id: VoiceId, note: u8) -> Result<()> {
+        // Check for MIDI output first - use sample-accurate timing via synthdef
+        #[cfg(feature = "midi")]
+        {
+            let (midi_output, midi_channel, node_id) = {
+                let mut state = self.state.write().await;
+                let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
+                let midi_output = voice.config.midi_output;
+                let midi_channel = voice.config.midi_channel;
+                let node_id = if midi_output.is_some() {
+                    Some(state.alloc_node_id())
+                } else {
+                    None
+                };
+                (midi_output, midi_channel, node_id)
+            };
+
+            if let Some(device_id) = midi_output {
+                // Try direct path first (lower latency, ~2ms vs ~20ms)
+                // Uses immediate scheduling - for lookahead scheduling, use try_send with timestamp
+                if let Some(sender) = self.get_midi_sender(device_id) {
+                    let event = QueuedMidiEvent::NoteOff {
+                        channel: midi_channel,
+                        note,
+                    };
+                    // Send immediately (no lookahead for direct note_off calls)
+                    if sender.try_send(event.immediate()).is_ok() {
+                        tracing::debug!(
+                            "Voice {:?}: direct MIDI note-off: ch={}, note={}",
+                            id,
+                            midi_channel,
+                            note
+                        );
+                        return Ok(());
+                    }
+                }
+
+                // Fallback: Use sample-accurate MIDI output via synthdef
+                let packed_data = pack_note_off(device_id.0 as u8, midi_channel, note);
+
+                let mut params = std::collections::HashMap::new();
+                params.insert("packed_data".to_string(), packed_data);
+
+                // Create synth at root node - it will fire and free itself immediately
+                let node_id = node_id.unwrap();
+                if let Err(e) = self
+                    .backend
+                    .create_synth(
+                        "vibelang_midi_note_off",
+                        node_id,
+                        NodeId::new(0), // root node
+                        AddAction::Tail,
+                        &params,
+                    )
+                    .await
+                {
+                    tracing::warn!(
+                        "Voice {:?}: failed to create MIDI note-off synth: {:?}",
+                        id,
+                        e
+                    );
+                } else {
+                    tracing::debug!(
+                        "Voice {:?}: SC MIDI note-off (fallback): ch={}, note={}",
+                        id,
+                        midi_channel,
+                        note
+                    );
+                }
+                return Ok(());
+            }
+        }
+
         let node_to_release = {
             let mut state = self.state.write().await;
 

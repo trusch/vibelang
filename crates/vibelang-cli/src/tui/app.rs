@@ -869,7 +869,7 @@ fn collect_group_entries(
                 .patterns
                 .iter()
                 .filter(|(_, p)| {
-                    p.config
+                    p.content
                         .voice
                         .as_ref()
                         .and_then(|vid| state.voices.get(vid))
@@ -888,7 +888,7 @@ fn collect_group_entries(
                         "\u{23F8}"
                     };
                     let voice_name = pattern_state
-                        .config
+                        .content
                         .voice
                         .and_then(|vid| {
                             state.voices.get(&vid).map(|v| {
@@ -901,10 +901,10 @@ fn collect_group_entries(
                         })
                         .unwrap_or_else(|| "?".to_string());
 
-                    let label = if pattern_state.config.name.is_empty() {
+                    let label = if pattern_state.content.name.is_empty() {
                         pattern_id.to_string()
                     } else {
-                        pattern_state.config.name.clone()
+                        pattern_state.content.name.clone()
                     };
 
                     entries.push(HierarchyEntry {
@@ -926,7 +926,7 @@ fn collect_group_entries(
                 .melodies
                 .iter()
                 .filter(|(_, m)| {
-                    m.config
+                    m.content
                         .voice
                         .as_ref()
                         .and_then(|vid| state.voices.get(vid))
@@ -945,7 +945,7 @@ fn collect_group_entries(
                         "\u{23F8}"
                     };
                     let voice_name = melody_state
-                        .config
+                        .content
                         .voice
                         .and_then(|vid| {
                             state.voices.get(&vid).map(|v| {
@@ -958,10 +958,10 @@ fn collect_group_entries(
                         })
                         .unwrap_or_else(|| "?".to_string());
 
-                    let label = if melody_state.config.name.is_empty() {
+                    let label = if melody_state.content.name.is_empty() {
                         melody_id.to_string()
                     } else {
-                        melody_state.config.name.clone()
+                        melody_state.content.name.clone()
                     };
 
                     entries.push(HierarchyEntry {

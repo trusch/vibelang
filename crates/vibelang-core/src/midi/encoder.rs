@@ -141,6 +141,250 @@ impl MidiEncoder {
             MidiMessage::Stop => vec![status::STOP],
             MidiMessage::ActiveSensing => vec![status::ACTIVE_SENSING],
             MidiMessage::Reset => vec![status::RESET],
+
+            // MIDI 2.0 messages - downscale to MIDI 1.0 for standard output
+            MidiMessage::Midi2NoteOn {
+                group_channel,
+                note,
+                velocity,
+                ..
+            } => self.encode_channel_msg(
+                status::NOTE_ON | group_channel.channel(),
+                *note,
+                Some(velocity.to_midi1()),
+            ),
+
+            MidiMessage::Midi2NoteOff {
+                group_channel,
+                note,
+                velocity,
+                ..
+            } => self.encode_channel_msg(
+                status::NOTE_OFF | group_channel.channel(),
+                *note,
+                Some(velocity.to_midi1()),
+            ),
+
+            MidiMessage::Midi2ControlChange {
+                group_channel,
+                controller,
+                value,
+            } => self.encode_channel_msg(
+                status::CONTROL_CHANGE | group_channel.channel(),
+                *controller,
+                Some(value.to_7bit()),
+            ),
+
+            MidiMessage::Midi2PitchBend {
+                group_channel,
+                value,
+            } => {
+                // Convert 32-bit MIDI 2.0 pitch bend to 14-bit MIDI 1.0
+                // MIDI 2.0: 0 = -full, 0x80000000 = center, 0xFFFFFFFF = +full
+                // MIDI 1.0: 0 = -full, 8192 = center, 16383 = +full
+                let pb14 = (*value >> 18) as u16; // Scale down from 32-bit to 14-bit
+                let lsb = (pb14 & 0x7F) as u8;
+                let msb = ((pb14 >> 7) & 0x7F) as u8;
+                self.encode_channel_msg_raw(status::PITCH_BEND | group_channel.channel(), &[lsb, msb])
+            }
+
+            MidiMessage::Midi2PerNotePitchBend {
+                group_channel,
+                note,
+                value,
+            } => {
+                // Per-note pitch bend has no MIDI 1.0 equivalent
+                // Best effort: send as channel pitch bend (loses per-note granularity)
+                let pb14 = (*value >> 18) as u16;
+                let lsb = (pb14 & 0x7F) as u8;
+                let msb = ((pb14 >> 7) & 0x7F) as u8;
+                // Note: we're losing the note-specific information
+                let _ = note;
+                self.encode_channel_msg_raw(status::PITCH_BEND | group_channel.channel(), &[lsb, msb])
+            }
+
+            MidiMessage::Midi2PerNoteController {
+                group_channel,
+                note,
+                controller,
+                value,
+            } => {
+                // Per-note CC has no MIDI 1.0 equivalent
+                // Best effort: send as regular CC (loses per-note granularity)
+                let _ = note;
+                self.encode_channel_msg(
+                    status::CONTROL_CHANGE | group_channel.channel(),
+                    *controller,
+                    Some(value.to_7bit()),
+                )
+            }
+
+            MidiMessage::Midi2PolyPressure {
+                group_channel,
+                note,
+                pressure,
+            } => {
+                // Downscale 32-bit poly pressure to 7-bit
+                self.encode_channel_msg(
+                    status::POLY_AFTERTOUCH | group_channel.channel(),
+                    *note,
+                    Some(pressure.to_7bit()),
+                )
+            }
+
+            MidiMessage::Midi2ChannelPressure {
+                group_channel,
+                pressure,
+            } => {
+                // Downscale 32-bit channel pressure to 7-bit
+                self.encode_channel_msg(
+                    status::CHANNEL_AFTERTOUCH | group_channel.channel(),
+                    pressure.to_7bit(),
+                    None,
+                )
+            }
+
+            MidiMessage::Midi2ProgramChange {
+                group_channel,
+                program,
+                bank_valid,
+                bank_msb,
+                bank_lsb,
+            } => {
+                // Send bank select CCs if valid, then program change
+                let mut result = Vec::new();
+                if *bank_valid {
+                    result.extend(self.encode_channel_msg(
+                        status::CONTROL_CHANGE | group_channel.channel(),
+                        0, // CC 0 = Bank Select MSB
+                        Some(*bank_msb),
+                    ));
+                    result.extend(self.encode_channel_msg(
+                        status::CONTROL_CHANGE | group_channel.channel(),
+                        32, // CC 32 = Bank Select LSB
+                        Some(*bank_lsb),
+                    ));
+                }
+                result.extend(self.encode_channel_msg(
+                    status::PROGRAM_CHANGE | group_channel.channel(),
+                    *program,
+                    None,
+                ));
+                result
+            }
+
+            MidiMessage::Midi2PerNoteManagement { .. } => {
+                // No MIDI 1.0 equivalent - return empty
+                vec![]
+            }
+
+            MidiMessage::Midi2RegisteredPerNoteController {
+                group_channel,
+                note,
+                index,
+                value,
+            } => {
+                // No direct MIDI 1.0 equivalent - best effort: send as CC
+                let _ = note; // Per-note granularity lost
+                self.encode_channel_msg(
+                    status::CONTROL_CHANGE | group_channel.channel(),
+                    *index,
+                    Some(value.to_7bit()),
+                )
+            }
+
+            MidiMessage::Midi2AssignablePerNoteController {
+                group_channel,
+                note,
+                index,
+                value,
+            } => {
+                // No direct MIDI 1.0 equivalent - best effort: send as CC
+                let _ = note;
+                self.encode_channel_msg(
+                    status::CONTROL_CHANGE | group_channel.channel(),
+                    *index,
+                    Some(value.to_7bit()),
+                )
+            }
+
+            MidiMessage::Midi2RegisteredController {
+                group_channel,
+                bank,
+                index,
+                value,
+            } => {
+                // Convert to MIDI 1.0 RPN sequence
+                let mut result = Vec::new();
+                // RPN MSB (CC 101)
+                result.extend(self.encode_channel_msg(
+                    status::CONTROL_CHANGE | group_channel.channel(),
+                    101,
+                    Some(*bank),
+                ));
+                // RPN LSB (CC 100)
+                result.extend(self.encode_channel_msg(
+                    status::CONTROL_CHANGE | group_channel.channel(),
+                    100,
+                    Some(*index),
+                ));
+                // Data Entry MSB (CC 6)
+                let value14 = value.to_14bit();
+                result.extend(self.encode_channel_msg(
+                    status::CONTROL_CHANGE | group_channel.channel(),
+                    6,
+                    Some((value14 >> 7) as u8),
+                ));
+                // Data Entry LSB (CC 38)
+                result.extend(self.encode_channel_msg(
+                    status::CONTROL_CHANGE | group_channel.channel(),
+                    38,
+                    Some((value14 & 0x7F) as u8),
+                ));
+                result
+            }
+
+            MidiMessage::Midi2AssignableController {
+                group_channel,
+                bank,
+                index,
+                value,
+            } => {
+                // Convert to MIDI 1.0 NRPN sequence
+                let mut result = Vec::new();
+                // NRPN MSB (CC 99)
+                result.extend(self.encode_channel_msg(
+                    status::CONTROL_CHANGE | group_channel.channel(),
+                    99,
+                    Some(*bank),
+                ));
+                // NRPN LSB (CC 98)
+                result.extend(self.encode_channel_msg(
+                    status::CONTROL_CHANGE | group_channel.channel(),
+                    98,
+                    Some(*index),
+                ));
+                // Data Entry MSB (CC 6)
+                let value14 = value.to_14bit();
+                result.extend(self.encode_channel_msg(
+                    status::CONTROL_CHANGE | group_channel.channel(),
+                    6,
+                    Some((value14 >> 7) as u8),
+                ));
+                // Data Entry LSB (CC 38)
+                result.extend(self.encode_channel_msg(
+                    status::CONTROL_CHANGE | group_channel.channel(),
+                    38,
+                    Some((value14 & 0x7F) as u8),
+                ));
+                result
+            }
+
+            MidiMessage::Midi2RelativeRegisteredController { .. }
+            | MidiMessage::Midi2RelativeAssignableController { .. } => {
+                // Relative controllers have no direct MIDI 1.0 equivalent
+                vec![]
+            }
         }
     }
 

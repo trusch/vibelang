@@ -97,8 +97,10 @@ mod learn;
 mod mpe;
 mod nrpn;
 mod parser;
+mod per_note_state;
 mod queue;
 mod recording;
+mod ump;
 mod voice_output;
 
 // =============================================================================
@@ -115,6 +117,7 @@ pub use constants::{
 };
 pub use realtime::{
     MidiDeviceSender, MidiRealtimeConfig, MidiRealtimeService, MidiRealtimeStats, QueuedMidiEvent,
+    ScheduledMidiEvent,
 };
 
 // =============================================================================
@@ -122,7 +125,9 @@ pub use realtime::{
 // =============================================================================
 
 // Core event types (MIDI 2.0-ready)
-pub use events::{Channel, ControlValue, MidiMessage, TimestampedMidiEvent, Velocity};
+pub use events::{
+    Channel, ControlValue, Group, GroupChannel, MidiMessage, TimestampedMidiEvent, Velocity,
+};
 
 // Device management with separate input/output namespaces
 pub use devices::{
@@ -175,3 +180,9 @@ pub use voice_output::{
     get_modulator_cc_mappings, has_modulator_cc_mappings, is_midi_voice, send_cc_for_param,
     send_modulator_ccs, value_to_cc, ModulatorCcMapping,
 };
+
+// Per-note state tracking for MIDI 2.0 and MPE
+pub use per_note_state::{PerNoteState, PerNoteStateManager};
+
+// UMP (Universal MIDI Packet) encoding/decoding
+pub use ump::{encode_ump, UmpParser};

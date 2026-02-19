@@ -125,18 +125,21 @@ impl Voice {
         } else {
             format!("{}/{}", context::current_group_path(), group)
         };
+        self.sync_to_state();
         self
     }
 
     /// Set the synth for this voice.
     pub fn synth(mut self, synth_name: String) -> Self {
         self.synth_name = Some(synth_name);
+        self.sync_to_state();
         self
     }
 
     /// Set the sound source (synthdef name).
     pub fn on(mut self, source: String) -> Self {
         self.synth_name = Some(source);
+        self.sync_to_state();
         self
     }
 
@@ -146,6 +149,7 @@ impl Voice {
         self.synth_name = Some("sample_voice".to_string());
         self.params
             .insert("bufnum".to_string(), sample.buffer_id as f32);
+        self.sync_to_state();
         self
     }
 
@@ -162,20 +166,34 @@ impl Voice {
         // SFZ voices use sfz_voice_mono or sfz_voice_stereo synthdef
         // The runtime will select the appropriate one based on the sample
         self.synth_name = Some("sfz_voice_stereo".to_string());
+        self.sync_to_state();
         self
     }
 
     /// Set the output to a MIDI device (routes notes to external MIDI instead of audio).
+    ///
+    /// The channel is taken from the MidiDevice. Use `midi_device("name").channel(n)`
+    /// to configure the channel before passing to this method.
     #[cfg(feature = "midi")]
     pub fn on_midi_device(mut self, device: MidiDevice) -> Self {
         self.midi_output_device = Some(device.id);
+        self.midi_channel = device.channel;
+        // Mark this device for output opening during reload
+        context::with_state(|state| {
+            state.midi_outputs.insert(device.id);
+        });
+        self.sync_to_state();
         self
     }
 
     /// Set the MIDI channel (0-15) for MIDI output.
+    ///
+    /// Deprecated: prefer using `midi_device("name").channel(n)` instead.
+    /// This method is kept for backward compatibility.
     #[cfg(feature = "midi")]
     pub fn channel(mut self, ch: i64) -> Self {
         self.midi_channel = ch.clamp(0, 15) as u8;
+        self.sync_to_state();
         self
     }
 
@@ -191,24 +209,28 @@ impl Voice {
     #[cfg(feature = "midi")]
     pub fn cc_map(mut self, param: String, cc: i64) -> Self {
         self.param_cc_map.insert(param, cc.clamp(0, 127) as u8);
+        self.sync_to_state();
         self
     }
 
     /// Set the polyphony.
     pub fn poly(mut self, count: i64) -> Self {
         self.polyphony = count.clamp(1, 255) as u8;
+        self.sync_to_state();
         self
     }
 
     /// Set the gain.
     pub fn gain(mut self, value: f64) -> Self {
         self.gain = value as f32;
+        self.sync_to_state();
         self
     }
 
     /// Set a parameter.
     pub fn set_param(mut self, param: String, value: f64) -> Self {
         self.params.insert(param, value as f32);
+        self.sync_to_state();
         self
     }
 
@@ -219,6 +241,7 @@ impl Voice {
     /// sample variations.
     pub fn round_robin(mut self, count: i64) -> Self {
         self.round_robin_count = count.max(0) as u32;
+        self.sync_to_state();
         self
     }
 
@@ -229,6 +252,7 @@ impl Voice {
     /// an open hi-hat should be stopped when a closed hi-hat is triggered.
     pub fn choke(mut self, group: String) -> Self {
         self.choke_group = if group.is_empty() { None } else { Some(group) };
+        self.sync_to_state();
         self
     }
 
@@ -256,6 +280,7 @@ impl Voice {
         // Get or create the modulator ID from the modulator's name
         let modulator_id = context::get_or_create_modulator_id(&modulator.name);
         self.modulations.insert(param, modulator_id);
+        self.sync_to_state();
         self
     }
 
@@ -347,6 +372,18 @@ impl Voice {
         self.sync_to_state();
         self
     }
+
+    /// Run the voice continuously (for line-in, drones, etc.).
+    ///
+    /// This syncs the voice config and marks it for auto-triggering.
+    /// The voice will be triggered automatically on startup and after
+    /// reloads, producing continuous sound (e.g., for line-in monitors,
+    /// drones, or other always-on sounds).
+    pub fn run(self) -> Self {
+        self.sync_to_state();
+        context::mark_voice_for_running(&self.name);
+        self
+    }
 }
 
 /// Create a new voice builder.
@@ -384,7 +421,9 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("on", Voice::on);
     engine.register_fn("on", Voice::on_sample);
     #[cfg(not(target_arch = "wasm32"))]
-    engine.register_fn("on_sfz", Voice::on_sfz);
+    engine.register_fn("on", Voice::on_sfz);
+    #[cfg(not(target_arch = "wasm32"))]
+    engine.register_fn("on_sfz", Voice::on_sfz); // Backward compatibility alias
     #[cfg(feature = "midi")]
     engine.register_fn("on", Voice::on_midi_device);
     #[cfg(feature = "midi")]
@@ -410,6 +449,7 @@ pub fn register(engine: &mut Engine) {
 
     // Actions
     engine.register_fn("apply", Voice::apply);
+    engine.register_fn("run", Voice::run);
 }
 
 #[cfg(test)]

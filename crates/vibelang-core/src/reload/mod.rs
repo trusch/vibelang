@@ -62,10 +62,12 @@ mod script_state;
 pub use bus_pool::BusAllocator;
 pub use diff::{diff_entities, EntityDiff, ParamDiff, ReloadDiff};
 pub use script_state::{EffectConfig, GroupConfig, ScriptState};
+// ChangeQuant is defined in this module and exported directly
 
 #[cfg(feature = "midi")]
 pub use script_state::{
-    AdvancedMidiCcRoute, AdvancedMidiKeyboardRoute, AdvancedMidiNoteRoute, MidiCallbackConfig,
+    AdvancedMidiCcRoute, AdvancedMidiKeyboardRoute, AdvancedMidiNoteRoute, Midi2CcRoute,
+    Midi2KeyboardRoute, Midi2PerNoteControllerType, Midi2PerNoteRoute, MidiCallbackConfig,
     MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute, MidiOutputMessage,
     MidiRecordingRequest,
 };
@@ -77,7 +79,65 @@ use std::collections::HashSet;
 // Imports for calculate_diff and order_group_deletions
 use crate::state::State;
 use crate::traits::SampleConfig;
-use crate::types::{EffectId, MelodyId, ModulatorId, PatternId, SampleId, SequenceId, VoiceId};
+use crate::types::{Beat, EffectId, MelodyId, ModulatorId, PatternId, SampleId, SequenceId, TimeSignature, VoiceId};
+
+/// Quantization mode for applying hot reload changes.
+///
+/// Controls when content swaps take effect during playback. Using musical
+/// quantization ensures changes happen at musically appropriate moments,
+/// preventing audio disruption.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ChangeQuant {
+    /// Apply change immediately (may cause audio artifacts).
+    Immediate,
+    /// Apply change at the next beat boundary.
+    NextBeat,
+    /// Apply change at the next bar boundary (default).
+    #[default]
+    NextBar,
+    /// Apply change at the end of the current pattern/melody loop.
+    NextCycle,
+}
+
+impl ChangeQuant {
+    /// Check if a change should be applied at the current beat position.
+    ///
+    /// # Arguments
+    /// * `current_beat` - The global transport beat position
+    /// * `loop_position` - The current position within the pattern/melody loop
+    /// * `loop_length` - The length of the pattern/melody in beats
+    /// * `time_sig` - The current time signature
+    /// * `tolerance` - Beat tolerance for boundary detection (typically ~0.02 beats at 100Hz tick)
+    pub fn should_apply(
+        &self,
+        current_beat: Beat,
+        loop_position: Beat,
+        loop_length: Beat,
+        time_sig: TimeSignature,
+        tolerance: f64,
+    ) -> bool {
+        match self {
+            ChangeQuant::Immediate => true,
+            ChangeQuant::NextBeat => {
+                // Near integer beat boundary
+                let beat_frac = current_beat.to_f64().fract();
+                beat_frac < tolerance || beat_frac > (1.0 - tolerance)
+            }
+            ChangeQuant::NextBar => {
+                // Near bar boundary (beat 0 of any bar)
+                let bar_length = time_sig.numerator as f64;
+                let position_in_bar = current_beat.to_f64() % bar_length;
+                position_in_bar < tolerance || position_in_bar > (bar_length - tolerance)
+            }
+            ChangeQuant::NextCycle => {
+                // Near the start of the pattern/melody loop
+                let pos = loop_position.to_f64();
+                let len = loop_length.to_f64();
+                pos < tolerance || pos > (len - tolerance)
+            }
+        }
+    }
+}
 
 /// Calculate the diff between current runtime state and new script state.
 pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
@@ -115,14 +175,31 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
     // Patterns
     let current_pattern_ids: HashSet<PatternId> = current.patterns.keys().copied().collect();
     diff.patterns = diff_entities(&current_pattern_ids, &new.patterns, |id| {
-        current.patterns.get(id).map(|p| p.config.clone())
+        current.patterns.get(id).map(|p| p.config())
     });
 
     // Melodies
     let current_melody_ids: HashSet<MelodyId> = current.melodies.keys().copied().collect();
+    tracing::debug!(
+        "calculate_diff: melodies - current={}, new={}",
+        current_melody_ids.len(),
+        new.melodies.len()
+    );
+    for (id, config) in &new.melodies {
+        tracing::debug!(
+            "  new melody {:?} '{}': voice={:?}, notes={}, length={}",
+            id, config.name, config.voice, config.notes.len(), config.length.to_f64()
+        );
+    }
     diff.melodies = diff_entities(&current_melody_ids, &new.melodies, |id| {
-        current.melodies.get(id).map(|m| m.config.clone())
+        current.melodies.get(id).map(|m| m.config())
     });
+    tracing::debug!(
+        "calculate_diff: melody diff - created={}, updated={}, deleted={}",
+        diff.melodies.created.len(),
+        diff.melodies.updated.len(),
+        diff.melodies.deleted.len()
+    );
 
     // Sequences
     let current_sequence_ids: HashSet<SequenceId> = current.sequences.keys().copied().collect();

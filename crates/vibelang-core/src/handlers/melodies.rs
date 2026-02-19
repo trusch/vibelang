@@ -1,77 +1,96 @@
 //! Melodies handler implementation.
 
-use crate::backend::{AddAction, Backend};
-use crate::compat::RwLock;
+use crate::backend::Backend;
+use crate::compat::{Instant, RwLock};
+use crate::handlers::VoicesHandler;
 use crate::state::{MelodyState, State};
-use crate::traits::{Melodies, MelodyConfig, NoteEvent};
-use crate::types::{Beat, MelodyId, NodeId, ParamMap, VoiceId};
+use crate::traits::{Melodies, MelodyConfig, MelodyContent, NoteEvent, Voices};
+use crate::types::{Beat, MelodyId, VoiceId};
 use crate::validation::Validate;
 use crate::{Error, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
-/// Tracks pending note-off: when it should fire
-type PendingNoteOffs = HashMap<NodeId, Beat>;
+/// Lookahead window in milliseconds for MIDI scheduling.
+///
+/// Notes within this window ahead of the current beat are scheduled with
+/// precise wall-clock timestamps. This provides sub-millisecond timing accuracy
+/// for MIDI output while still responding to transport changes promptly.
+///
+/// 50ms provides a good balance:
+/// - Enough buffer to absorb scheduling jitter (~10ms typical)
+/// - Short enough to respond to transport stops quickly
+/// - At 120 BPM: 0.1 beats of lookahead
+/// - At 180 BPM: 0.15 beats of lookahead
+const LOOKAHEAD_MS: u64 = 50;
 
-/// Tracks which nodes belong to which melody (for cleanup on stop/delete)
-type MelodyNodes = HashMap<MelodyId, Vec<NodeId>>;
+/// Tracks pending note-off: (voice_id, note) -> (beat, wall-clock timestamp)
+///
+/// We track both the beat position (for display/debugging) and the wall-clock
+/// timestamp (for precise scheduling). The timestamp is calculated at note-on
+/// time based on the current tempo.
+type PendingNoteOffs = HashMap<(VoiceId, u8), (Beat, Instant)>;
+
+/// Tracks which notes belong to which melody (for cleanup on stop/delete)
+type MelodyNotes = HashMap<MelodyId, Vec<(VoiceId, u8)>>;
 
 /// Handler for melody operations.
 pub struct MelodiesHandler<B: Backend> {
-    backend: Arc<B>,
+    voices: Arc<VoicesHandler<B>>,
     state: Arc<RwLock<State>>,
     /// Tracks pending note-offs for releasing notes at the correct beat.
     pending_note_offs: Arc<RwLock<PendingNoteOffs>>,
-    /// Tracks which nodes belong to which melody (for cleanup).
-    melody_nodes: Arc<RwLock<MelodyNodes>>,
+    /// Tracks which notes belong to which melody (for cleanup).
+    melody_notes: Arc<RwLock<MelodyNotes>>,
 }
 
 /// Info about a note that needs to be triggered.
 struct NoteTrigger {
     melody_id: MelodyId,
-    // Voice ID kept for debugging/logging purposes, may be used in future error messages
-    #[allow(dead_code)]
     voice_id: VoiceId,
     note: u8,
-    synthdef: String,
-    group_node_id: NodeId,
-    node_id: NodeId,
-    /// Old node that this trigger replaces (if re-triggering same note)
-    old_node_id: Option<NodeId>,
-    params: ParamMap,
+    velocity: f32,
+    /// Beat position when the note should end.
     off_beat: Beat,
-    /// Modulations to apply after synth creation (param_name, control_bus)
-    modulations: Vec<(String, u32)>,
-}
-
-/// Convert MIDI note number to frequency in Hz.
-fn midi_to_freq(note: u8) -> f32 {
-    440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0)
+    /// Wall-clock time when note-on should fire.
+    on_timestamp: Instant,
+    /// Wall-clock time when note-off should fire.
+    off_timestamp: Instant,
 }
 
 impl<B: Backend> MelodiesHandler<B> {
     /// Create a new melodies handler.
-    pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>) -> Self {
+    pub fn new(state: Arc<RwLock<State>>, voices: Arc<VoicesHandler<B>>) -> Self {
         Self {
-            backend,
+            voices,
             state,
             pending_note_offs: Arc::new(RwLock::new(HashMap::new())),
-            melody_nodes: Arc::new(RwLock::new(HashMap::new())),
+            melody_notes: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     /// Process melodies for the current beat.
     ///
     /// Called by the runtime's tick loop to trigger note events.
+    ///
+    /// Uses lookahead scheduling for MIDI: notes are scheduled ahead of time
+    /// with precise wall-clock timestamps for sub-millisecond timing accuracy.
     pub async fn tick(&self, current_beat: Beat) {
+        let now = Instant::now();
+
         // First, process note-offs that are due
-        self.process_note_offs(current_beat).await;
+        self.process_note_offs_timed(now).await;
 
         // Collect note-on triggers while holding lock
         let triggers = {
             let mut state = self.state.write().await;
             let mut triggers = Vec::new();
+
+            // Get tempo for beat-to-time conversion
+            let tempo = state.tempo;
+            let lookahead_beats = Beat::from_f64(LOOKAHEAD_MS as f64 * tempo / 60000.0);
 
             // Get IDs of playing melodies
             let melody_ids: Vec<MelodyId> = state
@@ -81,143 +100,169 @@ impl<B: Backend> MelodiesHandler<B> {
                 .map(|(id, _)| *id)
                 .collect();
 
+            // Debug: log playing melodies count periodically (every ~1 second at 100Hz tick)
+            static TICK_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let tick_count = TICK_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if tick_count % 100 == 0 && !melody_ids.is_empty() {
+                tracing::debug!(
+                    "MelodiesHandler::tick: beat={:.2}, {} playing melodies, lookahead={:.3} beats",
+                    current_beat.to_f64(),
+                    melody_ids.len(),
+                    lookahead_beats.to_f64()
+                );
+            }
+
+            // Calculate tolerance for quantization boundary detection
+            // At 100Hz tick rate, ~10ms between ticks = ~0.02 beats at 120 BPM
+            let tolerance = 0.02 * tempo / 120.0;
+            let time_sig = state.time_sig;
+
             for melody_id in melody_ids {
                 if let Some(melody) = state.melodies.get_mut(&melody_id) {
-                    if !melody.playing || melody.config.length == Beat::ZERO {
+                    // Check for pending content swap at musical boundary
+                    if melody.try_apply_pending(current_beat, time_sig, tolerance) {
+                        tracing::debug!(
+                            "Melody {:?}: applied pending content swap at beat {:.2}",
+                            melody_id,
+                            current_beat.to_f64()
+                        );
+                    }
+
+                    if !melody.playing || melody.content.length == Beat::ZERO {
+                        tracing::trace!(
+                            "MelodiesHandler: melody {:?} skipped (playing={}, length={})",
+                            melody_id,
+                            melody.playing,
+                            melody.content.length.to_f64()
+                        );
                         continue;
                     }
 
-                    let length = melody.config.length;
+                    let length = melody.content.length;
                     let last_pos = melody.loop_position;
 
-                    // Calculate new position (wrapped to melody length)
-                    let new_pos = current_beat % length;
+                    // Calculate lookahead position (where we're scheduling up to)
+                    // This is ahead of current_beat by the lookahead window
+                    let lookahead_pos = (current_beat + lookahead_beats) % length;
 
-                    // Find notes that should trigger
-                    // Handle wrap-around case (when new_pos < last_pos)
-                    // Also handle first tick case where last_pos == new_pos
-                    let notes_to_trigger: Vec<NoteEvent> = if new_pos < last_pos {
-                        // Wrapped around - trigger notes from last_pos to end and 0 to new_pos
+                    // Find notes that should be scheduled
+                    // Notes between last_pos (exclusive) and lookahead_pos (inclusive)
+                    let notes_to_trigger: Vec<NoteEvent> = if lookahead_pos < last_pos {
+                        // Wrapped around - schedule notes from last_pos to end and 0 to lookahead_pos
                         melody
-                            .config
+                            .content
                             .notes
                             .iter()
-                            .filter(|n| n.beat >= last_pos || n.beat <= new_pos)
+                            .filter(|n| n.beat > last_pos || n.beat <= lookahead_pos)
                             .cloned()
                             .collect()
-                    } else if last_pos == new_pos {
-                        // First tick case: trigger notes exactly at this position
+                    } else if last_pos == lookahead_pos {
+                        // First tick case: schedule notes exactly at this position
                         melody
-                            .config
+                            .content
                             .notes
                             .iter()
-                            .filter(|n| n.beat == new_pos)
+                            .filter(|n| n.beat == lookahead_pos)
                             .cloned()
                             .collect()
                     } else {
-                        // Normal case - trigger notes between last_pos (exclusive) and new_pos (inclusive)
-                        // Use exclusive start to avoid re-triggering notes that were just played
+                        // Normal case - schedule notes between last_pos (exclusive) and lookahead_pos (inclusive)
                         melody
-                            .config
+                            .content
                             .notes
                             .iter()
-                            .filter(|n| n.beat > last_pos && n.beat <= new_pos)
+                            .filter(|n| n.beat > last_pos && n.beat <= lookahead_pos)
                             .cloned()
                             .collect()
                     };
 
-                    // Update loop position
-                    melody.loop_position = new_pos;
+                    // Update loop position to what we've scheduled up to
+                    melody.loop_position = lookahead_pos;
 
-                    // Get voice info for triggering (clone data to avoid borrow conflicts)
-                    let voice_id = match melody.config.voice {
+                    // Get voice info for triggering
+                    let melody_name = melody.content.name.clone();
+                    let notes_count = melody.content.notes.len();
+                    let voice_id = match melody.content.voice {
                         Some(id) => id,
-                        None => continue, // Skip melodies without a voice
+                        None => {
+                            tracing::warn!(
+                                "Melody {:?} '{}': no voice configured, skipping. notes_count={}",
+                                melody_id,
+                                melody_name,
+                                notes_count
+                            );
+                            continue;
+                        }
                     };
-                    let voice_info = state.voices.get(&voice_id).map(|v| {
-                        // Collect modulations for this voice
-                        let mut modulations = Vec::new();
-                        for (param_name, modulator_id) in &v.config.modulations {
-                            if let Some(modulator_state) = state.modulators.get(modulator_id) {
-                                modulations
-                                    .push((param_name.clone(), modulator_state.control_bus.raw()));
-                            } else {
-                                tracing::warn!(
-                                    "Modulator {:?} not found for param '{}' on voice {:?}",
-                                    modulator_id,
-                                    param_name,
-                                    voice_id
-                                );
-                            }
-                        }
-                        (
-                            v.config.synthdef.clone(),
-                            v.config.params.clone(),
-                            v.config.group,
-                            modulations,
-                        )
-                    });
 
-                    if let Some((synthdef, base_params, group_id, modulations)) = voice_info {
-                        let group_info = state
-                            .groups
-                            .get(&group_id)
-                            .map(|g| (g.node_id, g.audio_bus));
+                    // Verify voice exists
+                    if !state.voices.contains_key(&voice_id) {
+                        tracing::warn!(
+                            "Melody {:?} '{}': voice {:?} not found in state. Available voices: {:?}",
+                            melody_id,
+                            melody_name,
+                            voice_id,
+                            state.voices.keys().collect::<Vec<_>>()
+                        );
+                        continue;
+                    }
 
-                        if let Some((group_node_id, audio_bus)) = group_info {
-                            for note_event in notes_to_trigger {
-                                // Build params with note info
-                                let mut params = base_params.clone();
-                                params.insert("freq".to_string(), midi_to_freq(note_event.note));
+                    // Get base amp from voice config (for velocity multiplication)
+                    let base_amp = state
+                        .voices
+                        .get(&voice_id)
+                        .map(|v| v.config.params.get("amp").copied().unwrap_or(1.0))
+                        .unwrap_or(1.0);
 
-                                // Multiply voice amp by note velocity (don't overwrite voice's amp)
-                                let voice_amp = base_params.get("amp").copied().unwrap_or(1.0);
-                                let final_amp = voice_amp * note_event.velocity;
-                                params.insert("amp".to_string(), final_amp);
+                    for note_event in notes_to_trigger {
+                        // Multiply voice amp by note velocity
+                        let final_velocity = base_amp * note_event.velocity;
 
-                                tracing::debug!(
-                                    "Melody note: synthdef={}, note={}, voice_amp={}, velocity={}, final_amp={}",
-                                    synthdef, note_event.note, voice_amp, note_event.velocity, final_amp
-                                );
+                        // Calculate beat offset from current position to the note
+                        // We need to figure out how far ahead (in beats) the note is from current_beat
+                        let current_pos_in_loop = current_beat % length;
+                        let note_beat_in_loop = note_event.beat;
 
-                                params.insert("gate".to_string(), 1.0);
+                        // Calculate beat offset, handling wrap-around
+                        let beat_offset = if note_beat_in_loop >= current_pos_in_loop {
+                            // Note is ahead of current position in the loop
+                            note_beat_in_loop - current_pos_in_loop
+                        } else {
+                            // Note wrapped around (it's at the start of the next loop iteration)
+                            (length - current_pos_in_loop) + note_beat_in_loop
+                        };
 
-                                // Set output bus to group's audio bus (for proper routing)
-                                params.insert("out".to_string(), audio_bus.0 as f32);
+                        // Calculate wall-clock timestamp for note-on
+                        // offset_secs = beat_offset * 60.0 / tempo
+                        let offset_secs = beat_offset.to_f64() * 60.0 / tempo;
+                        // Clamp to non-negative (schedule immediately if somehow in the past)
+                        let on_timestamp = now + Duration::from_secs_f64(offset_secs.max(0.0));
 
-                                let node_id = state.alloc_node_id();
+                        // Calculate note-off timestamp
+                        let duration_secs = note_event.duration.to_f64() * 60.0 / tempo;
+                        let off_offset_secs = offset_secs + duration_secs;
+                        // Clamp to non-negative
+                        let off_timestamp = now + Duration::from_secs_f64(off_offset_secs.max(0.0));
+                        let off_beat = current_beat + Beat::from_f64(off_offset_secs.max(0.0) * tempo / 60.0);
 
-                                // Calculate when the note should end
-                                let off_beat = current_beat + note_event.duration;
+                        tracing::debug!(
+                            "Melody note scheduled: voice={:?}, note={}, vel={:.2}, on_offset={:.3}ms, off_offset={:.3}ms",
+                            voice_id,
+                            note_event.note,
+                            final_velocity,
+                            offset_secs * 1000.0,
+                            off_offset_secs * 1000.0
+                        );
 
-                                // Track the new node in voice state and capture old node if re-triggering
-                                let old_node_id =
-                                    if let Some(voice) = state.voices.get_mut(&voice_id) {
-                                        // If note already playing, we'll replace it
-                                        let old = voice.note_nodes.remove(&note_event.note);
-                                        if let Some(old_node) = old {
-                                            voice.active_nodes.retain(|n| *n != old_node);
-                                        }
-                                        voice.note_nodes.insert(note_event.note, node_id);
-                                        old
-                                    } else {
-                                        None
-                                    };
-
-                                triggers.push(NoteTrigger {
-                                    melody_id,
-                                    voice_id,
-                                    note: note_event.note,
-                                    synthdef: synthdef.clone(),
-                                    group_node_id,
-                                    node_id,
-                                    old_node_id,
-                                    params,
-                                    off_beat,
-                                    modulations: modulations.clone(),
-                                });
-                            }
-                        }
+                        triggers.push(NoteTrigger {
+                            melody_id,
+                            voice_id,
+                            note: note_event.note,
+                            velocity: final_velocity,
+                            off_beat,
+                            on_timestamp,
+                            off_timestamp,
+                        });
                     }
                 }
             }
@@ -225,149 +270,165 @@ impl<B: Backend> MelodiesHandler<B> {
             triggers
         };
 
-        // Send triggers to backend and schedule note-offs (lock released)
+        // Send triggers through voice handler and schedule note-offs (lock released)
         for trigger in triggers {
-            // If re-triggering a note, release the old synth immediately
-            if let Some(old_node) = trigger.old_node_id {
-                // Remove the old pending note-off (it's no longer needed)
-                {
-                    let mut note_offs = self.pending_note_offs.write().await;
-                    note_offs.remove(&old_node);
+            // Check if this note is already playing - if so, the new scheduling will replace it
+            {
+                let mut note_offs = self.pending_note_offs.write().await;
+                let key = (trigger.voice_id, trigger.note);
+                if note_offs.remove(&key).is_some() {
+                    tracing::debug!(
+                        "Re-triggering note {} on voice {:?}, replacing pending note-off",
+                        trigger.note,
+                        trigger.voice_id
+                    );
                 }
-                // Send gate=0 to release the old synth
-                tracing::debug!(
-                    "Releasing old node {} (re-triggered note {})",
-                    old_node.0,
-                    trigger.note
-                );
-                let _ = self.backend.set_param(old_node, "gate", 0.0).await;
             }
 
-            // Use Head so voices execute before effects/link synths (which are at tail)
-            let _ = self
-                .backend
-                .create_synth(
-                    &trigger.synthdef,
-                    trigger.node_id,
-                    trigger.group_node_id,
-                    AddAction::Head,
-                    &trigger.params,
-                )
-                .await;
-
-            // Apply modulations - map control buses to synth parameters
-            for (param_name, control_bus) in &trigger.modulations {
+            // Trigger note through voice handler with timestamp (for MIDI lookahead)
+            // Uses note_on_at if available (MIDI feature), otherwise falls back to immediate
+            #[cfg(feature = "midi")]
+            {
                 let _ = self
-                    .backend
-                    .map_param_to_bus(trigger.node_id, param_name, *control_bus)
+                    .voices
+                    .note_on_at(trigger.voice_id, trigger.note, trigger.velocity, Some(trigger.on_timestamp))
+                    .await;
+            }
+            #[cfg(not(feature = "midi"))]
+            {
+                let _ = self
+                    .voices
+                    .note_on(trigger.voice_id, trigger.note, trigger.velocity)
                     .await;
             }
 
-            // Schedule the note-off using node_id as key (each synth is unique)
+            // Schedule the note-off with timestamp
             {
                 let mut note_offs = self.pending_note_offs.write().await;
+                let key = (trigger.voice_id, trigger.note);
                 tracing::debug!(
-                    "Scheduling note-off: node={}, note={}, off_beat={}",
-                    trigger.node_id.0,
+                    "Scheduling note-off: voice={:?}, note={}, off_beat={:.2}, ts={:?}",
+                    trigger.voice_id,
                     trigger.note,
-                    trigger.off_beat.to_f64()
+                    trigger.off_beat.to_f64(),
+                    trigger.off_timestamp
                 );
-                note_offs.insert(trigger.node_id, trigger.off_beat);
+                note_offs.insert(key, (trigger.off_beat, trigger.off_timestamp));
             }
 
-            // Track this node for the melody (for cleanup on stop/delete)
+            // Track this note for the melody (for cleanup on stop/delete)
             {
-                let mut melody_nodes = self.melody_nodes.write().await;
-                melody_nodes
+                let mut melody_notes = self.melody_notes.write().await;
+                melody_notes
                     .entry(trigger.melody_id)
                     .or_default()
-                    .push(trigger.node_id);
+                    .push((trigger.voice_id, trigger.note));
             }
         }
     }
 
-    /// Process pending note-offs that are due.
-    async fn process_note_offs(&self, current_beat: Beat) {
-        let notes_to_off: Vec<NodeId> = {
+    /// Process pending note-offs using wall-clock timestamps.
+    ///
+    /// This method checks pending note-offs against the current time (Instant),
+    /// not beat position, for precise timing independent of tempo fluctuations.
+    async fn process_note_offs_timed(&self, now: Instant) {
+        // Note-offs that are due now or have a timestamp within the next few ms
+        // will be sent with their exact timestamp for precise timing
+        let notes_to_off: Vec<((VoiceId, u8), Instant)> = {
             let mut note_offs = self.pending_note_offs.write().await;
             let mut to_remove = Vec::new();
 
             if !note_offs.is_empty() {
-                tracing::debug!(
-                    "Checking {} pending note-offs at beat {}",
+                tracing::trace!(
+                    "Checking {} pending note-offs at {:?}",
                     note_offs.len(),
-                    current_beat.to_f64()
+                    now
                 );
             }
 
-            for (&node_id, &off_beat) in note_offs.iter() {
-                if off_beat <= current_beat {
+            // Find note-offs that are due (timestamp has passed or is imminent)
+            // We use a small threshold to batch nearby note-offs together
+            let threshold = now + Duration::from_millis(5);
+
+            for (&key, &(off_beat, off_timestamp)) in note_offs.iter() {
+                if off_timestamp <= threshold {
                     tracing::debug!(
-                        "Note-off due: node={}, off_beat={}",
-                        node_id.0,
-                        off_beat.to_f64()
+                        "Note-off due: voice={:?}, note={}, off_beat={:.2}, ts={:?}",
+                        key.0,
+                        key.1,
+                        off_beat.to_f64(),
+                        off_timestamp
                     );
-                    to_remove.push(node_id);
+                    to_remove.push((key, off_timestamp));
                 }
             }
 
-            for node_id in &to_remove {
-                note_offs.remove(node_id);
+            for (key, _) in &to_remove {
+                note_offs.remove(key);
             }
 
             to_remove
         };
 
-        // Send gate=0 to release notes and clean up melody_nodes tracking
+        // Clean up melody_notes tracking
         if !notes_to_off.is_empty() {
-            let mut melody_nodes = self.melody_nodes.write().await;
-            for node_id in &notes_to_off {
-                // Remove from all melody node lists
-                for nodes in melody_nodes.values_mut() {
-                    nodes.retain(|n| n != node_id);
+            let mut melody_notes = self.melody_notes.write().await;
+            for ((voice_id, note), _) in &notes_to_off {
+                // Remove from all melody note lists
+                for notes in melody_notes.values_mut() {
+                    notes.retain(|n| n != &(*voice_id, *note));
                 }
             }
         }
 
-        for node_id in notes_to_off {
+        // Send note-offs through voice handler with timestamps
+        for ((voice_id, note), timestamp) in notes_to_off {
             tracing::debug!(
-                "Sending note-off: node={}, current_beat={}",
-                node_id.0,
-                current_beat.to_f64()
+                "Sending note-off: voice={:?}, note={}, ts={:?}",
+                voice_id,
+                note,
+                timestamp
             );
-            let _ = self.backend.set_param(node_id, "gate", 0.0).await;
+            #[cfg(feature = "midi")]
+            {
+                let _ = self.voices.note_off_at(voice_id, note, Some(timestamp)).await;
+            }
+            #[cfg(not(feature = "midi"))]
+            {
+                let _ = self.voices.note_off(voice_id, note).await;
+            }
         }
     }
 
     /// Release all active notes for a melody and clear its pending note-offs.
     async fn release_melody_notes(&self, melody_id: MelodyId) {
-        // Get all nodes for this melody
-        let nodes_to_release: Vec<NodeId> = {
-            let mut melody_nodes = self.melody_nodes.write().await;
-            melody_nodes.remove(&melody_id).unwrap_or_default()
+        // Get all notes for this melody
+        let notes_to_release: Vec<(VoiceId, u8)> = {
+            let mut melody_notes = self.melody_notes.write().await;
+            melody_notes.remove(&melody_id).unwrap_or_default()
         };
 
-        if nodes_to_release.is_empty() {
+        if notes_to_release.is_empty() {
             return;
         }
 
         tracing::debug!(
             "Releasing {} notes for melody {:?}",
-            nodes_to_release.len(),
+            notes_to_release.len(),
             melody_id
         );
 
-        // Remove pending note-offs for these nodes
+        // Remove pending note-offs for these notes
         {
             let mut note_offs = self.pending_note_offs.write().await;
-            for node_id in &nodes_to_release {
-                note_offs.remove(node_id);
+            for key in &notes_to_release {
+                note_offs.remove(key);
             }
         }
 
-        // Send gate=0 to release all notes
-        for node_id in nodes_to_release {
-            let _ = self.backend.set_param(node_id, "gate", 0.0).await;
+        // Send note-offs through voice handler
+        for (voice_id, note) in notes_to_release {
+            let _ = self.voices.note_off(voice_id, note).await;
         }
     }
 }
@@ -392,15 +453,7 @@ impl<B: Backend> Melodies for MelodiesHandler<B> {
             }
         }
 
-        state.melodies.insert(
-            id,
-            MelodyState {
-                id,
-                config,
-                playing: false,
-                loop_position: Beat::ZERO,
-            },
-        );
+        state.melodies.insert(id, MelodyState::new(id, config));
 
         Ok(())
     }

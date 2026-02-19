@@ -8,12 +8,14 @@
 //! - Active playback state (running synths, active fades)
 
 use crate::compat::Instant;
+use crate::reload::ChangeQuant;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingInfo;
 use crate::traits::{
-    FadeConfig, MelodyConfig, ModulatorConfig, PatternConfig, SampleInfo, SequenceConfig,
-    VoiceConfig,
+    FadeConfig, MelodyConfig, MelodyContent, ModulatorConfig, PatternConfig, PatternContent,
+    SampleInfo, SequenceConfig, VoiceConfig,
 };
+use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::types::RecordingId;
 use crate::types::{
@@ -81,38 +83,183 @@ pub struct VoiceState {
     /// round-robin count. Useful for drum patterns with multiple sample
     /// variations (e.g., snare_1, snare_2, snare_3).
     pub round_robin_position: u32,
+
+    /// Pending parameter changes from MIDI routing.
+    ///
+    /// These are applied when the next note triggers.
+    pub pending_params: HashMap<String, f64>,
 }
 
 /// Internal state for a pattern.
+///
+/// Separates immutable content (steps, voice, length) from mutable playback state
+/// (playing, loop_position) to enable seamless hot reload. Content can be swapped
+/// atomically at musical boundaries without affecting playback continuity.
 #[derive(Clone, Debug)]
 pub struct PatternState {
     /// Pattern ID.
     pub id: PatternId,
 
-    /// Configuration.
-    pub config: PatternConfig,
+    /// The pattern content (steps, voice, length, etc.).
+    /// Wrapped in Arc for cheap cloning and atomic swapping during hot reload.
+    pub content: Arc<PatternContent>,
 
     /// Whether the pattern is playing.
     pub playing: bool,
 
     /// Current loop position.
     pub loop_position: Beat,
+
+    /// Pending content swap for hot reload.
+    /// When set, the new content will be applied at the specified quantization boundary.
+    pub pending_content: Option<(Arc<PatternContent>, ChangeQuant)>,
+}
+
+impl PatternState {
+    /// Create a new pattern state from a config.
+    pub fn new(id: PatternId, config: PatternConfig) -> Self {
+        Self {
+            id,
+            content: PatternContent::arc_from_config(&config),
+            playing: false,
+            loop_position: Beat::ZERO,
+            pending_content: None,
+        }
+    }
+
+    /// Get the pattern config (reconstructed from content).
+    /// Used for diff calculation and API compatibility.
+    pub fn config(&self) -> PatternConfig {
+        PatternConfig {
+            name: self.content.name.clone(),
+            voice: self.content.voice,
+            steps: self.content.steps.clone(),
+            length: self.content.length,
+            swing: self.content.swing,
+        }
+    }
+
+    /// Queue a content swap to be applied at the specified quantization boundary.
+    pub fn queue_content_swap(&mut self, new_content: Arc<PatternContent>, quant: ChangeQuant) {
+        self.pending_content = Some((new_content, quant));
+    }
+
+    /// Apply pending content swap if conditions are met.
+    /// Returns true if content was swapped.
+    pub fn try_apply_pending(
+        &mut self,
+        current_beat: Beat,
+        time_sig: crate::types::TimeSignature,
+        tolerance: f64,
+    ) -> bool {
+        if let Some((new_content, quant)) = &self.pending_content {
+            if quant.should_apply(
+                current_beat,
+                self.loop_position,
+                self.content.length,
+                time_sig,
+                tolerance,
+            ) {
+                let new_content = new_content.clone();
+                self.pending_content = None;
+
+                // If length changed and we're past the new length, reset to start
+                if self.loop_position >= new_content.length {
+                    self.loop_position = Beat::ZERO;
+                }
+
+                self.content = new_content;
+                return true;
+            }
+        }
+        false
+    }
 }
 
 /// Internal state for a melody.
+///
+/// Separates immutable content (notes, voice, length) from mutable playback state
+/// (playing, loop_position) to enable seamless hot reload. Content can be swapped
+/// atomically at musical boundaries without affecting playback continuity.
 #[derive(Clone, Debug)]
 pub struct MelodyState {
     /// Melody ID.
     pub id: MelodyId,
 
-    /// Configuration.
-    pub config: MelodyConfig,
+    /// The melody content (notes, voice, length, etc.).
+    /// Wrapped in Arc for cheap cloning and atomic swapping during hot reload.
+    pub content: Arc<MelodyContent>,
 
     /// Whether the melody is playing.
     pub playing: bool,
 
     /// Current loop position.
     pub loop_position: Beat,
+
+    /// Pending content swap for hot reload.
+    /// When set, the new content will be applied at the specified quantization boundary.
+    pub pending_content: Option<(Arc<MelodyContent>, ChangeQuant)>,
+}
+
+impl MelodyState {
+    /// Create a new melody state from a config.
+    pub fn new(id: MelodyId, config: MelodyConfig) -> Self {
+        Self {
+            id,
+            content: MelodyContent::arc_from_config(&config),
+            playing: false,
+            loop_position: Beat::ZERO,
+            pending_content: None,
+        }
+    }
+
+    /// Get the melody config (reconstructed from content).
+    /// Used for diff calculation and API compatibility.
+    pub fn config(&self) -> MelodyConfig {
+        MelodyConfig {
+            name: self.content.name.clone(),
+            voice: self.content.voice,
+            notes: self.content.notes.clone(),
+            length: self.content.length,
+            swing: self.content.swing,
+        }
+    }
+
+    /// Queue a content swap to be applied at the specified quantization boundary.
+    pub fn queue_content_swap(&mut self, new_content: Arc<MelodyContent>, quant: ChangeQuant) {
+        self.pending_content = Some((new_content, quant));
+    }
+
+    /// Apply pending content swap if conditions are met.
+    /// Returns true if content was swapped.
+    pub fn try_apply_pending(
+        &mut self,
+        current_beat: Beat,
+        time_sig: crate::types::TimeSignature,
+        tolerance: f64,
+    ) -> bool {
+        if let Some((new_content, quant)) = &self.pending_content {
+            if quant.should_apply(
+                current_beat,
+                self.loop_position,
+                self.content.length,
+                time_sig,
+                tolerance,
+            ) {
+                let new_content = new_content.clone();
+                self.pending_content = None;
+
+                // If length changed and we're past the new length, reset to start
+                if self.loop_position >= new_content.length {
+                    self.loop_position = Beat::ZERO;
+                }
+
+                self.content = new_content;
+                return true;
+            }
+        }
+        false
+    }
 }
 
 /// Internal state for a sequence.
@@ -591,12 +738,14 @@ impl State {
         id
     }
 
-    /// Allocate a new audio bus ID.
+    /// Allocate a new stereo audio bus ID.
     ///
-    /// Each group gets its own bus for audio routing.
+    /// Each group gets its own stereo bus pair for audio routing.
+    /// SuperCollider's `In.ar(bus, 2)` reads from `bus` and `bus+1`,
+    /// so we must allocate 2 consecutive buses per group.
     pub fn alloc_bus_id(&mut self) -> BusId {
         let id = BusId::new(self.next_bus_id);
-        self.next_bus_id += 1;
+        self.next_bus_id += 2; // Allocate stereo pair (2 consecutive buses)
         id
     }
 

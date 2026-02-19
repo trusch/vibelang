@@ -67,10 +67,10 @@ impl BusAllocator {
             return bus;
         }
 
-        // Try to reuse a freed bus, otherwise allocate new
+        // Try to reuse a freed bus, otherwise allocate new stereo pair
         let bus = self.free_buses.pop().unwrap_or_else(|| {
             let id = BusId::new(self.next_bus_id);
-            self.next_bus_id += 1;
+            self.next_bus_id += 2; // Allocate stereo pair (2 consecutive buses)
             id
         });
 
@@ -158,7 +158,7 @@ mod tests {
         let bus = allocator.get_or_alloc(GroupId::new(1));
 
         assert_eq!(bus.0, 16);
-        assert_eq!(allocator.next_id(), 17);
+        assert_eq!(allocator.next_id(), 18); // Stereo: increments by 2
         assert_eq!(allocator.allocated_count(), 1);
     }
 

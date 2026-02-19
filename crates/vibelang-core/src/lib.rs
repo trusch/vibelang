@@ -120,6 +120,7 @@ mod runtime;
 mod state;
 
 // Public modules
+pub mod audio;
 pub mod backends;
 pub mod handlers;
 pub mod message;
@@ -133,6 +134,7 @@ pub mod validation;
 pub mod midi;
 
 // Re-exports for convenience
+pub use audio::{AudioConnector, AudioError, PortDirection, PortMatcher};
 pub use backend::{AddAction, Backend, BufferInfo};
 pub use error::{Error, Result};
 

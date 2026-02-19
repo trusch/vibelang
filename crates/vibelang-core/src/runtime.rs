@@ -104,7 +104,7 @@ pub struct Runtime<B: Backend> {
     // =========================================================================
     transport: TransportHandler<B>,
     groups: GroupsHandler<B>,
-    voices: VoicesHandler<B>,
+    voices: Arc<VoicesHandler<B>>,
     patterns: PatternsHandler<B>,
     melodies: MelodiesHandler<B>,
     sequences: SequencesHandler<B>,
@@ -131,6 +131,16 @@ impl<B: Backend> Runtime<B> {
         let backend = Arc::new(backend);
         let state = Arc::new(RwLock::new(State::default()));
 
+        // Create MIDI handler first so we can share output channels with voices
+        #[cfg(feature = "midi")]
+        let midi = MidiHandler::new(backend.clone(), state.clone());
+
+        // Create voices handler and connect MIDI outputs
+        let mut voices_handler = VoicesHandler::new(backend.clone(), state.clone());
+        #[cfg(feature = "midi")]
+        voices_handler.set_midi_outputs(midi.output_channels());
+        let voices = Arc::new(voices_handler);
+
         Self {
             backend: backend.clone(),
             state: state.clone(),
@@ -138,9 +148,9 @@ impl<B: Backend> Runtime<B> {
             rx,
             transport: TransportHandler::new(backend.clone(), state.clone()),
             groups: GroupsHandler::new(backend.clone(), state.clone()),
-            voices: VoicesHandler::new(backend.clone(), state.clone()),
-            patterns: PatternsHandler::new(backend.clone(), state.clone()),
-            melodies: MelodiesHandler::new(backend.clone(), state.clone()),
+            voices: voices.clone(),
+            patterns: PatternsHandler::new(state.clone(), voices.clone()),
+            melodies: MelodiesHandler::new(state.clone(), voices.clone()),
             sequences: SequencesHandler::new(backend.clone(), state.clone()),
             fades: FadesHandler::new(backend.clone(), state.clone()),
             effects: EffectsHandler::new(backend.clone(), state.clone()),
@@ -151,7 +161,7 @@ impl<B: Backend> Runtime<B> {
             recordings: RecordingsHandler::new(backend.clone(), state.clone()),
             synthdefs: SynthDefsHandler::new(backend.clone(), state.clone()),
             #[cfg(feature = "midi")]
-            midi: MidiHandler::new(backend.clone(), state.clone()),
+            midi,
         }
     }
 
@@ -183,7 +193,7 @@ impl<B: Backend> Runtime<B> {
     /// use [`Runtime::tick()`] in a requestAnimationFrame loop.
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn run(&mut self) {
-        let tick_interval = Duration::from_millis(10); // 100 Hz
+        let tick_interval = Duration::from_millis(2); // 500 Hz for tighter MIDI timing
 
         loop {
             // Process available messages
@@ -248,6 +258,9 @@ impl<B: Backend> Runtime<B> {
 
         // Tick fades before patterns/melodies so triggered notes get the current fade values
         self.fades.tick().await;
+
+        // Tick effects to process pending frees (after grace period)
+        self.effects.tick().await;
 
         // Tick schedulers (patterns and melodies now use updated fade values)
         self.patterns.tick(current_beat).await;
@@ -581,6 +594,78 @@ impl<B: Backend> Runtime<B> {
         Ok(())
     }
 
+    /// Sync with the backend (non-blocking, minimal timeout).
+    ///
+    /// This method wraps backend.sync() with a very short timeout to avoid
+    /// blocking the main tick loop. MIDI clock runs at 24 PPQN so we can't
+    /// afford to block for more than a few milliseconds.
+    ///
+    /// Returns true if sync succeeded, false if it timed out or failed.
+    /// On failure, the system will eventually converge - this is not fatal.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn sync_with_retry(&self, context: &str) -> bool {
+        // Use minimal timeout (10ms) - MIDI clock must not be delayed
+        // If scsynth doesn't respond in 10ms, continue anyway
+        match timeout(Duration::from_millis(10), self.backend.sync()).await {
+            Ok(Ok(())) => {
+                tracing::trace!("Reload: {} sync succeeded", context);
+                true
+            }
+            Ok(Err(e)) => {
+                tracing::trace!("Reload: {} sync failed: {:?}, continuing", context, e);
+                false
+            }
+            Err(_) => {
+                // Timeout - don't retry, just continue
+                tracing::trace!("Reload: {} sync timed out, continuing", context);
+                false
+            }
+        }
+    }
+
+    /// Sync with the backend (WASM version - no timeout).
+    #[cfg(target_arch = "wasm32")]
+    async fn sync_with_retry(&self, context: &str) -> bool {
+        match self.backend.sync().await {
+            Ok(()) => {
+                tracing::debug!("Reload: {} sync succeeded", context);
+                true
+            }
+            Err(e) => {
+                tracing::warn!("Reload: {} sync failed: {:?}", context, e);
+                false
+            }
+        }
+    }
+
+    /// Calculate adaptive position epsilon based on tempo and pattern length.
+    ///
+    /// The epsilon prevents re-triggering steps that just fired when syncing
+    /// pattern/melody positions during reload. It needs to be:
+    /// - Large enough to skip past the tick interval (avoid re-triggering)
+    /// - Small enough to not skip actual steps in the pattern
+    ///
+    /// Formula: epsilon = max(tick_window_beats, 0.001), clamped to 10% of length
+    fn calculate_position_epsilon(&self, bpm: f64, length: crate::types::Beat) -> crate::types::Beat {
+        // Conservative tick window of 20ms (accounts for tick jitter and scheduling delays)
+        const TICK_WINDOW_MS: f64 = 20.0;
+
+        // Calculate how many beats 20ms represents at current tempo
+        // beats = (ms / 1000) * (bpm / 60) = ms * bpm / 60000
+        let tick_window_beats = TICK_WINDOW_MS * bpm / 60000.0;
+
+        // Ensure epsilon is at least 0.001 beats (minimum resolution)
+        let epsilon = tick_window_beats.max(0.001);
+
+        // Cap at 10% of pattern length to avoid skipping actual steps
+        // (e.g., 16th notes at any tempo are 0.25 beats, so 10% of a 4-beat pattern
+        // would be 0.4 beats, still well under 0.25)
+        let max_epsilon = length.to_f64() * 0.10;
+        let final_epsilon = epsilon.min(max_epsilon);
+
+        crate::types::Beat::from_f64(final_epsilon)
+    }
+
     /// Apply a live reload from a new script state.
     ///
     /// This calculates the minimal diff between current and new state,
@@ -625,26 +710,23 @@ impl<B: Backend> Runtime<B> {
         }
 
         // =========================================================================
-        // Phase 1: Stop all patterns/melodies/sequences that will be modified
+        // Phase 1: Stop entities that will be deleted
         // =========================================================================
+        // NOTE: We NO LONGER stop patterns/melodies that are being updated.
+        // Instead, we queue content swaps in Phase 4 for seamless hot reload.
 
-        // Stop patterns that will be deleted or updated
+        // Stop patterns that will be deleted (NOT updated - those continue playing)
         for id in &diff.patterns.deleted {
             let _ = self.patterns.stop(*id).await;
         }
-        for id in diff.patterns.updated.keys() {
-            let _ = self.patterns.stop(*id).await;
-        }
 
-        // Stop melodies that will be deleted or updated
+        // Stop melodies that will be deleted (NOT updated - those continue playing)
         for id in &diff.melodies.deleted {
-            let _ = self.melodies.stop(*id).await;
-        }
-        for id in diff.melodies.updated.keys() {
             let _ = self.melodies.stop(*id).await;
         }
 
         // Stop sequences that will be deleted or updated
+        // (Sequences still use delete/create cycle for now)
         for id in &diff.sequences.deleted {
             let _ = self.sequences.stop(*id).await;
         }
@@ -709,6 +791,29 @@ impl<B: Backend> Runtime<B> {
         }
 
         // =========================================================================
+        // Phase 2.5: Open MIDI devices (must be done before voices are created)
+        // =========================================================================
+
+        #[cfg(feature = "midi")]
+        {
+            // Open MIDI inputs
+            for device_id in &new_state.midi_inputs {
+                tracing::debug!("Reload: opening MIDI input {:?}", device_id);
+                if let Err(e) = self.midi.open_input(*device_id).await {
+                    tracing::error!("Reload: failed to open MIDI input {:?}: {}", device_id, e);
+                }
+            }
+
+            // Open MIDI outputs
+            for device_id in &new_state.midi_outputs {
+                tracing::debug!("Reload: opening MIDI output {:?}", device_id);
+                if let Err(e) = self.midi.open_output(*device_id).await {
+                    tracing::error!("Reload: failed to open MIDI output {:?}: {}", device_id, e);
+                }
+            }
+        }
+
+        // =========================================================================
         // Phase 3: Create new entities (parents before children for groups)
         // =========================================================================
 
@@ -740,8 +845,7 @@ impl<B: Backend> Runtime<B> {
 
         // Sync with backend to ensure groups are created before we create synths targeting them
         if !diff.groups.created.is_empty() {
-            tracing::debug!("Reload: syncing with backend after group creation");
-            let _ = self.backend.sync().await;
+            self.sync_with_retry("after group creation").await;
         }
 
         // Create new modulators (before voices so modulations can reference them)
@@ -827,73 +931,48 @@ impl<B: Backend> Runtime<B> {
             let _ = self.groups.solo(*id, new_config.soloed).await;
         }
 
-        // Update voices - recreate with new config
+        // Update voices - gracefully release old synths, then recreate with new config
+        // Using graceful_delete sets gate=0 instead of immediately freeing nodes,
+        // allowing release envelopes to complete naturally (via doneAction=2)
         for (id, config) in &diff.voices.updated {
-            tracing::debug!("Reload: updating voice {:?}", id);
-            // Delete and recreate
-            let _ = self.voices.delete(*id).await;
+            tracing::debug!("Reload: updating voice {:?} (graceful release + recreate)", id);
+            let _ = self.voices.graceful_delete(*id).await;
             let _ = self.voices.create(*id, config.clone()).await;
         }
 
-        // Update patterns - update config in place, preserving playback state
-        // This ensures seamless live reload without glitches
+        // Update patterns - queue content swap for seamless hot reload
+        // Instead of delete/create cycle, queue new content to be applied at next bar boundary
+        // This ensures no audio disruption during live reload
         for (id, config) in &diff.patterns.updated {
-            tracing::debug!("Reload: updating pattern {:?}", id);
-            // Save current playback state
-            let was_playing = {
-                let state = self.state.read().await;
-                state.patterns.get(id).is_some_and(|p| p.playing)
-            };
-            // Recreate with new config
-            let _ = self.patterns.delete(*id).await;
-            let _ = self.patterns.create(*id, config.clone()).await;
-            // Restore playback state - sync loop_position to current beat to avoid re-triggering
-            if was_playing {
-                let mut state = self.state.write().await;
-                // Use current_beat % new_length + small epsilon to sync with transport
-                // The epsilon ensures steps at exactly this position don't re-trigger
-                // (tick logic uses >= for last_pos, so we need to be past any triggered steps)
-                let base_position = state.current_beat % config.length;
-                let synced_position = base_position + crate::types::Beat::from_f64(0.001);
-                // Wrap if we exceeded length
-                let synced_position = if synced_position >= config.length {
-                    synced_position - config.length
-                } else {
-                    synced_position
-                };
-                if let Some(pattern) = state.patterns.get_mut(id) {
-                    pattern.playing = true;
-                    pattern.loop_position = synced_position;
-                }
+            tracing::debug!("Reload: queuing pattern {:?} content swap for next bar", id);
+            let new_content = crate::traits::PatternContent::arc_from_config(config);
+            let mut state = self.state.write().await;
+            if let Some(pattern) = state.patterns.get_mut(id) {
+                // Queue content swap with NextBar quantization (default)
+                pattern.queue_content_swap(new_content, reload::ChangeQuant::default());
+                tracing::debug!(
+                    "Pattern {:?}: content swap queued (playing={})",
+                    id,
+                    pattern.playing
+                );
             }
         }
 
-        // Update melodies - update config in place, preserving playback state
+        // Update melodies - queue content swap for seamless hot reload
+        // Instead of delete/create cycle, queue new content to be applied at next bar boundary
+        // This ensures no audio disruption during live reload
         for (id, config) in &diff.melodies.updated {
-            tracing::debug!("Reload: updating melody {:?}", id);
-            // Save current playback state
-            let was_playing = {
-                let state = self.state.read().await;
-                state.melodies.get(id).is_some_and(|m| m.playing)
-            };
-            // Recreate with new config
-            let _ = self.melodies.delete(*id).await;
-            let _ = self.melodies.create(*id, config.clone()).await;
-            // Restore playback state - sync loop_position to current beat to avoid re-triggering
-            if was_playing {
-                let mut state = self.state.write().await;
-                // Use current_beat % new_length + small epsilon to sync with transport
-                let base_position = state.current_beat % config.length;
-                let synced_position = base_position + crate::types::Beat::from_f64(0.001);
-                let synced_position = if synced_position >= config.length {
-                    synced_position - config.length
-                } else {
-                    synced_position
-                };
-                if let Some(melody) = state.melodies.get_mut(id) {
-                    melody.playing = true;
-                    melody.loop_position = synced_position;
-                }
+            tracing::debug!("Reload: queuing melody {:?} content swap for next bar", id);
+            let new_content = crate::traits::MelodyContent::arc_from_config(config);
+            let mut state = self.state.write().await;
+            if let Some(melody) = state.melodies.get_mut(id) {
+                // Queue content swap with NextBar quantization (default)
+                melody.queue_content_swap(new_content, reload::ChangeQuant::default());
+                tracing::debug!(
+                    "Melody {:?}: content swap queued (playing={})",
+                    id,
+                    melody.playing
+                );
             }
         }
 
@@ -915,14 +994,15 @@ impl<B: Backend> Runtime<B> {
             // Restore playback state - sync position to current beat to avoid re-triggering clips
             if was_playing {
                 let mut state = self.state.write().await;
+                // Calculate adaptive epsilon based on tempo and sequence length
+                let epsilon = self.calculate_position_epsilon(state.tempo, config.length);
                 // For looping sequences, use modulo + epsilon; for non-looping, clamp to length
                 let base_position = if looping {
                     state.current_beat % config.length
                 } else {
                     state.current_beat.min(config.length)
                 };
-                // Add small epsilon to avoid re-triggering clips at exactly this position
-                let synced_position = base_position + crate::types::Beat::from_f64(0.001);
+                let synced_position = base_position + epsilon;
                 let synced_position = if looping && synced_position >= config.length {
                     synced_position - config.length
                 } else {
@@ -936,16 +1016,48 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
-        // Update effects - apply all params from new config
+        // Update effects - only recreate if synthdef or group changed
+        // For param-only changes, use set_param to avoid audio gaps
         for (id, new_config) in &diff.effects.updated {
-            for (param, value) in &new_config.params {
+            // Get current effect state to compare
+            let needs_recreate = {
+                let state = self.state.read().await;
+                if let Some(current_effect) = state.effects.get(id) {
+                    // Recreate if synthdef or group changed
+                    current_effect.synthdef != new_config.synthdef
+                        || current_effect.group != new_config.group
+                } else {
+                    // Effect not found - shouldn't happen, but recreate to be safe
+                    true
+                }
+            };
+
+            if needs_recreate {
                 tracing::debug!(
-                    "Reload: updating effect {:?} param {} to {}",
+                    "Reload: recreating effect {:?} (synthdef or group changed, synthdef='{}', {} params)",
                     id,
-                    param,
-                    value
+                    new_config.synthdef,
+                    new_config.params.len()
                 );
-                let _ = self.effects.set_param(*id, param, *value).await;
+                let _ = self.effects.remove(*id).await;
+                if let Err(e) = self
+                    .effects
+                    .add(*id, new_config.group, &new_config.synthdef, &new_config.params)
+                    .await
+                {
+                    tracing::error!("Reload: failed to recreate effect {:?}: {}", id, e);
+                }
+            } else {
+                // Only params changed - update them without recreating the synth
+                tracing::debug!(
+                    "Reload: updating effect {:?} params only (synthdef='{}', {} params)",
+                    id,
+                    new_config.synthdef,
+                    new_config.params.len()
+                );
+                for (param, value) in &new_config.params {
+                    let _ = self.effects.set_param(*id, param, *value).await;
+                }
             }
         }
 
@@ -966,14 +1078,15 @@ impl<B: Backend> Runtime<B> {
         // Phase 5: Finalize groups (create link synths)
         // =========================================================================
 
-        // Always finalize groups to ensure proper audio routing
-        // This is idempotent - link synths won't be recreated if they exist
-        tracing::debug!("Reload: finalizing groups");
-        let _ = self.groups.finalize().await;
+        // Only finalize if groups were created - skip for simple pattern/melody updates
+        // This avoids unnecessary sync operations during hot reload
+        if !diff.groups.created.is_empty() {
+            tracing::debug!("Reload: finalizing groups");
+            let _ = self.groups.finalize().await;
 
-        // Sync to ensure link synths are created before patterns start
-        tracing::debug!("Reload: syncing with backend after finalize");
-        let _ = self.backend.sync().await;
+            // Brief sync to let link synths be created (non-blocking, quick timeout)
+            self.sync_with_retry("after finalize").await;
+        }
 
         // =========================================================================
         // Phase 6: Start patterns/melodies/sequences that should be playing
@@ -992,7 +1105,7 @@ impl<B: Backend> Runtime<B> {
                 let length = state
                     .patterns
                     .get(id)
-                    .map(|p| p.config.length)
+                    .map(|p| p.content.length)
                     .unwrap_or(crate::types::Beat::from_f64(4.0));
                 (should_start, length)
             };
@@ -1006,7 +1119,9 @@ impl<B: Backend> Runtime<B> {
                 let synced_position = if base_position == crate::types::Beat::ZERO {
                     base_position
                 } else {
-                    let pos = base_position + crate::types::Beat::from_f64(0.001);
+                    // Use adaptive epsilon based on tempo
+                    let epsilon = self.calculate_position_epsilon(state.tempo, pattern_length);
+                    let pos = base_position + epsilon;
                     if pos >= pattern_length {
                         pos - pattern_length
                     } else {
@@ -1021,17 +1136,41 @@ impl<B: Backend> Runtime<B> {
 
         // Start melodies that should be playing (only if not already playing)
         // Also sync their position to current_beat to avoid triggering past notes
+        tracing::debug!(
+            "Reload: processing {} melodies to start from playing_melodies",
+            new_state.playing_melodies.len()
+        );
         for id in &new_state.playing_melodies {
-            let (should_start, melody_length) = {
+            let (should_start, melody_length, melody_exists, notes_count) = {
                 let state = self.state.read().await;
+                let melody_exists = state.melodies.contains_key(id);
                 let should_start = state.melodies.get(id).is_some_and(|m| !m.playing);
                 let length = state
                     .melodies
                     .get(id)
-                    .map(|m| m.config.length)
+                    .map(|m| m.content.length)
                     .unwrap_or(crate::types::Beat::from_f64(4.0));
-                (should_start, length)
+                let notes_count = state
+                    .melodies
+                    .get(id)
+                    .map(|m| m.content.notes.len())
+                    .unwrap_or(0);
+                (should_start, length, melody_exists, notes_count)
             };
+
+            if !melody_exists {
+                tracing::warn!(
+                    "Reload: melody {:?} in playing_melodies but NOT in runtime state.melodies!",
+                    id
+                );
+                continue;
+            }
+
+            tracing::debug!(
+                "Reload: melody {:?} exists={}, should_start={}, notes_count={}",
+                id, melody_exists, should_start, notes_count
+            );
+
             if should_start {
                 tracing::debug!("Reload: starting melody {:?}", id);
                 let _ = self.melodies.start(*id).await;
@@ -1043,8 +1182,9 @@ impl<B: Backend> Runtime<B> {
                     // Starting fresh at beat 0 - don't add epsilon
                     base_position
                 } else {
-                    // Mid-song reload - add epsilon to avoid re-triggering
-                    let pos = base_position + crate::types::Beat::from_f64(0.001);
+                    // Mid-song reload - use adaptive epsilon to avoid re-triggering
+                    let epsilon = self.calculate_position_epsilon(state.tempo, melody_length);
+                    let pos = base_position + epsilon;
                     if pos >= melody_length {
                         pos - melody_length
                     } else {
@@ -1081,7 +1221,9 @@ impl<B: Backend> Runtime<B> {
                 let synced_position = if base_position == crate::types::Beat::ZERO {
                     base_position
                 } else {
-                    let pos = base_position + crate::types::Beat::from_f64(0.001);
+                    // Use adaptive epsilon based on tempo
+                    let epsilon = self.calculate_position_epsilon(state.tempo, sequence_length);
+                    let pos = base_position + epsilon;
                     if pos >= sequence_length {
                         pos - sequence_length
                     } else {
@@ -1090,6 +1232,50 @@ impl<B: Backend> Runtime<B> {
                 };
                 if let Some(sequence) = state.sequences.get_mut(id) {
                     sequence.position = synced_position;
+                }
+            }
+        }
+
+        // =========================================================================
+        // Phase 6.5: Handle running voices (line-in, drones, etc.)
+        // =========================================================================
+
+        // First, stop voices that were running but are no longer in running_voices
+        // This handles the case where .run() is removed from a voice
+        let voices_to_stop: Vec<crate::types::VoiceId> = {
+            let state = self.state.read().await;
+            state
+                .voices
+                .iter()
+                .filter(|(id, v)| {
+                    // Voice has active nodes (was running) but is not in new running_voices
+                    !v.active_nodes.is_empty() && !new_state.running_voices.contains(id)
+                })
+                .map(|(id, _)| *id)
+                .collect()
+        };
+
+        for voice_id in voices_to_stop {
+            tracing::debug!("Reload: stopping voice {:?} (no longer in running_voices)", voice_id);
+            let _ = self.voices.stop(voice_id).await;
+        }
+
+        // Then, trigger voices that should be running
+        for voice_id in &new_state.running_voices {
+            // Check if voice exists and doesn't already have active synths
+            let should_trigger = {
+                let state = self.state.read().await;
+                state
+                    .voices
+                    .get(voice_id)
+                    .is_some_and(|v| v.active_nodes.is_empty())
+            };
+            if should_trigger {
+                tracing::debug!("Reload: triggering running voice {:?}", voice_id);
+                // Trigger with gate=1.0 for continuous playback
+                let params = crate::types::ParamMap::from([("gate".to_string(), 1.0f32)]);
+                if let Err(e) = self.voices.trigger(*voice_id, &params).await {
+                    tracing::error!("Reload: failed to trigger running voice {:?}: {}", voice_id, e);
                 }
             }
         }
@@ -1106,6 +1292,30 @@ impl<B: Backend> Runtime<B> {
                     new_state.midi_cc_routes.len()
                 );
                 self.midi.apply_cc_routes(&new_state.midi_cc_routes).await;
+            }
+
+            // Apply MIDI clock output requests
+            for clock_req in &new_state.midi_clock_outputs {
+                tracing::debug!(
+                    "Reload: {} MIDI clock output for device {:?}",
+                    if clock_req.enabled { "enabling" } else { "disabling" },
+                    clock_req.device_id
+                );
+                if clock_req.enabled {
+                    if let Err(e) = self.midi.enable_clock_output(clock_req.device_id).await {
+                        tracing::error!(
+                            "Reload: failed to enable clock output for device {:?}: {}",
+                            clock_req.device_id,
+                            e
+                        );
+                    }
+                } else if let Err(e) = self.midi.disable_clock_output(clock_req.device_id).await {
+                    tracing::error!(
+                        "Reload: failed to disable clock output for device {:?}: {}",
+                        clock_req.device_id,
+                        e
+                    );
+                }
             }
         }
 

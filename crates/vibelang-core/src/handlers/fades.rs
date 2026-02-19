@@ -96,9 +96,18 @@ impl<B: Backend> FadesHandler<B> {
                     }
                     FadeTarget::Pattern(id) => {
                         if let Some(pattern) = state.patterns.get_mut(id) {
-                            for step in &mut pattern.config.steps {
+                            // Clone content, modify steps, and replace
+                            let mut new_steps = pattern.content.steps.clone();
+                            for step in &mut new_steps {
                                 step.params.insert(data.param.clone(), data.value);
                             }
+                            pattern.content = std::sync::Arc::new(crate::traits::PatternContent {
+                                name: pattern.content.name.clone(),
+                                voice: pattern.content.voice,
+                                steps: new_steps,
+                                length: pattern.content.length,
+                                swing: pattern.content.swing,
+                            });
                         }
                         vec![] // No live nodes to update
                     }
@@ -169,7 +178,7 @@ impl<B: Backend> Fades for FadesHandler<B> {
                     .patterns
                     .get(id)
                     .and_then(|p| {
-                        p.config
+                        p.content
                             .steps
                             .first()
                             .and_then(|s| s.params.get(&config.param).copied())

@@ -210,6 +210,118 @@ impl From<u8> for Channel {
 }
 
 // ============================================================================
+// MIDI 2.0 Group (4-bit)
+// ============================================================================
+
+/// MIDI 2.0 Group (0-15).
+///
+/// MIDI 2.0 adds the concept of Groups, allowing up to 16 groups of 16 channels each,
+/// for a total of 256 addressable channels.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Group(u8);
+
+impl Group {
+    /// Create a new group (0-15). Panics if out of range.
+    #[inline]
+    pub fn new(g: u8) -> Self {
+        assert!(g < 16, "MIDI 2.0 group must be 0-15");
+        Self(g)
+    }
+
+    /// Create a new group, clamping to valid range.
+    #[inline]
+    pub fn new_clamped(g: u8) -> Self {
+        Self(g & 0x0F)
+    }
+
+    /// Get the group number (0-15).
+    #[inline]
+    pub fn get(&self) -> u8 {
+        self.0
+    }
+}
+
+impl From<u8> for Group {
+    fn from(g: u8) -> Self {
+        Self::new_clamped(g)
+    }
+}
+
+// ============================================================================
+// MIDI 2.0 Group + Channel
+// ============================================================================
+
+/// Combined Group and Channel for MIDI 2.0 addressing.
+///
+/// Efficiently stores both group (4-bit) and channel (4-bit) in a single byte.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct GroupChannel(u8);
+
+impl GroupChannel {
+    /// Create a new group-channel pair.
+    #[inline]
+    pub fn new(group: u8, channel: u8) -> Self {
+        Self(((group & 0x0F) << 4) | (channel & 0x0F))
+    }
+
+    /// Get the group (0-15).
+    #[inline]
+    pub fn group(&self) -> u8 {
+        self.0 >> 4
+    }
+
+    /// Get the channel (0-15).
+    #[inline]
+    pub fn channel(&self) -> u8 {
+        self.0 & 0x0F
+    }
+
+    /// Get as Group type.
+    #[inline]
+    pub fn as_group(&self) -> Group {
+        Group(self.group())
+    }
+
+    /// Get as Channel type.
+    #[inline]
+    pub fn as_channel(&self) -> Channel {
+        Channel(self.channel())
+    }
+
+    /// Get the flat index (0-255) for array indexing.
+    #[inline]
+    pub fn to_flat(&self) -> u8 {
+        self.0
+    }
+
+    /// Alias for `to_flat()` - get flat index for HashMap keying.
+    #[inline]
+    pub fn flat_index(&self) -> u16 {
+        self.0 as u16
+    }
+
+    /// Create from flat index (u8).
+    #[inline]
+    pub fn from_flat(flat: u8) -> Self {
+        Self(flat)
+    }
+
+    /// Create from flat index (u16, for HashMap compatibility).
+    #[inline]
+    pub fn from_flat_u16(flat: u16) -> Self {
+        Self(flat as u8)
+    }
+
+    /// Convert MIDI 2.0 pitch bend value to semitones.
+    #[inline]
+    pub fn pitch_bend_to_semitones(value: u32, range: u8) -> f32 {
+        let center = 0x80000000u32;
+        let offset = (value as i64) - (center as i64);
+        (offset as f64 / center as f64 * range as f64) as f32
+    }
+}
+
+// ============================================================================
 // MIDI Messages
 // ============================================================================
 
@@ -311,6 +423,133 @@ pub enum MidiMessage {
 
     /// System Reset.
     Reset,
+
+    // ========================================================================
+    // MIDI 2.0 Channel Voice Messages
+    // ========================================================================
+    /// MIDI 2.0 Note On with 16-bit velocity and per-note attributes.
+    Midi2NoteOn {
+        group_channel: GroupChannel,
+        note: u8,
+        velocity: Velocity,
+        attribute_type: u8,
+        attribute_value: u16,
+    },
+
+    /// MIDI 2.0 Note Off with 16-bit velocity and per-note attributes.
+    Midi2NoteOff {
+        group_channel: GroupChannel,
+        note: u8,
+        velocity: Velocity,
+        attribute_type: u8,
+        attribute_value: u16,
+    },
+
+    /// MIDI 2.0 Control Change with 32-bit value.
+    Midi2ControlChange {
+        group_channel: GroupChannel,
+        controller: u8,
+        value: ControlValue,
+    },
+
+    /// MIDI 2.0 Pitch Bend with 32-bit value.
+    Midi2PitchBend {
+        group_channel: GroupChannel,
+        value: u32,
+    },
+
+    /// MIDI 2.0 Per-Note Pitch Bend.
+    Midi2PerNotePitchBend {
+        group_channel: GroupChannel,
+        note: u8,
+        value: u32,
+    },
+
+    /// MIDI 2.0 Per-Note Controller.
+    Midi2PerNoteController {
+        group_channel: GroupChannel,
+        note: u8,
+        controller: u8,
+        value: ControlValue,
+    },
+
+    /// MIDI 2.0 Polyphonic Aftertouch with 32-bit value.
+    Midi2PolyPressure {
+        group_channel: GroupChannel,
+        note: u8,
+        pressure: ControlValue,
+    },
+
+    /// MIDI 2.0 Channel Aftertouch with 32-bit value.
+    Midi2ChannelPressure {
+        group_channel: GroupChannel,
+        pressure: ControlValue,
+    },
+
+    /// MIDI 2.0 Program Change with bank select.
+    Midi2ProgramChange {
+        group_channel: GroupChannel,
+        program: u8,
+        bank_valid: bool,
+        bank_msb: u8,
+        bank_lsb: u8,
+    },
+
+    /// MIDI 2.0 Per-Note Management message.
+    Midi2PerNoteManagement {
+        group_channel: GroupChannel,
+        note: u8,
+        detach: bool,
+        reset_controllers: bool,
+    },
+
+    /// MIDI 2.0 Registered Per-Note Controller.
+    Midi2RegisteredPerNoteController {
+        group_channel: GroupChannel,
+        note: u8,
+        index: u8,
+        value: ControlValue,
+    },
+
+    /// MIDI 2.0 Assignable Per-Note Controller.
+    Midi2AssignablePerNoteController {
+        group_channel: GroupChannel,
+        note: u8,
+        index: u8,
+        value: ControlValue,
+    },
+
+    /// MIDI 2.0 Registered Controller (RPN).
+    Midi2RegisteredController {
+        group_channel: GroupChannel,
+        bank: u8,
+        index: u8,
+        value: ControlValue,
+    },
+
+    /// MIDI 2.0 Assignable Controller (NRPN).
+    Midi2AssignableController {
+        group_channel: GroupChannel,
+        bank: u8,
+        index: u8,
+        value: ControlValue,
+    },
+
+    /// MIDI 2.0 Relative Registered Controller.
+    Midi2RelativeRegisteredController {
+        group_channel: GroupChannel,
+        bank: u8,
+        index: u8,
+        delta: i32,
+    },
+
+    /// MIDI 2.0 Relative Assignable Controller.
+    Midi2RelativeAssignableController {
+        group_channel: GroupChannel,
+        bank: u8,
+        index: u8,
+        delta: i32,
+    },
 }
 
 impl MidiMessage {
@@ -324,15 +563,87 @@ impl MidiMessage {
             | MidiMessage::ProgramChange { channel, .. }
             | MidiMessage::ChannelAftertouch { channel, .. }
             | MidiMessage::PitchBend { channel, .. } => Some(*channel),
+
+            // MIDI 2.0 messages use GroupChannel
+            MidiMessage::Midi2NoteOn { group_channel, .. }
+            | MidiMessage::Midi2NoteOff { group_channel, .. }
+            | MidiMessage::Midi2ControlChange { group_channel, .. }
+            | MidiMessage::Midi2PitchBend { group_channel, .. }
+            | MidiMessage::Midi2PerNotePitchBend { group_channel, .. }
+            | MidiMessage::Midi2PerNoteController { group_channel, .. }
+            | MidiMessage::Midi2PolyPressure { group_channel, .. }
+            | MidiMessage::Midi2ChannelPressure { group_channel, .. }
+            | MidiMessage::Midi2ProgramChange { group_channel, .. }
+            | MidiMessage::Midi2PerNoteManagement { group_channel, .. }
+            | MidiMessage::Midi2RegisteredPerNoteController { group_channel, .. }
+            | MidiMessage::Midi2AssignablePerNoteController { group_channel, .. }
+            | MidiMessage::Midi2RegisteredController { group_channel, .. }
+            | MidiMessage::Midi2AssignableController { group_channel, .. }
+            | MidiMessage::Midi2RelativeRegisteredController { group_channel, .. }
+            | MidiMessage::Midi2RelativeAssignableController { group_channel, .. } => {
+                Some(group_channel.as_channel())
+            }
+
             _ => None,
         }
+    }
+
+    /// Get the MIDI 2.0 group-channel pair, None for MIDI 1.0 or system messages.
+    pub fn group_channel(&self) -> Option<GroupChannel> {
+        match self {
+            MidiMessage::Midi2NoteOn { group_channel, .. }
+            | MidiMessage::Midi2NoteOff { group_channel, .. }
+            | MidiMessage::Midi2ControlChange { group_channel, .. }
+            | MidiMessage::Midi2PitchBend { group_channel, .. }
+            | MidiMessage::Midi2PerNotePitchBend { group_channel, .. }
+            | MidiMessage::Midi2PerNoteController { group_channel, .. }
+            | MidiMessage::Midi2PolyPressure { group_channel, .. }
+            | MidiMessage::Midi2ChannelPressure { group_channel, .. }
+            | MidiMessage::Midi2ProgramChange { group_channel, .. }
+            | MidiMessage::Midi2PerNoteManagement { group_channel, .. }
+            | MidiMessage::Midi2RegisteredPerNoteController { group_channel, .. }
+            | MidiMessage::Midi2AssignablePerNoteController { group_channel, .. }
+            | MidiMessage::Midi2RegisteredController { group_channel, .. }
+            | MidiMessage::Midi2AssignableController { group_channel, .. }
+            | MidiMessage::Midi2RelativeRegisteredController { group_channel, .. }
+            | MidiMessage::Midi2RelativeAssignableController { group_channel, .. } => {
+                Some(*group_channel)
+            }
+            _ => None,
+        }
+    }
+
+    /// Check if this is a MIDI 2.0 message.
+    pub fn is_midi2(&self) -> bool {
+        matches!(
+            self,
+            MidiMessage::Midi2NoteOn { .. }
+                | MidiMessage::Midi2NoteOff { .. }
+                | MidiMessage::Midi2ControlChange { .. }
+                | MidiMessage::Midi2PitchBend { .. }
+                | MidiMessage::Midi2PerNotePitchBend { .. }
+                | MidiMessage::Midi2PerNoteController { .. }
+                | MidiMessage::Midi2PolyPressure { .. }
+                | MidiMessage::Midi2ChannelPressure { .. }
+                | MidiMessage::Midi2ProgramChange { .. }
+                | MidiMessage::Midi2PerNoteManagement { .. }
+                | MidiMessage::Midi2RegisteredPerNoteController { .. }
+                | MidiMessage::Midi2AssignablePerNoteController { .. }
+                | MidiMessage::Midi2RegisteredController { .. }
+                | MidiMessage::Midi2AssignableController { .. }
+                | MidiMessage::Midi2RelativeRegisteredController { .. }
+                | MidiMessage::Midi2RelativeAssignableController { .. }
+        )
     }
 
     /// Check if this is a note message (Note On or Note Off).
     pub fn is_note(&self) -> bool {
         matches!(
             self,
-            MidiMessage::NoteOn { .. } | MidiMessage::NoteOff { .. }
+            MidiMessage::NoteOn { .. }
+                | MidiMessage::NoteOff { .. }
+                | MidiMessage::Midi2NoteOn { .. }
+                | MidiMessage::Midi2NoteOff { .. }
         )
     }
 

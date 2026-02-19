@@ -80,6 +80,20 @@ enum Commands {
         #[arg(long)]
         no_jack_connect: bool,
 
+        /// Manually specify JACK/PipeWire output ports to connect to (for audio output).
+        /// Format: comma-separated list of ports, one per output channel.
+        /// Example: "Device:playback_FL,Device:playback_FR"
+        /// Use `pw-link -i` or `jack_lsp` to list available input ports.
+        #[arg(long, value_name = "PORTS")]
+        jack_connect_to: Option<String>,
+
+        /// Manually specify JACK/PipeWire input ports to connect from (for audio input).
+        /// Format: comma-separated list of ports, one per input channel.
+        /// Example: "Device:capture_1,Device:capture_2,Device:capture_3,Device:capture_4"
+        /// Use `pw-link -o` or `jack_lsp` to list available output ports.
+        #[arg(long, value_name = "PORTS")]
+        jack_connect_from: Option<String>,
+
         /// Audio device name (e.g., "default", "hw:0", "Focusrite USB ASIO")
         #[arg(long)]
         device: Option<String>,
@@ -164,6 +178,8 @@ async fn main() -> Result<()> {
             tui: false,
             api: false,
             no_jack_connect: false,
+            jack_connect_to: None,
+            jack_connect_from: None,
             api_port: 1606,
             include_paths: Vec::new(),
             scsynth_addr: "127.0.0.1:57110".to_string(),
@@ -197,6 +213,8 @@ async fn main() -> Result<()> {
             scsynth_addr,
             no_boot,
             no_jack_connect,
+            jack_connect_to,
+            jack_connect_from,
             device,
             sample_rate,
             input_channels,
@@ -222,6 +240,8 @@ async fn main() -> Result<()> {
                     scsynth_addr,
                     no_boot,
                     no_jack_connect,
+                    jack_connect_to,
+                    jack_connect_from,
                     device,
                     sample_rate,
                     input_channels,
@@ -239,6 +259,8 @@ async fn main() -> Result<()> {
                     scsynth_addr,
                     no_boot,
                     no_jack_connect,
+                    jack_connect_to,
+                    jack_connect_from,
                     device,
                     sample_rate,
                     input_channels,
@@ -282,19 +304,17 @@ async fn run_simple_mode(
     scsynth_addr: String,
     no_boot: bool,
     no_jack_connect: bool,
+    jack_connect_to: Option<String>,
+    jack_connect_from: Option<String>,
     device: Option<String>,
     sample_rate: u32,
     input_channels: u32,
     output_channels: u32,
     ext_config: ExtensionSettings,
 ) -> Result<()> {
-    // Initialize logging
+    // Initialize logging - uses RUST_LOG env var
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive("vibelang=info".parse()?)
-                .add_directive("vibe2=info".parse()?),
-        )
+        .with_env_filter(EnvFilter::from_default_env())
         .init();
 
     // Setup shutdown signal
@@ -320,12 +340,40 @@ async fn run_simple_mode(
         if let Some(dev) = &device {
             config = config.device(dev);
         }
+        // Parse manual JACK output connection targets if specified
+        if let Some(ref targets) = jack_connect_to {
+            let ports: Vec<String> = targets.split(',').map(|s| s.trim().to_string()).collect();
+            if ports.is_empty() || ports.iter().any(|p| p.is_empty()) {
+                anyhow::bail!(
+                    "Invalid --jack-connect-to format. Expected comma-separated port names, got: {}",
+                    targets
+                );
+            }
+            config = config.jack_connect_outputs(ports);
+        }
+        // Parse manual JACK input connection sources if specified
+        if let Some(ref sources) = jack_connect_from {
+            let ports: Vec<String> = sources.split(',').map(|s| s.trim().to_string()).collect();
+            if ports.is_empty() || ports.iter().any(|p| p.is_empty()) {
+                anyhow::bail!(
+                    "Invalid --jack-connect-from format. Expected comma-separated port names, got: {}",
+                    sources
+                );
+            }
+            config = config.jack_connect_inputs(ports);
+        }
         let process = ScsynthProcess::spawn(config).context("Failed to start scsynth")?;
         process.wait_startup(Duration::from_secs(3)).await;
         info!("scsynth started");
 
-        // Auto-connect JACK/PipeWire ports to system audio output
-        process.auto_connect_jack_ports();
+        // Handle JACK port connections
+        if no_jack_connect && jack_connect_to.is_none() && jack_connect_from.is_none() {
+            // Disconnect all ports that scsynth's JACK driver may have auto-connected
+            process.disconnect_all_jack_ports();
+        } else {
+            // Auto-connect or use manual targets
+            process.auto_connect_jack_ports();
+        }
 
         Some(process)
     };
@@ -553,6 +601,8 @@ async fn run_tui_mode(
     scsynth_addr: String,
     no_boot: bool,
     no_jack_connect: bool,
+    jack_connect_to: Option<String>,
+    jack_connect_from: Option<String>,
     device: Option<String>,
     sample_rate: u32,
     input_channels: u32,
@@ -593,13 +643,57 @@ async fn run_tui_mode(
         if let Some(dev) = &device {
             config = config.device(dev);
         }
+        // Parse manual JACK output connection targets if specified
+        if let Some(ref targets) = jack_connect_to {
+            let ports: Vec<String> = targets.split(',').map(|s| s.trim().to_string()).collect();
+            if ports.is_empty() || ports.iter().any(|p| p.is_empty()) {
+                // Clean up terminal before returning error
+                disable_raw_mode()?;
+                execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                terminal.show_cursor()?;
+                return Err(anyhow::anyhow!(
+                    "Invalid --jack-connect-to format. Expected comma-separated port names, got: {}",
+                    targets
+                ));
+            }
+            config = config.jack_connect_outputs(ports);
+        }
+        // Parse manual JACK input connection sources if specified
+        if let Some(ref sources) = jack_connect_from {
+            let ports: Vec<String> = sources.split(',').map(|s| s.trim().to_string()).collect();
+            if ports.is_empty() || ports.iter().any(|p| p.is_empty()) {
+                // Clean up terminal before returning error
+                disable_raw_mode()?;
+                execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                terminal.show_cursor()?;
+                return Err(anyhow::anyhow!(
+                    "Invalid --jack-connect-from format. Expected comma-separated port names, got: {}",
+                    sources
+                ));
+            }
+            config = config.jack_connect_inputs(ports);
+        }
         match ScsynthProcess::spawn(config) {
             Ok(process) => {
                 process.wait_startup(Duration::from_secs(3)).await;
                 log::info!("scsynth started");
 
-                // Auto-connect JACK/PipeWire ports to system audio output
-                process.auto_connect_jack_ports();
+                // Handle JACK port connections
+                if no_jack_connect && jack_connect_to.is_none() && jack_connect_from.is_none() {
+                    // Disconnect all ports that scsynth's JACK driver may have auto-connected
+                    process.disconnect_all_jack_ports();
+                } else {
+                    // Auto-connect or use manual targets
+                    process.auto_connect_jack_ports();
+                }
 
                 Some(process)
             }

@@ -42,7 +42,7 @@ async fn resolve_melody_id(
         .with_state(|s| {
             s.melodies
                 .iter()
-                .find(|(_, ms)| ms.config.name == identifier)
+                .find(|(_, ms)| ms.content.name == identifier)
                 .map(|(id, _)| *id)
         })
         .await;
@@ -65,11 +65,11 @@ fn melody_to_api(
     state: &vibelang_core::MelodyState,
     voices: &std::collections::HashMap<vibelang_core::VoiceId, vibelang_core::VoiceState>,
 ) -> Melody {
-    // Use the actual name from config
-    let name = state.config.name.clone();
+    // Use the actual name from content
+    let name = state.content.name.clone();
     // Get voice name from voice state
     let voice_name = state
-        .config
+        .content
         .voice
         .and_then(|vid| voices.get(&vid))
         .map(|vs| vs.config.name.clone())
@@ -77,7 +77,7 @@ fn melody_to_api(
 
     // Get group path from the voice if available
     let group_path = state
-        .config
+        .content
         .voice
         .and_then(|vid| voices.get(&vid))
         .map(|vs| vs.config.group.raw().to_string())
@@ -98,9 +98,9 @@ fn melody_to_api(
         name,
         voice_name,
         group_path,
-        loop_beats: state.config.length.to_f64(),
+        loop_beats: state.content.length.to_f64(),
         events: state
-            .config
+            .content
             .notes
             .iter()
             .map(|n| MelodyEvent {

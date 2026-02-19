@@ -185,6 +185,16 @@ pub trait Voices: Send + Sync {
     /// Delete a voice.
     async fn delete(&self, id: VoiceId) -> Result<()>;
 
+    /// Delete a voice gracefully by setting gate=0 on active synths.
+    ///
+    /// Instead of immediately freeing synth nodes, this sets gate=0 on all
+    /// active nodes to trigger their release envelopes. The synths will free
+    /// themselves via doneAction=2 when the envelope completes.
+    ///
+    /// This is used during hot-reload to avoid abrupt audio cuts when
+    /// voice configurations change.
+    async fn graceful_delete(&self, id: VoiceId) -> Result<()>;
+
     /// Trigger a voice with parameters.
     ///
     /// Creates a new synth instance with the given parameters.
@@ -226,6 +236,9 @@ pub trait Voices {
 
     /// Delete a voice.
     async fn delete(&self, id: VoiceId) -> Result<()>;
+
+    /// Delete a voice gracefully by setting gate=0 on active synths.
+    async fn graceful_delete(&self, id: VoiceId) -> Result<()>;
 
     /// Trigger a voice with parameters.
     async fn trigger(&self, id: VoiceId, params: &ParamMap) -> Result<()>;

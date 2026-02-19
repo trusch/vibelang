@@ -5,6 +5,7 @@
 use crate::types::{Beat, ParamMap, PatternId, VoiceId};
 use crate::Result;
 use async_trait::async_trait;
+use std::sync::Arc;
 
 /// A single step in a pattern.
 #[derive(Clone, Debug, PartialEq)]
@@ -94,6 +95,66 @@ impl PatternConfig {
     pub fn with_swing(mut self, swing: f32) -> Self {
         self.swing = swing;
         self
+    }
+}
+
+/// The content of a pattern that can be swapped during hot reload.
+///
+/// This struct is separate from playback state (playing, loop_position) to enable
+/// seamless hot reload. The content can be atomically swapped while the pattern
+/// continues playing, allowing changes to take effect at musical boundaries
+/// without any audio disruption.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PatternContent {
+    /// Pattern name (for display in TUI/API).
+    pub name: String,
+
+    /// Voice to trigger (None if pattern is just for timing).
+    pub voice: Option<VoiceId>,
+
+    /// Steps in the pattern.
+    pub steps: Vec<Step>,
+
+    /// Length of the pattern in beats.
+    pub length: Beat,
+
+    /// Swing amount (0.0 = none, 1.0 = full).
+    pub swing: f32,
+}
+
+impl PatternContent {
+    /// Create new pattern content from a config.
+    pub fn from_config(config: &PatternConfig) -> Self {
+        Self {
+            name: config.name.clone(),
+            voice: config.voice,
+            steps: config.steps.clone(),
+            length: config.length,
+            swing: config.swing,
+        }
+    }
+
+    /// Create an Arc-wrapped content from config.
+    pub fn arc_from_config(config: &PatternConfig) -> Arc<Self> {
+        Arc::new(Self::from_config(config))
+    }
+}
+
+impl From<&PatternConfig> for PatternContent {
+    fn from(config: &PatternConfig) -> Self {
+        Self::from_config(config)
+    }
+}
+
+impl From<PatternConfig> for PatternContent {
+    fn from(config: PatternConfig) -> Self {
+        Self {
+            name: config.name,
+            voice: config.voice,
+            steps: config.steps,
+            length: config.length,
+            swing: config.swing,
+        }
     }
 }
 
