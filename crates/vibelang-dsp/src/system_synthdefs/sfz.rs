@@ -1,6 +1,10 @@
 //! SFZ voice synthdef with gate-controlled envelope.
 //!
 //! PlayBuf -> EnvGen (ASR) -> amp -> Out
+//!
+//! Supports both melodic (gate-controlled) and one-shot (auto-release) playback:
+//! - When loop=1: gate must be manually closed (melodic instruments)
+//! - When loop=0: gate auto-closes when sample ends (drums, one-shots)
 
 use crate::{encode_synthdef, GraphBuilderInner, GraphIR, Input, Rate};
 
@@ -9,6 +13,10 @@ use crate::{encode_synthdef, GraphBuilderInner, GraphIR, Input, Rate};
 /// The envelope responds to gate changes:
 /// - gate=1: Attack phase (0 -> sustain), then holds at sustain
 /// - gate=0: Release phase (sustain -> 0), then synth is freed via doneAction=2
+///
+/// For non-looping samples (loop=0), the gate automatically closes when the
+/// sample finishes playing or reaches endPos, triggering the release envelope.
+/// This ensures one-shot samples like drums fade out properly.
 ///
 /// Parameters:
 /// - out: output bus (0)
@@ -22,6 +30,7 @@ use crate::{encode_synthdef, GraphBuilderInner, GraphIR, Input, Rate};
 /// - release: envelope release time (8)
 /// - loop: loop mode 0=no, 1=yes (9)
 /// - startPos: start position in frames (10)
+/// - endPos: end position in frames, -1 = full sample (11)
 pub fn create_sfz_voice_synthdef(num_channels: u32) -> Result<GraphIR, crate::SynthDefError> {
     let name = if num_channels == 1 {
         "sfz_voice_mono"
@@ -49,6 +58,7 @@ pub fn create_sfz_voice_synthdef(num_channels: u32) -> Result<GraphIR, crate::Sy
     builder.add_param("release".to_string(), vec![0.01], None); // 8 - release time
     builder.add_param("loop".to_string(), vec![0.0], None); // 9
     builder.add_param("startPos".to_string(), vec![0.0], None); // 10
+    builder.add_param("endPos".to_string(), vec![-1.0], None); // 11 - end position in frames, -1 = full
 
     // Create control UGen (must be first node after params are added)
     builder.create_control_ugen();
@@ -94,6 +104,227 @@ pub fn create_sfz_voice_synthdef(num_channels: u32) -> Result<GraphIR, crate::Sy
         num_channels as i16,
     );
 
+    // === Auto-release for one-shot samples ===
+    // When loop=0, automatically close gate when sample finishes or reaches endPos.
+    // This ensures drums and one-shots fade out properly.
+
+    // Done.kr detects when PlayBuf has finished (reached end of buffer)
+    let playbuf_done = builder.add_node(
+        "Done".to_string(),
+        Rate::Control,
+        vec![Input::Node {
+            node_id: playbuf_node.0,
+            output_index: 0,
+        }],
+        1,
+        0,
+    );
+
+    // BufSampleRate.kr(bufnum) - get sample rate of buffer for duration calculation
+    let buf_sr = builder.add_node(
+        "BufSampleRate".to_string(),
+        Rate::Control,
+        vec![param(1)], // bufnum
+        1,
+        0,
+    );
+
+    // BufFrames.kr(bufnum) - get total frames for endPos=-1 case
+    let buf_frames = builder.add_node(
+        "BufFrames".to_string(),
+        Rate::Control,
+        vec![param(1)], // bufnum
+        1,
+        0,
+    );
+
+    // Calculate effective endPos: if endPos < 0, use bufFrames
+    // First: endPos < 0 comparison
+    let end_is_neg = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![param(11), Input::Constant(zero)], // endPos < 0
+        1,
+        8, // less than
+    );
+
+    // Select between endPos and bufFrames based on end_is_neg
+    let effective_end = builder.add_node(
+        "Select".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: end_is_neg.0,
+                output_index: 0,
+            },
+            param(11), // endPos (when end_is_neg=0)
+            Input::Node {
+                node_id: buf_frames.0,
+                output_index: 0,
+            }, // bufFrames (when end_is_neg=1)
+        ],
+        1,
+        0,
+    );
+
+    // duration_frames = effectiveEnd - startPos
+    let duration_frames = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: effective_end.0,
+                output_index: 0,
+            },
+            param(10), // startPos
+        ],
+        1,
+        1, // subtraction
+    );
+
+    // duration_secs = duration_frames / sampleRate
+    let duration_secs = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: duration_frames.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: buf_sr.0,
+                output_index: 0,
+            },
+        ],
+        1,
+        4, // division
+    );
+
+    // actual_duration = duration_secs / rate (accounting for playback speed)
+    let actual_duration = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: duration_secs.0,
+                output_index: 0,
+            },
+            param(2), // rate
+        ],
+        1,
+        4, // division
+    );
+
+    // Line.kr(0, 1, duration) - timer that finishes when we should reach endPos
+    let timer = builder.add_node(
+        "Line".to_string(),
+        Rate::Control,
+        vec![
+            Input::Constant(zero), // start
+            Input::Constant(one),  // end
+            Input::Node {
+                node_id: actual_duration.0,
+                output_index: 0,
+            }, // duration
+            Input::Constant(zero), // doneAction=0
+        ],
+        1,
+        0,
+    );
+
+    // Done.kr on timer - fires when we reach endPos
+    let timer_done = builder.add_node(
+        "Done".to_string(),
+        Rate::Control,
+        vec![Input::Node {
+            node_id: timer.0,
+            output_index: 0,
+        }],
+        1,
+        0,
+    );
+
+    // Combined done: either PlayBuf finished OR timer finished (for endPos)
+    // done = max(playbuf_done, timer_done)
+    let done_node = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: playbuf_done.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: timer_done.0,
+                output_index: 0,
+            },
+        ],
+        1,
+        13, // max
+    );
+
+    // For non-looping samples: close gate when done
+    // effectiveGate = gate * (1 - ((1 - loop) * done))
+    // When loop=0: effectiveGate = gate * (1 - done) → gate becomes 0 when done=1
+    // When loop=1: effectiveGate = gate * 1 = gate → unaffected (melodic instruments)
+
+    // (1 - loop)
+    let one_minus_loop = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(one), param(9)],
+        1,
+        1, // subtraction
+    );
+
+    // (1 - loop) * done
+    let done_factor = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: one_minus_loop.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: done_node.0,
+                output_index: 0,
+            },
+        ],
+        1,
+        2, // multiplication
+    );
+
+    // 1 - (done_factor)
+    let gate_modifier = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Constant(one),
+            Input::Node {
+                node_id: done_factor.0,
+                output_index: 0,
+            },
+        ],
+        1,
+        1, // subtraction
+    );
+
+    // gate * gate_modifier = effectiveGate
+    let effective_gate = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            param(4), // original gate
+            Input::Node {
+                node_id: gate_modifier.0,
+                output_index: 0,
+            },
+        ],
+        1,
+        2, // multiplication
+    );
+
     // EnvGen with ASR envelope
     //
     // SuperCollider Env format for EnvGen:
@@ -123,7 +354,10 @@ pub fn create_sfz_voice_synthdef(num_channels: u32) -> Result<GraphIR, crate::Sy
         "EnvGen".to_string(),
         Rate::Audio,
         vec![
-            param(4),                          // gate
+            Input::Node {
+                node_id: effective_gate.0,
+                output_index: 0,
+            }, // effectiveGate instead of raw gate
             Input::Constant(one),              // levelScale = 1
             Input::Constant(zero),             // levelBias = 0
             Input::Constant(one),              // timeScale = 1

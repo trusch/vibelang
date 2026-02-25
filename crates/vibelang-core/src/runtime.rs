@@ -38,6 +38,10 @@ use crate::handlers::{
 };
 #[cfg(feature = "midi")]
 use crate::message::MidiMessage;
+#[cfg(feature = "midi")]
+use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
+#[cfg(feature = "midi")]
+use crate::reload::MidiOutputMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::message::RecordingMessage;
 use crate::message::ReloadMessage;
@@ -56,6 +60,7 @@ use crate::traits::{
     Effects, Fades, Groups, Melodies, Modulators, Patterns, Samples, Sequences, Sfz, SynthDefs,
     Transport, Voices,
 };
+use crate::transport_snapshot::TransportSnapshot;
 use crate::{Error, Result};
 use std::sync::Arc;
 
@@ -99,6 +104,14 @@ pub struct Runtime<B: Backend> {
     /// Message receiver.
     rx: Receiver<Message>,
 
+    /// Transport state snapshot for lock-free sharing with background threads.
+    /// Used by MIDI clock thread and modulator polling thread.
+    transport_snapshot: Arc<TransportSnapshot>,
+
+    /// Tick counter for reducing frequency of some operations.
+    #[cfg(feature = "midi")]
+    tick_count: u32,
+
     // =========================================================================
     // Feature Handlers
     // =========================================================================
@@ -130,6 +143,7 @@ impl<B: Backend> Runtime<B> {
         let (tx, rx) = channel(1024);
         let backend = Arc::new(backend);
         let state = Arc::new(RwLock::new(State::default()));
+        let transport_snapshot = Arc::new(TransportSnapshot::new());
 
         // Create MIDI handler first so we can share output channels with voices
         #[cfg(feature = "midi")]
@@ -146,6 +160,7 @@ impl<B: Backend> Runtime<B> {
             state: state.clone(),
             tx,
             rx,
+            transport_snapshot,
             transport: TransportHandler::new(backend.clone(), state.clone()),
             groups: GroupsHandler::new(backend.clone(), state.clone()),
             voices: voices.clone(),
@@ -162,6 +177,8 @@ impl<B: Backend> Runtime<B> {
             synthdefs: SynthDefsHandler::new(backend.clone(), state.clone()),
             #[cfg(feature = "midi")]
             midi,
+            #[cfg(feature = "midi")]
+            tick_count: 0,
         }
     }
 
@@ -184,6 +201,14 @@ impl<B: Backend> Runtime<B> {
             .map_err(|_| Error::ChannelClosed)
     }
 
+    /// Get the transport snapshot for sharing with background threads.
+    ///
+    /// The snapshot provides lock-free read access to transport state
+    /// (beat position, tempo, playing status).
+    pub fn transport_snapshot(&self) -> Arc<TransportSnapshot> {
+        Arc::clone(&self.transport_snapshot)
+    }
+
     /// Run the main loop until the channel is closed.
     ///
     /// This is the primary way to run the runtime on native platforms.
@@ -194,6 +219,10 @@ impl<B: Backend> Runtime<B> {
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn run(&mut self) {
         let tick_interval = Duration::from_millis(2); // 500 Hz for tighter MIDI timing
+
+        // Start MIDI clock thread (runs independently at 1kHz)
+        #[cfg(feature = "midi")]
+        self.midi.start_clock_thread(Arc::clone(&self.transport_snapshot));
 
         loop {
             // Process available messages
@@ -216,6 +245,11 @@ impl<B: Backend> Runtime<B> {
                 Ok(None) => {
                     // Channel closed, exit
                     tracing::info!("Runtime channel closed, shutting down");
+
+                    // Stop MIDI clock thread
+                    #[cfg(feature = "midi")]
+                    self.midi.stop_clock_thread();
+
                     break;
                 }
                 Err(_) => {
@@ -247,9 +281,12 @@ impl<B: Backend> Runtime<B> {
         // Tick transport (updates current beat from clock)
         self.transport.tick(now).await;
 
-        // Get current beat for scheduling
+        // Get current beat for scheduling and update transport snapshot
         let current_beat = {
             let state = self.state.read().await;
+            // Update transport snapshot for background threads (MIDI clock, modulators)
+            self.transport_snapshot
+                .update(state.current_beat.to_f64(), state.tempo, state.playing);
             state.current_beat
         };
 
@@ -276,21 +313,19 @@ impl<B: Backend> Runtime<B> {
         #[cfg(feature = "midi")]
         self.midi.tick().await;
 
-        // Tick MIDI clock output
-        #[cfg(feature = "midi")]
-        {
-            let (beat, playing) = {
-                let state = self.state.read().await;
-                (state.current_beat.to_f64(), state.playing)
-            };
-            if let Err(e) = self.midi.tick_clock(beat, playing).await {
-                tracing::warn!("MIDI clock tick error: {}", e);
-            }
-        }
+        // Note: MIDI clock output is now handled by the dedicated clock thread
+        // started in run(). The clock thread reads transport state from
+        // transport_snapshot which is updated above.
 
         // Tick MIDI voice modulator outputs (poll modulator values and send CC)
+        // Run at reduced frequency (every 10 ticks = 50Hz) since CC doesn't need 500Hz
         #[cfg(feature = "midi")]
-        self.voices.tick_modulators().await;
+        {
+            self.tick_count = self.tick_count.wrapping_add(1);
+            if self.tick_count % 10 == 0 {
+                self.voices.tick_modulators().await;
+            }
+        }
     }
 
     /// Handle a single message.
@@ -304,7 +339,10 @@ impl<B: Backend> Runtime<B> {
                 TransportMessage::SetTimeSignature { time_sig } => {
                     self.transport.set_time_signature(time_sig).await
                 }
-                TransportMessage::Seek { beat } => self.transport.seek(beat).await,
+                TransportMessage::Seek { beat } => {
+                    self.transport_snapshot.signal_seek();
+                    self.transport.seek(beat).await
+                }
                 TransportMessage::Start => self.transport.start().await,
                 TransportMessage::Stop => self.transport.stop().await,
             },
@@ -811,6 +849,148 @@ impl<B: Backend> Runtime<B> {
                     tracing::error!("Reload: failed to open MIDI output {:?}: {}", device_id, e);
                 }
             }
+
+            // Update beats per bar for quantization from time signature
+            self.midi.set_beats_per_bar(new_state.time_sig.numerator);
+
+            // Process MIDI output messages
+            if !new_state.midi_output_messages.is_empty() {
+                // First pass: handle Start/Stop/Continue using direct connection
+                // (output_channels may not exist due to exclusive device access)
+                for msg in &new_state.midi_output_messages {
+                    match msg {
+                        MidiOutputMessage::Start { device_id } => {
+                            tracing::debug!("Reload: sending MIDI Start to {:?}", device_id);
+                            if let Err(e) = self.midi.send_start(*device_id).await {
+                                tracing::warn!(
+                                    "Reload: failed to send MIDI Start to {:?}: {}",
+                                    device_id,
+                                    e
+                                );
+                            }
+                        }
+                        MidiOutputMessage::Stop { device_id } => {
+                            tracing::debug!("Reload: sending MIDI Stop to {:?}", device_id);
+                            if let Err(e) = self.midi.send_stop(*device_id).await {
+                                tracing::warn!(
+                                    "Reload: failed to send MIDI Stop to {:?}: {}",
+                                    device_id,
+                                    e
+                                );
+                            }
+                        }
+                        MidiOutputMessage::Continue { device_id } => {
+                            tracing::debug!("Reload: sending MIDI Continue to {:?}", device_id);
+                            if let Err(e) = self.midi.send_continue(*device_id).await {
+                                tracing::warn!(
+                                    "Reload: failed to send MIDI Continue to {:?}: {}",
+                                    device_id,
+                                    e
+                                );
+                            }
+                        }
+                        _ => {} // Other messages handled below
+                    }
+                }
+
+                // Second pass: handle note/CC messages via output channels
+                let output_channels = self.midi.output_channels();
+                let channels = output_channels.lock().unwrap();
+
+                for msg in &new_state.midi_output_messages {
+                    // Skip Start/Stop/Continue (handled above)
+                    if matches!(
+                        msg,
+                        MidiOutputMessage::Start { .. }
+                            | MidiOutputMessage::Stop { .. }
+                            | MidiOutputMessage::Continue { .. }
+                    ) {
+                        continue;
+                    }
+
+                    let (device_id, event) = match msg {
+                        MidiOutputMessage::Start { .. }
+                        | MidiOutputMessage::Stop { .. }
+                        | MidiOutputMessage::Continue { .. } => continue, // Already handled
+                        MidiOutputMessage::NoteOn {
+                            device_id,
+                            channel,
+                            note,
+                            velocity,
+                        } => (
+                            *device_id,
+                            QueuedMidiEvent::NoteOn {
+                                channel: *channel,
+                                note: *note,
+                                velocity: *velocity,
+                            },
+                        ),
+                        MidiOutputMessage::NoteOff {
+                            device_id,
+                            channel,
+                            note,
+                        } => (
+                            *device_id,
+                            QueuedMidiEvent::NoteOff {
+                                channel: *channel,
+                                note: *note,
+                            },
+                        ),
+                        MidiOutputMessage::ControlChange {
+                            device_id,
+                            channel,
+                            cc,
+                            value,
+                        } => (
+                            *device_id,
+                            QueuedMidiEvent::ControlChange {
+                                channel: *channel,
+                                cc: *cc,
+                                value: *value,
+                            },
+                        ),
+                        MidiOutputMessage::PitchBend {
+                            device_id,
+                            channel,
+                            value,
+                        } => (
+                            *device_id,
+                            QueuedMidiEvent::PitchBend {
+                                channel: *channel,
+                                value: *value,
+                            },
+                        ),
+                        // Skip MIDI 2.0 messages for now (need separate handling)
+                        MidiOutputMessage::ProgramChange { .. }
+                        | MidiOutputMessage::Midi2NoteOn { .. }
+                        | MidiOutputMessage::Midi2NoteOff { .. }
+                        | MidiOutputMessage::Midi2ControlChange { .. }
+                        | MidiOutputMessage::Midi2PitchBend { .. }
+                        | MidiOutputMessage::Midi2PerNotePitchBend { .. }
+                        | MidiOutputMessage::Midi2PerNoteController { .. }
+                        | MidiOutputMessage::Midi2PolyPressure { .. } => {
+                            tracing::debug!("Reload: skipping MIDI 2.0 message (not yet implemented)");
+                            continue;
+                        }
+                    };
+
+                    if let Some(sender) = channels.get(&device_id) {
+                        let scheduled = ScheduledMidiEvent::immediate(event);
+                        if let Err(e) = sender.try_send(scheduled) {
+                            tracing::warn!(
+                                "Reload: failed to send MIDI message to {:?}: {}",
+                                device_id,
+                                e
+                            );
+                        }
+                    } else {
+                        tracing::warn!(
+                            "Reload: no output channel for MIDI device {:?}",
+                            device_id
+                        );
+                    }
+                }
+            }
         }
 
         // =========================================================================
@@ -931,13 +1111,56 @@ impl<B: Backend> Runtime<B> {
             let _ = self.groups.solo(*id, new_config.soloed).await;
         }
 
-        // Update voices - gracefully release old synths, then recreate with new config
-        // Using graceful_delete sets gate=0 instead of immediately freeing nodes,
-        // allowing release envelopes to complete naturally (via doneAction=2)
-        for (id, config) in &diff.voices.updated {
-            tracing::debug!("Reload: updating voice {:?} (graceful release + recreate)", id);
-            let _ = self.voices.graceful_delete(*id).await;
-            let _ = self.voices.create(*id, config.clone()).await;
+        // Update voices - only recreate if synthdef, group, or sfz_instrument changed
+        // For param-only changes, use set_param to avoid audio gaps
+        for (id, new_config) in &diff.voices.updated {
+            // Get current voice state to compare
+            let needs_recreate = {
+                let state = self.state.read().await;
+                if let Some(current_voice) = state.voices.get(id) {
+                    // Recreate if synthdef, group, or sfz_instrument changed
+                    current_voice.config.synthdef != new_config.synthdef
+                        || current_voice.config.group != new_config.group
+                        || current_voice.config.sfz_instrument != new_config.sfz_instrument
+                } else {
+                    // Voice not found - shouldn't happen, but recreate to be safe
+                    true
+                }
+            };
+
+            if needs_recreate {
+                tracing::debug!(
+                    "Reload: recreating voice {:?} (synthdef, group, or sfz changed)",
+                    id
+                );
+                let _ = self.voices.graceful_delete(*id).await;
+                let _ = self.voices.create(*id, new_config.clone()).await;
+            } else {
+                // Only params/config changed - update them without recreating the synth
+                tracing::debug!(
+                    "Reload: updating voice {:?} params only ({} params)",
+                    id,
+                    new_config.params.len()
+                );
+                for (param, value) in &new_config.params {
+                    let _ = self.voices.set_param(*id, param, *value).await;
+                }
+                // Update the stored config for non-param fields (name, polyphony, etc.)
+                let mut state = self.state.write().await;
+                if let Some(voice) = state.voices.get_mut(id) {
+                    voice.config.name = new_config.name.clone();
+                    voice.config.polyphony = new_config.polyphony;
+                    voice.config.round_robin_count = new_config.round_robin_count;
+                    voice.config.choke_group = new_config.choke_group.clone();
+                    voice.config.modulations = new_config.modulations.clone();
+                    #[cfg(feature = "midi")]
+                    {
+                        voice.config.midi_output = new_config.midi_output;
+                        voice.config.midi_channel = new_config.midi_channel;
+                        voice.config.param_cc_map = new_config.param_cc_map.clone();
+                    }
+                }
+            }
         }
 
         // Update patterns - queue content swap for seamless hot reload
@@ -1089,12 +1312,94 @@ impl<B: Backend> Runtime<B> {
         }
 
         // =========================================================================
+        // Phase 5.5: Process pending fades
+        //
+        // Fades triggered via fade(...).start() are added to pending_fades
+        // and processed here during reload.
+        // =========================================================================
+
+        // Process fades - both .now() and .start() start immediately, matching pattern/melody behavior
+        for fade_config in new_state
+            .pending_fades
+            .iter()
+            .chain(new_state.pending_fades_quantized.iter())
+        {
+            tracing::debug!(
+                "Reload: starting fade on {:?}/{} from {:?} to {} over {:?}",
+                fade_config.target,
+                fade_config.param,
+                fade_config.from,
+                fade_config.to,
+                fade_config.duration
+            );
+            if let Err(e) = self.fades.fade(fade_config.clone()).await {
+                tracing::error!("Reload: failed to start fade: {}", e);
+            }
+        }
+
+        // =========================================================================
         // Phase 6: Start patterns/melodies/sequences that should be playing
         //
         // Important: Only start entities that aren't already playing.
         // This ensures seamless live reload - unchanged patterns continue
         // from their current position without glitching.
         // =========================================================================
+
+        // First, stop patterns/melodies/sequences that were playing but are no longer
+        // in the playing_* sets. This handles the case where user changes start() to stop().
+        let patterns_to_stop: Vec<crate::types::PatternId> = {
+            let state = self.state.read().await;
+            state
+                .patterns
+                .iter()
+                .filter(|(id, p)| p.playing && !new_state.playing_patterns.contains(id))
+                .map(|(id, _)| *id)
+                .collect()
+        };
+        for id in patterns_to_stop {
+            tracing::debug!("Reload: stopping pattern {:?} (no longer in playing_patterns)", id);
+            let _ = self.patterns.stop(id).await;
+        }
+
+        let melodies_to_stop: Vec<crate::types::MelodyId> = {
+            let state = self.state.read().await;
+            tracing::debug!(
+                "Reload: checking {} runtime melodies against {} script playing_melodies",
+                state.melodies.len(),
+                new_state.playing_melodies.len()
+            );
+            for (id, m) in &state.melodies {
+                tracing::debug!(
+                    "  Runtime melody {:?}: playing={}, in_new_playing={}",
+                    id, m.playing, new_state.playing_melodies.contains(id)
+                );
+            }
+            state
+                .melodies
+                .iter()
+                .filter(|(id, m)| m.playing && !new_state.playing_melodies.contains(id))
+                .map(|(id, _)| *id)
+                .collect()
+        };
+        tracing::debug!("Reload: melodies to stop: {:?}", melodies_to_stop);
+        for id in melodies_to_stop {
+            tracing::debug!("Reload: stopping melody {:?} (no longer in playing_melodies)", id);
+            let _ = self.melodies.stop(id).await;
+        }
+
+        let sequences_to_stop: Vec<crate::types::SequenceId> = {
+            let state = self.state.read().await;
+            state
+                .sequences
+                .iter()
+                .filter(|(id, s)| s.playing && !new_state.playing_sequences.contains(id))
+                .map(|(id, _)| *id)
+                .collect()
+        };
+        for id in sequences_to_stop {
+            tracing::debug!("Reload: stopping sequence {:?} (no longer in playing_sequences)", id);
+            let _ = self.sequences.stop(id).await;
+        }
 
         // Start patterns that should be playing (only if not already playing)
         // Also sync their position to current_beat to avoid triggering past steps

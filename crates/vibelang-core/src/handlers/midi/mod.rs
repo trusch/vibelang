@@ -35,6 +35,8 @@
 
 mod callbacks;
 mod clock;
+#[cfg(not(target_arch = "wasm32"))]
+mod clock_thread;
 mod output;
 mod recording;
 mod routing;
@@ -42,6 +44,8 @@ mod types;
 
 pub use callbacks::MidiCallbackManager;
 pub use clock::MidiClockManager;
+#[cfg(not(target_arch = "wasm32"))]
+pub use clock_thread::MidiClockThread;
 pub use output::MidiOutputManager;
 pub use recording::MidiRecordingManager;
 pub use routing::MidiRoutingManager;
@@ -50,6 +54,8 @@ pub use types::{CcRoute, KeyboardRoute, MidiEventNotification, MidiMessage, Midi
 
 pub use types::{map_to_range, Midi2ControllerType};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::transport_snapshot::TransportSnapshot;
 use crate::backend::Backend;
 use crate::compat::RwLock;
 use crate::midi::{
@@ -151,6 +157,14 @@ pub struct MidiHandler<B: Backend> {
     /// This listens for /tr OSC messages from SuperCollider and routes them
     /// to the appropriate MIDI output devices.
     realtime_service: Arc<parking_lot::RwLock<MidiRealtimeService>>,
+
+    // ========================================================================
+    // Clock Thread (Native Only)
+    // ========================================================================
+    /// Dedicated thread for MIDI clock output.
+    /// Runs independently from the main loop for tighter timing.
+    #[cfg(not(target_arch = "wasm32"))]
+    clock_thread: Arc<parking_lot::RwLock<Option<MidiClockThread>>>,
 }
 
 impl<B: Backend> MidiHandler<B> {
@@ -186,6 +200,10 @@ impl<B: Backend> MidiHandler<B> {
 
             // Realtime service (not started yet - call start_realtime_service())
             realtime_service: Arc::new(parking_lot::RwLock::new(MidiRealtimeService::new())),
+
+            // Clock thread (not started yet - call start_clock_thread())
+            #[cfg(not(target_arch = "wasm32"))]
+            clock_thread: Arc::new(parking_lot::RwLock::new(None)),
         }
     }
 
@@ -226,6 +244,91 @@ impl<B: Backend> MidiHandler<B> {
     /// Check if the MIDI realtime service is running.
     pub fn is_realtime_service_running(&self) -> bool {
         self.realtime_service.read().is_running()
+    }
+
+    /// Start the MIDI clock thread for low-latency clock output.
+    ///
+    /// This starts a dedicated 1kHz thread that reads transport state from
+    /// the provided snapshot and sends MIDI clock (24 PPQN) to registered devices.
+    ///
+    /// Call this after the runtime is initialized and transport is ready.
+    ///
+    /// # Arguments
+    ///
+    /// * `transport_snapshot` - Shared transport state for lock-free reading
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn start_clock_thread(&self, transport_snapshot: Arc<TransportSnapshot>) {
+        let mut clock_thread_guard = self.clock_thread.write();
+
+        if clock_thread_guard.is_some() {
+            tracing::debug!("MIDI clock thread already initialized");
+            return;
+        }
+
+        // Create the clock thread with output channels
+        let mut clock_thread = MidiClockThread::new(
+            transport_snapshot,
+            self.output_manager.output_channels.clone(),
+        );
+
+        // Start the thread
+        clock_thread.start();
+
+        *clock_thread_guard = Some(clock_thread);
+        tracing::info!("MIDI clock thread started");
+    }
+
+    /// Stop the MIDI clock thread.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn stop_clock_thread(&self) {
+        let mut clock_thread_guard = self.clock_thread.write();
+        if let Some(ref mut thread) = *clock_thread_guard {
+            thread.stop();
+        }
+        *clock_thread_guard = None;
+        tracing::info!("MIDI clock thread stopped");
+    }
+
+    /// Check if the MIDI clock thread is running.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn is_clock_thread_running(&self) -> bool {
+        self.clock_thread
+            .read()
+            .as_ref()
+            .map(|t| t.is_running())
+            .unwrap_or(false)
+    }
+
+    /// Enable clock output for a device via the clock thread.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn enable_clock_output_threaded(&self, device: MidiDeviceId) {
+        if let Some(ref thread) = *self.clock_thread.read() {
+            thread.enable_clock_output(device);
+        }
+    }
+
+    /// Disable clock output for a device via the clock thread.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn disable_clock_output_threaded(&self, device: MidiDeviceId) {
+        if let Some(ref thread) = *self.clock_thread.read() {
+            thread.disable_clock_output(device);
+        }
+    }
+
+    /// Queue a quantized MIDI Start for a device (sent at next bar boundary).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn queue_quantized_start(&self, device: MidiDeviceId) {
+        if let Some(ref thread) = *self.clock_thread.read() {
+            thread.queue_quantized_start(device);
+        }
+    }
+
+    /// Set the beats per bar for quantization (from time signature).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_beats_per_bar(&self, beats: u8) {
+        if let Some(ref thread) = *self.clock_thread.read() {
+            thread.set_beats_per_bar(beats);
+        }
     }
 
     /// Get cached capability for a device, detecting if not cached.

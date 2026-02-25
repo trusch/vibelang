@@ -11,8 +11,10 @@
 //! - `system_link_audio` - Routes group bus to output with metering
 //!
 //! ### Sample Playback
+//! - `sample_voice` - PlayBuf-based sample voice (stereo default)
 //! - `sample_voice_mono` - PlayBuf-based mono sample voice
 //! - `sample_voice_stereo` - PlayBuf-based stereo sample voice
+//! - `warp_voice` - Warp1-based time-stretch voice (stereo default)
 //! - `warp_voice_mono` - Warp1-based time-stretch mono voice
 //! - `warp_voice_stereo` - Warp1-based time-stretch stereo voice
 //!

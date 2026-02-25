@@ -671,9 +671,10 @@ impl ScsynthBackend {
         // Send sync command
         self.send_msg("/sync", vec![OscType::Int(sync_id)])?;
 
-        // Wait for response with minimal timeout (20ms) to avoid blocking MIDI clock
-        // If scsynth doesn't respond in time, commands will still be processed eventually
-        match tokio::time::timeout(Duration::from_millis(20), rx).await {
+        // Wait for response with reasonable timeout.
+        // Since MIDI clock is now handled in a dedicated thread, we don't need
+        // aggressive timeouts here anymore.
+        match tokio::time::timeout(Duration::from_secs(5), rx).await {
             Ok(Ok(())) => {
                 tracing::trace!("Sync {} completed", sync_id);
                 Ok(())
@@ -682,7 +683,7 @@ impl ScsynthBackend {
                 "Sync response channel closed".to_string(),
             )),
             Err(_) => {
-                tracing::trace!("Sync {} timed out (20ms), continuing", sync_id);
+                tracing::warn!("Sync {} timed out after 5 seconds", sync_id);
                 Err(ScsynthError::Timeout)
             }
         }

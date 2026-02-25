@@ -265,6 +265,11 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("enable_clock", MidiDevice::enable_clock);
     engine.register_fn("disable_clock", MidiDevice::disable_clock);
 
+    // MIDI transport messages (Start/Stop/Continue)
+    engine.register_fn("send_start", MidiDevice::send_start);
+    engine.register_fn("send_stop", MidiDevice::send_stop);
+    engine.register_fn("send_continue", MidiDevice::send_continue);
+
     // Register MidiRecordingHandle type
     engine.build_type::<MidiRecordingHandle>();
     engine.register_fn("note_count", MidiRecordingHandle::get_note_count);

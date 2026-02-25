@@ -393,14 +393,26 @@ impl<B: Backend> Midi for MidiHandler<B> {
     // =========================================================================
 
     async fn enable_clock_output(&self, device: MidiDeviceId) -> Result<()> {
+        // Register with clock manager (for backward compat and direct sending)
         self.clock_manager.enable_clock_output(
             device,
             &self.outputs,
             &self.output_manager.output_channels,
-        ).await
+        ).await?;
+
+        // Also enable on clock thread if running (handles threaded clock output)
+        #[cfg(not(target_arch = "wasm32"))]
+        self.enable_clock_output_threaded(device);
+
+        Ok(())
     }
 
     async fn disable_clock_output(&self, device: MidiDeviceId) -> Result<()> {
+        // Disable on clock thread if running
+        #[cfg(not(target_arch = "wasm32"))]
+        self.disable_clock_output_threaded(device);
+
+        // Remove from clock manager
         self.clock_manager.disable_clock_output(device).await
     }
 

@@ -8,8 +8,8 @@ use crate::traits::FadeTarget;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingConfig;
 use crate::traits::{
-    MelodyConfig, ModulatorConfig, PatternConfig, SampleConfig, SequenceConfig, SfzConfig,
-    VoiceConfig,
+    FadeConfig, MelodyConfig, ModulatorConfig, PatternConfig, SampleConfig, SequenceConfig,
+    SfzConfig, VoiceConfig,
 };
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
@@ -205,6 +205,14 @@ pub enum MidiOutputMessage {
         note: u8,
         pressure: u32,
     },
+
+    // MIDI Real-Time messages (for sync with external gear)
+    /// MIDI Start message (0xFA) - starts playback from beginning.
+    Start { device_id: MidiDeviceId },
+    /// MIDI Stop message (0xFC) - stops playback.
+    Stop { device_id: MidiDeviceId },
+    /// MIDI Continue message (0xFB) - resumes playback from current position.
+    Continue { device_id: MidiDeviceId },
 }
 
 /// Advanced MIDI keyboard route with range, transpose, and velocity curves.
@@ -466,6 +474,18 @@ pub struct ScriptState {
     /// These voices are auto-triggered on startup and after reload.
     pub running_voices: HashSet<VoiceId>,
 
+    /// Fades to start immediately on reload (no quantization).
+    ///
+    /// These are fades triggered via `fade(...).now()` in the script.
+    /// They are processed during `apply_reload` and converted to active fades.
+    pub pending_fades: Vec<FadeConfig>,
+
+    /// Fades to start with quantization.
+    ///
+    /// These are fades triggered via `fade(...).start()` in the script.
+    /// They are processed at the next quantization boundary.
+    pub pending_fades_quantized: Vec<FadeConfig>,
+
     /// MIDI keyboard routes.
     #[cfg(feature = "midi")]
     pub midi_keyboard_routes: Vec<MidiKeyboardRoute>,
@@ -670,6 +690,7 @@ mod tests {
                 muted: false,
                 soloed: false,
                 sfz_instrument: None,
+                sample_id: None,
                 choke_group: None,
                 round_robin_count: 0,
                 modulations: std::collections::HashMap::new(),

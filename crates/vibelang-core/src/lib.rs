@@ -118,6 +118,7 @@ pub mod compat;
 mod error;
 mod runtime;
 mod state;
+mod transport_snapshot;
 
 // Public modules
 pub mod audio;
@@ -144,6 +145,7 @@ pub use message::{
     VoiceMessage,
 };
 pub use runtime::{Runtime, RuntimeHandle};
+pub use transport_snapshot::TransportSnapshot;
 pub use state::{
     ActiveFade, EffectState, GroupState, MelodyState, MeterLevel, PatternState, SequenceState,
     SfzInstrumentState, SfzRegionState, State, VoiceState,

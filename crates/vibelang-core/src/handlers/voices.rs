@@ -392,6 +392,64 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Set output bus to group's audio bus (for proper routing)
             merged_params.insert("out".to_string(), group.audio_bus.0 as f32);
 
+            // Convert sample offset/length from seconds to synth params
+            if let Some(sample_id) = voice.config.sample_id {
+                if let Some(sample_info) = state.samples.get(&sample_id) {
+                    let sample_rate = sample_info.sample_rate;
+                    let duration = sample_info.duration_secs;
+                    let is_warp = voice.config.synthdef.contains("warp");
+
+                    // Get and remove temporary params
+                    let offset_secs = merged_params.remove("_offset_secs").unwrap_or(0.0) as f64;
+                    let release_secs = merged_params.remove("_release_secs").unwrap_or(0.0) as f64;
+                    let length_secs = merged_params.remove("_length_secs");
+
+                    // Calculate effective length for fade-out
+                    // If no explicit length, use full sample minus release time
+                    let effective_length = if let Some(len) = length_secs {
+                        // Explicit length - subtract release for fade
+                        Some((len as f64 - release_secs).max(0.01))
+                    } else if release_secs > 0.0 {
+                        // Full sample minus release for proper fade
+                        let remaining = duration - offset_secs - release_secs;
+                        if remaining > 0.0 {
+                            Some(remaining)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    if is_warp {
+                        // Warp voice uses normalized 0-1 positions
+                        let start_norm = (offset_secs / duration).min(1.0);
+                        merged_params.insert("startPos".to_string(), start_norm as f32);
+
+                        if let Some(len) = effective_length {
+                            let end_norm = ((offset_secs + len) / duration).min(1.0);
+                            merged_params.insert("endPos".to_string(), end_norm as f32);
+                        }
+                        // else endPos defaults to 1.0 (full sample)
+                    } else {
+                        // Sample voice uses frame positions
+                        let start_frame = (offset_secs * sample_rate) as f32;
+                        merged_params.insert("startPos".to_string(), start_frame);
+
+                        if let Some(len) = effective_length {
+                            let end_frame = ((offset_secs + len) * sample_rate) as f32;
+                            merged_params.insert("endPos".to_string(), end_frame);
+                        }
+                        // else endPos defaults to -1 (full sample)
+                    }
+
+                    tracing::debug!(
+                        "Voice {:?}: sample conversion - offset={:.2}s, length={:?}s, release={:.2}s, is_warp={}",
+                        id, offset_secs, effective_length, release_secs, is_warp
+                    );
+                }
+            }
+
             let synthdef = voice.config.synthdef.clone();
             let group_node_id = group.node_id;
             let polyphony = voice.config.polyphony as usize;
@@ -643,6 +701,57 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
             // Set output bus to group's audio bus (for proper routing)
             params.insert("out".to_string(), group.audio_bus.0 as f32);
+
+            // Convert sample offset/length from seconds to synth params
+            if let Some(sample_id) = voice.config.sample_id {
+                if let Some(sample_info) = state.samples.get(&sample_id) {
+                    let sample_rate = sample_info.sample_rate;
+                    let duration = sample_info.duration_secs;
+                    let is_warp = voice.config.synthdef.contains("warp");
+
+                    // Get and remove temporary params
+                    let offset_secs = params.remove("_offset_secs").unwrap_or(0.0) as f64;
+                    let release_secs = params.remove("_release_secs").unwrap_or(0.0) as f64;
+                    let length_secs = params.remove("_length_secs");
+
+                    // Calculate effective length for fade-out
+                    let effective_length = if let Some(len) = length_secs {
+                        Some((len as f64 - release_secs).max(0.01))
+                    } else if release_secs > 0.0 {
+                        let remaining = duration - offset_secs - release_secs;
+                        if remaining > 0.0 {
+                            Some(remaining)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    if is_warp {
+                        let start_norm = (offset_secs / duration).min(1.0);
+                        params.insert("startPos".to_string(), start_norm as f32);
+
+                        if let Some(len) = effective_length {
+                            let end_norm = ((offset_secs + len) / duration).min(1.0);
+                            params.insert("endPos".to_string(), end_norm as f32);
+                        }
+                    } else {
+                        let start_frame = (offset_secs * sample_rate) as f32;
+                        params.insert("startPos".to_string(), start_frame);
+
+                        if let Some(len) = effective_length {
+                            let end_frame = ((offset_secs + len) * sample_rate) as f32;
+                            params.insert("endPos".to_string(), end_frame);
+                        }
+                    }
+
+                    tracing::debug!(
+                        "Voice {:?} note_on: sample conversion - offset={:.2}s, length={:?}s",
+                        id, offset_secs, effective_length
+                    );
+                }
+            }
 
             // Collect modulations to apply after synth creation
             let mut modulations_to_apply: Vec<(String, u32)> = Vec::new();

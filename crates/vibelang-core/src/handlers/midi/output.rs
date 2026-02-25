@@ -262,6 +262,13 @@ fn run_output_thread(
                 };
 
                 if !bytes.is_empty() {
+                    tracing::debug!(
+                        "[MIDI_OUT_{}] Sending {:?} ({} bytes: {:02x?})",
+                        device_id,
+                        event.event,
+                        bytes.len(),
+                        bytes
+                    );
                     if let Err(e) = conn.send(&bytes) {
                         tracing::warn!("[MIDI_OUT_{}] Failed to send MIDI: {}", device_id, e);
                     }

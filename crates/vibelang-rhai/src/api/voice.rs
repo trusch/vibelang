@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use vibelang_core::traits::VoiceConfig;
 #[cfg(feature = "midi")]
 use vibelang_core::types::MidiDeviceId;
-use vibelang_core::types::ModulatorId;
+use vibelang_core::types::{ModulatorId, SampleId};
 #[cfg(not(target_arch = "wasm32"))]
 use vibelang_core::types::SfzId;
 
@@ -41,6 +41,8 @@ pub struct Voice {
     /// SFZ instrument ID (if this voice uses an SFZ instrument) - native only.
     #[cfg(not(target_arch = "wasm32"))]
     sfz_instrument: Option<SfzId>,
+    /// Sample ID (if this voice uses a sample).
+    sample_id: Option<SampleId>,
     /// Round-robin count for cycling through sample variations.
     round_robin_count: u32,
     /// Choke group name for exclusive triggering.
@@ -72,6 +74,7 @@ impl Voice {
             soloed: false,
             #[cfg(not(target_arch = "wasm32"))]
             sfz_instrument: None,
+            sample_id: None,
             round_robin_count: 0,
             choke_group: None,
             modulations: HashMap::new(),
@@ -144,9 +147,66 @@ impl Voice {
     }
 
     /// Set the sound source to a sample.
+    ///
+    /// This extracts all sample configuration (envelope, playback, warp settings)
+    /// and stores them in the voice params for use at trigger time.
     pub fn on_sample(mut self, sample: SampleHandle) -> Self {
-        // Use sample_voice synthdef
-        self.synth_name = Some("sample_voice".to_string());
+        // Get sample ID and config from context
+        if let Some(sample_id) = context::get_sample_id(&sample.id) {
+            self.sample_id = Some(sample_id);
+
+            context::with_state(|state| {
+                if let Some(config) = state.samples.get(&sample_id) {
+                    // Choose synthdef based on warp mode
+                    self.synth_name = Some(if config.warp {
+                        "warp_voice".to_string()
+                    } else {
+                        "sample_voice".to_string()
+                    });
+
+                    // Copy envelope params
+                    self.params
+                        .insert("attack".to_string(), config.attack as f32);
+                    self.params
+                        .insert("sustain".to_string(), config.sustain as f32);
+                    self.params
+                        .insert("release".to_string(), config.release as f32);
+                    self.params.insert("amp".to_string(), config.amp as f32);
+
+                    // Playback params
+                    self.params.insert("rate".to_string(), config.rate as f32);
+                    self.params.insert(
+                        "loop".to_string(),
+                        if config.loop_mode { 1.0 } else { 0.0 },
+                    );
+
+                    // Warp params (if warp mode)
+                    if config.warp {
+                        self.params
+                            .insert("speed".to_string(), config.speed as f32);
+                        self.params
+                            .insert("pitch".to_string(), config.pitch as f32);
+                        self.params
+                            .insert("windowSize".to_string(), config.window_size as f32);
+                        self.params
+                            .insert("overlaps".to_string(), config.overlaps as f32);
+                    }
+
+                    // Store offset/length for conversion to frames at trigger time
+                    self.params
+                        .insert("_offset_secs".to_string(), config.offset as f32);
+                    if let Some(len) = config.length {
+                        self.params.insert("_length_secs".to_string(), len as f32);
+                    }
+
+                    // Store release time for fade-out calculation at trigger time
+                    self.params
+                        .insert("_release_secs".to_string(), config.release as f32);
+                }
+            });
+        }
+
+        // Always set bufnum
         self.params
             .insert("bufnum".to_string(), sample.buffer_id as f32);
         self.sync_to_state();
@@ -351,6 +411,7 @@ impl Voice {
             sfz_instrument: self.sfz_instrument,
             #[cfg(target_arch = "wasm32")]
             sfz_instrument: None,
+            sample_id: self.sample_id,
             round_robin_count: self.round_robin_count,
             choke_group: self.choke_group.clone(),
             modulations: self.modulations.clone(),
@@ -469,6 +530,7 @@ mod tests {
             soloed: false,
             #[cfg(not(target_arch = "wasm32"))]
             sfz_instrument: None,
+            sample_id: None,
             round_robin_count: 0,
             choke_group: None,
             modulations: HashMap::new(),

@@ -7,8 +7,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Range;
 use vibelang_core::reload::EffectConfig;
-use vibelang_core::traits::{Clip, FadeConfig, FadeCurve, SequenceConfig};
-use vibelang_core::types::Beat;
+use vibelang_core::traits::{Clip, FadeConfig, FadeCurve, FadeTarget, SequenceConfig};
+use vibelang_core::types::{Beat, Duration};
 
 use super::melody::Melody;
 use super::pattern::Pattern;
@@ -347,10 +347,35 @@ impl Fade {
         self
     }
 
-    /// Target an effect.
+    /// Target an effect by name.
     pub fn on_effect(mut self, effect_name: String) -> Self {
         self.target_type = FadeTargetType::Effect;
         self.target_name = effect_name;
+        self
+    }
+
+    /// Target an effect by handle.
+    pub fn on_effect_handle(mut self, effect: Fx) -> Self {
+        self.target_type = FadeTargetType::Effect;
+        self.target_name = effect.id.clone();
+        self
+    }
+
+    /// Generic target method that accepts various handle types.
+    ///
+    /// Accepts Voice, Fx, or falls back to treating Dynamic as a string (group name).
+    pub fn on_dynamic(mut self, target: rhai::Dynamic) -> Self {
+        if let Some(voice) = target.clone().try_cast::<Voice>() {
+            self.target_type = FadeTargetType::Voice;
+            self.target_name = voice.name.clone();
+        } else if let Some(fx) = target.clone().try_cast::<Fx>() {
+            self.target_type = FadeTargetType::Effect;
+            self.target_name = fx.id.clone();
+        } else if let Some(name) = target.clone().try_cast::<String>() {
+            // Default to group for string names
+            self.target_type = FadeTargetType::Group;
+            self.target_name = name;
+        }
         self
     }
 
@@ -507,6 +532,62 @@ impl Fade {
         // Fades are applied through sequences, not directly
         self
     }
+
+    /// Convert this Fade to a FadeConfig.
+    fn to_config(&self) -> FadeConfig {
+        let target = match self.target_type {
+            FadeTargetType::Group => {
+                FadeTarget::Group(context::get_or_create_group_id(&self.target_name))
+            }
+            FadeTargetType::Voice => {
+                FadeTarget::Voice(context::get_or_create_voice_id(&self.target_name))
+            }
+            FadeTargetType::Effect => {
+                FadeTarget::Effect(context::get_or_create_effect_id(&self.target_name))
+            }
+        };
+
+        let mut config = FadeConfig::new(
+            target,
+            &self.param_name,
+            self.to_value as f32,
+            Duration::from_beats(self.duration_beats),
+        );
+        config.from = Some(self.from_value as f32);
+        config.curve = self.curve.clone();
+        config
+    }
+
+    /// Start the fade with quantization (chainable).
+    ///
+    /// This schedules the fade to start at the next quantization boundary,
+    /// similar to how patterns and melodies are quantized for live performance.
+    pub fn start(self) -> Self {
+        let config = self.to_config();
+        context::with_state(|state| {
+            state.pending_fades_quantized.push(config);
+        });
+        self
+    }
+
+    /// Launch the fade with quantization (alias for start).
+    ///
+    /// This is an alias for `start()` to match the pattern/melody API.
+    pub fn launch(self) -> Self {
+        self.start()
+    }
+
+    /// Start the fade immediately without quantization (chainable).
+    ///
+    /// This adds the fade to the pending_fades list in ScriptState,
+    /// which will be processed immediately during the next reload/apply cycle.
+    pub fn now(self) -> Self {
+        let config = self.to_config();
+        context::with_state(|state| {
+            state.pending_fades.push(config);
+        });
+        self
+    }
 }
 
 /// An Fx builder for creating audio effects.
@@ -546,14 +627,16 @@ impl Fx {
     }
 
     /// Apply the effect to the current group.
-    pub fn apply(self) {
+    ///
+    /// Returns self so the effect handle can be used with fade operations.
+    pub fn apply(self) -> Self {
         let effect_id = context::get_or_create_effect_id(&self.id);
         let group_id = context::get_or_create_group_id(&self.group_path);
 
         let config = EffectConfig {
-            synthdef: self.synth_name.unwrap_or_default(),
+            synthdef: self.synth_name.clone().unwrap_or_default(),
             group: group_id,
-            params: self.params,
+            params: self.params.clone(),
         };
 
         context::with_state(|state| {
@@ -564,6 +647,8 @@ impl Fx {
                 group_config.effects.push(effect_id);
             }
         });
+
+        self
     }
 }
 
@@ -626,6 +711,8 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("on_voice", Fade::on_voice);
     engine.register_fn("on_voice", Fade::on_voice_handle); // Overload for Voice handle
     engine.register_fn("on_effect", Fade::on_effect);
+    engine.register_fn("on_effect", Fade::on_effect_handle); // Overload for Fx handle
+    engine.register_fn("on", Fade::on_dynamic); // Generic target method
     engine.register_fn("param", Fade::param);
     engine.register_fn("from", Fade::from);
     engine.register_fn("to", Fade::to);
@@ -636,6 +723,9 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("spline", Fade::spline);
     engine.register_fn("point", Fade::point);
     engine.register_fn("apply", Fade::apply);
+    engine.register_fn("start", Fade::start);
+    engine.register_fn("launch", Fade::launch);
+    engine.register_fn("now", Fade::now);
 
     // Fx builder methods
     engine.register_fn("synth", Fx::synth);

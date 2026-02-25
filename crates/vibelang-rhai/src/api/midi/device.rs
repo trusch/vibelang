@@ -686,6 +686,63 @@ impl MidiDevice {
         self
     }
 
+    // === MIDI Transport Messages ===
+
+    /// Send a MIDI Start message (0xFA) to this device.
+    ///
+    /// This tells the device to start playback from the beginning.
+    /// Use this to synchronize external sequencers/drum machines with VibeLang.
+    ///
+    /// The message is quantized and sent during the next reconciliation cycle,
+    /// ensuring it aligns with other musical events like melodies and patterns.
+    ///
+    /// # Example
+    /// ```rhai
+    /// let ko2 = midi_device("KO2");
+    /// ko2.send_start();  // External device starts in sync
+    /// ```
+    pub fn send_start(&mut self) {
+        let msg = MidiOutputMessage::Start { device_id: self.id };
+        context::with_state(|state| {
+            state.midi_outputs.insert(self.id);
+            state.midi_output_messages.push(msg);
+        });
+    }
+
+    /// Send a MIDI Stop message (0xFC) to this device.
+    ///
+    /// This tells the device to stop playback.
+    ///
+    /// # Example
+    /// ```rhai
+    /// let ko2 = midi_device("KO2");
+    /// ko2.send_stop();  // External device stops
+    /// ```
+    pub fn send_stop(&mut self) {
+        let msg = MidiOutputMessage::Stop { device_id: self.id };
+        context::with_state(|state| {
+            state.midi_outputs.insert(self.id);
+            state.midi_output_messages.push(msg);
+        });
+    }
+
+    /// Send a MIDI Continue message (0xFB) to this device.
+    ///
+    /// This tells the device to resume playback from its current position.
+    ///
+    /// # Example
+    /// ```rhai
+    /// let ko2 = midi_device("KO2");
+    /// ko2.send_continue();  // External device resumes
+    /// ```
+    pub fn send_continue(&mut self) {
+        let msg = MidiOutputMessage::Continue { device_id: self.id };
+        context::with_state(|state| {
+            state.midi_outputs.insert(self.id);
+            state.midi_output_messages.push(msg);
+        });
+    }
+
     // === MIDI 2.0 Methods ===
 
     /// Start building a route for a specific UMP group (0-15).

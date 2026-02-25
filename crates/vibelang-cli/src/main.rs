@@ -504,6 +504,12 @@ async fn run_simple_mode(
 
     handle.send(ReloadMessage::Apply { state }.into()).await?;
 
+    // Wait for state to be fully applied before starting transport
+    // This ensures MIDI devices are registered before transport starts,
+    // so they receive the Start message
+    handle.sync_and_wait().await?;
+    info!("State applied");
+
     // Start transport
     handle
         .send(Message::Transport(TransportMessage::Start))
@@ -815,6 +821,9 @@ async fn run_tui_mode(
                 log::error!("Failed to apply script: {}", e);
                 app.process_event(tui::TuiEvent::Error(format!("{}", e)));
             } else {
+                // Wait for state to be fully applied before starting transport
+                // This ensures MIDI devices are registered before transport starts
+                let _ = handle.sync_and_wait().await;
                 log::info!("Script loaded successfully");
             }
         }
@@ -869,11 +878,10 @@ async fn run_tui_mode(
                 log::info!("Reloading: {}", changed_file.display());
                 match execute_script(&changed_file, &include_paths_clone, &ext_config_clone) {
                     Ok(state) => {
-                        // Wait for synthdefs queued during script execution to be loaded
-                        if let Err(e) = reload_handle.sync_and_wait().await {
-                            log::error!("Failed to sync before reload: {}", e);
-                            continue;
-                        }
+                        // NOTE: We skip sync_and_wait here for hot reloads to avoid blocking
+                        // the tick loop and causing audio gaps. Synthdefs are loaded async
+                        // and will be available for subsequent reloads. Initial load still
+                        // syncs to ensure synthdefs are ready before first playback.
                         if let Err(e) = reload_handle
                             .send(ReloadMessage::Apply { state }.into())
                             .await

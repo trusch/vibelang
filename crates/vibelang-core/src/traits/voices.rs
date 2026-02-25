@@ -5,7 +5,7 @@
 
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
-use crate::types::{GroupId, ModulatorId, ParamMap, SfzId, VoiceId};
+use crate::types::{GroupId, ModulatorId, ParamMap, SampleId, SfzId, VoiceId};
 use crate::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -39,6 +39,12 @@ pub struct VoiceConfig {
     /// When set, the voice will use the SFZ instrument for sample selection
     /// based on note and velocity, rather than a single synthdef.
     pub sfz_instrument: Option<SfzId>,
+
+    /// Sample ID (if this voice uses a sample).
+    ///
+    /// When set, the voice will use sample parameters (offset, length, envelope)
+    /// from the SampleConfig, converted to synth params at trigger time.
+    pub sample_id: Option<SampleId>,
 
     /// Round-robin count for cycling through sample variations.
     ///
@@ -89,6 +95,7 @@ impl VoiceConfig {
             muted: false,
             soloed: false,
             sfz_instrument: None,
+            sample_id: None,
             round_robin_count: 0,
             choke_group: None,
             modulations: HashMap::new(),

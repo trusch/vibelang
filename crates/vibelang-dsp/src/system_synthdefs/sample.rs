@@ -16,6 +16,10 @@ pub fn create_sample_synthdefs() -> Vec<(String, Vec<u8>)> {
     if let Some((name, bytes)) = generate_sample_voice_synthdef("sample_voice_stereo", 2) {
         defs.push((name, bytes));
     }
+    // Also create generic "sample_voice" as stereo by default (like sfz_voice)
+    if let Some((_, bytes)) = generate_sample_voice_synthdef("sample_voice", 2) {
+        defs.push(("sample_voice".to_string(), bytes));
+    }
 
     // Warp1-based time-stretch voices
     if let Some((name, bytes)) = generate_warp_voice_synthdef("warp_voice_mono", 1) {
@@ -23,6 +27,10 @@ pub fn create_sample_synthdefs() -> Vec<(String, Vec<u8>)> {
     }
     if let Some((name, bytes)) = generate_warp_voice_synthdef("warp_voice_stereo", 2) {
         defs.push((name, bytes));
+    }
+    // Also create generic "warp_voice" as stereo by default
+    if let Some((_, bytes)) = generate_warp_voice_synthdef("warp_voice", 2) {
+        defs.push(("warp_voice".to_string(), bytes));
     }
 
     defs
@@ -103,9 +111,8 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
         num_channels as i16,
     );
 
-    // Done.kr detects when PlayBuf has finished playing
-    // Outputs 1.0 when the source UGen (PlayBuf) is done
-    let done_node = builder.add_node(
+    // Done.kr detects when PlayBuf has finished playing (reaches end of buffer)
+    let playbuf_done = builder.add_node(
         "Done".to_string(),
         Rate::Control,
         vec![Input::Node {
@@ -116,7 +123,156 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
         0,
     );
 
-    // For non-looping samples: close gate when PlayBuf finishes
+    // === endPos support ===
+    // When endPos >= 0, we need to close the gate when playback reaches endPos.
+    // Calculate duration in seconds: (endPos - startPos) / sampleRate / rate
+    // Use a Line UGen that finishes after this duration.
+
+    // BufSampleRate.kr(bufnum) - get sample rate of buffer
+    let buf_sr = builder.add_node(
+        "BufSampleRate".to_string(),
+        Rate::Control,
+        vec![param(1)], // bufnum
+        1,
+        0,
+    );
+
+    // BufFrames.kr(bufnum) - get total frames for endPos=-1 case
+    let buf_frames = builder.add_node(
+        "BufFrames".to_string(),
+        Rate::Control,
+        vec![param(1)], // bufnum
+        1,
+        0,
+    );
+
+    // Calculate effective endPos: if endPos < 0, use bufFrames
+    // effectiveEnd = Select.kr(endPos < 0, [endPos, bufFrames])
+    // First: endPos < 0 comparison
+    let end_is_neg = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![param(10), Input::Constant(zero)], // endPos < 0
+        1,
+        8, // less than
+    );
+
+    // Select between endPos and bufFrames based on end_is_neg
+    let effective_end = builder.add_node(
+        "Select".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: end_is_neg.0,
+                output_index: 0,
+            },
+            param(10), // endPos (when end_is_neg=0)
+            Input::Node {
+                node_id: buf_frames.0,
+                output_index: 0,
+            }, // bufFrames (when end_is_neg=1)
+        ],
+        1,
+        0,
+    );
+
+    // duration_frames = effectiveEnd - startPos
+    let duration_frames = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: effective_end.0,
+                output_index: 0,
+            },
+            param(9), // startPos
+        ],
+        1,
+        1, // subtraction
+    );
+
+    // duration_secs = duration_frames / sampleRate
+    let duration_secs = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: duration_frames.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: buf_sr.0,
+                output_index: 0,
+            },
+        ],
+        1,
+        4, // division
+    );
+
+    // actual_duration = duration_secs / rate (accounting for playback speed)
+    let actual_duration = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: duration_secs.0,
+                output_index: 0,
+            },
+            param(2), // rate
+        ],
+        1,
+        4, // division
+    );
+
+    // Line.kr(0, 1, duration) - timer that finishes when we should reach endPos
+    let timer = builder.add_node(
+        "Line".to_string(),
+        Rate::Control,
+        vec![
+            Input::Constant(zero),  // start
+            Input::Constant(one),   // end
+            Input::Node {
+                node_id: actual_duration.0,
+                output_index: 0,
+            }, // duration
+            Input::Constant(zero),  // doneAction=0
+        ],
+        1,
+        0,
+    );
+
+    // Done.kr on timer - fires when we reach endPos
+    let timer_done = builder.add_node(
+        "Done".to_string(),
+        Rate::Control,
+        vec![Input::Node {
+            node_id: timer.0,
+            output_index: 0,
+        }],
+        1,
+        0,
+    );
+
+    // Combined done: either PlayBuf finished OR timer finished (for endPos)
+    // done = max(playbuf_done, timer_done)
+    let done_node = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: playbuf_done.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: timer_done.0,
+                output_index: 0,
+            },
+        ],
+        1,
+        13, // max
+    );
+
+    // For non-looping samples: close gate when done
     // effectiveGate = gate * (1 - ((1 - loop) * done))
     // When loop=0: effectiveGate = gate * (1 - done) → gate becomes 0 when done=1
     // When loop=1: effectiveGate = gate * (1 - 0) = gate → unaffected
@@ -274,7 +430,7 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
 /// Generate a Warp1-based synthdef for time-stretching sample playback.
 ///
 /// Warp1 allows independent control of playback speed and pitch.
-/// This synthdef automatically releases when the Line UGen finishes (reaching endPos).
+/// Supports both one-shot (auto-release) and looping playback.
 ///
 /// Parameters:
 /// - out: output bus (0)
@@ -290,6 +446,7 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
 /// - endPos: normalized end position 0-1 (10)
 /// - windowSize: granular window size in seconds (11)
 /// - overlaps: number of overlapping grains (12)
+/// - loop: loop mode 0/1 (13)
 fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String, Vec<u8>)> {
     let mut builder = GraphBuilderInner::new();
 
@@ -307,6 +464,7 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
     builder.add_param("endPos".to_string(), vec![1.0], None); // 10 - normalized 0-1
     builder.add_param("windowSize".to_string(), vec![0.1], None); // 11
     builder.add_param("overlaps".to_string(), vec![8.0], None); // 12
+    builder.add_param("loop".to_string(), vec![0.0], None); // 13 - loop mode
 
     builder.create_control_ugen();
 
@@ -384,8 +542,12 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         4, // division
     );
 
-    // Line UGen for pointer position (moves from startPos to endPos over duration)
-    let pointer = builder.add_node(
+    // === Pointer generation ===
+    // For one-shot (loop=0): Line goes from startPos to endPos once
+    // For looping (loop=1): Phasor continuously cycles from startPos to endPos
+
+    // One-shot pointer: Line UGen (moves from startPos to endPos over duration)
+    let line_pointer = builder.add_node(
         "Line".to_string(),
         Rate::Control,
         vec![
@@ -401,26 +563,166 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         0,
     );
 
-    // Done.kr detects when Line has finished
+    // Looping pointer: Phasor that cycles between startPos and endPos
+    // Phasor.kr(trig, rate, start, end, resetPos)
+    // rate = (endPos - startPos) / duration_in_seconds / ControlRate
+    // Since Phasor advances by 'rate' per control period, and we want to
+    // traverse (endPos - startPos) over actual_dur seconds:
+    // rate = (endPos - startPos) / actual_dur / ControlRate
+    // But ControlRate.ir ~= SampleRate / 64, so rate = pos_range / (actual_dur * ControlRate)
+
+    // We need to add a constant for control rate (approximately SampleRate/64 ≈ 689 at 44100Hz)
+    // We'll use SampleRate.ir / 64 to calculate this properly
+    let sample_rate = builder.add_node(
+        "SampleRate".to_string(),
+        Rate::Scalar, // ir
+        vec![],
+        1,
+        0,
+    );
+
+    let block_size = 64.0f32;
+    builder.add_constant(block_size);
+
+    let control_rate = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Scalar,
+        vec![
+            Input::Node {
+                node_id: sample_rate.0,
+                output_index: 0,
+            },
+            Input::Constant(block_size),
+        ],
+        1,
+        4, // division: SampleRate / 64
+    );
+
+    // rate = pos_range / actual_dur / control_rate
+    let phasor_rate_a = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: pos_range.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: actual_dur.0,
+                output_index: 0,
+            },
+        ],
+        1,
+        4, // division
+    );
+
+    let phasor_rate = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: phasor_rate_a.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: control_rate.0,
+                output_index: 0,
+            },
+        ],
+        1,
+        4, // division
+    );
+
+    // Phasor.kr(trig=0, rate, start, end, resetPos)
+    let phasor_pointer = builder.add_node(
+        "Phasor".to_string(),
+        Rate::Control,
+        vec![
+            Input::Constant(zero), // trig
+            Input::Node {
+                node_id: phasor_rate.0,
+                output_index: 0,
+            }, // rate
+            param(9),              // start = startPos
+            param(10),             // end = endPos
+            param(9),              // resetPos = startPos
+        ],
+        1,
+        0,
+    );
+
+    // Select pointer based on loop parameter
+    // pointer = Select.kr(loop, [line_pointer, phasor_pointer])
+    let pointer = builder.add_node(
+        "Select".to_string(),
+        Rate::Control,
+        vec![
+            param(13), // loop
+            Input::Node {
+                node_id: line_pointer.0,
+                output_index: 0,
+            }, // when loop=0
+            Input::Node {
+                node_id: phasor_pointer.0,
+                output_index: 0,
+            }, // when loop=1
+        ],
+        1,
+        0,
+    );
+
+    // Done.kr detects when Line has finished (only fires for one-shot)
     let done_node = builder.add_node(
         "Done".to_string(),
         Rate::Control,
         vec![Input::Node {
-            node_id: pointer.0,
+            node_id: line_pointer.0, // Check the Line, not the selected pointer
             output_index: 0,
         }],
         1,
         0,
     );
 
-    // Auto-close gate when Line finishes: effectiveGate = gate * (1 - done)
-    let one_minus_done = builder.add_node(
+    // For non-looping: auto-close gate when done
+    // effectiveGate = gate * (1 - ((1 - loop) * done))
+    // When loop=0: effectiveGate = gate * (1 - done) → gate becomes 0 when done=1
+    // When loop=1: effectiveGate = gate * 1 = gate → unaffected
+
+    // (1 - loop)
+    let one_minus_loop = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(one), param(13)],
+        1,
+        1, // subtraction
+    );
+
+    // (1 - loop) * done
+    let done_factor = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Node {
+                node_id: one_minus_loop.0,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: done_node.0,
+                output_index: 0,
+            },
+        ],
+        1,
+        2, // multiplication
+    );
+
+    // 1 - done_factor
+    let gate_modifier = builder.add_node(
         "BinaryOpUGen".to_string(),
         Rate::Control,
         vec![
             Input::Constant(one),
             Input::Node {
-                node_id: done_node.0,
+                node_id: done_factor.0,
                 output_index: 0,
             },
         ],
@@ -428,13 +730,14 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         1, // subtraction
     );
 
+    // gate * gate_modifier = effectiveGate
     let effective_gate = builder.add_node(
         "BinaryOpUGen".to_string(),
         Rate::Control,
         vec![
             param(5), // original gate
             Input::Node {
-                node_id: one_minus_done.0,
+                node_id: gate_modifier.0,
                 output_index: 0,
             },
         ],
@@ -563,12 +866,14 @@ mod tests {
     #[test]
     fn test_create_sample_synthdefs() {
         let defs = create_sample_synthdefs();
-        assert_eq!(defs.len(), 4);
+        assert_eq!(defs.len(), 6);
 
         let names: Vec<_> = defs.iter().map(|(n, _)| n.as_str()).collect();
         assert!(names.contains(&"sample_voice_mono"));
         assert!(names.contains(&"sample_voice_stereo"));
+        assert!(names.contains(&"sample_voice")); // generic stereo default
         assert!(names.contains(&"warp_voice_mono"));
         assert!(names.contains(&"warp_voice_stereo"));
+        assert!(names.contains(&"warp_voice")); // generic stereo default
     }
 }

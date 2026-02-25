@@ -409,13 +409,18 @@ impl<B: Backend> MelodiesHandler<B> {
         };
 
         if notes_to_release.is_empty() {
+            tracing::debug!(
+                "release_melody_notes: no tracked notes for melody {:?}",
+                melody_id
+            );
             return;
         }
 
         tracing::debug!(
-            "Releasing {} notes for melody {:?}",
+            "Releasing {} tracked notes for melody {:?}: {:?}",
             notes_to_release.len(),
-            melody_id
+            melody_id,
+            notes_to_release
         );
 
         // Remove pending note-offs for these notes
@@ -487,8 +492,55 @@ impl<B: Backend> Melodies for MelodiesHandler<B> {
     }
 
     async fn stop(&self, id: MelodyId) -> Result<()> {
+        tracing::debug!("MelodiesHandler::stop called for melody {:?}", id);
+
+        // Get voice info before releasing notes (for MIDI all-notes-off failsafe)
+        let voice_id = {
+            let state = self.state.read().await;
+            state.melodies.get(&id).and_then(|m| m.content.voice)
+        };
+
         // Release any active notes for this melody
         self.release_melody_notes(id).await;
+
+        // Additionally, clear ALL pending note-offs for this melody's voice
+        // This handles cases where notes were scheduled but not yet in melody_notes
+        if let Some(vid) = voice_id {
+            let cleared_count = {
+                let mut note_offs = self.pending_note_offs.write().await;
+                let before = note_offs.len();
+                note_offs.retain(|(voice, _note), _| *voice != vid);
+                before - note_offs.len()
+            };
+            if cleared_count > 0 {
+                tracing::debug!(
+                    "Melody {:?}: cleared {} additional pending note-offs for voice {:?}",
+                    id, cleared_count, vid
+                );
+            }
+
+            // Send note-offs for notes 0-127 as a failsafe for MIDI voices
+            // This ensures stuck notes on external MIDI devices are released
+            // Only send for notes that might reasonably be playing (common range)
+            #[cfg(feature = "midi")]
+            {
+                let state = self.state.read().await;
+                if let Some(voice) = state.voices.get(&vid) {
+                    if voice.config.midi_output.is_some() {
+                        tracing::debug!(
+                            "Melody {:?}: sending all-notes-off for MIDI voice {:?}",
+                            id, vid
+                        );
+                        // Send note-offs for common MIDI note range (21-108, piano range)
+                        // This is more efficient than 0-127 and covers most use cases
+                        drop(state); // Release lock before async calls
+                        for note in 21..=108u8 {
+                            let _ = self.voices.note_off(vid, note).await;
+                        }
+                    }
+                }
+            }
+        }
 
         let mut state = self.state.write().await;
 
@@ -497,6 +549,10 @@ impl<B: Backend> Melodies for MelodiesHandler<B> {
             .get_mut(&id)
             .ok_or(Error::MelodyNotFound(id))?;
 
+        tracing::debug!(
+            "Melody {:?}: setting playing=false (was {})",
+            id, melody.playing
+        );
         melody.playing = false;
 
         Ok(())
