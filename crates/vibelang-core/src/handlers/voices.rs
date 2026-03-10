@@ -509,7 +509,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             }
 
             // Update voice state
-            let voice = state.voices.get_mut(&id).unwrap();
+            let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
             voice.active_nodes.push(node_id);
 
             // Handle round-robin: add `rr` parameter and increment position
@@ -649,7 +649,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 params.insert("packed_data".to_string(), packed_data);
 
                 // Create synth at root node - it will fire and free itself immediately
-                let node_id = node_id.unwrap();
+                // Safety: node_id is Some when midi_output is Some (allocated above)
+                let node_id = node_id.ok_or(Error::backend_msg("MIDI node ID not allocated"))?;
                 if let Err(e) = self
                     .backend
                     .create_synth(
@@ -785,7 +786,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let node_id = state.alloc_node_id();
 
             // Update voice state
-            let voice = state.voices.get_mut(&id).unwrap();
+            let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
 
             // If note already playing, collect it for cleanup
             let old_node = voice.note_nodes.remove(&note);
@@ -878,7 +879,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 params.insert("packed_data".to_string(), packed_data);
 
                 // Create synth at root node - it will fire and free itself immediately
-                let node_id = node_id.unwrap();
+                // Safety: node_id is Some when midi_output is Some (allocated above)
+                let node_id = node_id.ok_or(Error::backend_msg("MIDI node ID not allocated"))?;
                 if let Err(e) = self
                     .backend
                     .create_synth(
@@ -1500,6 +1502,24 @@ mod tests {
         );
 
         assert_eq!(backend.params_set(), 0, "No params should be set");
+    }
+
+    #[tokio::test]
+    async fn test_note_on_nonexistent_voice_fails() {
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let result = handler.note_on(VoiceId::new(999), 60, 0.8).await;
+        assert!(result.is_err(), "Note on for non-existent voice should fail");
+    }
+
+    #[tokio::test]
+    async fn test_note_off_nonexistent_voice_fails() {
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let result = handler.note_off(VoiceId::new(999), 60).await;
+        assert!(result.is_err(), "Note off for non-existent voice should fail");
     }
 
     // =========================================================================
