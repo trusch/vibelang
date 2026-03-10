@@ -516,6 +516,14 @@ pub fn register(engine: &mut Engine) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context;
+
+    /// Initialize a script context for testing, run the closure, then clean up.
+    fn with_test_context<F: FnOnce()>(f: F) {
+        context::init_context();
+        f();
+        context::clear_context();
+    }
 
     /// Create a Voice for testing without NativeCallContext.
     fn test_voice(name: &str) -> Voice {
@@ -546,49 +554,61 @@ mod tests {
 
     #[test]
     fn test_voice_synth() {
-        let v = test_voice("test").synth("my_synth".to_string());
-        assert_eq!(v.synth_name, Some("my_synth".to_string()));
+        with_test_context(|| {
+            let v = test_voice("test").synth("my_synth".to_string());
+            assert_eq!(v.synth_name, Some("my_synth".to_string()));
+        });
     }
 
     #[test]
     fn test_voice_on() {
-        let v = test_voice("test").on("another_synth".to_string());
-        assert_eq!(v.synth_name, Some("another_synth".to_string()));
+        with_test_context(|| {
+            let v = test_voice("test").on("another_synth".to_string());
+            assert_eq!(v.synth_name, Some("another_synth".to_string()));
+        });
     }
 
     #[test]
     fn test_voice_poly() {
-        let v = test_voice("test").poly(8);
-        assert_eq!(v.polyphony, 8);
+        with_test_context(|| {
+            let v = test_voice("test").poly(8);
+            assert_eq!(v.polyphony, 8);
+        });
     }
 
     #[test]
     fn test_voice_poly_clamping() {
-        // Should clamp to 1-255
-        let v1 = test_voice("test").poly(0);
-        assert_eq!(v1.polyphony, 1);
+        with_test_context(|| {
+            // Should clamp to 1-255
+            let v1 = test_voice("test").poly(0);
+            assert_eq!(v1.polyphony, 1);
 
-        let v2 = test_voice("test").poly(300);
-        assert_eq!(v2.polyphony, 255);
+            let v2 = test_voice("test").poly(300);
+            assert_eq!(v2.polyphony, 255);
 
-        let v3 = test_voice("test").poly(-5);
-        assert_eq!(v3.polyphony, 1);
+            let v3 = test_voice("test").poly(-5);
+            assert_eq!(v3.polyphony, 1);
+        });
     }
 
     #[test]
     fn test_voice_gain() {
-        let v = test_voice("test").gain(0.5);
-        assert!((v.gain - 0.5).abs() < 0.001);
+        with_test_context(|| {
+            let v = test_voice("test").gain(0.5);
+            assert!((v.gain - 0.5).abs() < 0.001);
+        });
     }
 
     #[test]
     fn test_voice_set_param() {
-        let v = test_voice("test")
-            .set_param("freq".to_string(), 440.0)
-            .set_param("amp".to_string(), 0.8);
+        with_test_context(|| {
+            let v = test_voice("test")
+                .set_param("freq".to_string(), 440.0)
+                .set_param("amp".to_string(), 0.8);
 
-        assert_eq!(v.params.get("freq"), Some(&440.0_f32));
-        assert_eq!(v.params.get("amp"), Some(&0.8_f32));
+            assert_eq!(v.params.get("freq"), Some(&440.0_f32));
+            assert_eq!(v.params.get("amp"), Some(&0.8_f32));
+        });
     }
 
     #[test]
@@ -628,17 +648,19 @@ mod tests {
 
     #[test]
     fn test_voice_chained_builders() {
-        let v = test_voice("lead")
-            .synth("supersaw".to_string())
-            .poly(4)
-            .gain(0.7)
-            .set_param("cutoff".to_string(), 2000.0);
+        with_test_context(|| {
+            let v = test_voice("lead")
+                .synth("supersaw".to_string())
+                .poly(4)
+                .gain(0.7)
+                .set_param("cutoff".to_string(), 2000.0);
 
-        assert_eq!(v.name, "lead");
-        assert_eq!(v.synth_name, Some("supersaw".to_string()));
-        assert_eq!(v.polyphony, 4);
-        assert!((v.gain - 0.7).abs() < 0.001);
-        assert_eq!(v.params.get("cutoff"), Some(&2000.0_f32));
+            assert_eq!(v.name, "lead");
+            assert_eq!(v.synth_name, Some("supersaw".to_string()));
+            assert_eq!(v.polyphony, 4);
+            assert!((v.gain - 0.7).abs() < 0.001);
+            assert_eq!(v.params.get("cutoff"), Some(&2000.0_f32));
+        });
     }
 
     // ==================== Getter Tests ====================
@@ -699,17 +721,19 @@ mod tests {
     #[cfg(feature = "midi")]
     #[test]
     fn test_voice_channel_clamping() {
-        let v1 = test_voice("test").channel(0);
-        assert_eq!(v1.midi_channel, 0);
+        with_test_context(|| {
+            let v1 = test_voice("test").channel(0);
+            assert_eq!(v1.midi_channel, 0);
 
-        let v2 = test_voice("test").channel(15);
-        assert_eq!(v2.midi_channel, 15);
+            let v2 = test_voice("test").channel(15);
+            assert_eq!(v2.midi_channel, 15);
 
-        let v3 = test_voice("test").channel(20);
-        assert_eq!(v3.midi_channel, 15);
+            let v3 = test_voice("test").channel(20);
+            assert_eq!(v3.midi_channel, 15);
 
-        let v4 = test_voice("test").channel(-5);
-        assert_eq!(v4.midi_channel, 0);
+            let v4 = test_voice("test").channel(-5);
+            assert_eq!(v4.midi_channel, 0);
+        });
     }
 
     // ==================== Modulation Tests ====================
@@ -737,17 +761,19 @@ mod tests {
 
     #[test]
     fn test_voice_modulate_multiple_params() {
-        let mut v = test_voice("test").synth("my_synth".to_string());
-        v.modulations
-            .insert("cutoff".to_string(), ModulatorId::new(1));
-        v.modulations
-            .insert("resonance".to_string(), ModulatorId::new(2));
-        v.modulations.insert("pan".to_string(), ModulatorId::new(3));
+        with_test_context(|| {
+            let mut v = test_voice("test").synth("my_synth".to_string());
+            v.modulations
+                .insert("cutoff".to_string(), ModulatorId::new(1));
+            v.modulations
+                .insert("resonance".to_string(), ModulatorId::new(2));
+            v.modulations.insert("pan".to_string(), ModulatorId::new(3));
 
-        assert_eq!(v.modulations.len(), 3);
-        assert!(v.modulations.contains_key("cutoff"));
-        assert!(v.modulations.contains_key("resonance"));
-        assert!(v.modulations.contains_key("pan"));
+            assert_eq!(v.modulations.len(), 3);
+            assert!(v.modulations.contains_key("cutoff"));
+            assert!(v.modulations.contains_key("resonance"));
+            assert!(v.modulations.contains_key("pan"));
+        });
     }
 
     #[test]
@@ -765,20 +791,22 @@ mod tests {
 
     #[test]
     fn test_voice_modulate_preserves_other_settings() {
-        let mut v = test_voice("test")
-            .synth("my_synth".to_string())
-            .poly(8)
-            .gain(0.5)
-            .set_param("freq".to_string(), 440.0);
-        v.modulations
-            .insert("cutoff".to_string(), ModulatorId::new(1));
+        with_test_context(|| {
+            let mut v = test_voice("test")
+                .synth("my_synth".to_string())
+                .poly(8)
+                .gain(0.5)
+                .set_param("freq".to_string(), 440.0);
+            v.modulations
+                .insert("cutoff".to_string(), ModulatorId::new(1));
 
-        // Verify other settings are preserved
-        assert_eq!(v.synth_name, Some("my_synth".to_string()));
-        assert_eq!(v.polyphony, 8);
-        assert!((v.gain - 0.5).abs() < 0.001);
-        assert_eq!(v.params.get("freq"), Some(&440.0_f32));
-        assert_eq!(v.modulations.len(), 1);
+            // Verify other settings are preserved
+            assert_eq!(v.synth_name, Some("my_synth".to_string()));
+            assert_eq!(v.polyphony, 8);
+            assert!((v.gain - 0.5).abs() < 0.001);
+            assert_eq!(v.params.get("freq"), Some(&440.0_f32));
+            assert_eq!(v.modulations.len(), 1);
+        });
     }
 
     #[test]

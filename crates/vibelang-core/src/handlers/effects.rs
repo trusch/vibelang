@@ -560,7 +560,13 @@ mod tests {
 
         let result = handler.remove(effect_id).await;
         assert!(result.is_ok(), "Removing effect should succeed");
-        assert_eq!(backend.nodes_freed(), 1, "Node should be freed");
+
+        // Effect removal uses a deferred grace period (50ms) for fade-out.
+        // Wait for the grace period to elapse, then tick to process the free.
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        handler.tick().await;
+
+        assert_eq!(backend.nodes_freed(), 1, "Node should be freed after grace period");
 
         let state_read = state.read().await;
         assert!(!state_read.effects.contains_key(&effect_id));
