@@ -68,7 +68,6 @@ use crate::midi::{
     MidiMessage as NewMidiMessage,
     MidiRecording,
     MidiRealtimeService,
-    QueuedMidiEvent,
     ScheduledMidiEvent,
     CcRouteBuilder,
     KeyboardRouteBuilder,
@@ -342,8 +341,7 @@ impl<B: Backend> MidiHandler<B> {
         }
 
         // Not cached - detect and cache
-        let cap = self.detect_and_cache_capability(device);
-        cap
+        self.detect_and_cache_capability(device)
     }
 
     /// Detect capability for a device and cache it.
@@ -517,7 +515,7 @@ impl<B: Backend> MidiHandler<B> {
         // Register with the realtime service so /tr messages are routed to this device
         // Pass the capability so the service knows how to encode messages
         let service = self.realtime_service.read();
-        service.register_device_with_capability(id.0 as u32, sender.clone(), capability);
+        service.register_device_with_capability(id.0, sender.clone(), capability);
 
         Ok(sender)
     }
@@ -528,7 +526,7 @@ impl<B: Backend> MidiHandler<B> {
     pub fn close_output_channel(&self, id: MidiDeviceId) {
         // Unregister from realtime service first
         let service = self.realtime_service.read();
-        service.unregister_device(id.0 as u32);
+        service.unregister_device(id.0);
         drop(service);
 
         self.output_manager.close_output_channel(id)
@@ -566,12 +564,16 @@ impl<B: Backend> MidiHandler<B> {
     pub async fn tick(&self) {
         // Collect messages from the channel (holding the lock briefly)
         let messages: Vec<_> = {
-            let mut rx = self.rx.lock().unwrap();
-            let mut msgs = Vec::new();
-            while let Ok(msg) = rx.try_recv() {
-                msgs.push(msg);
+            if let Ok(mut rx) = self.rx.lock() {
+                let mut msgs = Vec::new();
+                while let Ok(msg) = rx.try_recv() {
+                    msgs.push(msg);
+                }
+                msgs
+            } else {
+                tracing::warn!("MIDI rx mutex poisoned, skipping tick");
+                Vec::new()
             }
-            msgs
         };
 
         // Process messages without holding the lock
@@ -585,7 +587,6 @@ impl<B: Backend> MidiHandler<B> {
     }
 
     /// Process MIDI 2.0 events from the event queue.
-    
     async fn process_midi2_events(&self) {
         // Drain events from the queue
         let events = self.event_queue.drain();
@@ -1322,8 +1323,8 @@ impl<B: Backend> MidiHandler<B> {
                 .filter(|r| {
                     r.device_id == device_id
                         && r.cc == controller
-                        && r.group.map_or(true, |g| g == group_channel.group())
-                        && r.channel.map_or(true, |c| c == group_channel.channel())
+                        && r.group.is_none_or(|g| g == group_channel.group())
+                        && r.channel.is_none_or(|c| c == group_channel.channel())
                 })
                 .cloned()
                 .collect()
@@ -1374,8 +1375,8 @@ impl<B: Backend> MidiHandler<B> {
                 .iter()
                 .filter(|r| {
                     r.device_id == device_id
-                        && r.group.map_or(true, |g| g == group_channel.group())
-                        && r.channel.map_or(true, |c| c == group_channel.channel())
+                        && r.group.is_none_or(|g| g == group_channel.group())
+                        && r.channel.is_none_or(|c| c == group_channel.channel())
                 })
                 .cloned()
                 .collect()

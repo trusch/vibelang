@@ -93,7 +93,10 @@ impl MidiCallbackManager {
     ///
     /// Returns all pending notifications.
     pub fn poll_callbacks(&self) -> Vec<MidiEventNotification> {
-        let mut rx = self.callback_rx.lock().unwrap();
+        let Ok(mut rx) = self.callback_rx.lock() else {
+            tracing::warn!("MIDI callback rx mutex poisoned, skipping poll");
+            return Vec::new();
+        };
         let mut notifications = Vec::new();
         while let Ok(notification) = rx.try_recv() {
             notifications.push(notification);

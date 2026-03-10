@@ -26,6 +26,7 @@ pub struct OutputThreadState {
     /// Running flag.
     pub running: Arc<AtomicBool>,
     /// Device capability.
+    #[allow(dead_code)]
     pub capability: MidiOutputCapability,
 }
 
@@ -59,8 +60,9 @@ impl MidiOutputManager {
     }
 
     /// Get the capability of a device (if channel exists).
+    #[allow(dead_code)]
     pub fn get_capability(&self, id: MidiDeviceId) -> Option<MidiOutputCapability> {
-        self.device_capabilities.lock().unwrap().get(&id).copied()
+        self.device_capabilities.lock().ok()?.get(&id).copied()
     }
 
     /// Create an output channel for a MIDI device.
@@ -82,12 +84,17 @@ impl MidiOutputManager {
     ) -> crate::Result<(Sender<ScheduledMidiEvent>, MidiOutputCapability)> {
         // Check if we already have a channel for this device
         {
-            let channels = self.output_channels.lock().unwrap();
+            let channels = self
+                .output_channels
+                .lock()
+                .map_err(|e| Error::MidiError(format!("Output channels lock poisoned: {e}")))?;
             if let Some(sender) = channels.get(&id) {
                 let capability = self
                     .device_capabilities
                     .lock()
-                    .unwrap()
+                    .map_err(|e| {
+                        Error::MidiError(format!("Device capabilities lock poisoned: {e}"))
+                    })?
                     .get(&id)
                     .copied()
                     .unwrap_or(MidiOutputCapability::Midi2ViaTranslation);
@@ -131,9 +138,18 @@ impl MidiOutputManager {
             .map_err(|e| Error::MidiError(format!("Failed to spawn output thread: {}", e)))?;
 
         // Store the sender, thread state, and capability
-        self.output_channels.lock().unwrap().insert(id, tx.clone());
-        self.device_capabilities.lock().unwrap().insert(id, capability);
-        self.output_threads.lock().unwrap().insert(
+        self.output_channels
+            .lock()
+            .map_err(|e| Error::MidiError(format!("Output channels lock poisoned: {e}")))?
+            .insert(id, tx.clone());
+        self.device_capabilities
+            .lock()
+            .map_err(|e| Error::MidiError(format!("Device capabilities lock poisoned: {e}")))?
+            .insert(id, capability);
+        self.output_threads
+            .lock()
+            .map_err(|e| Error::MidiError(format!("Output threads lock poisoned: {e}")))?
+            .insert(
             id,
             OutputThreadState {
                 handle,
@@ -161,10 +177,12 @@ impl MidiOutputManager {
     /// Close an output channel and stop its background thread.
     pub fn close_output_channel(&self, id: MidiDeviceId) {
         // Remove the sender
-        self.output_channels.lock().unwrap().remove(&id);
+        if let Ok(mut channels) = self.output_channels.lock() {
+            channels.remove(&id);
+        }
 
         // Stop the thread
-        if let Some(state) = self.output_threads.lock().unwrap().remove(&id) {
+        if let Some(state) = self.output_threads.lock().ok().and_then(|mut t| t.remove(&id)) {
             state.running.store(false, Ordering::SeqCst);
             // The thread will exit when it sees the running flag is false
             // or when the channel is disconnected
@@ -175,7 +193,7 @@ impl MidiOutputManager {
 
     /// Get the output channel sender for a device (if it exists).
     pub fn get_output_channel(&self, id: MidiDeviceId) -> Option<Sender<ScheduledMidiEvent>> {
-        self.output_channels.lock().unwrap().get(&id).cloned()
+        self.output_channels.lock().ok()?.get(&id).cloned()
     }
 }
 
@@ -240,7 +258,10 @@ fn run_output_thread(
         let now = Instant::now();
         while let Some(event) = scheduled.peek() {
             if event.timestamp <= now {
-                let event = scheduled.pop().unwrap();
+                // Safety: we just called peek() and confirmed Some, so pop() cannot be None
+                let Some(event) = scheduled.pop() else {
+                    break;
+                };
 
                 // Choose encoding based on device capability
                 let bytes = match capability {

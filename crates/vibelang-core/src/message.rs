@@ -168,7 +168,7 @@ pub enum GroupMessage {
 #[derive(Clone, Debug)]
 pub enum VoiceMessage {
     /// Create a new voice.
-    Create { id: VoiceId, config: VoiceConfig },
+    Create { id: VoiceId, config: Box<VoiceConfig> },
 
     /// Delete a voice.
     Delete { id: VoiceId },
@@ -930,7 +930,7 @@ mod tests {
         let msgs = vec![
             VoiceMessage::Create {
                 id: VoiceId::new(1),
-                config: VoiceConfig::new("test_voice", "sine", GroupId::new(1)),
+                config: Box::new(VoiceConfig::new("test_voice", "sine", GroupId::new(1))),
             },
             VoiceMessage::Delete {
                 id: VoiceId::new(1),

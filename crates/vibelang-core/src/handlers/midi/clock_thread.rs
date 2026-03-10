@@ -196,11 +196,13 @@ impl MidiClockThread {
     }
 
     /// Check if clock output is enabled for a device.
+    #[allow(dead_code)]
     pub fn is_clock_enabled(&self, device: MidiDeviceId) -> bool {
         self.clock_devices.read().contains(&device)
     }
 
     /// Get the set of devices with clock output enabled.
+    #[allow(dead_code)]
     pub fn clock_devices(&self) -> Arc<RwLock<HashSet<MidiDeviceId>>> {
         Arc::clone(&self.clock_devices)
     }
@@ -343,7 +345,10 @@ fn send_to_all_devices(
         return;
     }
 
-    let channels = output_channels.lock().unwrap();
+    let Ok(channels) = output_channels.lock() else {
+        tracing::warn!("[MIDI_CLOCK] Failed to lock output channels (mutex poisoned)");
+        return;
+    };
 
     for device_id in devices.iter() {
         if let Some(sender) = channels.get(device_id) {

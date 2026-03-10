@@ -34,9 +34,10 @@ use async_trait::async_trait;
 use std::path::PathBuf;
 
 /// Status of an audio recording session.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum RecordingStatus {
     /// Waiting for start beat (quantized start pending).
+    #[default]
     Pending,
     /// Count-in metronome is playing.
     CountingIn,
@@ -46,12 +47,6 @@ pub enum RecordingStatus {
     Completed,
     /// Recording was cancelled.
     Cancelled,
-}
-
-impl Default for RecordingStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 /// Configuration for starting a recording session.

@@ -257,6 +257,7 @@ impl PerNoteStateManager {
 
 /// Per-note route configuration for Rhai API.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct PerNoteRoute {
     /// Controller type (or special value for pitch bend).
     pub controller_type: PerNoteControllerType,
@@ -274,6 +275,7 @@ pub struct PerNoteRoute {
 
 /// Type of per-note controller to route.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum PerNoteControllerType {
     /// Per-note pitch bend.
     PitchBend,
@@ -291,6 +293,7 @@ pub enum PerNoteControllerType {
 
 /// Curve type for parameter mapping.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[allow(dead_code)]
 pub enum ParameterCurve {
     #[default]
     Linear,
@@ -299,6 +302,7 @@ pub enum ParameterCurve {
     SCurve,
 }
 
+#[allow(dead_code)]
 impl ParameterCurve {
     /// Apply curve to a normalized value (0.0-1.0).
     pub fn apply(&self, value: f32) -> f32 {
@@ -322,6 +326,7 @@ impl ParameterCurve {
     }
 }
 
+#[allow(dead_code)]
 impl PerNoteRoute {
     /// Create a new per-note route.
     pub fn new(

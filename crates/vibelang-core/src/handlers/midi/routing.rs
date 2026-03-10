@@ -179,7 +179,6 @@ impl MidiRoutingManager {
     // ========================================================================
 
     /// Apply MIDI 2.0 keyboard routes from script state.
-    
     pub async fn apply_midi2_keyboard_routes(&self, routes: &[crate::reload::Midi2KeyboardRoute]) {
         let mut routing = self.routing.write().await;
         routing.midi2_keyboard_routes.clear();
@@ -213,7 +212,6 @@ impl MidiRoutingManager {
     }
 
     /// Apply MIDI 2.0 per-note routes from script state.
-    
     pub async fn apply_midi2_per_note_routes(&self, routes: &[crate::reload::Midi2PerNoteRoute]) {
         let mut routing = self.routing.write().await;
         routing.midi2_per_note_routes.clear();
@@ -264,7 +262,6 @@ impl MidiRoutingManager {
     }
 
     /// Apply MIDI 2.0 CC routes from script state.
-    
     pub async fn apply_midi2_cc_routes(&self, routes: &[crate::reload::Midi2CcRoute]) {
         let mut routing = self.routing.write().await;
         routing.midi2_cc_routes.clear();

@@ -150,7 +150,7 @@ impl JitterCompensator {
         }
 
         // Update estimates periodically
-        if self.samples.len() >= 16 && self.samples.len() % 16 == 0 {
+        if self.samples.len() >= 16 && self.samples.len().is_multiple_of(16) {
             self.update_estimates();
         }
     }

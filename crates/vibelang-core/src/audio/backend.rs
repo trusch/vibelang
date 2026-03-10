@@ -405,10 +405,8 @@ impl AudioBackend for JackBackend {
                         connections.push(trimmed.to_string());
                     }
                 }
-            } else if line.trim() == port {
-                in_target_port = true;
             } else {
-                in_target_port = false;
+                in_target_port = line.trim() == port;
             }
         }
 

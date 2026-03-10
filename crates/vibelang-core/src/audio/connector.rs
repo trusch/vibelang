@@ -132,7 +132,12 @@ impl AudioConnector {
                     suggestions,
                 })
             }
-            1 => Ok(matches.into_iter().next().unwrap()),
+            1 => {
+                // Safety: len() == 1, so into_iter().next() is guaranteed to be Some
+                #[allow(clippy::unwrap_used)]
+                let name = matches.into_iter().next().unwrap();
+                Ok(name)
+            }
             _ => Err(AudioError::AmbiguousMatch {
                 pattern: pattern.to_string(),
                 matches,

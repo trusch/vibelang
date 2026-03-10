@@ -419,7 +419,7 @@ pub async fn create_voice(
         .send(
             VoiceMessage::Create {
                 id: voice_id,
-                config,
+                config: Box::new(config),
             }
             .into(),
         )

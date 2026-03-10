@@ -4,7 +4,7 @@ use crate::backend::Backend;
 use crate::compat::{Instant, RwLock};
 use crate::handlers::VoicesHandler;
 use crate::state::{MelodyState, State};
-use crate::traits::{Melodies, MelodyConfig, MelodyContent, NoteEvent, Voices};
+use crate::traits::{Melodies, MelodyConfig, NoteEvent, Voices};
 use crate::types::{Beat, MelodyId, VoiceId};
 use crate::validation::Validate;
 use crate::{Error, Result};
@@ -103,7 +103,7 @@ impl<B: Backend> MelodiesHandler<B> {
             // Debug: log playing melodies count periodically (every ~1 second at 100Hz tick)
             static TICK_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let tick_count = TICK_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if tick_count % 100 == 0 && !melody_ids.is_empty() {
+            if tick_count.is_multiple_of(100) && !melody_ids.is_empty() {
                 tracing::debug!(
                     "MelodiesHandler::tick: beat={:.2}, {} playing melodies, lookahead={:.3} beats",
                     current_beat.to_f64(),

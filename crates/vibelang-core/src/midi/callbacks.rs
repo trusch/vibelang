@@ -197,9 +197,10 @@ impl MidiCallbacks {
 // ============================================================================
 
 /// Velocity curve types for keyboard routing.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum VelocityCurve {
     /// Linear (default): output = input
+    #[default]
     Linear,
     /// Soft: emphasizes low velocities
     Soft,
@@ -211,12 +212,6 @@ pub enum VelocityCurve {
     Compressed,
     /// Fixed: always outputs the same velocity
     Fixed(u8),
-}
-
-impl Default for VelocityCurve {
-    fn default() -> Self {
-        Self::Linear
-    }
 }
 
 impl VelocityCurve {
@@ -252,20 +247,15 @@ impl VelocityCurve {
 // ============================================================================
 
 /// Parameter curve types for CC routing.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum ParameterCurve {
     /// Linear (default)
+    #[default]
     Linear,
     /// Logarithmic (good for frequency)
     Logarithmic,
     /// Exponential (good for amplitude)
     Exponential,
-}
-
-impl Default for ParameterCurve {
-    fn default() -> Self {
-        Self::Linear
-    }
 }
 
 impl ParameterCurve {

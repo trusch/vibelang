@@ -106,9 +106,10 @@ impl Default for SfzTriggerInfo {
 }
 
 /// Trigger mode for SFZ region matching.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SfzTriggerMode {
     /// Note-on trigger (default).
+    #[default]
     Attack,
     /// Note-off trigger (release samples).
     Release,
@@ -116,12 +117,6 @@ pub enum SfzTriggerMode {
     First,
     /// Subsequent notes in legato phrase.
     Legato,
-}
-
-impl Default for SfzTriggerMode {
-    fn default() -> Self {
-        Self::Attack
-    }
 }
 
 /// SFZ instrument management.

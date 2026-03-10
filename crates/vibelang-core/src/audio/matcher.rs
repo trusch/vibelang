@@ -72,10 +72,9 @@ impl PortMatcher {
             }
 
             // Last part must match at the end if pattern doesn't end with *
-            if i == parts.len() - 1 && !pattern.ends_with('*') {
-                if !text.ends_with(part) {
-                    return false;
-                }
+            if i == parts.len() - 1 && !pattern.ends_with('*')
+                && !text.ends_with(part) {
+                return false;
             }
         }
 

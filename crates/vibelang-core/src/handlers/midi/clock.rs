@@ -57,7 +57,9 @@ impl MidiClockManager {
             return Ok(());
         }
 
-        let mut outputs = outputs.lock().unwrap();
+        let mut outputs = outputs.lock().map_err(|e| {
+            crate::Error::MidiError(format!("Failed to lock MIDI outputs: {e}"))
+        })?;
         for device_id in clock_devices.iter() {
             if let Some(conn) = outputs.get_mut(device_id) {
                 // MIDI Clock message is 0xF8
@@ -111,7 +113,9 @@ impl MidiClockManager {
         let ticks_to_send = (beat_diff * PPQN).floor() as u32;
 
         if ticks_to_send > 0 {
-            let mut outputs = outputs.lock().unwrap();
+            let mut outputs = outputs.lock().map_err(|e| {
+                crate::Error::MidiError(format!("Failed to lock MIDI outputs: {e}"))
+            })?;
 
             for device_id in clock_devices.iter() {
                 if let Some(conn) = outputs.get_mut(device_id) {
@@ -152,8 +156,12 @@ impl MidiClockManager {
     ) -> crate::Result<()> {
         // Ensure output device is open (or has an output channel)
         {
-            let outputs = outputs.lock().unwrap();
-            let channels = output_channels.lock().unwrap();
+            let outputs = outputs.lock().map_err(|e| {
+                crate::Error::MidiError(format!("Failed to lock MIDI outputs: {e}"))
+            })?;
+            let channels = output_channels.lock().map_err(|e| {
+                crate::Error::MidiError(format!("Failed to lock MIDI output channels: {e}"))
+            })?;
             if !outputs.contains_key(&device) && !channels.contains_key(&device) {
                 return Err(crate::Error::MidiError(format!(
                     "MIDI output device {} not open",
@@ -204,11 +212,26 @@ impl MidiClockManager {
         let clock_devices = self.clock_output_devices.read().await;
         for device in clock_devices.iter() {
             // Try to send via output channel (for realtime service) or direct connection
-            if let Some(sender) = output_channels.lock().unwrap().get(device) {
-                let _ = sender.try_send(QueuedMidiEvent::Start.immediate());
-            } else if let Some(conn) = outputs.lock().unwrap().get_mut(device) {
-                if let Err(e) = conn.send(&[0xFA]) {
-                    tracing::warn!("Failed to send MIDI Start to device {}: {}", device.0, e);
+            let sent_via_channel = if let Ok(channels) = output_channels.lock() {
+                if let Some(sender) = channels.get(device) {
+                    let _ = sender.try_send(QueuedMidiEvent::Start.immediate());
+                    true
+                } else {
+                    false
+                }
+            } else {
+                tracing::warn!("Failed to lock MIDI output channels for Start message");
+                false
+            };
+            if !sent_via_channel {
+                if let Ok(mut out) = outputs.lock() {
+                    if let Some(conn) = out.get_mut(device) {
+                        if let Err(e) = conn.send(&[0xFA]) {
+                            tracing::warn!("Failed to send MIDI Start to device {}: {}", device.0, e);
+                        }
+                    }
+                } else {
+                    tracing::warn!("Failed to lock MIDI outputs for Start message");
                 }
             }
         }
@@ -225,11 +248,26 @@ impl MidiClockManager {
         let clock_devices = self.clock_output_devices.read().await;
         for device in clock_devices.iter() {
             // Try to send via output channel (for realtime service) or direct connection
-            if let Some(sender) = output_channels.lock().unwrap().get(device) {
-                let _ = sender.try_send(QueuedMidiEvent::Stop.immediate());
-            } else if let Some(conn) = outputs.lock().unwrap().get_mut(device) {
-                if let Err(e) = conn.send(&[0xFC]) {
-                    tracing::warn!("Failed to send MIDI Stop to device {}: {}", device.0, e);
+            let sent_via_channel = if let Ok(channels) = output_channels.lock() {
+                if let Some(sender) = channels.get(device) {
+                    let _ = sender.try_send(QueuedMidiEvent::Stop.immediate());
+                    true
+                } else {
+                    false
+                }
+            } else {
+                tracing::warn!("Failed to lock MIDI output channels for Stop message");
+                false
+            };
+            if !sent_via_channel {
+                if let Ok(mut out) = outputs.lock() {
+                    if let Some(conn) = out.get_mut(device) {
+                        if let Err(e) = conn.send(&[0xFC]) {
+                            tracing::warn!("Failed to send MIDI Stop to device {}: {}", device.0, e);
+                        }
+                    }
+                } else {
+                    tracing::warn!("Failed to lock MIDI outputs for Stop message");
                 }
             }
         }

@@ -239,8 +239,12 @@ impl MidiClockSync {
         }
 
         // Calculate average time between pulses
-        let first = self.pulse_times.first().unwrap();
-        let last = self.pulse_times.last().unwrap();
+        let Some(first) = self.pulse_times.first() else {
+            return;
+        };
+        let Some(last) = self.pulse_times.last() else {
+            return;
+        };
         let duration = last.duration_since(*first);
         let num_intervals = (self.pulse_times.len() - 1) as f64;
 

@@ -219,7 +219,6 @@ pub struct MidiEventNotification {
 }
 
 /// Map a value from one range to another with optional curve transformation.
-
 pub fn map_to_range(
     value: f32,
     in_min: f32,

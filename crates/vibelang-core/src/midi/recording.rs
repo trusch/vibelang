@@ -329,7 +329,7 @@ impl MidiRecording {
         // Sort steps by beat position
         config
             .steps
-            .sort_by(|a, b| a.beat.to_f64().partial_cmp(&b.beat.to_f64()).unwrap());
+            .sort_by(|a, b| a.beat.to_f64().partial_cmp(&b.beat.to_f64()).unwrap_or(std::cmp::Ordering::Equal));
 
         config
     }
@@ -362,7 +362,7 @@ impl MidiRecording {
         }
 
         // Sort by beat position
-        events.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        events.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
         events
     }

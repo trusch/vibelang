@@ -73,7 +73,7 @@ impl TransportSnapshot {
     pub fn update(&self, beat: f64, tempo: f64, playing: bool) {
         // Increment sequence to odd (write in progress)
         let seq = self.sequence.fetch_add(1, Ordering::Release);
-        debug_assert!(seq % 2 == 0, "Concurrent writers detected");
+        debug_assert!(seq.is_multiple_of(2), "Concurrent writers detected");
 
         // Write the values
         self.beat_bits.store(beat.to_bits(), Ordering::Relaxed);

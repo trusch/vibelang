@@ -44,6 +44,7 @@ pub struct MidiDeviceInfo {
 ///
 /// Provides control over external MIDI devices for input (keyboard controllers)
 /// and output (hardware synths, drum machines).
+#[allow(clippy::too_many_arguments)]
 #[async_trait]
 pub trait Midi: Send + Sync {
     /// List available MIDI devices.

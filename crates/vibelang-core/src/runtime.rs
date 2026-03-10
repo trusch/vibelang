@@ -322,7 +322,7 @@ impl<B: Backend> Runtime<B> {
         #[cfg(feature = "midi")]
         {
             self.tick_count = self.tick_count.wrapping_add(1);
-            if self.tick_count % 10 == 0 {
+            if self.tick_count.is_multiple_of(10) {
                 self.voices.tick_modulators().await;
             }
         }
@@ -377,7 +377,7 @@ impl<B: Backend> Runtime<B> {
 
             // Voices
             Message::Voice(voice_msg) => match voice_msg {
-                VoiceMessage::Create { id, config } => self.voices.create(id, config).await,
+                VoiceMessage::Create { id, config } => self.voices.create(id, *config).await,
                 VoiceMessage::Delete { id } => self.voices.delete(id).await,
                 VoiceMessage::Trigger { id, params } => self.voices.trigger(id, &params).await,
                 VoiceMessage::Stop { id } => self.voices.stop(id).await,
@@ -895,7 +895,10 @@ impl<B: Backend> Runtime<B> {
 
                 // Second pass: handle note/CC messages via output channels
                 let output_channels = self.midi.output_channels();
-                let channels = output_channels.lock().unwrap();
+                let Ok(channels) = output_channels.lock() else {
+                    tracing::warn!("MIDI output channels mutex poisoned, skipping output");
+                    return Ok(());
+                };
 
                 for msg in &new_state.midi_output_messages {
                     // Skip Start/Stop/Continue (handled above)
@@ -1953,7 +1956,7 @@ mod tests {
             .send(
                 VoiceMessage::Create {
                     id: VoiceId::new(1),
-                    config,
+                    config: Box::new(config),
                 }
                 .into(),
             )
@@ -2108,7 +2111,7 @@ mod tests {
             .send(
                 VoiceMessage::Create {
                     id: VoiceId::new(1),
-                    config: VoiceConfig::new("test_voice", "test", GroupId::new(1)),
+                    config: Box::new(VoiceConfig::new("test_voice", "test", GroupId::new(1))),
                 }
                 .into(),
             )
