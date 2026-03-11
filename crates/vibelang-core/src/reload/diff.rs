@@ -175,6 +175,9 @@ pub struct ReloadDiff {
     /// Sample changes.
     pub samples: EntityDiff<crate::types::SampleId, crate::traits::SampleConfig>,
 
+    /// SFZ instrument changes.
+    pub sfz: EntityDiff<crate::types::SfzId, crate::traits::SfzConfig>,
+
     /// Fade changes.
     pub fades: EntityDiff<crate::types::FadeId, crate::traits::FadeConfig>,
 }
@@ -232,6 +235,12 @@ impl Default for ReloadDiff {
                 updated: HashMap::new(),
                 unchanged: HashSet::new(),
             },
+            sfz: EntityDiff {
+                created: HashMap::new(),
+                deleted: Vec::new(),
+                updated: HashMap::new(),
+                unchanged: HashSet::new(),
+            },
             fades: EntityDiff {
                 created: HashMap::new(),
                 deleted: Vec::new(),
@@ -255,6 +264,7 @@ impl ReloadDiff {
             || self.effects.has_changes()
             || self.modulators.has_changes()
             || self.samples.has_changes()
+            || self.sfz.has_changes()
             || self.fades.has_changes()
     }
 
@@ -330,6 +340,14 @@ impl ReloadDiff {
                 self.samples.created.len(),
                 self.samples.deleted.len(),
                 self.samples.updated.len()
+            ));
+        }
+        if self.sfz.has_changes() {
+            parts.push(format!(
+                "sfz(+{} -{} ~{})",
+                self.sfz.created.len(),
+                self.sfz.deleted.len(),
+                self.sfz.updated.len()
             ));
         }
         if self.fades.has_changes() {

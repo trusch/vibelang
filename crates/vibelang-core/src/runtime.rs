@@ -1093,6 +1093,17 @@ impl<B: Backend> Runtime<B> {
             let _ = self.samples.load(*id, config.clone()).await;
         }
 
+        // Load new SFZ instruments (and re-load updated ones)
+        let sfz_to_load: Vec<_> = diff.sfz.created.iter()
+            .chain(diff.sfz.updated.iter())
+            .collect();
+        for (id, config) in sfz_to_load {
+            tracing::debug!("Reload: loading SFZ instrument {:?} from {:?}", id, config.path);
+            if let Err(e) = self.sfz.load(*id, &config.path).await {
+                tracing::error!("Reload: failed to load SFZ instrument {:?}: {}", id, e);
+            }
+        }
+
         // Create groups in correct order (parents first)
         let ordered_group_creations = reload::order_group_creations(&diff.groups.created);
         for id in ordered_group_creations {

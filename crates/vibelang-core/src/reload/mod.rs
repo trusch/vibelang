@@ -79,7 +79,7 @@ use std::collections::HashSet;
 // Imports for calculate_diff and order_group_deletions
 use crate::state::State;
 use crate::traits::SampleConfig;
-use crate::types::{Beat, EffectId, FadeId, MelodyId, ModulatorId, PatternId, SampleId, SequenceId, TimeSignature, VoiceId};
+use crate::types::{Beat, EffectId, FadeId, MelodyId, ModulatorId, PatternId, SampleId, SequenceId, SfzId, TimeSignature, VoiceId};
 
 /// Quantization mode for applying hot reload changes.
 ///
@@ -230,6 +230,15 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
             .samples
             .get(id)
             .map(|s| SampleConfig::new(s.path.clone()))
+    });
+
+    // SFZ instruments
+    let current_sfz_ids: HashSet<SfzId> = current.sfz_instruments.keys().copied().collect();
+    diff.sfz = diff_entities(&current_sfz_ids, &new.sfz_instruments, |id| {
+        current
+            .sfz_instruments
+            .get(id)
+            .map(|s| crate::traits::SfzConfig::new(s.path.clone()))
     });
 
     // Fades
