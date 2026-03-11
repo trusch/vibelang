@@ -12,3 +12,5 @@ updated: 2026-03-11T08:35:38.213050498+01:00
 ---
 
 # Workflow
+
+How to use VibeLang day-to-day: CLI, hot reload, recording, debugging, editor setup.
