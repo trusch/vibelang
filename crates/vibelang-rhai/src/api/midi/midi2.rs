@@ -44,9 +44,9 @@ impl GroupRoute {
         }
     }
 
-    /// Filter to a specific MIDI channel (0-15) within this group.
+    /// Filter to a specific MIDI channel (1-16) within this group.
     pub fn channel(mut self, channel: i64) -> Self {
-        self.channel = Some(channel.clamp(0, 15) as u8);
+        self.channel = Some((channel.clamp(1, 16) - 1) as u8); // User-facing: 1-16, internal: 0-15
         self
     }
 
@@ -149,9 +149,9 @@ impl PerNotePitchBendBuilder {
         self
     }
 
-    /// Filter to a specific MIDI channel (0-15).
+    /// Filter to a specific MIDI channel (1-16). Internally stored as 0-15.
     pub fn channel(mut self, channel: i64) -> Self {
-        self.channel = Some(channel.clamp(0, 15) as u8);
+        self.channel = Some((channel.clamp(1, 16) - 1) as u8); // User-facing: 1-16, internal: 0-15
         self
     }
 
@@ -238,9 +238,9 @@ impl PerNoteControllerBuilder {
         self
     }
 
-    /// Filter to a specific MIDI channel (0-15).
+    /// Filter to a specific MIDI channel (1-16). Internally stored as 0-15.
     pub fn channel(mut self, channel: i64) -> Self {
-        self.channel = Some(channel.clamp(0, 15) as u8);
+        self.channel = Some((channel.clamp(1, 16) - 1) as u8); // User-facing: 1-16, internal: 0-15
         self
     }
 
@@ -325,9 +325,9 @@ impl PerNotePressureBuilder {
         self
     }
 
-    /// Filter to a specific MIDI channel (0-15).
+    /// Filter to a specific MIDI channel (1-16). Internally stored as 0-15.
     pub fn channel(mut self, channel: i64) -> Self {
-        self.channel = Some(channel.clamp(0, 15) as u8);
+        self.channel = Some((channel.clamp(1, 16) - 1) as u8); // User-facing: 1-16, internal: 0-15
         self
     }
 
@@ -414,9 +414,9 @@ impl Cc32Route {
         self
     }
 
-    /// Filter to a specific MIDI channel (0-15).
+    /// Filter to a specific MIDI channel (1-16). Internally stored as 0-15.
     pub fn channel(mut self, channel: i64) -> Self {
-        self.channel = Some(channel.clamp(0, 15) as u8);
+        self.channel = Some((channel.clamp(1, 16) - 1) as u8); // User-facing: 1-16, internal: 0-15
         self
     }
 

@@ -108,24 +108,24 @@ impl MidiDevice {
         self
     }
 
-    /// Set the MIDI channel (0-15) for this device handle.
+    /// Set the MIDI channel (1-16) for this device handle.
     ///
-    /// Returns a new MidiDevice handle configured for the specified channel.
-    /// This affects which channel notes and CCs are sent on when using this
-    /// device as output.
+    /// User-facing API uses 1-16 (musician convention). Internally stored as 0-15.
+    /// This is consistent with `on_note_channel()` which also accepts 1-16.
     ///
     /// # Arguments
-    /// * `ch` - MIDI channel (0-15, will be clamped)
+    /// * `ch` - MIDI channel (1-16, will be clamped)
     ///
     /// # Example
     /// ```rhai
-    /// let synth_ch1 = midi_device("External Synth").channel(0);
-    /// let synth_ch2 = midi_device("External Synth").channel(1);
+    /// let synth_ch1 = midi_device("External Synth").channel(1);
+    /// let synth_ch2 = midi_device("External Synth").channel(2);
     /// voice("bass").on(synth_ch1).apply();
     /// voice("lead").on(synth_ch2).apply();
     /// ```
     pub fn channel(mut self, ch: i64) -> Self {
-        self.channel = ch.clamp(0, 15) as u8;
+        // User-facing: 1-16, internally: 0-15
+        self.channel = (ch.clamp(1, 16) - 1) as u8;
         self
     }
 
@@ -170,13 +170,13 @@ impl MidiDevice {
         self
     }
 
-    /// Route this device's keyboard input to a voice on a specific channel.
+    /// Route this device's keyboard input to a voice on a specific channel (1-16).
     pub fn route_to_channel(self, channel: i64, voice: Voice) -> Self {
         let voice_id = context::get_or_create_voice_id(&voice.name);
 
         let route = MidiKeyboardRoute {
             device_id: self.id,
-            channel: Some(channel.clamp(0, 15) as u8),
+            channel: Some((channel.clamp(1, 16) - 1) as u8), // User-facing: 1-16, internal: 0-15
             voice: voice_id,
         };
 
@@ -279,13 +279,13 @@ impl MidiDevice {
     /// Send a note-on message to this device.
     ///
     /// # Arguments
-    /// * `channel` - MIDI channel (0-15)
+    /// * `channel` - MIDI channel (1-16, internally converted to 0-15)
     /// * `note` - Note number (0-127)
     /// * `velocity` - Velocity (0-127)
     pub fn note_on(&mut self, channel: i64, note: i64, velocity: i64) {
         let msg = MidiOutputMessage::NoteOn {
             device_id: self.id,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8,
             note: note.clamp(0, 127) as u8,
             velocity: velocity.clamp(0, 127) as u8,
         };
@@ -298,12 +298,12 @@ impl MidiDevice {
     /// Send a note-off message to this device.
     ///
     /// # Arguments
-    /// * `channel` - MIDI channel (0-15)
+    /// * `channel` - MIDI channel (1-16, internally converted to 0-15)
     /// * `note` - Note number (0-127)
     pub fn note_off(&mut self, channel: i64, note: i64) {
         let msg = MidiOutputMessage::NoteOff {
             device_id: self.id,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8,
             note: note.clamp(0, 127) as u8,
         };
         context::with_state(|state| {
@@ -315,13 +315,13 @@ impl MidiDevice {
     /// Send a control change message to this device.
     ///
     /// # Arguments
-    /// * `channel` - MIDI channel (0-15)
+    /// * `channel` - MIDI channel (1-16, internally converted to 0-15)
     /// * `cc` - Controller number (0-127)
     /// * `value` - Controller value (0-127)
     pub fn cc(&mut self, channel: i64, cc: i64, value: i64) {
         let msg = MidiOutputMessage::ControlChange {
             device_id: self.id,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8,
             cc: cc.clamp(0, 127) as u8,
             value: value.clamp(0, 127) as u8,
         };
@@ -334,12 +334,12 @@ impl MidiDevice {
     /// Send a program change message to this device.
     ///
     /// # Arguments
-    /// * `channel` - MIDI channel (0-15)
+    /// * `channel` - MIDI channel (1-16, internally converted to 0-15)
     /// * `program` - Program number (0-127)
     pub fn program_change(&mut self, channel: i64, program: i64) {
         let msg = MidiOutputMessage::ProgramChange {
             device_id: self.id,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8,
             program: program.clamp(0, 127) as u8,
         };
         context::with_state(|state| {
@@ -351,12 +351,12 @@ impl MidiDevice {
     /// Send a pitch bend message to this device.
     ///
     /// # Arguments
-    /// * `channel` - MIDI channel (0-15)
+    /// * `channel` - MIDI channel (1-16, internally converted to 0-15)
     /// * `value` - Pitch bend value (-8192 to +8191, 0 = center)
     pub fn pitch_bend(&mut self, channel: i64, value: i64) {
         let msg = MidiOutputMessage::PitchBend {
             device_id: self.id,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8,
             value: value.clamp(-8192, 8191) as i16,
         };
         context::with_state(|state| {
@@ -370,14 +370,14 @@ impl MidiDevice {
     /// Send a high-resolution note-on message (MIDI 2.0).
     ///
     /// # Arguments
-    /// * `channel` - MIDI channel (0-15)
+    /// * `channel` - MIDI channel (1-16, internally converted to 0-15)
     /// * `note` - Note number (0-127)
     /// * `velocity` - 16-bit velocity (0-65535). For MIDI 1.0 devices, this is automatically downscaled.
     pub fn note_on_hires(&mut self, channel: i64, note: i64, velocity: i64) {
         let msg = MidiOutputMessage::Midi2NoteOn {
             device_id: self.id,
             group: 0,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8, // User-facing: 1-16
             note: note.clamp(0, 127) as u8,
             velocity: velocity.clamp(0, 65535) as u16,
         };
@@ -392,7 +392,7 @@ impl MidiDevice {
         let msg = MidiOutputMessage::Midi2NoteOff {
             device_id: self.id,
             group: 0,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8, // User-facing: 1-16
             note: note.clamp(0, 127) as u8,
             velocity: velocity.clamp(0, 65535) as u16,
         };
@@ -407,7 +407,7 @@ impl MidiDevice {
         let msg = MidiOutputMessage::Midi2ControlChange {
             device_id: self.id,
             group: 0,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8, // User-facing: 1-16
             controller: cc.clamp(0, 127) as u8,
             value: value.clamp(0, 0xFFFFFFFF) as u32,
         };
@@ -422,7 +422,7 @@ impl MidiDevice {
         let msg = MidiOutputMessage::Midi2PitchBend {
             device_id: self.id,
             group: 0,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8, // User-facing: 1-16
             value: value.clamp(0, 0xFFFFFFFF) as u32,
         };
         context::with_state(|state| {
@@ -436,7 +436,7 @@ impl MidiDevice {
         let msg = MidiOutputMessage::Midi2PerNotePitchBend {
             device_id: self.id,
             group: 0,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8, // User-facing: 1-16
             note: note.clamp(0, 127) as u8,
             value: value.clamp(0, 0xFFFFFFFF) as u32,
         };
@@ -451,7 +451,7 @@ impl MidiDevice {
         let msg = MidiOutputMessage::Midi2PerNoteController {
             device_id: self.id,
             group: 0,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8, // User-facing: 1-16
             note: note.clamp(0, 127) as u8,
             controller: controller.clamp(0, 127) as u8,
             value: value.clamp(0, 0xFFFFFFFF) as u32,
@@ -467,7 +467,7 @@ impl MidiDevice {
         let msg = MidiOutputMessage::Midi2PolyPressure {
             device_id: self.id,
             group: 0,
-            channel: channel.clamp(0, 15) as u8,
+            channel: (channel.clamp(1, 16) - 1) as u8, // User-facing: 1-16
             note: note.clamp(0, 127) as u8,
             pressure: pressure.clamp(0, 0xFFFFFFFF) as u32,
         };
