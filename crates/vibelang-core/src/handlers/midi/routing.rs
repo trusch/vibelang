@@ -7,10 +7,28 @@ use super::types::{CcRoute, KeyboardRoute, MidiRouting};
 
 use super::types::{Midi2CcRoute, Midi2ControllerType, Midi2KeyboardRoute, Midi2PerNoteRoute};
 use crate::compat::RwLock;
-use crate::midi::{CcRouteBuilder, KeyboardRouteBuilder, NoteRouteBuilder};
+use crate::midi::{
+    CcRouteBuilder, KeyboardRouteBuilder, NoteRouteBuilder, ParameterCurve, VelocityCurve,
+    VelocityMapping,
+};
 use crate::types::ids::MidiDeviceId;
 use crate::types::VoiceId;
 use std::sync::Arc;
+
+/// Parse a velocity curve string (as stored in ScriptState) back to VelocityCurve.
+fn parse_velocity_curve(s: &str) -> VelocityCurve {
+    if let Some(val) = s.strip_prefix("fixed:") {
+        if let Ok(v) = val.parse::<u8>() {
+            return VelocityCurve::Fixed(v);
+        }
+    }
+    VelocityCurve::from_name(s).unwrap_or_default()
+}
+
+/// Parse a parameter curve string back to ParameterCurve.
+fn parse_parameter_curve(s: &str) -> ParameterCurve {
+    ParameterCurve::from_name(s).unwrap_or_default()
+}
 
 /// Manager for MIDI routing configuration.
 pub struct MidiRoutingManager {
@@ -171,6 +189,160 @@ impl MidiRoutingManager {
 
         if !routes.is_empty() {
             tracing::info!("Applied {} MIDI CC routes from script", routes.len());
+        }
+    }
+
+    // ========================================================================
+    // MIDI 1.0 Route Application (from ScriptState during reload)
+    // ========================================================================
+
+    /// Apply basic keyboard routes from script state.
+    ///
+    /// Clears existing basic keyboard routes and rebuilds from the provided list.
+    pub async fn apply_basic_keyboard_routes(
+        &self,
+        routes: &[crate::reload::MidiKeyboardRoute],
+    ) {
+        let mut routing = self.routing.write().await;
+        routing.keyboard_routes.clear();
+
+        for route in routes {
+            routing.keyboard_routes.push(KeyboardRoute {
+                device_id: route.device_id,
+                channel: route.channel,
+                voice_id: route.voice,
+            });
+            tracing::debug!(
+                "Applied basic keyboard route: device={}, channel={:?}, voice={}",
+                route.device_id.0,
+                route.channel,
+                route.voice.0
+            );
+        }
+
+        if !routes.is_empty() {
+            tracing::info!(
+                "Applied {} basic MIDI keyboard routes from script",
+                routes.len()
+            );
+        }
+    }
+
+    /// Apply advanced keyboard routes from script state.
+    ///
+    /// Clears existing advanced keyboard routes and rebuilds as KeyboardRouteBuilders.
+    pub async fn apply_advanced_keyboard_routes(
+        &self,
+        routes: &[crate::reload::AdvancedMidiKeyboardRoute],
+    ) {
+        let mut routing = self.routing.write().await;
+        routing.advanced_keyboard_routes.clear();
+
+        for route in routes {
+            let mut builder = KeyboardRouteBuilder::new(route.device_id);
+            builder.channel = route.channel;
+            builder.note_min = route.note_min;
+            builder.note_max = route.note_max;
+            builder.transpose = route.transpose;
+            builder.velocity_curve = parse_velocity_curve(&route.velocity_curve);
+            builder.target_voice = Some(route.voice);
+
+            tracing::debug!(
+                "Applied advanced keyboard route: device={}, channel={:?}, notes={}-{}, transpose={}, voice={}",
+                route.device_id.0,
+                route.channel,
+                route.note_min,
+                route.note_max,
+                route.transpose,
+                route.voice.0
+            );
+            routing.advanced_keyboard_routes.push(builder);
+        }
+
+        if !routes.is_empty() {
+            tracing::info!(
+                "Applied {} advanced MIDI keyboard routes from script",
+                routes.len()
+            );
+        }
+    }
+
+    /// Apply advanced note routes from script state.
+    ///
+    /// Clears existing note routes and rebuilds as NoteRouteBuilders.
+    pub async fn apply_advanced_note_routes(
+        &self,
+        routes: &[crate::reload::AdvancedMidiNoteRoute],
+    ) {
+        let mut routing = self.routing.write().await;
+        routing.note_routes.clear();
+
+        for route in routes {
+            let mut builder = NoteRouteBuilder::new(route.device_id, route.source_note);
+            builder.channel = route.channel;
+            builder.choke_group = route.choke_group.clone();
+            builder.target_voice = Some(route.voice);
+
+            if let Some(ref param) = route.velocity_param {
+                builder.velocity_mapping = Some(VelocityMapping {
+                    param: param.clone(),
+                    min: route.velocity_min.unwrap_or(0.0),
+                    max: route.velocity_max.unwrap_or(1.0),
+                });
+            }
+
+            tracing::debug!(
+                "Applied advanced note route: device={}, note={}, channel={:?}, voice={}",
+                route.device_id.0,
+                route.source_note,
+                route.channel,
+                route.voice.0
+            );
+            routing.note_routes.push(builder);
+        }
+
+        if !routes.is_empty() {
+            tracing::info!(
+                "Applied {} advanced MIDI note routes from script",
+                routes.len()
+            );
+        }
+    }
+
+    /// Apply advanced CC routes from script state.
+    ///
+    /// Clears existing advanced CC routes and rebuilds as CcRouteBuilders.
+    pub async fn apply_advanced_cc_routes(
+        &self,
+        routes: &[crate::reload::AdvancedMidiCcRoute],
+    ) {
+        let mut routing = self.routing.write().await;
+        routing.advanced_cc_routes.clear();
+
+        for route in routes {
+            let mut builder = CcRouteBuilder::new(route.device_id, route.cc);
+            builder.channel = route.channel;
+            builder.curve = parse_parameter_curve(&route.curve);
+            builder.target_voice = Some(route.voice);
+            builder.target_param = Some(route.param.clone());
+            builder.range = (route.min, route.max);
+
+            tracing::debug!(
+                "Applied advanced CC route: device={}, cc={}, channel={:?}, voice={}, param={}",
+                route.device_id.0,
+                route.cc,
+                route.channel,
+                route.voice.0,
+                route.param
+            );
+            routing.advanced_cc_routes.push(builder);
+        }
+
+        if !routes.is_empty() {
+            tracing::info!(
+                "Applied {} advanced MIDI CC routes from script",
+                routes.len()
+            );
         }
     }
 

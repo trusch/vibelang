@@ -147,7 +147,7 @@ impl<B: Backend> Runtime<B> {
 
         // Create MIDI handler first so we can share output channels with voices
         #[cfg(feature = "midi")]
-        let midi = MidiHandler::new(backend.clone(), state.clone());
+        let midi = MidiHandler::new(backend.clone(), state.clone(), tx.clone());
 
         // Create voices handler and connect MIDI outputs
         let mut voices_handler = VoicesHandler::new(backend.clone(), state.clone());
@@ -1594,13 +1594,33 @@ impl<B: Backend> Runtime<B> {
 
         #[cfg(feature = "midi")]
         {
-            if !new_state.midi_cc_routes.is_empty() {
-                tracing::debug!(
-                    "Reload: applying {} MIDI CC routes",
-                    new_state.midi_cc_routes.len()
-                );
-                self.midi.apply_cc_routes(&new_state.midi_cc_routes).await;
-            }
+            // Apply all MIDI route types. Each apply method clears its own
+            // slice first, so calling with an empty vec correctly removes
+            // all routes of that type (handles route removal on reload).
+            self.midi
+                .apply_basic_keyboard_routes(&new_state.midi_keyboard_routes)
+                .await;
+            self.midi
+                .apply_advanced_keyboard_routes(&new_state.advanced_keyboard_routes)
+                .await;
+            self.midi
+                .apply_advanced_note_routes(&new_state.advanced_note_routes)
+                .await;
+            self.midi
+                .apply_cc_routes(&new_state.midi_cc_routes)
+                .await;
+            self.midi
+                .apply_advanced_cc_routes(&new_state.advanced_cc_routes)
+                .await;
+            self.midi
+                .apply_midi2_keyboard_routes(&new_state.midi2_keyboard_routes)
+                .await;
+            self.midi
+                .apply_midi2_per_note_routes(&new_state.midi2_per_note_routes)
+                .await;
+            self.midi
+                .apply_midi2_cc_routes(&new_state.midi2_cc_routes)
+                .await;
 
             // Apply MIDI clock output requests
             for clock_req in &new_state.midi_clock_outputs {

@@ -79,6 +79,8 @@ use crate::state::State;
 use crate::traits::{FadeTarget, MidiOutputCapability};
 use crate::types::ids::MidiDeviceId;
 use crate::types::{NodeId, VoiceId};
+use crate::compat::SenderExt;
+use crate::message::{Message, VoiceMessage};
 use crate::{Error, Result};
 use crossbeam_channel::Sender;
 use midir::{MidiInputConnection, MidiOutputConnection};
@@ -164,11 +166,15 @@ pub struct MidiHandler<B: Backend> {
     /// Runs independently from the main loop for tighter timing.
     #[cfg(not(target_arch = "wasm32"))]
     clock_thread: Arc<parking_lot::RwLock<Option<MidiClockThread>>>,
+
+    /// Sender for runtime messages, used to route MIDI note events
+    /// through VoicesHandler for proper synth creation/destruction.
+    runtime_tx: crate::compat::Sender<Message>,
 }
 
 impl<B: Backend> MidiHandler<B> {
     /// Create a new MIDI handler.
-    pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>) -> Self {
+    pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>, runtime_tx: crate::compat::Sender<Message>) -> Self {
         let (tx, rx) = mpsc::channel(1024);
 
         // Initialize new infrastructure
@@ -203,6 +209,8 @@ impl<B: Backend> MidiHandler<B> {
             // Clock thread (not started yet - call start_clock_thread())
             #[cfg(not(target_arch = "wasm32"))]
             clock_thread: Arc::new(parking_lot::RwLock::new(None)),
+
+            runtime_tx,
         }
     }
 
@@ -479,6 +487,41 @@ impl<B: Backend> MidiHandler<B> {
         self.routing_manager.apply_cc_routes(routes).await
     }
 
+    /// Apply basic keyboard routes from script state.
+    pub async fn apply_basic_keyboard_routes(&self, routes: &[crate::reload::MidiKeyboardRoute]) {
+        self.routing_manager.apply_basic_keyboard_routes(routes).await
+    }
+
+    /// Apply advanced keyboard routes from script state.
+    pub async fn apply_advanced_keyboard_routes(
+        &self,
+        routes: &[crate::reload::AdvancedMidiKeyboardRoute],
+    ) {
+        self.routing_manager
+            .apply_advanced_keyboard_routes(routes)
+            .await
+    }
+
+    /// Apply advanced note routes from script state.
+    pub async fn apply_advanced_note_routes(
+        &self,
+        routes: &[crate::reload::AdvancedMidiNoteRoute],
+    ) {
+        self.routing_manager
+            .apply_advanced_note_routes(routes)
+            .await
+    }
+
+    /// Apply advanced CC routes from script state.
+    pub async fn apply_advanced_cc_routes(
+        &self,
+        routes: &[crate::reload::AdvancedMidiCcRoute],
+    ) {
+        self.routing_manager
+            .apply_advanced_cc_routes(routes)
+            .await
+    }
+
     // ========================================================================
     // MIDI 2.0 Routing (delegated)
     // ========================================================================
@@ -695,21 +738,25 @@ impl<B: Backend> MidiHandler<B> {
         note: u8,
         velocity: u8,
     ) {
+        let vel_f32 = velocity as f32 / 127.0;
+
         // Process basic keyboard routes
         for route in &routing.keyboard_routes {
             if route.device_id == device_id
                 && (route.channel.is_none() || route.channel == Some(channel))
             {
-                let mut state = self.state.write().await;
-                let node_id = state.alloc_node_id();
-                if let Some(voice) = state.voices.get_mut(&route.voice_id) {
-                    tracing::debug!(
-                        "MIDI note_on: voice={}, note={}, velocity={}",
-                        route.voice_id.0,
-                        note,
-                        velocity
-                    );
-                    voice.note_nodes.insert(note, node_id);
+                tracing::debug!(
+                    "MIDI note_on: voice={}, note={}, velocity={}",
+                    route.voice_id.0,
+                    note,
+                    velocity
+                );
+                if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOn {
+                    voice: route.voice_id,
+                    note,
+                    velocity: vel_f32,
+                })).await {
+                    tracing::warn!("Failed to send MIDI note_on to runtime: {}", e);
                 }
             }
         }
@@ -723,19 +770,22 @@ impl<B: Backend> MidiHandler<B> {
                 if let Some(voice_id) = route.target_voice {
                     let transposed_note = route.apply_transpose(note);
                     let curved_velocity = route.apply_velocity(velocity);
+                    let vel = curved_velocity as f32 / 127.0;
 
-                    let mut state = self.state.write().await;
-                    let node_id = state.alloc_node_id();
-                    if let Some(voice) = state.voices.get_mut(&voice_id) {
-                        tracing::debug!(
-                            "MIDI advanced note_on: voice={}, note={}->{}, velocity={}->{}",
-                            voice_id.0,
-                            note,
-                            transposed_note,
-                            velocity,
-                            curved_velocity
-                        );
-                        voice.note_nodes.insert(transposed_note, node_id);
+                    tracing::debug!(
+                        "MIDI advanced note_on: voice={}, note={}->{}, velocity={}->{}",
+                        voice_id.0,
+                        note,
+                        transposed_note,
+                        velocity,
+                        curved_velocity
+                    );
+                    if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOn {
+                        voice: voice_id,
+                        note: transposed_note,
+                        velocity: vel,
+                    })).await {
+                        tracing::warn!("Failed to send MIDI advanced note_on to runtime: {}", e);
                     }
                 }
             }
@@ -748,26 +798,34 @@ impl<B: Backend> MidiHandler<B> {
                 && (route.channel.is_none() || route.channel == Some(channel))
             {
                 if let Some(voice_id) = route.target_voice {
-                    let mut state = self.state.write().await;
-                    let node_id = state.alloc_node_id();
-                    if let Some(voice) = state.voices.get_mut(&voice_id) {
-                        tracing::debug!(
-                            "MIDI note route: voice={}, note={}, velocity={}",
-                            voice_id.0,
-                            note,
-                            velocity
-                        );
-                        voice.note_nodes.insert(note, node_id);
+                    tracing::debug!(
+                        "MIDI note route: voice={}, note={}, velocity={}",
+                        voice_id.0,
+                        note,
+                        velocity
+                    );
 
-                        // Handle velocity-to-parameter mapping
-                        // Store the mapped parameter to be applied when the voice is triggered
-                        if let Some((param, value)) = route.velocity_to_param(velocity) {
-                            tracing::debug!(
-                                "MIDI velocity mapping: param={}, value={} (voice={}, note={})",
-                                param, value, voice_id.0, note
-                            );
-                            voice.pending_params.insert(param.to_string(), value as f64);
+                    // Handle velocity-to-parameter mapping before triggering the note
+                    if let Some((param, value)) = route.velocity_to_param(velocity) {
+                        tracing::debug!(
+                            "MIDI velocity mapping: param={}, value={} (voice={}, note={})",
+                            param, value, voice_id.0, note
+                        );
+                        if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::SetParam {
+                            id: voice_id,
+                            param: param.to_string(),
+                            value: value as f32,
+                        })).await {
+                            tracing::warn!("Failed to send MIDI velocity param to runtime: {}", e);
                         }
+                    }
+
+                    if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOn {
+                        voice: voice_id,
+                        note,
+                        velocity: vel_f32,
+                    })).await {
+                        tracing::warn!("Failed to send MIDI note route on to runtime: {}", e);
                     }
                 }
             }
@@ -786,14 +844,16 @@ impl<B: Backend> MidiHandler<B> {
             if route.device_id == device_id
                 && (route.channel.is_none() || route.channel == Some(channel))
             {
-                let mut state = self.state.write().await;
-                if let Some(voice) = state.voices.get_mut(&route.voice_id) {
-                    tracing::debug!(
-                        "MIDI note_off: voice={}, note={}",
-                        route.voice_id.0,
-                        note
-                    );
-                    voice.note_nodes.remove(&note);
+                tracing::debug!(
+                    "MIDI note_off: voice={}, note={}",
+                    route.voice_id.0,
+                    note
+                );
+                if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOff {
+                    voice: route.voice_id,
+                    note,
+                })).await {
+                    tracing::warn!("Failed to send MIDI note_off to runtime: {}", e);
                 }
             }
         }
@@ -807,15 +867,17 @@ impl<B: Backend> MidiHandler<B> {
                 if let Some(voice_id) = route.target_voice {
                     let transposed_note = route.apply_transpose(note);
 
-                    let mut state = self.state.write().await;
-                    if let Some(voice) = state.voices.get_mut(&voice_id) {
-                        tracing::debug!(
-                            "MIDI advanced note_off: voice={}, note={}->{}",
-                            voice_id.0,
-                            note,
-                            transposed_note
-                        );
-                        voice.note_nodes.remove(&transposed_note);
+                    tracing::debug!(
+                        "MIDI advanced note_off: voice={}, note={}->{}",
+                        voice_id.0,
+                        note,
+                        transposed_note
+                    );
+                    if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOff {
+                        voice: voice_id,
+                        note: transposed_note,
+                    })).await {
+                        tracing::warn!("Failed to send MIDI advanced note_off to runtime: {}", e);
                     }
                 }
             }
@@ -828,14 +890,16 @@ impl<B: Backend> MidiHandler<B> {
                 && (route.channel.is_none() || route.channel == Some(channel))
             {
                 if let Some(voice_id) = route.target_voice {
-                    let mut state = self.state.write().await;
-                    if let Some(voice) = state.voices.get_mut(&voice_id) {
-                        tracing::debug!(
-                            "MIDI note route off: voice={}, note={}",
-                            voice_id.0,
-                            note
-                        );
-                        voice.note_nodes.remove(&note);
+                    tracing::debug!(
+                        "MIDI note route off: voice={}, note={}",
+                        voice_id.0,
+                        note
+                    );
+                    if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOff {
+                        voice: voice_id,
+                        note,
+                    })).await {
+                        tracing::warn!("Failed to send MIDI note route off to runtime: {}", e);
                     }
                 }
             }
@@ -1246,17 +1310,19 @@ impl<B: Backend> MidiHandler<B> {
 
             let transposed_note = (note as i16 + route.transpose as i16).clamp(0, 127) as u8;
 
-            let mut state = self.state.write().await;
-            let node_id = state.alloc_node_id();
-            if let Some(voice) = state.voices.get_mut(&route.voice_id) {
-                tracing::debug!(
-                    "MIDI 2.0 note_on: voice={}, note={}->{}, velocity={}",
-                    route.voice_id.0,
-                    note,
-                    transposed_note,
-                    velocity.as_f32()
-                );
-                voice.note_nodes.insert(transposed_note, node_id);
+            tracing::debug!(
+                "MIDI 2.0 note_on: voice={}, note={}->{}, velocity={}",
+                route.voice_id.0,
+                note,
+                transposed_note,
+                velocity.as_f32()
+            );
+            if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOn {
+                voice: route.voice_id,
+                note: transposed_note,
+                velocity: velocity.as_f32(),
+            })).await {
+                tracing::warn!("Failed to send MIDI 2.0 note_on to runtime: {}", e);
             }
         }
     }
@@ -1293,15 +1359,17 @@ impl<B: Backend> MidiHandler<B> {
 
             let transposed_note = (note as i16 + route.transpose as i16).clamp(0, 127) as u8;
 
-            let mut state = self.state.write().await;
-            if let Some(voice) = state.voices.get_mut(&route.voice_id) {
-                tracing::debug!(
-                    "MIDI 2.0 note_off: voice={}, note={}->{}",
-                    route.voice_id.0,
-                    note,
-                    transposed_note
-                );
-                voice.note_nodes.remove(&transposed_note);
+            tracing::debug!(
+                "MIDI 2.0 note_off: voice={}, note={}->{}",
+                route.voice_id.0,
+                note,
+                transposed_note
+            );
+            if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOff {
+                voice: route.voice_id,
+                note: transposed_note,
+            })).await {
+                tracing::warn!("Failed to send MIDI 2.0 note_off to runtime: {}", e);
             }
         }
     }
