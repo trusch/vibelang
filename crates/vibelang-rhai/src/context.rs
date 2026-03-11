@@ -56,6 +56,8 @@ macro_rules! define_id_accessors {
         #[doc = $doc_create]
         ///
         /// The ID is generated from a hash of the name, ensuring stability across script reloads.
+        /// If a hash collision is detected (different name maps to same ID), the ID is
+        /// incremented via linear probing until a free slot is found.
         pub fn $get_or_create(name: &str) -> $id_type {
             CONTEXT.with(|ctx| {
                 let mut borrow = ctx.borrow_mut();
@@ -64,7 +66,23 @@ macro_rules! define_id_accessors {
                     id
                 } else {
                     // Use hash-based ID for stability across reloads
-                    let id = <$id_type>::new(hash_name_to_id(name));
+                    let mut raw = hash_name_to_id(name);
+                    // Collision detection: check if another name already has this ID
+                    loop {
+                        let candidate = <$id_type>::new(raw);
+                        let collision = c.$map.values().any(|&existing_id| existing_id == candidate);
+                        if !collision {
+                            break;
+                        }
+                        tracing::warn!(
+                            "Hash collision detected: '{}' collides at ID {} — probing next slot",
+                            name,
+                            raw
+                        );
+                        raw = raw.wrapping_add(1);
+                        if raw == 0 { raw = 1; } // Never use 0
+                    }
+                    let id = <$id_type>::new(raw);
                     c.$map.insert(name.to_string(), id);
                     id
                 }
@@ -311,7 +329,23 @@ pub fn get_or_create_group_id(name: &str) -> GroupId {
             id
         } else {
             // Use hash-based ID for stability across reloads
-            let id = GroupId::new(hash_name_to_id(name));
+            let mut raw = hash_name_to_id(name);
+            // Collision detection: check if another name already has this ID
+            loop {
+                let candidate = GroupId::new(raw);
+                let collision = c.group_ids.values().any(|&existing_id| existing_id == candidate);
+                if !collision {
+                    break;
+                }
+                tracing::warn!(
+                    "Hash collision detected for group '{}' at ID {} — probing next slot",
+                    name,
+                    raw
+                );
+                raw = raw.wrapping_add(1);
+                if raw == 0 { raw = 1; }
+            }
+            let id = GroupId::new(raw);
             c.group_ids.insert(name.to_string(), id);
             id
         };
@@ -353,7 +387,22 @@ fn get_or_create_group_id_inner(c: &mut ScriptContext, name: &str) -> GroupId {
         id
     } else {
         // Use hash-based ID for stability across reloads
-        let id = GroupId::new(hash_name_to_id(name));
+        let mut raw = hash_name_to_id(name);
+        loop {
+            let candidate = GroupId::new(raw);
+            let collision = c.group_ids.values().any(|&existing_id| existing_id == candidate);
+            if !collision {
+                break;
+            }
+            tracing::warn!(
+                "Hash collision detected for group '{}' at ID {} — probing next slot",
+                name,
+                raw
+            );
+            raw = raw.wrapping_add(1);
+            if raw == 0 { raw = 1; }
+        }
+        let id = GroupId::new(raw);
         c.group_ids.insert(name.to_string(), id);
         id
     }
