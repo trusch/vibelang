@@ -1402,9 +1402,10 @@ impl<B: Backend> Runtime<B> {
         // Phase 5: Finalize groups (create link synths)
         // =========================================================================
 
-        // Only finalize if groups were created - skip for simple pattern/melody updates
-        // This avoids unnecessary sync operations during hot reload
-        if !diff.groups.created.is_empty() {
+        // Finalize groups if any were created or updated — ensures link synths exist
+        // and are properly configured. This handles group renames where the old group
+        // is deleted and a new one is created.
+        if !diff.groups.created.is_empty() || !diff.groups.updated.is_empty() {
             tracing::debug!("Reload: finalizing groups");
             let _ = self.groups.finalize().await;
 
