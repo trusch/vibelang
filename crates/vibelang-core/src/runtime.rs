@@ -879,6 +879,20 @@ impl<B: Backend> Runtime<B> {
             let _ = self.samples.unload(*id).await;
         }
 
+        // Delete SFZ instruments
+        for id in &diff.sfz.deleted {
+            tracing::debug!("Reload: deleting SFZ instrument {:?}", id);
+            let _ = self.sfz.unload(*id).await;
+            self.state.write().await.sfz_instruments.remove(id);
+        }
+
+        // Delete updated SFZ instruments (will be recreated in Phase 3)
+        for (id, _) in &diff.sfz.updated {
+            tracing::debug!("Reload: deleting SFZ instrument {:?} for update", id);
+            let _ = self.sfz.unload(*id).await;
+            self.state.write().await.sfz_instruments.remove(id);
+        }
+
         // =========================================================================
         // Phase 2.5: Open MIDI devices (must be done before voices are created)
         // =========================================================================
