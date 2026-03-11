@@ -21,8 +21,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use vibelang_core::reload::ScriptState;
 use vibelang_core::types::{
-    EffectId, GroupId, MelodyId, ModulatorId, PatternId, RecordingId, SampleId, SequenceId, SfzId,
-    VoiceId,
+    EffectId, FadeId, GroupId, MelodyId, ModulatorId, PatternId, RecordingId, SampleId, SequenceId,
+    SfzId, VoiceId,
 };
 
 /// Generate a stable u32 ID from a name using FNV-1a hash.
@@ -121,6 +121,7 @@ struct ScriptContext {
     next_sfz_id: u32,
     next_recording_id: u32,
     next_modulator_id: u32,
+    next_fade_id: u32,
     /// Counter for MIDI callback IDs.
     #[cfg(feature = "midi")]
     next_callback_id: u64,
@@ -136,6 +137,7 @@ struct ScriptContext {
     sfz_ids: HashMap<String, SfzId>,
     recording_ids: HashMap<String, RecordingId>,
     modulator_ids: HashMap<String, ModulatorId>,
+    fade_ids: HashMap<String, FadeId>,
 
     /// MIDI callback FnPtr storage (callback_id -> FnPtr).
     #[cfg(feature = "midi")]
@@ -159,6 +161,7 @@ impl Default for ScriptContext {
             next_sfz_id: 1,
             next_recording_id: 1,
             next_modulator_id: 1,
+            next_fade_id: 1,
             #[cfg(feature = "midi")]
             next_callback_id: 1,
             group_ids: HashMap::new(),
@@ -171,6 +174,7 @@ impl Default for ScriptContext {
             sfz_ids: HashMap::new(),
             recording_ids: HashMap::new(),
             modulator_ids: HashMap::new(),
+            fade_ids: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_callbacks: HashMap::new(),
         }
@@ -447,6 +451,16 @@ define_id_accessors!(
     modulator_ids,
     "Get or create a modulator ID by name.",
     "Get a modulator ID by name (if it exists)."
+);
+
+define_id_accessors!(
+    get_or_create_fade_id,
+    get_fade_id,
+    FadeId,
+    next_fade_id,
+    fade_ids,
+    "Get or create a fade ID by name.",
+    "Get a fade ID by name (if it exists)."
 );
 
 /// Access the script state mutably.

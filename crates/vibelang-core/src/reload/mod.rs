@@ -79,7 +79,7 @@ use std::collections::HashSet;
 // Imports for calculate_diff and order_group_deletions
 use crate::state::State;
 use crate::traits::SampleConfig;
-use crate::types::{Beat, EffectId, MelodyId, ModulatorId, PatternId, SampleId, SequenceId, TimeSignature, VoiceId};
+use crate::types::{Beat, EffectId, FadeId, MelodyId, ModulatorId, PatternId, SampleId, SequenceId, TimeSignature, VoiceId};
 
 /// Quantization mode for applying hot reload changes.
 ///
@@ -231,6 +231,23 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
             .get(id)
             .map(|s| SampleConfig::new(s.path.clone()))
     });
+
+    // Fades
+    // We diff against the runtime's tracked fade configs (stored in state.fade_configs).
+    // Active fades in state.active_fades are the runtime execution state, not the config.
+    let current_fade_ids: HashSet<FadeId> = current.fade_configs.keys().copied().collect();
+    diff.fades = diff_entities(&current_fade_ids, &new.fades, |id| {
+        current.fade_configs.get(id).cloned()
+    });
+
+    // Force-restart fades should be treated as updated even if config is unchanged
+    for id in &new.force_restart_fades {
+        if diff.fades.unchanged.remove(id) {
+            if let Some(config) = new.fades.get(id) {
+                diff.fades.updated.insert(*id, config.clone());
+            }
+        }
+    }
 
     diff
 }

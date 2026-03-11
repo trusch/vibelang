@@ -15,6 +15,7 @@ use crate::traits::{
     FadeConfig, MelodyConfig, MelodyContent, ModulatorConfig, PatternConfig, PatternContent,
     SampleInfo, SequenceConfig, VoiceConfig,
 };
+use crate::types::FadeId;
 use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::types::RecordingId;
@@ -659,6 +660,12 @@ pub struct State {
     /// Active fade operations.
     pub active_fades: Vec<ActiveFade>,
 
+    /// Fade configs tracked for reload diffing.
+    ///
+    /// Maps FadeId to the FadeConfig that was used to start the fade.
+    /// This allows calculate_diff to detect unchanged fades and skip re-firing them.
+    pub fade_configs: HashMap<FadeId, FadeConfig>,
+
     /// Active audio recordings (native only).
     #[cfg(not(target_arch = "wasm32"))]
     pub recordings: HashMap<RecordingId, RecordingInfo>,
@@ -708,6 +715,7 @@ impl Default for State {
             control_buses: ControlBusAllocator::default(),
             modulator_group: None,
             active_fades: Vec::new(),
+            fade_configs: HashMap::new(),
             #[cfg(not(target_arch = "wasm32"))]
             recordings: HashMap::new(),
             meter_levels: HashMap::new(),

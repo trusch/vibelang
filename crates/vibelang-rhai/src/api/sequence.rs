@@ -560,12 +560,15 @@ impl Fade {
 
     /// Start the fade with quantization (chainable).
     ///
-    /// This schedules the fade to start at the next quantization boundary,
-    /// similar to how patterns and melodies are quantized for live performance.
+    /// Registers the fade as a stateful entity in the script state.
+    /// On reload, unchanged fades are not re-fired — only new or modified
+    /// fades are started. This prevents fades from resetting on every save.
     pub fn start(self) -> Self {
         let config = self.to_config();
+        let fade_id = context::get_or_create_fade_id(&self.name);
         context::with_state(|state| {
-            state.pending_fades_quantized.push(config);
+            state.fades.insert(fade_id, config);
+            state.playing_fades.insert(fade_id);
         });
         self
     }
@@ -577,21 +580,32 @@ impl Fade {
         self.start()
     }
 
-    /// Restart the fade (alias for now — re-triggers immediately).
+    /// Restart the fade (force re-fire even if config is unchanged).
     ///
-    /// Useful for re-firing a fade that has already completed.
+    /// Useful for re-firing a fade that has already completed or is still running.
+    /// Unlike `start()` and `now()`, this will always re-trigger the fade on reload,
+    /// even if the configuration hasn't changed.
     pub fn restart(self) -> Self {
-        self.now()
+        let config = self.to_config();
+        let fade_id = context::get_or_create_fade_id(&self.name);
+        context::with_state(|state| {
+            state.fades.insert(fade_id, config);
+            state.playing_fades.insert(fade_id);
+            state.force_restart_fades.insert(fade_id);
+        });
+        self
     }
 
     /// Start the fade immediately without quantization (chainable).
     ///
-    /// This adds the fade to the pending_fades list in ScriptState,
-    /// which will be processed immediately during the next reload/apply cycle.
+    /// Registers the fade as a stateful entity. On reload, unchanged fades
+    /// are not re-fired — only new or modified fades are started.
     pub fn now(self) -> Self {
         let config = self.to_config();
+        let fade_id = context::get_or_create_fade_id(&self.name);
         context::with_state(|state| {
-            state.pending_fades.push(config);
+            state.fades.insert(fade_id, config);
+            state.playing_fades.insert(fade_id);
         });
         self
     }

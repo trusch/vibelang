@@ -771,6 +771,30 @@ impl<B: Backend> Runtime<B> {
         // NOTE: We NO LONGER stop patterns/melodies that are being updated.
         // Instead, we queue content swaps in Phase 4 for seamless hot reload.
 
+        // Cancel fades that will be deleted
+        for id in &diff.fades.deleted {
+            let config_opt = {
+                let state = self.state.read().await;
+                state.fade_configs.get(id).cloned()
+            };
+            if let Some(config) = config_opt {
+                tracing::debug!("Reload: cancelling deleted fade {:?}", id);
+                let _ = self.fades.cancel(&config.target, &config.param).await;
+            }
+        }
+
+        // Cancel fades that will be updated (will be restarted with new config)
+        for (id, _) in &diff.fades.updated {
+            let config_opt = {
+                let state = self.state.read().await;
+                state.fade_configs.get(id).cloned()
+            };
+            if let Some(config) = config_opt {
+                tracing::debug!("Reload: cancelling updated fade {:?}", id);
+                let _ = self.fades.cancel(&config.target, &config.param).await;
+            }
+        }
+
         // Stop patterns that will be deleted (NOT updated - those continue playing)
         for id in &diff.patterns.deleted {
             let _ = self.patterns.stop(*id).await;
@@ -804,6 +828,15 @@ impl<B: Backend> Runtime<B> {
         for id in &diff.effects.deleted {
             tracing::debug!("Reload: deleting effect {:?}", id);
             let _ = self.effects.remove(*id).await;
+        }
+
+        // Delete fades from tracking state
+        if !diff.fades.deleted.is_empty() {
+            let mut state = self.state.write().await;
+            for id in &diff.fades.deleted {
+                tracing::debug!("Reload: deleting fade {:?}", id);
+                state.fade_configs.remove(id);
+            }
         }
 
         // Delete patterns
@@ -1355,28 +1388,76 @@ impl<B: Backend> Runtime<B> {
         }
 
         // =========================================================================
-        // Phase 5.5: Process pending fades
+        // Phase 5.5: Process fades (stateful + legacy pending)
         //
-        // Fades triggered via fade(...).start() are added to pending_fades
-        // and processed here during reload.
+        // Stateful fades participate in the diff system: unchanged fades are
+        // not re-fired. Only new or updated fades are started.
         // =========================================================================
 
-        // Process fades - both .now() and .start() start immediately, matching pattern/melody behavior
-        for fade_config in new_state
-            .pending_fades
-            .iter()
-            .chain(new_state.pending_fades_quantized.iter())
-        {
-            tracing::debug!(
-                "Reload: starting fade on {:?}/{} from {:?} to {} over {:?}",
-                fade_config.target,
-                fade_config.param,
-                fade_config.from,
-                fade_config.to,
-                fade_config.duration
+        // Start newly created fades
+        for (id, config) in &diff.fades.created {
+            if new_state.playing_fades.contains(id) {
+                tracing::debug!(
+                    "Reload: starting new fade {:?} on {:?}/{} from {:?} to {} over {:?}",
+                    id,
+                    config.target,
+                    config.param,
+                    config.from,
+                    config.to,
+                    config.duration
+                );
+                if let Err(e) = self.fades.fade(config.clone()).await {
+                    tracing::error!("Reload: failed to start fade {:?}: {}", id, e);
+                }
+                // Track in runtime state for future diffing
+                let mut state = self.state.write().await;
+                state.fade_configs.insert(*id, config.clone());
+            }
+        }
+
+        // Restart updated fades (already cancelled in Phase 1)
+        for (id, config) in &diff.fades.updated {
+            if new_state.playing_fades.contains(id) {
+                tracing::debug!(
+                    "Reload: restarting updated fade {:?} on {:?}/{} from {:?} to {} over {:?}",
+                    id,
+                    config.target,
+                    config.param,
+                    config.from,
+                    config.to,
+                    config.duration
+                );
+                if let Err(e) = self.fades.fade(config.clone()).await {
+                    tracing::error!("Reload: failed to restart fade {:?}: {}", id, e);
+                }
+                // Update tracking state
+                let mut state = self.state.write().await;
+                state.fade_configs.insert(*id, config.clone());
+            }
+        }
+
+        // Process legacy pending_fades/pending_fades_quantized for backward compatibility
+        if !new_state.pending_fades.is_empty() || !new_state.pending_fades_quantized.is_empty() {
+            tracing::warn!(
+                "Reload: processing {} legacy pending fades (deprecated, use stateful fades)",
+                new_state.pending_fades.len() + new_state.pending_fades_quantized.len()
             );
-            if let Err(e) = self.fades.fade(fade_config.clone()).await {
-                tracing::error!("Reload: failed to start fade: {}", e);
+            for fade_config in new_state
+                .pending_fades
+                .iter()
+                .chain(new_state.pending_fades_quantized.iter())
+            {
+                tracing::debug!(
+                    "Reload: starting legacy fade on {:?}/{} from {:?} to {} over {:?}",
+                    fade_config.target,
+                    fade_config.param,
+                    fade_config.from,
+                    fade_config.to,
+                    fade_config.duration
+                );
+                if let Err(e) = self.fades.fade(fade_config.clone()).await {
+                    tracing::error!("Reload: failed to start legacy fade: {}", e);
+                }
             }
         }
 

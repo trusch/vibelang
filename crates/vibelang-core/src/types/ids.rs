@@ -157,6 +157,15 @@ define_id!(
     ControlBusId
 );
 
+define_id!(
+    /// ID for a fade (parameter automation).
+    ///
+    /// Fades smoothly transition parameters over time. Using stable IDs
+    /// allows the reload diff system to detect unchanged fades and avoid
+    /// re-firing them on every hot reload.
+    FadeId
+);
+
 #[cfg(feature = "midi")]
 define_id!(
     /// ID for a MIDI device.

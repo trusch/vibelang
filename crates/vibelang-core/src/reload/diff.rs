@@ -174,6 +174,9 @@ pub struct ReloadDiff {
 
     /// Sample changes.
     pub samples: EntityDiff<crate::types::SampleId, crate::traits::SampleConfig>,
+
+    /// Fade changes.
+    pub fades: EntityDiff<crate::types::FadeId, crate::traits::FadeConfig>,
 }
 
 impl Default for ReloadDiff {
@@ -229,6 +232,12 @@ impl Default for ReloadDiff {
                 updated: HashMap::new(),
                 unchanged: HashSet::new(),
             },
+            fades: EntityDiff {
+                created: HashMap::new(),
+                deleted: Vec::new(),
+                updated: HashMap::new(),
+                unchanged: HashSet::new(),
+            },
         }
     }
 }
@@ -246,6 +255,7 @@ impl ReloadDiff {
             || self.effects.has_changes()
             || self.modulators.has_changes()
             || self.samples.has_changes()
+            || self.fades.has_changes()
     }
 
     /// Get a summary of changes for logging.
@@ -320,6 +330,14 @@ impl ReloadDiff {
                 self.samples.created.len(),
                 self.samples.deleted.len(),
                 self.samples.updated.len()
+            ));
+        }
+        if self.fades.has_changes() {
+            parts.push(format!(
+                "fades(+{} -{} ~{})",
+                self.fades.created.len(),
+                self.fades.deleted.len(),
+                self.fades.updated.len()
             ));
         }
 

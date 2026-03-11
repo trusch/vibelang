@@ -16,8 +16,8 @@ use crate::types::MidiDeviceId;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::types::RecordingId;
 use crate::types::{
-    EffectId, GroupId, MelodyId, ModulatorId, ParamMap, PatternId, SampleId, SequenceId, SfzId,
-    TimeSignature, VoiceId,
+    EffectId, FadeId, GroupId, MelodyId, ModulatorId, ParamMap, PatternId, SampleId, SequenceId,
+    SfzId, TimeSignature, VoiceId,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -474,14 +474,30 @@ pub struct ScriptState {
     /// These voices are auto-triggered on startup and after reload.
     pub running_voices: HashSet<VoiceId>,
 
+    /// Fades defined in the script (stateful, participate in reload diffing).
+    ///
+    /// Each fade has a stable ID derived from its name. On reload, unchanged
+    /// fades are not re-fired — only new or modified fades are started.
+    pub fades: HashMap<FadeId, FadeConfig>,
+
+    /// Fades that should be actively running (started via `.start()` or `.now()`).
+    pub playing_fades: HashSet<FadeId>,
+
+    /// Fades marked for forced restart (via `.restart()`).
+    ///
+    /// These fades will be re-fired on reload even if their config is unchanged.
+    pub force_restart_fades: HashSet<FadeId>,
+
     /// Fades to start immediately on reload (no quantization).
     ///
+    /// **Deprecated**: Use stateful fades via `state.fades` instead.
     /// These are fades triggered via `fade(...).now()` in the script.
     /// They are processed during `apply_reload` and converted to active fades.
     pub pending_fades: Vec<FadeConfig>,
 
     /// Fades to start with quantization.
     ///
+    /// **Deprecated**: Use stateful fades via `state.fades` instead.
     /// These are fades triggered via `fade(...).start()` in the script.
     /// They are processed at the next quantization boundary.
     pub pending_fades_quantized: Vec<FadeConfig>,
