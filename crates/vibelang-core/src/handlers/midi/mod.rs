@@ -84,7 +84,7 @@ use crate::message::{Message, VoiceMessage};
 use crate::{Error, Result};
 use crossbeam_channel::Sender;
 use midir::{MidiInputConnection, MidiOutputConnection};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
@@ -170,6 +170,10 @@ pub struct MidiHandler<B: Backend> {
     /// Sender for runtime messages, used to route MIDI note events
     /// through VoicesHandler for proper synth creation/destruction.
     runtime_tx: crate::compat::Sender<Message>,
+
+    /// Per-device transport state: tracks whether we've sent Start (true) or Stop (false).
+    /// Used to avoid re-sending Start/Stop on hot reload when state hasn't changed.
+    device_transport_started: Arc<Mutex<HashSet<MidiDeviceId>>>,
 }
 
 impl<B: Backend> MidiHandler<B> {
@@ -211,6 +215,8 @@ impl<B: Backend> MidiHandler<B> {
             clock_thread: Arc::new(parking_lot::RwLock::new(None)),
 
             runtime_tx,
+
+            device_transport_started: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -335,6 +341,29 @@ impl<B: Backend> MidiHandler<B> {
     pub fn set_beats_per_bar(&self, beats: u8) {
         if let Some(ref thread) = *self.clock_thread.read() {
             thread.set_beats_per_bar(beats);
+        }
+    }
+
+    /// Check if a MIDI Start has already been sent to this device.
+    /// Returns true if device is in "started" state (avoids re-sending on reload).
+    pub fn is_device_started(&self, device: MidiDeviceId) -> bool {
+        self.device_transport_started
+            .lock()
+            .map(|s| s.contains(&device))
+            .unwrap_or(false)
+    }
+
+    /// Mark a device as started (after sending MIDI Start).
+    pub fn mark_device_started(&self, device: MidiDeviceId) {
+        if let Ok(mut s) = self.device_transport_started.lock() {
+            s.insert(device);
+        }
+    }
+
+    /// Mark a device as stopped (after sending MIDI Stop).
+    pub fn mark_device_stopped(&self, device: MidiDeviceId) {
+        if let Ok(mut s) = self.device_transport_started.lock() {
+            s.remove(&device);
         }
     }
 

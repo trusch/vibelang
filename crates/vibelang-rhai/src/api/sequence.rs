@@ -577,6 +577,13 @@ impl Fade {
         self.start()
     }
 
+    /// Restart the fade (alias for now — re-triggers immediately).
+    ///
+    /// Useful for re-firing a fade that has already completed.
+    pub fn restart(self) -> Self {
+        self.now()
+    }
+
     /// Start the fade immediately without quantization (chainable).
     ///
     /// This adds the fade to the pending_fades list in ScriptState,
@@ -726,6 +733,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("start", Fade::start);
     engine.register_fn("launch", Fade::launch);
     engine.register_fn("now", Fade::now);
+    engine.register_fn("restart", Fade::restart);
 
     // Fx builder methods
     engine.register_fn("synth", Fx::synth);

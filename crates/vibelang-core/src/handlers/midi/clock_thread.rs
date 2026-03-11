@@ -161,13 +161,23 @@ impl MidiClockThread {
 
     /// Enable clock output for a device.
     ///
-    /// If the transport is already playing, immediately sends a Start message
-    /// to the device so it syncs with the current playback.
+    /// If the transport is already playing and this is a *newly* enabled device,
+    /// sends a Start message so it syncs with the current playback.
+    /// Already-enabled devices are left untouched (idempotent).
     pub fn enable_clock_output(&self, device: MidiDeviceId) {
+        // Check if already enabled — if so, skip to avoid re-sending Start on reload
+        {
+            let devices = self.clock_devices.read();
+            if devices.contains(&device) {
+                tracing::trace!("[MIDI_CLOCK] Clock output already enabled for device {}, skipping", device.0);
+                return;
+            }
+        }
+
         self.clock_devices.write().insert(device);
         tracing::debug!("[MIDI_CLOCK] Enabled clock output for device {}", device.0);
 
-        // If transport is already playing, send Start immediately so the device syncs
+        // Only send Start for newly enabled devices while transport is playing
         let (_beat, _tempo, playing) = self.transport.read();
         if playing {
             tracing::debug!(

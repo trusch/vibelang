@@ -112,6 +112,10 @@ pub struct Runtime<B: Backend> {
     #[cfg(feature = "midi")]
     tick_count: u32,
 
+    /// Whether the MIDI clock thread has been started (for tick() users).
+    #[cfg(feature = "midi")]
+    clock_thread_started: bool,
+
     // =========================================================================
     // Feature Handlers
     // =========================================================================
@@ -179,6 +183,8 @@ impl<B: Backend> Runtime<B> {
             midi,
             #[cfg(feature = "midi")]
             tick_count: 0,
+            #[cfg(feature = "midi")]
+            clock_thread_started: false,
         }
     }
 
@@ -222,7 +228,11 @@ impl<B: Backend> Runtime<B> {
 
         // Start MIDI clock thread (runs independently at 1kHz)
         #[cfg(feature = "midi")]
-        self.midi.start_clock_thread(Arc::clone(&self.transport_snapshot));
+        {
+            self.midi
+                .start_clock_thread(Arc::clone(&self.transport_snapshot));
+            self.clock_thread_started = true;
+        }
 
         loop {
             // Process available messages
@@ -263,6 +273,14 @@ impl<B: Backend> Runtime<B> {
     ///
     /// Use this in WASM or game loops where you control the main loop.
     pub async fn tick(&mut self) {
+        // Start MIDI clock thread on first tick (for users who use tick() instead of run())
+        #[cfg(feature = "midi")]
+        if !self.clock_thread_started {
+            self.midi
+                .start_clock_thread(Arc::clone(&self.transport_snapshot));
+            self.clock_thread_started = true;
+        }
+
         // Process all pending messages
         while let Some(msg) = self.rx.try_recv_compat() {
             if let Err(e) = self.handle_message(msg).await {
@@ -855,28 +873,48 @@ impl<B: Backend> Runtime<B> {
 
             // Process MIDI output messages
             if !new_state.midi_output_messages.is_empty() {
-                // First pass: handle Start/Stop/Continue using direct connection
-                // (output_channels may not exist due to exclusive device access)
+                // First pass: handle Start/Stop/Continue using direct connection.
+                // Track per-device transport state to avoid re-sending on reload.
                 for msg in &new_state.midi_output_messages {
                     match msg {
                         MidiOutputMessage::Start { device_id } => {
-                            tracing::debug!("Reload: sending MIDI Start to {:?}", device_id);
-                            if let Err(e) = self.midi.send_start(*device_id).await {
-                                tracing::warn!(
-                                    "Reload: failed to send MIDI Start to {:?}: {}",
-                                    device_id,
-                                    e
+                            // Only send Start if device is not already in "started" state
+                            if self.midi.is_device_started(*device_id) {
+                                tracing::trace!(
+                                    "Reload: skipping MIDI Start to {:?} (already started)",
+                                    device_id
                                 );
+                            } else {
+                                tracing::debug!("Reload: sending MIDI Start to {:?}", device_id);
+                                if let Err(e) = self.midi.send_start(*device_id).await {
+                                    tracing::warn!(
+                                        "Reload: failed to send MIDI Start to {:?}: {}",
+                                        device_id,
+                                        e
+                                    );
+                                } else {
+                                    self.midi.mark_device_started(*device_id);
+                                }
                             }
                         }
                         MidiOutputMessage::Stop { device_id } => {
-                            tracing::debug!("Reload: sending MIDI Stop to {:?}", device_id);
-                            if let Err(e) = self.midi.send_stop(*device_id).await {
-                                tracing::warn!(
-                                    "Reload: failed to send MIDI Stop to {:?}: {}",
-                                    device_id,
-                                    e
+                            // Only send Stop if device is in "started" state
+                            if !self.midi.is_device_started(*device_id) {
+                                tracing::trace!(
+                                    "Reload: skipping MIDI Stop to {:?} (already stopped)",
+                                    device_id
                                 );
+                            } else {
+                                tracing::debug!("Reload: sending MIDI Stop to {:?}", device_id);
+                                if let Err(e) = self.midi.send_stop(*device_id).await {
+                                    tracing::warn!(
+                                        "Reload: failed to send MIDI Stop to {:?}: {}",
+                                        device_id,
+                                        e
+                                    );
+                                } else {
+                                    self.midi.mark_device_stopped(*device_id);
+                                }
                             }
                         }
                         MidiOutputMessage::Continue { device_id } => {
@@ -887,6 +925,8 @@ impl<B: Backend> Runtime<B> {
                                     device_id,
                                     e
                                 );
+                            } else {
+                                self.midi.mark_device_started(*device_id);
                             }
                         }
                         _ => {} // Other messages handled below
@@ -1350,43 +1390,63 @@ impl<B: Backend> Runtime<B> {
 
         // First, stop patterns/melodies/sequences that were playing but are no longer
         // in the playing_* sets. This handles the case where user changes start() to stop().
+        //
+        // IMPORTANT: Preserve playing state for UNCHANGED entities to avoid disruption
+        // during hot reload. Only stop entities that:
+        // 1. Were playing AND
+        // 2. Are NOT in the new playing set AND
+        // 3. Are NOT unchanged (i.e., they were updated or deleted)
+        //
+        // This ensures that if you just edit a melody's notes without touching .start(),
+        // the melody keeps playing seamlessly.
         let patterns_to_stop: Vec<crate::types::PatternId> = {
             let state = self.state.read().await;
             state
                 .patterns
                 .iter()
-                .filter(|(id, p)| p.playing && !new_state.playing_patterns.contains(id))
+                .filter(|(id, p)| {
+                    p.playing
+                        && !new_state.playing_patterns.contains(id)
+                        // Only stop if NOT unchanged (was updated, deleted, or not in new state)
+                        && !diff.patterns.unchanged.contains(id)
+                })
                 .map(|(id, _)| *id)
                 .collect()
         };
         for id in patterns_to_stop {
-            tracing::debug!("Reload: stopping pattern {:?} (no longer in playing_patterns)", id);
+            tracing::debug!("Reload: stopping pattern {:?} (no longer in playing_patterns and was changed)", id);
             let _ = self.patterns.stop(id).await;
         }
 
         let melodies_to_stop: Vec<crate::types::MelodyId> = {
             let state = self.state.read().await;
             tracing::debug!(
-                "Reload: checking {} runtime melodies against {} script playing_melodies",
+                "Reload: checking {} runtime melodies against {} script playing_melodies, {} unchanged",
                 state.melodies.len(),
-                new_state.playing_melodies.len()
+                new_state.playing_melodies.len(),
+                diff.melodies.unchanged.len()
             );
             for (id, m) in &state.melodies {
                 tracing::debug!(
-                    "  Runtime melody {:?}: playing={}, in_new_playing={}",
-                    id, m.playing, new_state.playing_melodies.contains(id)
+                    "  Runtime melody {:?}: playing={}, in_new_playing={}, unchanged={}",
+                    id, m.playing, new_state.playing_melodies.contains(id), diff.melodies.unchanged.contains(id)
                 );
             }
             state
                 .melodies
                 .iter()
-                .filter(|(id, m)| m.playing && !new_state.playing_melodies.contains(id))
+                .filter(|(id, m)| {
+                    m.playing
+                        && !new_state.playing_melodies.contains(id)
+                        // Only stop if NOT unchanged (was updated, deleted, or not in new state)
+                        && !diff.melodies.unchanged.contains(id)
+                })
                 .map(|(id, _)| *id)
                 .collect()
         };
         tracing::debug!("Reload: melodies to stop: {:?}", melodies_to_stop);
         for id in melodies_to_stop {
-            tracing::debug!("Reload: stopping melody {:?} (no longer in playing_melodies)", id);
+            tracing::debug!("Reload: stopping melody {:?} (no longer in playing_melodies and was changed)", id);
             let _ = self.melodies.stop(id).await;
         }
 
@@ -1395,13 +1455,17 @@ impl<B: Backend> Runtime<B> {
             state
                 .sequences
                 .iter()
-                .filter(|(id, s)| s.playing && !new_state.playing_sequences.contains(id))
+                .filter(|(id, s)| {
+                    s.playing
+                        && !new_state.playing_sequences.contains(id)
+                        // Only stop if NOT unchanged (was updated, deleted, or not in new state)
+                        && !diff.sequences.unchanged.contains(id)
+                })
                 .map(|(id, _)| *id)
                 .collect()
         };
         for id in sequences_to_stop {
-            tracing::debug!("Reload: stopping sequence {:?} (no longer in playing_sequences)", id);
-            let _ = self.sequences.stop(id).await;
+            tracing::debug!("Reload: stopping sequence {:?} (no longer in playing_sequences and was changed)", id);
         }
 
         // Start patterns that should be playing (only if not already playing)
