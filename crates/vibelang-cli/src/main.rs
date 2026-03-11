@@ -54,10 +54,10 @@ enum Commands {
         #[arg(long)]
         tui: bool,
 
-        /// Start HTTP API server
+        /// Disable HTTP API server (API is enabled by default)
         #[arg(long)]
         #[cfg_attr(not(feature = "api"), arg(hide = true))]
-        api: bool,
+        no_api: bool,
 
         /// HTTP API server port (default: 1606)
         #[arg(long, default_value = "1606")]
@@ -176,7 +176,7 @@ async fn main() -> Result<()> {
             file,
             no_watch: false,
             tui: false,
-            api: false,
+            no_api: false,
             no_jack_connect: false,
             jack_connect_to: None,
             jack_connect_from: None,
@@ -207,7 +207,7 @@ async fn main() -> Result<()> {
             file,
             no_watch,
             tui,
-            api,
+            no_api,
             api_port,
             include_paths,
             scsynth_addr,
@@ -230,6 +230,7 @@ async fn main() -> Result<()> {
                 build_extension_config(no_extensions, no_fs, no_exec, no_net, fs_sandbox);
 
             let watch = !no_watch;
+            let api = !no_api;
             if tui {
                 run_tui_mode(
                     file,

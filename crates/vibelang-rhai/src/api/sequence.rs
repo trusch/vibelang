@@ -326,6 +326,36 @@ impl Fade {
         }
     }
 
+    /// Create an anonymous fade (name resolved at finalization).
+    pub fn new_anon() -> Self {
+        Self {
+            name: String::new(),
+            target_type: FadeTargetType::Group,
+            target_name: String::new(),
+            param_name: "amp".to_string(),
+            from_value: 0.0,
+            to_value: 1.0,
+            duration_beats: 4.0,
+            curve: FadeCurve::Linear,
+        }
+    }
+
+    /// Resolve the name for an anonymous fade from its target and parameter.
+    ///
+    /// Uses `_{target}_{param}` as the name formula.
+    /// No-op if the fade already has a name.
+    fn resolve_name(&mut self) {
+        if !self.name.is_empty() {
+            return;
+        }
+        let base = if self.target_name.is_empty() {
+            format!("_fade_{}", self.param_name)
+        } else {
+            format!("_{}_{}", self.target_name, self.param_name)
+        };
+        self.name = context::resolve_auto_name(&base);
+    }
+
     /// Target a group.
     pub fn on_group(mut self, group_name: String) -> Self {
         self.target_type = FadeTargetType::Group;
@@ -341,7 +371,8 @@ impl Fade {
     }
 
     /// Target a voice by handle.
-    pub fn on_voice_handle(mut self, voice: Voice) -> Self {
+    pub fn on_voice_handle(mut self, mut voice: Voice) -> Self {
+        voice.resolve_name();
         self.target_type = FadeTargetType::Voice;
         self.target_name = voice.name.clone();
         self
@@ -365,7 +396,8 @@ impl Fade {
     ///
     /// Accepts Voice, Fx, or falls back to treating Dynamic as a string (group name).
     pub fn on_dynamic(mut self, target: rhai::Dynamic) -> Self {
-        if let Some(voice) = target.clone().try_cast::<Voice>() {
+        if let Some(mut voice) = target.clone().try_cast::<Voice>() {
+            voice.resolve_name();
             self.target_type = FadeTargetType::Voice;
             self.target_name = voice.name.clone();
         } else if let Some(fx) = target.clone().try_cast::<Fx>() {
@@ -399,13 +431,13 @@ impl Fade {
 
     /// Set duration in beats.
     pub fn over(mut self, beats: f64) -> Self {
-        self.duration_beats = beats;
+        self.duration_beats = beats.max(0.0625); // minimum 1/64th note
         self
     }
 
-    /// Set duration in bars.
+    /// Set duration in bars. Minimum 1/64th note.
     pub fn over_bars(mut self, bars: i64) -> Self {
-        self.duration_beats = bars as f64 * 4.0;
+        self.duration_beats = (bars as f64 * 4.0).max(0.0625);
         self
     }
 
@@ -563,7 +595,10 @@ impl Fade {
     /// Registers the fade as a stateful entity in the script state.
     /// On reload, unchanged fades are not re-fired — only new or modified
     /// fades are started. This prevents fades from resetting on every save.
-    pub fn start(self) -> Self {
+    ///
+    /// For anonymous fades, resolves the name from target + param before registering.
+    pub fn start(mut self) -> Self {
+        self.resolve_name();
         let config = self.to_config();
         let fade_id = context::get_or_create_fade_id(&self.name);
         context::with_state(|state| {
@@ -585,7 +620,8 @@ impl Fade {
     /// Useful for re-firing a fade that has already completed or is still running.
     /// Unlike `start()` and `now()`, this will always re-trigger the fade on reload,
     /// even if the configuration hasn't changed.
-    pub fn restart(self) -> Self {
+    pub fn restart(mut self) -> Self {
+        self.resolve_name();
         let config = self.to_config();
         let fade_id = context::get_or_create_fade_id(&self.name);
         context::with_state(|state| {
@@ -600,7 +636,8 @@ impl Fade {
     ///
     /// Registers the fade as a stateful entity. On reload, unchanged fades
     /// are not re-fired — only new or modified fades are started.
-    pub fn now(self) -> Self {
+    pub fn now(mut self) -> Self {
+        self.resolve_name();
         let config = self.to_config();
         let fade_id = context::get_or_create_fade_id(&self.name);
         context::with_state(|state| {
@@ -691,6 +728,11 @@ pub fn fade(name: String) -> Fade {
     Fade::new(name)
 }
 
+/// Create an anonymous fade builder (name resolved from target + param).
+pub fn fade_anon() -> Fade {
+    Fade::new_anon()
+}
+
 /// Create a new fx builder.
 pub fn fx(ctx: NativeCallContext, id: String) -> Fx {
     Fx::new(ctx, id)
@@ -703,9 +745,10 @@ pub fn register(engine: &mut Engine) {
     engine.build_type::<Fade>();
     engine.build_type::<Fx>();
 
-    // Constructors
+    // Constructors (named and anonymous overloads)
     engine.register_fn("sequence", sequence);
     engine.register_fn("fade", fade);
+    engine.register_fn("fade", fade_anon);
     engine.register_fn("fx", fx);
 
     // Sequence builder methods

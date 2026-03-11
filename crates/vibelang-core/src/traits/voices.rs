@@ -10,8 +10,26 @@ use crate::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;
 
+/// Tolerance for floating-point comparisons in voice data.
+/// This prevents false "updates" during reload due to float precision issues.
+const FLOAT_TOLERANCE: f32 = 1e-6;
+
+/// Compare two ParamMaps with tolerance for f32 values.
+fn params_equal(a: &ParamMap, b: &ParamMap) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    for (key, &value) in a {
+        match b.get(key) {
+            Some(&other_value) if (value - other_value).abs() < FLOAT_TOLERANCE => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
 /// Configuration for creating a voice.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct VoiceConfig {
     /// Voice name (for display in TUI/API).
     pub name: String,
@@ -82,6 +100,35 @@ pub struct VoiceConfig {
     #[cfg(feature = "midi")]
     pub param_cc_map: HashMap<String, u8>,
 }
+
+impl PartialEq for VoiceConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.synthdef == other.synthdef
+            && self.group == other.group
+            && self.polyphony == other.polyphony
+            && params_equal(&self.params, &other.params)
+            && self.muted == other.muted
+            && self.soloed == other.soloed
+            && self.sfz_instrument == other.sfz_instrument
+            && self.sample_id == other.sample_id
+            && self.round_robin_count == other.round_robin_count
+            && self.choke_group == other.choke_group
+            && self.modulations == other.modulations
+            && {
+                #[cfg(feature = "midi")]
+                {
+                    self.midi_output == other.midi_output
+                        && self.midi_channel == other.midi_channel
+                        && self.param_cc_map == other.param_cc_map
+                }
+                #[cfg(not(feature = "midi"))]
+                true
+            }
+    }
+}
+
+impl Eq for VoiceConfig {}
 
 impl VoiceConfig {
     /// Create a new voice configuration.

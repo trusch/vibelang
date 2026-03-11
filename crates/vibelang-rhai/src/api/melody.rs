@@ -78,6 +78,8 @@ struct MelodyNote {
     notes: Vec<u8>, // MIDI note numbers
     velocity: f64,
     gate: f64,
+    /// Per-note voice parameters (e.g., cutoff, pan, resonance).
+    params: std::collections::HashMap<String, f32>,
 }
 
 impl Melody {
@@ -97,6 +99,52 @@ impl Melody {
         }
     }
 
+    /// Create an anonymous melody (name resolved at finalization).
+    pub fn new_anon(_ctx: NativeCallContext) -> Self {
+        Self {
+            name: String::new(),
+            voice_name: None,
+            notes: Vec::new(),
+            length: 4.0,
+            gate: 0.5,
+            transpose: 0,
+            swing: 0.0,
+            group_path: context::current_group_path(),
+            root: None,
+            scale: None,
+        }
+    }
+
+    /// Create a melody for testing purposes (no call context needed).
+    #[cfg(test)]
+    fn new_for_test(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            voice_name: None,
+            notes: Vec::new(),
+            length: 4.0,
+            gate: 0.5,
+            transpose: 0,
+            swing: 0.0,
+            group_path: String::new(),
+            root: None,
+            scale: None,
+        }
+    }
+
+    /// Resolve the name for an anonymous melody from its voice target.
+    ///
+    /// Uses the voice name to generate `_{voice_name}_mel`.
+    /// No-op if the melody already has a name.
+    fn resolve_name(&mut self) {
+        if !self.name.is_empty() {
+            return;
+        }
+        let voice = self.voice_name.as_deref().unwrap_or("unknown");
+        let base = format!("_{}_mel", voice);
+        self.name = context::resolve_auto_name(&base);
+    }
+
     // === Builder methods ===
 
     /// Set the voice to trigger (by name).
@@ -107,8 +155,9 @@ impl Melody {
 
     /// Set the voice to trigger (by Voice object).
     ///
-    /// This also syncs the voice's current state in case it has been modified.
-    pub fn on_voice(mut self, voice: Voice) -> Self {
+    /// This also resolves anonymous voice names and syncs the voice's current state.
+    pub fn on_voice(mut self, mut voice: Voice) -> Self {
+        voice.resolve_name();
         voice.sync_to_state();
         self.voice_name = Some(voice.name);
         self
@@ -134,6 +183,12 @@ impl Melody {
     }
 
     /// Set notes from a string pattern.
+    ///
+    /// Supports per-note parameter overrides via `[key=value]` syntax:
+    /// - `C4[velocity=100]` — set velocity for this note
+    /// - `C4[vel=80,cutoff=2000]` — set velocity and cutoff
+    /// - `1[pan=-0.5]` — set pan for scale degree
+    /// - `[C4 E4 G4][vel=100]` — set velocity for chord
     pub fn notes(mut self, notes_str: String) -> Self {
         let bars = split_into_bars(&notes_str);
         let num_bars = bars.len().max(1);
@@ -148,6 +203,9 @@ impl Melody {
         let mut current_notes: Option<Vec<u8>> = None;
         let mut note_start_beat: f64 = 0.0;
         let mut note_duration: f64 = 0.0;
+        let mut current_velocity: f64 = 1.0;
+        let mut current_params: std::collections::HashMap<String, f32> =
+            std::collections::HashMap::new();
 
         for bar in bars {
             let tokens = tokenize_bar(&bar);
@@ -172,27 +230,39 @@ impl Melody {
                             self.notes.push(MelodyNote {
                                 beat: note_start_beat,
                                 notes: midi_notes,
-                                velocity: 1.0,
+                                velocity: current_velocity,
                                 gate: note_duration,
+                                params: std::mem::take(&mut current_params),
                             });
                         }
                     }
-                    NoteToken::Notes(midi_notes) => {
+                    NoteToken::Notes(midi_notes, note_params) => {
                         if let Some(prev_notes) = current_notes.take() {
                             self.notes.push(MelodyNote {
                                 beat: note_start_beat,
                                 notes: prev_notes,
-                                velocity: 1.0,
+                                velocity: current_velocity,
                                 gate: note_duration,
+                                params: std::mem::take(&mut current_params),
                             });
                         }
                         current_notes = Some(midi_notes.clone());
                         note_start_beat = beat;
                         note_duration = beat_per_token;
+                        current_velocity = note_params.velocity.unwrap_or(1.0);
+                        current_params = note_params.params.clone();
+                        if let Some(gate_override) = note_params.gate {
+                            // Gate override will be applied when committing
+                            // Store it as a multiplier on note_duration later
+                            // For now, we track it via the params and apply at commit
+                            current_params
+                                .insert("_gate_override".to_string(), gate_override as f32);
+                        }
                     }
                     NoteToken::ScaleDegree {
                         degree,
                         octave_offset,
+                        params: note_params,
                     } => {
                         // Resolve scale degree to MIDI note
                         if let Some(midi) =
@@ -202,13 +272,20 @@ impl Melody {
                                 self.notes.push(MelodyNote {
                                     beat: note_start_beat,
                                     notes: prev_notes,
-                                    velocity: 1.0,
+                                    velocity: current_velocity,
                                     gate: note_duration,
+                                    params: std::mem::take(&mut current_params),
                                 });
                             }
                             current_notes = Some(vec![midi]);
                             note_start_beat = beat;
                             note_duration = beat_per_token;
+                            current_velocity = note_params.velocity.unwrap_or(1.0);
+                            current_params = note_params.params.clone();
+                            if let Some(gate_override) = note_params.gate {
+                                current_params
+                                    .insert("_gate_override".to_string(), gate_override as f32);
+                            }
                         }
                     }
                 }
@@ -222,8 +299,9 @@ impl Melody {
             self.notes.push(MelodyNote {
                 beat: note_start_beat,
                 notes: midi_notes,
-                velocity: 1.0,
+                velocity: current_velocity,
                 gate: note_duration,
+                params: current_params,
             });
         }
 
@@ -248,6 +326,7 @@ impl Melody {
                     notes: vec![midi],
                     velocity: 1.0,
                     gate: beat_per_note * self.gate,
+                    params: std::collections::HashMap::new(),
                 });
             } else if let Some(chord_notes) = note.clone().try_cast::<rhai::Array>() {
                 // Handle chord (array of notes)
@@ -261,6 +340,7 @@ impl Melody {
                         notes: midi_notes,
                         velocity: 1.0,
                         gate: beat_per_note * self.gate,
+                        params: std::collections::HashMap::new(),
                     });
                 }
             }
@@ -282,6 +362,7 @@ impl Melody {
             notes: vec![note.clamp(0, 127) as u8],
             velocity: velocity.clamp(0.0, 1.0),
             gate: duration,
+            params: std::collections::HashMap::new(),
         });
         self
     }
@@ -311,6 +392,7 @@ impl Melody {
                 notes: midi_notes,
                 velocity: velocity.clamp(0.0, 1.0),
                 gate: duration,
+                params: std::collections::HashMap::new(),
             });
         }
         self
@@ -341,7 +423,12 @@ impl Melody {
     }
 
     /// Sync melody to script state.
+    ///
+    /// Skips registration for anonymous melodies (empty name) not yet resolved.
     pub fn sync_to_state(&self) {
+        if self.name.is_empty() {
+            return; // Anonymous melody not yet resolved — defer registration
+        }
         tracing::debug!("Melody::sync_to_state called for '{}'", self.name);
         let melody_id = context::get_or_create_melody_id(&self.name);
         let voice_id = self
@@ -364,13 +451,26 @@ impl Melody {
             .iter()
             .flat_map(|n| {
                 let transpose = self.transpose;
+                let params = n.params.clone();
+                // Handle gate override from per-note params
+                let gate = if let Some(gate_override) = params.get("_gate_override") {
+                    *gate_override as f64
+                } else {
+                    n.gate
+                };
+                // Filter out internal params (prefixed with _)
+                let clean_params: std::collections::HashMap<String, f32> = params
+                    .into_iter()
+                    .filter(|(k, _)| !k.starts_with('_'))
+                    .collect();
                 n.notes.iter().map(move |&note| {
                     let transposed = (note as i64 + transpose).clamp(0, 127) as u8;
                     NoteEvent {
                         beat: Beat::from_f64(n.beat),
                         note: transposed,
                         velocity: n.velocity as f32,
-                        duration: Beat::from_f64(n.gate),
+                        duration: Beat::from_f64(gate),
+                        params: clean_params.clone(),
                     }
                 })
             })
@@ -412,7 +512,10 @@ impl Melody {
     }
 
     /// Register and apply the melody (chainable).
-    pub fn apply(self) -> Self {
+    ///
+    /// For anonymous melodies, resolves the name from the voice target before registering.
+    pub fn apply(mut self) -> Self {
+        self.resolve_name();
         self.sync_to_state();
         // Store in registry for later lookup
         store_melody(&self);
@@ -420,7 +523,10 @@ impl Melody {
     }
 
     /// Start the melody playing (chainable).
-    pub fn start(self) -> Self {
+    ///
+    /// For anonymous melodies, resolves the name from the voice target before registering.
+    pub fn start(mut self) -> Self {
+        self.resolve_name();
         self.sync_to_state();
 
         let melody_id = context::get_or_create_melody_id(&self.name);
@@ -462,15 +568,35 @@ impl Melody {
     }
 }
 
+/// Per-note parameter overrides parsed from `[key=value, ...]` syntax.
+///
+/// Special parameters:
+/// - `velocity` / `vel`: Overrides note velocity (values > 1.0 treated as MIDI 0-127)
+/// - `gate`: Overrides note gate/duration ratio
+/// - All others: Passed as arbitrary voice/synth params at note-on time
+#[derive(Debug, Clone, Default)]
+struct NoteParams {
+    /// Velocity override (normalized 0.0-1.0).
+    velocity: Option<f64>,
+    /// Gate override (duration ratio).
+    gate: Option<f64>,
+    /// Arbitrary voice parameters (cutoff, pan, resonance, etc.).
+    params: std::collections::HashMap<String, f32>,
+}
+
 /// Token type for bar parsing.
 #[derive(Debug, Clone)]
 enum NoteToken {
-    /// Absolute MIDI note(s).
-    Notes(Vec<u8>),
-    /// Scale degree (1-7) with octave offset.
+    /// Absolute MIDI note(s) with optional per-note parameters.
+    Notes(Vec<u8>, NoteParams),
+    /// Scale degree (1-7) with octave offset and optional per-note parameters.
     /// degree: 1-7 (1 = root)
     /// octave_offset: positive = up, negative = down
-    ScaleDegree { degree: u8, octave_offset: i8 },
+    ScaleDegree {
+        degree: u8,
+        octave_offset: i8,
+        params: NoteParams,
+    },
     /// Tie/hold previous note.
     Tie,
     /// Rest (silence).
@@ -486,6 +612,107 @@ fn split_into_bars(pattern: &str) -> Vec<String> {
         .collect()
 }
 
+/// Parse per-note parameters from `[key=value, ...]` syntax.
+///
+/// Reads from the current position in the char iterator, expecting `[` as the
+/// next character. Parses key=value pairs separated by commas or spaces.
+///
+/// Special parameter handling:
+/// - `velocity` / `vel`: Normalized to 0.0-1.0 (values > 1.0 treated as MIDI 0-127)
+/// - `gate`: Stored as-is (duration ratio)
+/// - All others: Stored as f32 voice/synth parameters
+///
+/// Example inputs: `[velocity=100]`, `[vel=0.8,cutoff=2000,pan=-0.5]`
+fn parse_note_params(chars: &mut std::iter::Peekable<std::str::Chars>) -> NoteParams {
+    let mut params = NoteParams::default();
+
+    // Check if next char is '['
+    if chars.peek() != Some(&'[') {
+        return params;
+    }
+    chars.next(); // consume '['
+
+    // Parse key=value pairs
+    loop {
+        // Skip whitespace and commas
+        while let Some(&c) = chars.peek() {
+            if c == ' ' || c == '\t' || c == ',' {
+                chars.next();
+            } else {
+                break;
+            }
+        }
+
+        // Check for end
+        if chars.peek() == Some(&']') {
+            chars.next(); // consume ']'
+            break;
+        }
+
+        // No more chars = unterminated bracket, stop
+        if chars.peek().is_none() {
+            break;
+        }
+
+        // Parse key
+        let mut key = String::new();
+        while let Some(&c) = chars.peek() {
+            if c.is_alphanumeric() || c == '_' {
+                key.push(chars.next().unwrap());
+            } else {
+                break;
+            }
+        }
+
+        // Expect '='
+        if chars.peek() != Some(&'=') {
+            // Malformed, skip to ']' or end
+            while let Some(&c) = chars.peek() {
+                if c == ']' {
+                    chars.next();
+                    return params;
+                }
+                chars.next();
+            }
+            return params;
+        }
+        chars.next(); // consume '='
+
+        // Parse value (can be negative, float)
+        let mut value_str = String::new();
+        while let Some(&c) = chars.peek() {
+            if c == '-' || c == '.' || c.is_ascii_digit() {
+                value_str.push(chars.next().unwrap());
+            } else {
+                break;
+            }
+        }
+
+        if let Ok(value) = value_str.parse::<f64>() {
+            let key_lower = key.to_lowercase();
+            match key_lower.as_str() {
+                "velocity" | "vel" => {
+                    // Normalize: values > 1.0 are treated as MIDI 0-127
+                    let normalized = if value > 1.0 {
+                        (value / 127.0).clamp(0.0, 1.0)
+                    } else {
+                        value.clamp(0.0, 1.0)
+                    };
+                    params.velocity = Some(normalized);
+                }
+                "gate" => {
+                    params.gate = Some(value.max(0.0));
+                }
+                _ => {
+                    params.params.insert(key_lower, value as f32);
+                }
+            }
+        }
+    }
+
+    params
+}
+
 /// Tokenize a bar string into note tokens.
 ///
 /// Supports:
@@ -496,6 +723,7 @@ fn split_into_bars(pattern: &str) -> Vec<String> {
 /// - Octave down: `,` (can stack: `1,,` = two octaves down)
 /// - Tie/hold: `-`
 /// - Rest: `.` or `_`
+/// - Per-note params: `C4[velocity=100,cutoff=2000]`, `1[vel=80]`
 fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
     let mut tokens = Vec::new();
     let mut chars = bar.chars().peekable();
@@ -505,7 +733,7 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
             // Whitespace is ignored
             ' ' | '\t' | '\n' | '\r' => {}
 
-            // Chord bracket notation: [C4 E4 G4]
+            // Chord bracket notation: [C4 E4 G4] with optional params [C4 E4 G4][vel=80]
             '[' => {
                 let mut chord_notes = Vec::new();
                 let mut current_note = String::new();
@@ -535,7 +763,9 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
                 }
 
                 if !chord_notes.is_empty() {
-                    tokens.push(NoteToken::Notes(chord_notes));
+                    // Check for per-note params after chord brackets
+                    let note_params = parse_note_params(&mut chars);
+                    tokens.push(NoteToken::Notes(chord_notes, note_params));
                 }
             }
 
@@ -565,9 +795,13 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
                     }
                 }
 
+                // Check for per-note params after scale degree
+                let note_params = parse_note_params(&mut chars);
+
                 tokens.push(NoteToken::ScaleDegree {
                     degree,
                     octave_offset,
+                    params: note_params,
                 });
             }
 
@@ -609,7 +843,9 @@ fn tokenize_bar(bar: &str) -> Vec<NoteToken> {
                     } else {
                         vec![root_midi]
                     };
-                    tokens.push(NoteToken::Notes(midi_notes));
+                    // Check for per-note params after note/chord
+                    let note_params = parse_note_params(&mut chars);
+                    tokens.push(NoteToken::Notes(midi_notes, note_params));
                 }
             }
 
@@ -799,11 +1035,18 @@ pub fn melody(ctx: NativeCallContext, name: String) -> Melody {
     Melody::new(ctx, name)
 }
 
+/// Create an anonymous melody builder (name resolved from voice target).
+pub fn melody_anon(ctx: NativeCallContext) -> Melody {
+    Melody::new_anon(ctx)
+}
+
 /// Register melody API with the Rhai engine.
 pub fn register(engine: &mut Engine) {
     engine.build_type::<Melody>();
 
+    // Constructor (named and anonymous overloads)
     engine.register_fn("melody", melody);
+    engine.register_fn("melody", melody_anon);
 
     engine.register_fn("on", Melody::on);
     engine.register_fn("on", Melody::on_voice);
@@ -844,6 +1087,7 @@ mod tests {
                 NoteToken::ScaleDegree {
                     degree,
                     octave_offset,
+                    ..
                 } => {
                     assert_eq!(*degree, (i + 1) as u8);
                     assert_eq!(*octave_offset, 0);
@@ -862,6 +1106,7 @@ mod tests {
             NoteToken::ScaleDegree {
                 degree,
                 octave_offset,
+                ..
             } => {
                 assert_eq!(*degree, 1);
                 assert_eq!(*octave_offset, 1);
@@ -873,6 +1118,7 @@ mod tests {
             NoteToken::ScaleDegree {
                 degree,
                 octave_offset,
+                ..
             } => {
                 assert_eq!(*degree, 2);
                 assert_eq!(*octave_offset, 2);
@@ -884,6 +1130,7 @@ mod tests {
             NoteToken::ScaleDegree {
                 degree,
                 octave_offset,
+                ..
             } => {
                 assert_eq!(*degree, 3);
                 assert_eq!(*octave_offset, 3);
@@ -901,6 +1148,7 @@ mod tests {
             NoteToken::ScaleDegree {
                 degree,
                 octave_offset,
+                ..
             } => {
                 assert_eq!(*degree, 1);
                 assert_eq!(*octave_offset, -1);
@@ -912,6 +1160,7 @@ mod tests {
             NoteToken::ScaleDegree {
                 degree,
                 octave_offset,
+                ..
             } => {
                 assert_eq!(*degree, 2);
                 assert_eq!(*octave_offset, -2);
@@ -923,6 +1172,7 @@ mod tests {
             NoteToken::ScaleDegree {
                 degree,
                 octave_offset,
+                ..
             } => {
                 assert_eq!(*degree, 3);
                 assert_eq!(*octave_offset, -3);
@@ -940,17 +1190,19 @@ mod tests {
             &tokens[0],
             NoteToken::ScaleDegree {
                 degree: 1,
-                octave_offset: 0
+                octave_offset: 0,
+                ..
             }
         ));
         assert!(matches!(&tokens[1], NoteToken::Tie));
         assert!(matches!(&tokens[2], NoteToken::Rest));
-        assert!(matches!(&tokens[3], NoteToken::Notes(_)));
+        assert!(matches!(&tokens[3], NoteToken::Notes(_, _)));
         assert!(matches!(
             &tokens[4],
             NoteToken::ScaleDegree {
                 degree: 2,
-                octave_offset: 1
+                octave_offset: 1,
+                ..
             }
         ));
     }
@@ -974,7 +1226,7 @@ mod tests {
         let tokens = tokenize_bar("[C4 E4 G4]");
         assert_eq!(tokens.len(), 1);
         match &tokens[0] {
-            NoteToken::Notes(notes) => {
+            NoteToken::Notes(notes, _) => {
                 assert_eq!(notes.len(), 3);
                 assert_eq!(notes[0], 60); // C4
                 assert_eq!(notes[1], 64); // E4
@@ -986,7 +1238,7 @@ mod tests {
         // Chord followed by ties
         let tokens = tokenize_bar("[A3 C4 E4] - - -");
         assert_eq!(tokens.len(), 4);
-        assert!(matches!(&tokens[0], NoteToken::Notes(_)));
+        assert!(matches!(&tokens[0], NoteToken::Notes(_, _)));
         assert!(matches!(&tokens[1], NoteToken::Tie));
         assert!(matches!(&tokens[2], NoteToken::Tie));
         assert!(matches!(&tokens[3], NoteToken::Tie));
@@ -995,7 +1247,7 @@ mod tests {
         let tokens = tokenize_bar("[C4 E4] [G4 B4]");
         assert_eq!(tokens.len(), 2);
         match &tokens[0] {
-            NoteToken::Notes(notes) => {
+            NoteToken::Notes(notes, _) => {
                 assert_eq!(notes.len(), 2);
                 assert_eq!(notes[0], 60); // C4
                 assert_eq!(notes[1], 64); // E4
@@ -1003,7 +1255,7 @@ mod tests {
             _ => panic!("Expected Notes"),
         }
         match &tokens[1] {
-            NoteToken::Notes(notes) => {
+            NoteToken::Notes(notes, _) => {
                 assert_eq!(notes.len(), 2);
                 assert_eq!(notes[0], 67); // G4
                 assert_eq!(notes[1], 71); // B4
@@ -1138,5 +1390,556 @@ mod tests {
     #[test]
     fn test_scale_intervals_unknown_defaults_to_major() {
         assert_eq!(get_scale_intervals("unknown"), vec![0, 2, 4, 5, 7, 9, 11]);
+    }
+
+    // ==================== Per-Note Parameter Tests ====================
+
+    #[test]
+    fn test_parse_note_params_empty() {
+        let mut chars = "".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_none());
+        assert!(params.gate.is_none());
+        assert!(params.params.is_empty());
+    }
+
+    #[test]
+    fn test_parse_note_params_velocity_midi() {
+        let mut chars = "[velocity=100]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_some());
+        // 100/127 ≈ 0.787
+        let vel = params.velocity.unwrap();
+        assert!((vel - 100.0 / 127.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_note_params_velocity_normalized() {
+        let mut chars = "[vel=0.5]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_some());
+        assert!((params.velocity.unwrap() - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_note_params_multiple() {
+        let mut chars = "[vel=100,cutoff=2000,pan=-0.5]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_some());
+        assert!((params.params["cutoff"] - 2000.0).abs() < 0.001);
+        assert!((params.params["pan"] - (-0.5)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_note_params_gate() {
+        let mut chars = "[gate=0.8]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.gate.is_some());
+        assert!((params.gate.unwrap() - 0.8).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_note_params_with_spaces() {
+        let mut chars = "[vel=80, cutoff=1500]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_some());
+        assert!((params.params["cutoff"] - 1500.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_tokenize_note_with_velocity() {
+        let tokens = tokenize_bar("C4[velocity=100]");
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0] {
+            NoteToken::Notes(notes, params) => {
+                assert_eq!(notes, &[60]); // C4
+                assert!(params.velocity.is_some());
+                let vel = params.velocity.unwrap();
+                assert!((vel - 100.0 / 127.0).abs() < 0.001);
+            }
+            _ => panic!("Expected Notes"),
+        }
+    }
+
+    #[test]
+    fn test_tokenize_note_with_multiple_params() {
+        let tokens = tokenize_bar("D#3[vel=0.8,cutoff=2000]");
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0] {
+            NoteToken::Notes(notes, params) => {
+                assert_eq!(notes, &[51]); // D#3
+                assert!(params.velocity.is_some());
+                assert!((params.velocity.unwrap() - 0.8).abs() < 0.001);
+                assert!((params.params["cutoff"] - 2000.0).abs() < 0.001);
+            }
+            _ => panic!("Expected Notes"),
+        }
+    }
+
+    #[test]
+    fn test_tokenize_scale_degree_with_params() {
+        let tokens = tokenize_bar("1[velocity=100]");
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0] {
+            NoteToken::ScaleDegree {
+                degree,
+                octave_offset,
+                params,
+            } => {
+                assert_eq!(*degree, 1);
+                assert_eq!(*octave_offset, 0);
+                assert!(params.velocity.is_some());
+            }
+            _ => panic!("Expected ScaleDegree"),
+        }
+    }
+
+    #[test]
+    fn test_tokenize_scale_degree_octave_with_params() {
+        let tokens = tokenize_bar("3'[vel=50,pan=-1.0]");
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0] {
+            NoteToken::ScaleDegree {
+                degree,
+                octave_offset,
+                params,
+            } => {
+                assert_eq!(*degree, 3);
+                assert_eq!(*octave_offset, 1);
+                assert!(params.velocity.is_some());
+                assert!((params.params["pan"] - (-1.0)).abs() < 0.001);
+            }
+            _ => panic!("Expected ScaleDegree"),
+        }
+    }
+
+    #[test]
+    fn test_tokenize_chord_brackets_with_params() {
+        let tokens = tokenize_bar("[C4 E4 G4][velocity=50]");
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0] {
+            NoteToken::Notes(notes, params) => {
+                assert_eq!(notes.len(), 3);
+                assert_eq!(notes[0], 60); // C4
+                assert_eq!(notes[1], 64); // E4
+                assert_eq!(notes[2], 67); // G4
+                assert!(params.velocity.is_some());
+            }
+            _ => panic!("Expected Notes"),
+        }
+    }
+
+    #[test]
+    fn test_tokenize_chord_suffix_with_params() {
+        let tokens = tokenize_bar("C4:m7[vel=0.3]");
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0] {
+            NoteToken::Notes(notes, params) => {
+                // C minor 7th: C4(60) Eb4(63) G4(67) Bb4(70)
+                assert_eq!(notes.len(), 4);
+                assert_eq!(notes[0], 60);
+                assert_eq!(notes[1], 63);
+                assert_eq!(notes[2], 67);
+                assert_eq!(notes[3], 70);
+                assert!(params.velocity.is_some());
+                assert!((params.velocity.unwrap() - 0.3).abs() < 0.001);
+            }
+            _ => panic!("Expected Notes"),
+        }
+    }
+
+    #[test]
+    fn test_tokenize_mixed_params_and_no_params() {
+        let tokens = tokenize_bar("C4[velocity=100] C3[velocity=50] C2 C1[velocity=100]");
+        assert_eq!(tokens.len(), 4);
+
+        // C4 with velocity
+        match &tokens[0] {
+            NoteToken::Notes(notes, params) => {
+                assert_eq!(notes, &[60]);
+                assert!(params.velocity.is_some());
+            }
+            _ => panic!("Expected Notes"),
+        }
+
+        // C3 with velocity
+        match &tokens[1] {
+            NoteToken::Notes(notes, params) => {
+                assert_eq!(notes, &[48]);
+                assert!(params.velocity.is_some());
+            }
+            _ => panic!("Expected Notes"),
+        }
+
+        // C2 without params
+        match &tokens[2] {
+            NoteToken::Notes(notes, params) => {
+                assert_eq!(notes, &[36]);
+                assert!(params.velocity.is_none());
+            }
+            _ => panic!("Expected Notes"),
+        }
+
+        // C1 with velocity
+        match &tokens[3] {
+            NoteToken::Notes(notes, params) => {
+                assert_eq!(notes, &[24]);
+                assert!(params.velocity.is_some());
+            }
+            _ => panic!("Expected Notes"),
+        }
+    }
+
+    #[test]
+    fn test_tokenize_params_with_arbitrary_voice_params() {
+        let tokens = tokenize_bar("C4[cutoff=2000,resonance=0.8,attack=0.01]");
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0] {
+            NoteToken::Notes(_, params) => {
+                assert!(params.velocity.is_none()); // No velocity override
+                assert!((params.params["cutoff"] - 2000.0).abs() < 0.001);
+                assert!((params.params["resonance"] - 0.8).abs() < 0.001);
+                assert!((params.params["attack"] - 0.01).abs() < 0.001);
+            }
+            _ => panic!("Expected Notes"),
+        }
+    }
+
+    // ==================== Parser Edge Cases ====================
+
+    #[test]
+    fn test_parse_note_params_empty_brackets() {
+        let mut chars = "[]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_none());
+        assert!(params.gate.is_none());
+        assert!(params.params.is_empty());
+    }
+
+    #[test]
+    fn test_parse_note_params_unterminated_bracket() {
+        // Unterminated bracket should not crash, just stop parsing
+        let mut chars = "[vel=80".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        // Should still parse what it can
+        assert!(params.velocity.is_some());
+    }
+
+    #[test]
+    fn test_parse_note_params_no_bracket() {
+        // No bracket means no params
+        let mut chars = " C4".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_none());
+        assert!(params.params.is_empty());
+        // The iterator should not consume any chars
+        assert_eq!(chars.next(), Some(' '));
+    }
+
+    #[test]
+    fn test_parse_note_params_malformed_no_equals() {
+        // Malformed: key without =value
+        let mut chars = "[cutoff]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        // Should gracefully handle malformed params
+        assert!(params.params.is_empty());
+    }
+
+    #[test]
+    fn test_parse_note_params_velocity_clamped_above() {
+        // Velocity above 127 should be clamped to 1.0
+        let mut chars = "[vel=200]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_some());
+        assert!(
+            params.velocity.unwrap() <= 1.0,
+            "Velocity should be clamped to 1.0"
+        );
+    }
+
+    #[test]
+    fn test_parse_note_params_velocity_zero() {
+        let mut chars = "[vel=0]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_some());
+        assert!((params.velocity.unwrap() - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_note_params_negative_value() {
+        let mut chars = "[pan=-1.0]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!((params.params["pan"] - (-1.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_note_params_case_insensitive_keys() {
+        let mut chars = "[Velocity=100]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(
+            params.velocity.is_some(),
+            "Velocity key should be case-insensitive"
+        );
+    }
+
+    #[test]
+    fn test_parse_note_params_vel_alias() {
+        let mut chars = "[vel=0.7]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_some());
+        assert!((params.velocity.unwrap() - 0.7).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_note_params_gate_zero() {
+        // Gate of 0 should be clamped to 0 (not negative)
+        let mut chars = "[gate=0]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.gate.is_some());
+        assert!((params.gate.unwrap() - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_note_params_integer_param() {
+        let mut chars = "[cutoff=800]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!((params.params["cutoff"] - 800.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_note_params_many_params() {
+        let mut chars =
+            "[vel=80,cutoff=2000,resonance=0.9,pan=-0.3,attack=0.01,release=0.5]"
+                .chars()
+                .peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_some());
+        assert_eq!(params.params.len(), 5); // cutoff, resonance, pan, attack, release
+        assert!((params.params["cutoff"] - 2000.0).abs() < 0.001);
+        assert!((params.params["resonance"] - 0.9).abs() < 0.001);
+        assert!((params.params["pan"] - (-0.3)).abs() < 0.001);
+        assert!((params.params["attack"] - 0.01).abs() < 0.001);
+        assert!((params.params["release"] - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_note_params_spaces_around_values() {
+        let mut chars = "[vel=80, cutoff=2000, pan=-0.5]".chars().peekable();
+        let params = parse_note_params(&mut chars);
+        assert!(params.velocity.is_some());
+        assert_eq!(params.params.len(), 2);
+    }
+
+    #[test]
+    fn test_tokenize_note_without_params_has_no_params() {
+        let tokens = tokenize_bar("C4");
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0] {
+            NoteToken::Notes(notes, params) => {
+                assert_eq!(notes, &[60]);
+                assert!(params.velocity.is_none());
+                assert!(params.gate.is_none());
+                assert!(params.params.is_empty());
+            }
+            _ => panic!("Expected Notes"),
+        }
+    }
+
+    #[test]
+    fn test_tokenize_notes_with_ties_and_params() {
+        // Params should only be on the note, not on ties
+        let tokens = tokenize_bar("C4[vel=80] - -");
+        assert_eq!(tokens.len(), 3);
+        match &tokens[0] {
+            NoteToken::Notes(_, params) => {
+                assert!(params.velocity.is_some());
+            }
+            _ => panic!("Expected Notes"),
+        }
+        assert!(matches!(&tokens[1], NoteToken::Tie));
+        assert!(matches!(&tokens[2], NoteToken::Tie));
+    }
+
+    #[test]
+    fn test_tokenize_alternating_params() {
+        // Different params on each note
+        let tokens = tokenize_bar("C4[cutoff=2000] D4[cutoff=1000] E4[cutoff=500]");
+        assert_eq!(tokens.len(), 3);
+        for (i, expected_cutoff) in [(0, 2000.0), (1, 1000.0), (2, 500.0)] {
+            match &tokens[i] {
+                NoteToken::Notes(_, params) => {
+                    assert!(
+                        (params.params["cutoff"] - expected_cutoff).abs() < 0.001,
+                        "Token {} should have cutoff={}",
+                        i,
+                        expected_cutoff
+                    );
+                }
+                _ => panic!("Expected Notes at index {}", i),
+            }
+        }
+    }
+
+    // ==================== End-to-End Melody Construction Tests ====================
+
+    #[test]
+    fn test_melody_notes_velocity_override_flows_to_melody_note() {
+        let melody = Melody::new_for_test("test")
+            .notes("C4[velocity=100] D4[vel=0.5] E4".to_string());
+
+        assert_eq!(melody.notes.len(), 3);
+
+        // C4 with velocity=100 (MIDI) → normalized ≈ 0.787
+        let vel_c4 = melody.notes[0].velocity;
+        assert!(
+            (vel_c4 - 100.0 / 127.0).abs() < 0.001,
+            "C4 velocity should be 100/127, got {}",
+            vel_c4
+        );
+
+        // D4 with vel=0.5 → normalized 0.5
+        let vel_d4 = melody.notes[1].velocity;
+        assert!(
+            (vel_d4 - 0.5).abs() < 0.001,
+            "D4 velocity should be 0.5, got {}",
+            vel_d4
+        );
+
+        // E4 with no velocity override → default 1.0
+        let vel_e4 = melody.notes[2].velocity;
+        assert!(
+            (vel_e4 - 1.0).abs() < 0.001,
+            "E4 velocity should be default 1.0, got {}",
+            vel_e4
+        );
+    }
+
+    #[test]
+    fn test_melody_notes_arbitrary_params_flow_to_melody_note() {
+        let melody = Melody::new_for_test("test")
+            .notes("C4[cutoff=2000,pan=-0.5] D4 E4[resonance=0.8]".to_string());
+
+        assert_eq!(melody.notes.len(), 3);
+
+        // C4: cutoff + pan
+        assert_eq!(melody.notes[0].params.len(), 2);
+        assert!((melody.notes[0].params["cutoff"] - 2000.0).abs() < 0.001);
+        assert!((melody.notes[0].params["pan"] - (-0.5)).abs() < 0.001);
+
+        // D4: no params
+        assert!(
+            melody.notes[1].params.is_empty(),
+            "D4 should have no params"
+        );
+
+        // E4: resonance
+        assert_eq!(melody.notes[2].params.len(), 1);
+        assert!((melody.notes[2].params["resonance"] - 0.8).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_melody_notes_gate_override() {
+        let melody = Melody::new_for_test("test")
+            .notes("C4[gate=0.5] D4".to_string());
+
+        assert_eq!(melody.notes.len(), 2);
+
+        // C4: gate override stored as internal param
+        assert!(
+            melody.notes[0].params.contains_key("_gate_override"),
+            "Gate override should be stored as internal param"
+        );
+    }
+
+    #[test]
+    fn test_melody_notes_params_with_ties() {
+        // Params on a note should persist through ties
+        let melody = Melody::new_for_test("test")
+            .notes("C4[cutoff=2000] - - D4".to_string());
+
+        assert_eq!(melody.notes.len(), 2);
+
+        // C4 with ties: should have cutoff param and duration of 3 beats
+        assert_eq!(melody.notes[0].params.len(), 1);
+        assert!((melody.notes[0].params["cutoff"] - 2000.0).abs() < 0.001);
+
+        // D4: no params
+        assert!(melody.notes[1].params.is_empty());
+    }
+
+    #[test]
+    fn test_melody_notes_params_across_bars() {
+        let melody = Melody::new_for_test("test")
+            .notes("C4[cutoff=2000] D4 E4 F4 | G4[pan=0.5] A4 B4 C5".to_string());
+
+        assert_eq!(melody.notes.len(), 8);
+
+        // First bar: C4 has cutoff
+        assert!((melody.notes[0].params["cutoff"] - 2000.0).abs() < 0.001);
+        assert!(melody.notes[1].params.is_empty()); // D4
+        assert!(melody.notes[2].params.is_empty()); // E4
+        assert!(melody.notes[3].params.is_empty()); // F4
+
+        // Second bar: G4 has pan
+        assert!((melody.notes[4].params["pan"] - 0.5).abs() < 0.001);
+        assert!(melody.notes[5].params.is_empty()); // A4
+    }
+
+    #[test]
+    fn test_melody_notes_scale_degree_with_params() {
+        let melody = Melody::new_for_test("test")
+            .root("C4".to_string())
+            .scale("major".to_string())
+            .notes("1[cutoff=2000] 3[pan=-0.5] 5".to_string());
+
+        assert_eq!(melody.notes.len(), 3);
+
+        // Degree 1: C4 with cutoff
+        assert!((melody.notes[0].params["cutoff"] - 2000.0).abs() < 0.001);
+
+        // Degree 3: E4 with pan
+        assert!((melody.notes[1].params["pan"] - (-0.5)).abs() < 0.001);
+
+        // Degree 5: G4 with no params
+        assert!(melody.notes[2].params.is_empty());
+    }
+
+    #[test]
+    fn test_melody_notes_combined_velocity_and_params() {
+        let melody = Melody::new_for_test("test")
+            .notes("C4[vel=80,cutoff=2000] D4[vel=40]".to_string());
+
+        assert_eq!(melody.notes.len(), 2);
+
+        // C4: velocity override + cutoff param
+        let vel_c4 = melody.notes[0].velocity;
+        assert!(
+            (vel_c4 - 80.0 / 127.0).abs() < 0.001,
+            "C4 velocity should be 80/127"
+        );
+        assert!((melody.notes[0].params["cutoff"] - 2000.0).abs() < 0.001);
+
+        // D4: velocity override only, no extra params
+        let vel_d4 = melody.notes[1].velocity;
+        assert!(
+            (vel_d4 - 40.0 / 127.0).abs() < 0.001,
+            "D4 velocity should be 40/127"
+        );
+        assert!(
+            melody.notes[1].params.is_empty(),
+            "D4 should have no extra params"
+        );
+    }
+
+    #[test]
+    fn test_melody_notes_chord_with_params_shared() {
+        // All notes in a chord should share the same params
+        let melody = Melody::new_for_test("test")
+            .notes("[C4 E4 G4][cutoff=1500]".to_string());
+
+        // Each note in the chord becomes a separate NoteEvent
+        assert_eq!(melody.notes.len(), 1); // Still 1 MelodyNote (chord)
+        assert_eq!(melody.notes[0].notes.len(), 3); // 3 MIDI notes
+        assert!((melody.notes[0].params["cutoff"] - 1500.0).abs() < 0.001);
     }
 }

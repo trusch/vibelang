@@ -1,0 +1,17 @@
+[Unit]
+Description=VibeLang Music Runtime
+After=pipewire.service pipewire-pulse.service
+Wants=pipewire.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Music/vibelang
+ExecStart=%h/.cargo/bin/vibe run main.vibe
+Restart=on-failure
+RestartSec=3
+
+# Audio environment
+Environment=PIPEWIRE_LATENCY=256/48000
+
+[Install]
+WantedBy=default.target

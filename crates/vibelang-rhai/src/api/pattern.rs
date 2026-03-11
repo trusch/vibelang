@@ -66,6 +66,32 @@ impl Pattern {
         }
     }
 
+    /// Create an anonymous pattern (name resolved at finalization).
+    pub fn new_anon(_ctx: NativeCallContext) -> Self {
+        Self {
+            name: String::new(),
+            voice_name: None,
+            steps: None,
+            length: 4.0,
+            swing: 0.0,
+            group_path: context::current_group_path(),
+            params: HashMap::new(),
+        }
+    }
+
+    /// Resolve the name for an anonymous pattern from its voice target.
+    ///
+    /// Uses the voice name to generate `_{voice_name}_pat`.
+    /// No-op if the pattern already has a name.
+    fn resolve_name(&mut self) {
+        if !self.name.is_empty() {
+            return;
+        }
+        let voice = self.voice_name.as_deref().unwrap_or("unknown");
+        let base = format!("_{}_pat", voice);
+        self.name = context::resolve_auto_name(&base);
+    }
+
     // === Builder methods ===
 
     /// Set the voice to trigger (by name).
@@ -76,8 +102,9 @@ impl Pattern {
 
     /// Set the voice to trigger (by Voice object).
     ///
-    /// This also syncs the voice's current state in case it has been modified.
-    pub fn on_voice(mut self, voice: Voice) -> Self {
+    /// This also resolves anonymous voice names and syncs the voice's current state.
+    pub fn on_voice(mut self, mut voice: Voice) -> Self {
+        voice.resolve_name();
         voice.sync_to_state();
         self.voice_name = Some(voice.name);
         self
@@ -122,7 +149,12 @@ impl Pattern {
     }
 
     /// Sync pattern to script state.
+    ///
+    /// Skips registration for anonymous patterns (empty name) not yet resolved.
     fn sync_to_state(&self) {
+        if self.name.is_empty() {
+            return; // Anonymous pattern not yet resolved — defer registration
+        }
         let pattern_id = context::get_or_create_pattern_id(&self.name);
         let voice_id = self
             .voice_name
@@ -157,7 +189,10 @@ impl Pattern {
     }
 
     /// Register and apply the pattern (chainable).
-    pub fn apply(self) -> Self {
+    ///
+    /// For anonymous patterns, resolves the name from the voice target before registering.
+    pub fn apply(mut self) -> Self {
+        self.resolve_name();
         self.sync_to_state();
         // Store in registry for later lookup
         store_pattern(&self);
@@ -165,7 +200,10 @@ impl Pattern {
     }
 
     /// Start the pattern playing (chainable).
-    pub fn start(self) -> Self {
+    ///
+    /// For anonymous patterns, resolves the name from the voice target before registering.
+    pub fn start(mut self) -> Self {
+        self.resolve_name();
         self.sync_to_state();
 
         // Register that this pattern should start
@@ -330,13 +368,19 @@ pub fn pattern(ctx: NativeCallContext, name: String) -> Pattern {
     Pattern::new(ctx, name)
 }
 
+/// Create an anonymous pattern builder (name resolved from voice target).
+pub fn pattern_anon(ctx: NativeCallContext) -> Pattern {
+    Pattern::new_anon(ctx)
+}
+
 /// Register pattern API with the Rhai engine.
 pub fn register(engine: &mut Engine) {
     // Register Pattern type
     engine.build_type::<Pattern>();
 
-    // Constructor
+    // Constructor (named and anonymous overloads)
     engine.register_fn("pattern", pattern);
+    engine.register_fn("pattern", pattern_anon);
 
     // Builder methods
     engine.register_fn("on", Pattern::on);

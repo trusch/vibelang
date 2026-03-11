@@ -7,8 +7,12 @@ use crate::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
 
+/// Tolerance for floating-point comparisons in pattern data.
+/// This prevents false "updates" during reload due to float precision issues.
+const FLOAT_TOLERANCE: f32 = 1e-6;
+
 /// A single step in a pattern.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Step {
     /// Beat position within the pattern (0 to length).
     pub beat: Beat,
@@ -16,6 +20,27 @@ pub struct Step {
     /// Parameters for this step.
     pub params: ParamMap,
 }
+
+impl PartialEq for Step {
+    fn eq(&self, other: &Self) -> bool {
+        if self.beat != other.beat {
+            return false;
+        }
+        if self.params.len() != other.params.len() {
+            return false;
+        }
+        // Compare params with tolerance for f32 values
+        for (key, &value) in &self.params {
+            match other.params.get(key) {
+                Some(&other_value) if (value - other_value).abs() < FLOAT_TOLERANCE => {}
+                _ => return false,
+            }
+        }
+        true
+    }
+}
+
+impl Eq for Step {}
 
 impl Step {
     /// Create a new step at the given beat.
@@ -39,7 +64,7 @@ impl Step {
 }
 
 /// Configuration for creating a pattern.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct PatternConfig {
     /// Pattern name (for display in TUI/API).
     pub name: String,
@@ -56,6 +81,18 @@ pub struct PatternConfig {
     /// Swing amount (0.0 = none, 1.0 = full).
     pub swing: f32,
 }
+
+impl PartialEq for PatternConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.voice == other.voice
+            && self.steps == other.steps
+            && self.length == other.length
+            && (self.swing - other.swing).abs() < FLOAT_TOLERANCE
+    }
+}
+
+impl Eq for PatternConfig {}
 
 impl PatternConfig {
     /// Create a new pattern configuration.

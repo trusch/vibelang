@@ -157,7 +157,7 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
     let current_group_ids: HashSet<GroupId> = current.groups.keys().copied().collect();
     diff.groups = diff_entities(&current_group_ids, &new.groups, |id| {
         current.groups.get(id).map(|g| GroupConfig {
-            name: String::new(), // Runtime doesn't track name
+            name: g.name.clone(),
             parent: g.parent,
             params: g.params.clone(),
             effects: Vec::new(), // TODO: Track effects per group in runtime state

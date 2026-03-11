@@ -93,7 +93,9 @@ impl<B: Backend> PatternsHandler<B> {
                         );
                     }
 
-                    if !pattern.playing || pattern.content.length == Beat::ZERO {
+                    // Skip patterns with zero or near-zero length to prevent runaway triggering
+                    let min_length = Beat::from_f64(0.0625); // 1/64th note
+                    if !pattern.playing || pattern.content.length < min_length {
                         continue;
                     }
 

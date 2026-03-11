@@ -110,6 +110,10 @@ struct ScriptContext {
     /// Import paths for module resolution.
     import_paths: Vec<PathBuf>,
 
+    /// Auto-name collision counters for anonymous entities.
+    /// Maps base name → count. Reset on each script execution.
+    auto_name_counts: HashMap<String, u32>,
+
     /// ID counters for generating unique IDs.
     next_group_id: u32,
     next_voice_id: u32,
@@ -151,6 +155,7 @@ impl Default for ScriptContext {
             group_stack: vec!["main".to_string()],
             current_file: None,
             import_paths: Vec::new(),
+            auto_name_counts: HashMap::new(),
             next_group_id: 1, // Start at 1, 0 is reserved
             next_voice_id: 1,
             next_pattern_id: 1,
@@ -547,5 +552,24 @@ pub fn take_midi_callbacks() -> HashMap<u64, FnPtr> {
             .as_mut()
             .map(|c| std::mem::take(&mut c.midi_callbacks))
             .unwrap_or_default()
+    })
+}
+
+/// Resolve an auto-generated name, handling collisions deterministically.
+///
+/// On first use of a base name, returns it as-is. On subsequent uses,
+/// appends `_2`, `_3`, etc. The counter is reset when the script context
+/// is re-initialized, ensuring deterministic names across reloads.
+pub fn resolve_auto_name(base: &str) -> String {
+    CONTEXT.with(|ctx| {
+        let mut borrow = ctx.borrow_mut();
+        let c = borrow.as_mut().expect("Script context not initialized");
+        let count = c.auto_name_counts.entry(base.to_string()).or_insert(0);
+        *count += 1;
+        if *count == 1 {
+            base.to_string()
+        } else {
+            format!("{}_{}", base, count)
+        }
     })
 }

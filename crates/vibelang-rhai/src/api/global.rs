@@ -26,8 +26,9 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("get_current_bar", get_current_bar);
 }
 
-/// Set the tempo in BPM.
+/// Set the tempo in BPM. Clamped to 1.0–999.0.
 pub fn set_tempo(bpm: f64) {
+    let bpm = bpm.clamp(1.0, 999.0);
     context::with_state(|state| {
         state.tempo = bpm;
     });
@@ -43,12 +44,24 @@ pub fn get_tempo() -> f64 {
     context::get_tempo()
 }
 
-/// Set the time signature.
+/// Set the time signature. Numerator clamped to 1–32, denominator to valid
+/// powers of 2 (1, 2, 4, 8, 16, 32).
 pub fn set_time_signature(numerator: i64, denominator: i64) {
+    let numerator = numerator.clamp(1, 32) as u8;
+    // Snap denominator to nearest power of 2 in range 1–32
+    let denom = denominator.clamp(1, 32) as u8;
+    let denom = match denom {
+        0..=1 => 1,
+        2..=3 => 2,
+        4..=6 => 4,
+        7..=12 => 8,
+        13..=24 => 16,
+        _ => 32,
+    };
     context::with_state(|state| {
         state.time_sig = TimeSignature {
-            numerator: numerator as u8,
-            denominator: denominator as u8,
+            numerator,
+            denominator: denom,
         };
     });
 }

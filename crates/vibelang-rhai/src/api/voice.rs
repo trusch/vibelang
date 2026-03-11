@@ -64,7 +64,7 @@ impl Voice {
     /// Create a new voice with the given name.
     pub fn new(_ctx: NativeCallContext, name: String) -> Self {
         Self {
-            name,
+            name: name,
             synth_name: None,
             group_path: context::current_group_path(),
             polyphony: 4,
@@ -87,15 +87,61 @@ impl Voice {
         }
     }
 
+    /// Create an anonymous voice (name resolved at finalization).
+    pub fn new_anon(_ctx: NativeCallContext) -> Self {
+        Self {
+            name: String::new(),
+            synth_name: None,
+            group_path: context::current_group_path(),
+            polyphony: 4,
+            gain: 1.0,
+            params: HashMap::new(),
+            muted: false,
+            soloed: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            sfz_instrument: None,
+            sample_id: None,
+            round_robin_count: 0,
+            choke_group: None,
+            modulations: HashMap::new(),
+            #[cfg(feature = "midi")]
+            midi_output_device: None,
+            #[cfg(feature = "midi")]
+            midi_channel: 0,
+            #[cfg(feature = "midi")]
+            param_cc_map: HashMap::new(),
+        }
+    }
+
+    /// Resolve the name for an anonymous voice from its structural identity.
+    ///
+    /// Uses the synthdef name and group path to generate a stable, human-readable name.
+    /// No-op if the voice already has a name.
+    pub(crate) fn resolve_name(&mut self) {
+        if !self.name.is_empty() {
+            return;
+        }
+        let synth = self.synth_name.as_deref().unwrap_or("voice");
+        let base = if self.group_path == "main" {
+            format!("_{}", synth)
+        } else {
+            let group_suffix = self.group_path.strip_prefix("main/").unwrap_or(&self.group_path);
+            format!("_{}/{}", group_suffix, synth)
+        };
+        self.name = context::resolve_auto_name(&base);
+    }
+
     // === Getters ===
 
     /// Get the voice ID (name).
     pub fn id(&mut self) -> String {
+        self.resolve_name();
         self.name.clone()
     }
 
     /// Get the voice name.
     pub fn get_name(&mut self) -> String {
+        self.resolve_name();
         self.name.clone()
     }
 
@@ -383,7 +429,12 @@ impl Voice {
     }
 
     /// Register this voice with the script state (chainable).
+    ///
+    /// Skips registration for anonymous voices (empty name) that haven't been resolved yet.
     pub(crate) fn sync_to_state(&self) {
+        if self.name.is_empty() {
+            return; // Anonymous voice not yet resolved — defer registration
+        }
         let voice_id = context::get_or_create_voice_id(&self.name);
         let group_id = context::get_or_create_group_id(&self.group_path);
 
@@ -399,9 +450,17 @@ impl Voice {
             params.get("amp")
         );
 
+        let synthdef = self.synth_name.clone().unwrap_or_default();
+        if synthdef.is_empty() {
+            tracing::warn!(
+                "Voice '{}': no synthdef set — use .synth(\"name\") or .on(\"sample\")",
+                self.name
+            );
+        }
+
         let config = VoiceConfig {
             name: self.name.clone(),
-            synthdef: self.synth_name.clone().unwrap_or_default(),
+            synthdef,
             group: group_id,
             polyphony: self.polyphony,
             params,
@@ -429,7 +488,11 @@ impl Voice {
     }
 
     /// Apply the voice configuration (chainable).
-    pub fn apply(self) -> Self {
+    ///
+    /// For anonymous voices, this resolves the name from the structural identity
+    /// (synthdef + group path) before registering.
+    pub fn apply(mut self) -> Self {
+        self.resolve_name();
         self.sync_to_state();
         self
     }
@@ -440,7 +503,8 @@ impl Voice {
     /// The voice will be triggered automatically on startup and after
     /// reloads, producing continuous sound (e.g., for line-in monitors,
     /// drones, or other always-on sounds).
-    pub fn run(self) -> Self {
+    pub fn run(mut self) -> Self {
+        self.resolve_name();
         self.sync_to_state();
         context::mark_voice_for_running(&self.name);
         self
@@ -455,13 +519,19 @@ pub fn voice(ctx: NativeCallContext, name: String) -> Voice {
     v
 }
 
+/// Create an anonymous voice builder (name resolved from structural identity).
+pub fn voice_anon(ctx: NativeCallContext) -> Voice {
+    Voice::new_anon(ctx)
+}
+
 /// Register voice API with the Rhai engine.
 pub fn register(engine: &mut Engine) {
     // Register Voice type
     engine.build_type::<Voice>();
 
-    // Constructor
+    // Constructor (named and anonymous overloads)
     engine.register_fn("voice", voice);
+    engine.register_fn("voice", voice_anon);
 
     // Getters
     engine.register_fn("id", Voice::id);

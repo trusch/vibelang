@@ -1404,6 +1404,265 @@ mod tests {
         );
     }
 
+    // ==================== Per-Note Parameters Tests ====================
+
+    #[test]
+    fn test_melody_with_per_note_velocity() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                melody("vel_test")
+                    .on(v)
+                    .notes("C4[velocity=100] D4[vel=50] E4 F4[vel=0.3]")
+                    .apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let melody_config = state
+            .melodies
+            .values()
+            .next()
+            .expect("Should have a melody");
+
+        assert_eq!(melody_config.notes.len(), 4, "Should have 4 notes");
+
+        // C4: velocity=100 (MIDI) → ~0.787
+        let vel_c4 = melody_config.notes[0].velocity;
+        assert!(
+            (vel_c4 - 100.0 / 127.0).abs() < 0.01,
+            "C4 velocity should be 100/127, got {}",
+            vel_c4
+        );
+
+        // D4: vel=50 (MIDI) → ~0.394
+        let vel_d4 = melody_config.notes[1].velocity;
+        assert!(
+            (vel_d4 - 50.0 / 127.0).abs() < 0.01,
+            "D4 velocity should be 50/127, got {}",
+            vel_d4
+        );
+
+        // E4: no override → default 1.0
+        let vel_e4 = melody_config.notes[2].velocity;
+        assert!(
+            (vel_e4 - 1.0).abs() < 0.01,
+            "E4 velocity should be 1.0, got {}",
+            vel_e4
+        );
+
+        // F4: vel=0.3 → 0.3
+        let vel_f4 = melody_config.notes[3].velocity;
+        assert!(
+            (vel_f4 - 0.3).abs() < 0.01,
+            "F4 velocity should be 0.3, got {}",
+            vel_f4
+        );
+    }
+
+    #[test]
+    fn test_melody_with_per_note_synth_params() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                melody("params_test")
+                    .on(v)
+                    .notes("C4[cutoff=2000,resonance=0.8] D4 E4[pan=-0.5]")
+                    .apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let melody_config = state
+            .melodies
+            .values()
+            .next()
+            .expect("Should have a melody");
+
+        assert_eq!(melody_config.notes.len(), 3, "Should have 3 notes");
+
+        // C4: cutoff + resonance
+        assert_eq!(melody_config.notes[0].params.len(), 2);
+        assert!(
+            (melody_config.notes[0].params["cutoff"] - 2000.0).abs() < 0.01,
+            "C4 should have cutoff=2000"
+        );
+        assert!(
+            (melody_config.notes[0].params["resonance"] - 0.8).abs() < 0.01,
+            "C4 should have resonance=0.8"
+        );
+
+        // D4: no params
+        assert!(
+            melody_config.notes[1].params.is_empty(),
+            "D4 should have no per-note params"
+        );
+
+        // E4: pan
+        assert_eq!(melody_config.notes[2].params.len(), 1);
+        assert!(
+            (melody_config.notes[2].params["pan"] - (-0.5)).abs() < 0.01,
+            "E4 should have pan=-0.5"
+        );
+    }
+
+    #[test]
+    fn test_melody_with_per_note_params_and_scale_degrees() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                melody("scale_params")
+                    .on(v)
+                    .root("C4")
+                    .scale("minor")
+                    .notes("1[vel=100] 3[cutoff=2000] 5 7[vel=50,pan=0.5]")
+                    .apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let melody_config = state
+            .melodies
+            .values()
+            .next()
+            .expect("Should have a melody");
+
+        assert_eq!(melody_config.notes.len(), 4, "Should have 4 notes");
+
+        // Degree 1: velocity override
+        let vel_1 = melody_config.notes[0].velocity;
+        assert!(
+            (vel_1 - 100.0 / 127.0).abs() < 0.01,
+            "Degree 1 velocity should be 100/127"
+        );
+
+        // Degree 3: cutoff param
+        assert!(!melody_config.notes[1].params.is_empty());
+        assert!(
+            (melody_config.notes[1].params["cutoff"] - 2000.0).abs() < 0.01,
+            "Degree 3 should have cutoff=2000"
+        );
+
+        // Degree 5: no params
+        assert!(melody_config.notes[2].params.is_empty());
+
+        // Degree 7: velocity + pan
+        let vel_7 = melody_config.notes[3].velocity;
+        assert!(
+            (vel_7 - 50.0 / 127.0).abs() < 0.01,
+            "Degree 7 velocity should be 50/127"
+        );
+        assert!(
+            (melody_config.notes[3].params["pan"] - 0.5).abs() < 0.01,
+            "Degree 7 should have pan=0.5"
+        );
+    }
+
+    #[test]
+    fn test_melody_with_per_note_params_multi_bar() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                melody("multi_bar_params")
+                    .on(v)
+                    .notes("C4[cutoff=2000] D4 E4 F4 | G4[cutoff=500] A4 B4 C5")
+                    .apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let melody_config = state
+            .melodies
+            .values()
+            .next()
+            .expect("Should have a melody");
+
+        assert_eq!(melody_config.notes.len(), 8, "Should have 8 notes");
+
+        // C4 in bar 1: cutoff=2000
+        assert!(
+            (melody_config.notes[0].params["cutoff"] - 2000.0).abs() < 0.01,
+            "C4 should have cutoff=2000"
+        );
+
+        // G4 in bar 2: cutoff=500
+        assert!(
+            (melody_config.notes[4].params["cutoff"] - 500.0).abs() < 0.01,
+            "G4 should have cutoff=500"
+        );
+
+        // Other notes: no params
+        for i in [1, 2, 3, 5, 6, 7] {
+            assert!(
+                melody_config.notes[i].params.is_empty(),
+                "Note at index {} should have no params",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_melody_without_params_backwards_compatible() {
+        // Verify that normal melodies (no per-note params) still work exactly the same
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            set_tempo(120);
+            define_group("Test", || {
+                let v = voice("test_voice").synth("test_synth");
+                melody("compat_test")
+                    .on(v)
+                    .notes("C4 D4 E4 F4 | G4 A4 B4 C5")
+                    .apply();
+            });
+        "#,
+            )
+            .unwrap();
+
+        let melody_config = state
+            .melodies
+            .values()
+            .next()
+            .expect("Should have a melody");
+
+        assert_eq!(melody_config.notes.len(), 8, "Should have 8 notes");
+
+        // All notes should have empty params and default velocity
+        for (i, note) in melody_config.notes.iter().enumerate() {
+            assert!(
+                note.params.is_empty(),
+                "Note {} should have no params",
+                i
+            );
+            assert!(
+                (note.velocity - 1.0).abs() < 0.01,
+                "Note {} should have default velocity 1.0",
+                i
+            );
+        }
+    }
+
     // ==================== Phase 1 Tests: Edge Cases and Error Handling ====================
 
     #[test]

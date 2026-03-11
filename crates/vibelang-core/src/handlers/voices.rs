@@ -128,6 +128,285 @@ impl<B: Backend> VoicesHandler<B> {
         self.note_on(id, note, velocity).await
     }
 
+    /// Send a note-on with per-note voice parameters, scheduled for a specific time.
+    ///
+    /// Like `note_on_at`, but also merges `extra_params` into the synth creation
+    /// params. These params override the voice's defaults for this specific note only
+    /// (e.g., cutoff, pan, resonance set via `C4[cutoff=2000]` notation).
+    ///
+    /// For MIDI voices, extra params are sent as CC messages if mappings exist.
+    #[cfg(feature = "midi")]
+    pub async fn note_on_at_with_params(
+        &self,
+        id: VoiceId,
+        note: u8,
+        velocity: f32,
+        timestamp: Option<Instant>,
+        extra_params: &ParamMap,
+    ) -> Result<()> {
+        // If no timestamp provided, use immediate scheduling
+        let timestamp = timestamp.unwrap_or_else(Instant::now);
+
+        // Check for MIDI output - schedule with timestamp
+        let (midi_output, midi_channel) = {
+            let state = self.state.read().await;
+            let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
+            (voice.config.midi_output, voice.config.midi_channel)
+        };
+
+        if let Some(device_id) = midi_output {
+            let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
+
+            // Send extra params as CC if mappings exist
+            if let Some(sender) = self.get_midi_sender(device_id) {
+                // Send per-note CC params before note-on
+                let state = self.state.read().await;
+                if let Some(voice) = state.voices.get(&id) {
+                    for (param, value) in extra_params {
+                        if let Some(&cc) = voice.config.param_cc_map.get(param) {
+                            let cc_value = (value.clamp(0.0, 1.0) * 127.0) as u8;
+                            let cc_event = QueuedMidiEvent::ControlChange {
+                                channel: midi_channel,
+                                cc,
+                                value: cc_value,
+                            };
+                            let _ = sender.try_send(cc_event.at(timestamp));
+                        }
+                    }
+                }
+                drop(state);
+
+                let event = QueuedMidiEvent::NoteOn {
+                    channel: midi_channel,
+                    note,
+                    velocity: midi_velocity,
+                };
+                let scheduled = event.at(timestamp);
+                if sender.try_send(scheduled).is_ok() {
+                    tracing::debug!(
+                        "Voice {:?}: scheduled MIDI note-on with params: ch={}, note={}, vel={}, params={:?}",
+                        id, midi_channel, note, midi_velocity, extra_params
+                    );
+                    return Ok(());
+                }
+            }
+            // Fallback to immediate via with_params method
+        }
+
+        // For non-MIDI voices or fallback, use immediate note_on_with_params
+        self.note_on_with_params(id, note, velocity, extra_params).await
+    }
+
+    /// Send a note-on with per-note voice parameters (immediate).
+    ///
+    /// Like `note_on`, but also merges `extra_params` into the synth creation
+    /// params. These params override the voice's defaults for this specific note only
+    /// (e.g., cutoff, pan, resonance set via `C4[cutoff=2000]` notation).
+    pub async fn note_on_with_params(
+        &self,
+        id: VoiceId,
+        note: u8,
+        velocity: f32,
+        extra_params: &ParamMap,
+    ) -> Result<()> {
+        // Check for MIDI output first
+        #[cfg(feature = "midi")]
+        {
+            let (midi_output, midi_channel, node_id) = {
+                let mut state = self.state.write().await;
+                let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
+                let midi_out = voice.config.midi_output;
+                let ch = voice.config.midi_channel;
+                let node = if midi_out.is_some() {
+                    Some(state.alloc_node_id())
+                } else {
+                    None
+                };
+                (midi_out, ch, node)
+            };
+
+            if let Some(device_id) = midi_output {
+                let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
+
+                // Send extra params as CC if mappings exist
+                if let Some(sender) = self.get_midi_sender(device_id) {
+                    let state = self.state.read().await;
+                    if let Some(voice) = state.voices.get(&id) {
+                        for (param, value) in extra_params {
+                            if let Some(&cc) = voice.config.param_cc_map.get(param) {
+                                let cc_value = (value.clamp(0.0, 1.0) * 127.0) as u8;
+                                let cc_event = QueuedMidiEvent::ControlChange {
+                                    channel: midi_channel,
+                                    cc,
+                                    value: cc_value,
+                                };
+                                let _ = sender.try_send(cc_event.immediate());
+                            }
+                        }
+                    }
+                }
+
+                // Try direct path first
+                if let Some(sender) = self.get_midi_sender(device_id) {
+                    let event = QueuedMidiEvent::NoteOn {
+                        channel: midi_channel,
+                        note,
+                        velocity: midi_velocity,
+                    };
+                    if sender.try_send(event.immediate()).is_ok() {
+                        tracing::debug!(
+                            "Voice {:?}: direct MIDI note-on with params: ch={}, note={}, vel={}, params={:?}",
+                            id, midi_channel, note, midi_velocity, extra_params
+                        );
+                        return Ok(());
+                    }
+                }
+
+                // Fallback: Use sample-accurate MIDI output via synthdef
+                let packed_data = pack_note_on(device_id.0 as u8, midi_channel, note, midi_velocity);
+                let mut params = std::collections::HashMap::new();
+                params.insert("packed_data".to_string(), packed_data);
+
+                let node_id = node_id.ok_or(Error::backend_msg("MIDI node ID not allocated"))?;
+                if let Err(_e) = self
+                    .backend
+                    .create_synth("midi_out", node_id, NodeId::new(0), AddAction::Head, &params)
+                    .await
+                {
+                    tracing::debug!(
+                        "Voice {:?}: SC MIDI note-on with params (fallback): ch={}, note={}, vel={}",
+                        id, midi_channel, note, midi_velocity
+                    );
+                }
+                return Ok(());
+            }
+        }
+
+        // Gather info and allocate node while holding lock
+        let (node_id, group_node_id, synthdef, params, old_node, modulations_to_apply) = {
+            let mut state = self.state.write().await;
+
+            let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
+
+            let group = state
+                .groups
+                .get(&voice.config.group)
+                .ok_or(Error::GroupNotFound(voice.config.group))?;
+
+            let synthdef = voice.config.synthdef.clone();
+            let group_node_id = group.node_id;
+
+            // Build params with note info
+            let mut params = voice.config.params.clone();
+            params.insert("freq".to_string(), midi_to_freq(note));
+            params.insert("amp".to_string(), velocity);
+            params.insert("gate".to_string(), 1.0);
+
+            // Merge per-note extra params (overrides defaults)
+            for (k, v) in extra_params {
+                params.insert(k.clone(), *v);
+            }
+
+            // Set output bus to group's audio bus (for proper routing)
+            params.insert("out".to_string(), group.audio_bus.0 as f32);
+
+            // Convert sample offset/length from seconds to synth params
+            if let Some(sample_id) = voice.config.sample_id {
+                if let Some(sample_info) = state.samples.get(&sample_id) {
+                    let sample_rate = sample_info.sample_rate;
+                    let duration = sample_info.duration_secs;
+                    let is_warp = voice.config.synthdef.contains("warp");
+
+                    let offset_secs = params.remove("_offset_secs").unwrap_or(0.0) as f64;
+                    let release_secs = params.remove("_release_secs").unwrap_or(0.0) as f64;
+                    let length_secs = params.remove("_length_secs");
+
+                    let effective_length = if let Some(len) = length_secs {
+                        Some((len as f64 - release_secs).max(0.01))
+                    } else if release_secs > 0.0 {
+                        let remaining = duration - offset_secs - release_secs;
+                        if remaining > 0.0 {
+                            Some(remaining)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    if is_warp {
+                        let start_norm = (offset_secs / duration).min(1.0);
+                        params.insert("startPos".to_string(), start_norm as f32);
+                        if let Some(len) = effective_length {
+                            let end_norm = ((offset_secs + len) / duration).min(1.0);
+                            params.insert("endPos".to_string(), end_norm as f32);
+                        }
+                    } else {
+                        let start_frame = (offset_secs * sample_rate) as f32;
+                        params.insert("startPos".to_string(), start_frame);
+                        if let Some(len) = effective_length {
+                            let end_frame = ((offset_secs + len) * sample_rate) as f32;
+                            params.insert("endPos".to_string(), end_frame);
+                        }
+                    }
+                }
+            }
+
+            // Collect modulations to apply after synth creation
+            let mut modulations_to_apply: Vec<(String, u32)> = Vec::new();
+            for (param_name, modulator_id) in &voice.config.modulations {
+                if let Some(modulator_state) = state.modulators.get(modulator_id) {
+                    let control_bus = modulator_state.control_bus.raw();
+                    modulations_to_apply.push((param_name.clone(), control_bus));
+                }
+            }
+
+            let node_id = state.alloc_node_id();
+
+            let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
+            let old_node = voice.note_nodes.remove(&note);
+            voice.note_nodes.insert(note, node_id);
+
+            (
+                node_id,
+                group_node_id,
+                synthdef,
+                params,
+                old_node,
+                modulations_to_apply,
+            )
+        };
+
+        // Free old node if any (lock released)
+        if let Some(old) = old_node {
+            let _ = self.backend.free_node(old).await;
+        }
+
+        // Create synth
+        self.backend
+            .create_synth(&synthdef, node_id, group_node_id, AddAction::Head, &params)
+            .await
+            .map_err(Error::backend)?;
+
+        // Apply modulations
+        for (param_name, control_bus) in modulations_to_apply {
+            if let Err(e) = self
+                .backend
+                .map_param_to_bus(node_id, &param_name, control_bus)
+                .await
+            {
+                tracing::error!(
+                    "Failed to map param '{}' to control bus {}: {}",
+                    param_name,
+                    control_bus,
+                    e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     /// Send a note-off scheduled for a specific time.
     ///
     /// This is the lookahead-aware version of `note_off`. If `timestamp` is provided,
@@ -1744,5 +2023,157 @@ mod tests {
     fn test_midi_to_freq_a3() {
         let freq = midi_to_freq(57); // A3
         assert!((freq - 220.0).abs() < 0.01, "A3 should be 220 Hz");
+    }
+
+    // =========================================================================
+    // Note On With Params Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_note_on_with_params_creates_synth() {
+        let (handler, backend, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        let mut extra_params = ParamMap::new();
+        extra_params.insert("cutoff".to_string(), 2000.0);
+        extra_params.insert("resonance".to_string(), 0.8);
+
+        let result = handler
+            .note_on_with_params(voice_id, 60, 0.8, &extra_params)
+            .await;
+        assert!(result.is_ok(), "note_on_with_params should succeed");
+        assert_eq!(backend.synths_created(), 1, "One synth should be created");
+    }
+
+    #[tokio::test]
+    async fn test_note_on_with_empty_params_works() {
+        let (handler, backend, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        let result = handler
+            .note_on_with_params(voice_id, 60, 0.8, &ParamMap::new())
+            .await;
+        assert!(
+            result.is_ok(),
+            "note_on_with_params with empty params should work like note_on"
+        );
+        assert_eq!(backend.synths_created(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_note_on_with_params_nonexistent_voice_fails() {
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let result = handler
+            .note_on_with_params(VoiceId::new(999), 60, 0.8, &ParamMap::new())
+            .await;
+        assert!(
+            result.is_err(),
+            "note_on_with_params for non-existent voice should fail"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_note_on_with_params_replaces_same_note() {
+        let (handler, backend, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        let mut params = ParamMap::new();
+        params.insert("cutoff".to_string(), 2000.0);
+
+        // Play same note twice with params
+        handler
+            .note_on_with_params(voice_id, 60, 0.8, &params)
+            .await
+            .unwrap();
+        handler
+            .note_on_with_params(voice_id, 60, 0.9, &params)
+            .await
+            .unwrap();
+
+        // Should create 2 synths, free 1 (the first one)
+        assert_eq!(backend.synths_created(), 2);
+        assert_eq!(
+            backend.nodes_freed(),
+            1,
+            "Old note should be freed when same note played again"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_note_on_with_params_does_not_affect_voice_defaults() {
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        let mut extra_params = ParamMap::new();
+        extra_params.insert("cutoff".to_string(), 2000.0);
+
+        handler
+            .note_on_with_params(voice_id, 60, 0.8, &extra_params)
+            .await
+            .unwrap();
+
+        // Verify the voice's default params were NOT modified
+        let state_read = state.read().await;
+        let voice = state_read.voices.get(&voice_id).unwrap();
+        assert!(
+            !voice.config.params.contains_key("cutoff"),
+            "Per-note params should NOT be saved to voice defaults"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_note_on_with_params_different_notes() {
+        let (handler, backend, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        // Play different notes with different params
+        let mut params_a = ParamMap::new();
+        params_a.insert("cutoff".to_string(), 2000.0);
+
+        let mut params_b = ParamMap::new();
+        params_b.insert("cutoff".to_string(), 500.0);
+
+        handler
+            .note_on_with_params(voice_id, 60, 0.8, &params_a)
+            .await
+            .unwrap();
+        handler
+            .note_on_with_params(voice_id, 64, 0.8, &params_b)
+            .await
+            .unwrap();
+
+        // Both notes should have their own synths
+        assert_eq!(
+            backend.synths_created(),
+            2,
+            "Two different notes should create two synths"
+        );
+        assert_eq!(
+            backend.nodes_freed(),
+            0,
+            "Different notes should not free each other"
+        );
     }
 }

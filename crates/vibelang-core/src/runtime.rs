@@ -1547,6 +1547,7 @@ impl<B: Backend> Runtime<B> {
         };
         for id in sequences_to_stop {
             tracing::debug!("Reload: stopping sequence {:?} (no longer in playing_sequences and was changed)", id);
+            let _ = self.sequences.stop(id).await;
         }
 
         // Start patterns that should be playing (only if not already playing)

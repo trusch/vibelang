@@ -5,6 +5,7 @@ use crate::compat::{Instant, RwLock};
 use crate::handlers::VoicesHandler;
 use crate::state::{MelodyState, State};
 use crate::traits::{Melodies, MelodyConfig, NoteEvent, Voices};
+use crate::types::params::ParamMap;
 use crate::types::{Beat, MelodyId, VoiceId};
 use crate::validation::Validate;
 use crate::{Error, Result};
@@ -52,6 +53,8 @@ struct NoteTrigger {
     voice_id: VoiceId,
     note: u8,
     velocity: f32,
+    /// Per-note voice parameters (cutoff, pan, etc.) to merge at trigger time.
+    params: ParamMap,
     /// Beat position when the note should end.
     off_beat: Beat,
     /// Wall-clock time when note-on should fire.
@@ -128,7 +131,9 @@ impl<B: Backend> MelodiesHandler<B> {
                         );
                     }
 
-                    if !melody.playing || melody.content.length == Beat::ZERO {
+                    // Skip melodies with zero or near-zero length to prevent runaway triggering
+                    let min_length = Beat::from_f64(0.0625); // 1/64th note
+                    if !melody.playing || melody.content.length < min_length {
                         tracing::trace!(
                             "MelodiesHandler: melody {:?} skipped (playing={}, length={})",
                             melody_id,
@@ -259,6 +264,7 @@ impl<B: Backend> MelodiesHandler<B> {
                             voice_id,
                             note: note_event.note,
                             velocity: final_velocity,
+                            params: note_event.params.clone(),
                             off_beat,
                             on_timestamp,
                             off_timestamp,
@@ -287,19 +293,35 @@ impl<B: Backend> MelodiesHandler<B> {
 
             // Trigger note through voice handler with timestamp (for MIDI lookahead)
             // Uses note_on_at if available (MIDI feature), otherwise falls back to immediate
+            // When per-note params are present, use the _with_params variant to merge them
+            // into the synth creation params (only affects this specific note instance).
             #[cfg(feature = "midi")]
             {
-                let _ = self
-                    .voices
-                    .note_on_at(trigger.voice_id, trigger.note, trigger.velocity, Some(trigger.on_timestamp))
-                    .await;
+                if trigger.params.is_empty() {
+                    let _ = self
+                        .voices
+                        .note_on_at(trigger.voice_id, trigger.note, trigger.velocity, Some(trigger.on_timestamp))
+                        .await;
+                } else {
+                    let _ = self
+                        .voices
+                        .note_on_at_with_params(trigger.voice_id, trigger.note, trigger.velocity, Some(trigger.on_timestamp), &trigger.params)
+                        .await;
+                }
             }
             #[cfg(not(feature = "midi"))]
             {
-                let _ = self
-                    .voices
-                    .note_on(trigger.voice_id, trigger.note, trigger.velocity)
-                    .await;
+                if trigger.params.is_empty() {
+                    let _ = self
+                        .voices
+                        .note_on(trigger.voice_id, trigger.note, trigger.velocity)
+                        .await;
+                } else {
+                    let _ = self
+                        .voices
+                        .note_on_with_params(trigger.voice_id, trigger.note, trigger.velocity, &trigger.params)
+                        .await;
+                }
             }
 
             // Schedule the note-off with timestamp
@@ -571,6 +593,7 @@ mod tests {
             note,
             velocity: 1.0,
             duration: Beat::from_f64(0.5),
+            params: std::collections::HashMap::new(),
         }
     }
 
@@ -956,6 +979,94 @@ mod tests {
             triggered.len(),
             0,
             "Note should NOT re-trigger when it becomes last_pos"
+        );
+    }
+
+    // =========================================================================
+    // Per-Note Params Tests
+    // =========================================================================
+
+    /// Create a note event at a given beat position with per-note params.
+    fn note_at_with_params(
+        beat: f64,
+        note: u8,
+        params: std::collections::HashMap<String, f32>,
+    ) -> NoteEvent {
+        NoteEvent {
+            beat: Beat::from_f64(beat),
+            note,
+            velocity: 1.0,
+            duration: Beat::from_f64(0.5),
+            params,
+        }
+    }
+
+    #[test]
+    fn test_note_with_params_triggers_correctly() {
+        // Ensure notes with params are still found by filter_notes
+        let mut params = std::collections::HashMap::new();
+        params.insert("cutoff".to_string(), 2000.0_f32);
+
+        let notes = vec![
+            note_at_with_params(0.5, 60, params.clone()),
+            note_at(1.0, 62), // no params
+        ];
+
+        let triggered = filter_notes(
+            &notes,
+            Beat::from_f64(0.0),
+            Beat::from_f64(1.0),
+            Beat::from_f64(4.0),
+        );
+        assert_eq!(
+            triggered.len(),
+            2,
+            "Both notes (with and without params) should trigger"
+        );
+    }
+
+    #[test]
+    fn test_note_with_params_preserves_params_through_filter() {
+        let mut params = std::collections::HashMap::new();
+        params.insert("cutoff".to_string(), 2000.0_f32);
+        params.insert("pan".to_string(), -0.5_f32);
+
+        let notes = vec![note_at_with_params(0.5, 60, params)];
+
+        // Filter finds the note
+        let triggered: Vec<&NoteEvent> = notes
+            .iter()
+            .filter(|n| n.beat > Beat::from_f64(0.0) && n.beat <= Beat::from_f64(1.0))
+            .collect();
+
+        assert_eq!(triggered.len(), 1);
+        assert_eq!(triggered[0].params.len(), 2);
+        assert_eq!(*triggered[0].params.get("cutoff").unwrap(), 2000.0);
+        assert_eq!(*triggered[0].params.get("pan").unwrap(), -0.5);
+    }
+
+    #[test]
+    fn test_notes_with_different_params_are_distinct() {
+        let mut params_a = std::collections::HashMap::new();
+        params_a.insert("cutoff".to_string(), 2000.0_f32);
+
+        let mut params_b = std::collections::HashMap::new();
+        params_b.insert("cutoff".to_string(), 500.0_f32);
+
+        let note_a = note_at_with_params(0.0, 60, params_a);
+        let note_b = note_at_with_params(0.0, 60, params_b);
+
+        // Notes at the same beat with different params should not be equal
+        assert_ne!(note_a, note_b, "Notes with different params should not be equal");
+    }
+
+    #[test]
+    fn test_note_with_empty_params_equals_no_params() {
+        let note_a = note_at(0.0, 60);
+        let note_b = note_at_with_params(0.0, 60, std::collections::HashMap::new());
+        assert_eq!(
+            note_a, note_b,
+            "Note with no params should equal note with empty params"
         );
     }
 }
