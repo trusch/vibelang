@@ -436,6 +436,20 @@ impl Melody {
             .as_ref()
             .map(|n| context::get_or_create_voice_id(n));
 
+        // Warn if the voice doesn't exist in the script state yet
+        if let Some(ref voice_name) = self.voice_name {
+            if let Some(vid) = voice_id {
+                context::with_state(|state| {
+                    if !state.voices.contains_key(&vid) {
+                        tracing::warn!(
+                            "Melody '{}': voice '{}' not found — make sure to create it with voice(\"{}\")",
+                            self.name, voice_name, voice_name
+                        );
+                    }
+                });
+            }
+        }
+
         tracing::debug!(
             "Melody '{}': melody_id={:?}, voice_name={:?}, voice_id={:?}, internal_notes_count={}",
             self.name,

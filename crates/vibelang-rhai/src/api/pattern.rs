@@ -161,6 +161,20 @@ impl Pattern {
             .as_ref()
             .map(|n| context::get_or_create_voice_id(n));
 
+        // Warn if the voice doesn't exist in the script state yet
+        if let Some(ref voice_name) = self.voice_name {
+            if let Some(vid) = voice_id {
+                context::with_state(|state| {
+                    if !state.voices.contains_key(&vid) {
+                        tracing::warn!(
+                            "Pattern '{}': voice '{}' not found — make sure to create it with voice(\"{}\")",
+                            self.name, voice_name, voice_name
+                        );
+                    }
+                });
+            }
+        }
+
         // Calculate loop length from pattern if available
         let loop_length = if let Some(ref steps) = self.steps {
             calculate_loop_length_from_pattern(steps)
