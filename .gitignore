@@ -56,4 +56,6 @@ CLAUDE.md
 .parcel-cache
 dist
 landing-page/dist
+landing-page/src/generated
+landing-page/src/audio/*.wasm
 landing-page/.parcel-cache/*
