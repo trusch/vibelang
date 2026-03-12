@@ -19,6 +19,17 @@ Crates must be published in this order — each level depends only on previously
 
 ## Release Checklist
 
+### 0. Registry config
+
+Ensure `~/.cargo/config.toml` uses the sparse index (faster propagation):
+
+```toml
+[source.crates-io]
+registry = "sparse+https://index.crates.io/"
+```
+
+The old git-based index (`https://github.com/rust-lang/crates.io-index`) has slow propagation and will cause "version not found" errors when publishing dependent crates.
+
 ### 1. Pre-flight
 
 ```bash
