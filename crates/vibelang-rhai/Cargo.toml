@@ -1,6 +1,6 @@
 [package]
 name = "vibelang-rhai"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "Rhai scripting layer for VibeLang - provides the .vibe scripting API"
 license = "MIT OR Apache-2.0"
@@ -27,8 +27,8 @@ ext-exec = []
 ext-net = []
 
 [dependencies]
-vibelang-core = { version = "0.3.0", default-features = false }
-vibelang-dsp = "0.3.0"
+vibelang-core = { version = "0.4.0", default-features = false }
+vibelang-dsp = "0.4.0"
 rhai = { version = "1", features = ["sync"] }
 tracing = "0.1"
 log = "0.4"
@@ -42,4 +42,4 @@ wasm-bindgen = "0.2"
 # Enable wasm_js feature for getrandom used by ahash/rhai
 getrandom = { version = "0.3", features = ["wasm_js"] }
 # Stdlib for in-memory module resolution in WASM
-vibelang-std = "0.3.0"
+vibelang-std = "0.4.0"

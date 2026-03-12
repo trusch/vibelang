@@ -152,7 +152,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
  "x11rb",
 ]
 
@@ -954,7 +954,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2096,7 +2096,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2812,7 +2812,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3190,7 +3190,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3753,7 +3753,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibelang-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -3784,7 +3784,7 @@ dependencies = [
 
 [[package]]
 name = "vibelang-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "crossbeam-channel",
@@ -3810,7 +3810,7 @@ dependencies = [
 
 [[package]]
 name = "vibelang-dsp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -3824,7 +3824,7 @@ dependencies = [
 
 [[package]]
 name = "vibelang-http"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "axum",
  "futures",
@@ -3840,7 +3840,7 @@ dependencies = [
 
 [[package]]
 name = "vibelang-keys"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3860,7 +3860,7 @@ dependencies = [
 
 [[package]]
 name = "vibelang-lsp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3882,7 +3882,7 @@ dependencies = [
 
 [[package]]
 name = "vibelang-rhai"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "getrandom 0.3.4",
  "log",
@@ -3898,7 +3898,7 @@ dependencies = [
 
 [[package]]
 name = "vibelang-sfz"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "log",
@@ -3910,7 +3910,7 @@ dependencies = [
 
 [[package]]
 name = "vibelang-std"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "dirs",
  "include_dir",
@@ -3918,7 +3918,7 @@ dependencies = [
 
 [[package]]
 name = "vibelang-wasm"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "console_error_panic_hook",
  "getrandom 0.2.16",
@@ -4157,7 +4157,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

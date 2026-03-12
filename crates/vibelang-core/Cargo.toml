@@ -1,6 +1,6 @@
 [package]
 name = "vibelang-core"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "Clean, trait-based runtime for VibeLang - generic over synthesis backends"
 license = "MIT OR Apache-2.0"
@@ -16,8 +16,8 @@ async-trait = "0.1"
 thiserror = "1"
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
-vibelang-dsp = "0.3.0"
-vibelang-sfz = "0.3.0"
+vibelang-dsp = "0.4.0"
+vibelang-sfz = "0.4.0"
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
 futures = "0.3"
