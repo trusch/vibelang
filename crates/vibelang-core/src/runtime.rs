@@ -38,10 +38,6 @@ use crate::handlers::{
 };
 #[cfg(feature = "midi")]
 use crate::message::MidiMessage;
-#[cfg(feature = "midi")]
-use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
-#[cfg(feature = "midi")]
-use crate::reload::MidiOutputMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::message::RecordingMessage;
 use crate::message::ReloadMessage;
@@ -50,7 +46,11 @@ use crate::message::{
     PatternMessage, SampleMessage, SequenceMessage, SfzMessage, SyncMessage, SynthDefMessage,
     TransportMessage, VoiceMessage,
 };
+#[cfg(feature = "midi")]
+use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
 use crate::reload;
+#[cfg(feature = "midi")]
+use crate::reload::MidiOutputMessage;
 use crate::state::State;
 #[cfg(feature = "midi")]
 use crate::traits::Midi;
@@ -702,7 +702,11 @@ impl<B: Backend> Runtime<B> {
     /// - Small enough to not skip actual steps in the pattern
     ///
     /// Formula: epsilon = max(tick_window_beats, 0.001), clamped to 10% of length
-    fn calculate_position_epsilon(&self, bpm: f64, length: crate::types::Beat) -> crate::types::Beat {
+    fn calculate_position_epsilon(
+        &self,
+        bpm: f64,
+        length: crate::types::Beat,
+    ) -> crate::types::Beat {
         // Conservative tick window of 20ms (accounts for tick jitter and scheduling delays)
         const TICK_WINDOW_MS: f64 = 20.0;
 
@@ -925,10 +929,10 @@ impl<B: Backend> Runtime<B> {
                 for msg in &new_state.midi_output_messages {
                     match msg {
                         MidiOutputMessage::Start { device_id } => {
-                            // Only send Start if device is not already in "started" state
-                            if self.midi.is_device_started(*device_id) {
+                            let transport_playing = self.state.read().await.playing;
+                            if transport_playing {
                                 tracing::trace!(
-                                    "Reload: skipping MIDI Start to {:?} (already started)",
+                                    "Reload: skipping MIDI Start to {:?} (transport already playing)",
                                     device_id
                                 );
                             } else {
@@ -939,16 +943,14 @@ impl<B: Backend> Runtime<B> {
                                         device_id,
                                         e
                                     );
-                                } else {
-                                    self.midi.mark_device_started(*device_id);
                                 }
                             }
                         }
                         MidiOutputMessage::Stop { device_id } => {
-                            // Only send Stop if device is in "started" state
-                            if !self.midi.is_device_started(*device_id) {
+                            let transport_playing = self.state.read().await.playing;
+                            if !transport_playing {
                                 tracing::trace!(
-                                    "Reload: skipping MIDI Stop to {:?} (already stopped)",
+                                    "Reload: skipping MIDI Stop to {:?} (transport not playing)",
                                     device_id
                                 );
                             } else {
@@ -959,8 +961,6 @@ impl<B: Backend> Runtime<B> {
                                         device_id,
                                         e
                                     );
-                                } else {
-                                    self.midi.mark_device_stopped(*device_id);
                                 }
                             }
                         }
@@ -972,8 +972,6 @@ impl<B: Backend> Runtime<B> {
                                     device_id,
                                     e
                                 );
-                            } else {
-                                self.midi.mark_device_started(*device_id);
                             }
                         }
                         _ => {} // Other messages handled below
@@ -1059,7 +1057,9 @@ impl<B: Backend> Runtime<B> {
                         | MidiOutputMessage::Midi2PerNotePitchBend { .. }
                         | MidiOutputMessage::Midi2PerNoteController { .. }
                         | MidiOutputMessage::Midi2PolyPressure { .. } => {
-                            tracing::debug!("Reload: skipping MIDI 2.0 message (not yet implemented)");
+                            tracing::debug!(
+                                "Reload: skipping MIDI 2.0 message (not yet implemented)"
+                            );
                             continue;
                         }
                     };
@@ -1074,10 +1074,7 @@ impl<B: Backend> Runtime<B> {
                             );
                         }
                     } else {
-                        tracing::warn!(
-                            "Reload: no output channel for MIDI device {:?}",
-                            device_id
-                        );
+                        tracing::warn!("Reload: no output channel for MIDI device {:?}", device_id);
                     }
                 }
             }
@@ -1094,11 +1091,18 @@ impl<B: Backend> Runtime<B> {
         }
 
         // Load new SFZ instruments (and re-load updated ones)
-        let sfz_to_load: Vec<_> = diff.sfz.created.iter()
+        let sfz_to_load: Vec<_> = diff
+            .sfz
+            .created
+            .iter()
             .chain(diff.sfz.updated.iter())
             .collect();
         for (id, config) in sfz_to_load {
-            tracing::debug!("Reload: loading SFZ instrument {:?} from {:?}", id, config.path);
+            tracing::debug!(
+                "Reload: loading SFZ instrument {:?} from {:?}",
+                id,
+                config.path
+            );
             if let Err(e) = self.sfz.load(*id, &config.path).await {
                 tracing::error!("Reload: failed to load SFZ instrument {:?}: {}", id, e);
             }
@@ -1366,7 +1370,12 @@ impl<B: Backend> Runtime<B> {
                 let _ = self.effects.remove(*id).await;
                 if let Err(e) = self
                     .effects
-                    .add(*id, new_config.group, &new_config.synthdef, &new_config.params)
+                    .add(
+                        *id,
+                        new_config.group,
+                        &new_config.synthdef,
+                        &new_config.params,
+                    )
                     .await
                 {
                     tracing::error!("Reload: failed to recreate effect {:?}: {}", id, e);
@@ -1385,16 +1394,39 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
-        // Update modulators - apply all params from new config
+        // Update modulators - only recreate if synthdef or modulations changed;
+        // for param-only changes use set_param to avoid resetting the LFO phase.
         for (id, new_config) in &diff.modulators.updated {
-            for (param, value) in &new_config.params {
+            let needs_recreate = {
+                let state = self.state.read().await;
+                if let Some(current) = state.modulators.get(id) {
+                    current.config.synthdef != new_config.synthdef
+                        || current.config.modulations != new_config.modulations
+                } else {
+                    true
+                }
+            };
+
+            if needs_recreate {
                 tracing::debug!(
-                    "Reload: updating modulator {:?} param {} to {}",
+                    "Reload: recreating modulator {:?} (synthdef or modulations changed, synthdef='{}')",
                     id,
-                    param,
-                    value
+                    new_config.synthdef
                 );
-                let _ = self.modulators.set_param(*id, param, *value).await;
+                let _ = self.modulators.delete(*id).await;
+                if let Err(e) = self.modulators.create(*id, new_config.clone()).await {
+                    tracing::error!("Reload: failed to recreate modulator {:?}: {}", id, e);
+                }
+            } else {
+                // Only params changed - update in place to preserve LFO phase
+                tracing::debug!(
+                    "Reload: updating modulator {:?} params only (synthdef='{}')",
+                    id,
+                    new_config.synthdef
+                );
+                for (param, value) in &new_config.params {
+                    let _ = self.modulators.set_param(*id, param, *value).await;
+                }
             }
         }
 
@@ -1521,7 +1553,10 @@ impl<B: Backend> Runtime<B> {
                 .collect()
         };
         for id in patterns_to_stop {
-            tracing::debug!("Reload: stopping pattern {:?} (no longer in playing_patterns and was changed)", id);
+            tracing::debug!(
+                "Reload: stopping pattern {:?} (no longer in playing_patterns and was changed)",
+                id
+            );
             let _ = self.patterns.stop(id).await;
         }
 
@@ -1536,7 +1571,10 @@ impl<B: Backend> Runtime<B> {
             for (id, m) in &state.melodies {
                 tracing::debug!(
                     "  Runtime melody {:?}: playing={}, in_new_playing={}, unchanged={}",
-                    id, m.playing, new_state.playing_melodies.contains(id), diff.melodies.unchanged.contains(id)
+                    id,
+                    m.playing,
+                    new_state.playing_melodies.contains(id),
+                    diff.melodies.unchanged.contains(id)
                 );
             }
             state
@@ -1553,7 +1591,10 @@ impl<B: Backend> Runtime<B> {
         };
         tracing::debug!("Reload: melodies to stop: {:?}", melodies_to_stop);
         for id in melodies_to_stop {
-            tracing::debug!("Reload: stopping melody {:?} (no longer in playing_melodies and was changed)", id);
+            tracing::debug!(
+                "Reload: stopping melody {:?} (no longer in playing_melodies and was changed)",
+                id
+            );
             let _ = self.melodies.stop(id).await;
         }
 
@@ -1572,7 +1613,10 @@ impl<B: Backend> Runtime<B> {
                 .collect()
         };
         for id in sequences_to_stop {
-            tracing::debug!("Reload: stopping sequence {:?} (no longer in playing_sequences and was changed)", id);
+            tracing::debug!(
+                "Reload: stopping sequence {:?} (no longer in playing_sequences and was changed)",
+                id
+            );
             let _ = self.sequences.stop(id).await;
         }
 
@@ -1648,7 +1692,10 @@ impl<B: Backend> Runtime<B> {
 
             tracing::debug!(
                 "Reload: melody {:?} exists={}, should_start={}, notes_count={}",
-                id, melody_exists, should_start, notes_count
+                id,
+                melody_exists,
+                should_start,
+                notes_count
             );
 
             if should_start {
@@ -1736,7 +1783,10 @@ impl<B: Backend> Runtime<B> {
         };
 
         for voice_id in voices_to_stop {
-            tracing::debug!("Reload: stopping voice {:?} (no longer in running_voices)", voice_id);
+            tracing::debug!(
+                "Reload: stopping voice {:?} (no longer in running_voices)",
+                voice_id
+            );
             let _ = self.voices.stop(voice_id).await;
         }
 
@@ -1755,7 +1805,11 @@ impl<B: Backend> Runtime<B> {
                 // Trigger with gate=1.0 for continuous playback
                 let params = crate::types::ParamMap::from([("gate".to_string(), 1.0f32)]);
                 if let Err(e) = self.voices.trigger(*voice_id, &params).await {
-                    tracing::error!("Reload: failed to trigger running voice {:?}: {}", voice_id, e);
+                    tracing::error!(
+                        "Reload: failed to trigger running voice {:?}: {}",
+                        voice_id,
+                        e
+                    );
                 }
             }
         }
@@ -1778,9 +1832,7 @@ impl<B: Backend> Runtime<B> {
             self.midi
                 .apply_advanced_note_routes(&new_state.advanced_note_routes)
                 .await;
-            self.midi
-                .apply_cc_routes(&new_state.midi_cc_routes)
-                .await;
+            self.midi.apply_cc_routes(&new_state.midi_cc_routes).await;
             self.midi
                 .apply_advanced_cc_routes(&new_state.advanced_cc_routes)
                 .await;
@@ -1794,11 +1846,18 @@ impl<B: Backend> Runtime<B> {
                 .apply_midi2_cc_routes(&new_state.midi2_cc_routes)
                 .await;
 
+            // Reconcile looper instances against the new config list.
+            self.midi.reconcile_loopers(&new_state.loopers).await;
+
             // Apply MIDI clock output requests
             for clock_req in &new_state.midi_clock_outputs {
                 tracing::debug!(
                     "Reload: {} MIDI clock output for device {:?}",
-                    if clock_req.enabled { "enabling" } else { "disabling" },
+                    if clock_req.enabled {
+                        "enabling"
+                    } else {
+                        "disabling"
+                    },
                     clock_req.device_id
                 );
                 if clock_req.enabled {

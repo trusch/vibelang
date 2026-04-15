@@ -51,40 +51,31 @@ pub use recording::MidiRecordingManager;
 pub use routing::MidiRoutingManager;
 pub use types::{CcRoute, KeyboardRoute, MidiEventNotification, MidiMessage, MidiRouting};
 
-
 pub use types::{map_to_range, Midi2ControllerType};
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::transport_snapshot::TransportSnapshot;
 use crate::backend::Backend;
 use crate::compat::RwLock;
 use crate::midi::{
-    CallbackData,
-    CallbackType,
-    JitterCompensator,
-    MidiClock,
-    MidiEventQueue,
-    MidiEventSender,
-    MidiMessage as NewMidiMessage,
-    MidiRecording,
-    MidiRealtimeService,
-    ScheduledMidiEvent,
-    CcRouteBuilder,
-    KeyboardRouteBuilder,
-    NoteRouteBuilder,
+    CallbackData, CallbackType, CcRouteBuilder, JitterCompensator, KeyboardRouteBuilder, MidiClock,
+    MidiEventQueue, MidiEventSender, MidiMessage as NewMidiMessage, MidiRealtimeService,
+    MidiRecording, NoteRouteBuilder, ScheduledMidiEvent,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::transport_snapshot::TransportSnapshot;
 
+use crate::compat::SenderExt;
+use crate::message::{Message, PatternMessage, VoiceMessage};
+use crate::midi::{LooperAction, LooperManager};
+use crate::reload::LooperConfig;
 use crate::midi::PerNoteStateManager;
 use crate::state::State;
 use crate::traits::{FadeTarget, MidiOutputCapability};
 use crate::types::ids::MidiDeviceId;
 use crate::types::{NodeId, VoiceId};
-use crate::compat::SenderExt;
-use crate::message::{Message, VoiceMessage};
 use crate::{Error, Result};
 use crossbeam_channel::Sender;
 use midir::{MidiInputConnection, MidiOutputConnection};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
@@ -171,14 +162,17 @@ pub struct MidiHandler<B: Backend> {
     /// through VoicesHandler for proper synth creation/destruction.
     runtime_tx: crate::compat::Sender<Message>,
 
-    /// Per-device transport state: tracks whether we've sent Start (true) or Stop (false).
-    /// Used to avoid re-sending Start/Stop on hot reload when state hasn't changed.
-    device_transport_started: Arc<Mutex<HashSet<MidiDeviceId>>>,
+    /// Looper manager — one instance per configured MIDI device.
+    looper_manager: Mutex<LooperManager>,
 }
 
 impl<B: Backend> MidiHandler<B> {
     /// Create a new MIDI handler.
-    pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>, runtime_tx: crate::compat::Sender<Message>) -> Self {
+    pub fn new(
+        backend: Arc<B>,
+        state: Arc<RwLock<State>>,
+        runtime_tx: crate::compat::Sender<Message>,
+    ) -> Self {
         let (tx, rx) = mpsc::channel(1024);
 
         // Initialize new infrastructure
@@ -216,7 +210,7 @@ impl<B: Backend> MidiHandler<B> {
 
             runtime_tx,
 
-            device_transport_started: Arc::new(Mutex::new(HashSet::new())),
+            looper_manager: Mutex::new(LooperManager::new()),
         }
     }
 
@@ -344,29 +338,6 @@ impl<B: Backend> MidiHandler<B> {
         }
     }
 
-    /// Check if a MIDI Start has already been sent to this device.
-    /// Returns true if device is in "started" state (avoids re-sending on reload).
-    pub fn is_device_started(&self, device: MidiDeviceId) -> bool {
-        self.device_transport_started
-            .lock()
-            .map(|s| s.contains(&device))
-            .unwrap_or(false)
-    }
-
-    /// Mark a device as started (after sending MIDI Start).
-    pub fn mark_device_started(&self, device: MidiDeviceId) {
-        if let Ok(mut s) = self.device_transport_started.lock() {
-            s.insert(device);
-        }
-    }
-
-    /// Mark a device as stopped (after sending MIDI Stop).
-    pub fn mark_device_stopped(&self, device: MidiDeviceId) {
-        if let Ok(mut s) = self.device_transport_started.lock() {
-            s.remove(&device);
-        }
-    }
-
     /// Get cached capability for a device, detecting if not cached.
     pub fn get_device_capability(&self, device: MidiDeviceId) -> MidiOutputCapability {
         // Check cache first
@@ -387,9 +358,10 @@ impl<B: Backend> MidiHandler<B> {
         let device_name = midir::MidiOutput::new("vibelang-cap-check")
             .ok()
             .and_then(|midi_out| {
-                midi_out.ports().get(device.0 as usize).and_then(|port| {
-                    midi_out.port_name(port).ok()
-                })
+                midi_out
+                    .ports()
+                    .get(device.0 as usize)
+                    .and_then(|port| midi_out.port_name(port).ok())
             })
             .unwrap_or_else(|| format!("Unknown {}", device.0));
 
@@ -462,13 +434,13 @@ impl<B: Backend> MidiHandler<B> {
 
     /// Clear all callbacks for a specific device.
     pub async fn clear_device_callbacks(&self, device_id: MidiDeviceId) {
-        self.callback_manager.clear_device_callbacks(device_id).await
+        self.callback_manager
+            .clear_device_callbacks(device_id)
+            .await
     }
 
     /// Get a receiver for callback notifications.
-    pub fn callback_receiver(
-        &self,
-    ) -> Arc<Mutex<mpsc::Receiver<MidiEventNotification>>> {
+    pub fn callback_receiver(&self) -> Arc<Mutex<mpsc::Receiver<MidiEventNotification>>> {
         self.callback_manager.callback_receiver()
     }
 
@@ -518,7 +490,9 @@ impl<B: Backend> MidiHandler<B> {
 
     /// Apply basic keyboard routes from script state.
     pub async fn apply_basic_keyboard_routes(&self, routes: &[crate::reload::MidiKeyboardRoute]) {
-        self.routing_manager.apply_basic_keyboard_routes(routes).await
+        self.routing_manager
+            .apply_basic_keyboard_routes(routes)
+            .await
     }
 
     /// Apply advanced keyboard routes from script state.
@@ -542,30 +516,26 @@ impl<B: Backend> MidiHandler<B> {
     }
 
     /// Apply advanced CC routes from script state.
-    pub async fn apply_advanced_cc_routes(
-        &self,
-        routes: &[crate::reload::AdvancedMidiCcRoute],
-    ) {
-        self.routing_manager
-            .apply_advanced_cc_routes(routes)
-            .await
+    pub async fn apply_advanced_cc_routes(&self, routes: &[crate::reload::AdvancedMidiCcRoute]) {
+        self.routing_manager.apply_advanced_cc_routes(routes).await
     }
 
     // ========================================================================
     // MIDI 2.0 Routing (delegated)
     // ========================================================================
 
-    
     pub async fn apply_midi2_keyboard_routes(&self, routes: &[crate::reload::Midi2KeyboardRoute]) {
-        self.routing_manager.apply_midi2_keyboard_routes(routes).await
+        self.routing_manager
+            .apply_midi2_keyboard_routes(routes)
+            .await
     }
 
-    
     pub async fn apply_midi2_per_note_routes(&self, routes: &[crate::reload::Midi2PerNoteRoute]) {
-        self.routing_manager.apply_midi2_per_note_routes(routes).await
+        self.routing_manager
+            .apply_midi2_per_note_routes(routes)
+            .await
     }
 
-    
     pub async fn apply_midi2_cc_routes(&self, routes: &[crate::reload::Midi2CcRoute]) {
         self.routing_manager.apply_midi2_cc_routes(routes).await
     }
@@ -654,8 +624,94 @@ impl<B: Backend> MidiHandler<B> {
         }
 
         // Process MIDI 2.0 messages from the event queue
-        
+
         self.process_midi2_events().await;
+
+        // Tick looper manager — detects silence and triggers playback conversion.
+        let (current_beat, time_sig_num) = {
+            let state = self.state.read().await;
+            (state.current_beat.to_f64(), state.time_sig.numerator)
+        };
+        let looper_actions = {
+            let mut mgr = self.looper_manager.lock().unwrap_or_else(|e| e.into_inner());
+            mgr.tick(current_beat, time_sig_num)
+        };
+        self.dispatch_looper_actions(looper_actions).await;
+    }
+
+    // ========================================================================
+    // Looper Management
+    // ========================================================================
+
+    /// Reconcile looper instances against the new config list.
+    ///
+    /// Called on script reload. Stops patterns from removed loopers.
+    pub async fn reconcile_loopers(&self, configs: &[LooperConfig]) {
+        let actions = {
+            let mut mgr = self.looper_manager.lock().unwrap_or_else(|e| e.into_inner());
+            mgr.reconcile(configs)
+        };
+        self.dispatch_looper_actions(actions).await;
+    }
+
+    /// Dispatch a batch of looper actions to the runtime.
+    async fn dispatch_looper_actions(&self, actions: Vec<LooperAction>) {
+        for action in actions {
+            match action {
+                LooperAction::NoteOn {
+                    voice_id,
+                    note,
+                    velocity,
+                } => {
+                    if let Err(e) = self
+                        .runtime_tx
+                        .send_async(Message::Voice(VoiceMessage::NoteOn {
+                            voice: voice_id,
+                            note,
+                            velocity: velocity as f32 / 127.0,
+                        }))
+                        .await
+                    {
+                        tracing::warn!("Looper: failed to send NoteOn: {}", e);
+                    }
+                }
+                LooperAction::NoteOff { voice_id, note } => {
+                    if let Err(e) = self
+                        .runtime_tx
+                        .send_async(Message::Voice(VoiceMessage::NoteOff {
+                            voice: voice_id,
+                            note,
+                        }))
+                        .await
+                    {
+                        tracing::warn!("Looper: failed to send NoteOff: {}", e);
+                    }
+                }
+                LooperAction::StopPattern { pattern_id } => {
+                    let _ = self
+                        .runtime_tx
+                        .send_async(Message::Pattern(PatternMessage::Stop { id: pattern_id }))
+                        .await;
+                    let _ = self
+                        .runtime_tx
+                        .send_async(Message::Pattern(PatternMessage::Delete { id: pattern_id }))
+                        .await;
+                }
+                LooperAction::StartPattern { config, pattern_id } => {
+                    let _ = self
+                        .runtime_tx
+                        .send_async(Message::Pattern(PatternMessage::Create {
+                            id: pattern_id,
+                            config,
+                        }))
+                        .await;
+                    let _ = self
+                        .runtime_tx
+                        .send_async(Message::Pattern(PatternMessage::Start { id: pattern_id }))
+                        .await;
+                }
+            }
+        }
     }
 
     /// Process MIDI 2.0 events from the event queue.
@@ -675,10 +731,14 @@ impl<B: Backend> MidiHandler<B> {
     /// Handle a single MIDI message.
     async fn handle_message(&self, device_id: MidiDeviceId, msg: MidiMessage) {
         // First, invoke callbacks
-        self.callback_manager.invoke_callbacks(device_id, &msg).await;
+        self.callback_manager
+            .invoke_callbacks(device_id, &msg)
+            .await;
 
         // Record events if recording is active for this device
-        self.recording_manager.record_message(device_id, &msg, &self.state).await;
+        self.recording_manager
+            .record_message(device_id, &msg, &self.state)
+            .await;
 
         // Then process routing
         let routing_arc = self.routing_manager.routing();
@@ -690,10 +750,12 @@ impl<B: Backend> MidiHandler<B> {
                 note,
                 velocity,
             } => {
-                self.handle_note_on(&routing, device_id, *channel, *note, *velocity).await;
+                self.handle_note_on(&routing, device_id, *channel, *note, *velocity)
+                    .await;
             }
             MidiMessage::NoteOff { channel, note } => {
-                self.handle_note_off(&routing, device_id, *channel, *note).await;
+                self.handle_note_off(&routing, device_id, *channel, *note)
+                    .await;
             }
             MidiMessage::ControlChange { channel, cc, value } => {
                 // Collect routes and drop routing lock before backend calls
@@ -717,7 +779,8 @@ impl<B: Backend> MidiHandler<B> {
 
                 drop(routing);
 
-                self.handle_cc(basic_routes, advanced_routes, *cc, *value).await;
+                self.handle_cc(basic_routes, advanced_routes, *cc, *value)
+                    .await;
             }
             MidiMessage::PitchBend { channel, value } => {
                 let basic_routes: Vec<_> = routing
@@ -742,7 +805,8 @@ impl<B: Backend> MidiHandler<B> {
 
                 drop(routing);
 
-                self.handle_pitch_bend(basic_routes, advanced_routes, *value).await;
+                self.handle_pitch_bend(basic_routes, advanced_routes, *value)
+                    .await;
             }
             MidiMessage::Clock => {
                 tracing::trace!("MIDI Clock pulse from device {}", device_id.0);
@@ -767,6 +831,20 @@ impl<B: Backend> MidiHandler<B> {
         note: u8,
         velocity: u8,
     ) {
+        // If a looper is configured for this device, route exclusively through it.
+        if self.looper_manager.lock().unwrap_or_else(|e| e.into_inner()).has_device(device_id) {
+            let (current_beat, time_sig_num) = {
+                let state = self.state.read().await;
+                (state.current_beat.to_f64(), state.time_sig.numerator)
+            };
+            let actions = {
+                let mut mgr = self.looper_manager.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.handle_note_on(device_id, channel, note, velocity, current_beat, time_sig_num)
+            };
+            self.dispatch_looper_actions(actions).await;
+            return;
+        }
+
         let vel_f32 = velocity as f32 / 127.0;
 
         // Process basic keyboard routes
@@ -780,11 +858,15 @@ impl<B: Backend> MidiHandler<B> {
                     note,
                     velocity
                 );
-                if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOn {
-                    voice: route.voice_id,
-                    note,
-                    velocity: vel_f32,
-                })).await {
+                if let Err(e) = self
+                    .runtime_tx
+                    .send_async(Message::Voice(VoiceMessage::NoteOn {
+                        voice: route.voice_id,
+                        note,
+                        velocity: vel_f32,
+                    }))
+                    .await
+                {
                     tracing::warn!("Failed to send MIDI note_on to runtime: {}", e);
                 }
             }
@@ -809,11 +891,15 @@ impl<B: Backend> MidiHandler<B> {
                         velocity,
                         curved_velocity
                     );
-                    if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOn {
-                        voice: voice_id,
-                        note: transposed_note,
-                        velocity: vel,
-                    })).await {
+                    if let Err(e) = self
+                        .runtime_tx
+                        .send_async(Message::Voice(VoiceMessage::NoteOn {
+                            voice: voice_id,
+                            note: transposed_note,
+                            velocity: vel,
+                        }))
+                        .await
+                    {
                         tracing::warn!("Failed to send MIDI advanced note_on to runtime: {}", e);
                     }
                 }
@@ -838,22 +924,33 @@ impl<B: Backend> MidiHandler<B> {
                     if let Some((param, value)) = route.velocity_to_param(velocity) {
                         tracing::debug!(
                             "MIDI velocity mapping: param={}, value={} (voice={}, note={})",
-                            param, value, voice_id.0, note
+                            param,
+                            value,
+                            voice_id.0,
+                            note
                         );
-                        if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::SetParam {
-                            id: voice_id,
-                            param: param.to_string(),
-                            value: value as f32,
-                        })).await {
+                        if let Err(e) = self
+                            .runtime_tx
+                            .send_async(Message::Voice(VoiceMessage::SetParam {
+                                id: voice_id,
+                                param: param.to_string(),
+                                value: value as f32,
+                            }))
+                            .await
+                        {
                             tracing::warn!("Failed to send MIDI velocity param to runtime: {}", e);
                         }
                     }
 
-                    if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOn {
-                        voice: voice_id,
-                        note,
-                        velocity: vel_f32,
-                    })).await {
+                    if let Err(e) = self
+                        .runtime_tx
+                        .send_async(Message::Voice(VoiceMessage::NoteOn {
+                            voice: voice_id,
+                            note,
+                            velocity: vel_f32,
+                        }))
+                        .await
+                    {
                         tracing::warn!("Failed to send MIDI note route on to runtime: {}", e);
                     }
                 }
@@ -868,20 +965,34 @@ impl<B: Backend> MidiHandler<B> {
         channel: u8,
         note: u8,
     ) {
+        // If a looper is configured for this device, route exclusively through it.
+        if self.looper_manager.lock().unwrap_or_else(|e| e.into_inner()).has_device(device_id) {
+            let current_beat = {
+                let state = self.state.read().await;
+                state.current_beat.to_f64()
+            };
+            let actions = {
+                let mut mgr = self.looper_manager.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.handle_note_off(device_id, channel, note, current_beat)
+            };
+            self.dispatch_looper_actions(actions).await;
+            return;
+        }
+
         // Process basic keyboard routes
         for route in &routing.keyboard_routes {
             if route.device_id == device_id
                 && (route.channel.is_none() || route.channel == Some(channel))
             {
-                tracing::debug!(
-                    "MIDI note_off: voice={}, note={}",
-                    route.voice_id.0,
-                    note
-                );
-                if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOff {
-                    voice: route.voice_id,
-                    note,
-                })).await {
+                tracing::debug!("MIDI note_off: voice={}, note={}", route.voice_id.0, note);
+                if let Err(e) = self
+                    .runtime_tx
+                    .send_async(Message::Voice(VoiceMessage::NoteOff {
+                        voice: route.voice_id,
+                        note,
+                    }))
+                    .await
+                {
                     tracing::warn!("Failed to send MIDI note_off to runtime: {}", e);
                 }
             }
@@ -902,10 +1013,14 @@ impl<B: Backend> MidiHandler<B> {
                         note,
                         transposed_note
                     );
-                    if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOff {
-                        voice: voice_id,
-                        note: transposed_note,
-                    })).await {
+                    if let Err(e) = self
+                        .runtime_tx
+                        .send_async(Message::Voice(VoiceMessage::NoteOff {
+                            voice: voice_id,
+                            note: transposed_note,
+                        }))
+                        .await
+                    {
                         tracing::warn!("Failed to send MIDI advanced note_off to runtime: {}", e);
                     }
                 }
@@ -919,15 +1034,15 @@ impl<B: Backend> MidiHandler<B> {
                 && (route.channel.is_none() || route.channel == Some(channel))
             {
                 if let Some(voice_id) = route.target_voice {
-                    tracing::debug!(
-                        "MIDI note route off: voice={}, note={}",
-                        voice_id.0,
-                        note
-                    );
-                    if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOff {
-                        voice: voice_id,
-                        note,
-                    })).await {
+                    tracing::debug!("MIDI note route off: voice={}, note={}", voice_id.0, note);
+                    if let Err(e) = self
+                        .runtime_tx
+                        .send_async(Message::Voice(VoiceMessage::NoteOff {
+                            voice: voice_id,
+                            note,
+                        }))
+                        .await
+                    {
                         tracing::warn!("Failed to send MIDI note route off to runtime: {}", e);
                     }
                 }
@@ -968,21 +1083,16 @@ impl<B: Backend> MidiHandler<B> {
         for route in advanced_routes {
             let param_value = route.cc_to_param(value);
 
-            if let (Some(voice_id), Some(param)) = (route.target_voice, &route.target_param) {
+            if let (Some(target), Some(param)) = (route.target.as_ref(), &route.target_param) {
                 tracing::debug!(
-                    "MIDI advanced CC: voice={}, param={}, value={}",
-                    voice_id.0,
+                    "MIDI advanced CC: target={:?}, param={}, value={}",
+                    target,
                     param,
                     param_value
                 );
 
-                let target = FadeTarget::Voice(voice_id);
-                if let Err(e) = self.apply_cc_to_target(&target, param, param_value).await {
-                    tracing::warn!(
-                        "Failed to apply advanced CC to voice {}: {}",
-                        voice_id.0,
-                        e
-                    );
+                if let Err(e) = self.apply_cc_to_target(target, param, param_value).await {
+                    tracing::warn!("Failed to apply advanced CC to {:?}: {}", target, e);
                 }
             }
         }
@@ -1009,11 +1119,7 @@ impl<B: Backend> MidiHandler<B> {
         for route in advanced_routes {
             if let Some(voice_id) = route.target_voice {
                 if let Err(e) = self.apply_pitch_bend(voice_id, bend_semitones).await {
-                    tracing::warn!(
-                        "Failed to apply pitch bend to voice {}: {}",
-                        voice_id.0,
-                        e
-                    );
+                    tracing::warn!("Failed to apply pitch bend to voice {}: {}", voice_id.0, e);
                 }
             }
         }
@@ -1105,7 +1211,9 @@ impl<B: Backend> MidiHandler<B> {
 
     /// Tick MIDI clock output based on current beat position.
     pub async fn tick_clock(&self, current_beat: f64, is_playing: bool) -> Result<()> {
-        self.clock_manager.tick_clock(current_beat, is_playing, &self.outputs).await
+        self.clock_manager
+            .tick_clock(current_beat, is_playing, &self.outputs)
+            .await
     }
 
     /// Reset the clock output position.
@@ -1117,7 +1225,6 @@ impl<B: Backend> MidiHandler<B> {
     // MIDI 2.0 Message Handling
     // ========================================================================
 
-    
     async fn handle_midi2_message(&self, device_id: MidiDeviceId, msg: &NewMidiMessage) {
         match msg {
             NewMidiMessage::Midi2PerNotePitchBend {
@@ -1134,8 +1241,14 @@ impl<B: Backend> MidiHandler<B> {
                 controller,
                 value,
             } => {
-                self.handle_per_note_controller(device_id, *group_channel, *note, *controller, *value)
-                    .await;
+                self.handle_per_note_controller(
+                    device_id,
+                    *group_channel,
+                    *note,
+                    *controller,
+                    *value,
+                )
+                .await;
             }
             NewMidiMessage::Midi2NoteOn {
                 group_channel,
@@ -1173,7 +1286,6 @@ impl<B: Backend> MidiHandler<B> {
         }
     }
 
-    
     async fn handle_per_note_pitch_bend(
         &self,
         device_id: MidiDeviceId,
@@ -1237,7 +1349,6 @@ impl<B: Backend> MidiHandler<B> {
         }
     }
 
-    
     async fn handle_per_note_controller(
         &self,
         device_id: MidiDeviceId,
@@ -1306,7 +1417,6 @@ impl<B: Backend> MidiHandler<B> {
         }
     }
 
-    
     async fn handle_midi2_note_on(
         &self,
         device_id: MidiDeviceId,
@@ -1346,17 +1456,20 @@ impl<B: Backend> MidiHandler<B> {
                 transposed_note,
                 velocity.as_f32()
             );
-            if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOn {
-                voice: route.voice_id,
-                note: transposed_note,
-                velocity: velocity.as_f32(),
-            })).await {
+            if let Err(e) = self
+                .runtime_tx
+                .send_async(Message::Voice(VoiceMessage::NoteOn {
+                    voice: route.voice_id,
+                    note: transposed_note,
+                    velocity: velocity.as_f32(),
+                }))
+                .await
+            {
                 tracing::warn!("Failed to send MIDI 2.0 note_on to runtime: {}", e);
             }
         }
     }
 
-    
     async fn handle_midi2_note_off(
         &self,
         device_id: MidiDeviceId,
@@ -1394,16 +1507,19 @@ impl<B: Backend> MidiHandler<B> {
                 note,
                 transposed_note
             );
-            if let Err(e) = self.runtime_tx.send_async(Message::Voice(VoiceMessage::NoteOff {
-                voice: route.voice_id,
-                note: transposed_note,
-            })).await {
+            if let Err(e) = self
+                .runtime_tx
+                .send_async(Message::Voice(VoiceMessage::NoteOff {
+                    voice: route.voice_id,
+                    note: transposed_note,
+                }))
+                .await
+            {
                 tracing::warn!("Failed to send MIDI 2.0 note_off to runtime: {}", e);
             }
         }
     }
 
-    
     async fn handle_midi2_cc(
         &self,
         device_id: MidiDeviceId,
@@ -1413,7 +1529,7 @@ impl<B: Backend> MidiHandler<B> {
     ) {
         let routes: Vec<_> = {
             let routing_arc = self.routing_manager.routing();
-        let routing = routing_arc.read().await;
+            let routing = routing_arc.read().await;
             routing
                 .midi2_cc_routes
                 .iter()
@@ -1447,7 +1563,10 @@ impl<B: Backend> MidiHandler<B> {
             );
 
             let target = FadeTarget::Voice(route.voice_id);
-            if let Err(e) = self.apply_cc_to_target(&target, &route.param, param_value).await {
+            if let Err(e) = self
+                .apply_cc_to_target(&target, &route.param, param_value)
+                .await
+            {
                 tracing::warn!(
                     "Failed to apply MIDI 2.0 CC to voice {}: {}",
                     route.voice_id.0,
@@ -1457,7 +1576,6 @@ impl<B: Backend> MidiHandler<B> {
         }
     }
 
-    
     async fn handle_midi2_pitch_bend(
         &self,
         device_id: MidiDeviceId,
@@ -1466,7 +1584,7 @@ impl<B: Backend> MidiHandler<B> {
     ) {
         let routes: Vec<_> = {
             let routing_arc = self.routing_manager.routing();
-        let routing = routing_arc.read().await;
+            let routing = routing_arc.read().await;
             routing
                 .midi2_keyboard_routes
                 .iter()
@@ -1494,7 +1612,6 @@ impl<B: Backend> MidiHandler<B> {
         }
     }
 
-    
     async fn apply_per_note_param(
         &self,
         voice_id: VoiceId,
