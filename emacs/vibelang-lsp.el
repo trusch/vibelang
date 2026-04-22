@@ -83,6 +83,48 @@ Eglot is built into Emacs 29+."
   "Face for pattern tokens (x, X, -, .) in VibeLang."
   :group 'vibelang-lsp)
 
+;;; Diagnostic Overlays
+
+(defface vibelang-error-overlay-face
+  '((t :inherit compilation-error :extend nil))
+  "Face for inline error overlays."
+  :group 'vibelang)
+
+(defface vibelang-warning-overlay-face
+  '((t :inherit compilation-warning :extend nil))
+  "Face for inline warning overlays."
+  :group 'vibelang)
+
+(defun vibelang--clear-diagnostic-overlays ()
+  "Remove all VibeLang diagnostic overlays from current buffer."
+  (remove-overlays (point-min) (point-max) 'vibelang-diagnostic-overlay t))
+
+(defun vibelang--show-diagnostic-overlays ()
+  "Show flymake/eglot diagnostics as inline overlays after each error line."
+  (vibelang--clear-diagnostic-overlays)
+  (when (fboundp 'flymake-diagnostics)
+    (dolist (diag (flymake-diagnostics))
+      (let* ((beg (flymake-diagnostic-beg diag))
+             (text (flymake-diagnostic-text diag))
+             (type (flymake-diagnostic-type diag))
+             (face (if (eq type :error)
+                       'vibelang-error-overlay-face
+                     'vibelang-warning-overlay-face))
+             (line-end (save-excursion (goto-char beg) (line-end-position)))
+             (ov (make-overlay line-end line-end)))
+        (overlay-put ov 'vibelang-diagnostic-overlay t)
+        (overlay-put ov 'after-string
+                     (propertize (concat "  ← " text) 'face face))))))
+
+(defun vibelang-lsp--setup-diagnostic-overlays ()
+  "Hook diagnostic overlays into flymake for the current buffer."
+  (add-hook 'flymake-after-update-hook #'vibelang--show-diagnostic-overlays nil t))
+
+(defun vibelang-lsp--teardown-diagnostic-overlays ()
+  "Remove diagnostic overlay hooks and clear overlays from current buffer."
+  (remove-hook 'flymake-after-update-hook #'vibelang--show-diagnostic-overlays t)
+  (vibelang--clear-diagnostic-overlays))
+
 ;;; Eglot Integration
 
 (defun vibelang-lsp--eglot-setup ()
@@ -92,40 +134,10 @@ Eglot is built into Emacs 29+."
     (add-to-list 'eglot-server-programs
                  `(vibelang-mode . ,vibelang-lsp-server-command))
 
-    ;; Map semantic token types to faces
-    ;; VibeLang LSP token types (from semantic_tokens.rs):
-    ;; 0: namespace (groups)
-    ;; 1: type (synthdefs)
-    ;; 2: class (effects)
-    ;; 3: function (voices)
-    ;; 4: method
-    ;; 5: property (parameters)
-    ;; 6: variable
-    ;; 7: string
-    ;; 8: number
-    ;; 9: keyword
-    ;; 10: operator
-    ;; 11: comment
-    ;; 12: macro (patterns/melodies)
-    ;; 13: parameter
-    ;; 14: enumMember (note names)
-    (when (boundp 'eglot-semantic-token-faces)
-      (setq-local eglot-semantic-token-faces
-                  '((namespace . vibelang-lsp-group-face)
-                    (type . vibelang-lsp-synthdef-face)
-                    (class . vibelang-lsp-synthdef-face)
-                    (function . vibelang-lsp-voice-face)
-                    (method . font-lock-function-name-face)
-                    (property . font-lock-variable-name-face)
-                    (variable . font-lock-variable-name-face)
-                    (string . font-lock-string-face)
-                    (number . font-lock-constant-face)
-                    (keyword . font-lock-keyword-face)
-                    (operator . font-lock-operator-face)
-                    (comment . font-lock-comment-face)
-                    (macro . vibelang-lsp-pattern-face)
-                    (parameter . font-lock-variable-name-face)
-                    (enumMember . vibelang-lsp-note-face))))))
+    ;; Note: eglot does not expose a semantic token face mapping variable.
+    ;; The faces defined in this file (vibelang-lsp-*-face) are available for
+    ;; future use if eglot gains such an API or via a custom eglot extension.
+    ))
 
 (defun vibelang-lsp--eglot-ensure ()
   "Ensure eglot is running for current buffer."
@@ -174,10 +186,13 @@ Eglot is built into Emacs 29+."
    ((and (featurep 'eglot) vibelang-lsp-use-eglot)
     (vibelang-lsp--eglot-setup)
     (vibelang-lsp--eglot-ensure)
+    (vibelang-lsp--configure-inlay-hints)
+    (vibelang-lsp--setup-diagnostic-overlays)
     (message "VibeLang LSP enabled via eglot"))
    ((featurep 'lsp-mode)
     (vibelang-lsp--lsp-mode-setup)
     (vibelang-lsp--lsp-mode-ensure)
+    (vibelang-lsp--setup-diagnostic-overlays)
     (message "VibeLang LSP enabled via lsp-mode"))
    (t
     (message "No LSP client available. Install eglot (Emacs 29+) or lsp-mode."))))
@@ -185,6 +200,7 @@ Eglot is built into Emacs 29+."
 (defun vibelang-lsp-disable ()
   "Disable LSP support for VibeLang in current buffer."
   (interactive)
+  (vibelang-lsp--teardown-diagnostic-overlays)
   (cond
    ((and (featurep 'eglot) (eglot-managed-p))
     (eglot-shutdown (eglot-current-server)))

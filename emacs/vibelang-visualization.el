@@ -10,16 +10,29 @@
 ;; currently playing elements including active clips within sequences.
 ;;
 ;; Architecture:
-;; - Server sends playback.tick events every 16th note (~8 updates per beat)
+;; - Server polls at 20 Hz and emits playback.tick when each 16th-note
+;;   boundary is crossed. At 120 BPM this yields ~8 ticks/beat; at very
+;;   high tempos (>240 BPM) ticks may occasionally merge.
 ;; - Each tick triggers overlay updates via vibelang-viz--update-all
 ;; - Beat overlays are reused (moved) rather than recreated for smoothness
 ;; - No client-side interpolation - server ticks are frequent enough
 
 ;;; Code:
 
+(require 'seq)
 (require 'vibelang-syntax)
+(require 'vibelang-websocket)
+
+;;; Global active-buffer registry
+
+(defvar vibelang-viz--active-buffers nil
+  "List of buffers with vibelang-visualization-mode active.
+Maintained by setup/teardown; pruned of dead buffers in update-all.")
 
 ;;; Buffer-local state
+
+(defvar-local vibelang-viz--active nil
+  "Non-nil when vibelang-visualization-mode is active in this buffer.")
 
 (defvar-local vibelang-viz--pattern-info nil
   "Alist of (name . info) for pattern/melody/sequence visualization.
@@ -53,6 +66,29 @@ Overlays are moved rather than recreated for smooth animation.")
 (defvar-local vibelang-viz--playing-overlays nil
   "Hash table mapping entity key to its playing line overlay.")
 
+(defvar-local vibelang-viz--clip-overlays nil
+  "Hash table mapping clip identity to its overlay for reuse.")
+
+;;; Eval flash feedback
+
+(defface vibelang-eval-flash-face
+  '((t :inherit highlight :extend t))
+  "Face used for the eval flash effect."
+  :group 'vibelang)
+
+(defcustom vibelang-eval-flash-duration 0.15
+  "Duration in seconds of the eval flash highlight."
+  :type 'float
+  :group 'vibelang)
+
+(defun vibelang--flash-region (beg end)
+  "Briefly flash the region BEG..END to indicate evaluation."
+  (let ((ov (make-overlay beg end)))
+    (overlay-put ov 'face 'vibelang-eval-flash-face)
+    (overlay-put ov 'vibelang-overlay t)
+    (run-at-time vibelang-eval-flash-duration nil
+                 (lambda () (delete-overlay ov)))))
+
 ;;; Faces for visualization
 
 (defface vibelang-clip-active-face
@@ -71,6 +107,22 @@ Overlays are moved rather than recreated for smooth animation.")
   "Face for clip progress indicator."
   :group 'vibelang-faces)
 
+(defface vibelang-clip-stale-face
+  '((((class color) (background dark))
+     :background "#3a3214" :extend t)
+    (((class color) (background light))
+     :background "#fff4cc" :extend t))
+  "Face for active clips when playback state is stale or reconnecting."
+  :group 'vibelang-faces)
+
+(defface vibelang-clip-progress-stale-face
+  '((((class color) (background dark))
+     :foreground "#f0c674" :weight bold)
+    (((class color) (background light))
+     :foreground "#8a6d00" :weight bold))
+  "Face for stale clip progress indicators."
+  :group 'vibelang-faces)
+
 ;;; Minor mode
 
 (define-minor-mode vibelang-visualization-mode
@@ -82,21 +134,37 @@ Shows beat position indicators in pattern/melody/sequence strings."
       (vibelang-viz--setup)
     (vibelang-viz--teardown)))
 
+(defun vibelang-viz--on-buffer-kill ()
+  "Remove current buffer from the active-buffer registry on kill."
+  (setq vibelang-viz--active-buffers
+        (delq (current-buffer) vibelang-viz--active-buffers)))
+
 (defun vibelang-viz--setup ()
   "Set up visualization for current buffer."
+  (setq vibelang-viz--active t)
+  (add-to-list 'vibelang-viz--active-buffers (current-buffer))
+  (add-hook 'kill-buffer-hook #'vibelang-viz--on-buffer-kill nil t)
   (add-hook 'after-change-functions #'vibelang-viz--on-buffer-change nil t)
+  (add-hook 'vibelang--connection-state-hook #'vibelang-viz--on-connection-state-change)
   (setq vibelang-viz--beat-overlays (make-hash-table :test 'equal))
   (setq vibelang-viz--playing-overlays (make-hash-table :test 'equal))
+  (setq vibelang-viz--clip-overlays (make-hash-table :test 'equal))
   (vibelang-viz--scan-patterns))
 
 (defun vibelang-viz--teardown ()
   "Tear down visualization for current buffer."
+  (setq vibelang-viz--active nil)
+  (setq vibelang-viz--active-buffers
+        (delq (current-buffer) vibelang-viz--active-buffers))
+  (remove-hook 'kill-buffer-hook #'vibelang-viz--on-buffer-kill t)
   (when vibelang-viz--change-debounce-timer
     (cancel-timer vibelang-viz--change-debounce-timer)
     (setq vibelang-viz--change-debounce-timer nil))
+  (remove-hook 'vibelang--connection-state-hook #'vibelang-viz--on-connection-state-change)
   (vibelang-viz--clear-all-overlays)
   (setq vibelang-viz--beat-overlays nil)
   (setq vibelang-viz--playing-overlays nil)
+  (setq vibelang-viz--clip-overlays nil)
   (remove-hook 'after-change-functions #'vibelang-viz--on-buffer-change t))
 
 (defun vibelang-viz--on-buffer-change (&rest _)
@@ -126,7 +194,7 @@ Shows beat position indicators in pattern/melody/sequence strings."
         (move-overlay ov pos (+ pos len))
       ;; Create new overlay
       (setq ov (make-overlay pos (+ pos len)))
-      (overlay-put ov 'face 'vibelang-beat-indicator-active-face)
+      (overlay-put ov 'face (vibelang-viz--beat-face))
       (overlay-put ov 'vibelang-overlay t)
       (overlay-put ov 'vibelang-beat-overlay t)
       (overlay-put ov 'priority 100)
@@ -141,31 +209,117 @@ Shows beat position indicators in pattern/melody/sequence strings."
         (delete-overlay ov))
       (remhash key vibelang-viz--beat-overlays))))
 
-(defun vibelang-viz--add-playing-overlay (start end)
-  "Add playing overlay from START to END (line highlight)."
+(defun vibelang-viz--add-playing-overlay (key start active-playing-keys)
+  "Get or create playing overlay for KEY at START's line, tracking in ACTIVE-PLAYING-KEYS."
+  (unless vibelang-viz--playing-overlays
+    (setq vibelang-viz--playing-overlays (make-hash-table :test 'equal)))
+  (puthash key t active-playing-keys)
   (save-excursion
     (goto-char start)
     (let* ((line-start (line-beginning-position))
            (line-end (line-end-position))
-           (ov (make-overlay line-start line-end)))
-      (overlay-put ov 'face 'vibelang-playing-face)
-      (overlay-put ov 'vibelang-overlay t)
-      (overlay-put ov 'vibelang-playing-overlay t)
-      (overlay-put ov 'priority 50))))
+           (ov (gethash key vibelang-viz--playing-overlays)))
+      (if (and ov (overlay-buffer ov))
+          (move-overlay ov line-start line-end)
+        (setq ov (make-overlay line-start line-end))
+        (overlay-put ov 'face (vibelang-viz--playing-face))
+        (overlay-put ov 'vibelang-overlay t)
+        (overlay-put ov 'vibelang-playing-overlay t)
+        (overlay-put ov 'priority 50)
+        (puthash key ov vibelang-viz--playing-overlays))
+      ov)))
 
 (defun vibelang-viz--clear-playing-overlays ()
-  "Clear all playing line overlays."
-  (remove-overlays (point-min) (point-max) 'vibelang-playing-overlay t))
+  "Clear all playing line overlays (teardown only)."
+  (remove-overlays (point-min) (point-max) 'vibelang-playing-overlay t)
+  (when vibelang-viz--playing-overlays
+    (clrhash vibelang-viz--playing-overlays)))
 
 (defun vibelang-viz--clear-clip-overlays ()
   "Clear all clip/sequence overlays."
-  (remove-overlays (point-min) (point-max) 'vibelang-clip-overlay t))
+  (remove-overlays (point-min) (point-max) 'vibelang-clip-overlay t)
+  (when vibelang-viz--clip-overlays
+    (clrhash vibelang-viz--clip-overlays)))
+
+(defun vibelang-viz--sync-state ()
+  "Return the current high-level playback sync state."
+  (if (fboundp 'vibelang-ws-connection-state)
+      (vibelang-ws-connection-state)
+    'synced))
+
+(defun vibelang-viz--connection-degraded-p ()
+  "Return non-nil when visualization should show stale/reconnecting state."
+  (memq (vibelang-viz--sync-state) '(stale reconnecting connected)))
+
+(defun vibelang-viz--beat-face ()
+  "Return the beat overlay face for the current sync state."
+  (if (vibelang-viz--connection-degraded-p)
+      'vibelang-beat-indicator-face
+    'vibelang-beat-indicator-active-face))
+
+(defun vibelang-viz--playing-face ()
+  "Return the playing-line face for the current sync state."
+  (if (vibelang-viz--connection-degraded-p)
+      'highlight
+    'vibelang-playing-face))
+
+(defun vibelang-viz--clip-face ()
+  "Return the clip overlay face for the current sync state."
+  (if (vibelang-viz--connection-degraded-p)
+      'vibelang-clip-stale-face
+    'vibelang-clip-active-face))
+
+(defun vibelang-viz--clip-progress-face ()
+  "Return the clip progress face for the current sync state."
+  (if (vibelang-viz--connection-degraded-p)
+      'vibelang-clip-progress-stale-face
+    'vibelang-clip-progress-face))
+
+(defun vibelang-viz--format-clip-progress (progress)
+  "Return a compact progress string for clip PROGRESS."
+  (let* ((bar-width 8)
+         (clamped (max 0.0 (min 1.0 (or progress 0.0))))
+         (filled (min bar-width (round (* clamped bar-width))))
+         (empty (- bar-width filled))
+         (bar (concat (make-string filled ?█)
+                      (make-string empty ?·)))
+         (label (format " [%s] %3d%%" bar (round (* clamped 100)))))
+    (propertize label 'face (vibelang-viz--clip-progress-face))))
+
+(defun vibelang-viz--on-connection-state-change (_state _detail)
+  "Refresh overlay styling after a connection state change."
+  (when (and (derived-mode-p 'vibelang-mode)
+             vibelang-visualization-mode)
+    (if (memq (vibelang-viz--sync-state) '(disconnected protocol-mismatch))
+        (vibelang-viz--clear-all-overlays)
+      (vibelang-viz--refresh-overlay-faces))))
+
+(defun vibelang-viz--refresh-overlay-faces ()
+  "Retint existing overlays to match the current sync state."
+  (when vibelang-viz--beat-overlays
+    (maphash (lambda (_key ov)
+               (when (overlay-buffer ov)
+                 (overlay-put ov 'face (vibelang-viz--beat-face))))
+             vibelang-viz--beat-overlays))
+  (dolist (ov (overlays-in (point-min) (point-max)))
+    (cond
+     ((overlay-get ov 'vibelang-playing-overlay)
+      (overlay-put ov 'face (vibelang-viz--playing-face)))
+     ((overlay-get ov 'vibelang-clip-overlay)
+      (overlay-put ov 'face (vibelang-viz--clip-face))
+      (overlay-put ov 'after-string
+                   (vibelang-viz--format-clip-progress
+                    (overlay-get ov 'vibelang-clip-progress)))))))
 
 (defun vibelang-viz--clear-all-overlays ()
   "Clear all visualization overlays."
   (remove-overlays (point-min) (point-max) 'vibelang-overlay t)
   (when vibelang-viz--beat-overlays
-    (clrhash vibelang-viz--beat-overlays)))
+    (clrhash vibelang-viz--beat-overlays))
+  (when vibelang-viz--playing-overlays
+    (clrhash vibelang-viz--playing-overlays))
+  (when vibelang-viz--clip-overlays
+    (clrhash vibelang-viz--clip-overlays)))
 
 ;;; String parsing helpers
 
@@ -218,12 +372,26 @@ Returns (START END) or nil."
         (list string-start (- (point) (1+ hash-count)))))))
 
 (defun vibelang-viz--find-statement-end (start)
-  "Find the end of statement starting at START."
+  "Find the end of statement starting at START.
+Skips semicolons inside double-quoted strings."
   (save-excursion
     (goto-char start)
-    (if (re-search-forward ";" nil t)
-        (point)
-      (point-max))))
+    (catch 'done
+      (let ((in-string nil))
+        (while (not (eobp))
+          (let ((ch (char-after)))
+            (cond
+             ((and (eq ch ?\\) in-string)
+              (forward-char 2))
+             ((eq ch ?\")
+              (setq in-string (not in-string))
+              (forward-char 1))
+             ((and (not in-string) (eq ch ?\;))
+              (forward-char 1)
+              (throw 'done (point)))
+             (t
+              (forward-char 1)))))
+        (point-max)))))
 
 (defun vibelang-viz--in-comment-p (pos)
   "Check if POS is inside a comment."
@@ -289,7 +457,7 @@ Returns (START END) or nil."
       (while (re-search-forward "sequence(\"\\([^\"]+\\)\")" nil t)
         (let ((name (match-string 1))
               (seq-start (match-beginning 0)))
-          (unless (vibelang-viz--preceded-by-comma-p seq-start)
+          (unless (vibelang-viz--in-argument-position-p seq-start)
             (when (looking-at "[ \t\n]*\\.")
               (save-excursion
                 (let ((limit (vibelang-viz--find-statement-end seq-start)))
@@ -297,13 +465,13 @@ Returns (START END) or nil."
                     (vibelang-viz--register-sequence name seq-start (point) limit)))))))))
     (setq vibelang-viz--last-scan-tick (buffer-modified-tick))))
 
-(defun vibelang-viz--preceded-by-comma-p (pos)
-  "Check if POS is preceded by a comma."
+(defun vibelang-viz--in-argument-position-p (pos)
+  "Return non-nil when POS is inside a function argument list."
   (save-excursion
     (goto-char pos)
     (skip-chars-backward " \t\n")
-    (and (> (point) (point-min))
-         (eq (char-before) ?,))))
+    (let ((c (char-before)))
+      (memq c '(?, ?\()))))
 
 (defun vibelang-viz--register-pattern (name start end pattern-string)
   "Register pattern NAME at START to END with PATTERN-STRING."
@@ -360,7 +528,7 @@ Returns (START END) or nil."
         (pos start-pos))
     (dolist (char (string-to-list pattern-string))
       (cond
-       ((memq char '(?x ?X ?o ?1 ?2 ?3 ?4 ?5 ?6 ?7 ?8 ?9))
+       ((memq char '(?x ?X ?o ?O ?1 ?2 ?3 ?4 ?5 ?6 ?7 ?8 ?9 ?! ?g ?> ?<))
         (push (cons pos beat) slots)
         (setq beat (+ beat 0.25))
         (setq pos (1+ pos)))
@@ -373,6 +541,8 @@ Returns (START END) or nil."
         (setq beat (+ beat 0.25))
         (setq pos (1+ pos)))
        ((memq char '(?| ?\s ?\n ?\r ?\t))
+        (setq pos (1+ pos)))
+       (t
         (setq pos (1+ pos)))))
     (cons (nreverse slots) beat)))
 
@@ -405,8 +575,8 @@ Returns (START END) or nil."
           (let ((note-start buf-pos))
             (setq str-pos (1+ str-pos))
             (setq buf-pos (1+ buf-pos))
-            (when (and (< str-pos len)
-                       (memq (aref notes-string str-pos) '(?# ?b)))
+            (while (and (< str-pos len)
+                        (memq (aref notes-string str-pos) '(?# ?b ?♯ ?♭)))
               (setq str-pos (1+ str-pos))
               (setq buf-pos (1+ buf-pos)))
             (while (and (< str-pos len)
@@ -446,6 +616,11 @@ Returns (START END) or nil."
           (setq beat (+ beat 1.0))
           (setq str-pos (1+ str-pos))
           (setq buf-pos (1+ buf-pos)))
+         ((memq char '(?r ?R ?_))
+          (push (cons buf-pos beat) slots)
+          (setq beat (+ beat 1.0))
+          (setq str-pos (1+ str-pos))
+          (setq buf-pos (1+ buf-pos)))
          (t
           (setq str-pos (1+ str-pos))
           (setq buf-pos (1+ buf-pos))))))
@@ -455,26 +630,23 @@ Returns (START END) or nil."
 
 (defun vibelang-viz--update-all (data)
   "Update all visualizations based on playback DATA."
-  (when vibelang-viz--enabled
-    (dolist (buffer (buffer-list))
-      (when (with-current-buffer buffer
-              (and (derived-mode-p 'vibelang-mode)
-                   vibelang-visualization-mode))
-        (with-current-buffer buffer
-          (setq vibelang-viz--last-playback-data data)
-          (setq vibelang-viz--last-update-time (float-time))
-          (setq vibelang-viz--transport (alist-get 'transport data))
-          (vibelang-viz--update-buffer data))))))
+  (setq vibelang-viz--active-buffers
+        (seq-filter #'buffer-live-p vibelang-viz--active-buffers))
+  (dolist (buffer vibelang-viz--active-buffers)
+    (with-current-buffer buffer
+      (when vibelang-viz--enabled
+        (setq vibelang-viz--last-playback-data data)
+        (setq vibelang-viz--last-update-time (float-time))
+        (setq vibelang-viz--transport (alist-get 'transport data))
+        (vibelang-viz--update-buffer data)))))
 
 (defun vibelang-viz--update-buffer (data)
   "Update visualization in current buffer based on DATA."
   (vibelang-viz--scan-patterns)
-  ;; Clear playing overlays (cheap, line-based)
-  (vibelang-viz--clear-playing-overlays)
-  ;; Clear clip overlays (need full rebuild for progress bars)
-  (vibelang-viz--clear-clip-overlays)
-  ;; Track which beat overlays are still in use
+  ;; Track which beat/clip/playing overlays are still in use
   (let ((active-keys (make-hash-table :test 'equal))
+        (active-clip-keys (make-hash-table :test 'equal))
+        (active-playing-keys (make-hash-table :test 'equal))
         (patterns (alist-get 'patterns data))
         (melodies (alist-get 'melodies data))
         (sequences (alist-get 'sequences data)))
@@ -488,7 +660,7 @@ Returns (START END) or nil."
                 (if playing
                     (progn
                       (puthash key t active-keys)
-                      (vibelang-viz--highlight-pattern name loop-pos loop-len))
+                      (vibelang-viz--highlight-pattern name loop-pos loop-len active-playing-keys))
                   (vibelang-viz--remove-beat-overlay key))))
             patterns)
     ;; Update melodies
@@ -501,7 +673,7 @@ Returns (START END) or nil."
                 (if playing
                     (progn
                       (puthash key t active-keys)
-                      (vibelang-viz--highlight-melody name loop-pos loop-len))
+                      (vibelang-viz--highlight-melody name loop-pos loop-len active-playing-keys))
                   (vibelang-viz--remove-beat-overlay key))))
             melodies)
     ;; Update sequences
@@ -512,10 +684,29 @@ Returns (START END) or nil."
                      (length (or (alist-get 'length sequence) 1))
                      (active-clips (alist-get 'active_clips sequence)))
                 (when playing
-                  (vibelang-viz--highlight-sequence name position length active-clips))))
-            sequences)))
+                  (vibelang-viz--highlight-sequence name position length active-clips
+                                                    active-clip-keys active-playing-keys))))
+            sequences)
+    ;; Remove stale clip overlays
+    (when vibelang-viz--clip-overlays
+      (maphash (lambda (key _ov)
+                 (unless (gethash key active-clip-keys)
+                   (vibelang-viz--remove-clip-overlay key)))
+               vibelang-viz--clip-overlays))
+    ;; Remove stale playing overlays (collect first to avoid modifying while iterating)
+    (when vibelang-viz--playing-overlays
+      (let (stale-playing-keys)
+        (maphash (lambda (key _ov)
+                   (unless (gethash key active-playing-keys)
+                     (push key stale-playing-keys)))
+                 vibelang-viz--playing-overlays)
+        (dolist (key stale-playing-keys)
+          (let ((ov (gethash key vibelang-viz--playing-overlays)))
+            (when (and ov (overlay-buffer ov))
+              (delete-overlay ov)))
+          (remhash key vibelang-viz--playing-overlays))))))
 
-(defun vibelang-viz--highlight-pattern (name loop-pos loop-len)
+(defun vibelang-viz--highlight-pattern (name loop-pos loop-len active-playing-keys)
   "Highlight current position in pattern NAME at LOOP-POS of LOOP-LEN."
   (when-let* ((info (alist-get name vibelang-viz--pattern-info nil nil #'string=)))
     (let* ((start (plist-get info :start))
@@ -524,7 +715,7 @@ Returns (START END) or nil."
            (slot-count (length slots))
            (parsed-length (plist-get info :length))
            (key (format "pattern:%s" name)))
-      (vibelang-viz--add-playing-overlay start end)
+      (vibelang-viz--add-playing-overlay (format "playing:pattern:%s" name) start active-playing-keys)
       (when (and slots (> slot-count 0) (> loop-len 0) (> parsed-length 0))
         (let* ((slot-idx (vibelang-viz--loop-pos-to-slot-idx loop-pos loop-len slot-count)))
           (when (and slot-idx (>= slot-idx 0) (< slot-idx slot-count))
@@ -532,7 +723,7 @@ Returns (START END) or nil."
               (when slot
                 (vibelang-viz--get-or-move-beat-overlay key (car slot) 1)))))))))
 
-(defun vibelang-viz--highlight-melody (name loop-pos loop-len)
+(defun vibelang-viz--highlight-melody (name loop-pos loop-len active-playing-keys)
   "Highlight current position in melody NAME at LOOP-POS of LOOP-LEN."
   (when-let* ((info (alist-get name vibelang-viz--pattern-info nil nil #'string=)))
     (let* ((start (plist-get info :start))
@@ -541,7 +732,7 @@ Returns (START END) or nil."
            (slot-count (length slots))
            (parsed-length (plist-get info :length))
            (key (format "melody:%s" name)))
-      (vibelang-viz--add-playing-overlay start end)
+      (vibelang-viz--add-playing-overlay (format "playing:melody:%s" name) start active-playing-keys)
       (when (and slots (> slot-count 0) (> loop-len 0) (> parsed-length 0))
         (let* ((slot-idx (vibelang-viz--loop-pos-to-slot-idx-melody loop-pos loop-len slots)))
           (when (and slot-idx (>= slot-idx 0) (< slot-idx slot-count))
@@ -551,17 +742,17 @@ Returns (START END) or nil."
                   (vibelang-viz--get-or-move-beat-overlay
                    key (car slot) (- note-end (car slot))))))))))))
 
-(defun vibelang-viz--highlight-sequence (name position length active-clips)
+(defun vibelang-viz--highlight-sequence (name _position _length active-clips active-clip-keys active-playing-keys)
   "Highlight playing sequence NAME at POSITION of LENGTH with ACTIVE-CLIPS."
   (when-let* ((info (alist-get name vibelang-viz--pattern-info nil nil #'string=)))
     (let* ((start (plist-get info :start))
            (end (plist-get info :end))
            (clips (plist-get info :clips)))
-      (vibelang-viz--add-playing-overlay start end)
+      (vibelang-viz--add-playing-overlay (format "playing:sequence:%s" name) start active-playing-keys)
       (when active-clips
-        (vibelang-viz--highlight-active-clips active-clips clips name)))))
+        (vibelang-viz--highlight-active-clips active-clips clips active-clip-keys active-playing-keys name)))))
 
-(defun vibelang-viz--highlight-active-clips (active-clips parent-clips &optional seq-name)
+(defun vibelang-viz--highlight-active-clips (active-clips parent-clips active-clip-keys active-playing-keys &optional seq-name)
   "Highlight ACTIVE-CLIPS matching PARENT-CLIPS in sequence SEQ-NAME."
   (seq-do (lambda (active-clip)
             (let* ((clip-name (alist-get 'name active-clip))
@@ -569,49 +760,54 @@ Returns (START END) or nil."
                    (progress (or (alist-get 'progress active-clip) 0))
                    (clip-type (alist-get 'type active-clip))
                    (nested-clips (alist-get 'nested_clips active-clip)))
-              (vibelang-viz--highlight-clip parent-clips clip-index progress seq-name)
+              (vibelang-viz--highlight-clip parent-clips clip-index progress active-clip-keys seq-name)
               (when (and (string= clip-type "sequence") nested-clips)
                 (when-let* ((nested-info (alist-get clip-name vibelang-viz--pattern-info
                                                     nil nil #'string=)))
                   (let ((nested-seq-clips (plist-get nested-info :clips))
                         (nested-start (plist-get nested-info :start))
                         (nested-end (plist-get nested-info :end)))
-                    (vibelang-viz--add-playing-overlay nested-start nested-end)
+                    (vibelang-viz--add-playing-overlay
+                     (format "playing:sequence:%s" clip-name) nested-start active-playing-keys)
                     (vibelang-viz--highlight-active-clips
-                     nested-clips nested-seq-clips clip-name))))))
+                     nested-clips nested-seq-clips active-clip-keys active-playing-keys clip-name))))))
           active-clips))
 
-(defun vibelang-viz--highlight-clip (clips clip-index progress &optional seq-name)
+(defun vibelang-viz--highlight-clip (clips clip-index progress active-clip-keys &optional seq-name)
   "Highlight clip at CLIP-INDEX in CLIPS with PROGRESS."
   (dolist (clip-info clips)
     (let* ((parsed-index (nth 0 clip-info))
            (clip-start (nth 1 clip-info))
            (clip-end (nth 2 clip-info)))
       (when (= parsed-index clip-index)
-        (vibelang-viz--add-clip-overlay clip-start clip-end progress clip-index seq-name)))))
+        (vibelang-viz--add-clip-overlay clip-start clip-end progress active-clip-keys clip-index seq-name)))))
 
-(defun vibelang-viz--add-clip-overlay (start end progress &optional clip-index seq-name)
-  "Add overlay for clip from START to END with PROGRESS."
-  (let* ((identity-key (format "%s:%s" (or seq-name "?") (or clip-index "?")))
-         (existing (seq-find (lambda (ov)
-                               (and (overlay-get ov 'vibelang-clip-overlay)
-                                    (equal (overlay-get ov 'vibelang-clip-identity)
-                                           identity-key)))
-                             (overlays-in (point-min) (point-max)))))
-    (unless existing
-      (let ((ov (make-overlay start end)))
-        (overlay-put ov 'face 'vibelang-clip-active-face)
+(defun vibelang-viz--remove-clip-overlay (key)
+  "Remove clip overlay for KEY if it exists."
+  (when vibelang-viz--clip-overlays
+    (let ((ov (gethash key vibelang-viz--clip-overlays)))
+      (when (and ov (overlay-buffer ov))
+        (delete-overlay ov))
+      (remhash key vibelang-viz--clip-overlays))))
+
+(defun vibelang-viz--add-clip-overlay (start end progress active-clip-keys &optional clip-index seq-name)
+  "Add or move overlay for clip from START to END with PROGRESS."
+  (let* ((identity-key (format "%s:%s" (or seq-name "?") (or clip-index "?"))))
+    (puthash identity-key t active-clip-keys)
+    (unless vibelang-viz--clip-overlays
+      (setq vibelang-viz--clip-overlays (make-hash-table :test 'equal)))
+    (let ((ov (gethash identity-key vibelang-viz--clip-overlays)))
+      (if (and ov (overlay-buffer ov))
+          (move-overlay ov start end)
+        (setq ov (make-overlay start end))
         (overlay-put ov 'vibelang-overlay t)
         (overlay-put ov 'vibelang-clip-overlay t)
         (overlay-put ov 'vibelang-clip-identity identity-key)
         (overlay-put ov 'priority 75)
-        (let* ((bar-width 10)
-               (filled (round (* progress bar-width)))
-               (empty (- bar-width filled))
-               (bar (concat (make-string filled ?#) (make-string empty ?-)))
-               (progress-str (propertize (format " [%s] %d%%" bar (round (* progress 100)))
-                                         'face 'vibelang-clip-progress-face)))
-          (overlay-put ov 'after-string progress-str))))))
+        (puthash identity-key ov vibelang-viz--clip-overlays))
+      (overlay-put ov 'face (vibelang-viz--clip-face))
+      (overlay-put ov 'vibelang-clip-progress progress)
+      (overlay-put ov 'after-string (vibelang-viz--format-clip-progress progress)))))
 
 (defun vibelang-viz--loop-pos-to-slot-idx (loop-pos pattern-length slot-count)
   "Convert LOOP-POS to slot index given PATTERN-LENGTH and SLOT-COUNT."

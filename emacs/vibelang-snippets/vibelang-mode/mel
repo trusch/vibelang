@@ -1,0 +1,6 @@
+# name: melody
+# key: mel
+# --
+let ${1:name} = melody([
+    "${2:C4}",
+]);

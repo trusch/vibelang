@@ -1,0 +1,5 @@
+# name: fx
+# key: fx
+# --
+let ${1:name} = fx()
+    .synth("${2:reverb}");

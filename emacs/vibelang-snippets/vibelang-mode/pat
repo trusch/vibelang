@@ -1,0 +1,4 @@
+# name: pattern
+# key: pat
+# --
+let ${1:name} = pattern("${2:pattern}");

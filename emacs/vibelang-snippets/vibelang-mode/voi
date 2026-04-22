@@ -1,0 +1,6 @@
+# name: voice
+# key: voi
+# --
+let ${1:name} = voice()
+    .synth("${2:synth}")
+    .volume(${3:1.0});

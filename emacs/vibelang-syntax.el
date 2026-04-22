@@ -367,22 +367,6 @@
 
 ;;; Velocity highlighting in pattern strings
 
-(defun vibelang-colorize-pattern-string ()
-  "Apply velocity-based coloring to pattern strings after font-lock."
-  (save-excursion
-    (goto-char (point-min))
-    ;; Find step patterns: .step("...")
-    (while (re-search-forward "\\.step(\"\\([^\"]+\\)\")" nil t)
-      (let ((start (match-beginning 1))
-            (end (match-end 1)))
-        (vibelang--colorize-steps start end)))
-    ;; Find note patterns: .notes("...")
-    (goto-char (point-min))
-    (while (re-search-forward "\\.notes(\"\\([^\"]+\\)\")" nil t)
-      (let ((start (match-beginning 1))
-            (end (match-end 1)))
-        (vibelang--colorize-notes start end)))))
-
 (defun vibelang--colorize-steps (start end)
   "Colorize step characters from START to END with velocity faces."
   (save-excursion
@@ -402,12 +386,16 @@
          ((memq char '(?o ?1 ?2 ?3))
           (put-text-property (point) (1+ (point))
                              'font-lock-face 'vibelang-velocity-soft-face))
-         ;; Accent
-         ((eq char ?!)
+         ;; Open/strong hit - uppercase O
+         ((eq char ?O)
+          (put-text-property (point) (1+ (point))
+                             'font-lock-face 'vibelang-velocity-loud-face))
+         ;; Accent / dynamics up
+         ((memq char '(?! ?>))
           (put-text-property (point) (1+ (point))
                              'font-lock-face 'vibelang-velocity-accent-face))
-         ;; Ghost
-         ((eq char ?g)
+         ;; Ghost / dynamics down
+         ((memq char '(?g ?<))
           (put-text-property (point) (1+ (point))
                              'font-lock-face 'vibelang-velocity-ghost-face))
          ;; Rest

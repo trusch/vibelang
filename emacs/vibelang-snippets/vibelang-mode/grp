@@ -1,0 +1,5 @@
+# name: group
+# key: grp
+# --
+let ${1:name} = group()
+    .add(${2:voice_name});

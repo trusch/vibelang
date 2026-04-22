@@ -1,0 +1,6 @@
+# name: cc
+# key: cc
+# --
+midi_device("${1:device}")
+    .map_cc(${2:14})
+    .to(${3:group_or_voice}, "${4:amp}", 0.0, 1.0);

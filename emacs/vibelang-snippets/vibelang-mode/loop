@@ -1,0 +1,6 @@
+# name: loop
+# key: loop
+# --
+midi_device("${1:device}")
+    .looper()
+    .to(${2:voice_name});
