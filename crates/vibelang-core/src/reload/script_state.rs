@@ -41,6 +41,11 @@ pub struct GroupConfig {
 
     /// Whether this group is soloed.
     pub soloed: bool,
+
+    /// Hardware output bus override (0-indexed channel number).
+    /// When set, the link synth routes directly to this hardware bus
+    /// instead of mixing into the parent group.
+    pub output_bus: Option<u32>,
 }
 
 /// Configuration for an effect (from script, no runtime IDs).
@@ -286,8 +291,8 @@ pub struct AdvancedMidiCcRoute {
     /// Curve type name.
     pub curve: String,
 
-    /// Voice to control.
-    pub voice: VoiceId,
+    /// Target to control.
+    pub target: FadeTarget,
 
     /// Parameter name.
     pub param: String,
@@ -542,6 +547,10 @@ pub struct ScriptState {
     #[cfg(feature = "midi")]
     pub midi_recording_requests: Vec<MidiRecordingRequest>,
 
+    /// Looper configurations.
+    #[cfg(feature = "midi")]
+    pub loopers: Vec<LooperConfig>,
+
     /// MIDI clock output configurations.
     #[cfg(feature = "midi")]
     pub midi_clock_outputs: Vec<MidiClockOutputRequest>,
@@ -557,6 +566,31 @@ pub struct ScriptState {
     /// MIDI 2.0 CC routes.
     #[cfg(feature = "midi")]
     pub midi2_cc_routes: Vec<Midi2CcRoute>,
+}
+
+/// Declarative config written by the .vibe script.
+/// Tells the runtime: "this MIDI device should use looper mode for this voice."
+#[cfg(feature = "midi")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct LooperConfig {
+    pub device_id: MidiDeviceId,
+    pub voice_id: VoiceId,
+    pub channel: Option<u8>,     // Optional MIDI channel filter (0-15)
+    pub silence_bars: f64,       // How many bars of silence before playback. Default: 1.0
+    pub quantize_beats: f64,     // Quantization grid for recorded notes. Default: 0.25 (16th notes)
+}
+
+#[cfg(feature = "midi")]
+impl Default for LooperConfig {
+    fn default() -> Self {
+        Self {
+            device_id: MidiDeviceId::default(),
+            voice_id: VoiceId::default(),
+            channel: None,
+            silence_bars: 1.0,
+            quantize_beats: 0.25,
+        }
+    }
 }
 
 /// Configuration for a MIDI recording request.
@@ -686,6 +720,7 @@ mod tests {
                 effects: Vec::new(),
                 muted: false,
                 soloed: false,
+                output_bus: None,
             },
         );
 

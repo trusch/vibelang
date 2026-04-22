@@ -35,12 +35,18 @@ impl<B: Backend> GroupsHandler<B> {
                 .values()
                 .filter(|g| g.link_synth_node_id.is_none())
                 .map(|g| {
-                    // Determine output bus: parent's bus or bus 0 (main output)
-                    let out_bus = g
-                        .parent
-                        .and_then(|p| state.groups.get(&p))
-                        .map(|pg| pg.audio_bus)
-                        .unwrap_or(BusId::new(0));
+                    // Determine output bus:
+                    // 1. Explicit output_bus override → route to hardware bus directly
+                    // 2. Parent group → route to parent's audio bus
+                    // 3. Root group → route to bus 0 (main stereo output)
+                    let out_bus = if let Some(hw_bus) = g.output_bus {
+                        BusId::new(hw_bus)
+                    } else {
+                        g.parent
+                            .and_then(|p| state.groups.get(&p))
+                            .map(|pg| pg.audio_bus)
+                            .unwrap_or(BusId::new(0))
+                    };
 
                     (g.id, g.node_id, g.audio_bus, out_bus)
                 })
@@ -142,6 +148,7 @@ impl<B: Backend> Groups for GroupsHandler<B> {
                 muted: false,
                 soloed: false,
                 params: ParamMap::new(),
+                output_bus: None,
             },
         );
 
@@ -160,7 +167,12 @@ impl<B: Backend> Groups for GroupsHandler<B> {
     async fn delete(&self, id: GroupId) -> Result<()> {
         let group = {
             let mut state = self.state.write().await;
-            state.groups.remove(&id).ok_or(Error::GroupNotFound(id))?
+            let group = state.groups.remove(&id).ok_or(Error::GroupNotFound(id))?;
+            state.free_node_id(group.node_id);
+            if let Some(link_id) = group.link_synth_node_id {
+                state.free_node_id(link_id);
+            }
+            group
         };
 
         // Free the link synth first if it exists

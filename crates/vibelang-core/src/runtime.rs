@@ -1125,6 +1125,13 @@ impl<B: Backend> Runtime<B> {
                 if config.soloed {
                     let _ = self.groups.solo(id, true).await;
                 }
+                // Apply output_bus routing override
+                if config.output_bus.is_some() {
+                    let mut state = self.state.write().await;
+                    if let Some(group) = state.groups.get_mut(&id) {
+                        group.output_bus = config.output_bus;
+                    }
+                }
             }
         }
 
@@ -1214,6 +1221,39 @@ impl<B: Backend> Runtime<B> {
             );
             let _ = self.groups.mute(*id, new_config.muted).await;
             let _ = self.groups.solo(*id, new_config.soloed).await;
+
+            // Update output_bus routing if changed
+            {
+                let mut state = self.state.write().await;
+                if let Some(group) = state.groups.get_mut(id) {
+                    if group.output_bus != new_config.output_bus {
+                        let old_output = group.output_bus;
+                        group.output_bus = new_config.output_bus;
+
+                        // Update link synth's outbus parameter if it exists
+                        if let Some(link_node) = group.link_synth_node_id {
+                            let new_outbus = if let Some(hw_bus) = new_config.output_bus {
+                                hw_bus as f32
+                            } else {
+                                // Route back to parent or main
+                                group
+                                    .parent
+                                    .and_then(|p| state.groups.get(&p))
+                                    .map(|pg| pg.audio_bus.0 as f32)
+                                    .unwrap_or(0.0)
+                            };
+                            drop(state);
+                            let _ = self.backend.set_param(link_node, "outbus", new_outbus).await;
+                            tracing::info!(
+                                "Reload: updated group {:?} output_bus {:?} -> {:?}",
+                                id,
+                                old_output,
+                                new_config.output_bus
+                            );
+                        }
+                    }
+                }
+            }
         }
 
         // Update voices - only recreate if synthdef, group, or sfz_instrument changed
@@ -2677,6 +2717,7 @@ mod tests {
                 effects: Vec::new(),
                 muted: false,
                 soloed: false,
+                output_bus: None,
             },
         );
 

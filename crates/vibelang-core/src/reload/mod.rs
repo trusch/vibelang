@@ -69,7 +69,7 @@ pub use script_state::{
     AdvancedMidiCcRoute, AdvancedMidiKeyboardRoute, AdvancedMidiNoteRoute, Midi2CcRoute,
     Midi2KeyboardRoute, Midi2PerNoteControllerType, Midi2PerNoteRoute, MidiCallbackConfig,
     MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute, MidiOutputMessage,
-    MidiRecordingRequest,
+    MidiRecordingRequest, LooperConfig,
 };
 
 // Types available on all platforms (for order_group_creations)
@@ -79,7 +79,10 @@ use std::collections::HashSet;
 // Imports for calculate_diff and order_group_deletions
 use crate::state::State;
 use crate::traits::SampleConfig;
-use crate::types::{Beat, EffectId, FadeId, MelodyId, ModulatorId, PatternId, SampleId, SequenceId, SfzId, TimeSignature, VoiceId};
+use crate::types::{
+    Beat, EffectId, FadeId, MelodyId, ModulatorId, PatternId, SampleId, SequenceId, SfzId,
+    TimeSignature, VoiceId,
+};
 
 /// Quantization mode for applying hot reload changes.
 ///
@@ -163,6 +166,7 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
             effects: Vec::new(), // TODO: Track effects per group in runtime state
             muted: g.muted,
             soloed: g.soloed,
+            output_bus: g.output_bus,
         })
     });
 
@@ -188,7 +192,11 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
     for (id, config) in &new.melodies {
         tracing::debug!(
             "  new melody {:?} '{}': voice={:?}, notes={}, length={}",
-            id, config.name, config.voice, config.notes.len(), config.length.to_f64()
+            id,
+            config.name,
+            config.voice,
+            config.notes.len(),
+            config.length.to_f64()
         );
     }
     diff.melodies = diff_entities(&current_melody_ids, &new.melodies, |id| {
@@ -420,6 +428,7 @@ mod tests {
             muted: false,
             soloed: false,
             params: ParamMap::new(),
+            output_bus: None,
         }
     }
 
@@ -492,6 +501,7 @@ mod tests {
                 effects: Vec::new(),
                 muted: false,
                 soloed: false,
+                output_bus: None,
             },
         );
 
@@ -522,6 +532,7 @@ mod tests {
                 effects: Vec::new(),
                 muted: false,
                 soloed: false,
+                output_bus: None,
             },
         );
         configs.insert(
@@ -533,6 +544,7 @@ mod tests {
                 effects: Vec::new(),
                 muted: false,
                 soloed: false,
+                output_bus: None,
             },
         );
 
