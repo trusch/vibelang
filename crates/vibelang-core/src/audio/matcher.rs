@@ -72,8 +72,7 @@ impl PortMatcher {
             }
 
             // Last part must match at the end if pattern doesn't end with *
-            if i == parts.len() - 1 && !pattern.ends_with('*')
-                && !text.ends_with(part) {
+            if i == parts.len() - 1 && !pattern.ends_with('*') && !text.ends_with(part) {
                 return false;
             }
         }
@@ -163,10 +162,12 @@ impl PortMatcher {
         for i in 1..=m {
             curr[0] = i;
             for j in 1..=n {
-                let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
-                curr[j] = (prev[j] + 1)
-                    .min(curr[j - 1] + 1)
-                    .min(prev[j - 1] + cost);
+                let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                    0
+                } else {
+                    1
+                };
+                curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
             }
             std::mem::swap(&mut prev, &mut curr);
         }
@@ -195,7 +196,10 @@ mod tests {
             "UMC404HD 192k Line A:playback_FL",
             "*playback_FL"
         ));
-        assert!(PortMatcher::matches("Headphones:playback_FL", "*Headphones*"));
+        assert!(PortMatcher::matches(
+            "Headphones:playback_FL",
+            "*Headphones*"
+        ));
         assert!(PortMatcher::matches(
             "UMC404HD 192k Input 1:capture_MONO",
             "UMC404*Input 1*"

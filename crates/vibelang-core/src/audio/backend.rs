@@ -86,13 +86,14 @@ impl AudioBackend for PipeWireBackend {
     }
 
     fn list_output_ports(&self) -> Result<Vec<Port>> {
-        let output = Command::new("pw-link")
-            .arg("-o")
-            .output()
-            .map_err(|e| AudioError::CommandFailed {
-                command: "pw-link -o".into(),
-                reason: e.to_string(),
-            })?;
+        let output =
+            Command::new("pw-link")
+                .arg("-o")
+                .output()
+                .map_err(|e| AudioError::CommandFailed {
+                    command: "pw-link -o".into(),
+                    reason: e.to_string(),
+                })?;
 
         if !output.status.success() {
             return Err(AudioError::CommandFailed {
@@ -106,13 +107,14 @@ impl AudioBackend for PipeWireBackend {
     }
 
     fn list_input_ports(&self) -> Result<Vec<Port>> {
-        let output = Command::new("pw-link")
-            .arg("-i")
-            .output()
-            .map_err(|e| AudioError::CommandFailed {
-                command: "pw-link -i".into(),
-                reason: e.to_string(),
-            })?;
+        let output =
+            Command::new("pw-link")
+                .arg("-i")
+                .output()
+                .map_err(|e| AudioError::CommandFailed {
+                    command: "pw-link -i".into(),
+                    reason: e.to_string(),
+                })?;
 
         if !output.status.success() {
             return Err(AudioError::CommandFailed {
@@ -233,11 +235,14 @@ impl JackBackend {
             } else if !line.is_empty() {
                 // Save previous port
                 if let Some(port_name) = current_port.take() {
-                    let mut port = Port::parse(&port_name, if is_output {
-                        PortDirection::Output
-                    } else {
-                        PortDirection::Input
-                    });
+                    let mut port = Port::parse(
+                        &port_name,
+                        if is_output {
+                            PortDirection::Output
+                        } else {
+                            PortDirection::Input
+                        },
+                    );
                     port.connections = std::mem::take(&mut current_connections);
 
                     if is_output {
@@ -259,11 +264,14 @@ impl JackBackend {
 
         // Don't forget the last port
         if let Some(port_name) = current_port {
-            let mut port = Port::parse(&port_name, if is_output {
-                PortDirection::Output
-            } else {
-                PortDirection::Input
-            });
+            let mut port = Port::parse(
+                &port_name,
+                if is_output {
+                    PortDirection::Output
+                } else {
+                    PortDirection::Input
+                },
+            );
             port.connections = current_connections;
 
             if is_output {
@@ -292,13 +300,14 @@ impl AudioBackend for JackBackend {
     }
 
     fn list_output_ports(&self) -> Result<Vec<Port>> {
-        let output = Command::new("jack_lsp")
-            .arg("-c")
-            .output()
-            .map_err(|e| AudioError::CommandFailed {
-                command: "jack_lsp -c".into(),
-                reason: e.to_string(),
-            })?;
+        let output =
+            Command::new("jack_lsp")
+                .arg("-c")
+                .output()
+                .map_err(|e| AudioError::CommandFailed {
+                    command: "jack_lsp -c".into(),
+                    reason: e.to_string(),
+                })?;
 
         if !output.status.success() {
             return Err(AudioError::CommandFailed {
@@ -313,13 +322,14 @@ impl AudioBackend for JackBackend {
     }
 
     fn list_input_ports(&self) -> Result<Vec<Port>> {
-        let output = Command::new("jack_lsp")
-            .arg("-c")
-            .output()
-            .map_err(|e| AudioError::CommandFailed {
-                command: "jack_lsp -c".into(),
-                reason: e.to_string(),
-            })?;
+        let output =
+            Command::new("jack_lsp")
+                .arg("-c")
+                .output()
+                .map_err(|e| AudioError::CommandFailed {
+                    command: "jack_lsp -c".into(),
+                    reason: e.to_string(),
+                })?;
 
         if !output.status.success() {
             return Err(AudioError::CommandFailed {
@@ -381,13 +391,14 @@ impl AudioBackend for JackBackend {
     }
 
     fn list_connections(&self, port: &str) -> Result<Vec<String>> {
-        let output = Command::new("jack_lsp")
-            .arg("-c")
-            .output()
-            .map_err(|e| AudioError::CommandFailed {
-                command: "jack_lsp -c".into(),
-                reason: e.to_string(),
-            })?;
+        let output =
+            Command::new("jack_lsp")
+                .arg("-c")
+                .output()
+                .map_err(|e| AudioError::CommandFailed {
+                    command: "jack_lsp -c".into(),
+                    reason: e.to_string(),
+                })?;
 
         if !output.status.success() {
             return Ok(Vec::new());

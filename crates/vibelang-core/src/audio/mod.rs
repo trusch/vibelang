@@ -37,10 +37,16 @@ pub enum AudioError {
     NoBackendAvailable { tried: Vec<String> },
 
     /// Port not found matching the given pattern
-    PortNotFound { pattern: String, suggestions: Vec<String> },
+    PortNotFound {
+        pattern: String,
+        suggestions: Vec<String>,
+    },
 
     /// Pattern matches multiple ports - user needs to be more specific
-    AmbiguousMatch { pattern: String, matches: Vec<String> },
+    AmbiguousMatch {
+        pattern: String,
+        matches: Vec<String>,
+    },
 
     /// Connection operation failed
     ConnectionFailed {
@@ -67,9 +73,16 @@ impl fmt::Display for AudioError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AudioError::NoBackendAvailable { tried } => {
-                write!(f, "No audio backend available (tried: {})", tried.join(", "))
+                write!(
+                    f,
+                    "No audio backend available (tried: {})",
+                    tried.join(", ")
+                )
             }
-            AudioError::PortNotFound { pattern, suggestions } => {
+            AudioError::PortNotFound {
+                pattern,
+                suggestions,
+            } => {
                 if suggestions.is_empty() {
                     write!(f, "Port not found: '{}'", pattern)
                 } else {
@@ -90,11 +103,27 @@ impl fmt::Display for AudioError {
                     matches.join("\n  ")
                 )
             }
-            AudioError::ConnectionFailed { source, destination, reason } => {
-                write!(f, "Connection failed: {} -> {}: {}", source, destination, reason)
+            AudioError::ConnectionFailed {
+                source,
+                destination,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "Connection failed: {} -> {}: {}",
+                    source, destination, reason
+                )
             }
-            AudioError::DisconnectionFailed { source, destination, reason } => {
-                write!(f, "Disconnection failed: {} -> {}: {}", source, destination, reason)
+            AudioError::DisconnectionFailed {
+                source,
+                destination,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "Disconnection failed: {} -> {}: {}",
+                    source, destination, reason
+                )
             }
             AudioError::CommandFailed { command, reason } => {
                 write!(f, "Command '{}' failed: {}", command, reason)

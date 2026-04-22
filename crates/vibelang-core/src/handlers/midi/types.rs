@@ -102,7 +102,6 @@ pub fn convert_new_to_legacy_message(msg: &NewMidiMessage) -> Option<MidiMessage
 
         // MIDI 2.0 messages are handled separately via the MIDI 2.0 processing path.
         // They don't convert to legacy MIDI 1.0 messages.
-        
         _ => None,
     }
 }
@@ -199,11 +198,10 @@ pub struct MidiRouting {
     pub choke_groups: HashMap<String, Vec<crate::types::NodeId>>,
 
     // MIDI 2.0 routes
-    
     pub midi2_keyboard_routes: Vec<Midi2KeyboardRoute>,
-    
+
     pub midi2_per_note_routes: Vec<Midi2PerNoteRoute>,
-    
+
     pub midi2_cc_routes: Vec<Midi2CcRoute>,
 }
 

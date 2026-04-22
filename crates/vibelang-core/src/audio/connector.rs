@@ -43,10 +43,7 @@ impl AudioConnector {
 
     /// Get the primary backend name.
     pub fn backend_name(&self) -> &str {
-        self.backends
-            .first()
-            .map(|b| b.name())
-            .unwrap_or("none")
+        self.backends.first().map(|b| b.name()).unwrap_or("none")
     }
 
     /// List all output ports (audio sources).
@@ -311,6 +308,9 @@ mod tests {
         // This test may fail in environments without pw-link or jack_lsp
         let result = AudioConnector::detect();
         // We don't assert success since it depends on the environment
-        println!("Backend detection result: {:?}", result.map(|c| c.backend_name().to_string()));
+        println!(
+            "Backend detection result: {:?}",
+            result.map(|c| c.backend_name().to_string())
+        );
     }
 }

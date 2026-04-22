@@ -18,8 +18,8 @@
 //!
 //! This module unifies both approaches into a single `PerNoteState` type.
 
-use std::collections::HashMap;
 use super::events::{ControlValue, GroupChannel};
+use std::collections::HashMap;
 
 /// Default pitch bend range for MIDI 2.0 per-note pitch bend.
 pub const DEFAULT_PITCH_BEND_RANGE: u8 = 48;
@@ -166,7 +166,8 @@ impl PerNoteStateManager {
     /// Start tracking a note (called on note-on).
     pub fn note_on(&mut self, gc: GroupChannel, note: u8, velocity: f32) {
         let key = (gc.flat_index(), note);
-        self.notes.insert(key, PerNoteState::with_velocity(velocity));
+        self.notes
+            .insert(key, PerNoteState::with_velocity(velocity));
     }
 
     /// Stop tracking a note (called on note-off).
@@ -209,7 +210,13 @@ impl PerNoteStateManager {
     }
 
     /// Update per-note controller (MIDI 2.0).
-    pub fn set_controller(&mut self, gc: GroupChannel, note: u8, controller: u8, value: ControlValue) {
+    pub fn set_controller(
+        &mut self,
+        gc: GroupChannel,
+        note: u8,
+        controller: u8,
+        value: ControlValue,
+    ) {
         if let Some(state) = self.get_mut(gc, note) {
             state.set_controller_midi2(controller, value);
         }
@@ -233,9 +240,9 @@ impl PerNoteStateManager {
 
     /// Get all active notes across all group/channels.
     pub fn all_active_notes(&self) -> impl Iterator<Item = (GroupChannel, u8, &PerNoteState)> {
-        self.notes.iter().map(|((gc_flat, note), state)| {
-            (GroupChannel::from_flat_u16(*gc_flat), *note, state)
-        })
+        self.notes
+            .iter()
+            .map(|((gc_flat, note), state)| (GroupChannel::from_flat_u16(*gc_flat), *note, state))
     }
 
     /// Get the number of active notes.

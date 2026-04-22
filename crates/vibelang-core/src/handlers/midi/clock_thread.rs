@@ -169,7 +169,10 @@ impl MidiClockThread {
         {
             let devices = self.clock_devices.read();
             if devices.contains(&device) {
-                tracing::trace!("[MIDI_CLOCK] Clock output already enabled for device {}, skipping", device.0);
+                tracing::trace!(
+                    "[MIDI_CLOCK] Clock output already enabled for device {}, skipping",
+                    device.0
+                );
                 return;
             }
         }
@@ -279,8 +282,7 @@ fn run_clock_thread(
                 || position_in_bar > (bar_len - BAR_BOUNDARY_TOLERANCE)
             {
                 // Send Start to all pending devices
-                let devices: Vec<MidiDeviceId> =
-                    pending_starts.write().drain().collect();
+                let devices: Vec<MidiDeviceId> = pending_starts.write().drain().collect();
                 if !devices.is_empty() {
                     if let Ok(channels) = output_channels.lock() {
                         for device in devices {

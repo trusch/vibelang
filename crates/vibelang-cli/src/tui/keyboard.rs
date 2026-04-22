@@ -510,4 +510,3 @@ impl VirtualKeyboard {
         self.config.channel = channel.min(15);
     }
 }
-

@@ -117,10 +117,9 @@ impl MidiCallbackManager {
                 (CallbackType::ControlChange(*cc), Some(*channel))
             }
             MidiMessage::PitchBend { channel, .. } => (CallbackType::PitchBend, Some(*channel)),
-            MidiMessage::Clock
-            | MidiMessage::Start
-            | MidiMessage::Stop
-            | MidiMessage::Continue => (CallbackType::ClockSync, None),
+            MidiMessage::Clock | MidiMessage::Start | MidiMessage::Stop | MidiMessage::Continue => {
+                (CallbackType::ClockSync, None)
+            }
         };
 
         // Get matching callbacks - channel is optional now

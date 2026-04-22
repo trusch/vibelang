@@ -73,10 +73,24 @@ impl MidiRealtimeStats {
 #[derive(Debug, Clone)]
 pub enum QueuedMidiEvent {
     // MIDI 1.0 messages
-    NoteOn { channel: u8, note: u8, velocity: u8 },
-    NoteOff { channel: u8, note: u8 },
-    ControlChange { channel: u8, cc: u8, value: u8 },
-    PitchBend { channel: u8, value: i16 },
+    NoteOn {
+        channel: u8,
+        note: u8,
+        velocity: u8,
+    },
+    NoteOff {
+        channel: u8,
+        note: u8,
+    },
+    ControlChange {
+        channel: u8,
+        cc: u8,
+        value: u8,
+    },
+    PitchBend {
+        channel: u8,
+        value: i16,
+    },
     Clock,
     Start,
     Stop,
@@ -496,9 +510,7 @@ impl QueuedMidiEvent {
                 let vel7 = (velocity >> 9) as u8;
                 vec![0x90 | (channel & 0x0F), note & 0x7F, vel7.max(1)]
             }
-            QueuedMidiEvent::Midi2NoteOff {
-                channel, note, ..
-            } => {
+            QueuedMidiEvent::Midi2NoteOff { channel, note, .. } => {
                 vec![0x80 | (channel & 0x0F), note & 0x7F, 0]
             }
             QueuedMidiEvent::Midi2ControlChange {
@@ -555,9 +567,14 @@ impl QueuedMidiEvent {
                 if *bank_valid {
                     // Send bank select CCs first, then program change
                     vec![
-                        0xB0 | (channel & 0x0F), 0x00, bank_msb & 0x7F,  // Bank MSB
-                        0xB0 | (channel & 0x0F), 0x20, bank_lsb & 0x7F,  // Bank LSB
-                        0xC0 | (channel & 0x0F), program & 0x7F,         // Program Change
+                        0xB0 | (channel & 0x0F),
+                        0x00,
+                        bank_msb & 0x7F, // Bank MSB
+                        0xB0 | (channel & 0x0F),
+                        0x20,
+                        bank_lsb & 0x7F, // Bank LSB
+                        0xC0 | (channel & 0x0F),
+                        program & 0x7F, // Program Change
                     ]
                 } else {
                     vec![0xC0 | (channel & 0x0F), program & 0x7F]
@@ -1366,8 +1383,7 @@ mod tests {
     #[test]
     fn test_midi_device_sender_with_capability() {
         let (tx, _rx) = crossbeam_channel::unbounded::<ScheduledMidiEvent>();
-        let sender =
-            MidiDeviceSender::with_capability(1, tx, MidiOutputCapability::Midi2Native);
+        let sender = MidiDeviceSender::with_capability(1, tx, MidiOutputCapability::Midi2Native);
 
         assert!(sender.is_midi2_native());
     }

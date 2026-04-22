@@ -134,7 +134,7 @@ impl MidiRoutingManager {
         routing.note_routes.clear();
         routing.advanced_cc_routes.clear();
         routing.choke_groups.clear();
-        
+
         {
             routing.midi2_keyboard_routes.clear();
             routing.midi2_per_note_routes.clear();
@@ -199,10 +199,7 @@ impl MidiRoutingManager {
     /// Apply basic keyboard routes from script state.
     ///
     /// Clears existing basic keyboard routes and rebuilds from the provided list.
-    pub async fn apply_basic_keyboard_routes(
-        &self,
-        routes: &[crate::reload::MidiKeyboardRoute],
-    ) {
+    pub async fn apply_basic_keyboard_routes(&self, routes: &[crate::reload::MidiKeyboardRoute]) {
         let mut routing = self.routing.write().await;
         routing.keyboard_routes.clear();
 
@@ -312,10 +309,7 @@ impl MidiRoutingManager {
     /// Apply advanced CC routes from script state.
     ///
     /// Clears existing advanced CC routes and rebuilds as CcRouteBuilders.
-    pub async fn apply_advanced_cc_routes(
-        &self,
-        routes: &[crate::reload::AdvancedMidiCcRoute],
-    ) {
+    pub async fn apply_advanced_cc_routes(&self, routes: &[crate::reload::AdvancedMidiCcRoute]) {
         let mut routing = self.routing.write().await;
         routing.advanced_cc_routes.clear();
 
@@ -323,16 +317,16 @@ impl MidiRoutingManager {
             let mut builder = CcRouteBuilder::new(route.device_id, route.cc);
             builder.channel = route.channel;
             builder.curve = parse_parameter_curve(&route.curve);
-            builder.target_voice = Some(route.voice);
+            builder.target = Some(route.target.clone());
             builder.target_param = Some(route.param.clone());
             builder.range = (route.min, route.max);
 
             tracing::debug!(
-                "Applied advanced CC route: device={}, cc={}, channel={:?}, voice={}, param={}",
+                "Applied advanced CC route: device={}, cc={}, channel={:?}, target={:?}, param={}",
                 route.device_id.0,
                 route.cc,
                 route.channel,
-                route.voice.0,
+                route.target,
                 route.param
             );
             routing.advanced_cc_routes.push(builder);
@@ -393,7 +387,9 @@ impl MidiRoutingManager {
                 crate::reload::Midi2PerNoteControllerType::PitchBend { range } => {
                     Midi2ControllerType::PitchBend { range: *range }
                 }
-                crate::reload::Midi2PerNoteControllerType::Pressure => Midi2ControllerType::Pressure,
+                crate::reload::Midi2PerNoteControllerType::Pressure => {
+                    Midi2ControllerType::Pressure
+                }
                 crate::reload::Midi2PerNoteControllerType::Timbre => Midi2ControllerType::Timbre,
                 crate::reload::Midi2PerNoteControllerType::Controller(cc) => {
                     Midi2ControllerType::Controller(*cc)
@@ -460,10 +456,7 @@ impl MidiRoutingManager {
         }
 
         if !routes.is_empty() {
-            tracing::info!(
-                "Applied {} MIDI 2.0 CC routes from script",
-                routes.len()
-            );
+            tracing::info!("Applied {} MIDI 2.0 CC routes from script", routes.len());
         }
     }
 }

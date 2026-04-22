@@ -68,7 +68,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
     async fn open_input(&self, id: MidiDeviceId) -> Result<()> {
         // Check if already open (idempotent operation)
         {
-            let inputs = self.inputs.lock().map_err(|e| Error::MidiError(format!("MIDI inputs lock poisoned: {}", e)))?;
+            let inputs = self
+                .inputs
+                .lock()
+                .map_err(|e| Error::MidiError(format!("MIDI inputs lock poisoned: {}", e)))?;
             if inputs.contains_key(&id) {
                 tracing::trace!("MIDI input {} already open", id.0);
                 return Ok(());
@@ -129,7 +132,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
             )
             .map_err(|e| Error::MidiError(format!("Failed to connect MIDI input: {}", e)))?;
 
-        self.inputs.lock().map_err(|e| Error::MidiError(format!("MIDI inputs lock poisoned: {}", e)))?.insert(id, conn);
+        self.inputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI inputs lock poisoned: {}", e)))?
+            .insert(id, conn);
         tracing::info!(
             "Opened MIDI input: {} (id={}) with timestamp preservation",
             port_name,
@@ -142,7 +148,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
     async fn open_output(&self, id: MidiDeviceId) -> Result<()> {
         // Check if already open (idempotent operation)
         {
-            let outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+            let outputs = self
+                .outputs
+                .lock()
+                .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
             if outputs.contains_key(&id) {
                 tracing::trace!("MIDI output {} already open", id.0);
                 return Ok(());
@@ -176,7 +185,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
             .connect(port, "vibelang-output")
             .map_err(|e| Error::MidiError(format!("Failed to connect MIDI output: {}", e)))?;
 
-        self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?.insert(id, conn);
+        self.outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?
+            .insert(id, conn);
         tracing::info!("Opened MIDI output: {} (id={})", port_name, id.0);
 
         // Also create the output channel for async/voice-based sending
@@ -195,12 +207,24 @@ impl<B: Backend> Midi for MidiHandler<B> {
     async fn close(&self, id: MidiDeviceId) -> Result<()> {
         let mut removed = false;
 
-        if self.inputs.lock().map_err(|e| Error::MidiError(format!("MIDI inputs lock poisoned: {}", e)))?.remove(&id).is_some() {
+        if self
+            .inputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI inputs lock poisoned: {}", e)))?
+            .remove(&id)
+            .is_some()
+        {
             tracing::info!("Closed MIDI input: id={}", id.0);
             removed = true;
         }
 
-        if self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?.remove(&id).is_some() {
+        if self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?
+            .remove(&id)
+            .is_some()
+        {
             tracing::info!("Closed MIDI output: id={}", id.0);
             removed = true;
         }
@@ -219,7 +243,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
         note: u8,
         velocity: u8,
     ) -> Result<()> {
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -232,7 +259,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
     }
 
     async fn send_note_off(&self, device: MidiDeviceId, channel: u8, note: u8) -> Result<()> {
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -245,7 +275,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
     }
 
     async fn send_cc(&self, device: MidiDeviceId, channel: u8, cc: u8, value: u8) -> Result<()> {
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -258,7 +291,9 @@ impl<B: Backend> Midi for MidiHandler<B> {
     }
 
     async fn route_keyboard(&self, device: MidiDeviceId, voice: VoiceId) -> Result<()> {
-        self.routing_manager.add_basic_keyboard_route(device, voice).await;
+        self.routing_manager
+            .add_basic_keyboard_route(device, voice)
+            .await;
         Ok(())
     }
 
@@ -269,14 +304,16 @@ impl<B: Backend> Midi for MidiHandler<B> {
         target: crate::traits::FadeTarget,
         param: &str,
     ) -> Result<()> {
-        self.routing_manager.add_basic_cc_route(super::types::CcRoute {
-            device_id: device,
-            cc,
-            target: target.clone(),
-            param: param.to_string(),
-            min_value: 0.0,
-            max_value: 1.0,
-        }).await;
+        self.routing_manager
+            .add_basic_cc_route(super::types::CcRoute {
+                device_id: device,
+                cc,
+                target: target.clone(),
+                param: param.to_string(),
+                min_value: 0.0,
+                max_value: 1.0,
+            })
+            .await;
 
         tracing::info!(
             "Routed MIDI CC {} from device {} to {:?}.{}",
@@ -394,11 +431,9 @@ impl<B: Backend> Midi for MidiHandler<B> {
 
     async fn enable_clock_output(&self, device: MidiDeviceId) -> Result<()> {
         // Register with clock manager (for backward compat and direct sending)
-        self.clock_manager.enable_clock_output(
-            device,
-            &self.outputs,
-            &self.output_manager.output_channels,
-        ).await?;
+        self.clock_manager
+            .enable_clock_output(device, &self.outputs, &self.output_manager.output_channels)
+            .await?;
 
         // Also enable on clock thread if running (handles threaded clock output)
         #[cfg(not(target_arch = "wasm32"))]
@@ -426,21 +461,22 @@ impl<B: Backend> Midi for MidiHandler<B> {
     }
 
     async fn send_start_to_all_clock_devices(&self) -> Result<()> {
-        self.clock_manager.send_start_to_all_clock_devices(
-            &self.output_manager.output_channels,
-            &self.outputs,
-        ).await
+        self.clock_manager
+            .send_start_to_all_clock_devices(&self.output_manager.output_channels, &self.outputs)
+            .await
     }
 
     async fn send_stop_to_all_clock_devices(&self) -> Result<()> {
-        self.clock_manager.send_stop_to_all_clock_devices(
-            &self.output_manager.output_channels,
-            &self.outputs,
-        ).await
+        self.clock_manager
+            .send_stop_to_all_clock_devices(&self.output_manager.output_channels, &self.outputs)
+            .await
     }
 
     async fn send_start(&self, device: MidiDeviceId) -> Result<()> {
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -454,7 +490,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
     }
 
     async fn send_stop(&self, device: MidiDeviceId) -> Result<()> {
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -468,7 +507,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
     }
 
     async fn send_continue(&self, device: MidiDeviceId) -> Result<()> {
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -486,7 +528,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
     // =========================================================================
 
     async fn send_pitch_bend(&self, device: MidiDeviceId, channel: u8, value: i16) -> Result<()> {
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -543,7 +588,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
         };
 
         let capability = self.midi2_capability(device);
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -581,7 +629,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
         };
 
         let capability = self.midi2_capability(device);
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -608,7 +659,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
         };
 
         let capability = self.midi2_capability(device);
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -642,7 +696,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
         };
 
         let capability = self.midi2_capability(device);
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -678,7 +735,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
             value,
         };
 
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -723,7 +783,10 @@ impl<B: Backend> Midi for MidiHandler<B> {
             value,
         };
 
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
@@ -750,13 +813,17 @@ impl<B: Backend> Midi for MidiHandler<B> {
         };
 
         let capability = self.midi2_capability(device);
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
 
-        send_midi2_event_to_device(conn, &event, capability)
-            .map_err(|e| Error::MidiError(format!("Failed to send MIDI 2.0 poly pressure: {}", e)))?;
+        send_midi2_event_to_device(conn, &event, capability).map_err(|e| {
+            Error::MidiError(format!("Failed to send MIDI 2.0 poly pressure: {}", e))
+        })?;
 
         Ok(())
     }
@@ -775,13 +842,17 @@ impl<B: Backend> Midi for MidiHandler<B> {
         };
 
         let capability = self.midi2_capability(device);
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
 
-        send_midi2_event_to_device(conn, &event, capability)
-            .map_err(|e| Error::MidiError(format!("Failed to send MIDI 2.0 channel pressure: {}", e)))?;
+        send_midi2_event_to_device(conn, &event, capability).map_err(|e| {
+            Error::MidiError(format!("Failed to send MIDI 2.0 channel pressure: {}", e))
+        })?;
 
         Ok(())
     }
@@ -809,13 +880,17 @@ impl<B: Backend> Midi for MidiHandler<B> {
         };
 
         let capability = self.midi2_capability(device);
-        let mut outputs = self.outputs.lock().map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
+        let mut outputs = self
+            .outputs
+            .lock()
+            .map_err(|e| Error::MidiError(format!("MIDI outputs lock poisoned: {}", e)))?;
         let conn = outputs
             .get_mut(&device)
             .ok_or_else(|| Error::MidiError(format!("MIDI output {} not open", device.0)))?;
 
-        send_midi2_event_to_device(conn, &event, capability)
-            .map_err(|e| Error::MidiError(format!("Failed to send MIDI 2.0 program change: {}", e)))?;
+        send_midi2_event_to_device(conn, &event, capability).map_err(|e| {
+            Error::MidiError(format!("Failed to send MIDI 2.0 program change: {}", e))
+        })?;
 
         Ok(())
     }

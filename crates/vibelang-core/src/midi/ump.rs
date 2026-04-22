@@ -208,9 +208,9 @@ impl UmpParser {
         let msg_type = ((first_word >> 28) & 0xF) as u8;
         match msg_type {
             0x0..=0x2 => 1, // Utility, System, MIDI 1.0 CV
-            0x3 | 0x4 => 2,       // Data 64, MIDI 2.0 CV
-            0x5 | 0xD => 4,       // Data 128, Flex Data
-            _ => 1,               // Unknown/reserved
+            0x3 | 0x4 => 2, // Data 64, MIDI 2.0 CV
+            0x5 | 0xD => 4, // Data 128, Flex Data
+            _ => 1,         // Unknown/reserved
         }
     }
 
@@ -278,7 +278,7 @@ impl UmpParser {
         let status = ((word1 >> 20) & 0xF) as u8;
         let channel = ((word1 >> 16) & 0xF) as u8;
         let index = ((word1 >> 8) & 0xFF) as u8; // Note number or controller index
-        let byte4 = (word1 & 0xFF) as u8;        // Attribute type or bank
+        let byte4 = (word1 & 0xFF) as u8; // Attribute type or bank
 
         let group_channel = GroupChannel::new(group, channel);
 

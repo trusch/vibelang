@@ -937,7 +937,12 @@ async fn run_tui_mode(
                                             velocity: velocity as f32 / 127.0,
                                         }))
                                         .await;
-                                    log::debug!("Note on: {} vel:{} -> {}", note, velocity, voice_id);
+                                    log::debug!(
+                                        "Note on: {} vel:{} -> {}",
+                                        note,
+                                        velocity,
+                                        voice_id
+                                    );
                                 } else {
                                     log::debug!("Note on: {} (no target voice)", note);
                                 }
@@ -1108,7 +1113,12 @@ async fn run_tui_mode(
                                                 velocity: velocity as f32 / 127.0,
                                             }))
                                             .await;
-                                        log::debug!("Note on: {} vel:{} -> {}", note, velocity, voice_id);
+                                        log::debug!(
+                                            "Note on: {} vel:{} -> {}",
+                                            note,
+                                            velocity,
+                                            voice_id
+                                        );
                                     } else {
                                         log::debug!("Note on: {} (no target voice)", note);
                                     }

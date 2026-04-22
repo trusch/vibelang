@@ -469,11 +469,7 @@ impl ScsynthProcess {
         tracing::debug!("Disconnecting all audio ports from SuperCollider");
 
         // Get the client name (defaults to "SuperCollider" but can be custom via -H flag)
-        let client_name = self
-            .config
-            .device
-            .as_deref()
-            .unwrap_or("SuperCollider");
+        let client_name = self.config.device.as_deref().unwrap_or("SuperCollider");
 
         let connector = match AudioConnector::detect() {
             Ok(c) => c,
@@ -580,17 +576,20 @@ impl ScsynthProcess {
 
             // Use the connector's fuzzy matching to resolve the port pattern
             match connector.resolve_port(pattern, PortDirection::Input) {
-                Ok(resolved_port) => {
-                    match connector.connect(&src_port, &resolved_port) {
-                        Ok(()) => {
-                            tracing::debug!("Connected {} -> {}", src_port, resolved_port);
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to connect {} -> {}: {}", src_port, resolved_port, e);
-                            all_success = false;
-                        }
+                Ok(resolved_port) => match connector.connect(&src_port, &resolved_port) {
+                    Ok(()) => {
+                        tracing::debug!("Connected {} -> {}", src_port, resolved_port);
                     }
-                }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to connect {} -> {}: {}",
+                            src_port,
+                            resolved_port,
+                            e
+                        );
+                        all_success = false;
+                    }
+                },
                 Err(e) => {
                     tracing::warn!("Could not resolve port pattern '{}': {}", pattern, e);
                     all_success = false;
@@ -599,7 +598,10 @@ impl ScsynthProcess {
         }
 
         if all_success {
-            tracing::info!("Output ports connected successfully via {}", connector.backend_name());
+            tracing::info!(
+                "Output ports connected successfully via {}",
+                connector.backend_name()
+            );
         }
         all_success
     }
@@ -627,17 +629,20 @@ impl ScsynthProcess {
 
             // Use the connector's fuzzy matching to resolve the port pattern
             match connector.resolve_port(pattern, PortDirection::Output) {
-                Ok(resolved_port) => {
-                    match connector.connect(&resolved_port, &dst_port) {
-                        Ok(()) => {
-                            tracing::debug!("Connected {} -> {}", resolved_port, dst_port);
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to connect {} -> {}: {}", resolved_port, dst_port, e);
-                            all_success = false;
-                        }
+                Ok(resolved_port) => match connector.connect(&resolved_port, &dst_port) {
+                    Ok(()) => {
+                        tracing::debug!("Connected {} -> {}", resolved_port, dst_port);
                     }
-                }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to connect {} -> {}: {}",
+                            resolved_port,
+                            dst_port,
+                            e
+                        );
+                        all_success = false;
+                    }
+                },
                 Err(e) => {
                     tracing::warn!("Could not resolve port pattern '{}': {}", pattern, e);
                     all_success = false;
@@ -646,7 +651,10 @@ impl ScsynthProcess {
         }
 
         if all_success {
-            tracing::info!("Input ports connected successfully via {}", connector.backend_name());
+            tracing::info!(
+                "Input ports connected successfully via {}",
+                connector.backend_name()
+            );
         }
         all_success
     }

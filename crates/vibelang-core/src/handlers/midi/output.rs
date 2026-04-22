@@ -150,13 +150,13 @@ impl MidiOutputManager {
             .lock()
             .map_err(|e| Error::MidiError(format!("Output threads lock poisoned: {e}")))?
             .insert(
-            id,
-            OutputThreadState {
-                handle,
-                running,
-                capability,
-            },
-        );
+                id,
+                OutputThreadState {
+                    handle,
+                    running,
+                    capability,
+                },
+            );
 
         let cap_str = match capability {
             MidiOutputCapability::Midi2Native => "MIDI 2.0 Native",
@@ -182,7 +182,12 @@ impl MidiOutputManager {
         }
 
         // Stop the thread
-        if let Some(state) = self.output_threads.lock().ok().and_then(|mut t| t.remove(&id)) {
+        if let Some(state) = self
+            .output_threads
+            .lock()
+            .ok()
+            .and_then(|mut t| t.remove(&id))
+        {
             state.running.store(false, Ordering::SeqCst);
             // The thread will exit when it sees the running flag is false
             // or when the channel is disconnected
@@ -512,9 +517,7 @@ pub fn send_midi2_event_to_device(
                 }
                 QueuedMidiEvent::Midi2PerNotePitchBend { .. }
                 | QueuedMidiEvent::Midi2PerNoteController { .. } => {
-                    tracing::debug!(
-                        "Dropping MIDI 2.0 per-note message (no MIDI 1.0 equivalent)"
-                    );
+                    tracing::debug!("Dropping MIDI 2.0 per-note message (no MIDI 1.0 equivalent)");
                     return Ok(()); // Skip - no equivalent in MIDI 1.0
                 }
                 _ => {}

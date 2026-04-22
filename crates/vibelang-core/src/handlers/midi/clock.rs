@@ -57,9 +57,9 @@ impl MidiClockManager {
             return Ok(());
         }
 
-        let mut outputs = outputs.lock().map_err(|e| {
-            crate::Error::MidiError(format!("Failed to lock MIDI outputs: {e}"))
-        })?;
+        let mut outputs = outputs
+            .lock()
+            .map_err(|e| crate::Error::MidiError(format!("Failed to lock MIDI outputs: {e}")))?;
         for device_id in clock_devices.iter() {
             if let Some(conn) = outputs.get_mut(device_id) {
                 // MIDI Clock message is 0xF8
@@ -227,7 +227,11 @@ impl MidiClockManager {
                 if let Ok(mut out) = outputs.lock() {
                     if let Some(conn) = out.get_mut(device) {
                         if let Err(e) = conn.send(&[0xFA]) {
-                            tracing::warn!("Failed to send MIDI Start to device {}: {}", device.0, e);
+                            tracing::warn!(
+                                "Failed to send MIDI Start to device {}: {}",
+                                device.0,
+                                e
+                            );
                         }
                     }
                 } else {
@@ -263,7 +267,11 @@ impl MidiClockManager {
                 if let Ok(mut out) = outputs.lock() {
                     if let Some(conn) = out.get_mut(device) {
                         if let Err(e) = conn.send(&[0xFC]) {
-                            tracing::warn!("Failed to send MIDI Stop to device {}: {}", device.0, e);
+                            tracing::warn!(
+                                "Failed to send MIDI Stop to device {}: {}",
+                                device.0,
+                                e
+                            );
                         }
                     }
                 } else {

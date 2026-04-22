@@ -636,7 +636,10 @@ impl ScsynthBackend {
 
         // Register pending request
         {
-            let mut pending = self.pending_buffer_info.lock().map_err(|_| ScsynthError::LockPoisoned)?;
+            let mut pending = self
+                .pending_buffer_info
+                .lock()
+                .map_err(|_| ScsynthError::LockPoisoned)?;
             pending.insert(id.0, tx);
         }
 
@@ -667,7 +670,10 @@ impl ScsynthBackend {
 
         // Register pending request
         {
-            let mut pending = self.pending_sync.lock().map_err(|_| ScsynthError::LockPoisoned)?;
+            let mut pending = self
+                .pending_sync
+                .lock()
+                .map_err(|_| ScsynthError::LockPoisoned)?;
             pending.insert(sync_id, tx);
         }
 
@@ -811,7 +817,10 @@ impl Backend for ScsynthBackend {
 
         // Register pending request
         {
-            let mut pending = self.pending_control_bus.lock().map_err(|_| ScsynthError::LockPoisoned)?;
+            let mut pending = self
+                .pending_control_bus
+                .lock()
+                .map_err(|_| ScsynthError::LockPoisoned)?;
             pending.insert(bus, tx);
         }
 
@@ -834,7 +843,10 @@ impl Backend for ScsynthBackend {
             Err(_) => {
                 // Timeout - remove pending request and return default
                 {
-                    let mut pending = self.pending_control_bus.lock().map_err(|_| ScsynthError::LockPoisoned)?;
+                    let mut pending = self
+                        .pending_control_bus
+                        .lock()
+                        .map_err(|_| ScsynthError::LockPoisoned)?;
                     pending.remove(&bus);
                 }
                 tracing::trace!("Control bus {} read timeout, returning 0.0", bus);
@@ -853,7 +865,10 @@ impl Backend for ScsynthBackend {
 
         // Register all pending requests and send all /c_get commands
         {
-            let mut pending = self.pending_control_bus.lock().map_err(|_| ScsynthError::LockPoisoned)?;
+            let mut pending = self
+                .pending_control_bus
+                .lock()
+                .map_err(|_| ScsynthError::LockPoisoned)?;
             for &bus in buses {
                 let (tx, rx) = oneshot::channel();
                 pending.insert(bus, tx);
@@ -879,7 +894,10 @@ impl Backend for ScsynthBackend {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
                 // Timeout exhausted, clean up remaining
-                let mut pending = self.pending_control_bus.lock().map_err(|_| ScsynthError::LockPoisoned)?;
+                let mut pending = self
+                    .pending_control_bus
+                    .lock()
+                    .map_err(|_| ScsynthError::LockPoisoned)?;
                 pending.remove(&bus);
                 continue;
             }
@@ -893,7 +911,10 @@ impl Backend for ScsynthBackend {
                 }
                 Err(_) => {
                     // Timeout - clean up
-                    let mut pending = self.pending_control_bus.lock().map_err(|_| ScsynthError::LockPoisoned)?;
+                    let mut pending = self
+                        .pending_control_bus
+                        .lock()
+                        .map_err(|_| ScsynthError::LockPoisoned)?;
                     pending.remove(&bus);
                 }
             }
@@ -918,7 +939,10 @@ impl Backend for ScsynthBackend {
 
         // Register pending request
         {
-            let mut pending = self.pending_buffer_info.lock().map_err(|_| ScsynthError::LockPoisoned)?;
+            let mut pending = self
+                .pending_buffer_info
+                .lock()
+                .map_err(|_| ScsynthError::LockPoisoned)?;
             pending.insert(id.0, tx);
         }
 
@@ -979,7 +1003,10 @@ impl Backend for ScsynthBackend {
 
         // Register pending request
         {
-            let mut pending = self.pending_buffer_info.lock().map_err(|_| ScsynthError::LockPoisoned)?;
+            let mut pending = self
+                .pending_buffer_info
+                .lock()
+                .map_err(|_| ScsynthError::LockPoisoned)?;
             pending.insert(id.0, tx);
         }
 

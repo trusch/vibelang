@@ -185,7 +185,10 @@ impl MidiEncoder {
                 let pb14 = (*value >> 18) as u16; // Scale down from 32-bit to 14-bit
                 let lsb = (pb14 & 0x7F) as u8;
                 let msb = ((pb14 >> 7) & 0x7F) as u8;
-                self.encode_channel_msg_raw(status::PITCH_BEND | group_channel.channel(), &[lsb, msb])
+                self.encode_channel_msg_raw(
+                    status::PITCH_BEND | group_channel.channel(),
+                    &[lsb, msb],
+                )
             }
 
             MidiMessage::Midi2PerNotePitchBend {
@@ -200,7 +203,10 @@ impl MidiEncoder {
                 let msb = ((pb14 >> 7) & 0x7F) as u8;
                 // Note: we're losing the note-specific information
                 let _ = note;
-                self.encode_channel_msg_raw(status::PITCH_BEND | group_channel.channel(), &[lsb, msb])
+                self.encode_channel_msg_raw(
+                    status::PITCH_BEND | group_channel.channel(),
+                    &[lsb, msb],
+                )
             }
 
             MidiMessage::Midi2PerNoteController {
