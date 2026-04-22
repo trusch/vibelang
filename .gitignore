@@ -33,6 +33,9 @@ sample.wav
 *.vst
 *.vst3
 
+# Emacs byte-compiled
+*.elc
+
 # Temporary files
 *.tmp
 *.log
