@@ -194,7 +194,8 @@ impl<B: Backend> VoicesHandler<B> {
         }
 
         // For non-MIDI voices or fallback, use immediate note_on_with_params
-        self.note_on_with_params(id, note, velocity, extra_params).await
+        self.note_on_with_params(id, note, velocity, extra_params)
+            .await
     }
 
     /// Send a note-on with per-note voice parameters (immediate).
@@ -263,14 +264,21 @@ impl<B: Backend> VoicesHandler<B> {
                 }
 
                 // Fallback: Use sample-accurate MIDI output via synthdef
-                let packed_data = pack_note_on(device_id.0 as u8, midi_channel, note, midi_velocity);
+                let packed_data =
+                    pack_note_on(device_id.0 as u8, midi_channel, note, midi_velocity);
                 let mut params = std::collections::HashMap::new();
                 params.insert("packed_data".to_string(), packed_data);
 
                 let node_id = node_id.ok_or(Error::backend_msg("MIDI node ID not allocated"))?;
                 if let Err(_e) = self
                     .backend
-                    .create_synth("midi_out", node_id, NodeId::new(0), AddAction::Head, &params)
+                    .create_synth(
+                        "midi_out",
+                        node_id,
+                        NodeId::new(0),
+                        AddAction::Head,
+                        &params,
+                    )
                     .await
                 {
                     tracing::debug!(
@@ -922,7 +930,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 // Fallback: Use sample-accurate MIDI output via synthdef
                 // The synthdef fires a SendTrig at creation time, which the
                 // MidiRealtimeService receives and converts to actual MIDI bytes.
-                let packed_data = pack_note_on(device_id.0 as u8, midi_channel, note, midi_velocity);
+                let packed_data =
+                    pack_note_on(device_id.0 as u8, midi_channel, note, midi_velocity);
 
                 let mut params = std::collections::HashMap::new();
                 params.insert("packed_data".to_string(), packed_data);
@@ -1028,7 +1037,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
                     tracing::debug!(
                         "Voice {:?} note_on: sample conversion - offset={:.2}s, length={:?}s",
-                        id, offset_secs, effective_length
+                        id,
+                        offset_secs,
+                        effective_length
                     );
                 }
             }
@@ -1188,20 +1199,27 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             }
         }
 
-        let node_to_release = {
+        let (node_to_release, is_sample_voice) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
 
-            voice.note_nodes.remove(&note)
+            let is_sample_voice =
+                voice.config.sample_id.is_some() || voice.config.sfz_instrument.is_some();
+            (voice.note_nodes.remove(&note), is_sample_voice)
         };
 
         // Release the note (lock released)
         if let Some(node_id) = node_to_release {
-            self.backend
-                .set_param(node_id, "gate", 0.0)
-                .await
-                .map_err(Error::backend)?;
+            if is_sample_voice {
+                // Sample/SFZ synths don't respond to gate - free the node directly.
+                let _ = self.backend.free_node(node_id).await;
+            } else {
+                self.backend
+                    .set_param(node_id, "gate", 0.0)
+                    .await
+                    .map_err(Error::backend)?;
+            }
         }
 
         Ok(())
@@ -1479,6 +1497,7 @@ mod tests {
                 muted: false,
                 soloed: false,
                 params: ParamMap::new(),
+                output_bus: None,
             },
         );
     }
@@ -1789,7 +1808,10 @@ mod tests {
         setup_state_with_group(&state).await;
 
         let result = handler.note_on(VoiceId::new(999), 60, 0.8).await;
-        assert!(result.is_err(), "Note on for non-existent voice should fail");
+        assert!(
+            result.is_err(),
+            "Note on for non-existent voice should fail"
+        );
     }
 
     #[tokio::test]
@@ -1798,7 +1820,10 @@ mod tests {
         setup_state_with_group(&state).await;
 
         let result = handler.note_off(VoiceId::new(999), 60).await;
-        assert!(result.is_err(), "Note off for non-existent voice should fail");
+        assert!(
+            result.is_err(),
+            "Note off for non-existent voice should fail"
+        );
     }
 
     // =========================================================================

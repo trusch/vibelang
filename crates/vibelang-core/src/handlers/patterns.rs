@@ -208,7 +208,10 @@ impl<B: Backend> PatternsHandler<B> {
 
         // Trigger through voice handler (lock released)
         if !triggers.is_empty() {
-            tracing::debug!("Patterns: triggering {} steps through voice handler", triggers.len());
+            tracing::debug!(
+                "Patterns: triggering {} steps through voice handler",
+                triggers.len()
+            );
         }
         for trigger in triggers {
             // If step has a note parameter and voice has MIDI output, use note_on_at

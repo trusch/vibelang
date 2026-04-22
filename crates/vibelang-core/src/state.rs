@@ -16,15 +16,15 @@ use crate::traits::{
     SampleInfo, SequenceConfig, VoiceConfig,
 };
 use crate::types::FadeId;
-use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::types::RecordingId;
 use crate::types::{
     Beat, BufferId, BusId, ControlBusId, EffectId, GroupId, MelodyId, ModulatorId, NodeId,
     ParamMap, PatternId, SampleId, SequenceId, SfzId, TimeSignature, VoiceId,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Internal state for a group.
 #[derive(Clone, Debug)]
@@ -61,6 +61,11 @@ pub struct GroupState {
 
     /// Current parameter values (applied to link synth).
     pub params: ParamMap,
+
+    /// Hardware output bus override (0-indexed channel number).
+    /// When set, the link synth routes directly to this hardware bus
+    /// instead of mixing into the parent group.
+    pub output_bus: Option<u32>,
 }
 
 /// Internal state for a voice.
@@ -330,6 +335,59 @@ pub struct ModulatorState {
     pub synth_node: NodeId,
 }
 
+/// A free-list allocator that reclaims IDs when entities are deleted.
+///
+/// Freed IDs are pushed to a queue and reused before allocating new ones,
+/// preventing unbounded ID growth over long sessions.
+#[derive(Clone, Debug)]
+pub struct FreeListAllocator {
+    next: u32,
+    free_list: VecDeque<u32>,
+    min: u32,
+    max: u32,
+}
+
+impl FreeListAllocator {
+    pub fn new(min: u32, max: u32) -> Self {
+        Self {
+            next: min,
+            free_list: VecDeque::new(),
+            min,
+            max,
+        }
+    }
+
+    /// Allocate an ID, reusing a freed one if available.
+    pub fn alloc(&mut self) -> Option<u32> {
+        if let Some(id) = self.free_list.pop_front() {
+            return Some(id);
+        }
+        if self.next >= self.max {
+            return None;
+        }
+        let id = self.next;
+        self.next += 1;
+        Some(id)
+    }
+
+    /// Return an ID to the free list for reuse.
+    pub fn free(&mut self, id: u32) {
+        debug_assert!(id >= self.min && id < self.max, "freed ID out of range");
+        self.free_list.push_back(id);
+    }
+
+    /// Reset to initial state (clears free list and restarts from min).
+    pub fn reset(&mut self) {
+        self.next = self.min;
+        self.free_list.clear();
+    }
+
+    /// Total IDs ever allocated from the counter (not counting recycled ones).
+    pub fn allocated_count(&self) -> u32 {
+        self.next - self.min
+    }
+}
+
 /// Allocator for control buses.
 ///
 /// Control buses are used for modulation signals (LFOs, envelopes, etc.).
@@ -337,10 +395,7 @@ pub struct ModulatorState {
 /// at a safe offset to avoid conflicts with any internal usage.
 #[derive(Clone, Debug)]
 pub struct ControlBusAllocator {
-    /// Next control bus ID to allocate.
-    next_bus: u32,
-    /// Starting bus ID (to avoid conflicts).
-    start_bus: u32,
+    inner: FreeListAllocator,
 }
 
 impl Default for ControlBusAllocator {
@@ -353,28 +408,30 @@ impl ControlBusAllocator {
     /// Create a new control bus allocator starting at the given bus ID.
     pub fn new(start: u32) -> Self {
         Self {
-            next_bus: start,
-            start_bus: start,
+            inner: FreeListAllocator::new(start, u32::MAX),
         }
     }
 
     /// Allocate a new control bus.
     pub fn allocate(&mut self) -> ControlBusId {
-        let bus = ControlBusId::new(self.next_bus);
-        self.next_bus += 1;
-        bus
+        ControlBusId::new(self.inner.alloc().expect("control bus IDs exhausted"))
+    }
+
+    /// Return a control bus to the pool for reuse.
+    pub fn free(&mut self, bus: ControlBusId) {
+        self.inner.free(bus.raw());
     }
 
     /// Reset the allocator to its initial state.
     ///
     /// Useful when reloading scripts and all modulators are being recreated.
     pub fn reset(&mut self) {
-        self.next_bus = self.start_bus;
+        self.inner.reset();
     }
 
-    /// Get the number of buses allocated.
+    /// Get the number of buses ever allocated from the counter.
     pub fn allocated_count(&self) -> u32 {
-        self.next_bus - self.start_bus
+        self.inner.allocated_count()
     }
 }
 
@@ -682,11 +739,11 @@ pub struct State {
     // =========================================================================
     // ID Allocation
     // =========================================================================
-    /// Next node ID to allocate.
-    pub next_node_id: u32,
+    /// Node ID allocator — reclaims IDs when nodes are freed.
+    pub node_ids: FreeListAllocator,
 
-    /// Next buffer ID to allocate.
-    pub next_buffer_id: u32,
+    /// Buffer ID allocator — reclaims IDs when buffers are freed.
+    pub buffer_ids: FreeListAllocator,
 
     /// Next audio bus ID to allocate.
     ///
@@ -719,8 +776,8 @@ impl Default for State {
             #[cfg(not(target_arch = "wasm32"))]
             recordings: HashMap::new(),
             meter_levels: HashMap::new(),
-            next_node_id: 1000, // Reserve low IDs for system nodes
-            next_buffer_id: 0,
+            node_ids: FreeListAllocator::new(1000, u32::MAX), // Reserve low IDs for system nodes
+            buffer_ids: FreeListAllocator::new(0, u32::MAX),
             next_bus_id: 16, // Reserve buses 0-15 for hardware I/O
         }
     }
@@ -734,16 +791,22 @@ impl State {
 
     /// Allocate a new node ID.
     pub fn alloc_node_id(&mut self) -> NodeId {
-        let id = NodeId::new(self.next_node_id);
-        self.next_node_id += 1;
-        id
+        NodeId::new(self.node_ids.alloc().expect("node IDs exhausted"))
+    }
+
+    /// Return a node ID to the pool for reuse.
+    pub fn free_node_id(&mut self, id: NodeId) {
+        self.node_ids.free(id.raw());
     }
 
     /// Allocate a new buffer ID.
     pub fn alloc_buffer_id(&mut self) -> crate::types::BufferId {
-        let id = crate::types::BufferId::new(self.next_buffer_id);
-        self.next_buffer_id += 1;
-        id
+        crate::types::BufferId::new(self.buffer_ids.alloc().expect("buffer IDs exhausted"))
+    }
+
+    /// Return a buffer ID to the pool for reuse.
+    pub fn free_buffer_id(&mut self, id: crate::types::BufferId) {
+        self.buffer_ids.free(id.raw());
     }
 
     /// Allocate a new stereo audio bus ID.
@@ -792,5 +855,110 @@ mod tests {
     fn test_beats_to_secs() {
         let state = State::new(); // 120 BPM
         assert!((state.beats_to_secs(2.0) - 1.0).abs() < 0.001);
+    }
+
+    // =========================================================================
+    // FreeListAllocator tests
+    // =========================================================================
+
+    #[test]
+    fn test_free_list_alloc_sequential() {
+        let mut alloc = FreeListAllocator::new(10, 20);
+        assert_eq!(alloc.alloc(), Some(10));
+        assert_eq!(alloc.alloc(), Some(11));
+        assert_eq!(alloc.alloc(), Some(12));
+    }
+
+    #[test]
+    fn test_free_list_reuse_after_free() {
+        let mut alloc = FreeListAllocator::new(0, 100);
+        let ids: Vec<u32> = (0..10).map(|_| alloc.alloc().unwrap()).collect();
+        // Free half of them
+        for &id in &ids[0..5] {
+            alloc.free(id);
+        }
+        // Next allocs should come from the free list (FIFO)
+        let reused: Vec<u32> = (0..5).map(|_| alloc.alloc().unwrap()).collect();
+        assert_eq!(reused, ids[0..5]);
+        // After free list exhausted, continues from counter
+        assert_eq!(alloc.alloc(), Some(10));
+    }
+
+    #[test]
+    fn test_free_list_max_enforcement() {
+        let mut alloc = FreeListAllocator::new(0, 3);
+        assert_eq!(alloc.alloc(), Some(0));
+        assert_eq!(alloc.alloc(), Some(1));
+        assert_eq!(alloc.alloc(), Some(2));
+        // Exhausted — no free list entries
+        assert_eq!(alloc.alloc(), None);
+    }
+
+    #[test]
+    fn test_free_list_max_with_reclaim() {
+        let mut alloc = FreeListAllocator::new(0, 2);
+        let a = alloc.alloc().unwrap(); // 0
+        let b = alloc.alloc().unwrap(); // 1
+        assert_eq!(alloc.alloc(), None); // exhausted
+        alloc.free(a);
+        // Now we can alloc again from the free list
+        assert_eq!(alloc.alloc(), Some(0));
+        alloc.free(b);
+        assert_eq!(alloc.alloc(), Some(1));
+    }
+
+    #[test]
+    fn test_free_list_reset() {
+        let mut alloc = FreeListAllocator::new(5, 100);
+        alloc.alloc();
+        alloc.alloc();
+        alloc.free(5);
+        alloc.reset();
+        // After reset, starts fresh from min
+        assert_eq!(alloc.alloc(), Some(5));
+    }
+
+    #[test]
+    fn test_state_free_node_id_reuse() {
+        let mut state = State::new();
+        let id1 = state.alloc_node_id();
+        let id2 = state.alloc_node_id();
+        state.free_node_id(id1);
+        // Next alloc should reuse id1
+        let id3 = state.alloc_node_id();
+        assert_eq!(id3, id1);
+        assert_ne!(id3, id2);
+    }
+
+    #[test]
+    fn test_state_free_buffer_id_reuse() {
+        let mut state = State::new();
+        let b1 = state.alloc_buffer_id();
+        let b2 = state.alloc_buffer_id();
+        state.free_buffer_id(b1);
+        let b3 = state.alloc_buffer_id();
+        assert_eq!(b3, b1);
+        assert_ne!(b3, b2);
+    }
+
+    #[test]
+    fn test_control_bus_alloc_free_reuse() {
+        let mut alloc = ControlBusAllocator::new(1000);
+        let b1 = alloc.allocate();
+        let b2 = alloc.allocate();
+        assert_eq!(b1.raw(), 1000);
+        assert_eq!(b2.raw(), 1001);
+        alloc.free(b1);
+        let b3 = alloc.allocate();
+        assert_eq!(b3.raw(), 1000);
+    }
+
+    #[test]
+    fn test_control_bus_reset() {
+        let mut alloc = ControlBusAllocator::new(1000);
+        alloc.allocate();
+        alloc.allocate();
+        alloc.reset();
+        assert_eq!(alloc.allocate().raw(), 1000);
     }
 }

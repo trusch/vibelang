@@ -72,6 +72,7 @@ impl<B: Backend> EffectsHandler<B> {
         for node_id in nodes_to_free {
             tracing::debug!("Effect grace period elapsed, freeing node {:?}", node_id);
             let _ = self.backend.free_node(node_id).await;
+            self.state.write().await.free_node_id(node_id);
         }
     }
 
@@ -86,6 +87,7 @@ impl<B: Backend> EffectsHandler<B> {
 
         for node_id in nodes_to_free {
             let _ = self.backend.free_node(node_id).await;
+            self.state.write().await.free_node_id(node_id);
         }
     }
 }
@@ -182,10 +184,7 @@ impl<B: Backend> Effects for EffectsHandler<B> {
 
         // Try to fade out by setting mix=0 (effects may or may not have this param)
         // This is best-effort - if the effect doesn't have a mix param, it's ignored
-        tracing::debug!(
-            "Effect {:?}: setting mix=0 for fade-out before removal",
-            id
-        );
+        tracing::debug!("Effect {:?}: setting mix=0 for fade-out before removal", id);
         let _ = self.backend.set_param(node_to_free, "mix", 0.0).await;
 
         // Schedule the free after grace period (allows fade-out to complete)
@@ -422,6 +421,7 @@ mod tests {
                 muted: false,
                 soloed: false,
                 params: ParamMap::new(),
+                output_bus: None,
             },
         );
     }
@@ -566,7 +566,11 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(60)).await;
         handler.tick().await;
 
-        assert_eq!(backend.nodes_freed(), 1, "Node should be freed after grace period");
+        assert_eq!(
+            backend.nodes_freed(),
+            1,
+            "Node should be freed after grace period"
+        );
 
         let state_read = state.read().await;
         assert!(!state_read.effects.contains_key(&effect_id));

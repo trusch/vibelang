@@ -170,13 +170,14 @@ impl<B: Backend> SequencesHandler<B> {
                                 for step in &mut new_steps {
                                     step.params.insert(config.param.clone(), start_value);
                                 }
-                                pattern.content = std::sync::Arc::new(crate::traits::PatternContent {
-                                    name: pattern.content.name.clone(),
-                                    voice: pattern.content.voice,
-                                    steps: new_steps,
-                                    length: pattern.content.length,
-                                    swing: pattern.content.swing,
-                                });
+                                pattern.content =
+                                    std::sync::Arc::new(crate::traits::PatternContent {
+                                        name: pattern.content.name.clone(),
+                                        voice: pattern.content.voice,
+                                        steps: new_steps,
+                                        length: pattern.content.length,
+                                        swing: pattern.content.swing,
+                                    });
                             }
                         }
                         FadeTarget::Melody(_) => {}
@@ -937,11 +938,7 @@ mod tests {
                 pattern_id,
                 PatternState::new(
                     pattern_id,
-                    PatternConfig::with_length(
-                        "test_pattern",
-                        crate::types::VoiceId::new(1),
-                        4.0,
-                    ),
+                    PatternConfig::with_length("test_pattern", crate::types::VoiceId::new(1), 4.0),
                 ),
             );
         }
@@ -976,11 +973,7 @@ mod tests {
                 pattern_id,
                 PatternState::new(
                     pattern_id,
-                    PatternConfig::with_length(
-                        "test_pattern",
-                        crate::types::VoiceId::new(1),
-                        4.0,
-                    ),
+                    PatternConfig::with_length("test_pattern", crate::types::VoiceId::new(1), 4.0),
                 ),
             );
         }

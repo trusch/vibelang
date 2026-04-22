@@ -381,6 +381,10 @@ impl<B: Backend> Recordings for RecordingsHandler<B> {
                 .recordings
                 .remove(&id)
                 .ok_or(Error::RecordingNotFound(id))?;
+            if let Some(nid) = info.node_id {
+                state.free_node_id(nid);
+            }
+            state.free_buffer_id(info.buffer_id);
             (info.node_id, info.buffer_id)
         };
 

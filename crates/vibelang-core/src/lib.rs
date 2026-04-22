@@ -146,11 +146,11 @@ pub use message::{
     VoiceMessage,
 };
 pub use runtime::{Runtime, RuntimeHandle};
-pub use transport_snapshot::TransportSnapshot;
 pub use state::{
-    ActiveFade, EffectState, GroupState, MelodyState, MeterLevel, PatternState, SequenceState,
-    SfzInstrumentState, SfzRegionState, State, VoiceState,
+    ActiveFade, EffectState, GroupState, MelodyState, MeterLevel, ModulatorState, PatternState,
+    SequenceState, SfzInstrumentState, SfzRegionState, State, VoiceState,
 };
+pub use transport_snapshot::TransportSnapshot;
 
 // Re-export the scsynth backend when available (native only)
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]

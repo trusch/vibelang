@@ -67,10 +67,7 @@ const EMBEDDED_MANIFESTS: &[(&str, &str)] = &[
         include_str!("ugen_manifests/multichannel.json"),
     ),
     ("analysis", include_str!("ugen_manifests/analysis.json")),
-    (
-        "conversion",
-        include_str!("ugen_manifests/conversion.json"),
-    ),
+    ("conversion", include_str!("ugen_manifests/conversion.json")),
     ("demand", include_str!("ugen_manifests/demand.json")),
     ("fft", include_str!("ugen_manifests/fft.json")),
     ("granular", include_str!("ugen_manifests/granular.json")),

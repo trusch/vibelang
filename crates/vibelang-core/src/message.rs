@@ -168,7 +168,10 @@ pub enum GroupMessage {
 #[derive(Clone, Debug)]
 pub enum VoiceMessage {
     /// Create a new voice.
-    Create { id: VoiceId, config: Box<VoiceConfig> },
+    Create {
+        id: VoiceId,
+        config: Box<VoiceConfig>,
+    },
 
     /// Delete a voice.
     Delete { id: VoiceId },

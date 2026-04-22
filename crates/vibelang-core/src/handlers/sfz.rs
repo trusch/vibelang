@@ -97,13 +97,9 @@ impl<B: Backend> Sfz for SfzHandler<B> {
         tracing::info!("Loading SFZ instrument {} from {}", id.0, path.display());
 
         // We need to load the SFZ file, then load each unique sample via backend
-        // First, allocate starting buffer ID
-        let start_buffer_id = {
-            let state = self.state.read().await;
-            state.next_buffer_id as i32
-        };
-
-        let mut next_buffer_id = start_buffer_id;
+        // next_buffer_id is a local counter used by the SFZ library to generate
+        // internal IDs for its sample mapping. These are separate from our BufferIds.
+        let mut next_buffer_id = 0i32;
 
         // Track which sfz buffer IDs map to our BufferIds
         let mut buffer_id_map: HashMap<i32, BufferId> = HashMap::new();
@@ -209,12 +205,17 @@ impl<B: Backend> Sfz for SfzHandler<B> {
                 .remove(&id)
                 .ok_or(Error::SfzNotFound(id))?;
 
-            instrument.regions.iter().map(|r| r.buffer_id).collect()
+            // Deduplicate before freeing (same buffer may back multiple regions)
+            let unique: std::collections::HashSet<BufferId> =
+                instrument.regions.iter().map(|r| r.buffer_id).collect();
+            for buf_id in &unique {
+                state.free_buffer_id(*buf_id);
+            }
+            unique.into_iter().collect()
         };
 
-        // Free buffers (deduplicate in case same buffer used by multiple regions)
-        let unique_buffers: std::collections::HashSet<_> = buffer_ids.into_iter().collect();
-        for buffer_id in unique_buffers {
+        // Free buffers in backend
+        for buffer_id in buffer_ids {
             if let Err(e) = self.backend.free_buffer(buffer_id).await {
                 tracing::warn!("Failed to free buffer {}: {}", buffer_id.0, e);
             }

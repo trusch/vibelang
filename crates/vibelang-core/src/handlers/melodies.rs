@@ -104,7 +104,8 @@ impl<B: Backend> MelodiesHandler<B> {
                 .collect();
 
             // Debug: log playing melodies count periodically (every ~1 second at 100Hz tick)
-            static TICK_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            static TICK_COUNTER: std::sync::atomic::AtomicU64 =
+                std::sync::atomic::AtomicU64::new(0);
             let tick_count = TICK_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             if tick_count.is_multiple_of(100) && !melody_ids.is_empty() {
                 tracing::debug!(
@@ -248,7 +249,8 @@ impl<B: Backend> MelodiesHandler<B> {
                         let off_offset_secs = offset_secs + duration_secs;
                         // Clamp to non-negative
                         let off_timestamp = now + Duration::from_secs_f64(off_offset_secs.max(0.0));
-                        let off_beat = current_beat + Beat::from_f64(off_offset_secs.max(0.0) * tempo / 60.0);
+                        let off_beat =
+                            current_beat + Beat::from_f64(off_offset_secs.max(0.0) * tempo / 60.0);
 
                         tracing::debug!(
                             "Melody note scheduled: voice={:?}, note={}, vel={:.2}, on_offset={:.3}ms, off_offset={:.3}ms",
@@ -300,12 +302,23 @@ impl<B: Backend> MelodiesHandler<B> {
                 if trigger.params.is_empty() {
                     let _ = self
                         .voices
-                        .note_on_at(trigger.voice_id, trigger.note, trigger.velocity, Some(trigger.on_timestamp))
+                        .note_on_at(
+                            trigger.voice_id,
+                            trigger.note,
+                            trigger.velocity,
+                            Some(trigger.on_timestamp),
+                        )
                         .await;
                 } else {
                     let _ = self
                         .voices
-                        .note_on_at_with_params(trigger.voice_id, trigger.note, trigger.velocity, Some(trigger.on_timestamp), &trigger.params)
+                        .note_on_at_with_params(
+                            trigger.voice_id,
+                            trigger.note,
+                            trigger.velocity,
+                            Some(trigger.on_timestamp),
+                            &trigger.params,
+                        )
                         .await;
                 }
             }
@@ -319,7 +332,12 @@ impl<B: Backend> MelodiesHandler<B> {
                 } else {
                     let _ = self
                         .voices
-                        .note_on_with_params(trigger.voice_id, trigger.note, trigger.velocity, &trigger.params)
+                        .note_on_with_params(
+                            trigger.voice_id,
+                            trigger.note,
+                            trigger.velocity,
+                            &trigger.params,
+                        )
                         .await;
                 }
             }
@@ -413,7 +431,10 @@ impl<B: Backend> MelodiesHandler<B> {
             );
             #[cfg(feature = "midi")]
             {
-                let _ = self.voices.note_off_at(voice_id, note, Some(timestamp)).await;
+                let _ = self
+                    .voices
+                    .note_off_at(voice_id, note, Some(timestamp))
+                    .await;
             }
             #[cfg(not(feature = "midi"))]
             {
@@ -537,7 +558,9 @@ impl<B: Backend> Melodies for MelodiesHandler<B> {
             if cleared_count > 0 {
                 tracing::debug!(
                     "Melody {:?}: cleared {} additional pending note-offs for voice {:?}",
-                    id, cleared_count, vid
+                    id,
+                    cleared_count,
+                    vid
                 );
             }
 
@@ -551,7 +574,8 @@ impl<B: Backend> Melodies for MelodiesHandler<B> {
                     if voice.config.midi_output.is_some() {
                         tracing::debug!(
                             "Melody {:?}: sending all-notes-off for MIDI voice {:?}",
-                            id, vid
+                            id,
+                            vid
                         );
                         // Send note-offs for common MIDI note range (21-108, piano range)
                         // This is more efficient than 0-127 and covers most use cases
@@ -573,7 +597,8 @@ impl<B: Backend> Melodies for MelodiesHandler<B> {
 
         tracing::debug!(
             "Melody {:?}: setting playing=false (was {})",
-            id, melody.playing
+            id,
+            melody.playing
         );
         melody.playing = false;
 
@@ -1057,7 +1082,10 @@ mod tests {
         let note_b = note_at_with_params(0.0, 60, params_b);
 
         // Notes at the same beat with different params should not be equal
-        assert_ne!(note_a, note_b, "Notes with different params should not be equal");
+        assert_ne!(
+            note_a, note_b,
+            "Notes with different params should not be equal"
+        );
     }
 
     #[test]

@@ -229,13 +229,13 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
         "Line".to_string(),
         Rate::Control,
         vec![
-            Input::Constant(zero),  // start
-            Input::Constant(one),   // end
+            Input::Constant(zero), // start
+            Input::Constant(one),  // end
             Input::Node {
                 node_id: actual_duration.0,
                 output_index: 0,
             }, // duration
-            Input::Constant(zero),  // doneAction=0
+            Input::Constant(zero), // doneAction=0
         ],
         1,
         0,

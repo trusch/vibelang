@@ -342,7 +342,10 @@ mod tests {
 
         let a = NoteEvent::new_with_params(0.0, 60, 0.8, 1.0, params_a);
         let b = NoteEvent::new_with_params(0.0, 60, 0.8, 1.0, params_b);
-        assert_ne!(a, b, "Notes with different param values should not be equal");
+        assert_ne!(
+            a, b,
+            "Notes with different param values should not be equal"
+        );
     }
 
     #[test]
@@ -368,10 +371,7 @@ mod tests {
 
         let a = NoteEvent::new_with_params(0.0, 60, 0.8, 1.0, params_a);
         let b = NoteEvent::new_with_params(0.0, 60, 0.8, 1.0, params_b);
-        assert_ne!(
-            a, b,
-            "Notes with different param keys should not be equal"
-        );
+        assert_ne!(a, b, "Notes with different param keys should not be equal");
     }
 
     #[test]
@@ -386,10 +386,7 @@ mod tests {
 
         let a = NoteEvent::new_with_params(0.0, 60, 0.8, 1.0, params_a);
         let b = NoteEvent::new_with_params(0.0, 60, 0.8, 1.0, params_b);
-        assert_eq!(
-            a, b,
-            "Param insertion order should not affect equality"
-        );
+        assert_eq!(a, b, "Param insertion order should not affect equality");
     }
 
     // =========================================================================
@@ -402,12 +399,16 @@ mod tests {
         params.insert("cutoff".to_string(), 2000.0_f32);
 
         let voice = VoiceId::new(1);
-        let config_a = MelodyConfig::with_length("test", voice, 4.0)
-            .with_note(NoteEvent::new_with_params(0.0, 60, 1.0, 1.0, params.clone()));
+        let config_a = MelodyConfig::with_length("test", voice, 4.0).with_note(
+            NoteEvent::new_with_params(0.0, 60, 1.0, 1.0, params.clone()),
+        );
         let config_b = MelodyConfig::with_length("test", voice, 4.0)
             .with_note(NoteEvent::new_with_params(0.0, 60, 1.0, 1.0, params));
 
-        assert_eq!(config_a, config_b, "MelodyConfigs with same params should be equal");
+        assert_eq!(
+            config_a, config_b,
+            "MelodyConfigs with same params should be equal"
+        );
     }
 
     #[test]

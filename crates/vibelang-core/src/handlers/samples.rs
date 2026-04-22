@@ -113,6 +113,7 @@ impl<B: Backend> Samples for SamplesHandler<B> {
         let buffer_id = {
             let mut state = self.state.write().await;
             let info = state.samples.remove(&id).ok_or(Error::SampleNotFound(id))?;
+            state.free_buffer_id(info.buffer_id);
             info.buffer_id
         };
 

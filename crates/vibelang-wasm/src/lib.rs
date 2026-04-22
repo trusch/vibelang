@@ -342,7 +342,7 @@ impl VibelangRuntime {
     /// Parse a note name to MIDI number.
     #[wasm_bindgen(js_name = parseNote)]
     pub fn parse_note(note: &str) -> i32 {
-        vibelang_rhai::api::helpers::parse_note_name(note)
+        vibelang_core::midi::parse_note_name(note)
             .map(|n| n as i32)
             .unwrap_or(-1)
     }

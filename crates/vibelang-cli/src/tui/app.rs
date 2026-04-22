@@ -641,7 +641,7 @@ impl ResourceStats {
             voices: state.voices.len(),
             effects: state.effects.len(),
             samples: state.samples.len(),
-            buffers_allocated: state.next_buffer_id,
+            buffers_allocated: state.buffer_ids.allocated_count(),
         }
     }
 }

@@ -333,13 +333,15 @@ impl<B: Backend> Modulators for ModulatorsHandler<B> {
     }
 
     async fn delete(&self, id: ModulatorId) -> Result<()> {
-        let node_to_free = {
+        let (node_to_free, control_bus) = {
             let mut state = self.state.write().await;
             let modulator = state
                 .modulators
                 .remove(&id)
                 .ok_or(Error::ModulatorNotFound(id))?;
-            modulator.synth_node
+            state.free_node_id(modulator.synth_node);
+            state.control_buses.free(modulator.control_bus);
+            (modulator.synth_node, modulator.control_bus)
         };
 
         // Free the modulator node
@@ -348,7 +350,12 @@ impl<B: Backend> Modulators for ModulatorsHandler<B> {
             .await
             .map_err(Error::backend)?;
 
-        tracing::debug!("Deleted modulator {:?}", id);
+        tracing::debug!(
+            "Deleted modulator {:?} (node={:?}, control_bus={})",
+            id,
+            node_to_free,
+            control_bus.raw()
+        );
 
         Ok(())
     }
