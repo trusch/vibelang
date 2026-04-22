@@ -163,6 +163,10 @@ pub async fn start_server(
             post(routes::patterns::start_pattern),
         )
         .route("/patterns/{id}/stop", post(routes::patterns::stop_pattern))
+        .route(
+            "/patterns/{id}/params/{param}",
+            put(routes::patterns::set_pattern_param),
+        )
         // Melodies
         .route("/melodies", get(routes::melodies::list_melodies))
         .route("/melodies", post(routes::melodies::create_melody))
@@ -192,6 +196,10 @@ pub async fn start_server(
             "/sequences/{id}/pause",
             post(routes::sequences::pause_sequence),
         )
+        .route(
+            "/sequences/{id}/resume",
+            post(routes::sequences::resume_sequence),
+        )
         // Effects
         .route("/effects", get(routes::effects::list_effects))
         .route("/effects/{id}", get(routes::effects::get_effect))
@@ -200,6 +208,14 @@ pub async fn start_server(
         .route(
             "/effects/{id}/params/{param}",
             put(routes::effects::set_effect_param),
+        )
+        // Modulators
+        .route("/modulators", get(routes::modulators::list_modulators))
+        .route("/modulators/{id}", get(routes::modulators::get_modulator))
+        .route("/modulators/{id}", patch(routes::modulators::update_modulator))
+        .route(
+            "/modulators/{id}/params/{param}",
+            put(routes::modulators::set_modulator_param),
         )
         // Samples
         .route("/samples", get(routes::samples::list_samples))
@@ -224,8 +240,24 @@ pub async fn start_server(
         .route("/fades/voice/{name}", post(routes::fades::fade_voice))
         .route("/fades/group/{path}", post(routes::fades::fade_group))
         .route("/fades/effect/{id}", post(routes::fades::fade_effect))
+        .route("/fades/pattern/{name}", post(routes::fades::fade_pattern))
+        .route("/fades/melody/{name}", post(routes::fades::fade_melody))
         // WebSocket
         .route("/ws", get(websocket::ws_handler));
+
+    // Add recording routes (native only)
+    #[cfg(not(target_arch = "wasm32"))]
+    let app = app
+        .route("/recordings", get(routes::recordings::list_recordings))
+        .route("/recordings/{id}", get(routes::recordings::get_recording))
+        .route(
+            "/recordings/{id}/stop",
+            post(routes::recordings::stop_recording),
+        )
+        .route(
+            "/recordings/{id}/cancel",
+            post(routes::recordings::cancel_recording),
+        );
 
     // Add MIDI routes (feature-gated)
     #[cfg(feature = "midi")]

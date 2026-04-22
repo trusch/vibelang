@@ -10,7 +10,7 @@ use std::sync::Arc;
 use vibelang_core::{
     traits::{FadeConfig, FadeCurve, FadeTarget},
     types::Duration,
-    EffectId, FadeMessage, GroupId, VoiceId,
+    EffectId, FadeMessage, GroupId, MelodyId, PatternId, VoiceId,
 };
 
 use crate::{
@@ -276,6 +276,146 @@ pub async fn fade_effect(
 
     let mut config = FadeConfig::new(
         FadeTarget::Effect(effect_id),
+        &req.param,
+        req.to,
+        Duration::from_beats(req.duration_beats),
+    );
+    config.from = req.from;
+    config.curve = parse_curve_spec(&req.curve);
+
+    state
+        .send(FadeMessage::Start { config }.into())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal(&e.to_string())),
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Request body for starting a fade on a pattern.
+#[derive(Debug, Deserialize)]
+pub struct PatternFadeRequest {
+    /// Parameter name to fade.
+    pub param: String,
+    /// Target value.
+    pub to: f32,
+    /// Duration in beats.
+    pub duration_beats: f64,
+    /// Optional starting value (defaults to current value).
+    #[serde(default)]
+    pub from: Option<f32>,
+    /// Interpolation curve specification.
+    #[serde(default)]
+    pub curve: CurveSpec,
+}
+
+/// Request body for starting a fade on a melody.
+#[derive(Debug, Deserialize)]
+pub struct MelodyFadeRequest {
+    /// Parameter name to fade.
+    pub param: String,
+    /// Target value.
+    pub to: f32,
+    /// Duration in beats.
+    pub duration_beats: f64,
+    /// Optional starting value (defaults to current value).
+    #[serde(default)]
+    pub from: Option<f32>,
+    /// Interpolation curve specification.
+    #[serde(default)]
+    pub curve: CurveSpec,
+}
+
+/// POST /fades/pattern/:name - Start a fade on a pattern parameter.
+pub async fn fade_pattern(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Json(req): Json<PatternFadeRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let pattern_id = state
+        .with_state(|s| {
+            s.patterns
+                .iter()
+                .find(|(_, p)| p.id.raw().to_string() == name || p.content.name == name)
+                .map(|(id, _)| *id)
+        })
+        .await;
+
+    let pattern_id = match pattern_id {
+        Some(id) => id,
+        None => match name.parse::<u32>() {
+            Ok(n) => PatternId::new(n),
+            Err(_) => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse::not_found(&format!(
+                        "Pattern '{}' not found",
+                        name
+                    ))),
+                ));
+            }
+        },
+    };
+
+    let mut config = FadeConfig::new(
+        FadeTarget::Pattern(pattern_id),
+        &req.param,
+        req.to,
+        Duration::from_beats(req.duration_beats),
+    );
+    config.from = req.from;
+    config.curve = parse_curve_spec(&req.curve);
+
+    state
+        .send(FadeMessage::Start { config }.into())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal(&e.to_string())),
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /fades/melody/:name - Start a fade on a melody parameter.
+pub async fn fade_melody(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Json(req): Json<MelodyFadeRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let melody_id = state
+        .with_state(|s| {
+            s.melodies
+                .iter()
+                .find(|(_, m)| m.id.raw().to_string() == name || m.content.name == name)
+                .map(|(id, _)| *id)
+        })
+        .await;
+
+    let melody_id = match melody_id {
+        Some(id) => id,
+        None => match name.parse::<u32>() {
+            Ok(n) => MelodyId::new(n),
+            Err(_) => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse::not_found(&format!(
+                        "Melody '{}' not found",
+                        name
+                    ))),
+                ));
+            }
+        },
+    };
+
+    let mut config = FadeConfig::new(
+        FadeTarget::Melody(melody_id),
         &req.param,
         req.to,
         Duration::from_beats(req.duration_beats),

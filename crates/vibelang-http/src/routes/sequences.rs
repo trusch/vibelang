@@ -248,6 +248,29 @@ pub async fn pause_sequence(
     Ok(StatusCode::OK)
 }
 
+/// POST /sequences/:id/resume - Resume a paused sequence by ID or name
+pub async fn resume_sequence(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let sequence_id = resolve_sequence_id(&state, &id).await?;
+
+    if let Err(e) = state
+        .send(SequenceMessage::Resume { id: sequence_id }.into())
+        .await
+    {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::internal(&format!(
+                "Failed to resume sequence: {}",
+                e
+            ))),
+        ));
+    }
+
+    Ok(StatusCode::OK)
+}
+
 /// Convert API SequenceClip to internal Clip
 fn api_clip_to_clip(clip: &SequenceClip) -> Option<Clip> {
     let start = Beat::from_f64(clip.start_beat);

@@ -600,6 +600,30 @@ pub struct MeterLevel {
 pub type MeterLevels = HashMap<String, MeterLevel>;
 
 // =============================================================================
+// Recordings
+// =============================================================================
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingStatus {
+    Pending,
+    CountingIn,
+    Recording,
+    Completed,
+    Cancelled,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Recording {
+    pub id: String,
+    pub status: RecordingStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_secs: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+// =============================================================================
 // Error Response
 // =============================================================================
 

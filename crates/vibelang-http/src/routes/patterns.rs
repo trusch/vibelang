@@ -255,6 +255,37 @@ pub async fn stop_pattern(
     Ok(StatusCode::OK)
 }
 
+/// PUT /patterns/:id/params/:param - Set a single pattern parameter by ID or name
+pub async fn set_pattern_param(
+    State(state): State<Arc<AppState>>,
+    Path((id, param)): Path<(String, String)>,
+    Json(req): Json<crate::models::ParamSet>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let pattern_id = resolve_pattern_id(&state, &id).await?;
+
+    if let Err(e) = state
+        .send(
+            PatternMessage::SetParam {
+                id: pattern_id,
+                param,
+                value: req.value,
+            }
+            .into(),
+        )
+        .await
+    {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::internal(&format!(
+                "Failed to set pattern param: {}",
+                e
+            ))),
+        ));
+    }
+
+    Ok(StatusCode::OK)
+}
+
 /// POST /patterns - Create a new pattern
 pub async fn create_pattern(
     State(state): State<Arc<AppState>>,
