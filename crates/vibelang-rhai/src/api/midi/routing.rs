@@ -63,9 +63,17 @@ impl KeyboardRoute {
     /// Set the velocity curve.
     ///
     /// Available curves: "linear", "soft", "hard", "exponential", "compressed"
-    pub fn velocity_curve(mut self, curve_name: String) -> Self {
+    pub fn velocity(mut self, curve_name: String) -> Self {
         self.builder = self.builder.velocity_curve_name(&curve_name);
         self
+    }
+
+    /// Set the velocity curve.
+    ///
+    /// **Deprecated**: Use `velocity(name)` instead.
+    #[deprecated(note = "Use velocity() instead")]
+    pub fn velocity_curve(self, curve_name: String) -> Self {
+        self.velocity(curve_name)
     }
 
     /// Set a fixed velocity (0-127).
@@ -140,9 +148,17 @@ impl NoteRoute {
     }
 
     /// Set choke group (notes in same group stop each other).
-    pub fn choke_group(mut self, group: String) -> Self {
+    pub fn choke(mut self, group: String) -> Self {
         self.builder = self.builder.choke_group(&group);
         self
+    }
+
+    /// Set choke group (notes in same group stop each other).
+    ///
+    /// **Deprecated**: Use `choke(name)` instead.
+    #[deprecated(note = "Use choke() instead")]
+    pub fn choke_group(self, group: String) -> Self {
+        self.choke(group)
     }
 
     /// Map velocity to a parameter.
@@ -236,6 +252,7 @@ impl CcRoute {
     /// Internal helper to apply the CC route configuration.
     fn apply_route(self, voice_name: &str, param: String, min: f64, max: f64) {
         use vibelang_core::reload::AdvancedMidiCcRoute;
+        use vibelang_core::traits::FadeTarget;
 
         let voice_id = context::get_or_create_voice_id(voice_name);
 
@@ -248,7 +265,7 @@ impl CcRoute {
                 ParameterCurve::Logarithmic => "logarithmic".to_string(),
                 ParameterCurve::Exponential => "exponential".to_string(),
             },
-            voice: voice_id,
+            target: FadeTarget::Voice(voice_id),
             param,
             min: min as f32,
             max: max as f32,

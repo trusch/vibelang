@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use vibelang_core::traits::{MelodyConfig, NoteEvent};
 use vibelang_core::types::Beat;
 
-use super::helpers::parse_note_name;
+use vibelang_core::midi::parse_note_name;
 use super::voice::Voice;
 use crate::context;
 
@@ -1722,10 +1722,9 @@ mod tests {
 
     #[test]
     fn test_parse_note_params_many_params() {
-        let mut chars =
-            "[vel=80,cutoff=2000,resonance=0.9,pan=-0.3,attack=0.01,release=0.5]"
-                .chars()
-                .peekable();
+        let mut chars = "[vel=80,cutoff=2000,resonance=0.9,pan=-0.3,attack=0.01,release=0.5]"
+            .chars()
+            .peekable();
         let params = parse_note_params(&mut chars);
         assert!(params.velocity.is_some());
         assert_eq!(params.params.len(), 5); // cutoff, resonance, pan, attack, release
@@ -1798,8 +1797,8 @@ mod tests {
 
     #[test]
     fn test_melody_notes_velocity_override_flows_to_melody_note() {
-        let melody = Melody::new_for_test("test")
-            .notes("C4[velocity=100] D4[vel=0.5] E4".to_string());
+        let melody =
+            Melody::new_for_test("test").notes("C4[velocity=100] D4[vel=0.5] E4".to_string());
 
         assert_eq!(melody.notes.len(), 3);
 
@@ -1853,8 +1852,7 @@ mod tests {
 
     #[test]
     fn test_melody_notes_gate_override() {
-        let melody = Melody::new_for_test("test")
-            .notes("C4[gate=0.5] D4".to_string());
+        let melody = Melody::new_for_test("test").notes("C4[gate=0.5] D4".to_string());
 
         assert_eq!(melody.notes.len(), 2);
 
@@ -1868,8 +1866,7 @@ mod tests {
     #[test]
     fn test_melody_notes_params_with_ties() {
         // Params on a note should persist through ties
-        let melody = Melody::new_for_test("test")
-            .notes("C4[cutoff=2000] - - D4".to_string());
+        let melody = Melody::new_for_test("test").notes("C4[cutoff=2000] - - D4".to_string());
 
         assert_eq!(melody.notes.len(), 2);
 
@@ -1920,8 +1917,8 @@ mod tests {
 
     #[test]
     fn test_melody_notes_combined_velocity_and_params() {
-        let melody = Melody::new_for_test("test")
-            .notes("C4[vel=80,cutoff=2000] D4[vel=40]".to_string());
+        let melody =
+            Melody::new_for_test("test").notes("C4[vel=80,cutoff=2000] D4[vel=40]".to_string());
 
         assert_eq!(melody.notes.len(), 2);
 
@@ -1948,8 +1945,7 @@ mod tests {
     #[test]
     fn test_melody_notes_chord_with_params_shared() {
         // All notes in a chord should share the same params
-        let melody = Melody::new_for_test("test")
-            .notes("[C4 E4 G4][cutoff=1500]".to_string());
+        let melody = Melody::new_for_test("test").notes("[C4 E4 G4][cutoff=1500]".to_string());
 
         // Each note in the chord becomes a separate NoteEvent
         assert_eq!(melody.notes.len(), 1); // Still 1 MelodyNote (chord)

@@ -14,9 +14,14 @@ use vibelang_core::types::MidiDeviceId;
 use crate::api::voice::Voice;
 use crate::context;
 
+use super::cc_mapping::CcMapping;
+use super::looper_builder::LooperBuilder;
 use super::routing::{CcRoute, KeyboardRoute, NoteRoute};
 
-use super::midi2::{Cc32Route, GroupRoute, PerNoteControllerBuilder, PerNotePitchBendBuilder, PerNotePressureBuilder};
+use super::midi2::{
+    Cc32Route, GroupRoute, PerNoteControllerBuilder, PerNotePitchBendBuilder,
+    PerNotePressureBuilder,
+};
 
 /// Handle to a MIDI device.
 #[derive(Debug, Clone, CustomType)]
@@ -195,6 +200,7 @@ impl MidiDevice {
     /// * `param` - Parameter name
     /// * `min` - Value when CC is 0
     /// * `max` - Value when CC is 127
+    #[deprecated(note = "use map_cc(cc).to(target, param, min, max) instead")]
     pub fn route_cc_to_voice(
         self,
         cc: i64,
@@ -222,6 +228,7 @@ impl MidiDevice {
     }
 
     /// Route a CC from this device to a group parameter.
+    #[deprecated(note = "use map_cc(cc).to(target, param, min, max) instead")]
     pub fn route_cc_to_group(
         self,
         cc: i64,
@@ -480,12 +487,20 @@ impl MidiDevice {
     // === Advanced Routing Builders ===
 
     /// Start building an advanced keyboard route.
-    pub fn keyboard_route(self) -> KeyboardRoute {
+    pub fn keys(self) -> KeyboardRoute {
         KeyboardRoute::new(self.id, KeyboardRouteBuilder::new(self.id))
     }
 
+    /// Start building an advanced keyboard route.
+    ///
+    /// **Deprecated**: Use `keys()` instead.
+    #[deprecated(note = "Use keys() instead")]
+    pub fn keyboard_route(self) -> KeyboardRoute {
+        self.keys()
+    }
+
     /// Start building an advanced note route (for drums/pads).
-    pub fn note_route(self, note: Dynamic) -> NoteRoute {
+    pub fn pad(self, note: Dynamic) -> NoteRoute {
         let note_num = if note.is_int() {
             note.as_int().unwrap_or(60).clamp(0, 127) as u8
         } else if note.is_string() {
@@ -494,7 +509,7 @@ impl MidiDevice {
                 Some(n) => n,
                 None => {
                     tracing::warn!(
-                        "Invalid note name '{}' for note_route on device '{}', defaulting to C4 (60)",
+                        "Invalid note name '{}' for pad on device '{}', defaulting to C4 (60)",
                         name,
                         self.name
                     );
@@ -503,7 +518,7 @@ impl MidiDevice {
             }
         } else {
             tracing::warn!(
-                "Invalid note type for note_route on device '{}', defaulting to C4 (60)",
+                "Invalid note type for pad on device '{}', defaulting to C4 (60)",
                 self.name
             );
             60
@@ -512,9 +527,33 @@ impl MidiDevice {
         NoteRoute::new(self.id, NoteRouteBuilder::new(self.id, note_num))
     }
 
+    /// Start building an advanced note route (for drums/pads).
+    ///
+    /// **Deprecated**: Use `pad(note)` instead.
+    #[deprecated(note = "Use pad() instead")]
+    pub fn note_route(self, note: Dynamic) -> NoteRoute {
+        self.pad(note)
+    }
+
+    /// Start building a looper configuration for this device.
+    pub fn looper(self) -> LooperBuilder {
+        LooperBuilder::new(self.id)
+    }
+
+    /// Start building an advanced CC mapping with polymorphic target.
+    pub fn map_cc(self, cc: i64) -> CcMapping {
+        CcMapping::new(self.id, cc.clamp(0, 127) as u8)
+    }
+
     /// Start building an advanced CC route with curves.
+    ///
+    /// **Deprecated**: Use `map_cc()` instead.
+    #[deprecated(note = "use map_cc()")]
     pub fn cc_route(self, cc: i64) -> CcRoute {
-        CcRoute::new(self.id, CcRouteBuilder::new(self.id, cc.clamp(0, 127) as u8))
+        CcRoute::new(
+            self.id,
+            CcRouteBuilder::new(self.id, cc.clamp(0, 127) as u8),
+        )
     }
 
     // === MIDI Callback Methods ===
@@ -665,6 +704,13 @@ impl MidiDevice {
 
     /// Enable MIDI clock output to this device.
     pub fn enable_clock(self) -> Self {
+        if !self.has_input && !self.has_output {
+            log::warn!(
+                "[MIDI] enable_clock(): device '{}' not found, skipping",
+                self.name
+            );
+            return self;
+        }
         context::with_state(|state| {
             state.midi_outputs.insert(self.id);
             state.midi_clock_outputs.push(MidiClockOutputRequest {
@@ -702,6 +748,13 @@ impl MidiDevice {
     /// ko2.send_start();  // External device starts in sync
     /// ```
     pub fn send_start(&mut self) {
+        if !self.has_input && !self.has_output {
+            log::warn!(
+                "[MIDI] send_start(): device '{}' not found, skipping",
+                self.name
+            );
+            return;
+        }
         let msg = MidiOutputMessage::Start { device_id: self.id };
         context::with_state(|state| {
             state.midi_outputs.insert(self.id);
@@ -746,31 +799,31 @@ impl MidiDevice {
     // === MIDI 2.0 Methods ===
 
     /// Start building a route for a specific UMP group (0-15).
-    
+
     pub fn group(self, group: i64) -> GroupRoute {
         GroupRoute::new(self.id, group.clamp(0, 15) as u8)
     }
 
     /// Start building a per-note pitch bend route.
-    
+
     pub fn per_note_pitch_bend(self) -> PerNotePitchBendBuilder {
         PerNotePitchBendBuilder::new(self.id)
     }
 
     /// Start building a per-note controller route.
-    
+
     pub fn per_note_controller(self, controller: i64) -> PerNoteControllerBuilder {
         PerNoteControllerBuilder::new(self.id, controller.clamp(0, 127) as u8)
     }
 
     /// Start building a per-note pressure route.
-    
+
     pub fn per_note_pressure(self) -> PerNotePressureBuilder {
         PerNotePressureBuilder::new(self.id)
     }
 
     /// Start building a high-resolution 32-bit CC route.
-    
+
     pub fn cc32(self, cc: i64) -> Cc32Route {
         Cc32Route::new(self.id, cc.clamp(0, 127) as u8)
     }

@@ -4,6 +4,7 @@
 //! - Callback storage for MIDI event handlers
 //! - Advanced routing builders for keyboards, notes, and CCs
 
+use crate::traits::FadeTarget;
 use crate::types::ids::{MidiDeviceId, VoiceId};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -498,8 +499,8 @@ pub struct CcRouteBuilder {
     pub channel: Option<u8>,
     /// Parameter curve.
     pub curve: ParameterCurve,
-    /// Target voice.
-    pub target_voice: Option<VoiceId>,
+    /// Target.
+    pub target: Option<FadeTarget>,
     /// Target parameter name.
     pub target_param: Option<String>,
     /// Parameter range.
@@ -514,7 +515,7 @@ impl CcRouteBuilder {
             cc,
             channel: None,
             curve: ParameterCurve::default(),
-            target_voice: None,
+            target: None,
             target_param: None,
             range: (0.0, 1.0),
         }
@@ -542,7 +543,7 @@ impl CcRouteBuilder {
 
     /// Route to a voice parameter with range.
     pub fn to_voice(mut self, voice_id: VoiceId, param: &str, min: f32, max: f32) -> Self {
-        self.target_voice = Some(voice_id);
+        self.target = Some(FadeTarget::Voice(voice_id));
         self.target_param = Some(param.to_string());
         self.range = (min, max);
         self
@@ -559,18 +560,19 @@ impl CcRouteBuilder {
 // Utilities
 // ============================================================================
 
-/// Parse a note name like "C4" or "F#3" to a MIDI note number.
+/// Parse a note name like "C4", "F#3", or "Bb4" to a MIDI note number.
+/// Supports multiple accidentals (#, b, ♯, ♭), Unicode symbols, and defaults
+/// to octave 4 when no octave is specified (e.g. "C" → 60).
 pub fn parse_note_name(name: &str) -> Option<u8> {
-    let name = name.trim().to_uppercase();
+    let name = name.trim();
     if name.is_empty() {
         return None;
     }
 
     let mut chars = name.chars().peekable();
 
-    // Get the note letter
-    let letter = chars.next()?;
-    let base = match letter {
+    // Parse note letter (C, D, E, F, G, A, B)
+    let base = match chars.next()?.to_ascii_uppercase() {
         'C' => 0,
         'D' => 2,
         'E' => 4,
@@ -581,36 +583,31 @@ pub fn parse_note_name(name: &str) -> Option<u8> {
         _ => return None,
     };
 
-    // Check for sharp/flat
-    let mut modifier = 0i8;
-    if let Some(&c) = chars.peek() {
+    // Parse accidentals (# or b, multiple, Unicode)
+    let mut accidental = 0i8;
+    while let Some(&c) = chars.peek() {
         match c {
-            '#' => {
-                modifier = 1;
+            '#' | '♯' => {
+                accidental += 1;
                 chars.next();
             }
-            'B' => {
-                // Could be 'B' note or 'b' for flat
-                // Check if followed by a digit
-                let temp: String = chars.clone().collect();
-                if temp.len() > 1 && temp.chars().nth(1).is_some_and(|c| c.is_ascii_digit()) {
-                    modifier = -1;
-                    chars.next();
-                }
+            'b' | '♭' => {
+                accidental -= 1;
+                chars.next();
             }
-            _ => {}
+            _ => break,
         }
     }
 
-    // Get the octave
+    // Parse octave (defaults to 4 if absent)
     let octave_str: String = chars.collect();
-    let octave: i8 = octave_str.parse().ok()?;
+    let octave: i8 = octave_str.parse().unwrap_or(4);
 
-    // MIDI note = (octave + 1) * 12 + base + modifier
-    let note = ((octave + 1) as i16) * 12 + base as i16 + modifier as i16;
+    // Calculate MIDI note (C4 = 60)
+    let midi = (octave + 1) as i16 * 12 + base as i16 + accidental as i16;
 
-    if (0..=127).contains(&note) {
-        Some(note as u8)
+    if (0..=127).contains(&midi) {
+        Some(midi as u8)
     } else {
         None
     }
@@ -657,9 +654,15 @@ mod tests {
         assert_eq!(parse_note_name("C4"), Some(60));
         assert_eq!(parse_note_name("A4"), Some(69));
         assert_eq!(parse_note_name("C#4"), Some(61));
+        assert_eq!(parse_note_name("Bb4"), Some(70));
+        assert_eq!(parse_note_name("C##4"), Some(62));
+        assert_eq!(parse_note_name("C♯4"), Some(61));
+        assert_eq!(parse_note_name("D♭4"), Some(61));
         assert_eq!(parse_note_name("C0"), Some(12));
         assert_eq!(parse_note_name("C-1"), Some(0));
         assert_eq!(parse_note_name("G9"), Some(127));
+        assert_eq!(parse_note_name("C"), Some(60)); // defaults to octave 4
+        assert_eq!(parse_note_name("c4"), Some(60)); // lowercase
     }
 
     #[test]

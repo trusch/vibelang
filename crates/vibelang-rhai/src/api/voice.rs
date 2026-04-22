@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use vibelang_core::traits::VoiceConfig;
 #[cfg(feature = "midi")]
 use vibelang_core::types::MidiDeviceId;
-use vibelang_core::types::{ModulatorId, SampleId};
 #[cfg(not(target_arch = "wasm32"))]
 use vibelang_core::types::SfzId;
+use vibelang_core::types::{ModulatorId, SampleId};
 
 #[cfg(feature = "midi")]
 use super::midi::MidiDevice;
@@ -125,7 +125,10 @@ impl Voice {
         let base = if self.group_path == "main" {
             format!("_{}", synth)
         } else {
-            let group_suffix = self.group_path.strip_prefix("main/").unwrap_or(&self.group_path);
+            let group_suffix = self
+                .group_path
+                .strip_prefix("main/")
+                .unwrap_or(&self.group_path);
             format!("_{}/{}", group_suffix, synth)
         };
         self.name = context::resolve_auto_name(&base);
@@ -221,17 +224,13 @@ impl Voice {
 
                     // Playback params
                     self.params.insert("rate".to_string(), config.rate as f32);
-                    self.params.insert(
-                        "loop".to_string(),
-                        if config.loop_mode { 1.0 } else { 0.0 },
-                    );
+                    self.params
+                        .insert("loop".to_string(), if config.loop_mode { 1.0 } else { 0.0 });
 
                     // Warp params (if warp mode)
                     if config.warp {
-                        self.params
-                            .insert("speed".to_string(), config.speed as f32);
-                        self.params
-                            .insert("pitch".to_string(), config.pitch as f32);
+                        self.params.insert("speed".to_string(), config.speed as f32);
+                        self.params.insert("pitch".to_string(), config.pitch as f32);
                         self.params
                             .insert("windowSize".to_string(), config.window_size as f32);
                         self.params
@@ -338,6 +337,11 @@ impl Voice {
         self.params.insert(param, value as f32);
         self.sync_to_state();
         self
+    }
+
+    /// Alias for set_param() — consistent with modulator API.
+    pub fn param(self, param: String, value: f64) -> Self {
+        self.set_param(param, value)
     }
 
     /// Set the round-robin count for cycling through sample variations.
@@ -564,6 +568,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("poly", Voice::poly);
     engine.register_fn("gain", Voice::gain);
     engine.register_fn("set_param", Voice::set_param);
+    engine.register_fn("param", Voice::param);
     engine.register_fn("round_robin", Voice::round_robin);
     engine.register_fn("choke", Voice::choke);
     engine.register_fn("modulate", Voice::modulate);

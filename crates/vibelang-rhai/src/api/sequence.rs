@@ -260,11 +260,9 @@ impl Sequence {
 
     /// Launch the sequence with quantization.
     ///
-    /// This schedules the sequence to start at the next quantization boundary.
-    /// Uses the global quantization setting.
+    /// Deprecated: use `start()` instead.
+    #[deprecated(note = "use start() instead")]
     pub fn launch(&mut self) {
-        // For now, launch behaves the same as start.
-        // The runtime will use the quantization setting to determine when to actually start.
         self.start()
     }
 
@@ -764,6 +762,7 @@ pub fn register(engine: &mut Engine) {
     // Sequence actions
     engine.register_fn("apply", Sequence::apply);
     engine.register_fn("start", Sequence::start);
+    #[allow(deprecated)]
     engine.register_fn("launch", Sequence::launch);
     engine.register_fn("stop", Sequence::stop);
     engine.register_fn("is_playing", Sequence::is_playing);

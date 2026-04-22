@@ -1650,11 +1650,7 @@ mod tests {
 
         // All notes should have empty params and default velocity
         for (i, note) in melody_config.notes.iter().enumerate() {
-            assert!(
-                note.params.is_empty(),
-                "Note {} should have no params",
-                i
-            );
+            assert!(note.params.is_empty(), "Note {} should have no params", i);
             assert!(
                 (note.velocity - 1.0).abs() < 0.01,
                 "Note {} should have default velocity 1.0",
@@ -2140,5 +2136,159 @@ mod tests {
         assert!((sample_config.speed - 0.75).abs() < 0.001);
         assert!((sample_config.pitch - 1.1).abs() < 0.001);
         assert!(sample_config.loop_mode);
+    }
+
+    // ==================== MIDI Routing Tests: map_cc, keys, pad ====================
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_map_cc_to_voice() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let synth = voice("synth");
+                let dev = midi_device("test-device");
+                dev.map_cc(14).to(synth, "cutoff", 200.0, 8000.0);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.advanced_cc_routes.len(), 1, "Should have 1 CC route");
+        let route = &state.advanced_cc_routes[0];
+        assert_eq!(route.cc, 14, "CC number should be 14");
+        assert_eq!(route.curve, "linear", "Default curve should be linear");
+        assert_eq!(route.channel, None, "No channel filter by default");
+        assert_eq!(route.param, "cutoff", "Param should be cutoff");
+        assert!((route.min - 200.0f32).abs() < 0.01, "Min should be 200.0");
+        assert!((route.max - 8000.0f32).abs() < 0.01, "Max should be 8000.0");
+        assert!(
+            matches!(route.target, vibelang_core::traits::FadeTarget::Voice(_)),
+            "Target should be a Voice"
+        );
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_map_cc_to_group() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let synths = define_group("Synths", || {});
+                let dev = midi_device("test-device");
+                dev.map_cc(15).to(synths, "amp", 0.0, 1.0);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.advanced_cc_routes.len(), 1, "Should have 1 CC route");
+        let route = &state.advanced_cc_routes[0];
+        assert_eq!(route.cc, 15, "CC number should be 15");
+        assert_eq!(route.param, "amp", "Param should be amp");
+        assert!((route.min - 0.0f32).abs() < 0.001, "Min should be 0.0");
+        assert!((route.max - 1.0f32).abs() < 0.001, "Max should be 1.0");
+        assert!(
+            matches!(route.target, vibelang_core::traits::FadeTarget::Group(_)),
+            "Target should be a Group"
+        );
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_map_cc_to_string_target() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let dev = midi_device("test-device");
+                dev.map_cc(16).to("my_voice", "amp", 0.0, 1.0);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.advanced_cc_routes.len(), 1, "Should have 1 CC route");
+        let route = &state.advanced_cc_routes[0];
+        assert_eq!(route.cc, 16, "CC number should be 16");
+        assert_eq!(route.param, "amp", "Param should be amp");
+        assert!(
+            matches!(route.target, vibelang_core::traits::FadeTarget::Voice(_)),
+            "String target defaults to Voice"
+        );
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_map_cc_with_channel_and_curve() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let synth = voice("synth");
+                let dev = midi_device("test-device");
+                dev.map_cc(17).channel(1).curve("log").to(synth, "cutoff", 200.0, 8000.0);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.advanced_cc_routes.len(), 1, "Should have 1 CC route");
+        let route = &state.advanced_cc_routes[0];
+        assert_eq!(route.cc, 17, "CC number should be 17");
+        assert_eq!(route.channel, Some(0), "Channel 1 (user-facing) stored as 0 (internal)");
+        assert_eq!(route.curve, "logarithmic", "\"log\" maps to \"logarithmic\"");
+        assert_eq!(route.param, "cutoff", "Param should be cutoff");
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_keys_builder() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let synth = voice("synth");
+                let dev = midi_device("test-device");
+                dev.keys().range("C2", "C6").velocity("soft").to(synth);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(
+            state.advanced_keyboard_routes.len(),
+            1,
+            "Should have 1 keyboard route"
+        );
+        let route = &state.advanced_keyboard_routes[0];
+        assert_eq!(route.note_min, 36, "C2 = MIDI note 36");
+        assert_eq!(route.note_max, 84, "C6 = MIDI note 84");
+        assert_eq!(route.velocity_curve, "soft", "Velocity curve should be soft");
+    }
+
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_pad_builder() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let hat = voice("hat");
+                let dev = midi_device("test-device");
+                dev.pad("C2").choke("hats").to(hat);
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(
+            state.advanced_note_routes.len(),
+            1,
+            "Should have 1 note route"
+        );
+        let route = &state.advanced_note_routes[0];
+        assert_eq!(route.source_note, 36, "C2 = MIDI note 36");
+        assert_eq!(
+            route.choke_group,
+            Some("hats".to_string()),
+            "Choke group should be hats"
+        );
     }
 }

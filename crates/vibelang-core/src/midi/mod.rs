@@ -100,6 +100,7 @@ mod parser;
 mod per_note_state;
 mod queue;
 mod recording;
+pub mod looper;
 mod ump;
 mod voice_output;
 
@@ -186,3 +187,6 @@ pub use per_note_state::{PerNoteState, PerNoteStateManager};
 
 // UMP (Universal MIDI Packet) encoding/decoding
 pub use ump::{encode_ump, UmpParser};
+
+// Looper
+pub use looper::{LooperAction, LooperInstance, LooperManager, LooperPhase};

@@ -151,9 +151,9 @@ impl Pattern {
     /// Sync pattern to script state.
     ///
     /// Skips registration for anonymous patterns (empty name) not yet resolved.
-    fn sync_to_state(&self) {
+    fn sync_to_state(&self) -> Result<(), Box<EvalAltResult>> {
         if self.name.is_empty() {
-            return; // Anonymous pattern not yet resolved — defer registration
+            return Ok(()); // Anonymous pattern not yet resolved — defer registration
         }
         let pattern_id = context::get_or_create_pattern_id(&self.name);
         let voice_id = self
@@ -184,7 +184,7 @@ impl Pattern {
 
         // Parse steps into Step events
         let steps = if let Some(ref step_str) = self.steps {
-            parse_pattern_steps(step_str, loop_length, self.swing)
+            parse_pattern_steps(step_str, loop_length, self.swing)?
         } else {
             Vec::new()
         };
@@ -200,25 +200,27 @@ impl Pattern {
         context::with_state(|state| {
             state.patterns.insert(pattern_id, config);
         });
+
+        Ok(())
     }
 
     /// Register and apply the pattern (chainable).
     ///
     /// For anonymous patterns, resolves the name from the voice target before registering.
-    pub fn apply(mut self) -> Self {
+    pub fn apply(mut self) -> Result<Self, Box<EvalAltResult>> {
         self.resolve_name();
-        self.sync_to_state();
+        self.sync_to_state()?;
         // Store in registry for later lookup
         store_pattern(&self);
-        self
+        Ok(self)
     }
 
     /// Start the pattern playing (chainable).
     ///
     /// For anonymous patterns, resolves the name from the voice target before registering.
-    pub fn start(mut self) -> Self {
+    pub fn start(mut self) -> Result<Self, Box<EvalAltResult>> {
         self.resolve_name();
-        self.sync_to_state();
+        self.sync_to_state()?;
 
         // Register that this pattern should start
         let pattern_id = context::get_or_create_pattern_id(&self.name);
@@ -226,14 +228,14 @@ impl Pattern {
             state.playing_patterns.insert(pattern_id);
         });
 
-        self
+        Ok(self)
     }
 
     /// Launch the pattern with quantization (chainable).
     ///
     /// This schedules the pattern to start at the next quantization boundary.
     /// Uses the global quantization setting.
-    pub fn launch(self) -> Self {
+    pub fn launch(self) -> Result<Self, Box<EvalAltResult>> {
         // For now, launch behaves the same as start.
         // The runtime will use the quantization setting to determine when to actually start.
         self.start()
@@ -276,13 +278,18 @@ fn calculate_loop_length_from_pattern(pattern: &str) -> f64 {
 }
 
 /// Parse pattern steps into Step events.
-fn parse_pattern_steps(steps: &str, _length: f64, swing: f32) -> Vec<Step> {
+fn parse_pattern_steps(
+    steps: &str,
+    _length: f64,
+    swing: f32,
+) -> Result<Vec<Step>, Box<EvalAltResult>> {
     let mut result = Vec::new();
     let bars = split_into_bars(steps);
     let beats_per_bar = 4.0;
 
     let mut current_beat = 0.0;
     let mut step_index = 0;
+    let mut global_pos: usize = 0;
 
     for bar in bars {
         let tokens: Vec<char> = bar.chars().filter(|c| !c.is_whitespace()).collect();
@@ -317,7 +324,17 @@ fn parse_pattern_steps(steps: &str, _length: f64, swing: f32) -> Vec<Step> {
                     Some(digit / 9.0)
                 }
                 '.' | '_' | '0' | '-' => None, // Rest
-                _ => None,
+                _ => {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        format!(
+                            "Pattern parse error: invalid step character '{}' at position {} \
+                             — valid chars are x X o O 1-9 . _ 0 - |",
+                            ch, global_pos
+                        )
+                        .into(),
+                        Position::NONE,
+                    )));
+                }
             };
 
             if let Some(vel) = velocity {
@@ -330,12 +347,14 @@ fn parse_pattern_steps(steps: &str, _length: f64, swing: f32) -> Vec<Step> {
             }
 
             step_index += 1;
+            global_pos += 1;
         }
 
         current_beat += beats_per_bar;
+        global_pos += 1; // account for '|' separator
     }
 
-    result
+    Ok(result)
 }
 
 /// Generate a Euclidean rhythm pattern with optional rotation.
@@ -566,14 +585,14 @@ mod tests {
 
     #[test]
     fn test_parse_pattern_steps_basic() {
-        let steps = parse_pattern_steps("x...", 4.0, 0.0);
+        let steps = parse_pattern_steps("x...", 4.0, 0.0).unwrap();
         assert_eq!(steps.len(), 1);
         assert!((steps[0].beat.to_f64() - 0.0).abs() < 0.001);
     }
 
     #[test]
     fn test_parse_pattern_steps_multiple_hits() {
-        let steps = parse_pattern_steps("x.x.", 4.0, 0.0);
+        let steps = parse_pattern_steps("x.x.", 4.0, 0.0).unwrap();
         assert_eq!(steps.len(), 2);
         assert!((steps[0].beat.to_f64() - 0.0).abs() < 0.001);
         assert!((steps[1].beat.to_f64() - 2.0).abs() < 0.001);
@@ -581,40 +600,40 @@ mod tests {
 
     #[test]
     fn test_parse_pattern_steps_all_hits() {
-        let steps = parse_pattern_steps("xxxx", 4.0, 0.0);
+        let steps = parse_pattern_steps("xxxx", 4.0, 0.0).unwrap();
         assert_eq!(steps.len(), 4);
     }
 
     #[test]
     fn test_parse_pattern_steps_no_hits() {
-        let steps = parse_pattern_steps("....", 4.0, 0.0);
+        let steps = parse_pattern_steps("....", 4.0, 0.0).unwrap();
         assert_eq!(steps.len(), 0);
     }
 
     #[test]
     fn test_parse_pattern_steps_velocity() {
         // 'x' = velocity 0.7 (normal)
-        let steps = parse_pattern_steps("x", 4.0, 0.0);
+        let steps = parse_pattern_steps("x", 4.0, 0.0).unwrap();
         assert_eq!(steps[0].params.get("amp"), Some(&0.7));
 
         // 'X' = velocity 1.0 (accent)
-        let steps = parse_pattern_steps("X", 4.0, 0.0);
+        let steps = parse_pattern_steps("X", 4.0, 0.0).unwrap();
         assert_eq!(steps[0].params.get("amp"), Some(&1.0));
 
         // 'o' = velocity 0.3 (ghost note)
-        let steps = parse_pattern_steps("o", 4.0, 0.0);
+        let steps = parse_pattern_steps("o", 4.0, 0.0).unwrap();
         assert_eq!(steps[0].params.get("amp"), Some(&0.3));
 
         // Numeric values 1-9 = scaled velocity (1/9 to 9/9)
-        let steps = parse_pattern_steps("1", 4.0, 0.0);
+        let steps = parse_pattern_steps("1", 4.0, 0.0).unwrap();
         let vel = *steps[0].params.get("amp").unwrap();
         assert!((vel - 1.0 / 9.0).abs() < 0.01); // ~0.11
 
-        let steps = parse_pattern_steps("5", 4.0, 0.0);
+        let steps = parse_pattern_steps("5", 4.0, 0.0).unwrap();
         let vel = *steps[0].params.get("amp").unwrap();
         assert!((vel - 5.0 / 9.0).abs() < 0.01); // ~0.55
 
-        let steps = parse_pattern_steps("9", 4.0, 0.0);
+        let steps = parse_pattern_steps("9", 4.0, 0.0).unwrap();
         let vel = *steps[0].params.get("amp").unwrap();
         assert!((vel - 1.0).abs() < 0.01); // 1.0
     }
@@ -622,13 +641,22 @@ mod tests {
     #[test]
     fn test_parse_pattern_steps_rest_markers() {
         // '.', '_', '0', '-' are all rests
-        let steps = parse_pattern_steps("._0-", 4.0, 0.0);
+        let steps = parse_pattern_steps("._0-", 4.0, 0.0).unwrap();
         assert_eq!(steps.len(), 0);
     }
 
     #[test]
+    fn test_parse_pattern_steps_invalid_char() {
+        let err = parse_pattern_steps("x.Z.", 4.0, 0.0);
+        assert!(err.is_err());
+        let msg = err.unwrap_err().to_string();
+        assert!(msg.contains("invalid step character 'Z'"));
+        assert!(msg.contains("position 2"));
+    }
+
+    #[test]
     fn test_parse_pattern_steps_two_bars() {
-        let steps = parse_pattern_steps("x...|..x.", 8.0, 0.0);
+        let steps = parse_pattern_steps("x...|..x.", 8.0, 0.0).unwrap();
         assert_eq!(steps.len(), 2);
         assert!((steps[0].beat.to_f64() - 0.0).abs() < 0.001);
         assert!((steps[1].beat.to_f64() - 6.0).abs() < 0.001);
@@ -636,7 +664,7 @@ mod tests {
 
     #[test]
     fn test_parse_pattern_steps_with_swing() {
-        let steps = parse_pattern_steps("xx", 4.0, 0.5);
+        let steps = parse_pattern_steps("xx", 4.0, 0.5).unwrap();
         assert_eq!(steps.len(), 2);
         // First beat should be unswung
         assert!((steps[0].beat.to_f64() - 0.0).abs() < 0.001);
@@ -646,7 +674,7 @@ mod tests {
 
     #[test]
     fn test_parse_pattern_steps_whitespace_ignored() {
-        let steps = parse_pattern_steps("x . x .", 4.0, 0.0);
+        let steps = parse_pattern_steps("x . x .", 4.0, 0.0).unwrap();
         assert_eq!(steps.len(), 2);
     }
 

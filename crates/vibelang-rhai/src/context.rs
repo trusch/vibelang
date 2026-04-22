@@ -70,7 +70,8 @@ macro_rules! define_id_accessors {
                     // Collision detection: check if another name already has this ID
                     loop {
                         let candidate = <$id_type>::new(raw);
-                        let collision = c.$map.values().any(|&existing_id| existing_id == candidate);
+                        let collision =
+                            c.$map.values().any(|&existing_id| existing_id == candidate);
                         if !collision {
                             break;
                         }
@@ -80,7 +81,9 @@ macro_rules! define_id_accessors {
                             raw
                         );
                         raw = raw.wrapping_add(1);
-                        if raw == 0 { raw = 1; } // Never use 0
+                        if raw == 0 {
+                            raw = 1;
+                        } // Never use 0
                     }
                     let id = <$id_type>::new(raw);
                     c.$map.insert(name.to_string(), id);
@@ -333,7 +336,10 @@ pub fn get_or_create_group_id(name: &str) -> GroupId {
             // Collision detection: check if another name already has this ID
             loop {
                 let candidate = GroupId::new(raw);
-                let collision = c.group_ids.values().any(|&existing_id| existing_id == candidate);
+                let collision = c
+                    .group_ids
+                    .values()
+                    .any(|&existing_id| existing_id == candidate);
                 if !collision {
                     break;
                 }
@@ -343,7 +349,9 @@ pub fn get_or_create_group_id(name: &str) -> GroupId {
                     raw
                 );
                 raw = raw.wrapping_add(1);
-                if raw == 0 { raw = 1; }
+                if raw == 0 {
+                    raw = 1;
+                }
             }
             let id = GroupId::new(raw);
             c.group_ids.insert(name.to_string(), id);
@@ -372,6 +380,7 @@ pub fn get_or_create_group_id(name: &str) -> GroupId {
                 effects: Vec::new(),
                 muted: false,
                 soloed: false,
+                output_bus: None,
             };
             c.state.groups.insert(group_id, config);
         }
@@ -390,7 +399,10 @@ fn get_or_create_group_id_inner(c: &mut ScriptContext, name: &str) -> GroupId {
         let mut raw = hash_name_to_id(name);
         loop {
             let candidate = GroupId::new(raw);
-            let collision = c.group_ids.values().any(|&existing_id| existing_id == candidate);
+            let collision = c
+                .group_ids
+                .values()
+                .any(|&existing_id| existing_id == candidate);
             if !collision {
                 break;
             }
@@ -400,7 +412,9 @@ fn get_or_create_group_id_inner(c: &mut ScriptContext, name: &str) -> GroupId {
                 raw
             );
             raw = raw.wrapping_add(1);
-            if raw == 0 { raw = 1; }
+            if raw == 0 {
+                raw = 1;
+            }
         }
         let id = GroupId::new(raw);
         c.group_ids.insert(name.to_string(), id);

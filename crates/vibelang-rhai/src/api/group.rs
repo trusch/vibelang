@@ -2,7 +2,7 @@
 //!
 //! Groups organize voices and provide hierarchical mixing.
 
-use rhai::{CustomType, Engine, FnPtr, NativeCallContext, TypeBuilder};
+use rhai::{Array, CustomType, Engine, FnPtr, NativeCallContext, TypeBuilder};
 use std::collections::HashMap;
 use vibelang_core::reload::GroupConfig;
 
@@ -147,6 +147,51 @@ impl GroupHandle {
         self
     }
 
+    /// Route this group's audio to a specific hardware output pair.
+    ///
+    /// `channels` is a two-element array of 0-indexed hardware output channels,
+    /// e.g. `[2, 3]` for the second stereo pair.
+    /// Without this, the group mixes into its parent (default behavior).
+    pub fn output(self, channels: Array) -> Self {
+        if channels.len() != 2 {
+            log::error!(
+                "group('{}').output() expects [left, right] array, got {} elements",
+                self.name,
+                channels.len()
+            );
+            return self;
+        }
+
+        let left = channels[0].as_int().unwrap_or(-1);
+        let right = channels[1].as_int().unwrap_or(-1);
+
+        if left < 0 || right < 0 || right != left + 1 {
+            log::error!(
+                "group('{}').output([{}, {}]): channels must be consecutive (e.g. [0,1], [2,3])",
+                self.name,
+                left,
+                right
+            );
+            return self;
+        }
+
+        let group_id = context::get_or_create_group_id(&self.path);
+        context::with_state(|state| {
+            if let Some(config) = state.groups.get_mut(&group_id) {
+                config.output_bus = Some(left as u32);
+            }
+        });
+
+        tracing::info!(
+            "Group '{}' output routed to hardware channels [{}, {}]",
+            self.name,
+            left,
+            right
+        );
+
+        self
+    }
+
     /// Clear all effects from this group.
     pub fn clear_effects(self) -> Self {
         let group_id = context::get_or_create_group_id(&self.path);
@@ -191,6 +236,7 @@ pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> Gro
         effects: Vec::new(),
         muted: false,
         soloed: false,
+        output_bus: None,
     };
 
     // Add to script state
@@ -210,6 +256,54 @@ pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> Gro
     context::pop_group();
 
     GroupHandle::new(full_path)
+}
+
+/// Define the group body with a closure (builder method).
+///
+/// This is the builder equivalent of `define_group("name", || { ... })`.
+/// The closure executes in the group's context, allowing nested definitions.
+fn group_body(ctx: NativeCallContext, handle: GroupHandle, closure: FnPtr) -> GroupHandle {
+    let group_id = context::get_or_create_group_id(&handle.path);
+
+    // Find parent group ID from path
+    let parent_path = if let Some(pos) = handle.path.rfind('/') {
+        &handle.path[..pos]
+    } else {
+        "main"
+    };
+    let parent_id = if parent_path == "main" {
+        None
+    } else {
+        Some(context::get_or_create_group_id(parent_path))
+    };
+
+    // Create group config (preserves existing output_bus if already set)
+    let existing_output_bus = context::with_state(|state| {
+        state.groups.get(&group_id).and_then(|c| c.output_bus)
+    });
+
+    let config = GroupConfig {
+        name: handle.name.clone(),
+        parent: parent_id,
+        params: HashMap::new(),
+        effects: Vec::new(),
+        muted: false,
+        soloed: false,
+        output_bus: existing_output_bus,
+    };
+
+    context::with_state(|state| {
+        state.groups.insert(group_id, config);
+    });
+
+    // Push group context, execute closure, pop
+    context::push_group(&handle.name);
+    if let Err(e) = closure.call_within_context::<rhai::Dynamic>(&ctx, ()) {
+        log::error!("Error in group('{}').body(): {}", handle.name, e);
+    }
+    context::pop_group();
+
+    handle
 }
 
 /// Get a group handle by path.
@@ -250,6 +344,10 @@ pub fn register(engine: &mut Engine) {
     // Parameters
     engine.register_fn("set_param", GroupHandle::set_param);
     engine.register_fn("effect_count", GroupHandle::effect_count);
+
+    // Group body and output routing
+    engine.register_fn("body", group_body);
+    engine.register_fn("output", GroupHandle::output);
 
     // Effect management
     engine.register_fn("remove_effect", GroupHandle::remove_effect);

@@ -2,8 +2,9 @@
 //!
 //! Utility functions for common operations like dB conversion, note parsing, etc.
 
-use rhai::{Array, Dynamic, Engine};
+use rhai::{Array, Dynamic, Engine, EvalAltResult, Position};
 use std::sync::atomic::{AtomicU64, Ordering};
+use vibelang_core::midi::parse_note_name;
 
 use crate::context;
 
@@ -91,8 +92,18 @@ pub fn db_int(decibels: i64) -> f64 {
 }
 
 /// Parse a note name to MIDI note number.
-pub fn note(name: &str) -> i64 {
-    parse_note_name(name).unwrap_or(60) as i64
+pub fn note(name: &str) -> Result<i64, Box<EvalAltResult>> {
+    parse_note_name(name).map(|n| n as i64).ok_or_else(|| {
+        Box::new(EvalAltResult::ErrorRuntime(
+            format!(
+                "Note parse error: invalid note name '{}' \
+                 — expected format like C4, D#3, Bb5",
+                name
+            )
+            .into(),
+            Position::NONE,
+        ))
+    })
 }
 
 /// Parse a chord name to an array of MIDI note numbers.
@@ -572,57 +583,6 @@ pub fn to_string_int(value: i64) -> String {
 /// Convert float to string.
 pub fn to_string_float(value: f64) -> String {
     value.to_string()
-}
-
-/// Parse a note name to MIDI note number.
-pub fn parse_note_name(name: &str) -> Option<u8> {
-    let name = name.trim();
-    if name.is_empty() {
-        return None;
-    }
-
-    let mut chars = name.chars().peekable();
-
-    // Parse note letter (C, D, E, F, G, A, B)
-    let base = match chars.next()?.to_ascii_uppercase() {
-        'C' => 0,
-        'D' => 2,
-        'E' => 4,
-        'F' => 5,
-        'G' => 7,
-        'A' => 9,
-        'B' => 11,
-        _ => return None,
-    };
-
-    // Parse accidental (# or b)
-    let mut accidental = 0i8;
-    while let Some(&c) = chars.peek() {
-        match c {
-            '#' | '♯' => {
-                accidental += 1;
-                chars.next();
-            }
-            'b' | '♭' => {
-                accidental -= 1;
-                chars.next();
-            }
-            _ => break,
-        }
-    }
-
-    // Parse octave
-    let octave_str: String = chars.collect();
-    let octave: i8 = octave_str.parse().unwrap_or(4);
-
-    // Calculate MIDI note (C4 = 60)
-    let midi = (octave + 1) as i16 * 12 + base as i16 + accidental as i16;
-
-    if (0..=127).contains(&midi) {
-        Some(midi as u8)
-    } else {
-        None
-    }
 }
 
 /// Parse a time specification string (e.g., "2b", "1/4", "500ms") to beats.

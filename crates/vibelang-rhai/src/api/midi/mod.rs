@@ -35,15 +35,21 @@
 //!     .to_param(lead, "cutoff", 100.0, 10000.0);
 //! ```
 
+mod cc_mapping;
 mod device;
-
+mod looper_builder;
 mod midi2;
 mod recording;
 mod routing;
 
+pub use cc_mapping::CcMapping;
 pub use device::MidiDevice;
+pub use looper_builder::LooperBuilder;
 
-pub use midi2::{Cc32Route, GroupRoute, PerNoteControllerBuilder, PerNotePitchBendBuilder, PerNotePressureBuilder};
+pub use midi2::{
+    Cc32Route, GroupRoute, PerNoteControllerBuilder, PerNotePitchBendBuilder,
+    PerNotePressureBuilder,
+};
 pub use recording::MidiRecordingHandle;
 pub use routing::{CcRoute, KeyboardRoute, NoteRoute};
 
@@ -168,9 +174,14 @@ pub fn midi_device(name_or_idx: String) -> MidiDevice {
         }
     }
 
-    // Return a placeholder if not found
+    // Return a placeholder if not found — use sentinel ID so open_output/clock
+    // registration fail loudly instead of silently targeting device 0.
+    log::warn!(
+        "[MIDI] midi_device(\"{}\"): device not found, MIDI operations will be no-ops",
+        name_or_idx
+    );
     MidiDevice {
-        id: MidiDeviceId::new(0),
+        id: MidiDeviceId::new(u32::MAX),
         name: format!("Unknown: {}", name_or_idx),
         has_input: false,
         has_output: false,
@@ -218,8 +229,12 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("route_to", MidiDevice::route_to);
     engine.register_fn("route_to", MidiDevice::route_to_name);
     engine.register_fn("route_to_channel", MidiDevice::route_to_channel);
-    engine.register_fn("route_cc", MidiDevice::route_cc_to_voice);
-    engine.register_fn("route_cc_to_group", MidiDevice::route_cc_to_group);
+    // Deprecated CC routing methods
+    #[allow(deprecated)]
+    {
+        engine.register_fn("route_cc", MidiDevice::route_cc_to_voice);
+        engine.register_fn("route_cc_to_group", MidiDevice::route_cc_to_group);
+    }
 
     // Device opening (deprecated)
     #[allow(deprecated)]
@@ -245,9 +260,30 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("poly_pressure_hires", MidiDevice::poly_pressure_hires);
 
     // Advanced routing builder methods
-    engine.register_fn("keyboard_route", MidiDevice::keyboard_route);
-    engine.register_fn("note_route", MidiDevice::note_route);
-    engine.register_fn("cc_route", MidiDevice::cc_route);
+    engine.register_fn("keys", MidiDevice::keys);
+    engine.register_fn("pad", MidiDevice::pad);
+    engine.register_fn("map_cc", MidiDevice::map_cc);
+    engine.register_fn("looper", MidiDevice::looper);
+
+    // Register LooperBuilder type
+    engine.build_type::<LooperBuilder>();
+    engine.register_fn("channel", LooperBuilder::channel);
+    engine.register_fn("silence", LooperBuilder::silence);
+    engine.register_fn("quantize", LooperBuilder::quantize);
+    engine.register_fn("to", LooperBuilder::to);
+    // Deprecated aliases
+    #[allow(deprecated)]
+    {
+        engine.register_fn("keyboard_route", MidiDevice::keyboard_route);
+        engine.register_fn("note_route", MidiDevice::note_route);
+        engine.register_fn("cc_route", MidiDevice::cc_route);
+    }
+
+    // Register CcMapping type
+    engine.build_type::<CcMapping>();
+    engine.register_fn("channel", CcMapping::channel);
+    engine.register_fn("curve", CcMapping::curve);
+    engine.register_fn("to", CcMapping::to);
 
     // Callback methods
     engine.register_fn("on_note", MidiDevice::on_note);
@@ -259,7 +295,10 @@ pub fn register(engine: &mut Engine) {
 
     // Recording methods
     engine.register_fn("start_recording", MidiDevice::start_recording);
-    engine.register_fn("start_recording_channel", MidiDevice::start_recording_channel);
+    engine.register_fn(
+        "start_recording_channel",
+        MidiDevice::start_recording_channel,
+    );
 
     // Clock output methods
     engine.register_fn("enable_clock", MidiDevice::enable_clock);
@@ -289,17 +328,23 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("range", KeyboardRoute::range);
     engine.register_fn("transpose", KeyboardRoute::transpose);
     engine.register_fn("octave", KeyboardRoute::octave);
-    engine.register_fn("velocity_curve", KeyboardRoute::velocity_curve);
+    engine.register_fn("velocity", KeyboardRoute::velocity);
     engine.register_fn("fixed_velocity", KeyboardRoute::fixed_velocity);
     engine.register_fn("to", KeyboardRoute::to);
     engine.register_fn("to", KeyboardRoute::to_name);
+    // Deprecated alias
+    #[allow(deprecated)]
+    engine.register_fn("velocity_curve", KeyboardRoute::velocity_curve);
 
     // Register NoteRoute type
     engine.build_type::<NoteRoute>();
     engine.register_fn("channel", NoteRoute::channel);
-    engine.register_fn("choke_group", NoteRoute::choke_group);
+    engine.register_fn("choke", NoteRoute::choke);
     engine.register_fn("velocity_to", NoteRoute::velocity_to);
     engine.register_fn("to", NoteRoute::to);
+    // Deprecated alias
+    #[allow(deprecated)]
+    engine.register_fn("choke_group", NoteRoute::choke_group);
 
     // Register CcRoute type
     engine.build_type::<CcRoute>();
@@ -309,7 +354,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("to_param", CcRoute::to_param_name);
 
     // MIDI 2.0 types and methods
-    
+
     register_midi2(engine);
 }
 

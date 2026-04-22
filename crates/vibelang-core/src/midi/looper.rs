@@ -1,0 +1,468 @@
+//! MIDI looper data types.
+//!
+//! Defines the state machine and runtime state for a single looper instance.
+
+use crate::midi::recording::MidiRecording;
+use crate::reload::LooperConfig;
+use crate::traits::PatternConfig;
+use crate::types::ids::{MidiDeviceId, PatternId, VoiceId};
+use crate::types::time::Beat;
+use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
+
+/// Looper state machine states.
+#[derive(Debug, Clone)]
+pub enum LooperPhase {
+    /// Waiting for first note-on.
+    Idle,
+    /// Recording in progress. Tracks last note-off for silence detection.
+    Capturing {
+        last_note_off_beat: Option<Beat>, // None = no note-off yet
+    },
+    /// Playback active. Holds the pattern id of the currently looping pattern.
+    Playing {
+        pattern_id: PatternId,
+        loop_length_beats: f64, // length of the loop in beats
+    },
+}
+
+/// Runtime state for a single looper instance (one per configured device).
+#[derive(Debug)]
+pub struct LooperInstance {
+    pub config: LooperConfig,
+    pub phase: LooperPhase,
+    pub recording: MidiRecording,    // Active or last completed recording
+    pub loop_count: u64,             // Increments on each new capture (for unique pattern names)
+}
+
+impl LooperInstance {
+    pub fn new(config: LooperConfig) -> Self {
+        let device_id = config.device_id;
+        Self {
+            config,
+            phase: LooperPhase::Idle,
+            recording: MidiRecording::new(device_id, Beat::ZERO),
+            loop_count: 0,
+        }
+    }
+}
+
+// =============================================================================
+// LooperAction
+// =============================================================================
+
+/// Actions returned by LooperManager methods — the caller executes these.
+#[derive(Debug, Clone)]
+pub enum LooperAction {
+    /// Pass a note-on through to the voice (during capture).
+    NoteOn {
+        voice_id: VoiceId,
+        note: u8,
+        velocity: u8,
+    },
+    /// Pass a note-off through to the voice.
+    NoteOff { voice_id: VoiceId, note: u8 },
+    /// Stop a looping pattern.
+    StopPattern { pattern_id: PatternId },
+    /// Start a new looping pattern from a completed recording.
+    StartPattern {
+        config: PatternConfig,
+        pattern_id: PatternId,
+    },
+}
+
+// =============================================================================
+// LooperManager
+// =============================================================================
+
+/// Manages all active looper instances (one per configured device).
+pub struct LooperManager {
+    instances: HashMap<MidiDeviceId, LooperInstance>,
+}
+
+impl Default for LooperManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LooperManager {
+    pub fn new() -> Self {
+        Self {
+            instances: HashMap::new(),
+        }
+    }
+
+    /// Returns true if a looper instance exists for this device.
+    pub fn has_device(&self, device_id: MidiDeviceId) -> bool {
+        self.instances.contains_key(&device_id)
+    }
+
+    /// Reconcile instances against the new set of configs.
+    ///
+    /// - New device_ids → insert a fresh LooperInstance.
+    /// - Removed device_ids → remove (returning StopPattern if Playing).
+    /// - Changed configs → update config in-place (phase/recording preserved).
+    pub fn reconcile(&mut self, configs: &[LooperConfig]) -> Vec<LooperAction> {
+        let mut actions = Vec::new();
+
+        // Build set of incoming device IDs for fast lookup.
+        let incoming: HashMap<MidiDeviceId, &LooperConfig> =
+            configs.iter().map(|c| (c.device_id, c)).collect();
+
+        // Remove instances no longer in configs.
+        self.instances.retain(|device_id, instance| {
+            if incoming.contains_key(device_id) {
+                true
+            } else {
+                // If it was playing, stop the pattern.
+                if let LooperPhase::Playing { pattern_id, .. } = instance.phase {
+                    actions.push(LooperAction::StopPattern { pattern_id });
+                }
+                false
+            }
+        });
+
+        // Add new instances or update configs for existing ones.
+        for config in configs {
+            self.instances
+                .entry(config.device_id)
+                .and_modify(|inst| inst.config = config.clone())
+                .or_insert_with(|| LooperInstance::new(config.clone()));
+        }
+
+        actions
+    }
+
+    /// Handle a note-on event for a device.
+    pub fn handle_note_on(
+        &mut self,
+        device_id: MidiDeviceId,
+        channel: u8,
+        note: u8,
+        velocity: u8,
+        current_beat: f64,
+        _time_sig_numerator: u8,
+    ) -> Vec<LooperAction> {
+        let Some(inst) = self.instances.get_mut(&device_id) else {
+            return Vec::new();
+        };
+
+        // Apply channel filter.
+        if let Some(filter) = inst.config.channel {
+            if channel != filter {
+                return Vec::new();
+            }
+        }
+
+        let beat = Beat::from_f64(current_beat);
+        let voice_id = inst.config.voice_id;
+        let mut actions = Vec::new();
+
+        match inst.phase.clone() {
+            LooperPhase::Idle => {
+                // Start a fresh recording.
+                let mut rec =
+                    MidiRecording::new(device_id, beat);
+                if let Some(ch) = inst.config.channel {
+                    rec = rec.with_channel_filter(ch);
+                }
+                rec.record_note_on(note, velocity, channel, beat);
+                inst.recording = rec;
+                inst.phase = LooperPhase::Capturing {
+                    last_note_off_beat: None,
+                };
+                actions.push(LooperAction::NoteOn { voice_id, note, velocity });
+            }
+            LooperPhase::Capturing { .. } => {
+                inst.recording.record_note_on(note, velocity, channel, beat);
+                actions.push(LooperAction::NoteOn { voice_id, note, velocity });
+            }
+            LooperPhase::Playing { pattern_id, .. } => {
+                // Stop the current loop and start recording the next one.
+                actions.push(LooperAction::StopPattern { pattern_id });
+                inst.loop_count += 1;
+
+                let mut rec = MidiRecording::new(device_id, beat);
+                if let Some(ch) = inst.config.channel {
+                    rec = rec.with_channel_filter(ch);
+                }
+                rec.record_note_on(note, velocity, channel, beat);
+                inst.recording = rec;
+                inst.phase = LooperPhase::Capturing {
+                    last_note_off_beat: None,
+                };
+                actions.push(LooperAction::NoteOn { voice_id, note, velocity });
+            }
+        }
+
+        actions
+    }
+
+    /// Handle a note-off event for a device.
+    pub fn handle_note_off(
+        &mut self,
+        device_id: MidiDeviceId,
+        channel: u8,
+        note: u8,
+        current_beat: f64,
+    ) -> Vec<LooperAction> {
+        let Some(inst) = self.instances.get_mut(&device_id) else {
+            return Vec::new();
+        };
+
+        // Apply channel filter.
+        if let Some(filter) = inst.config.channel {
+            if channel != filter {
+                return Vec::new();
+            }
+        }
+
+        let beat = Beat::from_f64(current_beat);
+        let voice_id = inst.config.voice_id;
+
+        if let LooperPhase::Capturing { .. } = &inst.phase {
+            inst.recording.record_note_off(note, channel, beat);
+            inst.phase = LooperPhase::Capturing {
+                last_note_off_beat: Some(beat),
+            };
+        }
+
+        vec![LooperAction::NoteOff { voice_id, note }]
+    }
+
+    /// Called every runtime tick. Detects silence and triggers playback conversion.
+    pub fn tick(&mut self, current_beat: f64, time_sig_numerator: u8) -> Vec<LooperAction> {
+        let mut actions = Vec::new();
+
+        for inst in self.instances.values_mut() {
+            let LooperPhase::Capturing {
+                last_note_off_beat: Some(last_off),
+            } = inst.phase
+            else {
+                continue;
+            };
+
+            let silence_beats = current_beat - last_off.to_f64();
+            let threshold = inst.config.silence_bars * time_sig_numerator as f64;
+
+            if silence_beats < threshold {
+                continue;
+            }
+
+            // Silence threshold reached — finalise the recording.
+            inst.recording.stop(Beat::from_f64(current_beat));
+
+            // Quantize loop length to the nearest bar (minimum 1 bar).
+            let bar_beats = time_sig_numerator as f64;
+            let raw_duration = inst.recording.duration().to_f64();
+            let bars = (raw_duration / bar_beats).round().max(1.0);
+            let loop_length_beats = bars * bar_beats;
+
+            // Build the pattern name and a stable ID from it.
+            inst.loop_count += 1;
+            let pattern_name = format!(
+                "__looper_{}_{}",
+                inst.config.device_id.raw(),
+                inst.loop_count
+            );
+            let pattern_id = name_to_pattern_id(&pattern_name);
+
+            let config = inst.recording.to_pattern(
+                &pattern_name,
+                inst.config.quantize_beats,
+                inst.config.voice_id,
+            );
+
+            inst.phase = LooperPhase::Playing {
+                pattern_id,
+                loop_length_beats,
+            };
+
+            actions.push(LooperAction::StartPattern { config, pattern_id });
+        }
+
+        actions
+    }
+}
+
+/// Derive a stable `PatternId` from a string name via the standard hasher.
+fn name_to_pattern_id(name: &str) -> PatternId {
+    let mut hasher = DefaultHasher::new();
+    name.hash(&mut hasher);
+    PatternId::new(hasher.finish() as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reload::LooperConfig;
+    use crate::types::ids::{MidiDeviceId, VoiceId};
+
+    fn make_config(device_id: u32, voice_id: u32) -> LooperConfig {
+        LooperConfig {
+            device_id: MidiDeviceId::new(device_id),
+            voice_id: VoiceId::new(voice_id),
+            channel: None,
+            silence_bars: 1.0,
+            quantize_beats: 0.25,
+        }
+    }
+
+    fn setup(config: LooperConfig) -> (LooperManager, MidiDeviceId) {
+        let device_id = config.device_id;
+        let mut manager = LooperManager::new();
+        manager.reconcile(&[config]);
+        (manager, device_id)
+    }
+
+    fn phase(manager: &LooperManager, device_id: MidiDeviceId) -> LooperPhase {
+        manager.instances.get(&device_id).unwrap().phase.clone()
+    }
+
+    #[test]
+    fn test_idle_to_capturing_on_note_on() {
+        let (mut manager, device_id) = setup(make_config(1, 1));
+
+        let actions = manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+
+        assert!(actions.iter().any(|a| matches!(a, LooperAction::NoteOn { .. })));
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Capturing { .. }));
+    }
+
+    #[test]
+    fn test_capturing_stays_on_more_notes() {
+        let (mut manager, device_id) = setup(make_config(1, 1));
+
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        let actions = manager.handle_note_on(device_id, 0, 64, 100, 1.0, 4);
+
+        assert!(actions.iter().any(|a| matches!(a, LooperAction::NoteOn { .. })));
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Capturing { .. }));
+    }
+
+    #[test]
+    fn test_note_off_updates_last_note_off_beat() {
+        let (mut manager, device_id) = setup(make_config(1, 1));
+
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        let actions = manager.handle_note_off(device_id, 0, 60, 2.0);
+
+        assert!(actions.iter().any(|a| matches!(a, LooperAction::NoteOff { .. })));
+        if let LooperPhase::Capturing { last_note_off_beat: Some(beat) } = phase(&manager, device_id) {
+            assert!((beat.to_f64() - 2.0).abs() < 0.001);
+        } else {
+            panic!("expected Capturing with last_note_off_beat set");
+        }
+    }
+
+    #[test]
+    fn test_no_silence_trigger_before_threshold() {
+        let (mut manager, device_id) = setup(make_config(1, 1));
+
+        // note-off at beat 4.0; threshold = 1.0 bar * 4 beats = 4.0
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        manager.handle_note_off(device_id, 0, 60, 4.0);
+
+        // silence = 7.9 - 4.0 = 3.9 < 4.0 — must not trigger
+        let actions = manager.tick(7.9, 4);
+        assert!(!actions.iter().any(|a| matches!(a, LooperAction::StartPattern { .. })));
+    }
+
+    #[test]
+    fn test_silence_triggers_playback_after_one_bar() {
+        let (mut manager, device_id) = setup(make_config(1, 1));
+
+        // note-off at beat 4.0; threshold = 4.0 beats (1 bar in 4/4)
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        manager.handle_note_off(device_id, 0, 60, 4.0);
+
+        // silence = 8.1 - 4.0 = 4.1 >= 4.0 — must trigger
+        let actions = manager.tick(8.1, 4);
+        assert!(actions.iter().any(|a| matches!(a, LooperAction::StartPattern { .. })));
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Playing { .. }));
+    }
+
+    #[test]
+    fn test_note_on_during_playback_restarts_capture() {
+        let (mut manager, device_id) = setup(make_config(1, 1));
+
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        manager.handle_note_off(device_id, 0, 60, 4.0);
+        manager.tick(8.1, 4);
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Playing { .. }));
+
+        let actions = manager.handle_note_on(device_id, 0, 62, 100, 9.0, 4);
+
+        assert!(actions.iter().any(|a| matches!(a, LooperAction::StopPattern { .. })));
+        assert!(actions.iter().any(|a| matches!(a, LooperAction::NoteOn { .. })));
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Capturing { .. }));
+    }
+
+    #[test]
+    fn test_reconcile_removes_playing_looper() {
+        let (mut manager, device_id) = setup(make_config(1, 1));
+
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        manager.handle_note_off(device_id, 0, 60, 4.0);
+        manager.tick(8.1, 4);
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Playing { .. }));
+
+        let actions = manager.reconcile(&[]);
+        assert!(actions.iter().any(|a| matches!(a, LooperAction::StopPattern { .. })));
+        assert!(!manager.has_device(device_id));
+    }
+
+    #[test]
+    fn test_loop_length_quantized_to_bar() {
+        // silence_bars=0.25 → threshold = 0.25 * 4 = 1.0 beat
+        let config = LooperConfig {
+            device_id: MidiDeviceId::new(1),
+            voice_id: VoiceId::new(1),
+            channel: None,
+            silence_bars: 0.25,
+            quantize_beats: 0.25,
+        };
+        let (mut manager, device_id) = setup(config);
+
+        // Recording from beat 0.0 to note-off at 3.5
+        manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
+        manager.handle_note_off(device_id, 0, 60, 3.5);
+
+        // Tick at 4.6: silence = 1.1 >= 1.0; raw_duration = 4.6; bars = round(1.15) = 1; loop = 4.0
+        let actions = manager.tick(4.6, 4);
+        assert!(actions.iter().any(|a| matches!(a, LooperAction::StartPattern { .. })));
+        if let LooperPhase::Playing { loop_length_beats, .. } = phase(&manager, device_id) {
+            assert!((loop_length_beats - 4.0).abs() < 0.001, "expected 4.0, got {loop_length_beats}");
+        } else {
+            panic!("expected Playing phase");
+        }
+    }
+
+    #[test]
+    fn test_channel_filter_ignored_when_none() {
+        let (mut manager, device_id) = setup(make_config(1, 1)); // channel = None
+
+        // note on channel 3 — must still be handled
+        let actions = manager.handle_note_on(device_id, 3, 60, 100, 0.0, 4);
+        assert!(actions.iter().any(|a| matches!(a, LooperAction::NoteOn { .. })));
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Capturing { .. }));
+    }
+
+    #[test]
+    fn test_channel_filter_blocks_other_channels() {
+        let config = LooperConfig {
+            device_id: MidiDeviceId::new(1),
+            voice_id: VoiceId::new(1),
+            channel: Some(0), // only channel 0
+            silence_bars: 1.0,
+            quantize_beats: 0.25,
+        };
+        let (mut manager, device_id) = setup(config);
+
+        // note on channel 1 — must be blocked
+        let actions = manager.handle_note_on(device_id, 1, 60, 100, 0.0, 4);
+        assert!(!actions.iter().any(|a| matches!(a, LooperAction::NoteOn { .. })));
+        assert!(matches!(phase(&manager, device_id), LooperPhase::Idle));
+    }
+}
