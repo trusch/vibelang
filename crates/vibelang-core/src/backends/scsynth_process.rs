@@ -396,6 +396,12 @@ impl ScsynthProcess {
             cmd.env("SC_JACK_DEFAULT_INPUTS", "");
         }
 
+        // Tell PipeWire this is a pro audio / music production client
+        cmd.env(
+            "PIPEWIRE_PROPS",
+            "media.type=Audio media.category=Duplex media.role=Production",
+        );
+
         cmd.stdin(Stdio::null());
         cmd.stdout(if config.verbose {
             Stdio::inherit()
