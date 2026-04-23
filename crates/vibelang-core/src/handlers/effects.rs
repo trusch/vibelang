@@ -152,7 +152,9 @@ impl<B: Backend> Effects for EffectsHandler<B> {
         };
 
         // Build params with bus routing
-        // Effects created with define_fx() have hidden __fx_bus_in and __fx_bus_out params
+        // Effects created with define_fx() have hidden __fx_bus_in and __fx_bus_out params.
+        // Note: group audio buses are stereo (2-channel). Effect synthdefs must read and
+        // write 2 channels via In.ar/ReplaceOut.ar, or the unused channel goes silent.
         let mut full_params = params.clone();
         full_params.insert("__fx_bus_in".to_string(), audio_bus.0 as f32);
         full_params.insert("__fx_bus_out".to_string(), audio_bus.0 as f32);

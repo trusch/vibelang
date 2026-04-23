@@ -53,6 +53,7 @@ pub fn create_sample_synthdefs() -> Vec<(String, Vec<u8>)> {
 /// - loop: loop mode 0/1 (8)
 /// - startPos: start position in frames (9)
 /// - endPos: end position in frames, -1 = full sample (10)
+/// - pan: stereo pan -1 (left) to 1 (right), 0 = center (11)
 fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(String, Vec<u8>)> {
     let mut builder = GraphBuilderInner::new();
 
@@ -68,6 +69,7 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
     builder.add_param("loop".to_string(), vec![0.0], None); // 8
     builder.add_param("startPos".to_string(), vec![0.0], None); // 9
     builder.add_param("endPos".to_string(), vec![-1.0], None); // 10
+    builder.add_param("pan".to_string(), vec![0.0], None); // 11
 
     builder.create_control_ugen();
 
@@ -365,7 +367,7 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
     );
 
     // Multiply each channel by envelope and amp
-    let mut out_inputs = vec![param(0)]; // out bus
+    let mut scaled_channel_ids = Vec::new();
     for ch in 0..num_channels {
         let playbuf_ch = Input::Node {
             node_id: playbuf_node.0,
@@ -402,12 +404,89 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
             2, // multiplication
         );
 
-        out_inputs.push(Input::Node {
-            node_id: amp_mul_node.0,
-            output_index: 0,
-        });
+        scaled_channel_ids.push(amp_mul_node.0);
     }
 
+    // Apply pan as stereo balance
+    // pan=0: center (both full), pan=-1: hard left, pan=1: hard right
+    // left_gain = 1 - max(0, pan), right_gain = 1 + min(0, pan)
+
+    // max(0, pan)
+    let max_node = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(zero), param(11)],
+        1,
+        13, // max
+    );
+    // 1 - max(0, pan) = left_gain
+    let left_gain = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Constant(one),
+            Input::Node { node_id: max_node.0, output_index: 0 },
+        ],
+        1,
+        1, // subtract
+    );
+    // min(0, pan)
+    let min_node = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(zero), param(11)],
+        1,
+        12, // min
+    );
+    // 1 + min(0, pan) = right_gain
+    let right_gain = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Constant(one),
+            Input::Node { node_id: min_node.0, output_index: 0 },
+        ],
+        1,
+        0, // add
+    );
+
+    let (left_sig_id, right_sig_id) = if num_channels == 1 {
+        // Mono: duplicate signal to both channels
+        (scaled_channel_ids[0], scaled_channel_ids[0])
+    } else {
+        // Stereo: use left and right channels
+        (scaled_channel_ids[0], scaled_channel_ids[1])
+    };
+
+    // left * left_gain
+    let left_out = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Audio,
+        vec![
+            Input::Node { node_id: left_sig_id, output_index: 0 },
+            Input::Node { node_id: left_gain.0, output_index: 0 },
+        ],
+        1,
+        2, // multiply
+    );
+    // right * right_gain
+    let right_out = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Audio,
+        vec![
+            Input::Node { node_id: right_sig_id, output_index: 0 },
+            Input::Node { node_id: right_gain.0, output_index: 0 },
+        ],
+        1,
+        2, // multiply
+    );
+
+    // Always output stereo
+    let out_inputs = vec![
+        param(0), // bus
+        Input::Node { node_id: left_out.0, output_index: 0 },
+        Input::Node { node_id: right_out.0, output_index: 0 },
+    ];
     builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
 
     let ir = GraphIR::from_builder(name.to_string(), builder);
@@ -447,6 +526,7 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
 /// - windowSize: granular window size in seconds (11)
 /// - overlaps: number of overlapping grains (12)
 /// - loop: loop mode 0/1 (13)
+/// - pan: stereo pan -1 (left) to 1 (right), 0 = center (14)
 fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String, Vec<u8>)> {
     let mut builder = GraphBuilderInner::new();
 
@@ -465,6 +545,7 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
     builder.add_param("windowSize".to_string(), vec![0.1], None); // 11
     builder.add_param("overlaps".to_string(), vec![8.0], None); // 12
     builder.add_param("loop".to_string(), vec![0.0], None); // 13 - loop mode
+    builder.add_param("pan".to_string(), vec![0.0], None); // 14
 
     builder.create_control_ugen();
 
@@ -797,7 +878,7 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
     );
 
     // Multiply each channel by envelope and amp
-    let mut out_inputs = vec![param(0)];
+    let mut scaled_channel_ids = Vec::new();
     for ch in 0..num_channels {
         let warp_ch = Input::Node {
             node_id: warp_node.0,
@@ -834,12 +915,87 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
             2, // multiplication
         );
 
-        out_inputs.push(Input::Node {
-            node_id: amp_mul_node.0,
-            output_index: 0,
-        });
+        scaled_channel_ids.push(amp_mul_node.0);
     }
 
+    // Apply pan as stereo balance
+    // pan=0: center (both full), pan=-1: hard left, pan=1: hard right
+    // left_gain = 1 - max(0, pan), right_gain = 1 + min(0, pan)
+
+    // max(0, pan)
+    let max_node = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(zero), param(14)],
+        1,
+        13, // max
+    );
+    // 1 - max(0, pan) = left_gain
+    let left_gain = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Constant(one),
+            Input::Node { node_id: max_node.0, output_index: 0 },
+        ],
+        1,
+        1, // subtract
+    );
+    // min(0, pan)
+    let min_node = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(zero), param(14)],
+        1,
+        12, // min
+    );
+    // 1 + min(0, pan) = right_gain
+    let right_gain = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Constant(one),
+            Input::Node { node_id: min_node.0, output_index: 0 },
+        ],
+        1,
+        0, // add
+    );
+
+    let (left_sig_id, right_sig_id) = if num_channels == 1 {
+        (scaled_channel_ids[0], scaled_channel_ids[0])
+    } else {
+        (scaled_channel_ids[0], scaled_channel_ids[1])
+    };
+
+    // left * left_gain
+    let left_out = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Audio,
+        vec![
+            Input::Node { node_id: left_sig_id, output_index: 0 },
+            Input::Node { node_id: left_gain.0, output_index: 0 },
+        ],
+        1,
+        2, // multiply
+    );
+    // right * right_gain
+    let right_out = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Audio,
+        vec![
+            Input::Node { node_id: right_sig_id, output_index: 0 },
+            Input::Node { node_id: right_gain.0, output_index: 0 },
+        ],
+        1,
+        2, // multiply
+    );
+
+    // Always output stereo
+    let out_inputs = vec![
+        param(0), // bus
+        Input::Node { node_id: left_out.0, output_index: 0 },
+        Input::Node { node_id: right_out.0, output_index: 0 },
+    ];
     builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
 
     let ir = GraphIR::from_builder(name.to_string(), builder);

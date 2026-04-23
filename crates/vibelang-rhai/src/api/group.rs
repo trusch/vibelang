@@ -175,6 +175,19 @@ impl GroupHandle {
             return self;
         }
 
+        if left as u32 >= 16 {
+            log::error!(
+                "group('{}').output([{}, {}]): channel index {} exceeds reasonable hardware output range (0-15). \
+                 Make sure scsynth is started with enough output channels (--output-channels {})",
+                self.name,
+                left,
+                right,
+                right,
+                right + 1,
+            );
+            return self;
+        }
+
         let group_id = context::get_or_create_group_id(&self.path);
         context::with_state(|state| {
             if let Some(config) = state.groups.get_mut(&group_id) {

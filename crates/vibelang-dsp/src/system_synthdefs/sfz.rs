@@ -31,6 +31,7 @@ use crate::{encode_synthdef, GraphBuilderInner, GraphIR, Input, Rate};
 /// - loop: loop mode 0=no, 1=yes (9)
 /// - startPos: start position in frames (10)
 /// - endPos: end position in frames, -1 = full sample (11)
+/// - pan: stereo pan -1=left, 0=center, 1=right (12)
 pub fn create_sfz_voice_synthdef(num_channels: u32) -> Result<GraphIR, crate::SynthDefError> {
     let name = if num_channels == 1 {
         "sfz_voice_mono"
@@ -59,6 +60,7 @@ pub fn create_sfz_voice_synthdef(num_channels: u32) -> Result<GraphIR, crate::Sy
     builder.add_param("loop".to_string(), vec![0.0], None); // 9
     builder.add_param("startPos".to_string(), vec![0.0], None); // 10
     builder.add_param("endPos".to_string(), vec![-1.0], None); // 11 - end position in frames, -1 = full
+    builder.add_param("pan".to_string(), vec![0.0], None); // 12
 
     // Create control UGen (must be first node after params are added)
     builder.create_control_ugen();
@@ -383,7 +385,7 @@ pub fn create_sfz_voice_synthdef(num_channels: u32) -> Result<GraphIR, crate::Sy
     );
 
     // Multiply each channel by envelope and amp
-    let mut out_inputs = vec![param(0)]; // out bus
+    let mut scaled_channel_ids = Vec::new();
     for ch in 0..num_channels {
         let playbuf_ch = Input::Node {
             node_id: playbuf_node.0,
@@ -420,13 +422,90 @@ pub fn create_sfz_voice_synthdef(num_channels: u32) -> Result<GraphIR, crate::Sy
             2, // multiplication
         );
 
-        out_inputs.push(Input::Node {
-            node_id: amp_mul_node.0,
-            output_index: 0,
-        });
+        scaled_channel_ids.push(amp_mul_node.0);
     }
 
-    // Out
+    // Apply pan as stereo balance
+    // pan=0: center (both full), pan=-1: hard left, pan=1: hard right
+    // left_gain = 1 - max(0, pan), right_gain = 1 + min(0, pan)
+    let pan_param_idx = 12u32; // pan parameter index
+
+    // max(0, pan)
+    let max_node = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(zero), param(pan_param_idx)],
+        1,
+        13, // max
+    );
+    // 1 - max(0, pan) = left_gain
+    let left_gain = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Constant(one),
+            Input::Node { node_id: max_node.0, output_index: 0 },
+        ],
+        1,
+        1, // subtract
+    );
+    // min(0, pan)
+    let min_node = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![Input::Constant(zero), param(pan_param_idx)],
+        1,
+        12, // min
+    );
+    // 1 + min(0, pan) = right_gain
+    let right_gain = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![
+            Input::Constant(one),
+            Input::Node { node_id: min_node.0, output_index: 0 },
+        ],
+        1,
+        0, // add
+    );
+
+    // For mono: use same signal for L and R. For stereo: use respective channels.
+    let left_sig_id = scaled_channel_ids[0];
+    let right_sig_id = if num_channels == 1 {
+        scaled_channel_ids[0]
+    } else {
+        scaled_channel_ids[1]
+    };
+
+    // left * left_gain
+    let left_out = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Audio,
+        vec![
+            Input::Node { node_id: left_sig_id, output_index: 0 },
+            Input::Node { node_id: left_gain.0, output_index: 0 },
+        ],
+        1,
+        2, // multiply
+    );
+    // right * right_gain
+    let right_out = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Audio,
+        vec![
+            Input::Node { node_id: right_sig_id, output_index: 0 },
+            Input::Node { node_id: right_gain.0, output_index: 0 },
+        ],
+        1,
+        2, // multiply
+    );
+
+    // Always output stereo
+    let out_inputs = vec![
+        param(0), // bus
+        Input::Node { node_id: left_out.0, output_index: 0 },
+        Input::Node { node_id: right_out.0, output_index: 0 },
+    ];
     builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
 
     let ir = GraphIR::from_builder(name.to_string(), builder);
