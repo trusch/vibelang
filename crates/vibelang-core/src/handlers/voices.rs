@@ -1199,27 +1199,18 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             }
         }
 
-        let (node_to_release, is_sample_voice) = {
+        let node_to_release = {
             let mut state = self.state.write().await;
-
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
-
-            let is_sample_voice =
-                voice.config.sample_id.is_some() || voice.config.sfz_instrument.is_some();
-            (voice.note_nodes.remove(&note), is_sample_voice)
+            voice.note_nodes.remove(&note)
         };
 
         // Release the note (lock released)
         if let Some(node_id) = node_to_release {
-            if is_sample_voice {
-                // Sample/SFZ synths don't respond to gate - free the node directly.
-                let _ = self.backend.free_node(node_id).await;
-            } else {
-                self.backend
-                    .set_param(node_id, "gate", 0.0)
-                    .await
-                    .map_err(Error::backend)?;
-            }
+            self.backend
+                .set_param(node_id, "gate", 0.0)
+                .await
+                .map_err(Error::backend)?;
         }
 
         Ok(())
