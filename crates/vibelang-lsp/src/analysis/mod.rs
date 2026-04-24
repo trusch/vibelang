@@ -688,12 +688,6 @@ fn is_inside_dsp_body(content: &str, line: usize, _character: usize) -> bool {
 // =============================================================================
 
 /// Valid chord types.
-const VALID_CHORDS: [&str; 32] = [
-    "maj", "major", "min", "minor", "dim", "aug", "sus2", "sus4", "7", "maj7", "major7", "min7",
-    "m7", "dim7", "aug7", "m7b5", "half-dim", "mM7", "mmaj7", "minmaj7", "9", "maj9", "min9",
-    "add9", "11", "13", "6", "m6", "min6", "5", "power", "dom7",
-];
-
 /// Valid pattern tokens.
 const VALID_PATTERN_TOKENS: [char; 15] = [
     'x', 'X', '.', '-', '|', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
@@ -730,40 +724,166 @@ fn lint_melodies(content: &str, diagnostics: &mut Vec<Diagnostic>) {
 }
 
 /// Lint the content of a .notes() call.
+///
+/// Tokenizes the melody string the same way the runtime does — character by
+/// character — so that concatenated shorthand like `1.1.` is valid.
 fn lint_melody_content(
     content: &str,
     line: u32,
     start_col: u32,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    // Tokenize and validate
-    let tokens: Vec<&str> = content
-        .split(|c: char| c.is_whitespace() || c == '|')
-        .filter(|s| !s.is_empty())
-        .collect();
+    let mut token_count = 0u32;
+    let mut chars = content.chars().enumerate().peekable();
 
-    // Check each token
-    for token in &tokens {
-        if !is_valid_melody_token(token) {
-            diagnostics.push(Diagnostic {
-                range: Range {
-                    start: Position { line, character: start_col },
-                    end: Position { line, character: start_col + content.len() as u32 },
-                },
-                severity: Some(DiagnosticSeverity::ERROR),
-                code: Some(NumberOrString::String("invalid-melody-token".to_string())),
-                source: Some("vibelang".to_string()),
-                message: format!(
-                    "Invalid melody token '{}'. Expected a note (C4, F#3), chord (C4:maj7), scale degree (1-7), or rest (-, ~, .).",
-                    token
-                ),
-                ..Default::default()
-            });
+    while let Some((idx, c)) = chars.next() {
+        match c {
+            // Whitespace and bar lines are separators
+            ' ' | '\t' | '\n' | '\r' | '|' => {}
+
+            // Rest markers
+            '.' | '_' | '~' => {
+                token_count += 1;
+            }
+
+            // Tie/hold
+            '-' => {
+                token_count += 1;
+            }
+
+            // Chord bracket notation: [C4 E4 G4] with optional [params]
+            '[' => {
+                token_count += 1;
+                // Skip to closing ']'
+                let mut found_close = false;
+                for (_, ch) in chars.by_ref() {
+                    if ch == ']' {
+                        found_close = true;
+                        break;
+                    }
+                }
+                if !found_close {
+                    diagnostics.push(Diagnostic {
+                        range: Range {
+                            start: Position { line, character: start_col + idx as u32 },
+                            end: Position { line, character: start_col + content.len() as u32 },
+                        },
+                        severity: Some(DiagnosticSeverity::ERROR),
+                        code: Some(NumberOrString::String("invalid-melody-token".to_string())),
+                        source: Some("vibelang".to_string()),
+                        message: "Unterminated chord bracket '['.".to_string(),
+                        ..Default::default()
+                    });
+                    return;
+                }
+                // Optional per-note params [key=value]
+                if chars.peek().map(|(_, ch)| *ch) == Some('[') {
+                    for (_, ch) in chars.by_ref() {
+                        if ch == ']' {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Scale degrees 1-7 with optional octave modifiers ('/,) and [params]
+            '1'..='7' => {
+                token_count += 1;
+                // Consume octave modifiers
+                while chars.peek().map(|(_, ch)| *ch == '\'' || *ch == ',').unwrap_or(false) {
+                    chars.next();
+                }
+                // Optional per-note params
+                if chars.peek().map(|(_, ch)| *ch) == Some('[') {
+                    for (_, ch) in chars.by_ref() {
+                        if ch == ']' {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Accidentals before scale degrees: #4, b7
+            '#' | 'b' if chars.peek().map(|(_, ch)| ('1'..='7').contains(ch)).unwrap_or(false) => {
+                // Check that next char is actually a digit (already peeked)
+                if let Some((_, _degree)) = chars.next() {
+                    token_count += 1;
+                    // Consume octave modifiers
+                    while chars.peek().map(|(_, ch)| *ch == '\'' || *ch == ',').unwrap_or(false) {
+                        chars.next();
+                    }
+                    // Optional per-note params
+                    if chars.peek().map(|(_, ch)| *ch) == Some('[') {
+                        for (_, ch) in chars.by_ref() {
+                            if ch == ']' {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Absolute note names A-G
+            'A'..='G' | 'a'..='g' => {
+                token_count += 1;
+                // Consume accidentals and octave digits
+                while chars
+                    .peek()
+                    .map(|(_, ch)| matches!(ch, '#' | '♯' | '♭' | '0'..='9') || (*ch == 'b' && !('a'..='g').contains(ch)))
+                    .unwrap_or(false)
+                {
+                    // Special case: 'b' is ambiguous (note B vs flat). If we just parsed
+                    // a note letter and see 'b', treat as accidental only if followed by a digit.
+                    if chars.peek().map(|(_, ch)| *ch) == Some('b') {
+                        // Look ahead: is there a digit after 'b'? If so, it's a flat accidental.
+                        // Otherwise break — it might be the note B.
+                        // We can't easily look 2 ahead with peekable, so consume 'b' as accidental
+                        // since we're already inside a note parse.
+                        chars.next();
+                        continue;
+                    }
+                    chars.next();
+                }
+                // Optional chord suffix :maj7, :m7, etc.
+                if chars.peek().map(|(_, ch)| *ch) == Some(':') {
+                    chars.next(); // consume ':'
+                    while chars.peek().map(|(_, ch)| ch.is_alphanumeric()).unwrap_or(false) {
+                        chars.next();
+                    }
+                }
+                // Optional per-note params
+                if chars.peek().map(|(_, ch)| *ch) == Some('[') {
+                    for (_, ch) in chars.by_ref() {
+                        if ch == ']' {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Anything else is invalid
+            _ => {
+                diagnostics.push(Diagnostic {
+                    range: Range {
+                        start: Position { line, character: start_col + idx as u32 },
+                        end: Position { line, character: start_col + idx as u32 + 1 },
+                    },
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    code: Some(NumberOrString::String("invalid-melody-token".to_string())),
+                    source: Some("vibelang".to_string()),
+                    message: format!(
+                        "Invalid melody character '{}'. Expected a note (C4, F#3), chord ([C4 E4 G4]), \
+                         scale degree (1-7), tie (-), or rest (., _, ~).",
+                        c
+                    ),
+                    ..Default::default()
+                });
+            }
         }
     }
 
-    // Warn if not a multiple of 4
-    if !tokens.is_empty() && tokens.len() % 4 != 0 {
+    // Warn if token count is not a multiple of 4
+    if token_count > 0 && token_count % 4 != 0 {
         diagnostics.push(Diagnostic {
             range: Range {
                 start: Position { line, character: start_col },
@@ -774,85 +894,11 @@ fn lint_melody_content(
             source: Some("vibelang".to_string()),
             message: format!(
                 "Melody has {} tokens. Consider using a multiple of 4 for standard time signatures.",
-                tokens.len()
+                token_count
             ),
             ..Default::default()
         });
     }
-}
-
-/// Check if a token is a valid melody token.
-fn is_valid_melody_token(token: &str) -> bool {
-    if token == "-" || token == "~" || token == "_" || token == "." {
-        return true;
-    }
-
-    // Check for chord notation (note:chord or number:chord)
-    if let Some(colon_pos) = token.find(':') {
-        let note_part = &token[..colon_pos];
-        let chord_part = &token[colon_pos + 1..];
-        return (is_valid_note(note_part) || is_valid_scale_degree(note_part))
-            && VALID_CHORDS.contains(&chord_part);
-    }
-
-    // Accept both standard notes and scale degrees
-    is_valid_note(token) || is_valid_scale_degree(token)
-}
-
-/// Check if a string is a valid note (C4, D#5, Bb3, etc.).
-fn is_valid_note(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-
-    let chars: Vec<char> = s.chars().collect();
-    let first = chars[0].to_ascii_uppercase();
-
-    if !['C', 'D', 'E', 'F', 'G', 'A', 'B'].contains(&first) {
-        return false;
-    }
-
-    let mut idx = 1;
-
-    // Check for accidental
-    if idx < chars.len() && (chars[idx] == '#' || chars[idx] == 'b') {
-        idx += 1;
-    }
-
-    // Rest should be digits (octave)
-    if idx >= chars.len() {
-        return true; // Note without octave is valid (e.g., "C" in scale context)
-    }
-
-    for c in &chars[idx..] {
-        if !c.is_ascii_digit() {
-            return false;
-        }
-    }
-
-    true
-}
-
-/// Check if a string is a valid scale degree (1-7).
-fn is_valid_scale_degree(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-
-    // Pure numbers 1-7 are valid
-    if let Ok(n) = s.parse::<i32>() {
-        return (1..=7).contains(&n);
-    }
-
-    // Also allow accidentals like #4 or b7
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() == 2 && (chars[0] == '#' || chars[0] == 'b') {
-        if let Some(d) = chars[1].to_digit(10) {
-            return (1..=7).contains(&d);
-        }
-    }
-
-    false
 }
 
 /// Lint pattern calls in the source.
@@ -1090,33 +1136,88 @@ fn lint_sample_files(
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_valid_note() {
-        assert!(is_valid_note("C4"));
-        assert!(is_valid_note("D#5"));
-        assert!(is_valid_note("Bb3"));
-        assert!(is_valid_note("A"));
-        assert!(!is_valid_note("X4"));
-        assert!(!is_valid_note(""));
+    /// Helper: lint a melody string and return only ERROR diagnostics.
+    fn melody_errors(content: &str) -> Vec<Diagnostic> {
+        let mut diags = Vec::new();
+        lint_melody_content(content, 0, 0, &mut diags);
+        diags
+            .into_iter()
+            .filter(|d| d.severity == Some(DiagnosticSeverity::ERROR))
+            .collect()
     }
 
     #[test]
-    fn test_valid_scale_degree() {
-        assert!(is_valid_scale_degree("1"));
-        assert!(is_valid_scale_degree("7"));
-        assert!(is_valid_scale_degree("#4"));
-        assert!(is_valid_scale_degree("b7"));
-        assert!(!is_valid_scale_degree("0"));
-        assert!(!is_valid_scale_degree("8"));
+    fn test_absolute_notes() {
+        assert!(melody_errors("C4 D#5 Bb3 A4").is_empty());
+        assert!(melody_errors("C D E F").is_empty());
     }
 
     #[test]
-    fn test_valid_melody_token() {
-        assert!(is_valid_melody_token("C4"));
-        assert!(is_valid_melody_token("C4:maj7"));
-        assert!(is_valid_melody_token("1"));
-        assert!(is_valid_melody_token("-"));
-        assert!(is_valid_melody_token("."));
-        assert!(!is_valid_melody_token("invalid"));
+    fn test_scale_degrees() {
+        assert!(melody_errors("1 2 3 4").is_empty());
+        assert!(melody_errors("1 3 5 7").is_empty());
+    }
+
+    #[test]
+    fn test_scale_degrees_with_octave() {
+        assert!(melody_errors("1' 2' 3' 4'").is_empty());
+        assert!(melody_errors("1, 2, 3, 4,").is_empty());
+        assert!(melody_errors("1'' 2,, 3' 4").is_empty());
+    }
+
+    #[test]
+    fn test_accidental_degrees() {
+        assert!(melody_errors("#4 b7 #1 b3").is_empty());
+    }
+
+    #[test]
+    fn test_rests_and_ties() {
+        assert!(melody_errors(". . . .").is_empty());
+        assert!(melody_errors("_ _ _ _").is_empty());
+        assert!(melody_errors("~ ~ ~ ~").is_empty());
+        assert!(melody_errors("- - - -").is_empty());
+        assert!(melody_errors("C4 - - .").is_empty());
+    }
+
+    #[test]
+    fn test_concatenated_shorthand() {
+        // This is the key case: "1.1." = degree 1, rest, degree 1, rest
+        assert!(melody_errors("1.1. 1.1. 1.1. 1.1.").is_empty());
+        assert!(melody_errors("1.1. 1.3. 5.3. 1.1.").is_empty());
+        assert!(melody_errors("1-1- 3-3- 5-5- 7-7-").is_empty());
+    }
+
+    #[test]
+    fn test_chord_brackets() {
+        assert!(melody_errors("[C4 E4 G4] . . .").is_empty());
+        assert!(melody_errors("[C4 E4 G4][vel=80] . . .").is_empty());
+    }
+
+    #[test]
+    fn test_chord_suffix() {
+        assert!(melody_errors("C4:maj7 D4:m7 E4:dim A4:aug").is_empty());
+    }
+
+    #[test]
+    fn test_per_note_params() {
+        assert!(melody_errors("C4[velocity=100] D4 E4 F4").is_empty());
+        assert!(melody_errors("1[cutoff=2000] 3[pan=-0.5] 5 7").is_empty());
+    }
+
+    #[test]
+    fn test_bars() {
+        assert!(melody_errors("C4 D4 E4 F4 | G4 A4 B4 C5").is_empty());
+        assert!(melody_errors("1.1. 1.1. 1.1. 1.1. | 1.1. 1.1. 1.1. 1.1.").is_empty());
+    }
+
+    #[test]
+    fn test_invalid_characters() {
+        assert!(!melody_errors("X Y Z W").is_empty());
+        assert!(!melody_errors("0 8 9 0").is_empty());
+    }
+
+    #[test]
+    fn test_unterminated_bracket() {
+        assert!(!melody_errors("[C4 E4").is_empty());
     }
 }
