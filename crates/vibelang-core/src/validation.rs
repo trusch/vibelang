@@ -70,19 +70,13 @@ pub trait Validate {
 
 impl Validate for VoiceConfig {
     fn validate(&self) -> Result<()> {
-        // A voice needs a sound source: synthdef, SFZ instrument, or MIDI output device
-        #[cfg(feature = "midi")]
-        let has_midi_output = self.midi_output.is_some();
-        #[cfg(not(feature = "midi"))]
-        let has_midi_output = false;
-
-        let has_synth = !self.synthdef.is_empty();
-        let has_sfz = self.sfz_instrument.is_some();
-
-        if !has_synth && !has_sfz && !has_midi_output {
+        if !self.has_sound_source() {
             return Err(Error::invalid_param(
                 "sound_source",
-                "voice must have a sound source: use .on(synth_name), .on(sample), .on(sfz_instrument), or .on(midi_device)",
+                format!(
+                    "voice '{}' must have a sound source: use .synth(\"name\"), .on(\"synth_or_sample\"), .on(sample), .on(sfz_instrument), or .on(midi_device)",
+                    self.name
+                ),
             ));
         }
 
@@ -674,11 +668,13 @@ mod tests {
     fn test_voice_config_validation() {
         // Valid config
         let config = VoiceConfig::new("test_voice", "sine", GroupId::new(0));
+        assert!(config.has_sound_source());
         assert!(config.validate().is_ok());
 
         // Empty synthdef
         let mut config = VoiceConfig::new("test_voice", "sine", GroupId::new(0));
         config.synthdef = String::new();
+        assert!(!config.has_sound_source());
         assert!(config.validate().is_err());
 
         // Invalid polyphony

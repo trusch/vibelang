@@ -224,6 +224,18 @@ impl VoiceConfig {
         self.modulations.insert(param.into(), modulator);
         self
     }
+
+    /// Whether this configuration can produce sound (synthdef, SFZ, or MIDI output).
+    ///
+    /// Used by script layers for get-or-create semantics: a bare `voice("name")` must not
+    /// overwrite a fully configured entry in [`ScriptState`](crate::reload::ScriptState).
+    pub fn has_sound_source(&self) -> bool {
+        #[cfg(feature = "midi")]
+        let has_midi = self.midi_output.is_some();
+        #[cfg(not(feature = "midi"))]
+        let has_midi = false;
+        !self.synthdef.is_empty() || self.sfz_instrument.is_some() || has_midi
+    }
 }
 
 /// Voice management for sound production.

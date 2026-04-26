@@ -2291,4 +2291,46 @@ mod tests {
             "Choke group should be hats"
         );
     }
+
+    /// `voice("name")` without a source must not overwrite a configured voice when used
+    /// only as a handle (e.g. inside `pad(...).to(voice("name"))`).
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_pad_to_voice_preserves_prior_synth_config() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                voice("kick").synth("sample_voice").apply();
+                let dev = midi_device("test-device");
+                dev.pad(36).to(voice("kick"));
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.advanced_note_routes.len(), 1);
+        assert_eq!(state.voices.len(), 1, "Bare voice() in .to() must not clobber .synth()");
+        let cfg = state.voices.values().next().unwrap();
+        assert_eq!(cfg.synthdef, "sample_voice");
+    }
+
+    /// Route may reference a voice by name before the full `voice(...).synth(...).apply()` line.
+    #[cfg(feature = "midi")]
+    #[test]
+    fn test_pad_to_voice_then_define_voice() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+                let dev = midi_device("test-device");
+                dev.pad(36).to(voice("kick"));
+                voice("kick").synth("sample_voice").apply();
+            "#,
+            )
+            .unwrap();
+
+        assert_eq!(state.advanced_note_routes.len(), 1);
+        assert_eq!(state.voices.len(), 1);
+        assert_eq!(state.voices.values().next().unwrap().synthdef, "sample_voice");
+    }
 }

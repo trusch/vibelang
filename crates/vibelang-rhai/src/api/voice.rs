@@ -487,7 +487,20 @@ impl Voice {
         };
 
         context::with_state(|state| {
-            state.voices.insert(voice_id, config);
+            if config.has_sound_source() {
+                state.voices.insert(voice_id, config);
+                return;
+            }
+            // Bare `voice("name")` (no synth / sample / SFZ / MIDI yet): do not clobber an
+            // existing fully configured voice — e.g. `device.pad(36).to(voice("kick"))` after
+            // `voice("kick").synth("x").apply()`.
+            match state.voices.get(&voice_id) {
+                Some(existing) if existing.has_sound_source() => {}
+                Some(_) => {
+                    state.voices.remove(&voice_id);
+                }
+                None => {}
+            }
         });
     }
 
@@ -516,9 +529,13 @@ impl Voice {
 }
 
 /// Create a new voice builder.
+///
+/// Registers the name in the ID map and syncs to script state. A bare `voice("x")` with no
+/// `.synth()` / `.on(...)` yet does **not** insert an invalid placeholder if `"x"` is already
+/// fully configured (get-or-create semantics for MIDI routing and similar).
 pub fn voice(ctx: NativeCallContext, name: String) -> Voice {
     let v = Voice::new(ctx, name);
-    // Auto-sync on creation so the voice is available immediately
+    // Auto-sync on creation; incomplete builders do not clobber existing voice configs.
     v.sync_to_state();
     v
 }
