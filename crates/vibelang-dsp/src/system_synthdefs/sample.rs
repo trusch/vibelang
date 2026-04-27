@@ -70,6 +70,7 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
     builder.add_param("startPos".to_string(), vec![0.0], None); // 9
     builder.add_param("endPos".to_string(), vec![-1.0], None); // 10
     builder.add_param("pan".to_string(), vec![0.0], None); // 11
+    builder.add_param("one_shot".to_string(), vec![0.0], None); // 12
 
     builder.create_control_ugen();
 
@@ -321,12 +322,24 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
         1, // subtraction
     );
 
-    // gate * gate_modifier = effectiveGate
+    // max(gate, one_shot) — when one_shot=1, gate stays 1 regardless of note-off
+    let actual_gate = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![param(4), param(12)], // gate, one_shot
+        1,
+        13, // max
+    );
+
+    // actual_gate * gate_modifier = effectiveGate
     let effective_gate = builder.add_node(
         "BinaryOpUGen".to_string(),
         Rate::Control,
         vec![
-            param(4), // original gate
+            Input::Node {
+                node_id: actual_gate.0,
+                output_index: 0,
+            },
             Input::Node {
                 node_id: gate_modifier.0,
                 output_index: 0,
@@ -546,6 +559,7 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
     builder.add_param("overlaps".to_string(), vec![8.0], None); // 12
     builder.add_param("loop".to_string(), vec![0.0], None); // 13 - loop mode
     builder.add_param("pan".to_string(), vec![0.0], None); // 14
+    builder.add_param("one_shot".to_string(), vec![0.0], None); // 15
 
     builder.create_control_ugen();
 
@@ -811,12 +825,24 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         1, // subtraction
     );
 
-    // gate * gate_modifier = effectiveGate
+    // max(gate, one_shot) — when one_shot=1, gate stays 1 regardless of note-off
+    let actual_gate = builder.add_node(
+        "BinaryOpUGen".to_string(),
+        Rate::Control,
+        vec![param(5), param(15)], // gate, one_shot
+        1,
+        13, // max
+    );
+
+    // actual_gate * gate_modifier = effectiveGate
     let effective_gate = builder.add_node(
         "BinaryOpUGen".to_string(),
         Rate::Control,
         vec![
-            param(5), // original gate
+            Input::Node {
+                node_id: actual_gate.0,
+                output_index: 0,
+            },
             Input::Node {
                 node_id: gate_modifier.0,
                 output_index: 0,

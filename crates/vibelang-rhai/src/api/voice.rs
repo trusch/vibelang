@@ -213,6 +213,11 @@ impl Voice {
                     // Copy trigger_mode from sample config
                     self.trigger_mode = config.trigger_mode.clone();
 
+                    // When one_shot, tell the synthdef to ignore gate=0
+                    if config.trigger_mode == "one_shot" {
+                        self.params.insert("one_shot".to_string(), 1.0);
+                    }
+
                     // Choose synthdef based on warp mode
                     self.synth_name = Some(if config.warp {
                         "warp_voice".to_string()
