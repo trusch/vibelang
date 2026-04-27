@@ -82,6 +82,9 @@ pub struct SampleConfig {
 
     /// Number of overlapping grains for warp mode.
     pub overlaps: f64,
+
+    /// Trigger mode: "gate" (default) = release on note-off, "one_shot" = ignore note-off.
+    pub trigger_mode: String,
 }
 
 impl Default for SampleConfig {
@@ -102,6 +105,7 @@ impl Default for SampleConfig {
             pitch: 1.0,
             window_size: 0.1,
             overlaps: 8.0,
+            trigger_mode: "gate".to_string(),
         }
     }
 }

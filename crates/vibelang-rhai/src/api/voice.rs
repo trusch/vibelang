@@ -43,6 +43,8 @@ pub struct Voice {
     sfz_instrument: Option<SfzId>,
     /// Sample ID (if this voice uses a sample).
     sample_id: Option<SampleId>,
+    /// Trigger mode: "gate" (default) or "one_shot".
+    trigger_mode: String,
     /// Round-robin count for cycling through sample variations.
     round_robin_count: u32,
     /// Choke group name for exclusive triggering.
@@ -75,6 +77,7 @@ impl Voice {
             #[cfg(not(target_arch = "wasm32"))]
             sfz_instrument: None,
             sample_id: None,
+            trigger_mode: "gate".to_string(),
             round_robin_count: 0,
             choke_group: None,
             modulations: HashMap::new(),
@@ -101,6 +104,7 @@ impl Voice {
             #[cfg(not(target_arch = "wasm32"))]
             sfz_instrument: None,
             sample_id: None,
+            trigger_mode: "gate".to_string(),
             round_robin_count: 0,
             choke_group: None,
             modulations: HashMap::new(),
@@ -206,6 +210,9 @@ impl Voice {
 
             context::with_state(|state| {
                 if let Some(config) = state.samples.get(&sample_id) {
+                    // Copy trigger_mode from sample config
+                    self.trigger_mode = config.trigger_mode.clone();
+
                     // Choose synthdef based on warp mode
                     self.synth_name = Some(if config.warp {
                         "warp_voice".to_string()
@@ -475,6 +482,7 @@ impl Voice {
             #[cfg(target_arch = "wasm32")]
             sfz_instrument: None,
             sample_id: self.sample_id,
+            trigger_mode: self.trigger_mode.clone(),
             round_robin_count: self.round_robin_count,
             choke_group: self.choke_group.clone(),
             modulations: self.modulations.clone(),
@@ -631,6 +639,7 @@ mod tests {
             #[cfg(not(target_arch = "wasm32"))]
             sfz_instrument: None,
             sample_id: None,
+            trigger_mode: "gate".to_string(),
             round_robin_count: 0,
             choke_group: None,
             modulations: HashMap::new(),

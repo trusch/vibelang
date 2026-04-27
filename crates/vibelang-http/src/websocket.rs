@@ -764,6 +764,7 @@ mod tests {
                     soloed: false,
                     sfz_instrument: None,
                     sample_id: None,
+                    trigger_mode: "gate".to_string(),
                     round_robin_count: 0,
                     choke_group: None,
                     modulations: HashMap::new(),

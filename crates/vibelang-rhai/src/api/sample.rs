@@ -255,6 +255,32 @@ impl SampleHandle {
         self
     }
 
+    // === Trigger mode methods ===
+
+    /// Set trigger mode to one-shot (ignore note-off).
+    pub fn one_shot(self) -> Self {
+        if let Some(sample_id) = context::get_sample_id(&self.id) {
+            context::with_state(|state| {
+                if let Some(config) = state.samples.get_mut(&sample_id) {
+                    config.trigger_mode = "one_shot".to_string();
+                }
+            });
+        }
+        self
+    }
+
+    /// Set trigger mode to gate (release on note-off, default).
+    pub fn gate(self) -> Self {
+        if let Some(sample_id) = context::get_sample_id(&self.id) {
+            context::with_state(|state| {
+                if let Some(config) = state.samples.get_mut(&sample_id) {
+                    config.trigger_mode = "gate".to_string();
+                }
+            });
+        }
+        self
+    }
+
     // === Slicing ===
 
     /// Create a slice of the sample from start to end (in seconds).
@@ -341,6 +367,10 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("warp_to_bpm", SampleHandle::warp_to_bpm);
     engine.register_fn("window_size", SampleHandle::window_size);
     engine.register_fn("overlaps", SampleHandle::overlaps);
+
+    // Trigger mode
+    engine.register_fn("one_shot", SampleHandle::one_shot);
+    engine.register_fn("gate", SampleHandle::gate);
 
     // Slicing
     engine.register_fn("slice", SampleHandle::slice);

@@ -742,6 +742,7 @@ mod tests {
                 soloed: false,
                 sfz_instrument: None,
                 sample_id: None,
+                trigger_mode: "gate".to_string(),
                 choke_group: None,
                 round_robin_count: 0,
                 modulations: std::collections::HashMap::new(),

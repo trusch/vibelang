@@ -71,6 +71,9 @@ pub struct VoiceConfig {
     /// Useful for drum voices with multiple sample variations.
     pub round_robin_count: u32,
 
+    /// Trigger mode: "gate" (default) = release on note-off, "one_shot" = ignore note-off.
+    pub trigger_mode: String,
+
     /// Choke group name for exclusive triggering.
     ///
     /// When set, triggering this voice will stop all other currently playing
@@ -113,6 +116,7 @@ impl PartialEq for VoiceConfig {
             && self.sfz_instrument == other.sfz_instrument
             && self.sample_id == other.sample_id
             && self.round_robin_count == other.round_robin_count
+            && self.trigger_mode == other.trigger_mode
             && self.choke_group == other.choke_group
             && self.modulations == other.modulations
             && {
@@ -144,6 +148,7 @@ impl VoiceConfig {
             sfz_instrument: None,
             sample_id: None,
             round_robin_count: 0,
+            trigger_mode: "gate".to_string(),
             choke_group: None,
             modulations: HashMap::new(),
             #[cfg(feature = "midi")]
