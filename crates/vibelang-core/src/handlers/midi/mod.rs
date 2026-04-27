@@ -913,15 +913,18 @@ impl<B: Backend> MidiHandler<B> {
                 && (route.channel.is_none() || route.channel == Some(channel))
             {
                 if let Some(voice_id) = route.target_voice {
+                    let curved_velocity = route.apply_velocity(velocity);
+                    let vel_curved = curved_velocity as f32 / 127.0;
                     tracing::debug!(
-                        "MIDI note route: voice={}, note={}, velocity={}",
+                        "MIDI note route: voice={}, note={}, velocity={}, curved={}",
                         voice_id.0,
                         note,
-                        velocity
+                        velocity,
+                        curved_velocity
                     );
 
                     // Handle velocity-to-parameter mapping before triggering the note
-                    if let Some((param, value)) = route.velocity_to_param(velocity) {
+                    if let Some((param, value)) = route.velocity_to_param(curved_velocity) {
                         tracing::debug!(
                             "MIDI velocity mapping: param={}, value={} (voice={}, note={})",
                             param,
@@ -947,7 +950,7 @@ impl<B: Backend> MidiHandler<B> {
                         .send_async(Message::Voice(VoiceMessage::NoteOn {
                             voice: voice_id,
                             note,
-                            velocity: vel_f32,
+                            velocity: vel_curved,
                         }))
                         .await
                     {

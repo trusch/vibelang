@@ -83,17 +83,19 @@ impl KeyboardRoute {
     }
 
     /// Route to a voice and apply the configuration.
-    pub fn to(self, voice: Voice) {
+    pub fn to(self, voice: Voice) -> Self {
         self.apply_route(&voice.name);
+        self
     }
 
     /// Route to a voice by name.
-    pub fn to_name(self, voice_name: String) {
+    pub fn to_name(self, voice_name: String) -> Self {
         self.apply_route(&voice_name);
+        self
     }
 
     /// Internal helper to apply the keyboard route configuration.
-    fn apply_route(self, voice_name: &str) {
+    fn apply_route(&self, voice_name: &str) {
         use vibelang_core::reload::AdvancedMidiKeyboardRoute;
 
         let voice_id = context::get_or_create_voice_id(voice_name);
@@ -172,8 +174,14 @@ impl NoteRoute {
         self
     }
 
+    /// Set a fixed velocity (0-127), ignoring how hard the pad is hit.
+    pub fn fixed_velocity(mut self, velocity: i64) -> Self {
+        self.builder.velocity_curve = VelocityCurve::Fixed(velocity.clamp(0, 127) as u8);
+        self
+    }
+
     /// Route to a voice and apply the configuration.
-    pub fn to(self, voice: Voice) {
+    pub fn to(self, voice: Voice) -> Self {
         use vibelang_core::reload::AdvancedMidiNoteRoute;
 
         let voice_id = context::get_or_create_voice_id(&voice.name);
@@ -197,6 +205,7 @@ impl NoteRoute {
             state.advanced_note_routes.push(route);
             state.midi_inputs.insert(self.device_id);
         });
+        self
     }
 }
 

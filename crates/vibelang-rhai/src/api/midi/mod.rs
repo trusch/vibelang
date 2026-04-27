@@ -1,6 +1,7 @@
 //! MIDI API for Rhai scripts.
 //!
 //! Provides MIDI device management, routing, and output functions.
+//! For a full user-facing reference (conventions, builders, examples), see **`README.md`** in this module directory.
 //!
 //! # Example
 //!
@@ -341,6 +342,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("channel", NoteRoute::channel);
     engine.register_fn("choke", NoteRoute::choke);
     engine.register_fn("velocity_to", NoteRoute::velocity_to);
+    engine.register_fn("fixed_velocity", NoteRoute::fixed_velocity);
     engine.register_fn("to", NoteRoute::to);
     // Deprecated alias
     #[allow(deprecated)]

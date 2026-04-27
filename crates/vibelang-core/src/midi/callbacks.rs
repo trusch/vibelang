@@ -416,6 +416,8 @@ pub struct NoteRouteBuilder {
     pub channel: Option<u8>,
     /// Choke group name (notes in same group stop each other).
     pub choke_group: Option<String>,
+    /// Velocity curve applied before velocity_mapping or note_on.
+    pub velocity_curve: VelocityCurve,
     /// Velocity-to-parameter mapping.
     pub velocity_mapping: Option<VelocityMapping>,
     /// Target voice.
@@ -441,6 +443,7 @@ impl NoteRouteBuilder {
             source_note: note,
             channel: None,
             choke_group: None,
+            velocity_curve: VelocityCurve::default(),
             velocity_mapping: None,
             target_voice: None,
         }
@@ -472,6 +475,11 @@ impl NoteRouteBuilder {
     pub fn to(mut self, voice_id: VoiceId) -> Self {
         self.target_voice = Some(voice_id);
         self
+    }
+
+    /// Apply the velocity curve to a raw velocity value.
+    pub fn apply_velocity(&self, velocity: u8) -> u8 {
+        self.velocity_curve.apply(velocity)
     }
 
     /// Calculate parameter value from velocity.
