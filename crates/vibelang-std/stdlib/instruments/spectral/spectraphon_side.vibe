@@ -1,4 +1,4 @@
-// Spectraphon Side - Stories A + C (single-side SAO + Array memory)
+// Spectraphon Side - Stories A + B + C (single-side SAO + SAM analyzer + Array memory)
 //
 // Single-side spectral oscillator with 64 harmonic partials split across an
 // Odd bank (k = 1, 3, ..., 63) and an Even bank (k = 2, 4, ..., 64). Each
@@ -6,21 +6,48 @@
 // klang_ar would require a 32+32-element signal array which exceeds Rhai's
 // 16-arity limit, so the additive bank is unrolled per the plan §7 fallback.
 //
-// Story C — Array memory (this story):
+// Story B — SAM analyzer (this story):
+//   When `sam_capture` selects a SAM mode, the per-partial magnitudes
+//   come from a real-time FFT of the hardware audio input. The 2048-frame
+//   FFT (Hann window, 50% hop) is read with `bin_data_kr` per partial,
+//   one bin per harmonic centred on `k · f0_analyze · binsPerHz`.
+//   Slide drives `f0_analyze` log-mapped to [50, 800] Hz (independent of
+//   the oscillator pitch — see kb/spectraphon-synthdef-plan.md §3.d).
+//   Each magnitude is smoothed with a 20 ms `lag_kr` (≈ 50 Hz one-pole)
+//   to avoid zipper noise on bin updates.
+//
+//   DEVIATION from the kb plan §3.a `bandwidth_bins ∈ [1, 16]` design:
+//   Focus does not modulate per-partial bandwidth in the analyser. Story
+//   C's bilinear lookup already consumes 256 buf_rd UGens per side; a
+//   bandwidth-3 kernel would push the SC synthdef definition message
+//   past the 64 KB UDP limit (`Message too long`, errno 90, observed
+//   while implementing Story B). Focus instead exclusively addresses
+//   the Story C Array Y-axis. A wider bucket-sum is possible once the
+//   synthdef framework moves to /d_recv + TCP or buffer-driven analysis.
+//
+//   DEVIATION from the ticket's literal "input parameter" requirement:
+//   Rhai synthdef bodies cap at 10 params (vibelang-dsp/builder.rs) and
+//   we are already at the cap, so the analyser pins itself to hardware
+//   audio input ch 0 via `sound_in_ar`. To analyse an internal vibelang
+//   bus, swap that line for `in_ar(<bus>, 1)` locally.
+//
+//   In SAM modes, Sub/CV (right_mode = 2) is replaced by an envelope
+//   follower (`amplitude_ar`) on the analyser input per the plan §3.c.
+//
+// Story C — Array memory:
 //   16 stored Arrays per side, each addressed by a 2-D Slide × Focus grid
 //   of N_GRID × N_GRID cells holding 64 partial magnitudes. Total buffer is
 //   N_ARRAYS × N_GRID × N_GRID × N_PARTIALS = 16 × 8 × 8 × 64 = 65536 floats.
 //
-//   SAM mode (mode=0): partial magnitudes come from `mag_sam` — a 1/k saw
-//     placeholder for now; Story B's FFT analyzer will replace this. When
-//     `capture_trig` is high in SAM mode, mag_sam is written into the cell
-//     `[array_idx, floor(slide·N_GRID), floor(focus·N_GRID), k-1]` via a
-//     phase-offset gating trick on buf_wr_kr.
+//   SAM mode (sam_capture ≥ 1): partial magnitudes come from `mag_sam`.
+//     When `sam_capture == 2` (capture active), mag_sam is written into
+//     the cell `[array_idx, floor(slide·N_GRID), floor(focus·N_GRID), k-1]`
+//     via a phase-offset gating trick on buf_wr_kr.
 //
-//   SAO mode (mode=1): partial magnitudes are read back from the buffer
-//     using bilinear interpolation across the 4 cells around the current
-//     (slide, focus). 4 buf_rd_kr per partial × 64 partials = 256 lookups
-//     per side at kr rate.
+//   SAO mode (sam_capture == 0): partial magnitudes are read back from
+//     the buffer using bilinear interpolation across the 4 cells around
+//     the current (slide, focus). 4 buf_rd_kr per partial × 64 partials =
+//     256 lookups per side at kr rate.
 //
 //   DEVIATION (documented for Story C follow-up): vibelang has no script-
 //   level top-level buffer API yet (see kb/spectraphon-synthdef-plan.md
@@ -32,6 +59,11 @@
 //   (Array 0 = saw, 1 = square, 2 = noise) is also deferred to that ticket
 //   since `set_buf_ir` cannot fan out to 65536 cells in one call.
 //
+// `sam_capture` decode (folded mode + capture trigger to fit the 10-arg cap):
+//   0 → SAO playback        (sao_mix=1, sam_mix=0, cap=0)
+//   1 → SAM, no capture     (sao_mix=0, sam_mix=1, cap=0)
+//   2 → SAM with capture    (sao_mix=0, sam_mix=1, cap=1)
+//
 // Output convention (stereo channels mirror the hardware jacks):
 //   L = Odd  jack — odd partials. With merge_even=1 (default), Even folds
 //                   into Odd so unpatched-Even users hear all harmonics on L.
@@ -40,27 +72,24 @@
 //                              gated by Partials like the hardware Even out.
 //       right_mode = 1       → Sine jack: clean sin_osc_ar(freq) at k=1.
 //                              Never gated by Partials — survives at partials=0.
-//       right_mode = 2       → Sub/CV: saw_ar(freq * 0.5) * 0.5 (Side A SAO sub).
+//       right_mode = 2       → Sub/CV: SAO = saw_ar(freq * 0.5) * 0.5;
+//                              SAM = amplitude_ar of the analyser input.
 //
-// NOTE on parameter count: Rhai closures cap at 10 args, so right_mode
-// folds the prior sine_out/sub_cv_out toggles into one selector, and
-// `sam_capture` folds mode+capture_trig together.
-//
-// Stories not yet integrated here: SAM analyzer (Story B), FM bus (Story D).
+// Stories not yet integrated here: FM bus (Story D), Spectranoise (Story E).
 // See kb/spectraphon-synthdef-plan.md §3 (DSP arch), §4 (UGen mapping),
-// §6.A (Story A), §6.C (Story C), §7 (storage format / risks).
+// §6.A (Story A), §6.B (Story B), §6.C (Story C), §7 (storage format / risks).
 
 define_synthdef("spectraphon_side", |builder| {
     builder
         .param("freq", 220.0)
         .param("partials", 1.0)
-        .param("slide", 0.5)        // SAO Array X-axis position (Story C)
-        .param("focus", 0.5)        // SAO Array Y-axis position (Story C)
+        .param("slide", 0.5)        // SAM: f0_analyze (log 50..800 Hz). SAO: Array X.
+        .param("focus", 0.5)        // SAM: bucket-sum bandwidth weight. SAO: Array Y.
         .param("amp", 0.3)
         .param("gate", 1.0)
         .param("merge_even", 1.0)   // 1 = even folds into odd (mono); 0 = odd-L / even-R split
         .param("right_mode", 0.0)   // 0 = even-jack | 1 = sine | 2 = sub/CV
-        .param("sam_capture", 1.0)  // 0 = SAM (no capture) | 1 = SAO playback | 2 = SAM + capture
+        .param("sam_capture", 1.0)  // 0 = SAO playback | 1 = SAM (no cap) | 2 = SAM + cap
         .param("array_idx", 0.0)    // 0..15 — which of the 16 stored Arrays to address
         .body(|freq, partials, slide, focus, amp, gate, merge_even, right_mode, sam_capture, array_idx| {
 
@@ -75,6 +104,34 @@ define_synthdef("spectraphon_side", |builder| {
             // CCW (partials=0) → silent, CW (partials=1) → full spectrum.
             let n = 64.0;
             let scale = partials * n;
+
+            // === Story B: SAM analyzer (FFT chain shared by all partials) ===
+            // Hardware audio input ch 0 — see file header for the rationale.
+            let analyze_in = sound_in_ar(0.0);
+            // 2048-frame FFT, 50% hop, Hann window. Bin spacing at 44.1 kHz
+            // is 21.5 Hz; the FFT writes magnitudes/phases into fft_buf and
+            // bin_data_kr reads (mag, freq) per bin out of the active chain.
+            let fft_buf = local_buf_ir(1.0, 2048.0);
+            let chain = fft_kr(fft_buf, analyze_in, 0.5, 1.0, 1.0, 0.0);
+
+            // Slide → analyser fundamental. Log-mapped 50..800 Hz so each
+            // half-turn doubles the harmonic grid spacing (kb plan §3.d).
+            let f0_analyze = 50.0 * pow(16.0, clip(slide, 0.0, 1.0));
+            // Bin index per Hz at the assumed 44.1 kHz server rate.
+            let bin_per_hz = 2048.0 / 44100.0;
+            // Hann-windowed FFT magnitude scaling: a unit sine on a bin
+            // produces ~N/4 ≈ 512, so 1/512 brings peaks back to ~1.0.
+            let mag_scale = 0.001953125;
+            // 60 dB lag time of 20 ms ≈ one-pole at ~55 Hz cutoff.
+            let lag_t = 0.02;
+            // Reusable Nyquist-safe bin clip range. Bin 0 is DC, bin 1024
+            // is Nyquist for FFT size 2048; clamp reads to [1, 1023].
+            let bin_max = 1023.0;
+
+            // sam_capture decode (see file header for the truth table).
+            let sam_mix = clip(sam_capture, 0.0, 1.0);
+            let sao_mix = 1.0 - sam_mix;
+            let cap_active = clip(sam_capture - 1.0, 0.0, 1.0);
 
             // === Story C: shared 16-Array buffer + bilinear lookup ===
             //
@@ -110,14 +167,6 @@ define_synthdef("spectraphon_side", |builder| {
             let base10 = arr_base + slide_hi * 512.0 + focus_lo * 64.0;
             let base11 = arr_base + slide_hi * 512.0 + focus_hi * 64.0;
 
-            // sam_capture decode:
-            //   0 → SAO playback,  1 → SAM (no capture),  2 → SAM + capture.
-            // sao_mix is 1 only in state 0; sam_mix is 1 in states 1 and 2;
-            // cap_active is 1 only in state 2.
-            let sam_mix = clip(sam_capture, 0.0, 1.0);
-            let sao_mix = 1.0 - sam_mix;
-            let cap_active = clip(sam_capture - 1.0, 0.0, 1.0);
-
             // Capture target = nearest (slide_lo, focus_lo) cell.
             // When capture is inactive we offset the write phase by 1e9 — far
             // past the 65536-frame buffer with loop=0, BufWr drops the write.
@@ -130,7 +179,9 @@ define_synthdef("spectraphon_side", |builder| {
                         + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
                         + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
                         + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
-            let mag_sam = 1.0 / k;
+            let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
+            let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
+            let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
             buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
             let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
             let odd_bank = sin_osc_ar(freq * k) * mag_k
@@ -141,7 +192,9 @@ define_synthdef("spectraphon_side", |builder| {
                             + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
                             + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
                             + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
-                let mag_sam = 1.0 / k;
+                let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
+                let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
+                let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
                 buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
                 let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
                 odd_bank = odd_bank + sin_osc_ar(freq * k) * mag_k
@@ -154,7 +207,9 @@ define_synthdef("spectraphon_side", |builder| {
                         + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
                         + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
                         + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
-            let mag_sam = 1.0 / k;
+            let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
+            let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
+            let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
             buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
             let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
             let even_bank = sin_osc_ar(freq * k) * mag_k
@@ -165,7 +220,9 @@ define_synthdef("spectraphon_side", |builder| {
                             + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
                             + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
                             + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
-                let mag_sam = 1.0 / k;
+                let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
+                let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
+                let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
                 buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
                 let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
                 even_bank = even_bank + sin_osc_ar(freq * k) * mag_k
@@ -184,10 +241,14 @@ define_synthdef("spectraphon_side", |builder| {
             // Right channel: 3-way selector via right_mode (0/1/2).
             //   sub/sine paths bypass the Partials gate (hardware Sub/CV
             //   and Sine outs are independent of the Partials knob).
+            //   Sub/CV in SAM modes is an envelope follower of the analyser
+            //   input (kb plan §3.c); SAO uses the side-A sawtooth sub-osc.
             let default_right = (even_out * (1.0 - merge_even)
                                   + odd_out * merge_even) * partials;
             let sine_signal = sin_osc_ar(freq);
-            let sub_signal  = saw_ar(freq * 0.5) * 0.5;
+            let sub_sao = saw_ar(freq * 0.5) * 0.5;
+            let sub_sam = amplitude_ar(analyze_in, 0.01, 0.1);
+            let sub_signal = sub_sao * sao_mix + sub_sam * sam_mix;
 
             let active_default = 1.0 - clip(right_mode, 0.0, 1.0);
             let active_sub     = clip(right_mode - 1.0, 0.0, 1.0);
