@@ -1,0 +1,73 @@
+// kind=fx | category=reverb | flavor=infinite | stereo=true | params=freeze,time,mix,level
+//
+// Infinite Reverb
+//
+// Feeds the input through JPverb to capture a lush algorithmic tail, then
+// per-channel runs `fft_kr` -> `pv_mag_freeze_kr` -> `ifft_ar`. While
+// `freeze >= 0.5` the frozen FFT magnitudes hold indefinitely so the JPverb
+// tail no longer decays — phases keep evolving so the held wash retains a
+// natural shimmer rather than turning into a static loop.
+//
+// Usage:
+//   group.add_effect("inf", "reverb_infinite", #{
+//     freeze: 1.0,
+//     time: 4.0,
+//     mix: 0.3,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   freeze: Gate. 0 = JPverb tail decays normally,
+//           >= 0.5 = freeze magnitudes for an infinite tail.
+//   time:   JPverb reverb time in seconds (0.1 to 60).
+//   mix:    Dry/wet crossfade (0.0 = dry, 1.0 = wet).
+//   level:  Output level trim applied after the dry/wet mix.
+
+define_fx("reverb_infinite", |builder| {
+    builder
+        .param("freeze", 0.0)
+        .param("time", 4.0)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, freeze, time, mix, level| {
+            // Mix stereo input to mono for the JPverb input.
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // JPverb (stereo out). Non-exposed params left at musical defaults:
+            // damp=0.3, size=1.0, earlyDiff=0.707, modDepth=0.1, modFreq=2.0,
+            // low/mid/high=1.0, lowcut=500 Hz, highcut=2000 Hz.
+            let verb = j_pverb_ar(
+                mono, time, 0.3, 1.0,
+                0.707, 0.1, 2.0,
+                1.0, 1.0, 1.0,
+                500.0, 2000.0
+            );
+            let verb_l = channel(verb, 0);
+            let verb_r = channel(verb, 1);
+
+            // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
+            let buf_l = local_buf_ir(1.0, 2048.0);
+            let buf_r = local_buf_ir(1.0, 2048.0);
+
+            // Analyse with 50% hop and Hann window.
+            let chain_l = fft_kr(buf_l, verb_l, 0.5, 1.0, 1.0, 0.0);
+            let chain_r = fft_kr(buf_r, verb_r, 0.5, 1.0, 1.0, 0.0);
+
+            // Hold the JPverb tail's magnitudes when freeze >= 0.5.
+            let frozen_l = pv_mag_freeze_kr(chain_l, freeze);
+            let frozen_r = pv_mag_freeze_kr(chain_r, freeze);
+
+            // Resynthesise.
+            let resynth_l = ifft_ar(frozen_l, 1.0, 0.0);
+            let resynth_r = ifft_ar(frozen_r, 1.0, 0.0);
+
+            // DC-block the wet path before the dry/wet mix.
+            let wet_l = leak_dc_ar(resynth_l, 0.995);
+            let wet_r = leak_dc_ar(resynth_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
+        })
+});

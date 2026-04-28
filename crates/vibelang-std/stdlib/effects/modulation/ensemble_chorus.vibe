@@ -1,0 +1,74 @@
+// kind=fx | category=modulation | flavor=ensemble_chorus | stereo=true | params=rate,depth,voices,mix,level
+//
+// Ensemble Chorus (Roland Juno-style)
+//
+// Six modulated `delay_c_ar` voices fed by phase-offset LFOs (0, 60, 120,
+// 180, 240, 300 degrees) and panned across the stereo field. The Juno-60
+// chorus is famous for its lush, three-dimensional smear — a single LFO
+// wouldn't cut it, so the secret was running multiple BBD lines slightly
+// out of phase. Voices alternate left/right placement to give the ensemble
+// its width.
+//
+// `voices` smoothly fades extra voices in. At voices=1.0 only the first two
+// are at unity; the others taper in linearly so the user can dial from
+// "single chorus" to "thick ensemble" without re-instantiating.
+//
+// Usage:
+//   group.add_effect("ens", "ensemble_chorus", #{
+//     rate: 0.6,
+//     depth: 0.004,
+//     voices: 1.0,
+//     mix: 0.3,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   rate:   LFO rate in Hz (0.05 to 10.0)
+//   depth:  Modulation depth in seconds (0.0005 to 0.01)
+//   voices: Voice taper (0.0 = first pair only, 1.0 = all six)
+//   mix:    Dry/wet mix
+//   level:  Output trim applied after the dry/wet mix
+
+define_fx("ensemble_chorus", |builder| {
+    builder
+        .param("rate", 0.6)
+        .param("depth", 0.004)
+        .param("voices", 1.0)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, rate, depth, voices, mix, level| {
+            // Six LFOs evenly spaced around the cycle.
+            let lfo1 = sin_osc_kr(rate, 0.0);
+            let lfo2 = sin_osc_kr(rate, 1.0471976);   //  60 deg
+            let lfo3 = sin_osc_kr(rate, 2.0943951);   // 120 deg
+            let lfo4 = sin_osc_kr(rate, 3.1415927);   // 180 deg
+            let lfo5 = sin_osc_kr(rate, 4.1887902);   // 240 deg
+            let lfo6 = sin_osc_kr(rate, 5.2359878);   // 300 deg
+
+            // Slight base-delay variation per voice keeps comb peaks from
+            // stacking. Around 7-15ms is the sweet spot for Juno character.
+            let voice1 = delay_c_ar(input[0], 0.05, 0.007  + depth * lfo1);
+            let voice2 = delay_c_ar(input[1], 0.05, 0.0085 + depth * lfo2);
+            let voice3 = delay_c_ar(input[0], 0.05, 0.010  + depth * lfo3);
+            let voice4 = delay_c_ar(input[1], 0.05, 0.0115 + depth * lfo4);
+            let voice5 = delay_c_ar(input[0], 0.05, 0.013  + depth * lfo5);
+            let voice6 = delay_c_ar(input[1], 0.05, 0.0145 + depth * lfo6);
+
+            // Voice taper: first pair always at full, voices 3-6 fade in.
+            let v_extra = voices;
+
+            // Pan: odd voices left-leaning, even voices right-leaning.
+            let sum_l = voice1 + voice3 * v_extra + voice5 * v_extra;
+            let sum_r = voice2 + voice4 * v_extra + voice6 * v_extra;
+
+            // Normalise so doubling voices doesn't blow up the level.
+            let norm = 1.0 / (1.0 + 2.0 * v_extra);
+            let wet_l = leak_dc_ar(sum_l * norm, 0.995);
+            let wet_r = leak_dc_ar(sum_r * norm, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

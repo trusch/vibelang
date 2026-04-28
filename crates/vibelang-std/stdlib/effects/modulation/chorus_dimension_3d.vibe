@@ -1,0 +1,93 @@
+// kind=fx | category=modulation | flavor=chorus_dimension_3d | stereo=true | params=rate,depth,spread,mix,level
+//
+// 3D Dimension Chorus
+//
+// `ensemble_chorus`'s six phase-offset modulated voices, but each voice is
+// placed at a different angle on the stereo plane so the chorus appears to
+// rotate around the listener. With no proper ambisonic decoder available
+// in stdlib, the angular spread is rendered with equal-power L/R panning
+// — voices placed at angles (i / 6) * 2*pi * spread. At spread=1.0 the
+// voices fully ring the listener; at spread=0.0 they collapse to centre.
+//
+// The L/R contribution per voice uses the standard sin/cos pan law, which
+// is the 2D projection of an Ambisonic W+Y horizontal-plane encode and
+// behaves the way the ear expects on plain stereo speakers.
+//
+// Usage:
+//   group.add_effect("3d", "chorus_dimension_3d", #{
+//     rate: 0.5,
+//     depth: 0.004,
+//     spread: 1.0,
+//     mix: 0.3,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   rate:   LFO rate in Hz (0.05 to 10.0)
+//   depth:  Modulation depth in seconds (0.0005 to 0.01)
+//   spread: Angular spread (0.0 = mono, 1.0 = full ring around listener)
+//   mix:    Dry/wet mix
+//   level:  Output trim applied after the dry/wet mix
+
+define_fx("chorus_dimension_3d", |builder| {
+    builder
+        .param("rate", 0.5)
+        .param("depth", 0.004)
+        .param("spread", 1.0)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, rate, depth, spread, mix, level| {
+            // Six LFOs evenly spaced around the cycle.
+            let lfo1 = sin_osc_kr(rate, 0.0);
+            let lfo2 = sin_osc_kr(rate, 1.0471976);   //  60 deg
+            let lfo3 = sin_osc_kr(rate, 2.0943951);   // 120 deg
+            let lfo4 = sin_osc_kr(rate, 3.1415927);   // 180 deg
+            let lfo5 = sin_osc_kr(rate, 4.1887902);   // 240 deg
+            let lfo6 = sin_osc_kr(rate, 5.2359878);   // 300 deg
+
+            // Sum L+R into a mono source so each voice can be re-panned
+            // freely without smearing the input's existing stereo image.
+            let mono = (input[0] + input[1]) * 0.5;
+
+            let v1 = delay_c_ar(mono, 0.05, 0.007  + depth * lfo1);
+            let v2 = delay_c_ar(mono, 0.05, 0.0085 + depth * lfo2);
+            let v3 = delay_c_ar(mono, 0.05, 0.010  + depth * lfo3);
+            let v4 = delay_c_ar(mono, 0.05, 0.0115 + depth * lfo4);
+            let v5 = delay_c_ar(mono, 0.05, 0.013  + depth * lfo5);
+            let v6 = delay_c_ar(mono, 0.05, 0.0145 + depth * lfo6);
+
+            // Voice positions on the unit circle (cos of 0, 60, 120, 180,
+            // 240, 300 degrees). These are constants — `spread` scales how
+            // far from centre each voice sits.
+            //   c = +1.0 -> hard left, c = -1.0 -> hard right, c = 0 -> centre
+            let c1 =  1.0;
+            let c2 =  0.5;
+            let c3 = -0.5;
+            let c4 = -1.0;
+            let c5 = -0.5;
+            let c6 =  0.5;
+
+            // Linear pan with spread as width: at spread=0 every voice
+            // sits centred (l=r=0.5); at spread=1 voices ring around the
+            // listener at their natural angle.
+            let l1 = 0.5 + 0.5 * c1 * spread; let r1 = 1.0 - l1;
+            let l2 = 0.5 + 0.5 * c2 * spread; let r2 = 1.0 - l2;
+            let l3 = 0.5 + 0.5 * c3 * spread; let r3 = 1.0 - l3;
+            let l4 = 0.5 + 0.5 * c4 * spread; let r4 = 1.0 - l4;
+            let l5 = 0.5 + 0.5 * c5 * spread; let r5 = 1.0 - l5;
+            let l6 = 0.5 + 0.5 * c6 * spread; let r6 = 1.0 - l6;
+
+            let sum_l = v1 * l1 + v2 * l2 + v3 * l3 + v4 * l4 + v5 * l5 + v6 * l6;
+            let sum_r = v1 * r1 + v2 * r2 + v3 * r3 + v4 * r4 + v5 * r5 + v6 * r6;
+
+            // Six voices, half their energy on each side on average -> /3.
+            let norm = 1.0 / 3.0;
+            let wet_l = leak_dc_ar(sum_l * norm, 0.995);
+            let wet_r = leak_dc_ar(sum_r * norm, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

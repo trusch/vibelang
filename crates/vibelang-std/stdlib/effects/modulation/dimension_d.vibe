@@ -1,0 +1,80 @@
+// kind=fx | category=modulation | flavor=dimension_d | stereo=true | params=mode,mix,level
+//
+// Dimension D (Roland SDD-320)
+//
+// Four short BBD-style modulated delays cross-mixed into the stereo field
+// with the original "no obvious chorus" character of the Roland SDD-320.
+// The hardware exposed four buttons; here `mode` is a continuous intensity
+// dial that sweeps from button-1 territory (subtle, slow, narrow) up to
+// button-4 (rich, faster, deeper). Treat it as the "amount of Dimension D"
+// knob the original never had:
+//
+//   mode = 0.0  -> mode 1 character (slow, narrow)
+//   mode = 0.33 -> mode 2 character
+//   mode = 0.66 -> mode 3 character
+//   mode = 1.0  -> mode 4 character (faster, deep)
+//
+// Continuous so users can fade `mode` smoothly without re-instantiating.
+//
+// The four LFOs sit 90 degrees apart so the modulation rotates around the
+// stereo image rather than pumping in lockstep.
+//
+// Usage:
+//   group.add_effect("dim", "dimension_d", #{
+//     mode: 0.5,
+//     mix: 1.0,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   mode:  Intensity dial (0.0 = subtle, 1.0 = rich)
+//   mix:   Dry/wet mix — Dimension D is meant fully wet but `mix` is exposed
+//          for blends
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("dimension_d", |builder| {
+    builder
+        .param("mode", 0.5)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, mode, mix, level| {
+            // Continuous mapping over [0, 1].
+            // Rate: 0.4 Hz (mode~1) up to 1.1 Hz (mode~4).
+            let lfo_rate = 0.4 + mode * 0.7;
+
+            // Pitch modulation depth (seconds). 0.001 to 0.0035s sweep.
+            let lfo_amt = 0.001 + mode * 0.0025;
+
+            // Four LFOs 90 degrees apart.
+            let lfo1 = sin_osc_kr(lfo_rate, 0.0);
+            let lfo2 = sin_osc_kr(lfo_rate, 1.5707963);
+            let lfo3 = sin_osc_kr(lfo_rate, 3.1415927);
+            let lfo4 = sin_osc_kr(lfo_rate, 4.7123890);
+
+            // Four short delays around 5-10ms. Slight base differences
+            // detune the comb peaks for that "dimensional" smear.
+            let d1_l = delay_c_ar(input[0], 0.03, 0.0050 + lfo_amt * lfo1);
+            let d2_l = delay_c_ar(input[0], 0.03, 0.0072 + lfo_amt * lfo3);
+            let d1_r = delay_c_ar(input[1], 0.03, 0.0058 + lfo_amt * lfo2);
+            let d2_r = delay_c_ar(input[1], 0.03, 0.0090 + lfo_amt * lfo4);
+
+            // Cross-mix: each output sees its own channel's pair plus a
+            // touch of the opposite channel for the spread the unit is
+            // famous for.
+            let cross = 0.25;
+            let mix_l = (d1_l + d2_l) * 0.5 + cross * ((d1_r + d2_r) * 0.5);
+            let mix_r = (d1_r + d2_r) * 0.5 + cross * ((d1_l + d2_l) * 0.5);
+
+            // BBD high-end roll-off.
+            let chorus_l = lpf_ar(mix_l, 10000.0);
+            let chorus_r = lpf_ar(mix_r, 10000.0);
+
+            let wet_l = leak_dc_ar(chorus_l, 0.995);
+            let wet_r = leak_dc_ar(chorus_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});
