@@ -1,0 +1,55 @@
+// kind=fx | category=convolution | flavor=cab_simulator | stereo=true | params=ir_buffer,presence,mix,level
+//
+// Cabinet Simulator
+//
+// Stereo convolution against a guitar/bass cabinet impulse response, with a
+// post-EQ presence shelf so users can lift or tame the upper-mids without
+// re-recording the IR. Drop this on a DI'd amp signal (or after a software
+// preamp) to give it the speaker-and-mic character a real cab brings.
+//
+// Use a cabinet IR (typically 200 ms or shorter — single mic position on a
+// 4x12 or similar). For longer IRs prefer reverb_partconv.
+//
+// Usage:
+//   group.add_effect("cab", "cab_simulator", #{
+//     ir_buffer: cab_ir_buf,
+//     presence: 0.0,
+//     mix: 1.0,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   ir_buffer: Buffer number containing the cabinet IR (mono, <= 4096 samples)
+//   presence: HF shelf gain in dB at 4 kHz — positive lifts upper-mids/air,
+//             negative tames harshness (-12 to +12 typical)
+//   mix:      Dry/wet mix (1.0 = full wet, insert default for cab sim)
+//   level:    Output trim applied after the dry/wet mix
+
+define_fx("cab_simulator", |builder| {
+    builder
+        .param("ir_buffer", 0.0)
+        .param("presence", 0.0)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, ir_buffer, presence, mix, level| {
+            // Reload the kernel whenever ir_buffer changes.
+            let trig = changed_kr(ir_buffer, 0.0);
+
+            // 4096-sample frame covers a typical cabinet IR (~93 ms at 44.1k).
+            let conv_l = convolution2_ar(input[0], ir_buffer, trig, 4096.0);
+            let conv_r = convolution2_ar(input[1], ir_buffer, trig, 4096.0);
+
+            // Post-EQ presence shelf at 4 kHz — the band guitarists reach for
+            // when a cabinet sounds dull or honky.
+            let eq_l = b_hi_shelf_ar(conv_l, 4000.0, 1.0, presence);
+            let eq_r = b_hi_shelf_ar(conv_r, 4000.0, 1.0, presence);
+
+            let wet_l = leak_dc_ar(eq_l, 0.995);
+            let wet_r = leak_dc_ar(eq_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

@@ -1,0 +1,69 @@
+// kind=fx | category=convolution | flavor=hybrid_reverb | stereo=true | params=er_ir,jpverb_time,blend,mix,level
+//
+// Hybrid Reverb (convolution ER + algorithmic tail)
+//
+// Combines a partitioned-convolution early-reflections stage (real room cues
+// from a short impulse response) with a JPverb late tail (long, lush, easily
+// tunable). Both paths run in parallel from the same input and are crossfaded
+// by `blend` before the dry/wet mix — so users can dial in "real room" vs
+// "synthetic tail" without rewiring the chain.
+//
+// The convolution path expects a *prepared spectral* IR buffer (see
+// Buffer.preparePartConv); it should hold only the early-reflections portion
+// of the source IR (truncate to ~150 ms before preparing).
+//
+// Usage:
+//   group.add_effect("verb", "hybrid_reverb", #{
+//     er_ir: prepared_er_buf,
+//     jpverb_time: 3.0,
+//     blend: 0.5,
+//     mix: 0.3,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   er_ir:       Buffer number of the prepared spectral early-reflections IR
+//   jpverb_time: Late-tail reverb time in seconds (0.1 to 60)
+//   blend:       Crossfade between paths — 0.0 = ER only, 1.0 = tail only
+//   mix:         Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:       Output trim applied after the dry/wet mix
+
+define_fx("hybrid_reverb", |builder| {
+    builder
+        .param("er_ir", 0.0)
+        .param("jpverb_time", 3.0)
+        .param("blend", 0.5)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, er_ir, jpverb_time, blend, mix, level| {
+            // Early reflections via partitioned convolution. 2048-sample
+            // partition keeps latency low and CPU bounded for short ER IRs.
+            let er_l = part_conv_ar(input[0], 2048.0, er_ir);
+            let er_r = part_conv_ar(input[1], 2048.0, er_ir);
+
+            // Late tail via JPverb. Mix to mono on the way in (the algorithm
+            // re-stereo-ises internally). Non-exposed JPverb params left at
+            // musical defaults to match reverb_jpverb.vibe.
+            let mono = (input[0] + input[1]) * 0.5;
+            let tail_node = j_pverb_ar(
+                mono, jpverb_time, 0.3, 1.0,
+                0.707, 0.1, 2.0,
+                1.0, 1.0, 1.0,
+                500.0, 2000.0
+            );
+            let tail_l = channel(tail_node, 0);
+            let tail_r = channel(tail_node, 1);
+
+            // Crossfade ER vs tail. blend=0 keeps only ER, blend=1 only tail.
+            let mixed_l = (1.0 - blend) * er_l + blend * tail_l;
+            let mixed_r = (1.0 - blend) * er_r + blend * tail_r;
+
+            let wet_l = leak_dc_ar(mixed_l, 0.995);
+            let wet_r = leak_dc_ar(mixed_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});
