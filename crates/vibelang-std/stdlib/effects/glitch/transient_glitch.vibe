@@ -1,0 +1,77 @@
+// kind=fx | category=glitch | flavor=transient_glitch | stereo=true | params=threshold,glitch_chance,glitch_amount,mix,level
+//
+// Transient Glitch
+//
+// A fast amplitude follower spots transients in the dry input; a Schmitt
+// trigger with hysteresis converts the envelope into clean rising-edge
+// triggers; a coin gate then decides — independently for each transient —
+// whether the event fires a glitch. Each fired glitch latches a fresh
+// random pitch ratio, which drives a granular pitch shifter for the wet
+// path, so the output is a pitch-jittered version of the input that only
+// jumps on actual hits.
+//
+// Behaviour at the extremes:
+//   - `glitch_chance = 0.0`: dry passes through unmodified
+//   - `glitch_chance = 1.0`: every transient triggers a fresh glitch
+//   - `glitch_amount  = 0.0`: ratio stays at 1.0 (no audible shift)
+//   - `glitch_amount  = 1.0`: ratio ranges over [0.5, 2.0] (octave swings)
+//
+// The Schmitt thresholds are `threshold/2` (release) and `threshold`
+// (attack), so the detector won't retrigger on tail bumps until the
+// envelope has fully released past the lower threshold.
+//
+// Usage:
+//   group.add_effect("glt", "transient_glitch", #{
+//     threshold: 0.2,
+//     glitch_chance: 0.5,
+//     glitch_amount: 0.5,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   threshold:     Amplitude threshold for transient detection (0.01 to 1.0)
+//   glitch_chance: Probability a detected transient fires a glitch (0.0 to 1.0)
+//   glitch_amount: Glitch intensity — scales the random pitch range (0.0 to 1.0)
+//   mix:           Dry/wet mix (0.0 = dry, 1.0 = glitched only)
+//   level:         Output level trim (1.0 = unity)
+
+define_fx("transient_glitch", |builder| {
+    builder
+        .param("threshold", 0.2)
+        .param("glitch_chance", 0.5)
+        .param("glitch_amount", 0.5)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, threshold, glitch_chance, glitch_amount, mix, level| {
+            // Fast envelope follower for transient detection.
+            let mono = (input[0] + input[1]) * 0.5;
+            let env = amplitude_ar(mono, 0.001, 0.05);
+
+            // Schmitt trigger with hysteresis: rises through `threshold`,
+            // releases through `threshold * 0.5`. Output is a sustained
+            // gate, but coin_gate_ar treats rising edges as triggers.
+            let trans = schmidt_ar(env, threshold * 0.5, threshold);
+
+            // Random per-transient gate at the chosen probability.
+            let glitch_trig = coin_gate_ar(glitch_chance, trans);
+
+            // Fresh random pitch ratio per fired glitch, held until the next
+            // trigger. glitch_amount=0 collapses the range to [1, 1].
+            let lo = 1.0 - glitch_amount * 0.5;
+            let hi = 1.0 + glitch_amount * 1.0;
+            let ratio = t_rand_ar(lo, hi, glitch_trig);
+
+            // Granular pitch shift driven by the held random ratio.
+            let shifted_l = pitch_shift_ar(input[0], 0.1, ratio, glitch_amount * 0.3, 0.004);
+            let shifted_r = pitch_shift_ar(input[1], 0.1, ratio, glitch_amount * 0.3, 0.004);
+
+            let wet_l = leak_dc_ar(shifted_l, 0.995);
+            let wet_r = leak_dc_ar(shifted_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
+        })
+});

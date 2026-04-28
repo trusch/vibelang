@@ -1,3 +1,6 @@
 // Glitch Effects Index
 import "stdlib/effects/glitch/stutter_repeat.vibe";
 import "stdlib/effects/glitch/beat_repeater.vibe";
+import "stdlib/effects/glitch/frame_freezer.vibe";
+import "stdlib/effects/glitch/reverse_buffer.vibe";
+import "stdlib/effects/glitch/transient_glitch.vibe";

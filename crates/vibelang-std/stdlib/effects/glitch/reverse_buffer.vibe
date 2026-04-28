@@ -1,0 +1,66 @@
+// kind=fx | category=glitch | flavor=reverse_buffer | stereo=true | params=window_seconds,trigger_rate,mix,level
+//
+// Reverse Buffer
+//
+// Continuously records the input into a 2-second circular buffer per
+// channel and re-triggers reverse playback (`rate = -1.0`) at
+// `trigger_rate` Hz. Each retrigger anchors the playhead at
+// `window_seconds * 48000` frames and reads backward toward frame 0,
+// which produces a chunked reverse-glitch texture rather than a clean
+// time-flipped tail.
+//
+// Because the recorder loops continuously and the playhead is anchored
+// to a fixed startPos, the audible "window" lags the live signal by up
+// to one buffer period — that's part of the lo-fi character. For a
+// musically aligned reverse stutter, set `trigger_rate` to a beat
+// subdivision (e.g. at 120 BPM, `trigger_rate = 4.0` gives 1/8th-note
+// reverse hits).
+//
+// Usage:
+//   group.add_effect("rev", "reverse_buffer", #{
+//     window_seconds: 0.5,
+//     trigger_rate: 2.0,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   window_seconds: Reverse-window length in seconds (0.05 to 2.0).
+//                   Translated to startPos assuming 48 kHz; at other rates
+//                   the effective window length scales accordingly.
+//   trigger_rate:   Reverse retriggers per second (0.25 to 16.0)
+//   mix:            Dry/wet mix (0.0 = dry, 1.0 = reverse only)
+//   level:          Output level trim (1.0 = unity)
+
+define_fx("reverse_buffer", |builder| {
+    builder
+        .param("window_seconds", 0.5)
+        .param("trigger_rate", 2.0)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, window_seconds, trigger_rate, mix, level| {
+            // 2-second circular buffers per channel (96000 frames @ 48 kHz).
+            let buf_l = local_buf_ir(1, 96000);
+            let buf_r = local_buf_ir(1, 96000);
+
+            // Continuously record, looping back to frame 0 at end of buffer.
+            record_buf_ar(input[0], buf_l, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+            record_buf_ar(input[1], buf_r, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+
+            // Periodic trigger anchors reverse playback to the configured
+            // window length. rate = -1.0 reads backward from startPos toward
+            // frame 0; loop = 0 stops the read at the boundary.
+            let trig = impulse_ar(trigger_rate, 0.0);
+            let start = window_seconds * 48000.0;
+            let rev_l = play_buf_ar(1, buf_l, -1.0, trig, start, 0.0, 0);
+            let rev_r = play_buf_ar(1, buf_r, -1.0, trig, start, 0.0, 0);
+
+            let wet_l = leak_dc_ar(rev_l, 0.995);
+            let wet_r = leak_dc_ar(rev_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
+        })
+});

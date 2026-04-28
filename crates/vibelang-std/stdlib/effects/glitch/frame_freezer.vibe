@@ -1,0 +1,60 @@
+// kind=fx | category=glitch | flavor=frame_freezer | stereo=true | params=freeze_chance,freeze_duration,mix,level
+//
+// Frame Freezer
+//
+// Periodically samples the input at a chosen "freeze" cadence and holds the
+// captured value until the next event. A coin gate decides — per pulse —
+// whether the latch actually fires, so only `freeze_chance` of the pulses
+// land and the rest leave the previously-held frame in place. The held DC
+// value is run through a short cubic delay line, which lightly smears the
+// stair-step transitions and gives each frozen frame a faint pitched tail.
+//
+// At low `freeze_chance` the dry path dominates with the occasional held
+// "stuck frame" interrupting it; cranking it toward 1.0 turns the effect
+// into a stuttering sample-and-hold reminiscent of broken-DAC glitches.
+//
+// Usage:
+//   group.add_effect("freezer", "frame_freezer", #{
+//     freeze_chance: 0.4,
+//     freeze_duration: 0.05,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   freeze_chance:   Probability that each cadence pulse fires the latch
+//                    (0.0 = never freeze, 1.0 = freeze on every pulse)
+//   freeze_duration: Period between freeze pulses in seconds (0.005 to 0.5)
+//   mix:             Dry/wet mix (0.0 = dry, 1.0 = held frames only)
+//   level:           Output level trim (1.0 = unity)
+
+define_fx("frame_freezer", |builder| {
+    builder
+        .param("freeze_chance", 0.4)
+        .param("freeze_duration", 0.05)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, freeze_chance, freeze_duration, mix, level| {
+            // Cadence pulses at 1/freeze_duration Hz, randomly let through
+            // by the coin gate at probability `freeze_chance`.
+            let pulses = impulse_ar(1.0 / freeze_duration, 0.0);
+            let trig = coin_gate_ar(freeze_chance, pulses);
+
+            // Sample-and-hold the input on each surviving trigger.
+            let held_l = latch_ar(input[0], trig);
+            let held_r = latch_ar(input[1], trig);
+
+            // 5 ms cubic delay smears the held DC step into a short glide,
+            // softening the click and adding a faint pitched character.
+            let smeared_l = delay_c_ar(held_l, 0.05, 0.005);
+            let smeared_r = delay_c_ar(held_r, 0.05, 0.005);
+
+            let wet_l = leak_dc_ar(smeared_l, 0.995);
+            let wet_r = leak_dc_ar(smeared_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
+        })
+});
