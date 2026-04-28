@@ -1,0 +1,441 @@
+[
+  {
+    "name": "JPverb",
+    "description": "Algorithmic reverberator inspired by vintage Lexicon and Alesis units. Designed to produce long, lush, chorused reverberation tails — well-suited to synthetic sources rather than realistic spaces. Always outputs stereo.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal (mono or stereo array)"
+      },
+      {
+        "name": "t60",
+        "type": "float",
+        "default": 1.0,
+        "description": "Approximate reverberation time in seconds (0.1..60). Time for the reverb to decay 60dB when damp == 0; does not affect early reflections."
+      },
+      {
+        "name": "damp",
+        "type": "float",
+        "default": 0.0,
+        "description": "High-frequency damping as the reverb decays (0..1). 0 = no damping, 1 = very strong."
+      },
+      {
+        "name": "size",
+        "type": "float",
+        "default": 1.0,
+        "description": "Scales size of internal delay-lines (0.5..5). Values below 1 can sound metallic."
+      },
+      {
+        "name": "earlyDiff",
+        "type": "float",
+        "default": 0.707,
+        "description": "Shape of early reflections (0..1). >= 0.707 produces smooth exponential decay; lower values give a slower build-up of echoes."
+      },
+      {
+        "name": "modDepth",
+        "type": "float",
+        "default": 0.1,
+        "description": "Depth of delay-line modulation (0..1). Combine with modFreq for chorusing."
+      },
+      {
+        "name": "modFreq",
+        "type": "float",
+        "default": 2.0,
+        "description": "Frequency of delay-line modulation in Hz (0..10). Combine with modDepth for chorusing."
+      },
+      {
+        "name": "low",
+        "type": "float",
+        "default": 1.0,
+        "description": "Multiplier for the reverberation time within the low band (0..1)."
+      },
+      {
+        "name": "mid",
+        "type": "float",
+        "default": 1.0,
+        "description": "Multiplier for the reverberation time within the mid band (0..1)."
+      },
+      {
+        "name": "high",
+        "type": "float",
+        "default": 1.0,
+        "description": "Multiplier for the reverberation time within the high band (0..1)."
+      },
+      {
+        "name": "lowcut",
+        "type": "float",
+        "default": 500.0,
+        "description": "Crossover frequency between the low and mid bands in Hz (100..6000)."
+      },
+      {
+        "name": "highcut",
+        "type": "float",
+        "default": 2000.0,
+        "description": "Crossover frequency between the mid and high bands in Hz (1000..10000)."
+      }
+    ],
+    "outputs": 2,
+    "category": "DEIND"
+  },
+  {
+    "name": "JPverbRaw",
+    "description": "Raw multi-output form of the JPverb algorithmic reverberator. Prefer JPverb for the convenient single-input wrapper. Always outputs stereo.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in1",
+        "type": "signal",
+        "default": 0,
+        "description": "Left channel input."
+      },
+      {
+        "name": "in2",
+        "type": "signal",
+        "default": 0,
+        "description": "Right channel input."
+      },
+      {
+        "name": "damp",
+        "type": "float",
+        "default": 0.0,
+        "description": "High-frequency damping as the reverb decays (0..1)."
+      },
+      {
+        "name": "earlydiff",
+        "type": "float",
+        "default": 0.707,
+        "description": "Shape of early reflections (0..1)."
+      },
+      {
+        "name": "highband",
+        "type": "float",
+        "default": 2000.0,
+        "description": "Crossover frequency between mid and high bands in Hz (1000..10000)."
+      },
+      {
+        "name": "highx",
+        "type": "float",
+        "default": 1.0,
+        "description": "Multiplier for the reverberation time within the high band (0..1)."
+      },
+      {
+        "name": "lowband",
+        "type": "float",
+        "default": 500.0,
+        "description": "Crossover frequency between low and mid bands in Hz (100..6000)."
+      },
+      {
+        "name": "lowx",
+        "type": "float",
+        "default": 1.0,
+        "description": "Multiplier for the reverberation time within the low band (0..1)."
+      },
+      {
+        "name": "mdepth",
+        "type": "float",
+        "default": 0.1,
+        "description": "Depth of delay-line modulation in samples (0..50)."
+      },
+      {
+        "name": "mfreq",
+        "type": "float",
+        "default": 2.0,
+        "description": "Frequency of delay-line modulation in Hz (0..10)."
+      },
+      {
+        "name": "midx",
+        "type": "float",
+        "default": 1.0,
+        "description": "Multiplier for the reverberation time within the mid band (0..1)."
+      },
+      {
+        "name": "size",
+        "type": "float",
+        "default": 1.0,
+        "description": "Scales size of internal delay-lines (0.5..5)."
+      },
+      {
+        "name": "t60",
+        "type": "float",
+        "default": 1.0,
+        "description": "Approximate reverberation time in seconds (0.1..60)."
+      }
+    ],
+    "outputs": 2,
+    "category": "DEIND"
+  },
+  {
+    "name": "Greyhole",
+    "description": "Complex echo-like effect inspired by the classic Eventide unit. A diffuser (similar to JPverb's) connected in a feedback loop with a long modulated delay-line — excels at spacey washes of sound. Always outputs stereo.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal (mono or stereo array)"
+      },
+      {
+        "name": "delayTime",
+        "type": "float",
+        "default": 2.0,
+        "description": "Approximate delay time in seconds (0.1..60)."
+      },
+      {
+        "name": "damp",
+        "type": "float",
+        "default": 0.0,
+        "description": "High-frequency damping as the delay decays (0..1)."
+      },
+      {
+        "name": "size",
+        "type": "float",
+        "default": 1.0,
+        "description": "Scales size of internal delay-lines (0.5..5). Values below 1 can sound metallic."
+      },
+      {
+        "name": "diff",
+        "type": "float",
+        "default": 0.707,
+        "description": "Shape of the diffusion unit (0..1). Low values act as a delay-line; medium values build up slowly; >= 0.707 produces smooth exponential decay."
+      },
+      {
+        "name": "feedback",
+        "type": "float",
+        "default": 0.9,
+        "description": "Amount of feedback through the system (0..1). 1.0 produces infinite sustain."
+      },
+      {
+        "name": "modDepth",
+        "type": "float",
+        "default": 0.1,
+        "description": "Depth of delay-line modulation (0..1). Combine with modFreq for chorus and pitch variation."
+      },
+      {
+        "name": "modFreq",
+        "type": "float",
+        "default": 2.0,
+        "description": "Frequency of delay-line modulation in Hz (0..10)."
+      }
+    ],
+    "outputs": 2,
+    "category": "DEIND"
+  },
+  {
+    "name": "GreyholeRaw",
+    "description": "Raw multi-output form of the Greyhole algorithmic delay. Prefer Greyhole for the convenient single-input wrapper. Always outputs stereo.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in1",
+        "type": "signal",
+        "default": 0,
+        "description": "Left channel input."
+      },
+      {
+        "name": "in2",
+        "type": "signal",
+        "default": 0,
+        "description": "Right channel input."
+      },
+      {
+        "name": "damping",
+        "type": "float",
+        "default": 0.0,
+        "description": "High-frequency damping as the delay decays (0..1)."
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 2.0,
+        "description": "Approximate delay time in seconds (0.1..60)."
+      },
+      {
+        "name": "diffusion",
+        "type": "float",
+        "default": 0.5,
+        "description": "Shape of the diffusion unit (0..1). >= 0.707 produces smooth exponential decay."
+      },
+      {
+        "name": "feedback",
+        "type": "float",
+        "default": 0.9,
+        "description": "Feedback amount through the delay line (0..1)."
+      },
+      {
+        "name": "moddepth",
+        "type": "float",
+        "default": 0.1,
+        "description": "Depth of delay-line modulation in samples (0..50)."
+      },
+      {
+        "name": "modfreq",
+        "type": "float",
+        "default": 2.0,
+        "description": "Frequency of delay-line modulation in Hz (0..10)."
+      },
+      {
+        "name": "size",
+        "type": "float",
+        "default": 1.0,
+        "description": "Scales size of internal delay-lines (0.5..5)."
+      }
+    ],
+    "outputs": 2,
+    "category": "DEIND"
+  },
+  {
+    "name": "FaustGreyholeRaw",
+    "description": "Faust-implemented variant of GreyholeRaw with the same parameter set. Always outputs stereo.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in1",
+        "type": "signal",
+        "default": 0,
+        "description": "Left channel input."
+      },
+      {
+        "name": "in2",
+        "type": "signal",
+        "default": 0,
+        "description": "Right channel input."
+      },
+      {
+        "name": "damping",
+        "type": "float",
+        "default": 0.0,
+        "description": "High-frequency damping as the delay decays (0..1)."
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Approximate delay time in seconds."
+      },
+      {
+        "name": "diffusion",
+        "type": "float",
+        "default": 0.5,
+        "description": "Shape of the diffusion unit (0..1)."
+      },
+      {
+        "name": "feedback",
+        "type": "float",
+        "default": 0.9,
+        "description": "Feedback amount through the delay line (0..1)."
+      },
+      {
+        "name": "moddepth",
+        "type": "float",
+        "default": 0.1,
+        "description": "Depth of delay-line modulation in samples (0..50)."
+      },
+      {
+        "name": "modfreq",
+        "type": "float",
+        "default": 2.0,
+        "description": "Frequency of delay-line modulation in Hz (0..10)."
+      },
+      {
+        "name": "size",
+        "type": "float",
+        "default": 1.0,
+        "description": "Scales size of internal delay-lines (0.5..5)."
+      }
+    ],
+    "outputs": 2,
+    "category": "DEIND"
+  },
+  {
+    "name": "ComplexRes",
+    "description": "Resonating filter that can be modulated at audio rate without blowing up. Implements the complex resonator structure from Parker & Bovermann (2013), 'Dynamic FM synthesis using a network of complex resonator filters'.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal."
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 100.0,
+        "description": "Resonating frequency in Hz; can be modulated at audio rate."
+      },
+      {
+        "name": "decay",
+        "type": "float",
+        "default": 0.2,
+        "description": "Decay time in seconds."
+      }
+    ],
+    "outputs": 1,
+    "category": "DEIND"
+  },
+  {
+    "name": "DiodeRingMod",
+    "description": "Ring modulation based on the physical model of a diode.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "car",
+        "type": "signal",
+        "default": 0,
+        "description": "Carrier signal."
+      },
+      {
+        "name": "mod",
+        "type": "signal",
+        "default": 0,
+        "description": "Modulator signal."
+      }
+    ],
+    "outputs": 1,
+    "category": "DEIND"
+  },
+  {
+    "name": "RMS",
+    "description": "Root mean square of the input signal: sqrt(lpf1(x^2)) — first-order low-pass filtered squared input, then square-rooted, computed per sample.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal."
+      },
+      {
+        "name": "lpFreq",
+        "type": "float",
+        "default": 10.0,
+        "description": "Low-pass filter frequency in Hz."
+      }
+    ],
+    "outputs": 1,
+    "category": "DEIND"
+  }
+]
