@@ -1,0 +1,382 @@
+[
+  {
+    "name": "FoaPanB",
+    "description": "First-order Ambisonic B-format encoder (sc3-plugins ATK). Places a mono source on the unit sphere, producing the four-channel B-format soundfield (W, X, Y, Z) for the given azimuth/elevation. NOTE: this manifest covers only the C++ server UGens from ATK. Higher-level helper classes from the atk-sc3 quark (FoaEncoderMatrix, FoaXformerMatrix, FoaDecoderKernel, HoaEncodeDirection, HoaRotate, …) are sclang-only and must be ported manually if needed.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0, "description": "Mono input signal to encode into B-format"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth angle in radians (0 = front, pi/2 = left, -pi/2 = right, ±pi = back)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation angle in radians (-pi/2 = below, 0 = horizontal, pi/2 = above)"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaDirectO",
+    "description": "FOA omni-directivity (origin) transform — adjusts the directivity of the B-format soundfield around its centre, collapsing the field towards omni at -pi/2 and expanding it back at 0. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W (pressure) channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X (front-back velocity) channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y (left-right velocity) channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z (up-down velocity) channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Directivity angle in radians (0 = unchanged, ±pi/2 = full omni / collapsed soundfield)"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaDirectX",
+    "description": "FOA directivity transform along the X axis — adjusts the directivity of the soundfield around the front-back (X) axis. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Directivity angle in radians, applied around the X axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaDirectY",
+    "description": "FOA directivity transform along the Y axis — adjusts the directivity of the soundfield around the left-right (Y) axis. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Directivity angle in radians, applied around the Y axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaDirectZ",
+    "description": "FOA directivity transform along the Z axis — adjusts the directivity of the soundfield around the up-down (Z) axis. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Directivity angle in radians, applied around the Z axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaRotate",
+    "description": "Rotate a B-format soundfield about the Z (vertical) axis — equivalent to spinning the soundfield left/right around the listener. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Rotation angle in radians (positive = counter-clockwise viewed from above)"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaTilt",
+    "description": "Rotate a B-format soundfield about the X (front-back) axis — tilts the soundfield left-right. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Tilt angle in radians around the X axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaTumble",
+    "description": "Rotate a B-format soundfield about the Y (left-right) axis — tumbles the soundfield front-back over the listener's head. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Tumble angle in radians around the Y axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaFocusX",
+    "description": "FOA focus transform along the X (front-back) axis — pulls the soundfield towards a directional point at ±X. Lossless equivalent of zoom; the focus angle pi/2 collapses the field to that direction. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Focus angle in radians (0 = unchanged, ±pi/2 = fully focused along the X axis)"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaFocusY",
+    "description": "FOA focus transform along the Y (left-right) axis — pulls the soundfield towards a directional point at ±Y. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Focus angle in radians around the Y axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaFocusZ",
+    "description": "FOA focus transform along the Z (up-down) axis — pulls the soundfield towards a directional point at ±Z. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Focus angle in radians around the Z axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaPushX",
+    "description": "FOA push transform along the X axis — pushes the soundfield towards a directional point at ±X. Distorts amplitude relationships (unlike Focus, which preserves energy). From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Push angle in radians (0 = unchanged, ±pi/2 = fully pushed along the X axis)"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaPushY",
+    "description": "FOA push transform along the Y axis — pushes the soundfield towards a directional point at ±Y. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Push angle in radians around the Y axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaPushZ",
+    "description": "FOA push transform along the Z axis — pushes the soundfield towards a directional point at ±Z. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Push angle in radians around the Z axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaPressX",
+    "description": "FOA press transform along the X axis — flattens the soundfield onto the X-axis plane, similar to Push but with different amplitude weighting. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Press angle in radians (0 = unchanged, ±pi/2 = fully pressed onto the X axis)"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaPressY",
+    "description": "FOA press transform along the Y axis — flattens the soundfield onto the Y-axis plane. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Press angle in radians around the Y axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaPressZ",
+    "description": "FOA press transform along the Z axis — flattens the soundfield onto the Z-axis plane. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Press angle in radians around the Z axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaZoomX",
+    "description": "FOA zoom transform along the X axis — emphasises one direction along the X axis at the expense of the opposite, with an overall gain change. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Zoom angle in radians (0 = unchanged, ±pi/2 = fully zoomed along the X axis)"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaZoomY",
+    "description": "FOA zoom transform along the Y axis. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Zoom angle in radians around the Y axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaZoomZ",
+    "description": "FOA zoom transform along the Z axis. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Zoom angle in radians around the Z axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaDominateX",
+    "description": "FOA dominance transform along the X axis — applies a 'dominance' (Lorentz-style boost) to the soundfield, increasing the apparent gain in one X direction while attenuating the opposite. Measured in dB. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "gain", "type": "float", "default": 0, "description": "Dominance gain in dB applied along the X axis (0 = unchanged)"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaDominateY",
+    "description": "FOA dominance transform along the Y axis. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "gain", "type": "float", "default": 0, "description": "Dominance gain in dB applied along the Y axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaDominateZ",
+    "description": "FOA dominance transform along the Z axis. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "gain", "type": "float", "default": 0, "description": "Dominance gain in dB applied along the Z axis"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaAsymmetry",
+    "description": "FOA asymmetry transform — distorts the soundfield laterally (around the median plane), shifting energy from front/back to one side. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "angle", "type": "float", "default": 0, "description": "Asymmetry angle in radians (0 = symmetric, ±pi/2 = full asymmetric distortion)"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaNFC",
+    "description": "Near-Field Compensation filter for B-format. Compensates for the proximity-effect colouration introduced by an Ambisonic encoding at finite distance, by applying a high-pass filter to X/Y/Z channels with a cutoff derived from the assumed source distance. W is passed through unchanged. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "distance", "type": "float", "default": 1.0, "description": "Encoding/reference distance in metres — sets the high-pass cutoff (smaller = higher cutoff)"},
+      {"name": "speedOfSound", "type": "float", "default": 343.0, "description": "Speed of sound in metres/second — used together with distance to derive the cutoff frequency. Optional; older atk-sc3 quarks (<=v5.0.3) instantiate without this input and the UGen falls back to 333 m/s"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaProximity",
+    "description": "Proximity-effect filter for B-format — the dual of FoaNFC. Adds the distance-dependent low-frequency boost a real listener would experience near a sound source, by applying a one-pole low-shelf (1+integrator) to X/Y/Z. W passes through unchanged. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "distance", "type": "float", "default": 1.0, "description": "Source distance in metres — smaller distances produce a stronger proximity boost"},
+      {"name": "speedOfSound", "type": "float", "default": 343.0, "description": "Speed of sound in metres/second. Optional; older atk-sc3 quarks (<=v5.0.3) instantiate without this input and the UGen falls back to 333 m/s"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  },
+  {
+    "name": "FoaPsychoShelf",
+    "description": "Psychoacoustic shelf filter for B-format — applies frequency-dependent gains separately to the W (pressure) and X/Y/Z (velocity) channels around a crossover frequency. Used to compensate for the perceptual difference between low- and high-frequency localisation cues during decoding. From sc3-plugins ATK.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
+      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
+      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
+      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
+      {"name": "freq", "type": "float", "default": 400.0, "description": "Shelf crossover frequency in Hz (typically ~400 Hz for psychoacoustic decoding)"},
+      {"name": "k0", "type": "float", "default": 1.0, "description": "Low-frequency shelf gain factor applied below the crossover (linear, 1.0 = unity)"},
+      {"name": "k1", "type": "float", "default": 1.0, "description": "High-frequency shelf gain factor applied above the crossover (linear, 1.0 = unity)"}
+    ],
+    "outputs": 4,
+    "category": "ATK (Foa)"
+  }
+]

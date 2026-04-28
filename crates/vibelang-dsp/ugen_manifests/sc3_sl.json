@@ -1,0 +1,1392 @@
+[
+  {
+    "name": "SortBuf",
+    "description": "Bubble-sort the contents of a buffer in-place over time. Each block performs a fixed number of sort steps so the buffer is gradually re-ordered. From sc3-plugins SLUGens (Sergio Luque / Nick Collins pack).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number whose contents will be sorted in place"
+      },
+      {
+        "name": "sortrate",
+        "type": "float",
+        "default": 10,
+        "description": "Number of bubble-sort comparisons performed per control block"
+      },
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that resets the sort to start over from the beginning"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "sort_buf_ar"
+    ]
+  },
+  {
+    "name": "GravityGrid",
+    "description": "Simulates a particle moving on a 2D grid of gravitational attractors stored in a buffer. Each row of the buffer holds (x, y, mass) for one attractor; the UGen integrates the resulting force on a moving body and outputs its trajectory. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that re-seeds the particle position"
+      },
+      {
+        "name": "rate",
+        "type": "float",
+        "default": 0.1,
+        "description": "Integration step size; larger values speed up motion at the cost of stability"
+      },
+      {
+        "name": "newx",
+        "type": "float",
+        "default": 0.0,
+        "description": "Particle x position used on next reset"
+      },
+      {
+        "name": "newy",
+        "type": "float",
+        "default": 0.0,
+        "description": "Particle y position used on next reset"
+      },
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": -1,
+        "description": "Buffer number holding attractor data as (x, y, mass) triples; -1 uses a built-in default grid"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "gravity_grid_ar"
+    ]
+  },
+  {
+    "name": "GravityGrid2",
+    "description": "Variant of GravityGrid that requires an explicit user-supplied attractor buffer (no built-in fallback grid). From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that re-seeds the particle position"
+      },
+      {
+        "name": "rate",
+        "type": "float",
+        "default": 0.1,
+        "description": "Integration step size"
+      },
+      {
+        "name": "newx",
+        "type": "float",
+        "default": 0.0,
+        "description": "Particle x position used on next reset"
+      },
+      {
+        "name": "newy",
+        "type": "float",
+        "default": 0.0,
+        "description": "Particle y position used on next reset"
+      },
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number holding attractor data as (x, y, mass) triples; required"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "gravity_grid2_ar"
+    ]
+  },
+  {
+    "name": "Breakcore",
+    "description": "Breakcore-style stutter / repeat generator. Captures a window from an input signal into a buffer on trigger and randomly retriggers chopped fragments with amplitude dropouts. Originally written by Nick Collins in one hour for a TOPLAP live-coding jam. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number used as the live capture / playback ring buffer"
+      },
+      {
+        "name": "capturein",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio source written into the buffer when capturetrigger fires"
+      },
+      {
+        "name": "capturetrigger",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger that arms a new capture from the input signal"
+      },
+      {
+        "name": "duration",
+        "type": "float",
+        "default": 0.1,
+        "description": "Maximum duration in seconds of each repeated fragment"
+      },
+      {
+        "name": "ampdropout",
+        "type": "float",
+        "default": 0,
+        "description": "Probability per fragment of dropping amplitude (silencing) the next repeat"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "breakcore_ar"
+    ]
+  },
+  {
+    "name": "Max",
+    "description": "Tracks the maximum absolute amplitude of a signal over a sliding window of N samples and outputs that running peak. Useful as a peak detector for normalisation or gating decisions. From sc3-plugins SLUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal whose running peak amplitude is tracked"
+      },
+      {
+        "name": "numsamp",
+        "type": "float",
+        "default": 64,
+        "description": "Window length in samples over which the maximum is held"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "max_kr"
+    ]
+  },
+  {
+    "name": "PrintVal",
+    "description": "Prints the current value of a kr signal to stdout once every N control blocks. Mostly superseded by the core Poll UGen but retained for legacy synthdefs. From sc3-plugins SLUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal whose current value is printed"
+      },
+      {
+        "name": "numblocks",
+        "type": "float",
+        "default": 100,
+        "description": "Number of control blocks between prints"
+      },
+      {
+        "name": "id",
+        "type": "float",
+        "default": 0,
+        "description": "Numeric tag printed alongside the value to disambiguate multiple PrintVals"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "print_val_kr"
+    ]
+  },
+  {
+    "name": "EnvDetect",
+    "description": "Envelope follower / detector with separate attack and release coefficients (musicdsp.org formulation). The detected envelope tracks the absolute value of the input with asymmetric smoothing. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio signal whose envelope is followed"
+      },
+      {
+        "name": "attack",
+        "type": "float",
+        "default": 100,
+        "description": "Attack smoothing coefficient (samples-equivalent)"
+      },
+      {
+        "name": "release",
+        "type": "float",
+        "default": 0,
+        "description": "Release smoothing coefficient (samples-equivalent)"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "env_detect_ar"
+    ]
+  },
+  {
+    "name": "FitzHughNagumo",
+    "description": "Euler ODE solver for the FitzHugh-Nagumo neuron model — a simplified Hodgkin-Huxley system that produces excitable / spiking dynamics. Outputs the membrane variable u. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that resets state variables to their init values"
+      },
+      {
+        "name": "rateu",
+        "type": "float",
+        "default": 0.01,
+        "description": "Integration step for the u (membrane) variable"
+      },
+      {
+        "name": "ratew",
+        "type": "float",
+        "default": 0.01,
+        "description": "Integration step for the w (recovery) variable"
+      },
+      {
+        "name": "b0",
+        "type": "float",
+        "default": 1,
+        "description": "Model parameter b0 (excitability bias)"
+      },
+      {
+        "name": "b1",
+        "type": "float",
+        "default": 1,
+        "description": "Model parameter b1 (recovery coupling)"
+      },
+      {
+        "name": "initu",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value for u, used on reset"
+      },
+      {
+        "name": "initw",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value for w, used on reset"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "fitz_hugh_nagumo_ar"
+    ]
+  },
+  {
+    "name": "DoubleWell",
+    "description": "Stochastic double-well oscillator (Duffing-style) with separate x/y integration rates and a damping/forcing parameter set. Generates chaotic motion between two stable potential minima. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that re-seeds state to (initx, inity)"
+      },
+      {
+        "name": "ratex",
+        "type": "float",
+        "default": 0.01,
+        "description": "Integration step for x"
+      },
+      {
+        "name": "ratey",
+        "type": "float",
+        "default": 0.01,
+        "description": "Integration step for y"
+      },
+      {
+        "name": "f",
+        "type": "float",
+        "default": 1,
+        "description": "Forcing amplitude"
+      },
+      {
+        "name": "w",
+        "type": "float",
+        "default": 0.001,
+        "description": "Forcing angular frequency"
+      },
+      {
+        "name": "delta",
+        "type": "float",
+        "default": 1,
+        "description": "Damping coefficient"
+      },
+      {
+        "name": "initx",
+        "type": "float",
+        "default": 0,
+        "description": "Initial x value, used on reset"
+      },
+      {
+        "name": "inity",
+        "type": "float",
+        "default": 0,
+        "description": "Initial y value, used on reset"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "double_well_ar"
+    ]
+  },
+  {
+    "name": "DoubleWell2",
+    "description": "Variant of DoubleWell using an alternative integration scheme; same parameter set, different chaotic character. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that re-seeds state to (initx, inity)"
+      },
+      {
+        "name": "ratex",
+        "type": "float",
+        "default": 0.01,
+        "description": "Integration step for x"
+      },
+      {
+        "name": "ratey",
+        "type": "float",
+        "default": 0.01,
+        "description": "Integration step for y"
+      },
+      {
+        "name": "f",
+        "type": "float",
+        "default": 1,
+        "description": "Forcing amplitude"
+      },
+      {
+        "name": "w",
+        "type": "float",
+        "default": 0.001,
+        "description": "Forcing angular frequency"
+      },
+      {
+        "name": "delta",
+        "type": "float",
+        "default": 1,
+        "description": "Damping coefficient"
+      },
+      {
+        "name": "initx",
+        "type": "float",
+        "default": 0,
+        "description": "Initial x value, used on reset"
+      },
+      {
+        "name": "inity",
+        "type": "float",
+        "default": 0,
+        "description": "Initial y value, used on reset"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "double_well2_ar"
+    ]
+  },
+  {
+    "name": "DoubleWell3",
+    "description": "Reduced-parameter double-well oscillator (single rate, no separate damping) producing chaotic motion between two attractors. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that re-seeds state to (initx, inity)"
+      },
+      {
+        "name": "rate",
+        "type": "float",
+        "default": 0.01,
+        "description": "Integration step size"
+      },
+      {
+        "name": "f",
+        "type": "float",
+        "default": 0,
+        "description": "Forcing amplitude"
+      },
+      {
+        "name": "delta",
+        "type": "float",
+        "default": 0.25,
+        "description": "Well depth / spacing parameter"
+      },
+      {
+        "name": "initx",
+        "type": "float",
+        "default": 0,
+        "description": "Initial x value, used on reset"
+      },
+      {
+        "name": "inity",
+        "type": "float",
+        "default": 0,
+        "description": "Initial y value, used on reset"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "double_well3_ar"
+    ]
+  },
+  {
+    "name": "WeaklyNonlinear",
+    "description": "Weakly nonlinear oscillator driven by an input signal. Adds two polynomial nonlinearity terms (alpha*x^xexponent + beta*y^yexponent) to a linear oscillator at the given frequency. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Driving input signal"
+      },
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that re-seeds state to (initx, inity)"
+      },
+      {
+        "name": "ratex",
+        "type": "float",
+        "default": 1,
+        "description": "Integration step for x"
+      },
+      {
+        "name": "ratey",
+        "type": "float",
+        "default": 1,
+        "description": "Integration step for y"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Linear oscillator frequency in Hz"
+      },
+      {
+        "name": "initx",
+        "type": "float",
+        "default": 0,
+        "description": "Initial x value, used on reset"
+      },
+      {
+        "name": "inity",
+        "type": "float",
+        "default": 0,
+        "description": "Initial y value, used on reset"
+      },
+      {
+        "name": "alpha",
+        "type": "float",
+        "default": 0,
+        "description": "Coefficient on the x-nonlinearity term"
+      },
+      {
+        "name": "xexponent",
+        "type": "float",
+        "default": 0,
+        "description": "Exponent on x in the nonlinearity term"
+      },
+      {
+        "name": "beta",
+        "type": "float",
+        "default": 0,
+        "description": "Coefficient on the y-nonlinearity term"
+      },
+      {
+        "name": "yexponent",
+        "type": "float",
+        "default": 0,
+        "description": "Exponent on y in the nonlinearity term"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "weakly_nonlinear_ar"
+    ]
+  },
+  {
+    "name": "WeaklyNonlinear2",
+    "description": "Variant of WeaklyNonlinear with an alternative ODE solver; same parameter signature. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Driving input signal"
+      },
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that re-seeds state to (initx, inity)"
+      },
+      {
+        "name": "ratex",
+        "type": "float",
+        "default": 1,
+        "description": "Integration step for x"
+      },
+      {
+        "name": "ratey",
+        "type": "float",
+        "default": 1,
+        "description": "Integration step for y"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Linear oscillator frequency in Hz"
+      },
+      {
+        "name": "initx",
+        "type": "float",
+        "default": 0,
+        "description": "Initial x value, used on reset"
+      },
+      {
+        "name": "inity",
+        "type": "float",
+        "default": 0,
+        "description": "Initial y value, used on reset"
+      },
+      {
+        "name": "alpha",
+        "type": "float",
+        "default": 0,
+        "description": "Coefficient on the x-nonlinearity term"
+      },
+      {
+        "name": "xexponent",
+        "type": "float",
+        "default": 0,
+        "description": "Exponent on x in the nonlinearity term"
+      },
+      {
+        "name": "beta",
+        "type": "float",
+        "default": 0,
+        "description": "Coefficient on the y-nonlinearity term"
+      },
+      {
+        "name": "yexponent",
+        "type": "float",
+        "default": 0,
+        "description": "Exponent on y in the nonlinearity term"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "weakly_nonlinear2_ar"
+    ]
+  },
+  {
+    "name": "TermanWang",
+    "description": "Terman-Wang relaxation oscillator. Two coupled state variables x and y produce alternating slow/fast bursts; commonly used to model neural oscillator networks. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "External input current"
+      },
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that re-seeds state to (initx, inity)"
+      },
+      {
+        "name": "ratex",
+        "type": "float",
+        "default": 0.01,
+        "description": "Integration step for x"
+      },
+      {
+        "name": "ratey",
+        "type": "float",
+        "default": 0.01,
+        "description": "Integration step for y"
+      },
+      {
+        "name": "alpha",
+        "type": "float",
+        "default": 1.0,
+        "description": "Model parameter alpha"
+      },
+      {
+        "name": "beta",
+        "type": "float",
+        "default": 1.0,
+        "description": "Model parameter beta"
+      },
+      {
+        "name": "eta",
+        "type": "float",
+        "default": 1.0,
+        "description": "Model parameter eta (timescale separation)"
+      },
+      {
+        "name": "initx",
+        "type": "float",
+        "default": 0,
+        "description": "Initial x value, used on reset"
+      },
+      {
+        "name": "inity",
+        "type": "float",
+        "default": 0,
+        "description": "Initial y value, used on reset"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "terman_wang_ar"
+    ]
+  },
+  {
+    "name": "LTI",
+    "description": "General Linear Time-Invariant filter with arbitrary order. Coefficients are supplied via two buffers — feedback (a) and feedforward (b) — implementing y(n) = sum b_k x(n-k) + sum a_j y(n-j). Stability is the user's responsibility. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal to filter"
+      },
+      {
+        "name": "bufnuma",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number holding feedback (a) coefficients from previous outputs"
+      },
+      {
+        "name": "bufnumb",
+        "type": "float",
+        "default": 1,
+        "description": "Buffer number holding feedforward (b) coefficients from previous inputs"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "lti_ar"
+    ]
+  },
+  {
+    "name": "NL",
+    "description": "Arbitrary nonlinear filter difference equation: y(n) = sum b_k x(n-k)^p_k + sum a_j y(n-j)^q_j. Coefficients (index, coeff, exponent) are supplied via two buffers. No cross-terms allowed. Stability is not guaranteed; guard1/guard2 reset the filter on blow-up. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal to filter"
+      },
+      {
+        "name": "bufnuma",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer with feedback coefficient triples (index, coefficient, exponent)"
+      },
+      {
+        "name": "bufnumb",
+        "type": "float",
+        "default": 1,
+        "description": "Buffer with feedforward coefficient triples (index, coefficient, exponent)"
+      },
+      {
+        "name": "guard1",
+        "type": "float",
+        "default": 1000.0,
+        "description": "Maximum absolute output before blow-up reset"
+      },
+      {
+        "name": "guard2",
+        "type": "float",
+        "default": 100.0,
+        "description": "Maximum absolute step change before blow-up reset"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "nl_ar"
+    ]
+  },
+  {
+    "name": "NL2",
+    "description": "Arbitrary nonlinear filter with cross-terms in x and y. A single buffer holds the full term specification (numterms, then per-term constant, x-pair list, y-pair list). Expensive but very general. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal to filter"
+      },
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding the full nonlinear term specification"
+      },
+      {
+        "name": "maxsizea",
+        "type": "float",
+        "default": 10,
+        "description": "Maximum index stored for previous outputs (history size for y)"
+      },
+      {
+        "name": "maxsizeb",
+        "type": "float",
+        "default": 10,
+        "description": "Maximum index stored for previous inputs (history size for x)"
+      },
+      {
+        "name": "guard1",
+        "type": "float",
+        "default": 1000.0,
+        "description": "Maximum absolute output before blow-up reset"
+      },
+      {
+        "name": "guard2",
+        "type": "float",
+        "default": 100.0,
+        "description": "Maximum absolute step change before blow-up reset"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "nl2_ar"
+    ]
+  },
+  {
+    "name": "LPCError",
+    "description": "Linear Predictive Coding analysis/resynthesis on 64-sample blocks. Models the input with p coefficients per block and outputs the resynthesised signal — the imperfections of the modelling are the point. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal to LPC-analyse and resynthesise"
+      },
+      {
+        "name": "p",
+        "type": "float",
+        "default": 10,
+        "description": "Number of LPC filter coefficients (1-64)"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "lpc_error_ar"
+    ]
+  },
+  {
+    "name": "KmeansToBPSet1",
+    "description": "k-means clustering used as a sound generator. Continuously clusters incoming data points and uses the cluster means to drive a bank of band-pass-filtered partials at multiples of the base frequency. Optional buffer supplies non-random initial data points and means. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Base frequency in Hz used to scale cluster outputs"
+      },
+      {
+        "name": "numdatapoints",
+        "type": "float",
+        "default": 20,
+        "description": "Number of data points being clustered"
+      },
+      {
+        "name": "maxnummeans",
+        "type": "float",
+        "default": 4,
+        "description": "Maximum number of cluster means allocated"
+      },
+      {
+        "name": "nummeans",
+        "type": "float",
+        "default": 4,
+        "description": "Active number of cluster means used for synthesis"
+      },
+      {
+        "name": "tnewdata",
+        "type": "float",
+        "default": 1,
+        "description": "Trigger that requests a fresh batch of data points"
+      },
+      {
+        "name": "tnewmeans",
+        "type": "float",
+        "default": 1,
+        "description": "Trigger that requests a fresh set of cluster means"
+      },
+      {
+        "name": "soft",
+        "type": "float",
+        "default": 1.0,
+        "description": "Soft assignment weight (1.0 = hard k-means, lower values blur cluster boundaries)"
+      },
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": -1,
+        "description": "Optional buffer supplying initial data points and mean positions; -1 randomises"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "kmeans_to_bp_set1_ar"
+    ]
+  },
+  {
+    "name": "Instruction",
+    "description": "Reads a buffer as a sequence of UGen-like instructions and executes them, producing audio according to the encoded program. An experimental data-driven synthesis primitive. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding the instruction stream"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "instruction_ar"
+    ]
+  },
+  {
+    "name": "WaveTerrain",
+    "description": "2D wave-terrain synthesis: an x/y trajectory is read out of a 2D terrain stored in a buffer. The buffer is interpreted as an xsize-by-ysize grid; bilinear sampling produces the output sample. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding the 2D terrain (xsize*ysize samples, row-major)"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "x coordinate signal in [0,1] driving terrain readout"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "y coordinate signal in [0,1] driving terrain readout"
+      },
+      {
+        "name": "xsize",
+        "type": "float",
+        "default": 100,
+        "description": "Number of samples per row in the terrain"
+      },
+      {
+        "name": "ysize",
+        "type": "float",
+        "default": 100,
+        "description": "Number of rows in the terrain"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "wave_terrain_ar"
+    ]
+  },
+  {
+    "name": "VMScan2D",
+    "description": "Reads a 2D buffer as a virtual machine scanline, traversing the grid and emitting two channels (x and y trajectory components). Multi-output UGen. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding the 2D scan source"
+      }
+    ],
+    "outputs": 2,
+    "category": "SLUGens",
+    "functions": [
+      "vm_scan2d_ar"
+    ]
+  },
+  {
+    "name": "SLOnset",
+    "description": "Onset detector with a sliding-history energy comparison. Outputs a trigger when post-window energy exceeds pre-window energy by `threshold`, with hysteresis to suppress retriggering. From sc3-plugins SLUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal whose onsets are detected"
+      },
+      {
+        "name": "memorysize1",
+        "type": "float",
+        "default": 20,
+        "description": "Length of the comparison history in control blocks"
+      },
+      {
+        "name": "before",
+        "type": "float",
+        "default": 5,
+        "description": "Pre-onset window length in blocks"
+      },
+      {
+        "name": "after",
+        "type": "float",
+        "default": 5,
+        "description": "Post-onset window length in blocks"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 10,
+        "description": "Energy ratio required for a trigger"
+      },
+      {
+        "name": "hysteresis",
+        "type": "float",
+        "default": 10,
+        "description": "Suppression window after a trigger to avoid double-firing"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "sl_onset_kr"
+    ]
+  },
+  {
+    "name": "TwoTube",
+    "description": "Physical model of two coupled waveguide tube sections with a single scattering junction between them. Each tube has its own delay length; loss factor controls energy decay per round trip. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Excitation signal injected into the tube system"
+      },
+      {
+        "name": "k",
+        "type": "float",
+        "default": 0.01,
+        "description": "Scattering coefficient at the junction (-1..1)"
+      },
+      {
+        "name": "loss",
+        "type": "float",
+        "default": 1.0,
+        "description": "Per-round-trip amplitude loss factor"
+      },
+      {
+        "name": "d1length",
+        "type": "float",
+        "default": 100,
+        "description": "Length in samples of the first tube's delay line"
+      },
+      {
+        "name": "d2length",
+        "type": "float",
+        "default": 100,
+        "description": "Length in samples of the second tube's delay line"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "two_tube_ar"
+    ]
+  },
+  {
+    "name": "NTube",
+    "description": "N-section waveguide tube physical model with N-1 scattering junctions. Per-section delay lengths and per-junction scattering coefficients allow simulation of vocal-tract-like structures. Note: arrays are static at synthdef time. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Excitation signal injected into the tube system"
+      },
+      {
+        "name": "lossarray",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Array of N+1 amplitude loss factors (one per section plus the outer feedback). Scalar broadcasts to all sections."
+      },
+      {
+        "name": "karray",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of N-1 scattering coefficients between adjacent sections (-1..1 typical)"
+      },
+      {
+        "name": "delaylengtharray",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of N delay lengths in seconds (each must give >= 2 samples at sample rate)"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "n_tube_ar"
+    ]
+  },
+  {
+    "name": "EnvFollow",
+    "description": "Simple envelope follower: outputs the absolute value of the input smoothed by a one-pole release coefficient. Compact alternative to EnvDetect when separate attack/release shaping is not needed. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal whose envelope is followed"
+      },
+      {
+        "name": "decaycoeff",
+        "type": "float",
+        "default": 0.99,
+        "description": "One-pole decay coefficient (closer to 1 = slower release)"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "env_follow_ar",
+      "env_follow_kr"
+    ]
+  },
+  {
+    "name": "Sieve1",
+    "description": "Reads a buffer with index-stride sieving: emits every gap-th sample, optionally alternating direction. Useful for generating sparse / decimated readback patterns. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer to read from"
+      },
+      {
+        "name": "gap",
+        "type": "float",
+        "default": 2,
+        "description": "Stride between read indices (every gap-th sample)"
+      },
+      {
+        "name": "alternate",
+        "type": "float",
+        "default": 1,
+        "description": "If non-zero, alternate readout direction on each pass"
+      }
+    ],
+    "outputs": 1,
+    "category": "SLUGens",
+    "functions": [
+      "sieve1_ar",
+      "sieve1_kr"
+    ]
+  },
+  {
+    "name": "Oregonator",
+    "description": "Euler ODE solver for the Oregonator chemical-oscillator model (Belousov-Zhabotinsky reaction). Outputs three coupled state variables x, y, z as separate channels. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that re-seeds state to (initx, inity, initz)"
+      },
+      {
+        "name": "rate",
+        "type": "float",
+        "default": 0.01,
+        "description": "Integration step size"
+      },
+      {
+        "name": "epsilon",
+        "type": "float",
+        "default": 1.0,
+        "description": "Model parameter epsilon (timescale of x)"
+      },
+      {
+        "name": "mu",
+        "type": "float",
+        "default": 1.0,
+        "description": "Model parameter mu (timescale of z)"
+      },
+      {
+        "name": "q",
+        "type": "float",
+        "default": 1.0,
+        "description": "Model parameter q (autocatalytic stoichiometry)"
+      },
+      {
+        "name": "initx",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial x value, used on reset"
+      },
+      {
+        "name": "inity",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial y value, used on reset"
+      },
+      {
+        "name": "initz",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial z value, used on reset"
+      }
+    ],
+    "outputs": 3,
+    "category": "SLUGens",
+    "functions": [
+      "oregonator_ar"
+    ]
+  },
+  {
+    "name": "Brusselator",
+    "description": "Euler ODE solver for the Brusselator (Prigogine) reaction-diffusion oscillator: x' = x^2*y - (mu+1)*x + gamma, y' = -x^2*y + mu*x. Outputs x and y as two channels. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that re-seeds state to (initx, inity)"
+      },
+      {
+        "name": "rate",
+        "type": "float",
+        "default": 0.01,
+        "description": "Integration step size"
+      },
+      {
+        "name": "mu",
+        "type": "float",
+        "default": 1.0,
+        "description": "Model parameter mu (autocatalytic rate)"
+      },
+      {
+        "name": "gamma",
+        "type": "float",
+        "default": 1.0,
+        "description": "Model parameter gamma (input concentration)"
+      },
+      {
+        "name": "initx",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial x value, used on reset"
+      },
+      {
+        "name": "inity",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial y value, used on reset"
+      }
+    ],
+    "outputs": 2,
+    "category": "SLUGens",
+    "functions": [
+      "brusselator_ar"
+    ]
+  },
+  {
+    "name": "SpruceBudworm",
+    "description": "Euler ODE solver for the spruce-budworm population dynamics model — a classic ecological bistable system. Outputs the two state variables x (budworm density) and y (foliage / branch state) as separate channels. From sc3-plugins SLUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "reset",
+        "type": "float",
+        "default": 0,
+        "description": "Trigger that re-seeds state to (initx, inity)"
+      },
+      {
+        "name": "rate",
+        "type": "float",
+        "default": 0.1,
+        "description": "Integration step size"
+      },
+      {
+        "name": "k1",
+        "type": "float",
+        "default": 27.9,
+        "description": "Model parameter k1 (carrying capacity / foliage saturation)"
+      },
+      {
+        "name": "k2",
+        "type": "float",
+        "default": 1.5,
+        "description": "Model parameter k2 (branch-state saturation)"
+      },
+      {
+        "name": "alpha",
+        "type": "float",
+        "default": 0.1,
+        "description": "Model parameter alpha"
+      },
+      {
+        "name": "beta",
+        "type": "float",
+        "default": 10.1,
+        "description": "Model parameter beta"
+      },
+      {
+        "name": "mu",
+        "type": "float",
+        "default": 0.3,
+        "description": "Model parameter mu (mortality)"
+      },
+      {
+        "name": "rho",
+        "type": "float",
+        "default": 10.1,
+        "description": "Model parameter rho"
+      },
+      {
+        "name": "initx",
+        "type": "float",
+        "default": 0.9,
+        "description": "Initial x value, used on reset"
+      },
+      {
+        "name": "inity",
+        "type": "float",
+        "default": 0.1,
+        "description": "Initial y value, used on reset"
+      }
+    ],
+    "outputs": 2,
+    "category": "SLUGens",
+    "functions": [
+      "spruce_budworm_ar"
+    ]
+  }
+]
