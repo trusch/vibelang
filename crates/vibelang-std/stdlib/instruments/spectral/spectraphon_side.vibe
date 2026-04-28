@@ -1,4 +1,5 @@
-// Spectraphon Side - Stories A + B + C (single-side SAO + SAM analyzer + Array memory)
+// Spectraphon Side - Stories A + B + C + E
+//   (single-side SAO + SAM analyzer + Array memory + Spectranoise Chaos/Noise)
 //
 // Single-side spectral oscillator with 64 harmonic partials split across an
 // Odd bank (k = 1, 3, ..., 63) and an Even bank (k = 2, 4, ..., 64). Each
@@ -6,7 +7,7 @@
 // klang_ar would require a 32+32-element signal array which exceeds Rhai's
 // 16-arity limit, so the additive bank is unrolled per the plan §7 fallback.
 //
-// Story B — SAM analyzer (this story):
+// Story B — SAM analyzer:
 //   When `sam_capture` selects a SAM mode, the per-partial magnitudes
 //   come from a real-time FFT of the hardware audio input. The 2048-frame
 //   FFT (Hann window, 50% hop) is read with `bin_data_kr` per partial,
@@ -59,25 +60,58 @@
 //   (Array 0 = saw, 1 = square, 2 = noise) is also deferred to that ticket
 //   since `set_buf_ir` cannot fan out to 65536 cells in one call.
 //
-// `sam_capture` decode (folded mode + capture trigger to fit the 10-arg cap):
-//   0 → SAO playback        (sao_mix=1, sam_mix=0, cap=0)
-//   1 → SAM, no capture     (sao_mix=0, sam_mix=1, cap=0)
-//   2 → SAM with capture    (sao_mix=0, sam_mix=1, cap=1)
+// Story E — Spectranoise modes (Chaos + Noise) per kb plan §6.E and §4:
+//
+//   Chaos (mode=2): paired sines per side. Carrier_a = sin_osc_ar(freq);
+//     carrier_b = sin_osc_ar(freq * chaos_ratio) where chaos_ratio is
+//     focus-mapped to [1, 4]. `slide` drives chaos feedback through
+//     fb_sine_l_ar (linear-interpolating chaotic sine, im + fb scale with
+//     slide). `partials` becomes audio-rate AM depth — at partials=0 the
+//     pair is clean; at partials=1 each carrier is fully AM-modulated by
+//     the chaos voice. merge_even still folds carrier_b into the L jack.
+//
+//   Noise (mode=3): pink_noise_ar → lpf_ar(slide_cut) → hpf_ar(focus_cut)
+//     → AM with sine carriers. slide_cut log-mapped 100..16000 Hz, focus_cut
+//     log-mapped 20..2000 Hz. L jack gets bp * sin(f0); R jack gets
+//     bp * sin(2*f0). merge_even folds the 2*f0 carrier into L like SAM/SAO.
+//     `partials` is unused in Noise (the AM is intrinsic to the mode).
+//     `right_mode` is also ignored in Chaos and Noise — those modes have
+//     fixed L=Odd-equivalent / R=Even-equivalent topologies.
+//
+// `sam_capture` decode (extended for Story E — see kb plan §6.E3):
+//   0 → SAO playback        (bank, sao_mix=1, no capture)
+//   1 → SAM, no capture     (bank, sam_mix=1, no capture)
+//   2 → Chaos               (paired sines + chaos feedback, partials = AM depth)
+//   3 → Noise               (filtered pink-noise sidebands AM-modulating sines)
+//   4 → SAM with capture    (bank, sam_mix=1, capture writes Story C array cell)
+//
+//   DEVIATION from the ticket's literal `mode=2 (Chaos), mode=3 (Noise)` and
+//   the existing Story C encoding `2 = SAM + capture`: this synthdef keeps
+//   parameter name `sam_capture` and its monotonic [0..N] integer encoding,
+//   but renumbers SAM-with-capture from 2 → 4 to free values 2 and 3 for
+//   Chaos and Noise per the ticket. Existing Story C patches that wrote
+//   `sam_capture = 2` to engage capture must update to `sam_capture = 4`.
+//   Param is folded mode+capture because the synthdef body is already at
+//   the 10-argument Rhai cap (vibelang-dsp/builder.rs).
 //
 // Output convention (stereo channels mirror the hardware jacks):
 //   L = Odd  jack — odd partials. With merge_even=1 (default), Even folds
 //                   into Odd so unpatched-Even users hear all harmonics on L.
-//   R = secondary jack, selected by `right_mode`:
+//   R = secondary jack:
+//     SAO/SAM (mode 0/1/4): selected by `right_mode`:
 //       right_mode = 0 (def) → Even jack: even bank (or odd if merge_even=1),
 //                              gated by Partials like the hardware Even out.
 //       right_mode = 1       → Sine jack: clean sin_osc_ar(freq) at k=1.
 //                              Never gated by Partials — survives at partials=0.
 //       right_mode = 2       → Sub/CV: SAO = saw_ar(freq * 0.5) * 0.5;
 //                              SAM = amplitude_ar of the analyser input.
+//     Chaos (mode 2): R = chaos_b (sin at freq*chaos_ratio) with AM.
+//     Noise (mode 3): R = bp * sin(2*f0).
 //
-// Stories not yet integrated here: FM bus (Story D), Spectranoise (Story E).
+// Stories not yet integrated here: FM bus (Story D — see spectraphon_dual.vibe).
 // See kb/spectraphon-synthdef-plan.md §3 (DSP arch), §4 (UGen mapping),
-// §6.A (Story A), §6.B (Story B), §6.C (Story C), §7 (storage format / risks).
+// §6.A (Story A), §6.B (Story B), §6.C (Story C), §6.E (Story E),
+// §7 (storage format / risks).
 
 define_synthdef("spectraphon_side", |builder| {
     builder
@@ -89,7 +123,7 @@ define_synthdef("spectraphon_side", |builder| {
         .param("gate", 1.0)
         .param("merge_even", 1.0)   // 1 = even folds into odd (mono); 0 = odd-L / even-R split
         .param("right_mode", 0.0)   // 0 = even-jack | 1 = sine | 2 = sub/CV
-        .param("sam_capture", 1.0)  // 0 = SAO playback | 1 = SAM (no cap) | 2 = SAM + cap
+        .param("sam_capture", 1.0)  // mode: 0=SAO | 1=SAM | 2=Chaos | 3=Noise | 4=SAM+cap
         .param("array_idx", 0.0)    // 0..15 — which of the 16 stored Arrays to address
         .body(|freq, partials, slide, focus, amp, gate, merge_even, right_mode, sam_capture, array_idx| {
 
@@ -129,9 +163,22 @@ define_synthdef("spectraphon_side", |builder| {
             let bin_max = 1023.0;
 
             // sam_capture decode (see file header for the truth table).
-            let sam_mix = clip(sam_capture, 0.0, 1.0);
-            let sao_mix = 1.0 - sam_mix;
-            let cap_active = clip(sam_capture - 1.0, 0.0, 1.0);
+            // Monotonic one-hot via cumulative-clip differences:
+            //   m_le_n = 1 when sam_capture ≤ n, else 0 (for integer values).
+            // Each mode's mix coefficient is then the difference between
+            // adjacent thresholds, yielding exactly one active coefficient
+            // per integer mode value. cap_active is high only at mode=4.
+            let m_le_0 = clip(1.0 - sam_capture, 0.0, 1.0);     // 1 at mode≤0
+            let m_le_1 = clip(2.0 - sam_capture, 0.0, 1.0);     // 1 at mode≤1
+            let m_le_2 = clip(3.0 - sam_capture, 0.0, 1.0);     // 1 at mode≤2
+            let m_le_3 = clip(4.0 - sam_capture, 0.0, 1.0);     // 1 at mode≤3
+            let sao_mix    = m_le_0;                             // mode=0
+            let sam_only   = m_le_1 - m_le_0;                    // mode=1
+            let chaos_mix  = m_le_2 - m_le_1;                    // mode=2
+            let noise_mix  = m_le_3 - m_le_2;                    // mode=3
+            let sam_cap    = 1.0 - m_le_3;                       // mode≥4
+            let sam_mix    = sam_only + sam_cap;                 // SAM is mode 1 OR 4
+            let cap_active = sam_cap;                            // capture only at mode=4
 
             // === Story C: shared 16-Array buffer + bilinear lookup ===
             //
@@ -235,14 +282,9 @@ define_synthdef("spectraphon_side", |builder| {
             let odd_out  = odd_bank + even_bank * merge_even;
             let even_out = even_bank * (1.0 - merge_even);
 
-            // Left = Odd jack (always). Partials-gated.
-            let left_raw = odd_out;
-
-            // Right channel: 3-way selector via right_mode (0/1/2).
-            //   sub/sine paths bypass the Partials gate (hardware Sub/CV
-            //   and Sine outs are independent of the Partials knob).
-            //   Sub/CV in SAM modes is an envelope follower of the analyser
-            //   input (kb plan §3.c); SAO uses the side-A sawtooth sub-osc.
+            // Bank L/R (SAO/SAM modes). default_right mirrors hardware Even
+            // jack behaviour, gated by partials. sine/sub bypass the gate.
+            let bank_left = odd_out;
             let default_right = (even_out * (1.0 - merge_even)
                                   + odd_out * merge_even) * partials;
             let sine_signal = sin_osc_ar(freq);
@@ -254,14 +296,61 @@ define_synthdef("spectraphon_side", |builder| {
             let active_sub     = clip(right_mode - 1.0, 0.0, 1.0);
             let active_sine    = 1.0 - active_default - active_sub;
 
-            let right_raw = default_right * active_default
-                          + sine_signal   * active_sine
-                          + sub_signal    * active_sub;
+            let bank_right = default_right * active_default
+                           + sine_signal   * active_sine
+                           + sub_signal    * active_sub;
 
-            // Per-channel DC block, then global VCA + envelope + amp.
-            // Partials gating is already baked into left_raw and default_right;
-            // the sine/sub bypass paths intentionally skip it.
-            let left  = leak_dc_ar(left_raw,  0.995) * env * amp * partials;
+            // === Story E: Chaos mode (paired sines + chaos feedback) =====
+            // chaos_ratio: focus → [1, 4], second-sine pitch ratio.
+            // chaos_im / chaos_fb: slide drives index multiplier and feedback
+            // amount of fb_sine_l_ar (linear-interpolating chaotic sine).
+            // Defaults a=1.1, c=0.5, xi=yi=0.1 mirror the manifest defaults.
+            let slide_c = clip(slide, 0.0, 1.0);
+            let focus_c = clip(focus, 0.0, 1.0);
+            let chaos_ratio = 1.0 + focus_c * 3.0;
+            let chaos_im    = 0.5 + slide_c * 3.5;
+            let chaos_fb    = slide_c * 0.5;
+            let chaos_voice = fb_sine_l_ar(freq, chaos_im, chaos_fb,
+                                            1.1, 0.5, 0.1, 0.1);
+            let chaos_a = sine_signal;                  // reuse sin(freq)
+            let chaos_b = sin_osc_ar(freq * chaos_ratio);
+            // Audio-rate AM: at partials=0 the carriers are clean; at
+            // partials=1 they are fully ring-modulated by the chaos voice.
+            let chaos_am = 1.0 + chaos_voice * partials;
+            let chaos_l_raw = (chaos_a + chaos_b * merge_even) * chaos_am * 0.5;
+            let chaos_r_raw =  chaos_b * (1.0 - merge_even)    * chaos_am * 0.5;
+
+            // === Story E: Noise mode (filtered pink-noise sidebands) =====
+            // slide → LP cutoff (100..16000 Hz log); focus → HP cutoff
+            // (20..2000 Hz log). bp = LPF then HPF — broad bandpass with
+            // independent LP/HP corners. Carriers AM-modulate the noise.
+            let slide_cut = lin_exp_kr(slide_c, 0.0, 1.0,    100.0, 16000.0);
+            let focus_cut = lin_exp_kr(focus_c, 0.0, 1.0,     20.0,  2000.0);
+            let noise_src = pink_noise_ar();
+            let noise_lp  = lpf_ar(noise_src, slide_cut);
+            let noise_bp  = hpf_ar(noise_lp,  focus_cut);
+            let noise_car_odd  = sine_signal;             // sin(f0)   — odd
+            let noise_car_even = sin_osc_ar(freq * 2.0);  // sin(2*f0) — even
+            let noise_l_raw = noise_bp
+                * (noise_car_odd + noise_car_even * merge_even) * 0.5;
+            let noise_r_raw = noise_bp
+                *  noise_car_even * (1.0 - merge_even)         * 0.5;
+
+            // === Mode-mixed L/R ==========================================
+            // Bank modes carry the existing global *partials VCA on L (SAO/SAM
+            // hardware behaviour). Chaos folds partials in via AM depth, so
+            // no global partials gate. Noise has no partials role at all.
+            let bank_active = sao_mix + sam_mix;
+            let left_raw  = bank_left  * bank_active * partials
+                          + chaos_l_raw * chaos_mix
+                          + noise_l_raw * noise_mix;
+            let right_raw = bank_right * bank_active
+                          + chaos_r_raw * chaos_mix
+                          + noise_r_raw * noise_mix;
+
+            // Per-channel DC block + envelope + amp. Partials gating already
+            // applied per-mode above; do not re-apply here.
+            let left  = leak_dc_ar(left_raw,  0.995) * env * amp;
             let right = leak_dc_ar(right_raw, 0.995) * env * amp;
 
             [left, right]
