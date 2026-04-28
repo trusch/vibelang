@@ -1,0 +1,812 @@
+[
+  {
+    "name": "StkPluck",
+    "description": "Karplus-Strong plucked-string physical model from the Stanford STK (sc3-plugins). Excites a delay-line filter loop tuned to freq with a noise burst on instantiation.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "decay",
+        "type": "float",
+        "default": 0.99,
+        "description": "Loop decay coefficient (0..1). Closer to 1 sustains longer."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkFlute",
+    "description": "Waveguide flute physical model from the Stanford STK (sc3-plugins). Models air column with jet excitation.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "jetDelay",
+        "type": "float",
+        "default": 49.0,
+        "description": "Jet delay in samples (controls embouchure timing)."
+      },
+      {
+        "name": "noisegain",
+        "type": "float",
+        "default": 0.15,
+        "description": "Breath noise gain (0..1)."
+      },
+      {
+        "name": "jetRatio",
+        "type": "float",
+        "default": 0.32,
+        "description": "Ratio of jet delay to bore length — affects overtone balance."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkBowed",
+    "description": "Bowed-string physical model (violin/cello-style) from the Stanford STK (sc3-plugins). Implements a slip-stick bow interaction with a waveguide string.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 220.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "bowpressure",
+        "type": "float",
+        "default": 64.0,
+        "description": "Bow pressure (0..127, MIDI-style controller scale)."
+      },
+      {
+        "name": "bowposition",
+        "type": "float",
+        "default": 64.0,
+        "description": "Bow position along string (0..127)."
+      },
+      {
+        "name": "vibfreq",
+        "type": "float",
+        "default": 64.0,
+        "description": "Vibrato frequency (0..127)."
+      },
+      {
+        "name": "vibgain",
+        "type": "float",
+        "default": 64.0,
+        "description": "Vibrato gain (0..127)."
+      },
+      {
+        "name": "loudness",
+        "type": "float",
+        "default": 64.0,
+        "description": "Loudness (0..127)."
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 1,
+        "description": "Trigger — non-zero retriggers a noteOn at the current freq."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkMandolin",
+    "description": "Plucked dual-string mandolin physical model from the Stanford STK (sc3-plugins). Two coupled Karplus-Strong strings with detuning.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 520.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "bodysize",
+        "type": "float",
+        "default": 64.0,
+        "description": "Resonant body size (0..127)."
+      },
+      {
+        "name": "pickposition",
+        "type": "float",
+        "default": 64.0,
+        "description": "Pick position along string (0..127)."
+      },
+      {
+        "name": "stringdamping",
+        "type": "float",
+        "default": 69.0,
+        "description": "String damping (0..127)."
+      },
+      {
+        "name": "stringdetune",
+        "type": "float",
+        "default": 10.0,
+        "description": "Detune amount between the two strings (0..127)."
+      },
+      {
+        "name": "aftertouch",
+        "type": "float",
+        "default": 64.0,
+        "description": "Aftertouch / pluck strength (0..127)."
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 1,
+        "description": "Trigger — non-zero retriggers a pluck at the current freq."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkSaxofony",
+    "description": "Reed-instrument physical model with a tonehole-modelled saxophone-like bore (Stanford STK / sc3-plugins).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 220.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "reedstiffness",
+        "type": "float",
+        "default": 64.0,
+        "description": "Reed stiffness (0..127)."
+      },
+      {
+        "name": "reedaperture",
+        "type": "float",
+        "default": 64.0,
+        "description": "Reed aperture (0..127)."
+      },
+      {
+        "name": "noisegain",
+        "type": "float",
+        "default": 20.0,
+        "description": "Breath noise gain (0..127)."
+      },
+      {
+        "name": "blowposition",
+        "type": "float",
+        "default": 26.0,
+        "description": "Blow position along bore (0..127)."
+      },
+      {
+        "name": "vibratofrequency",
+        "type": "float",
+        "default": 20.0,
+        "description": "Vibrato frequency (0..127)."
+      },
+      {
+        "name": "vibratogain",
+        "type": "float",
+        "default": 20.0,
+        "description": "Vibrato gain (0..127)."
+      },
+      {
+        "name": "breathpressure",
+        "type": "float",
+        "default": 128.0,
+        "description": "Breath pressure (0..128)."
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 1,
+        "description": "Trigger — non-zero retriggers a noteOn at the current freq."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkShakers",
+    "description": "Stochastic physical model of various shakers (maracas, sleighbells, sandpaper, ...) from the Stanford STK (sc3-plugins). Selects an instrument with the instr index.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "instr",
+        "type": "float",
+        "default": 0.0,
+        "description": "Instrument index — 0=maracas, 1=cabasa, 2=sekere, 3=guiro, 4=tambourine, 5=sleighbells, 6=sticks, 7=crunch, 8=wrench, 9=sandpaper, 10=coins, 11=bigrocks, 12=littlerocks, 13=nextmug, 14=pennyandmug, 15=nickleandmug, 16=dimeandmug, 17=quarterandmug, 18=francandmug, 19=peandmug, 20=tunedbamboochimes."
+      },
+      {
+        "name": "energy",
+        "type": "float",
+        "default": 64.0,
+        "description": "Shake energy (0..127)."
+      },
+      {
+        "name": "decay",
+        "type": "float",
+        "default": 64.0,
+        "description": "System decay rate (0..127)."
+      },
+      {
+        "name": "objects",
+        "type": "float",
+        "default": 64.0,
+        "description": "Number of objects in the resonator (0..127)."
+      },
+      {
+        "name": "resfreq",
+        "type": "float",
+        "default": 64.0,
+        "description": "Resonant frequency (0..127)."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkBandedWG",
+    "description": "Banded waveguide physical model from the Stanford STK (sc3-plugins). Uses a parallel bank of bandpass-filtered delay lines to simulate stiff resonators (uniform bar, marimba, glass, tibetan bowl).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "instr",
+        "type": "float",
+        "default": 0.0,
+        "description": "Preset index — 0=uniform bar, 1=tuned bar, 2=glass harmonica, 3=tibetan bowl."
+      },
+      {
+        "name": "bowpressure",
+        "type": "float",
+        "default": 0.0,
+        "description": "Bow pressure (0..127)."
+      },
+      {
+        "name": "bowmotion",
+        "type": "float",
+        "default": 0.0,
+        "description": "Bow motion (0..127)."
+      },
+      {
+        "name": "integration",
+        "type": "float",
+        "default": 0.0,
+        "description": "Integration constant (0..127)."
+      },
+      {
+        "name": "modalresonance",
+        "type": "float",
+        "default": 64.0,
+        "description": "Modal resonance (0..127)."
+      },
+      {
+        "name": "bowvelocity",
+        "type": "float",
+        "default": 0.0,
+        "description": "Bow velocity (0..127)."
+      },
+      {
+        "name": "setstriking",
+        "type": "float",
+        "default": 0.0,
+        "description": "Set striking (vs bowing) — 0=bowed, 127=struck."
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 1,
+        "description": "Trigger — non-zero retriggers a noteOn at the current freq."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkVoicForm",
+    "description": "Four-formant vocal-tract physical model from the Stanford STK (sc3-plugins). Synthesises sung vowels using formant filters driven by a glottal pulse / voiced-noise mix.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "vuvmix",
+        "type": "float",
+        "default": 64.0,
+        "description": "Voiced/unvoiced mix (0..127)."
+      },
+      {
+        "name": "vowelphon",
+        "type": "float",
+        "default": 64.0,
+        "description": "Vowel/phoneme selector (0..127)."
+      },
+      {
+        "name": "vibfreq",
+        "type": "float",
+        "default": 64.0,
+        "description": "Vibrato frequency (0..127)."
+      },
+      {
+        "name": "vibgain",
+        "type": "float",
+        "default": 20.0,
+        "description": "Vibrato gain (0..127)."
+      },
+      {
+        "name": "loudness",
+        "type": "float",
+        "default": 64.0,
+        "description": "Loudness (0..127)."
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 1,
+        "description": "Trigger — non-zero retriggers a noteOn at the current freq."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkModalBar",
+    "description": "Modal-resonator struck-bar physical model from the Stanford STK (sc3-plugins). Emulates marimba, vibraphone, agogo, wood block and other tuned percussion via four parallel modal filters.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "instrument",
+        "type": "float",
+        "default": 0.0,
+        "description": "Preset index — 0=marimba, 1=vibraphone, 2=agogo, 3=wood1, 4=reso, 5=wood2, 6=beats, 7=two-fixed, 8=clump."
+      },
+      {
+        "name": "stickhardness",
+        "type": "float",
+        "default": 64.0,
+        "description": "Stick hardness (0..127)."
+      },
+      {
+        "name": "stickposition",
+        "type": "float",
+        "default": 64.0,
+        "description": "Stick position along bar (0..127)."
+      },
+      {
+        "name": "vibratogain",
+        "type": "float",
+        "default": 20.0,
+        "description": "Vibrato gain (0..127)."
+      },
+      {
+        "name": "vibratofreq",
+        "type": "float",
+        "default": 20.0,
+        "description": "Vibrato frequency (0..127)."
+      },
+      {
+        "name": "directstickmix",
+        "type": "float",
+        "default": 64.0,
+        "description": "Mix of direct stick noise vs resonator output (0..127)."
+      },
+      {
+        "name": "volume",
+        "type": "float",
+        "default": 64.0,
+        "description": "Output volume (0..127)."
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 1,
+        "description": "Trigger — non-zero retriggers a strike at the current freq."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkClarinet",
+    "description": "Reed clarinet physical model from the Stanford STK (sc3-plugins). Single-reed cylindrical-bore waveguide.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "reedstiffness",
+        "type": "float",
+        "default": 64.0,
+        "description": "Reed stiffness (0..127)."
+      },
+      {
+        "name": "noisegain",
+        "type": "float",
+        "default": 4.0,
+        "description": "Breath noise gain (0..127)."
+      },
+      {
+        "name": "vibfreq",
+        "type": "float",
+        "default": 64.0,
+        "description": "Vibrato frequency (0..127)."
+      },
+      {
+        "name": "vibgain",
+        "type": "float",
+        "default": 11.0,
+        "description": "Vibrato gain (0..127)."
+      },
+      {
+        "name": "breathpressure",
+        "type": "float",
+        "default": 64.0,
+        "description": "Breath pressure (0..127)."
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 1,
+        "description": "Trigger — non-zero retriggers a noteOn at the current freq."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkBlowHole",
+    "description": "Reed-instrument physical model with a single tonehole and register vent (Stanford STK / sc3-plugins). Models a clarinet-like bore with a controllable open hole.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "reedstiffness",
+        "type": "float",
+        "default": 64.0,
+        "description": "Reed stiffness (0..127)."
+      },
+      {
+        "name": "noisegain",
+        "type": "float",
+        "default": 20.0,
+        "description": "Breath noise gain (0..127)."
+      },
+      {
+        "name": "tonehole",
+        "type": "float",
+        "default": 64.0,
+        "description": "Tonehole open amount (0..127)."
+      },
+      {
+        "name": "register",
+        "type": "float",
+        "default": 11.0,
+        "description": "Register vent open amount (0..127)."
+      },
+      {
+        "name": "breathpressure",
+        "type": "float",
+        "default": 64.0,
+        "description": "Breath pressure (0..127)."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkMoog",
+    "description": "Moog-style swept-filter monosynth from the Stanford STK (sc3-plugins). Sample-playback voice driven through a sweeping resonant filter.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "filterQ",
+        "type": "float",
+        "default": 10.0,
+        "description": "Filter Q / resonance (0..127)."
+      },
+      {
+        "name": "sweeprate",
+        "type": "float",
+        "default": 20.0,
+        "description": "Filter sweep rate (0..127)."
+      },
+      {
+        "name": "vibfreq",
+        "type": "float",
+        "default": 64.0,
+        "description": "Vibrato frequency (0..127)."
+      },
+      {
+        "name": "vibgain",
+        "type": "float",
+        "default": 0.0,
+        "description": "Vibrato gain (0..127)."
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 64.0,
+        "description": "Output gain (0..127)."
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 1,
+        "description": "Trigger — non-zero retriggers a noteOn at the current freq."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkBeeThree",
+    "description": "Four-operator FM tonewheel-organ emulation from the Stanford STK (sc3-plugins). Hammond B3-inspired voice using STK's FM engine.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "op4gain",
+        "type": "float",
+        "default": 10.0,
+        "description": "Operator 4 gain (0..127)."
+      },
+      {
+        "name": "op3gain",
+        "type": "float",
+        "default": 20.0,
+        "description": "Operator 3 gain (0..127)."
+      },
+      {
+        "name": "lfospeed",
+        "type": "float",
+        "default": 64.0,
+        "description": "LFO speed (0..127)."
+      },
+      {
+        "name": "lfodepth",
+        "type": "float",
+        "default": 0.0,
+        "description": "LFO depth (0..127)."
+      },
+      {
+        "name": "adsrtarget",
+        "type": "float",
+        "default": 64.0,
+        "description": "ADSR target / sustain level (0..127)."
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 1,
+        "description": "Trigger — non-zero retriggers a noteOn at the current freq."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkSitar",
+    "description": "Plucked sitar physical model from the Stanford STK (sc3-plugins). Karplus-Strong loop with a sympathetic-string resonator characteristic.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 1,
+        "description": "Trigger — positive transition retriggers a pluck at the current freq."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkStifKarp",
+    "description": "Stiff-string Karplus-Strong physical model from the Stanford STK (sc3-plugins). Adds string stiffness and pickup-position colouration to the basic Karplus-Strong loop.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz."
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1.0,
+        "description": "Pluck velocity / amplitude (0..1) — only sampled at instantiation."
+      },
+      {
+        "name": "pickuppos",
+        "type": "float",
+        "default": 0.0,
+        "description": "Pickup position along string (0..127)."
+      },
+      {
+        "name": "stringsustain",
+        "type": "float",
+        "default": 0.0,
+        "description": "String sustain (0..127). Higher = longer decay."
+      },
+      {
+        "name": "stringstretch",
+        "type": "float",
+        "default": 0.0,
+        "description": "String stretch / stiffness (0..127). Higher = more inharmonic detuning."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "StkTubeBell",
+    "description": "Four-operator FM tubular-bell voice from the Stanford STK (sc3-plugins). Single-shot bell tone struck at instantiation.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz — sampled at instantiation."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  },
+  {
+    "name": "Sflute",
+    "description": "Simple two-delay-line waveguide flute physical model from the Stanford STK port (sc3-plugins). Lighter / more direct alternative to StkFlute.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Fundamental frequency in Hz — sets the bore delay length."
+      },
+      {
+        "name": "pressure",
+        "type": "float",
+        "default": 0.5,
+        "description": "Breath pressure driving the jet (0..1)."
+      },
+      {
+        "name": "randamp",
+        "type": "float",
+        "default": 0.1,
+        "description": "Breath-noise random amplitude (0..1)."
+      },
+      {
+        "name": "dampcoef",
+        "type": "float",
+        "default": 0.0001,
+        "description": "Bore damping coefficient — small values for long sustain."
+      },
+      {
+        "name": "lipopen",
+        "type": "float",
+        "default": 20.0,
+        "description": "Embouchure delay length in samples (1..100)."
+      },
+      {
+        "name": "jetstream",
+        "type": "float",
+        "default": 0.5,
+        "description": "Jet-stream nonlinearity scaling (0..1)."
+      },
+      {
+        "name": "fullwave",
+        "type": "float",
+        "default": 1.0,
+        "description": "Waveform shaper amount — 1.0 = full waveshaping nonlinearity."
+      }
+    ],
+    "outputs": 1,
+    "category": "StkUGens"
+  }
+]
