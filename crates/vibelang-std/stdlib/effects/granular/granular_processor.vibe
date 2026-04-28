@@ -1,0 +1,62 @@
+// kind=fx | category=granular | flavor=processor | stereo=true | params=density,grain_size,pitch,pos_jitter,mix,level
+//
+// Granular Processor Effect
+//
+// Continuously records the input into a circular buffer and reads it back
+// as overlapping pitch-shifted grains. Use it for ambient clouds, time-
+// smearing, or as a creative live-input granulator. Each channel runs its
+// own buffer + grain stream so stereo material stays decorrelated.
+//
+// Usage:
+//   group.add_effect("grain", "granular_processor", #{
+//     density: 30.0,
+//     grain_size: 0.1,
+//     pitch: 1.0,
+//     pos_jitter: 0.5,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   density: Grain trigger rate in grains/sec (1 to 100)
+//   grain_size: Grain duration in seconds (0.01 to 0.5)
+//   pitch: Playback rate / pitch ratio (0.5 = octave down, 2.0 = octave up)
+//   pos_jitter: Randomisation of grain read position in the buffer (0 to 1)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("granular_processor", |builder| {
+    builder
+        .param("density", 30.0)
+        .param("grain_size", 0.1)
+        .param("pitch", 1.0)
+        .param("pos_jitter", 0.5)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, density, grain_size, pitch, pos_jitter, mix, level| {
+            // ~2s circular buffers, one per channel for true-stereo granulation.
+            let buf_l = local_buf_ir(1, 96000);
+            let buf_r = local_buf_ir(1, 96000);
+
+            // Continuous looping recording of the live input into each buffer.
+            record_buf_ar(input[0], buf_l, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+            record_buf_ar(input[1], buf_r, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+
+            // Shared grain trigger; centre position jitters per-grain via WhiteNoise.
+            let trig = impulse_ar(density, 0.0);
+            let pos_l = white_noise_ar() * pos_jitter * 0.5 + 0.5;
+            let pos_r = white_noise_ar() * pos_jitter * 0.5 + 0.5;
+
+            // TGrains is stereo-out; collapse to a single mono grain stream per side.
+            let g_l = channels(t_grains_ar(2, trig, buf_l, pitch, pos_l, grain_size, 0.0, 0.5, 4), 2);
+            let g_r = channels(t_grains_ar(2, trig, buf_r, pitch, pos_r, grain_size, 0.0, 0.5, 4), 2);
+
+            let wet_l = leak_dc_ar((g_l[0] + g_l[1]) * 0.5, 0.995);
+            let wet_r = leak_dc_ar((g_r[0] + g_r[1]) * 0.5, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

@@ -1,0 +1,65 @@
+// kind=fx | category=granular | flavor=freeze | stereo=true | params=freeze,density,grain_size,pitch,pos_jitter,mix,level
+//
+// Granular Freeze Effect
+//
+// Records the input into a circular buffer and granulates it back. Toggling
+// `freeze` to 1 stops the recording so the grains read forever from the last
+// captured slice — instant infinite-sustain pad from any source.
+//
+// Usage:
+//   group.add_effect("freeze", "granular_freeze", #{
+//     freeze: 0.0,
+//     density: 30.0,
+//     grain_size: 0.15,
+//     pitch: 1.0,
+//     pos_jitter: 0.4,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   freeze: Freeze gate (0 = recording, 1 = frozen — playback only)
+//   density: Grain trigger rate in grains/sec (1 to 100)
+//   grain_size: Grain duration in seconds (0.01 to 0.5)
+//   pitch: Playback rate / pitch ratio (0.5 = octave down, 2.0 = octave up)
+//   pos_jitter: Randomisation of grain read position in the buffer (0 to 1)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("granular_freeze", |builder| {
+    builder
+        .param("freeze", 0.0)
+        .param("density", 30.0)
+        .param("grain_size", 0.15)
+        .param("pitch", 1.0)
+        .param("pos_jitter", 0.4)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, freeze, density, grain_size, pitch, pos_jitter, mix, level| {
+            // ~2s circular buffers, one per channel.
+            let buf_l = local_buf_ir(1, 96000);
+            let buf_r = local_buf_ir(1, 96000);
+
+            // run = 1 - freeze: when freeze is high, RecordBuf pauses and the
+            // buffer holds the last captured slice for grains to read from.
+            let run = 1.0 - freeze;
+            record_buf_ar(input[0], buf_l, 0, 1.0, 0.0, run, 1, 1, 0);
+            record_buf_ar(input[1], buf_r, 0, 1.0, 0.0, run, 1, 1, 0);
+
+            // Shared trigger, independent per-side position jitter.
+            let trig = impulse_ar(density, 0.0);
+            let pos_l = white_noise_ar() * pos_jitter * 0.5 + 0.5;
+            let pos_r = white_noise_ar() * pos_jitter * 0.5 + 0.5;
+
+            let g_l = channels(t_grains_ar(2, trig, buf_l, pitch, pos_l, grain_size, 0.0, 0.5, 4), 2);
+            let g_r = channels(t_grains_ar(2, trig, buf_r, pitch, pos_r, grain_size, 0.0, 0.5, 4), 2);
+
+            let wet_l = leak_dc_ar((g_l[0] + g_l[1]) * 0.5, 0.995);
+            let wet_r = leak_dc_ar((g_r[0] + g_r[1]) * 0.5, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

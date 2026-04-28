@@ -1,0 +1,3 @@
+// Granular Effects Index
+import "stdlib/effects/granular/granular_processor.vibe";
+import "stdlib/effects/granular/granular_freeze.vibe";
