@@ -1,0 +1,212 @@
+// Spectraphon Dual - Story D (D1-D5 combined)
+//
+// Two Spectraphon sides (A, B) wired into one synthdef with the FM bus and
+// Follow routing per kb/spectraphon-synthdef-plan.md §3.f + §6.D + §7.
+//
+// Each side is a 32-odd + 32-even unrolled additive bank (mirroring the
+// Story A pattern from spectraphon_side.vibe — 1/k saw default spectrum,
+// per-partial reveal mask gated by `partials`). The two sides are pitched
+// independently (freq_a, freq_b), summed nowhere internally; the four
+// jacks come out as a 4-element output array [odd_a, even_a, odd_b, even_b].
+//
+// FM bus (audio rate, internal):
+//   * `sin_a_pre = sin_osc_ar(freq_a)` and `sin_b_pre = sin_osc_ar(freq_b_eff)`
+//     are clean reference sines used as the FM modulators (matches hardware
+//     where the FM bus picks up each side's Sine output, not the modulated
+//     bank). Open-loop, no feedback path.
+//   * Modulation depth follows kb plan §4a: `index ∈ [0,1] → depth ∈ [0, f0] Hz`,
+//     so each side's f0 is offset by `index * sin_other_pre * f0` — depth
+//     scales with the carrier so the perceived FM character stays consistent
+//     across pitch.
+//   * Convention (matches ticket body): `b_fm_index` modulates A; `a_fm_index`
+//     modulates B (i.e. each fm_index names the *source* side carrying the
+//     modulator). NOTE this inverts the panel-name convention in §2c where
+//     A-FM-Index sets B→A depth — call sites should treat the params as
+//     "amount of A's sine into B" / "amount of B's sine into A".
+//
+// Routing modes (`routing_mode`, quantised to nearest integer 0..4):
+//   0 = independent — B uses freq_b directly.
+//   1 = follow, unison        (B = freq_a)
+//   2 = follow, +7 semitones  (B = freq_a · 1.4983, perfect fifth)
+//   3 = follow, +12 semitones (B = freq_a · 2.0, octave)
+//   4 = follow, +19 semitones (B = freq_a · 2.9966, octave + fifth)
+//   The discrete-interval menu folds the ticket's separate `routing_mode`
+//   + `b_voct_offset` params into a single param to fit the 10-arg cap.
+//   Sync mode is **not implemented** in v1 — per §7 it would require a
+//   custom phase-reset bank or per-partial sin_osc_fb_ar phase hooks, both
+//   significantly more invasive than the rest of this synthdef. Documented
+//   as a follow-up story.
+//
+// Parameter folding (Rhai 10-arg body cap; spectraphon_side.vibe hits the
+// same wall):
+//   * `mode_a` / `mode_b` dropped — both sides fixed at SAO with the
+//     Story A 1/k saw default spectrum. (Story B SAM analyzer + Story C
+//     Array memory addressing live in spectraphon_side.vibe; bringing
+//     them into the dual is a future story since 4 SAM analyzers + dual
+//     Array buffers + cross-FM all in one synthdef would blow the param
+//     budget many times over.)
+//   * `array_idx_a` / `array_idx_b` dropped — implicit Array 0.
+//   * `partials`, `slide`, `focus` shared between sides. `slide` acts as
+//     an odd-vs-even bank balance (Erbe's "balance between odd and even
+//     harmonics" gloss, §3d), `focus` as a multiplier on the per-partial
+//     reveal scale (proxy for "density of partials"). These are simplified
+//     stand-ins for the SAO Array lookup that spectraphon_side.vibe does;
+//     see §6.D2 for the planned upgrade.
+//   * `gate` retained — needed for envelope cleanup_on_finish and voice freeing.
+//
+// Final 10-arg signature: freq_a, freq_b, partials, slide, focus, amp,
+// a_fm_index, b_fm_index, routing_mode, gate.
+//
+// Output: 4-channel array [odd_a, even_a, odd_b, even_b]. Users wanting a
+// stereo mix can sum or pan downstream.
+//
+// References: kb/spectraphon-synthdef-plan.md §3.f, §4 (FM bus, Follow,
+// Sync rows), §6.D, §7. Bank construction pattern: spectraphon_side.vibe.
+
+define_synthdef("spectraphon_dual", |builder| {
+    builder
+        .param("freq_a", 220.0)
+        .param("freq_b", 220.0)
+        .param("partials", 1.0)
+        .param("slide", 0.5)
+        .param("focus", 0.5)
+        .param("amp", 0.3)
+        .param("a_fm_index", 0.0)   // A's sine into B (depth scaled by f0_b Hz)
+        .param("b_fm_index", 0.0)   // B's sine into A (depth scaled by f0_a Hz)
+        .param("routing_mode", 0.0) // 0=indep, 1=unison, 2=+5, 3=+8, 4=+5+8
+        .param("gate", 1.0)
+        .body(|freq_a, freq_b, partials, slide, focus, amp,
+               a_fm_index, b_fm_index, routing_mode, gate| {
+
+            let env = envelope()
+                .asr(0.01, 1.0, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
+                .build();
+
+            // === Routing mode decode ==========================================
+            //
+            // Quantise routing_mode to nearest integer in [0, 4]. floor(x+0.5)
+            // = (x+0.5) - wrap_kr(x+0.5, 0, 1) since vibelang has no Round
+            // UGen (same trick spectraphon_side uses for floor).
+            let r_clip = clip(routing_mode, 0.0, 4.0);
+            let r_int = (r_clip + 0.5) - wrap_kr(r_clip + 0.5, 0.0, 1.0);
+
+            // Branchless equality masks: eq_i ≈ 1 when r_int = i, else 0.
+            // Uses (r_int - i)^2 ≥ 1 for any non-equal integer ⇒ scaled
+            // difference saturates clip past 1 ⇒ result clamps to 0.
+            let dr0 = r_int - 0.0;
+            let dr1 = r_int - 1.0;
+            let dr2 = r_int - 2.0;
+            let dr3 = r_int - 3.0;
+            let dr4 = r_int - 4.0;
+            let eq0 = clip(1.0 - dr0 * dr0 * 1000.0, 0.0, 1.0);
+            let eq1 = clip(1.0 - dr1 * dr1 * 1000.0, 0.0, 1.0);
+            let eq2 = clip(1.0 - dr2 * dr2 * 1000.0, 0.0, 1.0);
+            let eq3 = clip(1.0 - dr3 * dr3 * 1000.0, 0.0, 1.0);
+            let eq4 = clip(1.0 - dr4 * dr4 * 1000.0, 0.0, 1.0);
+
+            // Follow-mode pitch ratio (multiplier on freq_a). Modes 1..4 pick
+            // a discrete equal-tempered interval; mode 0 leaves it at zero
+            // and freq_b's independent value takes over.
+            let follow_ratio = eq1 * 1.0 + eq2 * 1.4983 + eq3 * 2.0 + eq4 * 2.9966;
+
+            // freq_b_eff: independent path uses freq_b; follow paths use
+            // freq_a * follow_ratio. eq0 / (1 - eq0) act as branch selectors.
+            let freq_b_eff = freq_b * eq0 + freq_a * follow_ratio;
+
+            // === FM bus ========================================================
+            //
+            // Reference sines are clean (un-modulated) — see header for why.
+            let sin_a_pre = sin_osc_ar(freq_a);
+            let sin_b_pre = sin_osc_ar(freq_b_eff);
+
+            // Effective per-side f0 carriers after FM. Depth ∈ [0, f0] Hz (linear).
+            let freq_a_fm = freq_a     + b_fm_index * sin_b_pre * freq_a;
+            let freq_b_fm = freq_b_eff + a_fm_index * sin_a_pre * freq_b_eff;
+
+            // === Per-partial mask shared across sides ==========================
+            //
+            // n=64 total partials per side, split 32 odd + 32 even.
+            // `scale = partials * n` gives the reveal cursor position; per-partial
+            // weight = clip(scale - (k-1), 0, 1) → CCW silent, CW full spectrum.
+            let n = 64.0;
+            let scale = partials * n;
+
+            // Slide acts as odd/even bank balance. slide=0 favours even,
+            // slide=1 favours odd; both banks always pass at least 0.5x.
+            let odd_gain  = 0.5 + slide * 0.5;
+            let even_gain = 1.0 - slide * 0.5;
+
+            // Focus scales the reveal cursor — proxy for "density of partials".
+            // focus=0 → 0.5x scale (sparse), focus=1 → 2.0x (dense).
+            let focus_scale = focus * 1.5 + 0.5;
+            let scale_eff = scale * focus_scale;
+
+            // === Side A — Odd bank (k = 1, 3, 5, ..., 63) ======================
+            let k = 1.0;
+            let mag_k = 1.0 / k;
+            let odd_a = sin_osc_ar(freq_a_fm * k) * mag_k
+                * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+            for i in 1..32 {
+                let k = (2 * i + 1).to_float();
+                let mag_k = 1.0 / k;
+                odd_a = odd_a + sin_osc_ar(freq_a_fm * k) * mag_k
+                    * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+            }
+            odd_a = odd_a * odd_gain;
+
+            // === Side A — Even bank (k = 2, 4, 6, ..., 64) =====================
+            let k = 2.0;
+            let mag_k = 1.0 / k;
+            let even_a = sin_osc_ar(freq_a_fm * k) * mag_k
+                * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+            for i in 1..32 {
+                let k = (2 * (i + 1)).to_float();
+                let mag_k = 1.0 / k;
+                even_a = even_a + sin_osc_ar(freq_a_fm * k) * mag_k
+                    * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+            }
+            even_a = even_a * even_gain;
+
+            // === Side B — Odd bank ============================================
+            let k = 1.0;
+            let mag_k = 1.0 / k;
+            let odd_b = sin_osc_ar(freq_b_fm * k) * mag_k
+                * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+            for i in 1..32 {
+                let k = (2 * i + 1).to_float();
+                let mag_k = 1.0 / k;
+                odd_b = odd_b + sin_osc_ar(freq_b_fm * k) * mag_k
+                    * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+            }
+            odd_b = odd_b * odd_gain;
+
+            // === Side B — Even bank ===========================================
+            let k = 2.0;
+            let mag_k = 1.0 / k;
+            let even_b = sin_osc_ar(freq_b_fm * k) * mag_k
+                * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+            for i in 1..32 {
+                let k = (2 * (i + 1)).to_float();
+                let mag_k = 1.0 / k;
+                even_b = even_b + sin_osc_ar(freq_b_fm * k) * mag_k
+                    * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+            }
+            even_b = even_b * even_gain;
+
+            // === Output stage =================================================
+            //
+            // Per-channel DC block, then global VCA = env * amp * partials
+            // (the * partials supplies the hardware Partials-knob global VCA
+            // on top of the per-partial reveal mask, matching spectraphon_side
+            // line 264).
+            let g = env * amp * partials;
+            let out_odd_a  = leak_dc_ar(odd_a,  0.995) * g;
+            let out_even_a = leak_dc_ar(even_a, 0.995) * g;
+            let out_odd_b  = leak_dc_ar(odd_b,  0.995) * g;
+            let out_even_b = leak_dc_ar(even_b, 0.995) * g;
+
+            [out_odd_a, out_even_a, out_odd_b, out_even_b]
+        })
+});
