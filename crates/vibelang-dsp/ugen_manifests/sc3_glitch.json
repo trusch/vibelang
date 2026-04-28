@@ -1,0 +1,132 @@
+[
+  {
+    "name": "GlitchHPF",
+    "description": "Pre-sc3.4 single-precision second order Butterworth high pass filter. Drop-in replacement for HPF that restores the older single-precision behaviour (HPF was changed to double precision in sc3.4 / svn r10300, 8 Sep 2010), producing the deliberately aliased/broken sound of the original implementation. From sc3-plugins GlitchUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Cutoff frequency in Hertz"
+      }
+    ],
+    "outputs": 1,
+    "category": "Glitch",
+    "functions": [
+      "glitch_hpf_ar",
+      "glitch_hpf_kr"
+    ]
+  },
+  {
+    "name": "GlitchRHPF",
+    "description": "Pre-sc3.4 single-precision resonant high pass filter. Drop-in replacement for RHPF that restores the older single-precision behaviour (RHPF was changed to double precision in sc3.4 / svn r10300, 8 Sep 2010), producing the deliberately aliased/broken sound of the original implementation. From sc3-plugins GlitchUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q. Bandwidth / cutoff frequency. Lower values = more resonance"
+      }
+    ],
+    "outputs": 1,
+    "category": "Glitch",
+    "functions": [
+      "glitch_rhpf_ar",
+      "glitch_rhpf_kr"
+    ]
+  },
+  {
+    "name": "GlitchBPF",
+    "description": "Pre-sc3.4 single-precision second order Butterworth band pass filter. Drop-in replacement for BPF that restores the older single-precision behaviour (BPF was changed to double precision after sc3.4), producing the deliberately aliased/broken sound of the original implementation. From sc3-plugins GlitchUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Center frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q. Bandwidth / cutoff frequency"
+      }
+    ],
+    "outputs": 1,
+    "category": "Glitch",
+    "functions": [
+      "glitch_bpf_ar",
+      "glitch_bpf_kr"
+    ]
+  },
+  {
+    "name": "GlitchBRF",
+    "description": "Pre-sc3.4 single-precision second order Butterworth band reject (notch) filter. Drop-in replacement for BRF that restores the older single-precision behaviour (BRF was changed to double precision after sc3.4), producing the deliberately aliased/broken sound of the original implementation. From sc3-plugins GlitchUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Center frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1,
+        "description": "Reciprocal of Q. Bandwidth / cutoff frequency"
+      }
+    ],
+    "outputs": 1,
+    "category": "Glitch",
+    "functions": [
+      "glitch_brf_ar",
+      "glitch_brf_kr"
+    ]
+  }
+]
