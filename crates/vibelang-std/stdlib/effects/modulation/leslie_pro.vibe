@@ -1,0 +1,97 @@
+// kind=fx | category=modulation | flavor=leslie_pro | stereo=true | params=speed,depth,brake,mix,level
+//
+// Leslie Pro (Two-Rotor Rotary Speaker)
+//
+// Proper Leslie cabinet simulation. The signal is split at 800Hz into a
+// bass band (low rotor) and a treble band (high horn). Each rotor has its
+// own rotation rate — the horn spins much faster than the bass drum — and
+// each applies Doppler pitch modulation (via a modulated delay line) plus
+// amplitude tremolo. The L/R LFOs sit 90deg apart so the rotation images
+// across the stereo field.
+//
+// `speed` crossfades between chorale (slow) and tremolo (fast) modes the
+// way the real cabinet's two-speed motor does — bass and horn ramp at
+// different rates because the heavier bass drum has more inertia. `brake`
+// rolls both rotors toward zero for the classic stop effect.
+//
+// Usage:
+//   group.add_effect("leslie", "leslie_pro", #{
+//     speed: 1.0,
+//     depth: 1.0,
+//     brake: 0.0,
+//     mix: 1.0,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   speed: Slow/fast crossfade (0.0 = chorale, 1.0 = tremolo)
+//   depth: Overall modulation amount (0.0 to 1.0)
+//   brake: Brake amount (0.0 = rotating, 1.0 = stopped)
+//   mix:   Dry/wet mix
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("leslie_pro", |builder| {
+    builder
+        .param("speed", 1.0)
+        .param("depth", 1.0)
+        .param("brake", 0.0)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, speed, depth, brake, mix, level| {
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // 800Hz crossover splits the signal between the two rotors.
+            let bass = lpf_ar(mono, 800.0);
+            let treble = hpf_ar(mono, 800.0);
+
+            // Brake scales both rotor rates toward zero. At brake=1 the
+            // rotors stop entirely, leaving only static filtering.
+            let rotation = 1.0 - brake;
+
+            // Rotor rates (Hz). Horn: 0.4 (slow) to 7.0 (fast).
+            // Bass drum: 0.3 (slow) to 0.6 (fast). The bass barely speeds
+            // up — that's how the real cabinet behaves and a big part of
+            // the chorale/tremolo character.
+            let horn_rate = (0.4 + speed * 6.6) * rotation;
+            let bass_rate = (0.3 + speed * 0.3) * rotation;
+
+            // Doppler depth. The horn projects further than the bass
+            // baffle, so its pitch modulation is wider.
+            let horn_doppler = 0.0006 * depth;
+            let bass_doppler = 0.00025 * depth;
+
+            // LFOs. SinOsc drives the smooth Doppler; LFPar drives the AM
+            // with a slightly different shape so pitch and volume don't
+            // track in lockstep — the real horn has lobed amplitude.
+            let horn_sin_l = sin_osc_kr(horn_rate, 0.0);
+            let horn_sin_r = sin_osc_kr(horn_rate, 1.5707963);
+            let horn_par_l = lf_par_kr(horn_rate, 0.0);
+            let horn_par_r = lf_par_kr(horn_rate, 0.5);
+            let bass_sin_l = sin_osc_kr(bass_rate, 0.0);
+            let bass_sin_r = sin_osc_kr(bass_rate, 1.5707963);
+            let bass_par_l = lf_par_kr(bass_rate, 0.0);
+            let bass_par_r = lf_par_kr(bass_rate, 0.5);
+
+            // Doppler — modulate a short delay around 5ms.
+            let horn_l = delay_c_ar(treble, 0.02, 0.005 + horn_sin_l * horn_doppler);
+            let horn_r = delay_c_ar(treble, 0.02, 0.005 + horn_sin_r * horn_doppler);
+            let bass_l = delay_c_ar(bass, 0.02, 0.005 + bass_sin_l * bass_doppler);
+            let bass_r = delay_c_ar(bass, 0.02, 0.005 + bass_sin_r * bass_doppler);
+
+            // Tremolo. Horn has deeper AM than the bass drum.
+            let horn_am_depth = 0.25 * depth;
+            let bass_am_depth = 0.15 * depth;
+            let horn_am_l = 1.0 - horn_am_depth * 0.5 * (1.0 + horn_par_l);
+            let horn_am_r = 1.0 - horn_am_depth * 0.5 * (1.0 + horn_par_r);
+            let bass_am_l = 1.0 - bass_am_depth * 0.5 * (1.0 + bass_par_l);
+            let bass_am_r = 1.0 - bass_am_depth * 0.5 * (1.0 + bass_par_r);
+
+            let wet_l = leak_dc_ar(horn_l * horn_am_l + bass_l * bass_am_l, 0.995);
+            let wet_r = leak_dc_ar(horn_r * horn_am_r + bass_r * bass_am_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

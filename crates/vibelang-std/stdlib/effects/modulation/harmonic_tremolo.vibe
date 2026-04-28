@@ -1,0 +1,58 @@
+// kind=fx | category=modulation | flavor=harmonic_tremolo | stereo=true | params=rate,depth,mix,level
+//
+// Harmonic Tremolo (Vox AC30 / Brownface Fender style)
+//
+// Crossover at 800Hz splits the signal into low and high bands. An LFO
+// drives both bands at opposite phase: as the bass dips the treble peaks
+// and vice versa. Recombined, the result is a harmonic see-saw — the
+// timbre appears to sweep rather than the volume pulsing, which is the
+// signature trick of the AC30 "Vibrato" channel and the early-60s Fender
+// Brownface bias-modulated tremolo.
+//
+// Usage:
+//   group.add_effect("htrem", "harmonic_tremolo", #{
+//     rate: 5.0,
+//     depth: 0.7,
+//     mix: 1.0,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   rate:  LFO rate in Hz (0.5 to 15.0)
+//   depth: Modulation depth (0.0 = off, 1.0 = full ducking)
+//   mix:   Dry/wet mix
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("harmonic_tremolo", |builder| {
+    builder
+        .param("rate", 5.0)
+        .param("depth", 0.7)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, rate, depth, mix, level| {
+            // Single LFO drives both bands; the opposite-phase trick is
+            // done by inverting the sign in the modulator math, not by
+            // running a second oscillator.
+            let lfo = sin_osc_kr(rate, 0.0);
+
+            // Each band's gain swings between 1.0 and (1.0 - depth) but
+            // the two bands are 180deg out of phase. depth=1 → one band
+            // briefly mutes while the other passes at unity.
+            let lo_mod = 1.0 - depth * 0.5 * (1.0 + lfo);
+            let hi_mod = 1.0 - depth * 0.5 * (1.0 - lfo);
+
+            // 800Hz crossover applied per channel. Stereo is preserved.
+            let bass_l = lpf_ar(input[0], 800.0);
+            let bass_r = lpf_ar(input[1], 800.0);
+            let treble_l = hpf_ar(input[0], 800.0);
+            let treble_r = hpf_ar(input[1], 800.0);
+
+            let wet_l = leak_dc_ar(bass_l * lo_mod + treble_l * hi_mod, 0.995);
+            let wet_r = leak_dc_ar(bass_r * lo_mod + treble_r * hi_mod, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

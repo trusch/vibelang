@@ -11,3 +11,5 @@ import "stdlib/effects/modulation/ring_mod.vibe";
 import "stdlib/effects/modulation/freq_shift.vibe";
 import "stdlib/effects/modulation/pitch_shift.vibe";
 import "stdlib/effects/modulation/auto_wah.vibe";
+import "stdlib/effects/modulation/leslie_pro.vibe";
+import "stdlib/effects/modulation/harmonic_tremolo.vibe";
