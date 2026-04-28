@@ -1,3 +1,5 @@
+// kind=fx | category=distortion | flavor=tape_saturation | stereo=true | params=drive,bias,speed,mix,level
+//
 // Tape Saturation Effect
 // Inspired by: Studer A800, Ampex ATR-102, UAD Tape machines
 //
@@ -6,17 +8,19 @@
 //
 // Parameters:
 //   drive: Input drive/saturation amount (0.0 to 1.0)
-//   bias: Tape bias affecting harmonic character (0.0 = vintage, 1.0 = modern)
+//   bias:  Tape bias affecting harmonic character (0.0 = vintage, 1.0 = modern)
 //   speed: Simulated tape speed affecting frequency response (0.0 = 7.5ips, 1.0 = 30ips)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
 
 define_fx("tape_saturation", |builder| {
     builder
         .param("drive", 0.4)
         .param("bias", 0.5)
         .param("speed", 0.7)
-        .param("mix", 0.5)
-        .body(|input, drive, bias, speed, mix| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, drive, bias, speed, mix, level| {
             // Input gain (drive into saturation)
             let driven_l = input[0] * (1.0 + drive * 3.0);
             let driven_r = input[1] * (1.0 + drive * 3.0);
@@ -43,9 +47,12 @@ define_fx("tape_saturation", |builder| {
             // Output level compensation
             let comp = 1.0 / (1.0 + drive * 0.5);
 
+            let wet_l = leak_dc_ar(final_l * comp, 0.995);
+            let wet_r = leak_dc_ar(final_r * comp, 0.995);
+
             [
-                (1.0 - mix) * input[0] + mix * final_l * comp,
-                (1.0 - mix) * input[1] + mix * final_r * comp
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });

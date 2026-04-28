@@ -1,37 +1,45 @@
+// kind=fx | category=dynamics | flavor=amp_follower | stereo=true | params=attack,release,scale,mix,level
+//
 // Amplitude Follower Effect
 //
-// Extracts and smooths the amplitude envelope of the signal.
-// Can be used for envelope following or ducking applications.
+// Extracts and smooths the amplitude envelope of the signal, then
+// re-multiplies the signal by it. Useful for envelope-following or
+// pumping effects. Wet path is purely multiplicative — no DC introduced —
+// so the spec-mandated DC blocker is omitted.
 //
 // Usage:
 //   group.add_effect("env_follow", "amp_follower", #{
 //     attack: 0.01,
 //     release: 0.1,
-//     scale: 2.0
+//     scale: 2.0,
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   attack: Attack time in seconds
+//   attack:  Attack time in seconds
 //   release: Release time in seconds
-//   scale: Output scaling factor (0.1 to 5.0)
+//   scale:   Output scaling factor (0.1 to 5.0)
+//   mix:     Dry/wet mix (1.0 = full wet, insert default)
+//   level:   Final output trim (1.0 = unity)
 
-define_fx("amp_follower", |builder| {
-    builder
-        .param("attack", 0.01)
-        .param("release", 0.1)
-        .param("scale", 2.0)
-        .body(|input, attack, release, scale| {
-            // Extract amplitude envelope
-            let env_left = amplitude_ar(input[0], attack, release);
-            let env_right = amplitude_ar(input[1], attack, release);
+define_fx("amp_follower")
+    .param("attack", 0.01)
+    .param("release", 0.1)
+    .param("scale", 2.0)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, attack, release, scale, mix, level| {
+        // Extract amplitude envelope
+        let env_left = amplitude_ar(input[0], attack, release);
+        let env_right = amplitude_ar(input[1], attack, release);
 
-            // Apply envelope back to signal (can create pumping effect)
-            let followed = [
-                input[0] * env_left * scale,
-                input[1] * env_right * scale
-            ];
+        // Apply envelope back to signal (can create pumping effect)
+        let wet_l = input[0] * env_left * scale;
+        let wet_r = input[1] * env_right * scale;
 
-            followed
-        })
-});
-
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

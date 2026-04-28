@@ -1,3 +1,5 @@
+// kind=fx | category=modulation | flavor=phaser | stereo=true | params=rate,depth,freq,feedback,mix,level
+//
 // Phaser Effect
 //
 // Creates a sweeping sound using all-pass filters with LFO modulation.
@@ -8,15 +10,17 @@
 //     depth: 1000.0,
 //     freq: 1000.0,
 //     feedback: 0.3,
-//     mix: 0.5
+//     mix: 0.3,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   rate: LFO rate in Hz (0.05 to 5.0)
-//   depth: Modulation depth in Hz (100 to 5000)
-//   freq: Base frequency in Hz (200 to 5000)
+//   rate:     LFO rate in Hz (0.05 to 5.0)
+//   depth:    Modulation depth in Hz (100 to 5000)
+//   freq:     Base frequency in Hz (200 to 5000)
 //   feedback: Feedback amount (0.0 to 0.9)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:      Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:    Output trim applied after the dry/wet mix
 
 define_fx("phaser", |builder| {
     builder
@@ -24,8 +28,9 @@ define_fx("phaser", |builder| {
         .param("depth", 1000.0)
         .param("freq", 1000.0)
         .param("feedback", 0.3)
-        .param("mix", 0.5)
-        .body(|input, rate, depth, freq, feedback, mix| {
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, rate, depth, freq, feedback, mix, level| {
             // LFO for filter modulation
             let lfo = sin_osc_ar(rate, 0.0);
             let mod_freq = freq + (depth * lfo);
@@ -47,13 +52,12 @@ define_fx("phaser", |builder| {
             phased_left = phased_left + (feedback * phased_left);
             phased_right = phased_right + (feedback * phased_right);
 
-            // Mix dry and wet signals
-            let output = [
-                (1.0 - mix) * input[0] + mix * phased_left,
-                (1.0 - mix) * input[1] + mix * phased_right
-            ];
+            let wet_l = leak_dc_ar(phased_left, 0.995);
+            let wet_r = leak_dc_ar(phased_right, 0.995);
 
-            output
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-

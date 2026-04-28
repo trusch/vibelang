@@ -1,3 +1,5 @@
+// kind=fx | category=modulation | flavor=vibrato | stereo=true | params=rate,depth,mix,level
+//
 // Vibrato Effect
 //
 // Pitch modulation effect that creates a vibrato sound.
@@ -6,20 +8,23 @@
 //   group.add_effect("vib", "vibrato", #{
 //     rate: 5.0,
 //     depth: 0.002,
-//     mix: 1.0
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   rate: Vibrato rate in Hz (1.0 to 20.0)
+//   rate:  Vibrato rate in Hz (1.0 to 20.0)
 //   depth: Vibrato depth in seconds (0.0001 to 0.01)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
 
 define_fx("vibrato", |builder| {
     builder
         .param("rate", 5.0)
         .param("depth", 0.002)
         .param("mix", 1.0)
-        .body(|input, rate, depth, mix| {
+        .param("level", 1.0)
+        .body(|input, rate, depth, mix, level| {
             // LFO for pitch modulation
             let lfo = sin_osc_ar(rate, 0.0);
 
@@ -30,13 +35,12 @@ define_fx("vibrato", |builder| {
             let vibrato_left = delay_c_ar(input[0], 0.1, delay_time);
             let vibrato_right = delay_c_ar(input[1], 0.1, delay_time);
 
-            // Mix dry and wet signals
-            let output = [
-                (1.0 - mix) * input[0] + mix * vibrato_left,
-                (1.0 - mix) * input[1] + mix * vibrato_right
-            ];
+            let wet_l = leak_dc_ar(vibrato_left, 0.995);
+            let wet_r = leak_dc_ar(vibrato_right, 0.995);
 
-            output
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-

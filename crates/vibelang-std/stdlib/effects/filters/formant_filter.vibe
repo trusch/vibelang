@@ -1,3 +1,5 @@
+// kind=fx | category=filter | flavor=formant | stereo=true | params=freq,attack,decay,mix,level
+//
 // Formant Filter Effect
 //
 // Creates vowel-like resonances using formant filtering.
@@ -7,33 +9,35 @@
 //     freq: 800.0,
 //     attack: 0.01,
 //     decay: 0.1,
-//     mix: 0.7
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   freq: Formant frequency in Hz (200 to 5000)
+//   freq:   Formant frequency in Hz (200 to 5000)
 //   attack: Attack time in seconds
-//   decay: Decay time in seconds
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   decay:  Decay time in seconds
+//   mix:    Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:  Output trim applied after the dry/wet mix
 
 define_fx("formant_filter", |builder| {
     builder
         .param("freq", 800.0)
         .param("attack", 0.01)
         .param("decay", 0.1)
-        .param("mix", 0.7)
-        .body(|input, freq, attack, decay, mix| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, freq, attack, decay, mix, level| {
             // Apply formant filtering
             let formant_left = formlet_ar(input[0], freq, attack, decay);
             let formant_right = formlet_ar(input[1], freq, attack, decay);
 
-            // Mix dry and wet signals
-            let output = [
-                (1.0 - mix) * input[0] + mix * formant_left,
-                (1.0 - mix) * input[1] + mix * formant_right
-            ];
+            let wet_l = leak_dc_ar(formant_left, 0.995);
+            let wet_r = leak_dc_ar(formant_right, 0.995);
 
-            output
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-

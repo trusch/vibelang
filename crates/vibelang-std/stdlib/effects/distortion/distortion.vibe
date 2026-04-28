@@ -1,3 +1,5 @@
+// kind=fx | category=distortion | flavor=hard_clip | stereo=true | params=drive,tone,mix,level
+//
 // Distortion Effect
 //
 // Hard clipping distortion with pre and post gain control.
@@ -6,24 +8,27 @@
 //   group.add_effect("dist", "distortion", #{
 //     drive: 8.0,
 //     tone: 5000.0,
-//     mix: 0.5
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
 //   drive: Input gain/drive (1.0 to 50.0)
-//   tone: Low-pass filter cutoff after distortion (1000 to 12000 Hz)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   tone:  Low-pass filter cutoff after distortion (1000 to 12000 Hz)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
 
 define_fx("distortion", |builder| {
     builder
         .param("drive", 8.0)
         .param("tone", 5000.0)
-        .param("mix", 0.5)
-        .body(|input, drive, tone, mix| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, drive, tone, mix, level| {
             // Large constant boost to ensure we hit tanh saturation even on quiet signals
             // drive=8 -> 800x boost, drive=20 -> 2000x boost
             let boost = 1.0;
-            
+
             // Remove low-end mud and boost signal for clipping
             let driven_left = hpf_ar(input[0], 80.0) * boost * drive;
             let driven_right = hpf_ar(input[1], 80.0) * boost * drive;
@@ -36,16 +41,12 @@ define_fx("distortion", |builder| {
             let shaped_left = lpf_ar(clipped_left, tone);
             let shaped_right = lpf_ar(clipped_right, tone);
 
-            // Mix dry and wet signals
-            let dry_left = input[0] * (1.0 - mix);
-            let dry_right = input[1] * (1.0 - mix);
-            let wet_left = shaped_left * mix;
-            let wet_right = shaped_right * mix;
-            
+            let wet_l = leak_dc_ar(shaped_left, 0.995);
+            let wet_r = leak_dc_ar(shaped_right, 0.995);
+
             [
-                dry_left + wet_left,
-                dry_right + wet_right
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });
-

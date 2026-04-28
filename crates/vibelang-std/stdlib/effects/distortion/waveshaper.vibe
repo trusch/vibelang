@@ -1,3 +1,5 @@
+// kind=fx | category=distortion | flavor=waveshaper | stereo=true | params=amount,curve,mix,level
+//
 // Waveshaper Effect
 //
 // Harmonic distortion through waveshaping transfer function.
@@ -7,20 +9,23 @@
 //   group.add_effect("shaper", "waveshaper", #{
 //     amount: 0.5,
 //     curve: 2.0,
-//     mix: 0.5
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
 //   amount: Shaping intensity (0.0 - 1.0)
-//   curve: Waveshaping curve exponent (1.0 = linear, 3.0 = cubic)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   curve:  Waveshaping curve exponent (1.0 = linear, 3.0 = cubic)
+//   mix:    Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:  Output trim applied after the dry/wet mix
 
 define_fx("waveshaper", |builder| {
     builder
         .param("amount", 0.5)
         .param("curve", 2.0)
-        .param("mix", 0.5)
-        .body(|input, amount, curve, mix| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, amount, curve, mix, level| {
             // Pre-gain based on amount
             let pre_gain = 1.0 + amount * 4.0;
 
@@ -36,9 +41,12 @@ define_fx("waveshaper", |builder| {
             let norm_left = shaped_left / pre_gain.sqrt();
             let norm_right = shaped_right / pre_gain.sqrt();
 
+            let wet_l = leak_dc_ar(norm_left, 0.995);
+            let wet_r = leak_dc_ar(norm_right, 0.995);
+
             [
-                (1.0 - mix) * input[0] + mix * norm_left,
-                (1.0 - mix) * input[1] + mix * norm_right
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });

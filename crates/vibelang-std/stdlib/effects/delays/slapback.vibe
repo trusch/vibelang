@@ -1,29 +1,35 @@
+// kind=fx | category=delay | flavor=slapback | stereo=true | params=time,mix,level
+//
 // Slapback Delay Effect
 //
-// Classic rockabilly/50s slapback echo.
+// Classic rockabilly/50s slapback echo. Single tap, no feedback.
 //
 // Usage:
 //   group.add_effect("slap", "slapback", #{
 //     time: 0.12,
-//     level: 0.6
+//     mix: 0.4,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   time: Delay time in seconds (0.05 to 0.2)
-//   level: Delay level (0.0 to 1.0)
+//   time:  Delay time in seconds (0.05 to 0.2)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Final output trim (1.0 = unity)
 
-define_fx("slapback", |builder| {
-    builder
-        .param("time", 0.12)
-        .param("level", 0.6)
-        .body(|input, time, level| {
-            // Single delay tap, no feedback
-            let delayed_left = delay_c_ar(input[0], 0.25, time);
-            let delayed_right = delay_c_ar(input[1], 0.25, time);
+define_fx("slapback")
+    .param("time", 0.12)
+    .param("mix", 0.4)
+    .param("level", 1.0)
+    .body(|input, time, mix, level| {
+        // Single delay tap, no feedback
+        let delayed_left = delay_c_ar(input[0], 0.25, time);
+        let delayed_right = delay_c_ar(input[1], 0.25, time);
 
-            [
-                input[0] + delayed_left * level,
-                input[1] + delayed_right * level
-            ]
-        })
-});
+        let wet_l = leak_dc_ar(delayed_left, 0.995);
+        let wet_r = leak_dc_ar(delayed_right, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

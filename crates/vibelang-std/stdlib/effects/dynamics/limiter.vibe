@@ -1,27 +1,40 @@
-// Limiter Effect
+// kind=fx | category=dynamics | flavor=peak | stereo=true | params=ceiling,lookahead,mix,level
+//
+// Peak Limiter Effect
 //
 // Peak limiter to prevent clipping and control maximum output level.
+// `ceiling` is the limiter's peak threshold (was `level` before the spec
+// refactor); `level` is now the spec-standard output trim.
 //
 // Usage:
 //   group.add_effect("limit", "limiter", #{
-//     level: 0.9,
-//     lookahead: 0.01
+//     ceiling: 0.9,
+//     lookahead: 0.01,
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   level: Maximum output level (0.0 to 1.0)
+//   ceiling:   Maximum output level (0.0 to 1.0)
 //   lookahead: Lookahead time in seconds (0.001 to 0.1)
+//   mix:       Dry/wet mix (1.0 = full wet, insert default)
+//   level:     Final output trim (1.0 = unity)
 
-define_fx("limiter", |builder| {
-    builder
-        .param("level", 0.9)
-        .param("lookahead", 0.01)
-        .body(|input, level, lookahead| {
-            // Apply limiter to both channels
-            let limited_left = limiter_ar(input[0], level, lookahead);
-            let limited_right = limiter_ar(input[1], level, lookahead);
+define_fx("limiter")
+    .param("ceiling", 0.9)
+    .param("lookahead", 0.01)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, ceiling, lookahead, mix, level| {
+        // Apply limiter to both channels
+        let limited_left = limiter_ar(input[0], ceiling, lookahead);
+        let limited_right = limiter_ar(input[1], ceiling, lookahead);
 
-            [limited_left, limited_right]
-        })
-});
+        let wet_l = leak_dc_ar(limited_left, 0.995);
+        let wet_r = leak_dc_ar(limited_right, 0.995);
 
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

@@ -1,3 +1,5 @@
+// kind=fx | category=distortion | flavor=vinyl | stereo=true | params=crackle,dust,wow,flutter,wear,mix,level
+//
 // Vinyl Record Effect
 //
 // Simulates the sound of a vinyl record with crackle, dust, and wow/flutter.
@@ -9,16 +11,18 @@
 //     wow: 0.3,
 //     flutter: 0.2,
 //     wear: 4000.0,
-//     mix: 0.8
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
 //   crackle: Crackle amount (0.0 to 0.2)
-//   dust: Dust/click amount (0.0 to 0.1)
-//   wow: Slow pitch variation (0.0 to 1.0)
+//   dust:    Dust/click amount (0.0 to 0.1)
+//   wow:     Slow pitch variation (0.0 to 1.0)
 //   flutter: Fast pitch variation (0.0 to 1.0)
-//   wear: Filter cutoff for record wear in Hz (2000 to 8000)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   wear:    Filter cutoff for record wear in Hz (2000 to 8000)
+//   mix:     Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:   Output trim applied after the dry/wet mix
 
 define_fx("vinyl", |builder| {
     builder
@@ -27,8 +31,9 @@ define_fx("vinyl", |builder| {
         .param("wow", 0.3)
         .param("flutter", 0.2)
         .param("wear", 4000.0)
-        .param("mix", 0.8)
-        .body(|input, crackle, dust, wow, flutter, wear, mix| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, crackle, dust, wow, flutter, wear, mix, level| {
             // Wow (slow pitch variation)
             let wow_lfo = sin_osc_ar(0.5, 0.0) * wow * 0.001;
             let flutter_lfo = sin_osc_ar(10.0, 0.0) * flutter * 0.0003;
@@ -52,11 +57,12 @@ define_fx("vinyl", |builder| {
             let vinyl_left = worn_left + crackle_sig + dust_sig;
             let vinyl_right = worn_right + crackle_sig + dust_sig;
 
-            // Mix dry and wet signals
+            let wet_l = leak_dc_ar(vinyl_left, 0.995);
+            let wet_r = leak_dc_ar(vinyl_right, 0.995);
+
             [
-                (1.0 - mix) * input[0] + mix * vinyl_left,
-                (1.0 - mix) * input[1] + mix * vinyl_right
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });
-

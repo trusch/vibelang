@@ -1,3 +1,5 @@
+// kind=fx | category=dynamics | flavor=gate | stereo=true | params=threshold,attack,release,mix,level
+//
 // Noise Gate Effect
 //
 // Attenuates signal when it falls below a threshold, useful for cutting noise.
@@ -6,25 +8,34 @@
 //   group.add_effect("gate", "gate", #{
 //     threshold: 0.1,
 //     attack: 0.01,
-//     release: 0.1
+//     release: 0.1,
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
 //   threshold: Gate threshold (0.0 to 1.0)
-//   attack: Attack time in seconds
-//   release: Release time in seconds
+//   attack:    Attack time in seconds
+//   release:   Release time in seconds
+//   mix:       Dry/wet mix (1.0 = full wet, insert default)
+//   level:     Final output trim (1.0 = unity)
 
-define_fx("gate", |builder| {
-    builder
-        .param("threshold", 0.1)
-        .param("attack", 0.01)
-        .param("release", 0.1)
-        .body(|input, threshold, attack, release| {
-            // Use Compander as a gate (expansion below threshold)
-            let gated_left = compander_ar(input[0], input[0], threshold, 10.0, 1.0, attack, release);
-            let gated_right = compander_ar(input[1], input[1], threshold, 10.0, 1.0, attack, release);
+define_fx("gate")
+    .param("threshold", 0.1)
+    .param("attack", 0.01)
+    .param("release", 0.1)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, threshold, attack, release, mix, level| {
+        // Use Compander as a gate (expansion below threshold)
+        let gated_left = compander_ar(input[0], input[0], threshold, 10.0, 1.0, attack, release);
+        let gated_right = compander_ar(input[1], input[1], threshold, 10.0, 1.0, attack, release);
 
-            [gated_left, gated_right]
-        })
-});
+        let wet_l = leak_dc_ar(gated_left, 0.995);
+        let wet_r = leak_dc_ar(gated_right, 0.995);
 
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

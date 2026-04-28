@@ -1,3 +1,5 @@
+// kind=fx | category=distortion | flavor=bitcrush | stereo=true | params=bits,sample_rate,mix,level
+//
 // Bitcrusher Effect
 //
 // Reduces bit depth and sample rate for lo-fi digital distortion.
@@ -6,20 +8,23 @@
 //   group.add_effect("crush", "bitcrush", #{
 //     bits: 8.0,
 //     sample_rate: 8000.0,
-//     mix: 0.5
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   bits: Bit depth (1.0 to 16.0)
+//   bits:        Bit depth (1.0 to 16.0)
 //   sample_rate: Sample rate reduction in Hz (100 to 44100)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:         Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:       Output trim applied after the dry/wet mix
 
 define_fx("bitcrush", |builder| {
     builder
         .param("bits", 8.0)
         .param("sample_rate", 8000.0)
-        .param("mix", 0.5)
-        .body(|input, bits, sample_rate, mix| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, bits, sample_rate, mix, level| {
             // Map bits (1..16) to a gentle drive factor.
             // We avoid using a true power function here to keep the graph stable.
             // 1.0 ≈ barely crushed, 4.0 ≈ heavy crush.
@@ -33,13 +38,12 @@ define_fx("bitcrush", |builder| {
             let crushed_left = (rate_reduced_left * drive).tanh();
             let crushed_right = (rate_reduced_right * drive).tanh();
 
-            // Mix dry and wet signals
-            let output = [
-                (1.0 - mix) * input[0] + mix * crushed_left,
-                (1.0 - mix) * input[1] + mix * crushed_right
-            ];
+            let wet_l = leak_dc_ar(crushed_left, 0.995);
+            let wet_r = leak_dc_ar(crushed_right, 0.995);
 
-            output
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-

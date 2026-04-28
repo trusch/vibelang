@@ -1,3 +1,5 @@
+// kind=fx | category=delay | flavor=ping_pong | stereo=true | params=time,feedback,mix,level
+//
 // Ping Pong Delay Effect
 //
 // Stereo delay where echoes bounce between left and right channels.
@@ -6,31 +8,31 @@
 //   group.add_effect("ping", "ping_pong_delay", #{
 //     time: 0.375,
 //     feedback: 0.6,
-//     mix: 0.4
+//     mix: 0.4,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   time: Delay time in seconds (0.01 to 2.0)
+//   time:     Delay time in seconds (0.01 to 2.0)
 //   feedback: Feedback amount (0.0 to 0.95)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:      Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:    Final output trim (1.0 = unity)
 
-define_fx("ping_pong_delay", |builder| {
-    builder
-        .param("time", 0.375)
-        .param("feedback", 0.6)
-        .param("mix", 0.4)
-        .body(|input, time, feedback, mix| {
-            // Create cross-coupled delays (left feeds right, right feeds left)
-            let del_left = delay_n_ar(input[0] + (feedback * delay_n_ar(input[1], 2.0, time)), 2.0, time);
-            let del_right = delay_n_ar(input[1] + (feedback * delay_n_ar(input[0], 2.0, time)), 2.0, time);
+define_fx("ping_pong_delay")
+    .param("time", 0.375)
+    .param("feedback", 0.6)
+    .param("mix", 0.4)
+    .param("level", 1.0)
+    .body(|input, time, feedback, mix, level| {
+        // Create cross-coupled delays (left feeds right, right feeds left)
+        let processed_l = delay_n_ar(input[0] + (feedback * delay_n_ar(input[1], 2.0, time)), 2.0, time);
+        let processed_r = delay_n_ar(input[1] + (feedback * delay_n_ar(input[0], 2.0, time)), 2.0, time);
 
-            // Mix dry and wet signals
-            let output = [
-                (1.0 - mix) * input[0] + mix * del_left,
-                (1.0 - mix) * input[1] + mix * del_right
-            ];
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
 
-            output
-        })
-});
-
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

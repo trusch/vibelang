@@ -1,3 +1,5 @@
+// kind=fx | category=distortion | flavor=overdrive | stereo=true | params=drive,tone,mix,level
+//
 // Overdrive Effect
 //
 // Soft clipping overdrive with filtering for warm, tube-like saturation.
@@ -6,20 +8,23 @@
 //   group.add_effect("od", "overdrive", #{
 //     drive: 5.0,
 //     tone: 3000.0,
-//     mix: 0.5
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
 //   drive: Input gain/drive (1.0 to 20.0)
-//   tone: Tone control (low pass filter freq, 500 to 10000 Hz)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   tone:  Tone control (low pass filter freq, 500 to 10000 Hz)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
 
 define_fx("overdrive", |builder| {
     builder
         .param("drive", 5.0)
         .param("tone", 3000.0)
-        .param("mix", 0.5)
-        .body(|input, drive, tone, mix| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, drive, tone, mix, level| {
             // Pre-emphasis (slight high pass to reduce mud)
             let emphasized_left = hpf_ar(input[0], 80.0);
             let emphasized_right = hpf_ar(input[1], 80.0);
@@ -37,18 +42,15 @@ define_fx("overdrive", |builder| {
             let filtered_right = lpf_ar(clipped_right, tone);
 
             // Output gain compensation
-            let overdriven = [
-                filtered_left * 0.5,
-                filtered_right * 0.5
-            ];
+            let overdriven_l = filtered_left * 0.5;
+            let overdriven_r = filtered_right * 0.5;
 
-            // Mix dry and wet signals
-            let output = [
-                (1.0 - mix) * input[0] + mix * overdriven[0],
-                (1.0 - mix) * input[1] + mix * overdriven[1]
-            ];
+            let wet_l = leak_dc_ar(overdriven_l, 0.995);
+            let wet_r = leak_dc_ar(overdriven_r, 0.995);
 
-            output
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-

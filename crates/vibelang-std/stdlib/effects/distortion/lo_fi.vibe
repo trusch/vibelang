@@ -1,3 +1,5 @@
+// kind=fx | category=distortion | flavor=lo_fi | stereo=true | params=bit_depth,sample_rate,noise,filter_freq,mix,level
+//
 // Lo-Fi Effect
 //
 // Combines multiple effects to create a lo-fi, degraded sound quality.
@@ -8,15 +10,17 @@
 //     sample_rate: 16000.0,
 //     noise: 0.02,
 //     filter_freq: 3500.0,
-//     mix: 0.7
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   bit_depth: Bit depth reduction (4.0 to 16.0)
+//   bit_depth:   Bit depth reduction (4.0 to 16.0)
 //   sample_rate: Sample rate reduction in Hz (4000 to 44100)
-//   noise: Noise amount (0.0 to 0.1)
+//   noise:       Noise amount (0.0 to 0.1)
 //   filter_freq: Low pass filter frequency in Hz (1000 to 8000)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:         Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:       Output trim applied after the dry/wet mix
 
 define_fx("lo_fi", |builder| {
     builder
@@ -24,8 +28,9 @@ define_fx("lo_fi", |builder| {
         .param("sample_rate", 16000.0)
         .param("noise", 0.02)
         .param("filter_freq", 3500.0)
-        .param("mix", 0.7)
-        .body(|input, bit_depth, sample_rate, noise, filter_freq, mix| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, bit_depth, sample_rate, noise, filter_freq, mix, level| {
             // Sample rate reduction
             let rate_reduced_left = latch_ar(input[0], impulse_ar(sample_rate, 0.0));
             let rate_reduced_right = latch_ar(input[1], impulse_ar(sample_rate, 0.0));
@@ -46,18 +51,15 @@ define_fx("lo_fi", |builder| {
             let filtered_right = lpf_ar(noisy_right, filter_freq);
 
             // Slight distortion
-            let lofi = [
-                (filtered_left * 1.2).tanh(),
-                (filtered_right * 1.2).tanh()
-            ];
+            let lofi_l = (filtered_left * 1.2).tanh();
+            let lofi_r = (filtered_right * 1.2).tanh();
 
-            // Mix dry and wet signals
-            let output = [
-                (1.0 - mix) * input[0] + mix * lofi[0],
-                (1.0 - mix) * input[1] + mix * lofi[1]
-            ];
+            let wet_l = leak_dc_ar(lofi_l, 0.995);
+            let wet_r = leak_dc_ar(lofi_r, 0.995);
 
-            output
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-

@@ -1,43 +1,40 @@
+// kind=fx | category=delay | flavor=basic | stereo=true | params=time,feedback,mix,level
+//
 // Stereo Delay Effect
 //
-// Usage:
-//   define_fx("delay", |input, time=0.25, feedback=0.5, mix=0.5| {
-//     let left = delay_n_ar(input[0], 2.0, time);
-//     let right = delay_n_ar(input[1], 2.0, time);
-//     [
-//       (1.0 - mix) * input[0] + mix * (left + feedback * left),
-//       (1.0 - mix) * input[1] + mix * (right + feedback * right)
-//     ]
-//   });
+// Simple stereo delay with feedback per channel — the bread-and-butter
+// echo line. Use for rhythmic dotted-eighth patterns, dub-style ambience,
+// or general slap.
 //
-//   group("Synths").add_effect("synth_delay", "delay", #{
+// Usage:
+//   group.add_effect("synth_delay", "delay", #{
 //     time: 0.375,
 //     feedback: 0.6,
-//     mix: 0.4
+//     mix: 0.5,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   time: Delay time in seconds
+//   time:     Delay time in seconds
 //   feedback: Feedback amount (0.0 - 1.0)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:      Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:    Final output trim (1.0 = unity)
 
-define_fx("delay", |builder| {
-    builder
-        .param("time", 0.25)
-        .param("feedback", 0.5)
-        .param("mix", 0.5)
-        .body(|input, time, feedback, mix| {
-            // Simple stereo delay with feedback
-            let left_delayed = delay_n_ar(input[0] + (feedback * delay_n_ar(input[0], 2.0, time)), 2.0, time);
-            let right_delayed = delay_n_ar(input[1] + (feedback * delay_n_ar(input[1], 2.0, time)), 2.0, time);
+define_fx("delay")
+    .param("time", 0.25)
+    .param("feedback", 0.5)
+    .param("mix", 0.5)
+    .param("level", 1.0)
+    .body(|input, time, feedback, mix, level| {
+        // Simple stereo delay with feedback
+        let processed_l = delay_n_ar(input[0] + (feedback * delay_n_ar(input[0], 2.0, time)), 2.0, time);
+        let processed_r = delay_n_ar(input[1] + (feedback * delay_n_ar(input[1], 2.0, time)), 2.0, time);
 
-            // Mix dry and wet signals
-            let output = [
-                (1.0 - mix) * input[0] + mix * left_delayed,
-                (1.0 - mix) * input[1] + mix * right_delayed
-            ];
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
 
-            output
-        })
-});
-
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

@@ -1,3 +1,5 @@
+// kind=fx | category=distortion | flavor=exciter | stereo=true | params=drive,freq,blend,mix,level
+//
 // Exciter/Enhancer Effect
 // Inspired by: Aphex Aural Exciter, BBE Sonic Maximizer, SPL Vitalizer
 //
@@ -6,9 +8,10 @@
 //
 // Parameters:
 //   drive: Harmonic generation intensity (0.0 to 1.0)
-//   freq: Frequency above which to excite (1000 to 8000)
+//   freq:  Frequency above which to excite (1000 to 8000)
 //   blend: Amount of generated harmonics to add (0.0 to 1.0)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = full effect)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = full effect)
+//   level: Output trim applied after the dry/wet mix
 
 define_fx("exciter", |builder| {
     builder
@@ -16,7 +19,8 @@ define_fx("exciter", |builder| {
         .param("freq", 3000.0)
         .param("blend", 0.3)
         .param("mix", 1.0)
-        .body(|input, drive, freq, blend, mix| {
+        .param("level", 1.0)
+        .body(|input, drive, freq, blend, mix, level| {
             // Extract high frequency content
             let highs_l = hpf_ar(input[0], freq);
             let highs_r = hpf_ar(input[1], freq);
@@ -37,9 +41,12 @@ define_fx("exciter", |builder| {
             let enhanced_l = input[0] + focused_l * blend;
             let enhanced_r = input[1] + focused_r * blend;
 
+            let wet_l = leak_dc_ar(enhanced_l, 0.995);
+            let wet_r = leak_dc_ar(enhanced_r, 0.995);
+
             [
-                (1.0 - mix) * input[0] + mix * enhanced_l,
-                (1.0 - mix) * input[1] + mix * enhanced_r
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });

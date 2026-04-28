@@ -1,3 +1,5 @@
+// kind=fx | category=delay | flavor=tape | stereo=true | params=time,feedback,wow,flutter,mix,level
+//
 // Tape Delay Effect
 //
 // Analog-style tape delay with wow, flutter, and saturation.
@@ -8,50 +10,50 @@
 //     feedback: 0.5,
 //     wow: 0.3,
 //     flutter: 0.2,
-//     mix: 0.5
+//     mix: 0.5,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   time: Delay time in seconds (0.01 to 2.0)
+//   time:     Delay time in seconds (0.01 to 2.0)
 //   feedback: Feedback amount (0.0 to 0.95)
-//   wow: Slow pitch variation amount (0.0 to 1.0)
-//   flutter: Fast pitch variation amount (0.0 to 1.0)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   wow:      Slow pitch variation amount (0.0 to 1.0)
+//   flutter:  Fast pitch variation amount (0.0 to 1.0)
+//   mix:      Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:    Final output trim (1.0 = unity)
 
-define_fx("tape_delay", |builder| {
-    builder
-        .param("time", 0.5)
-        .param("feedback", 0.5)
-        .param("wow", 0.3)
-        .param("flutter", 0.2)
-        .param("mix", 0.5)
-        .body(|input, time, feedback, wow, flutter, mix| {
-            // Generate wow (slow LFO) and flutter (fast LFO)
-            let wow_lfo = sin_osc_ar(0.5, 0.0) * wow * 0.001;
-            let flutter_lfo = sin_osc_ar(8.0, 0.0) * flutter * 0.0005;
+define_fx("tape_delay")
+    .param("time", 0.5)
+    .param("feedback", 0.5)
+    .param("wow", 0.3)
+    .param("flutter", 0.2)
+    .param("mix", 0.5)
+    .param("level", 1.0)
+    .body(|input, time, feedback, wow, flutter, mix, level| {
+        // Generate wow (slow LFO) and flutter (fast LFO)
+        let wow_lfo = sin_osc_ar(0.5, 0.0) * wow * 0.001;
+        let flutter_lfo = sin_osc_ar(8.0, 0.0) * flutter * 0.0005;
 
-            // Modulated delay time
-            let mod_time = time + wow_lfo + flutter_lfo;
+        // Modulated delay time
+        let mod_time = time + wow_lfo + flutter_lfo;
 
-            // Create delayed signals with modulation
-            let del_left = delay_c_ar(input[0] + (feedback * delay_c_ar(input[0], 2.0, mod_time)), 2.0, mod_time);
-            let del_right = delay_c_ar(input[1] + (feedback * delay_c_ar(input[1], 2.0, mod_time)), 2.0, mod_time);
+        // Create delayed signals with modulation
+        let del_left = delay_c_ar(input[0] + (feedback * delay_c_ar(input[0], 2.0, mod_time)), 2.0, mod_time);
+        let del_right = delay_c_ar(input[1] + (feedback * delay_c_ar(input[1], 2.0, mod_time)), 2.0, mod_time);
 
-            // Tape saturation (soft clipping)
-            let saturated_left = (del_left * 1.5).tanh();
-            let saturated_right = (del_right * 1.5).tanh();
+        // Tape saturation (soft clipping)
+        let saturated_left = (del_left * 1.5).tanh();
+        let saturated_right = (del_right * 1.5).tanh();
 
-            // High frequency roll-off for analog character
-            let filtered_left = lpf_ar(saturated_left, 4000.0);
-            let filtered_right = lpf_ar(saturated_right, 4000.0);
+        // High frequency roll-off for analog character
+        let filtered_left = lpf_ar(saturated_left, 4000.0);
+        let filtered_right = lpf_ar(saturated_right, 4000.0);
 
-            // Mix dry and wet signals
-            let output = [
-                (1.0 - mix) * input[0] + mix * filtered_left,
-                (1.0 - mix) * input[1] + mix * filtered_right
-            ];
+        let wet_l = leak_dc_ar(filtered_left, 0.995);
+        let wet_r = leak_dc_ar(filtered_right, 0.995);
 
-            output
-        })
-});
-
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

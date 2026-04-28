@@ -1,3 +1,5 @@
+// kind=fx | category=filter | flavor=eq_three_band | stereo=true | params=low_gain,mid_gain,high_gain,low_freq,high_freq,mix,level
+//
 // Three Band Equalizer
 //
 // Simple three-band EQ with low, mid, and high frequency control.
@@ -8,15 +10,19 @@
 //     mid_gain: 0.0,
 //     high_gain: 0.0,
 //     low_freq: 250.0,
-//     high_freq: 4000.0
+//     high_freq: 4000.0,
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   low_gain: Low frequency gain in dB (-12 to 12)
-//   mid_gain: Mid frequency gain in dB (-12 to 12)
+//   low_gain:  Low frequency gain in dB (-12 to 12)
+//   mid_gain:  Mid frequency gain in dB (-12 to 12)
 //   high_gain: High frequency gain in dB (-12 to 12)
-//   low_freq: Low/mid crossover frequency in Hz
+//   low_freq:  Low/mid crossover frequency in Hz
 //   high_freq: Mid/high crossover frequency in Hz
+//   mix:       Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:     Output trim applied after the dry/wet mix
 
 define_fx("eq_three_band", |builder| {
     builder
@@ -25,7 +31,9 @@ define_fx("eq_three_band", |builder| {
         .param("high_gain", 0.0)
         .param("low_freq", 250.0)
         .param("high_freq", 4000.0)
-        .body(|input, low_gain, mid_gain, high_gain, low_freq, high_freq| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, low_gain, mid_gain, high_gain, low_freq, high_freq, mix, level| {
             // Process left channel
             let low_left = b_low_shelf_ar(input[0], low_freq, 1.0, low_gain);
             let mid_left = b_peak_eq_ar(low_left, (low_freq + high_freq) * 0.5, 1.0, mid_gain);
@@ -36,7 +44,12 @@ define_fx("eq_three_band", |builder| {
             let mid_right = b_peak_eq_ar(low_right, (low_freq + high_freq) * 0.5, 1.0, mid_gain);
             let eq_right = b_hi_shelf_ar(mid_right, high_freq, 1.0, high_gain);
 
-            [eq_left, eq_right]
+            let wet_l = leak_dc_ar(eq_left, 0.995);
+            let wet_r = leak_dc_ar(eq_right, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-

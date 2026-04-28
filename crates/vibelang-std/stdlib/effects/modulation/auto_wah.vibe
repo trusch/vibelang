@@ -1,3 +1,5 @@
+// kind=fx | category=modulation | flavor=auto_wah | stereo=true | params=sensitivity,depth,mix,level
+//
 // Auto-Wah Effect
 //
 // Envelope-following wah effect.
@@ -6,20 +8,23 @@
 //   group.add_effect("wah", "auto_wah", #{
 //     sensitivity: 0.5,
 //     depth: 2000.0,
-//     mix: 1.0
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
 //   sensitivity: Envelope follower sensitivity (0.1 to 1.0)
-//   depth: Filter sweep depth in Hz (500 to 4000)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   depth:       Filter sweep depth in Hz (500 to 4000)
+//   mix:         Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:       Output trim applied after the dry/wet mix
 
 define_fx("auto_wah", |builder| {
     builder
         .param("sensitivity", 0.5)
         .param("depth", 2000.0)
         .param("mix", 1.0)
-        .body(|input, sensitivity, depth, mix| {
+        .param("level", 1.0)
+        .body(|input, sensitivity, depth, mix, level| {
             // Envelope follower
             let env_left = amplitude_ar(input[0], 0.01, 0.1);
             let env_right = amplitude_ar(input[1], 0.01, 0.1);
@@ -32,9 +37,12 @@ define_fx("auto_wah", |builder| {
             let wah_left = bpf_ar(input[0], cutoff_left, 0.2);
             let wah_right = bpf_ar(input[1], cutoff_right, 0.2);
 
+            let wet_l = leak_dc_ar(wah_left, 0.995);
+            let wet_r = leak_dc_ar(wah_right, 0.995);
+
             [
-                (1.0 - mix) * input[0] + mix * wah_left,
-                (1.0 - mix) * input[1] + mix * wah_right
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });

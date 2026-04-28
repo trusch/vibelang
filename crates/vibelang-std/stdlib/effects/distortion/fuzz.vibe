@@ -1,3 +1,5 @@
+// kind=fx | category=distortion | flavor=fuzz | stereo=true | params=gain,tone,mix,level
+//
 // Fuzz Effect
 //
 // Classic fuzz pedal distortion with aggressive clipping.
@@ -6,20 +8,23 @@
 //   group.add_effect("fz", "fuzz", #{
 //     gain: 10.0,
 //     tone: 3000.0,
-//     mix: 1.0
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   gain: Fuzz gain (2.0 to 50.0)
-//   tone: Tone control cutoff (500 to 8000 Hz)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   gain:  Fuzz gain (2.0 to 50.0)
+//   tone:  Tone control cutoff (500 to 8000 Hz)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
 
 define_fx("fuzz", |builder| {
     builder
         .param("gain", 10.0)
         .param("tone", 3000.0)
         .param("mix", 1.0)
-        .body(|input, gain, tone, mix| {
+        .param("level", 1.0)
+        .body(|input, gain, tone, mix, level| {
             // Boost and clip
             let fuzzed_left = (input[0] * gain).tanh();
             let fuzzed_right = (input[1] * gain).tanh();
@@ -32,9 +37,12 @@ define_fx("fuzz", |builder| {
             let toned_left = lpf_ar(clipped_left, tone);
             let toned_right = lpf_ar(clipped_right, tone);
 
+            let wet_l = leak_dc_ar(toned_left, 0.995);
+            let wet_r = leak_dc_ar(toned_right, 0.995);
+
             [
-                (1.0 - mix) * input[0] + mix * toned_left,
-                (1.0 - mix) * input[1] + mix * toned_right
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });

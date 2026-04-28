@@ -1,3 +1,5 @@
+// kind=fx | category=filter | flavor=comb | stereo=true | params=freq,decay,mix,level
+//
 // Comb Filter Effect
 //
 // Creates resonances at harmonics of a fundamental frequency.
@@ -7,20 +9,23 @@
 //   group.add_effect("comb", "comb_filter", #{
 //     freq: 220.0,
 //     decay: 2.0,
-//     mix: 0.5
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   freq: Fundamental frequency in Hz (20 to 2000)
+//   freq:  Fundamental frequency in Hz (20 to 2000)
 //   decay: Decay time in seconds (0.1 to 10.0)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
 
 define_fx("comb_filter", |builder| {
     builder
         .param("freq", 220.0)
         .param("decay", 2.0)
-        .param("mix", 0.5)
-        .body(|input, freq, decay, mix| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, freq, decay, mix, level| {
             // Calculate delay time from frequency
             let delay_time = 1.0 / freq;
 
@@ -28,13 +33,12 @@ define_fx("comb_filter", |builder| {
             let combed_left = comb_l_ar(input[0], 0.1, delay_time, decay);
             let combed_right = comb_l_ar(input[1], 0.1, delay_time, decay);
 
-            // Mix dry and wet signals
-            let output = [
-                (1.0 - mix) * input[0] + mix * combed_left,
-                (1.0 - mix) * input[1] + mix * combed_right
-            ];
+            let wet_l = leak_dc_ar(combed_left, 0.995);
+            let wet_r = leak_dc_ar(combed_right, 0.995);
 
-            output
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-

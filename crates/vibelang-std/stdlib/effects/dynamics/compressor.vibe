@@ -1,37 +1,45 @@
+// kind=fx | category=dynamics | flavor=basic | stereo=true | params=threshold,ratio,attack,release,mix,level
+//
 // Dynamics Compressor Effect
 //
-// Usage:
-//   define_fx("compressor", |input, threshold=0.5, ratio=4.0, attack=0.01, release=0.1| {
-//     let left = compander_ar(input[0], input[0], threshold, 1.0, 1.0/ratio, attack, release);
-//     let right = compander_ar(input[1], input[1], threshold, 1.0, 1.0/ratio, attack, release);
-//     [left, right]
-//   });
+// Generic linear-knee compressor — straight compander on each channel,
+// no colour. Use as a starting point for transparent gain control.
 //
-//   group("Master").add_effect("master_comp", "compressor", #{
+// Usage:
+//   group.add_effect("master_comp", "compressor", #{
 //     threshold: 0.6,
 //     ratio: 3.0,
 //     attack: 0.005,
-//     release: 0.1
+//     release: 0.1,
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
 //   threshold: Threshold level (0.0 - 1.0)
-//   ratio: Compression ratio
-//   attack: Attack time in seconds
-//   release: Release time in seconds
+//   ratio:     Compression ratio
+//   attack:    Attack time in seconds
+//   release:   Release time in seconds
+//   mix:       Dry/wet mix (1.0 = full wet, insert default)
+//   level:     Final output trim (1.0 = unity)
 
-define_fx("compressor", |builder| {
-    builder
-        .param("threshold", 0.5)
-        .param("ratio", 4.0)
-        .param("attack", 0.01)
-        .param("release", 0.1)
-        .body(|input, threshold, ratio, attack, release| {
-            // Apply compander to both channels
-            let left = compander_ar(input[0], input[0], threshold, 1.0, 1.0/ratio, attack, release);
-            let right = compander_ar(input[1], input[1], threshold, 1.0, 1.0/ratio, attack, release);
+define_fx("compressor")
+    .param("threshold", 0.5)
+    .param("ratio", 4.0)
+    .param("attack", 0.01)
+    .param("release", 0.1)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, threshold, ratio, attack, release, mix, level| {
+        // Apply compander to both channels
+        let comp_l = compander_ar(input[0], input[0], threshold, 1.0, 1.0/ratio, attack, release);
+        let comp_r = compander_ar(input[1], input[1], threshold, 1.0, 1.0/ratio, attack, release);
 
-            [left, right]
-        })
-});
+        let wet_l = leak_dc_ar(comp_l, 0.995);
+        let wet_r = leak_dc_ar(comp_r, 0.995);
 
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

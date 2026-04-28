@@ -1,3 +1,5 @@
+// kind=fx | category=dynamics | flavor=sidechain | stereo=true | params=threshold,ratio,attack,release,amount,mix,level
+//
 // Sidechain Compressor Effect
 //
 // Classic pumping/ducking effect triggered by amplitude follower.
@@ -9,38 +11,48 @@
 //     ratio: 8.0,
 //     attack: 0.001,
 //     release: 0.15,
-//     amount: 0.7
+//     amount: 0.7,
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
 //   threshold: Trigger threshold (0.0 - 1.0)
-//   ratio: Compression ratio when triggered
-//   attack: Attack time in seconds
-//   release: Release time in seconds
-//   amount: Effect intensity (0.0 = off, 1.0 = full pump)
+//   ratio:     Compression ratio when triggered
+//   attack:    Attack time in seconds
+//   release:   Release time in seconds
+//   amount:    Effect intensity (0.0 = off, 1.0 = full pump)
+//   mix:       Dry/wet mix (1.0 = full wet, insert default)
+//   level:     Final output trim (1.0 = unity)
 
-define_fx("sidechain", |builder| {
-    builder
-        .param("threshold", 0.3)
-        .param("ratio", 8.0)
-        .param("attack", 0.001)
-        .param("release", 0.15)
-        .param("amount", 0.7)
-        .body(|input, threshold, ratio, attack, release, amount| {
-            // Follow the input amplitude for self-ducking
-            // In a real scenario you'd use a sidechain input
-            let left_amp = amplitude_ar(input[0], attack, release);
-            let right_amp = amplitude_ar(input[1], attack, release);
-            let env = (left_amp + right_amp) * 0.5;
+define_fx("sidechain")
+    .param("threshold", 0.3)
+    .param("ratio", 8.0)
+    .param("attack", 0.001)
+    .param("release", 0.15)
+    .param("amount", 0.7)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, threshold, ratio, attack, release, amount, mix, level| {
+        // Follow the input amplitude for self-ducking
+        // In a real scenario you'd use a sidechain input
+        let left_amp = amplitude_ar(input[0], attack, release);
+        let right_amp = amplitude_ar(input[1], attack, release);
+        let env = (left_amp + right_amp) * 0.5;
 
-            // Calculate gain reduction when above threshold
-            let above_thresh = env - threshold;
-            let gain_reduction = 1.0 - (above_thresh.max(0.0) * (1.0 - 1.0/ratio) * amount);
+        // Calculate gain reduction when above threshold
+        let above_thresh = env - threshold;
+        let gain_reduction = 1.0 - (above_thresh.max(0.0) * (1.0 - 1.0/ratio) * amount);
 
-            // Apply gain reduction
-            [
-                input[0] * gain_reduction,
-                input[1] * gain_reduction
-            ]
-        })
-});
+        // Apply gain reduction
+        let processed_l = input[0] * gain_reduction;
+        let processed_r = input[1] * gain_reduction;
+
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

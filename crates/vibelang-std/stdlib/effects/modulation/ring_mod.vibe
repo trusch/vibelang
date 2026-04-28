@@ -1,3 +1,5 @@
+// kind=fx | category=modulation | flavor=ring_mod | stereo=true | params=freq,mix,level
+//
 // Ring Modulator Effect
 //
 // Creates metallic, bell-like tones by multiplying the input with a sine wave.
@@ -5,34 +7,34 @@
 // Usage:
 //   group.add_effect("ring", "ring_mod", #{
 //     freq: 440.0,
-//     mix: 0.5
+//     mix: 0.3,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   freq: Modulator frequency in Hz (20 to 5000)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   freq:  Modulator frequency in Hz (20 to 5000)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
 
 define_fx("ring_mod", |builder| {
     builder
         .param("freq", 440.0)
-        .param("mix", 0.5)
-        .body(|input, freq, mix| {
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, freq, mix, level| {
             // Generate modulator (carrier wave)
             let modulator = sin_osc_ar(freq, 0.0);
 
             // Ring modulation: multiply input by modulator
-            let modulated = [
-                input[0] * modulator,
-                input[1] * modulator
-            ];
+            let modulated_l = input[0] * modulator;
+            let modulated_r = input[1] * modulator;
 
-            // Mix dry and wet signals
-            let output = [
-                (1.0 - mix) * input[0] + mix * modulated[0],
-                (1.0 - mix) * input[1] + mix * modulated[1]
-            ];
+            let wet_l = leak_dc_ar(modulated_l, 0.995);
+            let wet_r = leak_dc_ar(modulated_r, 0.995);
 
-            output
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-

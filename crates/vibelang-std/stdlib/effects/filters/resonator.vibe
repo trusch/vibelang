@@ -1,3 +1,5 @@
+// kind=fx | category=filter | flavor=resonator | stereo=true | params=freq,decay,mix,level
+//
 // Resonator Effect
 //
 // Modal resonator that adds pitched resonance.
@@ -6,28 +8,34 @@
 //   group.add_effect("res", "resonator", #{
 //     freq: 440.0,
 //     decay: 0.5,
-//     mix: 0.5
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   freq: Resonant frequency in Hz
+//   freq:  Resonant frequency in Hz
 //   decay: Resonance decay time (0.1 to 2.0)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
 
 define_fx("resonator", |builder| {
     builder
         .param("freq", 440.0)
         .param("decay", 0.5)
-        .param("mix", 0.5)
-        .body(|input, freq, decay, mix| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, freq, decay, mix, level| {
             // Comb filter for resonance
             let delay_time = 1.0 / freq;
             let resonated_left = comb_c_ar(input[0], 0.05, delay_time, decay * 2.0);
             let resonated_right = comb_c_ar(input[1], 0.05, delay_time, decay * 2.0);
 
+            let wet_l = leak_dc_ar(resonated_left, 0.995);
+            let wet_r = leak_dc_ar(resonated_right, 0.995);
+
             [
-                (1.0 - mix) * input[0] + mix * resonated_left,
-                (1.0 - mix) * input[1] + mix * resonated_right
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });

@@ -1,3 +1,5 @@
+// kind=fx | category=modulation | flavor=dimension_chorus | stereo=true | params=mode,rate,mix,level
+//
 // Dimension Chorus Effect
 // Inspired by: Roland Dimension D (SDD-320), Boss DC-2
 //
@@ -5,16 +7,18 @@
 // Famous for its ability to widen sounds without obvious "chorus" effect.
 //
 // Parameters:
-//   mode: Intensity mode 1-4 (0.25=subtle, 0.5=warm, 0.75=rich, 1.0=full)
-//   rate: Modulation speed (0.0 to 1.0)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mode:  Intensity mode (0.25=subtle, 0.5=warm, 0.75=rich, 1.0=full)
+//   rate:  Modulation speed (0.0 to 1.0)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
 
 define_fx("dimension_chorus", |builder| {
     builder
         .param("mode", 0.5)
         .param("rate", 0.5)
-        .param("mix", 0.5)
-        .body(|input, mode, rate, mix| {
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, mode, rate, mix, level| {
             let lfo_rate = 0.3 + rate * 1.2;
 
             // Four BBD-style delay lines with different phases
@@ -39,12 +43,15 @@ define_fx("dimension_chorus", |builder| {
             let chorus_r = lpf_ar((voice1_r + voice2_r) * 0.5, 12000.0);
 
             // Mix with slight cross-feed for dimension
-            let wet_l = chorus_l + chorus_r * 0.15;
-            let wet_r = chorus_r + chorus_l * 0.15;
+            let processed_l = chorus_l + chorus_r * 0.15;
+            let processed_r = chorus_r + chorus_l * 0.15;
+
+            let wet_l = leak_dc_ar(processed_l, 0.995);
+            let wet_r = leak_dc_ar(processed_r, 0.995);
 
             [
-                (1.0 - mix) * input[0] + mix * wet_l,
-                (1.0 - mix) * input[1] + mix * wet_r
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });
