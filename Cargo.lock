@@ -3818,6 +3818,7 @@ dependencies = [
  "humantime",
  "log",
  "rhai",
+ "serde",
  "serde_json",
  "thiserror 1.0.69",
 ]
