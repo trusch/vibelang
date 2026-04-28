@@ -29,3 +29,6 @@ import "stdlib/effects/utility/index.vibe";
 
 // Spectral (3 effects)
 import "stdlib/effects/spectral/index.vibe";
+
+// Character (3 effects)
+import "stdlib/effects/character/index.vibe";
