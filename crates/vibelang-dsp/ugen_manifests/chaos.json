@@ -1,0 +1,1012 @@
+[
+  {
+    "name": "CuspN",
+    "description": "Cusp map chaotic generator (non-interpolating). Difference equation: x(n+1) = a - b * sqrt(|x(n)|).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.0,
+        "description": "Equation variable"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 1.9,
+        "description": "Equation variable"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "cusp_n_ar"
+    ]
+  },
+  {
+    "name": "CuspL",
+    "description": "Cusp map chaotic generator (linear-interpolating). Difference equation: x(n+1) = a - b * sqrt(|x(n)|).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.0,
+        "description": "Equation variable"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 1.9,
+        "description": "Equation variable"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "cusp_l_ar"
+    ]
+  },
+  {
+    "name": "FBSineN",
+    "description": "Feedback sine with chaotic phase indexing (non-interpolating). x(n+1) = sin(im*y(n) + fb*x(n)); y(n+1) = (a*y(n) + c) % 2pi.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "im",
+        "type": "float",
+        "default": 1,
+        "description": "Index multiplier amount"
+      },
+      {
+        "name": "fb",
+        "type": "float",
+        "default": 0.1,
+        "description": "Feedback amount"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.1,
+        "description": "Phase multiplier amount"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 0.5,
+        "description": "Phase increment amount"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.1,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0.1,
+        "description": "Initial value of y"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "fb_sine_n_ar"
+    ]
+  },
+  {
+    "name": "FBSineL",
+    "description": "Feedback sine with chaotic phase indexing (linear-interpolating). x(n+1) = sin(im*y(n) + fb*x(n)); y(n+1) = (a*y(n) + c) % 2pi.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "im",
+        "type": "float",
+        "default": 1,
+        "description": "Index multiplier amount"
+      },
+      {
+        "name": "fb",
+        "type": "float",
+        "default": 0.1,
+        "description": "Feedback amount"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.1,
+        "description": "Phase multiplier amount"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 0.5,
+        "description": "Phase increment amount"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.1,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0.1,
+        "description": "Initial value of y"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "fb_sine_l_ar"
+    ]
+  },
+  {
+    "name": "FBSineC",
+    "description": "Feedback sine with chaotic phase indexing (cubic-interpolating). x(n+1) = sin(im*y(n) + fb*x(n)); y(n+1) = (a*y(n) + c) % 2pi.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "im",
+        "type": "float",
+        "default": 1,
+        "description": "Index multiplier amount"
+      },
+      {
+        "name": "fb",
+        "type": "float",
+        "default": 0.1,
+        "description": "Feedback amount"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.1,
+        "description": "Phase multiplier amount"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 0.5,
+        "description": "Phase increment amount"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.1,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0.1,
+        "description": "Initial value of y"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "fb_sine_c_ar"
+    ]
+  },
+  {
+    "name": "GbmanN",
+    "description": "Gingerbreadman map chaotic generator (non-interpolating). x(n+1) = 1 - y(n) + |x(n)|; y(n+1) = x(n).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 1.2,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 2.1,
+        "description": "Initial value of y"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "gbman_n_ar"
+    ]
+  },
+  {
+    "name": "GbmanL",
+    "description": "Gingerbreadman map chaotic generator (linear-interpolating). x(n+1) = 1 - y(n) + |x(n)|; y(n+1) = x(n).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 1.2,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 2.1,
+        "description": "Initial value of y"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "gbman_l_ar"
+    ]
+  },
+  {
+    "name": "HenonN",
+    "description": "Henon map chaotic generator (non-interpolating). x(n+2) = 1 - a*x(n+1)^2 + b*x(n).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.4,
+        "description": "Equation variable"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 0.3,
+        "description": "Equation variable"
+      },
+      {
+        "name": "x0",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "x1",
+        "type": "float",
+        "default": 0,
+        "description": "Second value of x"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "henon_n_ar"
+    ]
+  },
+  {
+    "name": "HenonL",
+    "description": "Henon map chaotic generator (linear-interpolating). x(n+2) = 1 - a*x(n+1)^2 + b*x(n).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.4,
+        "description": "Equation variable"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 0.3,
+        "description": "Equation variable"
+      },
+      {
+        "name": "x0",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "x1",
+        "type": "float",
+        "default": 0,
+        "description": "Second value of x"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "henon_l_ar"
+    ]
+  },
+  {
+    "name": "HenonC",
+    "description": "Henon map chaotic generator (cubic-interpolating). x(n+2) = 1 - a*x(n+1)^2 + b*x(n).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.4,
+        "description": "Equation variable"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 0.3,
+        "description": "Equation variable"
+      },
+      {
+        "name": "x0",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "x1",
+        "type": "float",
+        "default": 0,
+        "description": "Second value of x"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "henon_c_ar"
+    ]
+  },
+  {
+    "name": "LatoocarfianN",
+    "description": "Latoocarfian chaotic generator (non-interpolating) from Pickover's Chaos In Wonderland. x(n+1) = sin(b*y(n)) + c*sin(b*x(n)); y(n+1) = sin(a*x(n)) + d*sin(a*y(n)).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1,
+        "description": "Equation variable (range -3 to +3)"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 3,
+        "description": "Equation variable (range -3 to +3)"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 0.5,
+        "description": "Equation variable (range 0.5 to 1.5)"
+      },
+      {
+        "name": "d",
+        "type": "float",
+        "default": 0.5,
+        "description": "Equation variable (range 0.5 to 1.5)"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial value of y"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "latoocarfian_n_ar"
+    ]
+  },
+  {
+    "name": "LatoocarfianL",
+    "description": "Latoocarfian chaotic generator (linear-interpolating) from Pickover's Chaos In Wonderland. x(n+1) = sin(b*y(n)) + c*sin(b*x(n)); y(n+1) = sin(a*x(n)) + d*sin(a*y(n)).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1,
+        "description": "Equation variable (range -3 to +3)"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 3,
+        "description": "Equation variable (range -3 to +3)"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 0.5,
+        "description": "Equation variable (range 0.5 to 1.5)"
+      },
+      {
+        "name": "d",
+        "type": "float",
+        "default": 0.5,
+        "description": "Equation variable (range 0.5 to 1.5)"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial value of y"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "latoocarfian_l_ar"
+    ]
+  },
+  {
+    "name": "LatoocarfianC",
+    "description": "Latoocarfian chaotic generator (cubic-interpolating) from Pickover's Chaos In Wonderland. x(n+1) = sin(b*y(n)) + c*sin(b*x(n)); y(n+1) = sin(a*x(n)) + d*sin(a*y(n)).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1,
+        "description": "Equation variable (range -3 to +3)"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 3,
+        "description": "Equation variable (range -3 to +3)"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 0.5,
+        "description": "Equation variable (range 0.5 to 1.5)"
+      },
+      {
+        "name": "d",
+        "type": "float",
+        "default": 0.5,
+        "description": "Equation variable (range 0.5 to 1.5)"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial value of y"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "latoocarfian_c_ar"
+    ]
+  },
+  {
+    "name": "LinCongN",
+    "description": "Linear congruential chaotic generator (non-interpolating). x(n+1) = (a*x(n) + c) % m. Output scaled to [-1, 1].",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.1,
+        "description": "Multiplier amount"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 0.13,
+        "description": "Increment amount"
+      },
+      {
+        "name": "m",
+        "type": "float",
+        "default": 1.0,
+        "description": "Modulus amount"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "lin_cong_n_ar"
+    ]
+  },
+  {
+    "name": "LinCongL",
+    "description": "Linear congruential chaotic generator (linear-interpolating). x(n+1) = (a*x(n) + c) % m. Output scaled to [-1, 1].",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.1,
+        "description": "Multiplier amount"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 0.13,
+        "description": "Increment amount"
+      },
+      {
+        "name": "m",
+        "type": "float",
+        "default": 1.0,
+        "description": "Modulus amount"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "lin_cong_l_ar"
+    ]
+  },
+  {
+    "name": "LinCongC",
+    "description": "Linear congruential chaotic generator (cubic-interpolating). x(n+1) = (a*x(n) + c) % m. Output scaled to [-1, 1].",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.1,
+        "description": "Multiplier amount"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 0.13,
+        "description": "Increment amount"
+      },
+      {
+        "name": "m",
+        "type": "float",
+        "default": 1.0,
+        "description": "Modulus amount"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "lin_cong_c_ar"
+    ]
+  },
+  {
+    "name": "LorenzL",
+    "description": "Lorenz strange attractor (linear-interpolating). Three ODEs: x' = s*(y-x); y' = x*(r-z) - y; z' = x*y - b*z.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "s",
+        "type": "float",
+        "default": 10,
+        "description": "Equation variable"
+      },
+      {
+        "name": "r",
+        "type": "float",
+        "default": 28,
+        "description": "Equation variable"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 2.667,
+        "description": "Equation variable"
+      },
+      {
+        "name": "h",
+        "type": "float",
+        "default": 0.05,
+        "description": "Integration time step. Higher values increase rate but cause more instability"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.1,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of y"
+      },
+      {
+        "name": "zi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of z"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "lorenz_l_ar"
+    ]
+  },
+  {
+    "name": "QuadN",
+    "description": "General quadratic map chaotic generator (non-interpolating). x(n+1) = a*x(n)^2 + b*x(n) + c.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1,
+        "description": "Equation variable"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": -1,
+        "description": "Equation variable"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": -0.75,
+        "description": "Equation variable"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "quad_n_ar"
+    ]
+  },
+  {
+    "name": "QuadL",
+    "description": "General quadratic map chaotic generator (linear-interpolating). x(n+1) = a*x(n)^2 + b*x(n) + c.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1,
+        "description": "Equation variable"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": -1,
+        "description": "Equation variable"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": -0.75,
+        "description": "Equation variable"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "quad_l_ar"
+    ]
+  },
+  {
+    "name": "QuadC",
+    "description": "General quadratic map chaotic generator (cubic-interpolating). x(n+1) = a*x(n)^2 + b*x(n) + c.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1,
+        "description": "Equation variable"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": -1,
+        "description": "Equation variable"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": -0.75,
+        "description": "Equation variable"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "quad_c_ar"
+    ]
+  },
+  {
+    "name": "StandardN",
+    "description": "Chirikov standard map chaotic generator (non-interpolating). x(n+1) = (x(n) + y(n+1)) % 2pi; y(n+1) = (y(n) + k*sin(x(n))) % 2pi.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "k",
+        "type": "float",
+        "default": 1.0,
+        "description": "Perturbation amount"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of y"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "standard_n_ar"
+    ]
+  },
+  {
+    "name": "StandardL",
+    "description": "Chirikov standard map chaotic generator (linear-interpolating). x(n+1) = (x(n) + y(n+1)) % 2pi; y(n+1) = (y(n) + k*sin(x(n))) % 2pi.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "k",
+        "type": "float",
+        "default": 1.0,
+        "description": "Perturbation amount"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of y"
+      }
+    ],
+    "outputs": 1,
+    "category": "Chaos",
+    "functions": [
+      "standard_l_ar"
+    ]
+  }
+]
