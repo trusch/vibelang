@@ -1,0 +1,57 @@
+// kind=fx | category=spectral | flavor=scrambler | stereo=true | params=amount,trig,mix,level
+//
+// Spectral Scrambler
+//
+// Randomises the order of FFT bins, smearing pitch and harmonic content into a
+// shimmering wash. `amount` raises the proportion of bins shuffled; a rising
+// edge on `trig` picks a new random ordering. Useful for granular-style
+// textures, broken glass timbres, and de-pitching pads.
+//
+// Usage:
+//   group.add_effect("scram", "spectral_scrambler", #{
+//     amount: 0.7,
+//     trig: 0.0,
+//     mix: 0.6,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   amount: How many bins to scramble (0.0 = none, 1.0 = all).
+//   trig:   Trigger. Rising edge picks a new random ordering.
+//   mix:    Dry/wet mix (0.0 = dry, 1.0 = wet).
+//   level:  Output level trim applied after the dry/wet mix.
+
+define_fx("spectral_scrambler", |builder| {
+    builder
+        .param("amount", 0.7)
+        .param("trig", 0.0)
+        .param("mix", 0.6)
+        .param("level", 1.0)
+        .body(|input, amount, trig, mix, level| {
+            // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
+            let buf_l = local_buf_ir(1.0, 2048.0);
+            let buf_r = local_buf_ir(1.0, 2048.0);
+
+            // Analyse with 50% hop and Hann window.
+            let chain_l = fft_kr(buf_l, input[0], 0.5, 1.0, 1.0, 0.0);
+            let chain_r = fft_kr(buf_r, input[1], 0.5, 1.0, 1.0, 0.0);
+
+            // Randomise bin ordering. width=1.0 lets bins move anywhere in the
+            // spectrum for a fully diffuse scramble.
+            let scrambled_l = pv_bin_scramble_kr(chain_l, amount, 1.0, trig);
+            let scrambled_r = pv_bin_scramble_kr(chain_r, amount, 1.0, trig);
+
+            // Resynthesise.
+            let wet_l = ifft_ar(scrambled_l, 1.0, 0.0);
+            let wet_r = ifft_ar(scrambled_r, 1.0, 0.0);
+
+            // Strip DC offset that resynthesis can introduce.
+            let blocked_l = leak_dc_ar(wet_l, 0.995);
+            let blocked_r = leak_dc_ar(wet_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * blocked_l) * level,
+                ((1.0 - mix) * input[1] + mix * blocked_r) * level
+            ]
+        })
+});

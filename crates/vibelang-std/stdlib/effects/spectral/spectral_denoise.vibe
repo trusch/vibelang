@@ -1,0 +1,59 @@
+// kind=fx | category=spectral | flavor=denoise | stereo=true | params=threshold,mix,level
+//
+// Spectral Denoise
+//
+// Per-bin magnitude duck: passes only FFT bins whose magnitude is *below*
+// `threshold`, zeroing louder bins. The complement of `spectral_gate` — instead
+// of keeping the loud partials, this keeps the quiet residue. Useful as a
+// noise extractor (mix it parallel against the dry to pull tonal content out
+// of background hiss), as a creative "shadow" effect, or, with a high
+// `threshold` and low `mix`, as a soft denoise that nudges the noise floor.
+//
+// Threshold values are raw FFT magnitudes — they scale with input level and
+// FFT size, so dial in by ear. Typical useful range is 1.0 - 50.0 for normal
+// program material at unity gain.
+//
+// Usage:
+//   group.add_effect("sdn", "spectral_denoise", #{
+//     threshold: 2.0,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   threshold: Magnitude threshold; bins at or above this are zeroed.
+//   mix:       Dry/wet mix (0.0 = dry, 1.0 = wet).
+//   level:     Output level trim applied after the dry/wet mix.
+
+define_fx("spectral_denoise", |builder| {
+    builder
+        .param("threshold", 2.0)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, threshold, mix, level| {
+            // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
+            let buf_l = local_buf_ir(1.0, 2048.0);
+            let buf_r = local_buf_ir(1.0, 2048.0);
+
+            // Analyse with 50% hop and Hann window.
+            let chain_l = fft_kr(buf_l, input[0], 0.5, 1.0, 1.0, 0.0);
+            let chain_r = fft_kr(buf_r, input[1], 0.5, 1.0, 1.0, 0.0);
+
+            // Pass only bins below threshold.
+            let ducked_l = pv_mag_below_kr(chain_l, threshold);
+            let ducked_r = pv_mag_below_kr(chain_r, threshold);
+
+            // Resynthesise.
+            let wet_l = ifft_ar(ducked_l, 1.0, 0.0);
+            let wet_r = ifft_ar(ducked_r, 1.0, 0.0);
+
+            // Strip DC offset that resynthesis can introduce.
+            let blocked_l = leak_dc_ar(wet_l, 0.995);
+            let blocked_r = leak_dc_ar(wet_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * blocked_l) * level,
+                ((1.0 - mix) * input[1] + mix * blocked_r) * level
+            ]
+        })
+});

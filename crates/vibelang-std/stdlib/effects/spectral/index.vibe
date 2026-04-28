@@ -5,3 +5,6 @@ import "stdlib/effects/spectral/spectral_diffuser.vibe";
 import "stdlib/effects/spectral/spectral_brickwall.vibe";
 import "stdlib/effects/spectral/spectral_phase_shift.vibe";
 import "stdlib/effects/spectral/spectral_morph.vibe";
+import "stdlib/effects/spectral/spectral_scrambler.vibe";
+import "stdlib/effects/spectral/spectral_gate.vibe";
+import "stdlib/effects/spectral/spectral_denoise.vibe";
