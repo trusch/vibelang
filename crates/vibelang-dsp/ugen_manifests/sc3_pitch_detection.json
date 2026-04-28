@@ -1,0 +1,108 @@
+[
+  {
+    "name": "Qitch",
+    "description": "Constant Q transform pitch follower (sc3-plugins). Frequency-domain pitch tracker using Brown and Puckette's efficient constant Q transform on a quartertone scale (base note F3 = 174.6 Hz), with phase-based fine tuning. Outputs [freq, hasFreq]. Requires a precomputed Qspeckern data buffer matching the output sample rate.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio rate input signal to analyze"
+      },
+      {
+        "name": "databufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number holding the QspeckernN<size>SR<rate>.wav initialisation data — must match the output sample rate"
+      },
+      {
+        "name": "ampThreshold",
+        "type": "float",
+        "default": 0.01,
+        "description": "Outputs 0 in hasFreq if the input amplitude is below this threshold"
+      },
+      {
+        "name": "algoflag",
+        "type": "float",
+        "default": 1,
+        "description": "0 = constant Q template pattern matcher only; 1 = enable phase-based refinement"
+      },
+      {
+        "name": "ampbufnum",
+        "type": "float",
+        "default": -1,
+        "description": "Optional 11-component buffer with template amplitudes (-1 to use the built-in defaults)"
+      },
+      {
+        "name": "minfreq",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum output frequency in Hz"
+      },
+      {
+        "name": "maxfreq",
+        "type": "float",
+        "default": 2500,
+        "description": "Maximum output frequency in Hz"
+      }
+    ],
+    "outputs": 2,
+    "category": "PitchDetection",
+    "functions": [
+      "qitch_kr"
+    ]
+  },
+  {
+    "name": "Tartini",
+    "description": "Pitch tracker using the McLeod method (sc3-plugins). Modified autocorrelation calculated via FFT — see McLeod and Wyvill, 'A Smarter Way to Find Pitch' (ICMC 2005). Outputs [freq, hasFreq] where hasFreq is the confidence in the estimate (0 = no fundamental, 1 = fully confident).",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio rate input signal to analyze"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 0.93,
+        "description": "Autocorrelation peak-picking threshold — chooses the first peak within this fraction of the maximum peak"
+      },
+      {
+        "name": "n",
+        "type": "float",
+        "default": 2048,
+        "description": "Data window size (without fftw, only 2048, 1024, and 512 are supported, with k = n/2)"
+      },
+      {
+        "name": "k",
+        "type": "float",
+        "default": 0,
+        "description": "Autocorrelation lags — actual FFT size will be n+k. Pass 0 to use the recommended default of n/2; otherwise keep at most 3n/4"
+      },
+      {
+        "name": "overlap",
+        "type": "float",
+        "default": 1024,
+        "description": "Overlap size in samples (e.g. 1024 window with 256 overlap advances by 768 samples per frame)"
+      },
+      {
+        "name": "smallCutoff",
+        "type": "float",
+        "default": 0.5,
+        "description": "Minimum height for a peak to be recorded in the autocorrelation function — keep well above zero to avoid spurious peaks"
+      }
+    ],
+    "outputs": 2,
+    "category": "PitchDetection",
+    "functions": [
+      "tartini_kr"
+    ]
+  }
+]
