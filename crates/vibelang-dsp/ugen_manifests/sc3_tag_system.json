@@ -1,0 +1,125 @@
+[
+  {
+    "name": "Dtag",
+    "description": "Demand-rate tag system — Emil Post's tag system as a demand UGen. Reads symbols from an axiom array, applies production rules indexed by integer symbols, and deletes v symbols at each step. The tape size is bounded; recycle/mode controls behaviour on overrun and empty conditions. From sc3-plugins TagSystemUGens. Documented as a builder-only entry because the input list is variadic (axiom and rules arrays are flattened into the input vector).",
+    "rates": [
+      "builder"
+    ],
+    "inputs": [
+      {
+        "name": ".bufsize(size)",
+        "type": "method",
+        "default": null,
+        "description": "Maximum tape size; when this size is reached, the process ends (depending on mode)"
+      },
+      {
+        "name": ".v(num)",
+        "type": "method",
+        "default": null,
+        "description": "Deletion number — symbols deleted at each step"
+      },
+      {
+        "name": ".axiom(array)",
+        "type": "method",
+        "default": null,
+        "description": "Initial string of integer symbols (rule indices)"
+      },
+      {
+        "name": ".rules(array_of_arrays)",
+        "type": "method",
+        "default": null,
+        "description": "Production rules — for each integer symbol, an array of replacement symbols"
+      },
+      {
+        "name": ".recycle(offset)",
+        "type": "method",
+        "default": null,
+        "description": "If non-zero, write position is offset and the tag system recycles instead of halting (depending on mode)"
+      },
+      {
+        "name": ".mode(m)",
+        "type": "method",
+        "default": null,
+        "description": "Halting/recycling mode (0..5) — see schelp for full table"
+      }
+    ],
+    "outputs": 1,
+    "category": "TagSystemUGens"
+  },
+  {
+    "name": "DbufTag",
+    "description": "Demand-rate tag system that runs on an external Buffer instead of a fixed-size internal tape. Like Dtag but uses Buffer.alloc, allowing multiple tag processes to share or overwrite each other's output on a single buffer. From sc3-plugins TagSystemUGens. Documented as a builder-only entry because the input list is variadic.",
+    "rates": [
+      "builder"
+    ],
+    "inputs": [
+      {
+        "name": ".bufnum(num)",
+        "type": "method",
+        "default": null,
+        "description": "Index of the 1-channel buffer used as the tag tape"
+      },
+      {
+        "name": ".v(num)",
+        "type": "method",
+        "default": null,
+        "description": "Deletion number — symbols deleted at each step"
+      },
+      {
+        "name": ".axiom(array)",
+        "type": "method",
+        "default": null,
+        "description": "Initial string of integer symbols"
+      },
+      {
+        "name": ".rules(array_of_arrays)",
+        "type": "method",
+        "default": null,
+        "description": "Production rules per symbol index"
+      },
+      {
+        "name": ".recycle(offset)",
+        "type": "method",
+        "default": null,
+        "description": "Recycle write-position offset"
+      },
+      {
+        "name": ".mode(m)",
+        "type": "method",
+        "default": null,
+        "description": "Halting/recycling mode (0..5)"
+      }
+    ],
+    "outputs": 1,
+    "category": "TagSystemUGens"
+  },
+  {
+    "name": "Dfsm",
+    "description": "Demand-rate finite-state machine — a Markov chain in UGen form. Each state holds a number of next-state choices; one is randomly selected per step from a user-provided RNG. Similar to Pfsm but evaluable as a UGen at demand rate. From sc3-plugins TagSystemUGens. Documented as a builder-only entry because the rules input is variadic and structured.",
+    "rates": [
+      "builder"
+    ],
+    "inputs": [
+      {
+        "name": ".rules(array)",
+        "type": "method",
+        "default": null,
+        "description": "Rules in the format [[entry states], item, [next states], item, [next states], ..., end item] — items can be numbers or demand UGens"
+      },
+      {
+        "name": ".n(count)",
+        "type": "method",
+        "default": null,
+        "description": "Number of items to embed from each state, or inf to embed completely"
+      },
+      {
+        "name": ".rgen(ugen)",
+        "type": "method",
+        "default": null,
+        "description": "Demand-rate RNG outputting values 0..1 — selects the next state. Deterministic UGens give controllable choice"
+      }
+    ],
+    "outputs": 1,
+    "category": "TagSystemUGens"
+  }
+]

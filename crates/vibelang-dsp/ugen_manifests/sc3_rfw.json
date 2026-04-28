@@ -1,0 +1,73 @@
+[
+  {
+    "name": "AverageOutput",
+    "description": "Running mean of audio or control rate input since the last received trigger. The trigger resets both the average and the internal sample count to zero. From sc3-plugins RFWUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset trigger — clears the running average on transition from <= 0 to > 0"
+      }
+    ],
+    "outputs": 1,
+    "category": "RFWUGens"
+  },
+  {
+    "name": "SwitchDelay",
+    "description": "Feedback delay line that uses the switch-and-ramp technique (Miller Puckette, 'Theory and Techniques of Electronic Music') to neutralise click artefacts when moving the buffer read pointer. Useful for runtime delay-time changes without zipper noise. Feedback is internally limited slightly below 1.0 for safety. From sc3-plugins RFWUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to be filtered"
+      },
+      {
+        "name": "drylevel",
+        "type": "float",
+        "default": 1.0,
+        "description": "Level of the dry input in the output mix"
+      },
+      {
+        "name": "wetlevel",
+        "type": "float",
+        "default": 1.0,
+        "description": "Level of the delayed signal in the output mix"
+      },
+      {
+        "name": "delaytime",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Delay time in seconds — can be modulated, switch-and-ramp masks the artefacts"
+      },
+      {
+        "name": "delayfactor",
+        "type": "float",
+        "default": 0.7,
+        "description": "Feedback multiplier (0..~1). Higher values lengthen the feedback tail; clamped below 1.0 to avoid runaway"
+      },
+      {
+        "name": "maxdelaytime",
+        "type": "float",
+        "default": 20.0,
+        "description": "Maximum delay buffer size in seconds (sets memory allocation, non-modulatable)"
+      }
+    ],
+    "outputs": 1,
+    "category": "RFWUGens"
+  }
+]

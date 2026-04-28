@@ -1,0 +1,79 @@
+[
+  {
+    "name": "AY",
+    "description": "Emulator of the General Instrument AY-3-8910 / Yamaha YM2149 sound chip — three pulse oscillators plus a noise oscillator, as found in the ZX Spectrum 128, Atari ST, MSX and other 8-bit machines. Always has DC offset; pair with LeakDC. Tone period is an integer (frequency = clock / 16 / period); use AY.freqtotone to convert from Hz. Provided via the libayemu library wrapped as a UGen. From sc3-plugins AYUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "tonea",
+        "type": "int",
+        "default": 1777,
+        "description": "Tone period of oscillator A (12-bit integer; lower = higher pitch). Use AY.freqtotone to convert from Hz"
+      },
+      {
+        "name": "toneb",
+        "type": "int",
+        "default": 1666,
+        "description": "Tone period of oscillator B"
+      },
+      {
+        "name": "tonec",
+        "type": "int",
+        "default": 1555,
+        "description": "Tone period of oscillator C"
+      },
+      {
+        "name": "noise",
+        "type": "int",
+        "default": 1,
+        "description": "Noise period (5-bit integer)"
+      },
+      {
+        "name": "control",
+        "type": "int",
+        "default": 7,
+        "description": "Mixer control byte. Low 3 bits enable the three tone channels (0=on); next 3 bits enable noise mixing onto each channel"
+      },
+      {
+        "name": "vola",
+        "type": "int",
+        "default": 15,
+        "description": "Volume of oscillator A (0..15); bit 4 (16) selects envelope-controlled volume"
+      },
+      {
+        "name": "volb",
+        "type": "int",
+        "default": 15,
+        "description": "Volume of oscillator B (0..15); bit 4 selects envelope mode"
+      },
+      {
+        "name": "volc",
+        "type": "int",
+        "default": 15,
+        "description": "Volume of oscillator C (0..15); bit 4 selects envelope mode"
+      },
+      {
+        "name": "envfreq",
+        "type": "int",
+        "default": 4,
+        "description": "Envelope period (16-bit integer; smaller = faster envelope)"
+      },
+      {
+        "name": "envstyle",
+        "type": "int",
+        "default": 1,
+        "description": "Envelope shape (0..15) — selects from the chip's hardware envelope shapes"
+      },
+      {
+        "name": "chiptype",
+        "type": "int",
+        "default": 0,
+        "description": "Chip flavour: 0 = AY-3-8910, 1 = YM2149 (different envelope step granularity)"
+      }
+    ],
+    "outputs": 1,
+    "category": "AYUGens"
+  }
+]

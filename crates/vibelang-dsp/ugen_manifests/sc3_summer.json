@@ -1,0 +1,86 @@
+[
+  {
+    "name": "Summer",
+    "description": "Pulse counter with floating-point steps. Like Stepper but accepts a float step size, so each trigger increments the running sum by that amount. From sc3-plugins SummerUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger — increments on transition from non-positive to positive"
+      },
+      {
+        "name": "step",
+        "type": "float",
+        "default": 1.0,
+        "description": "Float step size added on each trigger"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset trigger — sets the counter to resetval when fired"
+      },
+      {
+        "name": "resetval",
+        "type": "float",
+        "default": 0,
+        "description": "Value to reset the counter to on reset trigger"
+      }
+    ],
+    "outputs": 1,
+    "category": "SummerUGens"
+  },
+  {
+    "name": "WrapSummer",
+    "description": "Pulse counter with floating-point steps that wraps around min and max bounds. Like Summer but the counter wraps modulo (max - min). From sc3-plugins SummerUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger — increments on transition from non-positive to positive"
+      },
+      {
+        "name": "step",
+        "type": "float",
+        "default": 1.0,
+        "description": "Float step size added on each trigger"
+      },
+      {
+        "name": "min",
+        "type": "float",
+        "default": 0,
+        "description": "Minimum value of the counter (lower wrap bound)"
+      },
+      {
+        "name": "max",
+        "type": "float",
+        "default": 1.0,
+        "description": "Maximum value of the counter (upper wrap bound)"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset trigger — sets the counter to resetval when fired"
+      },
+      {
+        "name": "resetval",
+        "type": "float",
+        "default": 0,
+        "description": "Value to reset the counter to on reset trigger (defaults to min if unset)"
+      }
+    ],
+    "outputs": 1,
+    "category": "SummerUGens"
+  }
+]

@@ -1,0 +1,60 @@
+[
+  {
+    "name": "MembraneCircle",
+    "description": "Triangular waveguide mesh modelling a circular drum-like membrane. Feed an excitation impulse (e.g. a noise burst or filtered pulse) to set the mesh ringing; tension and loss are tweakable in real time. Slightly larger mesh than MembraneHexagon — higher CPU cost. From sc3-plugins MembraneUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "excitation",
+        "type": "signal",
+        "default": 0,
+        "description": "Excitation signal injected into the mesh — typically a brief noise burst or pulse"
+      },
+      {
+        "name": "tension",
+        "type": "float",
+        "default": 0.05,
+        "description": "Mesh tension — controls pitch and stiffness of the membrane"
+      },
+      {
+        "name": "loss",
+        "type": "float",
+        "default": 0.99999,
+        "description": "Per-step energy retention (close to 1.0 = long sustain). Lower values damp faster"
+      }
+    ],
+    "outputs": 1,
+    "category": "MembraneUGens"
+  },
+  {
+    "name": "MembraneHexagon",
+    "description": "Triangular waveguide mesh modelling a hexagonal drum-like membrane. Same controls as MembraneCircle but uses a hexagonal mesh layout — different modal pattern and slightly cheaper CPU. From sc3-plugins MembraneUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "excitation",
+        "type": "signal",
+        "default": 0,
+        "description": "Excitation signal injected into the mesh"
+      },
+      {
+        "name": "tension",
+        "type": "float",
+        "default": 0.05,
+        "description": "Mesh tension — controls pitch and stiffness"
+      },
+      {
+        "name": "loss",
+        "type": "float",
+        "default": 0.99999,
+        "description": "Per-step energy retention; lower = faster damping"
+      }
+    ],
+    "outputs": 1,
+    "category": "MembraneUGens"
+  }
+]

@@ -1,0 +1,335 @@
+[
+  {
+    "name": "AttackSlope",
+    "description": "Detects onsets using an energy-based detection function and characterises the attack slope of each detected onset. Outputs 6 channels: [0] onset trigger, [1] minima-corrected onset time, [2] most recent slope measurement, [3] averaged slope, [4] raw detection function, [5] raw peak-pick function. From sc3-plugins SCMIRUGens (Nick Collins MIR).",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio input to analyse"
+      },
+      {
+        "name": "windowsize",
+        "type": "int",
+        "default": 1024,
+        "description": "Window size in samples for the detection function"
+      },
+      {
+        "name": "peakpicksize",
+        "type": "int",
+        "default": 20,
+        "description": "Peak-pick window size for onset detection"
+      },
+      {
+        "name": "leak",
+        "type": "float",
+        "default": 0.999,
+        "description": "Leaky integrator coefficient for the detection function"
+      },
+      {
+        "name": "energythreshold",
+        "type": "float",
+        "default": 0.01,
+        "description": "Minimum energy threshold for an onset candidate"
+      },
+      {
+        "name": "sumthreshold",
+        "type": "float",
+        "default": 20.0,
+        "description": "Summed-energy threshold for confirming an onset"
+      },
+      {
+        "name": "mingap",
+        "type": "int",
+        "default": 30,
+        "description": "Minimum number of control periods between onsets (debounce)"
+      },
+      {
+        "name": "numslopesaveraged",
+        "type": "int",
+        "default": 10,
+        "description": "Number of past slope measurements to average"
+      }
+    ],
+    "outputs": 6,
+    "category": "SCMIRUGens"
+  },
+  {
+    "name": "BeatStatistics",
+    "description": "Computes statistics over a beat histogram derived from a perceptual onset front-end and 100 leaky-integrator periodicities. Outputs 4 channels: [0] entropy, [1] ratio of largest to second-largest histogram entry, [2] Simpson's diversity, [3] metricity (consistency with integer multiples/divisors of the strongest entry). From sc3-plugins SCMIRUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "fft",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain (output of an FFT UGen)"
+      },
+      {
+        "name": "leak",
+        "type": "float",
+        "default": 0.995,
+        "description": "Leaky-integrator coefficient for the periodicity detectors"
+      },
+      {
+        "name": "numpreviousbeats",
+        "type": "int",
+        "default": 4,
+        "description": "How many previous beats to consider in the histogram"
+      }
+    ],
+    "outputs": 4,
+    "category": "SCMIRUGens"
+  },
+  {
+    "name": "Chromagram",
+    "description": "Octave chroma-band representation of spectral energy for arbitrary nTET tuning. Buckets FFT bins into n equal divisions of an octave starting at tuningbase, summed across the requested number of octaves. Optional integration over time and per-frame normalisation. The number of output channels equals n (set at construction). From sc3-plugins SCMIRUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "fft",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain (output of an FFT UGen)"
+      },
+      {
+        "name": "fftsize",
+        "type": "int",
+        "default": 2048,
+        "description": "FFT size used to populate the bin lookup tables"
+      },
+      {
+        "name": "n",
+        "type": "int",
+        "default": 12,
+        "description": "Equal divisions of an octave (n=12 is 12-TET). Also the number of output channels"
+      },
+      {
+        "name": "tuningbase",
+        "type": "float",
+        "default": 32.703195662575,
+        "description": "Base frequency of chroma index 0 (default ~C1 in 12-TET)"
+      },
+      {
+        "name": "octaves",
+        "type": "int",
+        "default": 8,
+        "description": "Number of octaves above tuningbase to consider"
+      },
+      {
+        "name": "integrationflag",
+        "type": "int",
+        "default": 0,
+        "description": "If 1, integrate chroma frame-to-frame using coeff. Default 0 (no integration)"
+      },
+      {
+        "name": "coeff",
+        "type": "float",
+        "default": 0.9,
+        "description": "Coefficient of frame-to-frame integration when integrationflag is on"
+      },
+      {
+        "name": "octaveratio",
+        "type": "float",
+        "default": 2.0,
+        "description": "Frequency ratio of one 'octave'. Default 2.0; use 3.0 for Bohlen-Pierce tritave etc."
+      },
+      {
+        "name": "perframenormalize",
+        "type": "int",
+        "default": 0,
+        "description": "If 1, normalise each frame's chroma vector to sum to 1 (volume-independent). Default 0"
+      }
+    ],
+    "outputs": 12,
+    "category": "SCMIRUGens"
+  },
+  {
+    "name": "FeatureSave",
+    "description": "Stores feature vectors to a file in NRT mode (or low-load RT). On each trigger, the current features array is sampled and appended. Use unit commands createfile/closefile to control the file. From sc3-plugins SCMIRUGens. Documented as a builder-only entry because the features input is a variadic array flattened into the input list.",
+    "rates": [
+      "builder"
+    ],
+    "inputs": [
+      {
+        "name": ".features(array)",
+        "type": "method",
+        "default": null,
+        "description": "Feature array to sample on each trigger — pass any analysis UGens here"
+      },
+      {
+        "name": ".trig(signal)",
+        "type": "method",
+        "default": null,
+        "description": "Trigger input — must be at least -0.01 to fire (so bufnum 0 from FFT analysis still triggers)"
+      }
+    ],
+    "outputs": 1,
+    "category": "SCMIRUGens"
+  },
+  {
+    "name": "KeyClarity",
+    "description": "Running score of the maximum correlation between a chromagram and 12-TET major/minor key profiles in all transpositions. Higher output means a clearer/unambiguous key. Assumes a 440 Hz concert A reference and a 4096-point FFT (or 8192 at 88.2/96 kHz). From sc3-plugins SCMIRUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain (4096-point FFT for 44.1/48 kHz, 8192 for 88.2/96 kHz)"
+      },
+      {
+        "name": "keydecay",
+        "type": "float",
+        "default": 2.0,
+        "description": "Seconds for a window's influence on the key estimate to decay by 40 dB"
+      },
+      {
+        "name": "chromaleak",
+        "type": "float",
+        "default": 0.5,
+        "description": "Per-frame chroma leak coefficient; 0.0 = no memory between frames"
+      }
+    ],
+    "outputs": 1,
+    "category": "SCMIRUGens"
+  },
+  {
+    "name": "KeyMode",
+    "description": "Best-correlated key mode classifier between major, minor and chromatic-cluster scales in all transpositions. Output: 0 = major, 1 = minor, 2 = chromatic. Based on chromagram correlation with key profiles. Assumes 440 Hz concert A and 4096-point FFT (8192 at 88.2/96 kHz). From sc3-plugins SCMIRUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain (4096-point FFT for 44.1/48 kHz, 8192 for 88.2/96 kHz)"
+      },
+      {
+        "name": "keydecay",
+        "type": "float",
+        "default": 2.0,
+        "description": "Seconds for a window's influence on the mode estimate to decay by 40 dB"
+      },
+      {
+        "name": "chromaleak",
+        "type": "float",
+        "default": 0.5,
+        "description": "Per-frame chroma leak coefficient; 0.0 = no memory between frames"
+      }
+    ],
+    "outputs": 1,
+    "category": "SCMIRUGens"
+  },
+  {
+    "name": "OnsetStatistics",
+    "description": "Records onset triggers and their times within a sliding time window and produces basic statistics. Outputs 3 channels: [0] density (count of triggers in window), [1] mean inter-onset-interval (seconds), [2] standard deviation of IOIs. From sc3-plugins SCMIRUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Control-rate trigger input — each non-zero value is recorded as an onset"
+      },
+      {
+        "name": "windowsize",
+        "type": "float",
+        "default": 1.0,
+        "description": "Operating window size in seconds (counted backward from now)"
+      },
+      {
+        "name": "hopsize",
+        "type": "float",
+        "default": 0.1,
+        "description": "Hop size in seconds (currently unused — re-calculates every block)"
+      }
+    ],
+    "outputs": 3,
+    "category": "SCMIRUGens"
+  },
+  {
+    "name": "SensoryDissonance",
+    "description": "Perceptual sensory-dissonance / roughness measure based on pairs of prominent spectral peaks. Implements the model in Sethares (1998) 'Consonance-Based Spectral Mappings'. In default settings the output is roughly 0.0 to 1.0. From sc3-plugins SCMIRUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "fft",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain (output of an FFT UGen, default size 2048)"
+      },
+      {
+        "name": "maxpeaks",
+        "type": "int",
+        "default": 100,
+        "description": "Maximum number of spectral peaks to detect (initialisation only)"
+      },
+      {
+        "name": "peakthreshold",
+        "type": "float",
+        "default": 0.1,
+        "description": "Minimum spectral power to qualify as a peak"
+      },
+      {
+        "name": "norm",
+        "type": "float",
+        "default": 0.0001,
+        "description": "Normalisation factor — defaults to 0.01/maxpeaks (auto-computed in SC class). Tweak together with maxpeaks for alternative output ranges"
+      },
+      {
+        "name": "clamp",
+        "type": "float",
+        "default": 1.0,
+        "description": "Clamp value applied to very high dissonance scores (default keeps output in 0..1)"
+      }
+    ],
+    "outputs": 1,
+    "category": "SCMIRUGens"
+  },
+  {
+    "name": "SpectralEntropy",
+    "description": "Spectral entropy across a configurable number of sub-bands. With one band, gives a measure of overall spectral peakiness; with more bands, gives one entropy value per band (number of output channels = numbands). See Toh, Togneri & Nordholm 'Spectral Entropy as Speech Features for Speech Recognition'. From sc3-plugins SCMIRUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "fft",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain (output of an FFT UGen)"
+      },
+      {
+        "name": "fftsize",
+        "type": "int",
+        "default": 2048,
+        "description": "FFT size used for sub-band pre-calculation"
+      },
+      {
+        "name": "numbands",
+        "type": "int",
+        "default": 1,
+        "description": "Number of sub-bands (also the number of output channels). Clamped to fftsize"
+      }
+    ],
+    "outputs": 1,
+    "category": "SCMIRUGens"
+  }
+]

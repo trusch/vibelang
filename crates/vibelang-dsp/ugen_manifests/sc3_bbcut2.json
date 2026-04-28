@@ -1,0 +1,126 @@
+[
+  {
+    "name": "AnalyseEvents2",
+    "description": "On-the-fly event analyser — segments percussive material into events using an onset detector and writes per-event analysis data into a buffer. Best used indirectly via Segmentation (one-pass) or AnalyseEventsDatabase (on-the-fly) classes from the bbcut2 quark; not recommended for direct use. From sc3-plugins BBCut2UGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio input to track"
+      },
+      {
+        "name": "bufnum",
+        "type": "int",
+        "default": 0,
+        "description": "Buffer index where event analysis results are written"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 0.34,
+        "description": "Onset detector threshold (the default was empirically best on a percussive-onset database)"
+      },
+      {
+        "name": "triggerid",
+        "type": "int",
+        "default": 101,
+        "description": "Trigger ID for SendTrig-style notification of new events to the language (on-the-fly only)"
+      },
+      {
+        "name": "circular",
+        "type": "int",
+        "default": 0,
+        "description": "If 1, treat the buffer as circular (on-the-fly analysis). 0 for one-pass analysis"
+      },
+      {
+        "name": "pitch",
+        "type": "signal",
+        "default": 0,
+        "description": "Optional kr pitch detector — if connected, the median fundamental over each event is recorded"
+      }
+    ],
+    "outputs": 1,
+    "category": "BBCut2UGens"
+  },
+  {
+    "name": "DrumTrack",
+    "description": "Cross-correlation search and drum-pattern matching beat tracker designed for acoustic drum kits and pop signals with drums. Tempi 90-190 bpm. Outputs 4 channels: ticks at quarter, eighth and sixteenth note levels plus the current detected tempo. See Collins 'Drum Track: Beat Induction from an Acoustic Drum Kit with Synchronised Scheduling' (ICMC 2005). From sc3-plugins BBCut2UGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio input to track"
+      },
+      {
+        "name": "lock",
+        "type": "float",
+        "default": 0,
+        "description": "If > 0.5, lock the tracker to current periodicity/phase. Set back below 0.5 to resume tracking"
+      },
+      {
+        "name": "dynleak",
+        "type": "float",
+        "default": 0.0,
+        "description": "Leaky-integrator coefficient in the causal dynamic-programming search"
+      },
+      {
+        "name": "tempowt",
+        "type": "float",
+        "default": 0.0,
+        "description": "Weighting for tempo transition cost"
+      },
+      {
+        "name": "phasewt",
+        "type": "float",
+        "default": 0.0,
+        "description": "Weighting for phase transition cost"
+      },
+      {
+        "name": "basswt",
+        "type": "float",
+        "default": 0.0,
+        "description": "Weighting for low-frequency evidence"
+      },
+      {
+        "name": "patternwt",
+        "type": "float",
+        "default": 1.0,
+        "description": "Weighting for drum-pattern evidence"
+      },
+      {
+        "name": "prior",
+        "type": "int",
+        "default": -10,
+        "description": "Index of a 100-element float buffer of tempo prior weights (90..189 bpm in 1 bpm steps), or negative for a flat prior"
+      },
+      {
+        "name": "kicksensitivity",
+        "type": "float",
+        "default": 1.0,
+        "description": "Multiplier on the kick-drum detector's sensitivity (1.0 = default; lower = more sensitive)"
+      },
+      {
+        "name": "snaresensitivity",
+        "type": "float",
+        "default": 1.0,
+        "description": "Multiplier on the snare-drum detector's sensitivity"
+      },
+      {
+        "name": "debugmode",
+        "type": "int",
+        "default": 0,
+        "description": "0 = silent; 1 = post pattern matches and phase/period transitions; 2 = also post each kick/snare detection"
+      }
+    ],
+    "outputs": 4,
+    "category": "BBCut2UGens"
+  }
+]

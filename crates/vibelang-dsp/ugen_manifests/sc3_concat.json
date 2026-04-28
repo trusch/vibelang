@@ -1,0 +1,174 @@
+[
+  {
+    "name": "Concat",
+    "description": "Concatenative cross-synthesis on live streams. Matches frames of the source against the control input using four spectral features (zero-crossing rate, log mean square, spectral centroid, spectral tilt) — the source frames best matching the control are output. Frozen mode locks the source database. By Nick Collins. From sc3-plugins ConcatUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "control",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio-rate control input — drives matching"
+      },
+      {
+        "name": "source",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio-rate source input — frames are stored and selected for playback"
+      },
+      {
+        "name": "storesize",
+        "type": "float",
+        "default": 1.0,
+        "description": "Size of the source store sample buffer in seconds"
+      },
+      {
+        "name": "seektime",
+        "type": "float",
+        "default": 1.0,
+        "description": "Time in seconds into the past to start searching for matches"
+      },
+      {
+        "name": "seekdur",
+        "type": "float",
+        "default": 1.0,
+        "description": "Time in seconds from seektime towards the present to test matches"
+      },
+      {
+        "name": "matchlength",
+        "type": "float",
+        "default": 0.05,
+        "description": "Match length in seconds (rounded to the nearest FFT frame)"
+      },
+      {
+        "name": "freezestore",
+        "type": "float",
+        "default": 0,
+        "description": "Stop collecting novel source input — keep store fixed when > 0"
+      },
+      {
+        "name": "zcr",
+        "type": "float",
+        "default": 1.0,
+        "description": "Weight for zero-crossing-rate feature"
+      },
+      {
+        "name": "lms",
+        "type": "float",
+        "default": 1.0,
+        "description": "Weight for log-mean-square amplitude feature"
+      },
+      {
+        "name": "sc",
+        "type": "float",
+        "default": 1.0,
+        "description": "Weight for spectral-centroid feature"
+      },
+      {
+        "name": "st",
+        "type": "float",
+        "default": 0.0,
+        "description": "Weight for spectral-tilt feature"
+      },
+      {
+        "name": "randscore",
+        "type": "float",
+        "default": 0.0,
+        "description": "Random score added to matching (introduces variation)"
+      }
+    ],
+    "outputs": 1,
+    "category": "ConcatUGens"
+  },
+  {
+    "name": "Concat2",
+    "description": "Improved live concatenative cross-synthesis on live streams. Like Concat but adds a threshold parameter for a 'better live concatenative synthesiser' — matches below the threshold are rejected. By Nick Collins. From sc3-plugins ConcatUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "control",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio-rate control input — drives matching"
+      },
+      {
+        "name": "source",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio-rate source input — frames are stored and selected for playback"
+      },
+      {
+        "name": "storesize",
+        "type": "float",
+        "default": 1.0,
+        "description": "Size of the source store sample buffer in seconds"
+      },
+      {
+        "name": "seektime",
+        "type": "float",
+        "default": 1.0,
+        "description": "Time in seconds into the past to start searching for matches"
+      },
+      {
+        "name": "seekdur",
+        "type": "float",
+        "default": 1.0,
+        "description": "Time in seconds from seektime towards the present to test matches"
+      },
+      {
+        "name": "matchlength",
+        "type": "float",
+        "default": 0.05,
+        "description": "Match length in seconds (rounded to the nearest FFT frame)"
+      },
+      {
+        "name": "freezestore",
+        "type": "float",
+        "default": 0,
+        "description": "Stop collecting novel source input — keep store fixed when > 0"
+      },
+      {
+        "name": "zcr",
+        "type": "float",
+        "default": 1.0,
+        "description": "Weight for zero-crossing-rate feature"
+      },
+      {
+        "name": "lms",
+        "type": "float",
+        "default": 1.0,
+        "description": "Weight for log-mean-square amplitude feature"
+      },
+      {
+        "name": "sc",
+        "type": "float",
+        "default": 1.0,
+        "description": "Weight for spectral-centroid feature"
+      },
+      {
+        "name": "st",
+        "type": "float",
+        "default": 0.0,
+        "description": "Weight for spectral-tilt feature"
+      },
+      {
+        "name": "randscore",
+        "type": "float",
+        "default": 0.0,
+        "description": "Random score added to matching (introduces variation)"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 0.01,
+        "description": "Match-quality threshold — matches below this are rejected"
+      }
+    ],
+    "outputs": 1,
+    "category": "ConcatUGens"
+  }
+]

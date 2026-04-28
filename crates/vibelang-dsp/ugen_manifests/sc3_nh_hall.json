@@ -1,0 +1,85 @@
+[
+  {
+    "name": "NHHall",
+    "description": "Stereo-to-stereo reverb by Nathan Ho. Both early and late reflections are true-stereo, blooming outward from the panned input position; random modulation adds lush chorus. Wet-only output — pair with a dry mix and pre/post EQ as needed. Setting rt60 to inf gives an infinite hold reverb. From sc3-plugins NHUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "inLeft",
+        "type": "signal",
+        "default": 0,
+        "description": "Left input channel"
+      },
+      {
+        "name": "inRight",
+        "type": "signal",
+        "default": 0,
+        "description": "Right input channel"
+      },
+      {
+        "name": "rt60",
+        "type": "float",
+        "default": 1.0,
+        "description": "Approximate 60 dB decay time of the mid frequencies, in seconds. Use inf for infinite hold"
+      },
+      {
+        "name": "stereo",
+        "type": "float",
+        "default": 0.5,
+        "description": "Rate at which audio spreads between L/R. 0 keeps channels separate, 1 blends near-instantly"
+      },
+      {
+        "name": "lowFreq",
+        "type": "float",
+        "default": 200.0,
+        "description": "Crossover frequency between low and mid bands (Hz)"
+      },
+      {
+        "name": "lowRatio",
+        "type": "float",
+        "default": 0.5,
+        "description": "Ratio of low-frequency rt60 to mid rt60"
+      },
+      {
+        "name": "hiFreq",
+        "type": "float",
+        "default": 4000.0,
+        "description": "Crossover frequency between mid and high bands (Hz)"
+      },
+      {
+        "name": "hiRatio",
+        "type": "float",
+        "default": 0.5,
+        "description": "Ratio of high-frequency rt60 to mid rt60"
+      },
+      {
+        "name": "earlyDiffusion",
+        "type": "float",
+        "default": 0.5,
+        "description": "Diffusion amount for early reflections (0-1)"
+      },
+      {
+        "name": "lateDiffusion",
+        "type": "float",
+        "default": 0.5,
+        "description": "Diffusion amount for late reflections (0-1)"
+      },
+      {
+        "name": "modRate",
+        "type": "float",
+        "default": 0.2,
+        "description": "Rate of internal random modulation (Hz)"
+      },
+      {
+        "name": "modDepth",
+        "type": "float",
+        "default": 0.3,
+        "description": "Depth of internal random modulation"
+      }
+    ],
+    "outputs": 2,
+    "category": "NHUGens"
+  }
+]

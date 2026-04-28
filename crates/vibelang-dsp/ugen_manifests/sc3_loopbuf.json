@@ -1,0 +1,61 @@
+[
+  {
+    "name": "LoopBuf",
+    "description": "Sample-looping oscillator. Plays a buffer with sustain looping between startLoop and endLoop frames. Positive gate restarts from startPos; negative gate plays the rest of the sample from the current position without looping. By Lance Putnam. From sc3-plugins LoopBufUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "numChannels",
+        "type": "int",
+        "default": 1,
+        "description": "Number of channels in the buffer — fixed at SynthDef compile time. Must match the buffer's channel count or the UGen fails silently"
+      },
+      {
+        "name": "bufnum",
+        "type": "int",
+        "default": 0,
+        "description": "Index of the buffer to play"
+      },
+      {
+        "name": "rate",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Playback rate (1.0 = normal, 2.0 = +octave, 0.5 = -octave, -1.0 = reverse)"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Positive gate restarts from startPos. Negative gate plays the remainder of the sample without looping"
+      },
+      {
+        "name": "startPos",
+        "type": "float",
+        "default": 0.0,
+        "description": "Sample frame to start playback from"
+      },
+      {
+        "name": "startLoop",
+        "type": "float",
+        "default": 0.0,
+        "description": "Sample frame of the start of the loop"
+      },
+      {
+        "name": "endLoop",
+        "type": "float",
+        "default": 0.0,
+        "description": "Sample frame of the end of the loop"
+      },
+      {
+        "name": "interpolation",
+        "type": "int",
+        "default": 2,
+        "description": "Interpolation type: 1 = none, 2 = linear, 4 = cubic"
+      }
+    ],
+    "outputs": 1,
+    "category": "LoopBufUGens"
+  }
+]

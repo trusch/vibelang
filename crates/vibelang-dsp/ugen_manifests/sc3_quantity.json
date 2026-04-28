@@ -1,0 +1,62 @@
+[
+  {
+    "name": "MovingAverage",
+    "description": "Running mean of samples over a variable rectangular time window. The window length (numsamp) is modulatable up to maxsamp; memory is pre-allocated for maxsamp. Use .power for time-averaged power and .rms for root-mean-square. From sc3-plugins QuantityUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "numsamp",
+        "type": "float",
+        "default": 40,
+        "description": "Size of the averaging window in samples (modulatable, clipped to maxsamp)"
+      },
+      {
+        "name": "maxsamp",
+        "type": "int",
+        "default": 400,
+        "description": "Maximum window size; pre-allocates memory and is non-modulatable"
+      }
+    ],
+    "outputs": 1,
+    "category": "QuantityUGens"
+  },
+  {
+    "name": "MovingSum",
+    "description": "Running sum of samples over a variable rectangular time window. The window length (numsamp) is modulatable up to maxsamp; memory is pre-allocated for maxsamp. Useful for time-averaging operations — see MovingAverage for normalised output. From sc3-plugins QuantityUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "numsamp",
+        "type": "float",
+        "default": 40,
+        "description": "Size of the summing window in samples (modulatable, clipped to maxsamp)"
+      },
+      {
+        "name": "maxsamp",
+        "type": "int",
+        "default": 400,
+        "description": "Maximum window size; pre-allocates memory and is non-modulatable"
+      }
+    ],
+    "outputs": 1,
+    "category": "QuantityUGens"
+  }
+]

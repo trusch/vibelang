@@ -1,0 +1,31 @@
+[
+  {
+    "name": "FM7",
+    "description": "Phase-modulation oscillator matrix (6x6) from sc3-plugins SkUGens. Each of 6 oscillators has frequency, phase and amplitude controls; any oscillator's output can phase-modulate any other (including itself for feedback). Produces 6 channels — one per operator. Documented as a builder-only entry because the underlying UGen is variadic (18 control + 36 modulation values flattened into one input list) and does not fit the fixed-arity manifest signature; runtime invocation requires special-case wiring outside the auto-generated bindings.",
+    "rates": [
+      "builder"
+    ],
+    "inputs": [
+      {
+        "name": ".controlMatrix(rows...)",
+        "type": "method",
+        "default": null,
+        "description": "6x3 matrix of [freq, phase, amp] per operator. Phase is initial-only; freq/amp are kr"
+      },
+      {
+        "name": ".modMatrix(rows...)",
+        "type": "method",
+        "default": null,
+        "description": "6x6 matrix of phase-modulation amounts (radians). Row i, col j is the amount of operator j's output phase-modulating operator i"
+      },
+      {
+        "name": ".algoSpec(algo, feedback)",
+        "type": "method",
+        "default": null,
+        "description": "Pick one of 32 preset DX7-style algorithms with a feedback amount; returns a (modMatrix, channels) pair"
+      }
+    ],
+    "outputs": 6,
+    "category": "SkUGens"
+  }
+]

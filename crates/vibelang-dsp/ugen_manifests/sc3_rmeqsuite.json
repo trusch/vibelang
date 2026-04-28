@@ -1,0 +1,176 @@
+[
+  {
+    "name": "Allpass1",
+    "description": "First-order allpass filter from the RMEQ suite. Passes all frequencies but introduces a frequency-dependent phase shift around the corner frequency. Useful as a phase-shaping component in custom filters and decorrelation. From sc3-plugins RMEQSuiteUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200.0,
+        "description": "Corner frequency in Hz where the phase shift is centred"
+      }
+    ],
+    "outputs": 1,
+    "category": "RMEQSuiteUGens"
+  },
+  {
+    "name": "Allpass2",
+    "description": "Second-order allpass filter from the RMEQ suite. Passes all frequencies but introduces a phase shift; rq controls the bandwidth/sharpness of the phase transition. Useful as a building block for parametric EQ and decorrelation. From sc3-plugins RMEQSuiteUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1200.0,
+        "description": "Corner frequency in Hz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 1.0,
+        "description": "Reciprocal-Q (bandwidth/freq) — higher values widen the phase transition"
+      }
+    ],
+    "outputs": 1,
+    "category": "RMEQSuiteUGens"
+  },
+  {
+    "name": "RMEQ",
+    "description": "Regalia-Mitra parametric EQ section using two cascaded allpass filters. Provides clean boost/cut at a centre frequency with adjustable bandwidth (rq) and gain (k). The Regalia-Mitra topology has flat unity-gain reference and adjustable peak gain. From sc3-plugins RMEQSuiteUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Centre frequency in Hz"
+      },
+      {
+        "name": "rq",
+        "type": "float",
+        "default": 0.1,
+        "description": "Reciprocal-Q (bandwidth/freq) — smaller values give a narrower peak"
+      },
+      {
+        "name": "k",
+        "type": "float",
+        "default": 0,
+        "description": "Gain coefficient — positive values boost, negative cut. 0 is unity (no effect)"
+      }
+    ],
+    "outputs": 1,
+    "category": "RMEQSuiteUGens"
+  },
+  {
+    "name": "RMShelf",
+    "description": "Regalia-Mitra low/high shelving filter. Provides clean boost/cut above (or below) the corner frequency. Sign of k selects shelf direction and gain. From sc3-plugins RMEQSuiteUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Shelf corner frequency in Hz"
+      },
+      {
+        "name": "k",
+        "type": "float",
+        "default": 0,
+        "description": "Shelf gain coefficient — positive values boost, negative cut. 0 is unity"
+      }
+    ],
+    "outputs": 1,
+    "category": "RMEQSuiteUGens"
+  },
+  {
+    "name": "RMShelf2",
+    "description": "Second-order Regalia-Mitra shelving filter — sharper transition than RMShelf. Provides clean boost/cut with a steeper slope around the corner frequency. From sc3-plugins RMEQSuiteUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Shelf corner frequency in Hz"
+      },
+      {
+        "name": "k",
+        "type": "float",
+        "default": 0,
+        "description": "Shelf gain coefficient — positive values boost, negative cut. 0 is unity"
+      }
+    ],
+    "outputs": 1,
+    "category": "RMEQSuiteUGens"
+  },
+  {
+    "name": "Spreader",
+    "description": "Stereo spreader using a constant-Q filter bank to fan the input across the stereo field. theta controls the fan width (in radians, 0..pi/2) and filtsPerOctave controls the density of the filter bank. Outputs 2 channels. From sc3-plugins RMEQSuiteUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal (mono)"
+      },
+      {
+        "name": "theta",
+        "type": "float",
+        "default": 1.5707963267949,
+        "description": "Spread angle in radians (0..pi/2). Higher values widen the stereo image"
+      },
+      {
+        "name": "filtsPerOctave",
+        "type": "int",
+        "default": 8,
+        "description": "Filters per octave in the spreading bank — higher values give a denser, smoother spread"
+      }
+    ],
+    "outputs": 2,
+    "category": "RMEQSuiteUGens"
+  }
+]

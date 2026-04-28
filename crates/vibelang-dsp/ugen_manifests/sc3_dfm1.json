@@ -1,0 +1,49 @@
+[
+  {
+    "name": "DFM1",
+    "description": "Digitally modelled analog filter with low-pass and high-pass modes. Can be overdriven and self-oscillates at high resonance. Audio code by Tony Hardie-Bick. From sc3-plugins TJUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "signal",
+        "default": 1000.0,
+        "description": "Cutoff frequency in Hz"
+      },
+      {
+        "name": "res",
+        "type": "signal",
+        "default": 0.1,
+        "description": "Resonance (0 to ~1.2). High values self-oscillate"
+      },
+      {
+        "name": "inputgain",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Gain applied to the input before filtering — drives the model into nonlinear territory"
+      },
+      {
+        "name": "type",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Filter mode: 0.0 for low-pass, 1.0 for high-pass"
+      },
+      {
+        "name": "noiselevel",
+        "type": "signal",
+        "default": 0.0003,
+        "description": "Amplitude of internal noise added to the model"
+      }
+    ],
+    "outputs": 1,
+    "category": "TJUGens"
+  }
+]

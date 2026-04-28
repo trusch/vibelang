@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Dneuromodule",
+    "description": "Demand-rate discrete-time neurodynamics simulation. Models the dynamics of a small recurrent neural network with n nodes — initial state x[i], bias theta[i], and an n*n weight matrix between nodes. Transfer function is tanh. Implementation follows Pasemann (2002) 'Complex dynamics and the structure of small neural networks'. From sc3-plugins Neuromodules. Documented as a builder-only entry because the input list is variadic (numChannels, plus n thetas, n initial states, and n*n weights flattened); runtime invocation requires special-case wiring outside the auto-generated bindings.",
+    "rates": [
+      "builder"
+    ],
+    "inputs": [
+      {
+        "name": ".numChannels(n)",
+        "type": "method",
+        "default": null,
+        "description": "Number of neural nodes (also the number of output channels)"
+      },
+      {
+        "name": ".theta(array)",
+        "type": "method",
+        "default": null,
+        "description": "Array of biases per node (length numChannels). Also serves as per-node input drive — can be demand UGens, ar/kr UGens, or numbers"
+      },
+      {
+        "name": ".x(array)",
+        "type": "method",
+        "default": null,
+        "description": "Array of initial values per node (length numChannels)"
+      },
+      {
+        "name": ".weights(array)",
+        "type": "method",
+        "default": null,
+        "description": "Flattened n*n inter-node weight matrix representing synapses"
+      }
+    ],
+    "outputs": 1,
+    "category": "Neuromodules"
+  }
+]

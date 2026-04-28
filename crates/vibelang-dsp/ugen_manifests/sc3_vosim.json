@@ -1,0 +1,37 @@
+[
+  {
+    "name": "VOSIM",
+    "description": "VOSIM (VOice SIMulation) pulse generator — bursts of squared sinewaves separated by silence, decaying in amplitude. A classic formant-synthesis primitive (Kaegi & Tempelaars, 1978) for vocal-like sounds. Each trigger starts a new burst of nCycles squared-sine cycles at freq, with each cycle scaled by decay relative to the previous one. From sc3-plugins VOSIMUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0.1,
+        "description": "Trigger — starts a new VOSIM pulse on transition from non-positive to positive (only if no pulse is currently playing). Audio-rate triggering is sample-accurate"
+      },
+      {
+        "name": "freq",
+        "type": "signal",
+        "default": 400.0,
+        "description": "Frequency of the squared sinewave inside each burst (Hz)"
+      },
+      {
+        "name": "nCycles",
+        "type": "int",
+        "default": 1,
+        "description": "Number of squared sinewave cycles per VOSIM burst — sampled when a new trigger arrives"
+      },
+      {
+        "name": "decay",
+        "type": "float",
+        "default": 0.9,
+        "description": "Per-cycle amplitude decay factor (each cycle's peak is decay times the previous one)"
+      }
+    ],
+    "outputs": 1,
+    "category": "VOSIMUGens"
+  }
+]

@@ -1,0 +1,302 @@
+[
+  {
+    "name": "LPCAnalyzer",
+    "description": "Live linear-predictive-coding analysis and resynthesis. Models the spectrum of input via an n-sample autocorrelation window and a p-pole LPC filter, then runs source through the derived filter. Best results when source is spectrally flat (impulse train, white noise). Window size n is bounded 1..1024. From sc3-plugins NCAnalysisUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Original signal to analyse with the LPC model"
+      },
+      {
+        "name": "source",
+        "type": "signal",
+        "default": 0.01,
+        "description": "Excitation signal to filter through the LPC-derived filter"
+      },
+      {
+        "name": "n",
+        "type": "int",
+        "default": 256,
+        "description": "Analysis window size in samples (1..1024)"
+      },
+      {
+        "name": "p",
+        "type": "int",
+        "default": 10,
+        "description": "Number of poles in the LPC filter"
+      },
+      {
+        "name": "testE",
+        "type": "int",
+        "default": 0,
+        "description": "If non-zero, vary the number of poles up to p based on an error condition"
+      },
+      {
+        "name": "delta",
+        "type": "float",
+        "default": 0.999,
+        "description": "Error test threshold (close to but just below 1.0)"
+      },
+      {
+        "name": "windowtype",
+        "type": "int",
+        "default": 0,
+        "description": "0 = rectangular window (abrupt coefficient swap); 1 = triangular window (crossfaded LPCs, smoother but 2x CPU)"
+      }
+    ],
+    "outputs": 1,
+    "category": "NCAnalysisUGens"
+  },
+  {
+    "name": "MedianSeparation",
+    "description": "Harmonic/percussive source separation via median (or mean) filtering of FFT frames, after FitzGerald (2010) 'Harmonic/Percussive Separation using Median Filtering'. Reads an input FFT chain and writes the harmonic and percussive parts to two output FFT buffers. Outputs 2 trigger-style channels for the two FFT writes. From sc3-plugins NCAnalysisUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "fft",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain (pre-analysed by an FFT UGen)"
+      },
+      {
+        "name": "fftharmonic",
+        "type": "int",
+        "default": 0,
+        "description": "Output FFT buffer index for the harmonic part"
+      },
+      {
+        "name": "fftpercussive",
+        "type": "int",
+        "default": 0,
+        "description": "Output FFT buffer index for the percussive part"
+      },
+      {
+        "name": "fftsize",
+        "type": "int",
+        "default": 1024,
+        "description": "FFT size — must be known at construction time and match all input/output buffers"
+      },
+      {
+        "name": "mediansize",
+        "type": "int",
+        "default": 17,
+        "description": "How many FFT frames/bins to median over for harmonic vs percussive comparison"
+      },
+      {
+        "name": "hardorsoft",
+        "type": "int",
+        "default": 0,
+        "description": "0 = hard either/or assignment, 1 = soft proportional assignment"
+      },
+      {
+        "name": "p",
+        "type": "float",
+        "default": 2.0,
+        "description": "Soft-assignment exponent (paper default 2; 1 gives linear proportional)"
+      },
+      {
+        "name": "medianormax",
+        "type": "int",
+        "default": 0,
+        "description": "0 = median (higher quality), 1 = mean (lower CPU)"
+      }
+    ],
+    "outputs": 2,
+    "category": "NCAnalysisUGens"
+  },
+  {
+    "name": "SMS",
+    "description": "Spectral Modeling Synthesis (Serra 1989) — sines+noise model. Tracks sinusoidal partials in the spectrum and models the residual as filtered white noise. Sines and residual can be transformed independently. Assumes block size 64 and 1024-point FFT internally; optimised for 44.1 kHz. Outputs 2 channels (sines and noise). From sc3-plugins NCAnalysisUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio-rate input to analyse"
+      },
+      {
+        "name": "maxpeaks",
+        "type": "int",
+        "default": 80,
+        "description": "Absolute maximum number of allowed peaks (initialisation only)"
+      },
+      {
+        "name": "currentpeaks",
+        "type": "int",
+        "default": 80,
+        "description": "Current number of allowed peaks (modulatable up to maxpeaks)"
+      },
+      {
+        "name": "tolerance",
+        "type": "int",
+        "default": 4,
+        "description": "Search tolerance (in spectral bins) for matching peaks across frames"
+      },
+      {
+        "name": "noisefloor",
+        "type": "float",
+        "default": 0.2,
+        "description": "Minimum spectral magnitude for a candidate peak"
+      },
+      {
+        "name": "freqmult",
+        "type": "float",
+        "default": 1.0,
+        "description": "Resynthesis frequency multiplier — multiplies all sinusoidal partials"
+      },
+      {
+        "name": "freqadd",
+        "type": "float",
+        "default": 0.0,
+        "description": "Resynthesis frequency offset — added to all sinusoidal partials"
+      },
+      {
+        "name": "formantpreserve",
+        "type": "int",
+        "default": 0,
+        "description": "If non-zero, re-impose the original magnitude envelope when resynthesising (formant preservation) at small CPU cost"
+      },
+      {
+        "name": "useifft",
+        "type": "int",
+        "default": 0,
+        "description": "If non-zero, use IFFT-based resynthesis (lower quality but cheaper)"
+      },
+      {
+        "name": "ampmult",
+        "type": "float",
+        "default": 1.0,
+        "description": "Amplitude multiplier — internal compensation for analysis-window power loss"
+      },
+      {
+        "name": "graphicsbufnum",
+        "type": "int",
+        "default": -1,
+        "description": "Buffer index for graphics output, or -1 to disable"
+      }
+    ],
+    "outputs": 2,
+    "category": "NCAnalysisUGens"
+  },
+  {
+    "name": "TPV",
+    "description": "Tracking Phase Vocoder — sinusoidal model after McAulay & Quatieri (1986). Tracks spectral peaks across frames as continuous partials. Resynthesises the tracked partials with optional frequency multiplication. From sc3-plugins NCAnalysisUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "FFT chain — pre-analysed by an FFT UGen"
+      },
+      {
+        "name": "windowsize",
+        "type": "int",
+        "default": 1024,
+        "description": "FFT window size"
+      },
+      {
+        "name": "hopsize",
+        "type": "int",
+        "default": 512,
+        "description": "FFT hop size (typically half windowsize)"
+      },
+      {
+        "name": "maxpeaks",
+        "type": "int",
+        "default": 80,
+        "description": "Absolute maximum number of allowed peaks (initialisation only)"
+      },
+      {
+        "name": "currentpeaks",
+        "type": "int",
+        "default": 80,
+        "description": "Current number of allowed peaks (modulatable up to maxpeaks)"
+      },
+      {
+        "name": "freqmult",
+        "type": "float",
+        "default": 1.0,
+        "description": "Resynthesis frequency multiplier — no envelope compensation"
+      },
+      {
+        "name": "tolerance",
+        "type": "int",
+        "default": 4,
+        "description": "Search tolerance (in spectral bins) for matching peaks across frames"
+      },
+      {
+        "name": "noisefloor",
+        "type": "float",
+        "default": 0.2,
+        "description": "Minimum spectral magnitude for a candidate peak"
+      }
+    ],
+    "outputs": 1,
+    "category": "NCAnalysisUGens"
+  },
+  {
+    "name": "WalshHadamard",
+    "description": "Walsh-Hadamard transform — decomposition into square-wave-like basis functions, then reconstruction. Far cheaper than FFT (no trigonometric functions) but the 'sequency' representation is less intuitive. Acts as a 64-point block transform; lowest 'which' basis indices are zeroed for filtering effects. From sc3-plugins NCAnalysisUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Original signal"
+      },
+      {
+        "name": "which",
+        "type": "int",
+        "default": 0,
+        "description": "Basis-index threshold — indices below this are zeroed in the reconstruction (0 = pass-through)"
+      }
+    ],
+    "outputs": 1,
+    "category": "NCAnalysisUGens"
+  },
+  {
+    "name": "WaveletDaub",
+    "description": "Daubechies-4 wavelet transform — decomposition and reconstruction with optional zeroing of low-index coefficients for filtering. Block size n must be divisible by 64 (the standard SuperCollider blocksize). From sc3-plugins NCAnalysisUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Original signal"
+      },
+      {
+        "name": "n",
+        "type": "int",
+        "default": 64,
+        "description": "Wavelet transform size — must be divisible by 64"
+      },
+      {
+        "name": "which",
+        "type": "int",
+        "default": 0,
+        "description": "Basis-index threshold — indices below this are zeroed (0 = pass-through)"
+      }
+    ],
+    "outputs": 1,
+    "category": "NCAnalysisUGens"
+  }
+]
