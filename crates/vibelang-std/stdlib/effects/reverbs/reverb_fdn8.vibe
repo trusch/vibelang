@@ -1,0 +1,122 @@
+// kind=fx | category=reverb | flavor=fdn8 | stereo=true | params=time,damp,modulation_amount,mix,level
+//
+// FDN8 Reverb
+//
+// Eight prime-ratio delay lines combined through a Hadamard mixing matrix.
+// The matrix decorrelates the delay outputs so the tail sounds even and
+// non-pingy. Two diffusion stages are chained — input → 8 delays → Hadamard
+// → damping → 8 delays scaled by a per-pass decay gain → Hadamard — to
+// simulate the dense reflection field of a true feedback delay network.
+// Per-line LFOs nudge the delay times to defeat the metallic ring fixed
+// FDNs get on sustained tones.
+//
+// Usage:
+//   group.add_effect("verb", "reverb_fdn8", #{
+//     time: 2.5,
+//     damp: 0.4,
+//     modulation_amount: 0.3,
+//     mix: 0.3,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   time:               Reverb time in seconds (0.5 to 10.0)
+//   damp:               High-frequency damping per pass (0.0 = bright, 1.0 = dark)
+//   modulation_amount:  Delay-time modulation depth (0.0 = static, 1.0 = lush)
+//   mix:                Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:              Output trim applied after the dry/wet mix
+
+define_fx("reverb_fdn8", |builder| {
+    builder
+        .param("time", 2.5)
+        .param("damp", 0.4)
+        .param("modulation_amount", 0.3)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, time, damp, modulation_amount, mix, level| {
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Prime ratios in milliseconds — the round-trip set sums to ~75ms.
+            let dt0 = 0.0317;
+            let dt1 = 0.0379;
+            let dt2 = 0.0411;
+            let dt3 = 0.0431;
+            let dt4 = 0.0479;
+            let dt5 = 0.0539;
+            let dt6 = 0.0593;
+            let dt7 = 0.0613;
+
+            // Per-line slow modulators at incommensurate rates so the
+            // lines don't beat against each other.
+            let mod_scale = modulation_amount * 0.0008;
+            let m0 = sin_osc_kr(0.13) * mod_scale;
+            let m1 = sin_osc_kr(0.17) * mod_scale;
+            let m2 = sin_osc_kr(0.19) * mod_scale;
+            let m3 = sin_osc_kr(0.23) * mod_scale;
+            let m4 = sin_osc_kr(0.29) * mod_scale;
+            let m5 = sin_osc_kr(0.31) * mod_scale;
+            let m6 = sin_osc_kr(0.37) * mod_scale;
+            let m7 = sin_osc_kr(0.41) * mod_scale;
+
+            // Stage 1: input feeds 8 delay lines.
+            let d0 = delay_c_ar(mono, 0.2, dt0 + m0);
+            let d1 = delay_c_ar(mono, 0.2, dt1 + m1);
+            let d2 = delay_c_ar(mono, 0.2, dt2 + m2);
+            let d3 = delay_c_ar(mono, 0.2, dt3 + m3);
+            let d4 = delay_c_ar(mono, 0.2, dt4 + m4);
+            let d5 = delay_c_ar(mono, 0.2, dt5 + m5);
+            let d6 = delay_c_ar(mono, 0.2, dt6 + m6);
+            let d7 = delay_c_ar(mono, 0.2, dt7 + m7);
+
+            // 8x8 Hadamard mix. Scale by 1/sqrt(8) so energy is conserved.
+            let s = 0.353553;
+            let h0 = (d0 + d1 + d2 + d3 + d4 + d5 + d6 + d7) * s;
+            let h1 = (d0 - d1 + d2 - d3 + d4 - d5 + d6 - d7) * s;
+            let h2 = (d0 + d1 - d2 - d3 + d4 + d5 - d6 - d7) * s;
+            let h3 = (d0 - d1 - d2 + d3 + d4 - d5 - d6 + d7) * s;
+            let h4 = (d0 + d1 + d2 + d3 - d4 - d5 - d6 - d7) * s;
+            let h5 = (d0 - d1 + d2 - d3 - d4 + d5 - d6 + d7) * s;
+            let h6 = (d0 + d1 - d2 - d3 - d4 - d5 + d6 + d7) * s;
+            let h7 = (d0 - d1 - d2 + d3 - d4 + d5 + d6 - d7) * s;
+
+            // Per-line damping. Cutoff drops as damp rises.
+            let cutoff = 8000.0 * (1.0 - damp) + 800.0 * damp;
+            let l0 = lpf_ar(h0, cutoff);
+            let l1 = lpf_ar(h1, cutoff);
+            let l2 = lpf_ar(h2, cutoff);
+            let l3 = lpf_ar(h3, cutoff);
+            let l4 = lpf_ar(h4, cutoff);
+            let l5 = lpf_ar(h5, cutoff);
+            let l6 = lpf_ar(h6, cutoff);
+            let l7 = lpf_ar(h7, cutoff);
+
+            // Per-pass decay gain. With a ~75ms average round-trip the
+            // tail loses 60dB over `time` seconds, so g = 10^(-3 * 0.075 / time).
+            let g = pow(10.0, -0.225 / time);
+
+            // Stage 2: damped Hadamard outputs feed a second delay bank
+            // with the decay gain applied. The chain mimics one cycle of an
+            // FDN feedback loop and produces the dense early reflection cluster.
+            let f0 = delay_c_ar(l0 * g, 0.2, dt0);
+            let f1 = delay_c_ar(l1 * g, 0.2, dt1);
+            let f2 = delay_c_ar(l2 * g, 0.2, dt2);
+            let f3 = delay_c_ar(l3 * g, 0.2, dt3);
+            let f4 = delay_c_ar(l4 * g, 0.2, dt4);
+            let f5 = delay_c_ar(l5 * g, 0.2, dt5);
+            let f6 = delay_c_ar(l6 * g, 0.2, dt6);
+            let f7 = delay_c_ar(l7 * g, 0.2, dt7);
+
+            // Stereo split: even-indexed lines to L, odd to R. The Hadamard
+            // already decorrelated them, so this gives a wide stereo image.
+            let left  = (f0 + f2 + f4 + f6) * 0.5;
+            let right = (f1 + f3 + f5 + f7) * 0.5;
+
+            let wet_l = leak_dc_ar(left, 0.995);
+            let wet_r = leak_dc_ar(right, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

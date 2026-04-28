@@ -1,0 +1,67 @@
+// kind=fx | category=reverb | flavor=gated | stereo=true | params=time,gate_time,threshold,mix,level
+//
+// Gated Reverb
+//
+// JPverb fed through an envelope-follower-driven downward expander. The
+// reverb opens instantly on input transients and slams shut after
+// `gate_time` seconds — the classic 80s drum trick (Phil Collins, Bonham
+// snare, etc.).
+//
+// Usage:
+//   group.add_effect("verb", "reverb_gated", #{
+//     time: 1.5,
+//     gate_time: 0.25,
+//     threshold: 0.05,
+//     mix: 0.3,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   time:       Underlying reverb time in seconds (0.1 to 10.0)
+//   gate_time:  Time the gate stays open after the input drops below
+//               threshold (0.05 to 2.0 s) — also sets the gate's release.
+//   threshold:  Envelope-follower threshold below which the gate closes
+//               (0.0 to 1.0)
+//   mix:        Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:      Output trim applied after the dry/wet mix
+
+define_fx("reverb_gated", |builder| {
+    builder
+        .param("time", 1.5)
+        .param("gate_time", 0.25)
+        .param("threshold", 0.05)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, time, gate_time, threshold, mix, level| {
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Source reverb — JPverb at moderate size for a drum-room feel.
+            let wet_node = j_pverb_ar(
+                mono, time, 0.3, 1.5,
+                0.707, 0.05, 1.5,
+                1.0, 1.0, 1.0,
+                500.0, 4000.0
+            );
+            let raw_l = channel(wet_node, 0);
+            let raw_r = channel(wet_node, 1);
+
+            // Envelope follower on the input — fast attack so the gate
+            // tracks transients, release set by gate_time.
+            let env = amplitude_ar(mono, 0.005, gate_time);
+
+            // Compander as a downward expander/gate:
+            //   below threshold → strong expansion (slope < 1 cuts toward silence)
+            //   above threshold → unity (signal passes)
+            // clampTime = 5ms attack so the gate snaps open.
+            let gated_l = compander_ar(raw_l, env, threshold, 0.1, 1.0, 0.005, gate_time);
+            let gated_r = compander_ar(raw_r, env, threshold, 0.1, 1.0, 0.005, gate_time);
+
+            let wet_l = leak_dc_ar(gated_l, 0.995);
+            let wet_r = leak_dc_ar(gated_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

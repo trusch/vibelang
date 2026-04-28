@@ -1,0 +1,70 @@
+// kind=fx | category=reverb | flavor=reverse | stereo=true | params=time,reverse_window,mix,level
+//
+// Reverse Reverb
+//
+// Captures the tail of a JPverb into a circular buffer and plays it back
+// reversed. The output swells *into* the next attack — the classic
+// pre-verb texture used on snares, vocals, and synth pads.
+//
+// Each `reverse_window` seconds an impulse re-triggers the playhead to the
+// end of the recorded slice with negative rate, so playback walks
+// backwards through the freshest buffer contents.
+//
+// Usage:
+//   group.add_effect("verb", "reverb_reverse", #{
+//     time: 2.0,
+//     reverse_window: 1.0,
+//     mix: 0.3,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   time:           JPverb tail time in seconds (0.1 to 10.0)
+//   reverse_window: Length of each reverse sweep in seconds (0.1 to 2.0).
+//                   Also sets the trigger rate that re-anchors playback.
+//   mix:            Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:          Output trim applied after the dry/wet mix
+
+define_fx("reverb_reverse", |builder| {
+    builder
+        .param("time", 2.0)
+        .param("reverse_window", 1.0)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, time, reverse_window, mix, level| {
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Generate a stereo reverb tail to capture.
+            let wet_node = j_pverb_ar(
+                mono, time, 0.3, 1.5,
+                0.707, 0.1, 2.0,
+                1.0, 1.0, 1.0,
+                500.0, 2000.0
+            );
+            let tail_l = channel(wet_node, 0);
+            let tail_r = channel(wet_node, 1);
+
+            // 2-second circular buffers, one per channel (96000 frames @ 48 kHz).
+            let buf_l = local_buf_ir(1, 96000);
+            let buf_r = local_buf_ir(1, 96000);
+
+            // Continuous recording, looping back to frame 0 at end of buffer.
+            record_buf_ar(tail_l, buf_l, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+            record_buf_ar(tail_r, buf_r, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+
+            // Re-trigger every reverse_window seconds. With rate = -1 and
+            // startPos = 0 the playhead wraps to the end of the looping
+            // buffer and walks backwards from the freshest samples.
+            let trig = impulse_ar(1.0 / reverse_window, 0.0);
+            let rev_l = play_buf_ar(1, buf_l, -1.0, trig, 0.0, 1.0, 0);
+            let rev_r = play_buf_ar(1, buf_r, -1.0, trig, 0.0, 1.0, 0);
+
+            let wet_l = leak_dc_ar(rev_l, 0.995);
+            let wet_r = leak_dc_ar(rev_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});
