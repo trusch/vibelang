@@ -1,0 +1,52 @@
+// kind=fx | category=dynamics | flavor=fet | stereo=true | params=threshold,ratio,attack,release,mix,level
+//
+// FET Compressor (1176 style)
+//
+// Snappy, aggressive solid-state compression. Microsecond attack catches
+// transients hard; release is fast and forward-pushing. Hard knee, high
+// ratios. Ideal on snares, vocals that need to bark, and bass DI.
+//
+// Usage:
+//   group.add_effect("fet", "comp_fet", #{
+//     threshold: 0.2,
+//     ratio: 8.0,
+//     attack: 0.00005,
+//     release: 0.05,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   threshold: Onset of compression (0.0 to 1.0)
+//   ratio:     Compression ratio (4.0 to 20.0; 1176 famously goes to "all-buttons-in")
+//   attack:    Attack time in seconds (very fast; default 50 us)
+//   release:   Release time in seconds (fast; default 50 ms)
+//   mix:       Dry/wet mix (1.0 = full wet, insert default)
+//   level:     Output level trim (1.0 = unity)
+
+define_fx("comp_fet")
+    .param("threshold", 0.2)
+    .param("ratio", 8.0)
+    .param("attack", 0.00005)
+    .param("release", 0.05)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, threshold, ratio, attack, release, mix, level| {
+        // Hard knee, hit-it-hard FET behavior — straight compander with no
+        // below-threshold massage.
+        let comp_l = compander_ar(input[0], input[0], threshold, 1.0, 1.0 / ratio, attack, release);
+        let comp_r = compander_ar(input[1], input[1], threshold, 1.0, 1.0 / ratio, attack, release);
+
+        // Makeup — FETs eat a lot of level at high ratios.
+        let makeup = 1.0 + (1.0 - 1.0 / ratio) * 1.5;
+        let processed_l = comp_l * makeup;
+        let processed_r = comp_r * makeup;
+
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

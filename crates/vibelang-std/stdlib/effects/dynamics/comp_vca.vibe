@@ -1,0 +1,51 @@
+// kind=fx | category=dynamics | flavor=vca | stereo=true | params=threshold,ratio,attack,release,mix,level
+//
+// VCA Compressor (dbx 160 style)
+//
+// Transparent, linear-knee VCA compression. Fast and accurate level control
+// without the colour of opto or FET stages. User-selectable attack and
+// release across a wide range — set fast for drums, slow for bus glue.
+//
+// Usage:
+//   group.add_effect("vca", "comp_vca", #{
+//     threshold: 0.3,
+//     ratio: 4.0,
+//     attack: 0.005,
+//     release: 0.15,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   threshold: Onset of compression (0.0 to 1.0)
+//   ratio:     Compression ratio (typ. 2.0 to 10.0)
+//   attack:    Attack time in seconds (0.0001 = fast, 0.05 = slow)
+//   release:   Release time in seconds (0.05 = fast, 1.0 = slow)
+//   mix:       Dry/wet mix (1.0 = full wet, insert default)
+//   level:     Output level trim (1.0 = unity)
+
+define_fx("comp_vca")
+    .param("threshold", 0.3)
+    .param("ratio", 4.0)
+    .param("attack", 0.005)
+    .param("release", 0.15)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, threshold, ratio, attack, release, mix, level| {
+        // Linear-knee, transparent compander — no colour, just gain control.
+        let comp_l = compander_ar(input[0], input[0], threshold, 1.0, 1.0 / ratio, attack, release);
+        let comp_r = compander_ar(input[1], input[1], threshold, 1.0, 1.0 / ratio, attack, release);
+
+        // Modest makeup — VCAs are level-accurate, no need to overcompensate.
+        let makeup = 1.0 + (1.0 - 1.0 / ratio) * 0.4;
+        let processed_l = comp_l * makeup;
+        let processed_r = comp_r * makeup;
+
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

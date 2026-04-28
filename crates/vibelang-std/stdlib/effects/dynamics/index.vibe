@@ -9,3 +9,7 @@ import "stdlib/effects/dynamics/multiband_comp.vibe";
 import "stdlib/effects/dynamics/de_esser.vibe";
 import "stdlib/effects/dynamics/parallel_comp.vibe";
 import "stdlib/effects/dynamics/amp_follower.vibe";
+import "stdlib/effects/dynamics/comp_opto.vibe";
+import "stdlib/effects/dynamics/comp_fet.vibe";
+import "stdlib/effects/dynamics/comp_vca.vibe";
+import "stdlib/effects/dynamics/comp_vari_mu.vibe";

@@ -1,0 +1,73 @@
+// kind=fx | category=dynamics | flavor=vari_mu | stereo=true | params=threshold,ratio,attack,release,drive,mix,level
+//
+// Vari-Mu Compressor (Fairchild 670 style)
+//
+// Tube-bias compression with program-dependent release and tanh saturation
+// that grows in proportion to gain reduction. Slow, thick, expensive-sounding
+// — built for the mix bus and mastering glue. Pushes harmonics only when it
+// works, so light compression stays clean.
+//
+// Usage:
+//   group.add_effect("varimu", "comp_vari_mu", #{
+//     threshold: 0.25,
+//     ratio: 3.0,
+//     attack: 0.05,
+//     release: 0.6,
+//     drive: 1.0,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   threshold: Onset of compression (0.0 to 1.0)
+//   ratio:     Compression ratio (gentle: 2.0 to 4.0)
+//   attack:    Attack time in seconds (slow tube-stage; default 50 ms)
+//   release:   Base release time in seconds; bloomed by program level
+//   drive:     Saturation gain mapped onto gain reduction (0.0 = off, 2.0 = thick)
+//   mix:       Dry/wet mix (1.0 = full wet, insert default)
+//   level:     Output level trim (1.0 = unity)
+
+define_fx("comp_vari_mu")
+    .param("threshold", 0.25)
+    .param("ratio", 3.0)
+    .param("attack", 0.05)
+    .param("release", 0.6)
+    .param("drive", 1.0)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, threshold, ratio, attack, release, drive, mix, level| {
+        // Program-dependent release — Fairchild's time-constant network gets
+        // longer the harder you push it. Approximate with a slow envelope of
+        // input level driving release time.
+        let prog_l = lag_ar(amplitude_ar(input[0], 0.08, 0.6), 0.8);
+        let prog_r = lag_ar(amplitude_ar(input[1], 0.08, 0.6), 0.8);
+        let release_l = release * (0.6 + prog_l * 5.0);
+        let release_r = release * (0.6 + prog_r * 5.0);
+
+        // Soft-ish knee, tube vibe — slopeBelow < 1 eases the entry.
+        let comp_l = compander_ar(input[0], input[0], threshold, 0.85, 1.0 / ratio, attack, release_l);
+        let comp_r = compander_ar(input[1], input[1], threshold, 0.85, 1.0 / ratio, attack, release_r);
+
+        // Saturation grows with gain reduction: more compression -> more tube
+        // bloom. (input - comp) is a cheap GR detector.
+        let gr_l = (input[0].abs() - comp_l.abs()).max(0.0);
+        let gr_r = (input[1].abs() - comp_r.abs()).max(0.0);
+        let sat_drive_l = 1.0 + gr_l * drive * 4.0;
+        let sat_drive_r = 1.0 + gr_r * drive * 4.0;
+
+        // tanh adds odd harmonics; divide back so unity drive stays clean.
+        let saturated_l = (comp_l * sat_drive_l).tanh() / sat_drive_l.sqrt();
+        let saturated_r = (comp_r * sat_drive_r).tanh() / sat_drive_r.sqrt();
+
+        let makeup = 1.0 + (1.0 - 1.0 / ratio) * 0.5;
+        let processed_l = saturated_l * makeup;
+        let processed_r = saturated_r * makeup;
+
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

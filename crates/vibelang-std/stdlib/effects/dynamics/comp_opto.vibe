@@ -1,0 +1,62 @@
+// kind=fx | category=dynamics | flavor=opto | stereo=true | params=threshold,ratio,attack,release,mix,level
+//
+// Opto Compressor (LA-2A style)
+//
+// Slow, smooth compression with a soft knee and a program-dependent release.
+// Models the lazy attack and bloom-recovery feel of a vactrol-driven optical
+// gain cell: the harder it gets hit, the longer it takes to let go. Great on
+// vocals, bass, and bus-glue duty where transparency matters more than grab.
+//
+// Usage:
+//   group.add_effect("opto", "comp_opto", #{
+//     threshold: 0.3,
+//     ratio: 4.0,
+//     attack: 0.01,
+//     release: 0.4,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   threshold: Onset of compression (0.0 to 1.0)
+//   ratio:     Compression ratio above threshold (typ. 2.0 to 6.0)
+//   attack:    Attack time in seconds (~10 ms is classic)
+//   release:   Base release time in seconds; bloomed by program level
+//   mix:       Dry/wet mix (1.0 = full wet, insert default)
+//   level:     Output level trim (1.0 = unity)
+
+define_fx("comp_opto")
+    .param("threshold", 0.3)
+    .param("ratio", 4.0)
+    .param("attack", 0.01)
+    .param("release", 0.4)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, threshold, ratio, attack, release, mix, level| {
+        // Program-dependent release: a slow envelope follower drags the
+        // release time longer when the signal sits above threshold for a
+        // while, giving the LA-2A "bloom" recovery instead of pumping.
+        let prog_l = lag_ar(amplitude_ar(input[0], 0.05, 0.4), 0.6);
+        let prog_r = lag_ar(amplitude_ar(input[1], 0.05, 0.4), 0.6);
+        let release_l = release * (0.5 + prog_l * 4.0);
+        let release_r = release * (0.5 + prog_r * 4.0);
+
+        // Soft-knee approximation: a touch of below-threshold expansion
+        // (slopeBelow > 1 would expand; slopeBelow < 1 softens the entry into
+        // gain reduction so the curve eases through threshold).
+        let comp_l = compander_ar(input[0], input[0], threshold, 0.9, 1.0 / ratio, attack, release_l);
+        let comp_r = compander_ar(input[1], input[1], threshold, 0.9, 1.0 / ratio, attack, release_r);
+
+        // Makeup gain — opto stages always sound shy of unity once they grab.
+        let makeup = 1.0 + (1.0 - 1.0 / ratio) * 0.6;
+        let processed_l = comp_l * makeup;
+        let processed_r = comp_r * makeup;
+
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });
