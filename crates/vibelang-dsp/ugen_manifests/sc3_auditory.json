@@ -1,0 +1,102 @@
+[
+  {
+    "name": "Gammatone",
+    "description": "Single gammatone bandpass filter (sc3-plugins). Approximates the frequency selectivity of a haircell site on the basilar membrane in the cochlea, following V. Hohmann, 'Frequency analysis and synthesis using a Gammatone filterbank' (Acta Acustica 88, 2002, 433-442). Centre frequency and bandwidth cannot be modulated.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Input sound to filter"
+      },
+      {
+        "name": "centrefrequency",
+        "type": "float",
+        "default": 440.0,
+        "description": "Centre frequency in Hz — cannot be modulated"
+      },
+      {
+        "name": "bandwidth",
+        "type": "float",
+        "default": 200.0,
+        "description": "Bandwidth of the filter in Hz — cannot be modulated"
+      }
+    ],
+    "outputs": 1,
+    "category": "AuditoryModeling",
+    "functions": [
+      "gammatone_ar"
+    ]
+  },
+  {
+    "name": "HairCell",
+    "description": "Simple cochlear hair cell model (sc3-plugins). Positive input opens ion channels at rate minrate+(input*rate); when accumulated chemicals reach 1.0 the cell fires (output 1.0) then decays each sample by the loss factor. The chemical store is replenished at restorerate; spontaneousrate sets a baseline firing rate; boostrate is how much the input drives chemical flow.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Input to be processed (basilar membrane motion at a particular point pulling an inner hair cell's stereocilia)"
+      },
+      {
+        "name": "spontaneousrate",
+        "type": "float",
+        "default": 0.0,
+        "description": "Spontaneous (baseline) firing rate in Hz — how often the cell fires with no external input"
+      },
+      {
+        "name": "boostrate",
+        "type": "float",
+        "default": 200.0,
+        "description": "Amount that input boosts the chemical flow rate leading to cell fire"
+      },
+      {
+        "name": "restorerate",
+        "type": "float",
+        "default": 1000.0,
+        "description": "Rate at which the chemical store is replenished, in Hz"
+      },
+      {
+        "name": "loss",
+        "type": "float",
+        "default": 0.99,
+        "description": "Per-sample decay factor applied after the cell fires"
+      }
+    ],
+    "outputs": 1,
+    "category": "AuditoryModeling",
+    "functions": [
+      "hair_cell_ar",
+      "hair_cell_kr"
+    ]
+  },
+  {
+    "name": "Meddis",
+    "description": "Meddis cochlear inner hair cell model (sc3-plugins). Implements Meddis, Hewitt & Shackleton, 'Implementation details of a computation model of the inner hair-cell/auditory-nerve synapse' (JASA 87(4), April 1990). Hard-coded for the medium-spontaneous-rate parameters; output is scaled by 100 from the JASA paper for sensible audio levels. Functionally similar to half-wave rectification plus low-pass filtering, with a more physiologically plausible mechanism.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "signal",
+        "default": 0,
+        "description": "Input to be processed (basilar membrane motion at a particular point affecting an inner hair cell's stereocilia)"
+      }
+    ],
+    "outputs": 1,
+    "category": "AuditoryModeling",
+    "functions": [
+      "meddis_ar",
+      "meddis_kr"
+    ]
+  }
+]
