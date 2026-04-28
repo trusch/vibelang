@@ -1,0 +1,79 @@
+// kind=fx | category=spectral | flavor=compressor | stereo=true | params=threshold,ratio,mix,level
+//
+// Spectral Compressor
+//
+// Per-bin magnitude compression. The spectrum is analysed twice; one chain is
+// hard-clipped per-bin at `threshold` (so any bin that pokes above the line is
+// pulled back down to it), and the original chain is left untouched. The two
+// resulting time-domain signals are then crossfaded by `ratio`:
+//
+//   ratio = 1.0  → no compression (pass-through)
+//   ratio = 4.0  → bins blended 75% toward the clipped version
+//   ratio → ∞    → full per-bin limiting at `threshold`
+//
+// Threshold values are raw FFT magnitudes — they scale with input level and
+// FFT size, so dial in by ear. Typical useful range is 1.0 - 50.0 for normal
+// program material at unity gain (same convention as `spectral_gate` /
+// `spectral_denoise`). Compression makes things quieter; reach for `level`
+// to push the output back up.
+//
+// Usage:
+//   group.add_effect("scomp", "spectral_compressor", #{
+//     threshold: 5.0,
+//     ratio: 4.0,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   threshold: Per-bin magnitude ceiling for the clipped path.
+//   ratio:     Crossfade weighting between dry and clipped paths.
+//              1.0 = dry, large = full clipping.
+//   mix:       Dry/wet mix (0.0 = dry, 1.0 = wet).
+//   level:     Output level trim applied after the dry/wet mix.
+
+define_fx("spectral_compressor", |builder| {
+    builder
+        .param("threshold", 5.0)
+        .param("ratio", 4.0)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, threshold, ratio, mix, level| {
+            // Four FFT buffers — pv_mag_clip_kr overwrites its input chain, so
+            // the dry path needs its own pair of buffers to survive intact.
+            let buf_dry_l = local_buf_ir(1.0, 2048.0);
+            let buf_dry_r = local_buf_ir(1.0, 2048.0);
+            let buf_clip_l = local_buf_ir(1.0, 2048.0);
+            let buf_clip_r = local_buf_ir(1.0, 2048.0);
+
+            // Analyse with 50% hop and Hann window.
+            let chain_dry_l = fft_kr(buf_dry_l, input[0], 0.5, 1.0, 1.0, 0.0);
+            let chain_dry_r = fft_kr(buf_dry_r, input[1], 0.5, 1.0, 1.0, 0.0);
+            let chain_clip_l = fft_kr(buf_clip_l, input[0], 0.5, 1.0, 1.0, 0.0);
+            let chain_clip_r = fft_kr(buf_clip_r, input[1], 0.5, 1.0, 1.0, 0.0);
+
+            // Per-bin magnitude clip — bins above `threshold` are pulled to it.
+            let clipped_l = pv_mag_clip_kr(chain_clip_l, threshold);
+            let clipped_r = pv_mag_clip_kr(chain_clip_r, threshold);
+
+            // Resynthesise both paths.
+            let dry_l = ifft_ar(chain_dry_l, 1.0, 0.0);
+            let dry_r = ifft_ar(chain_dry_r, 1.0, 0.0);
+            let comp_l = ifft_ar(clipped_l, 1.0, 0.0);
+            let comp_r = ifft_ar(clipped_r, 1.0, 0.0);
+
+            // Time-domain crossfade. amount = 1 - 1/ratio in [0, 1].
+            let amount = (1.0 - 1.0 / ratio).max(0.0);
+            let blended_l = (1.0 - amount) * dry_l + amount * comp_l;
+            let blended_r = (1.0 - amount) * dry_r + amount * comp_r;
+
+            // Strip DC offset that the spectral ops can introduce.
+            let blocked_l = leak_dc_ar(blended_l, 0.995);
+            let blocked_r = leak_dc_ar(blended_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * blocked_l) * level,
+                ((1.0 - mix) * input[1] + mix * blocked_r) * level
+            ]
+        })
+});

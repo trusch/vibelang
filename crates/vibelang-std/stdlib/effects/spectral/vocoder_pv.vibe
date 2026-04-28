@@ -1,0 +1,71 @@
+// kind=fx | category=spectral | flavor=vocoder_pv | stereo=true | params=bands_count,mix,level
+//
+// Phase-Vocoder Vocoder
+//
+// True FFT vocoder via cross-synthesis. Two FFT chains are analysed in
+// parallel: the modulator (input[0]) supplies bin magnitudes, the carrier
+// (input[1]) supplies bin phases. `pv_copy_phase_kr` welds the modulator's
+// spectral envelope onto the carrier's phase structure — the carrier sings
+// with the modulator's voice.
+//
+// Send a vocal/drum/bus signal in on the left channel and a synth/pad on the
+// right. The right channel must be present and harmonically rich; a sine wave
+// will produce a thin, pitch-locked output, while sawtooth or noise carriers
+// produce the classic "robotic voice" sound.
+//
+// `bands_count` controls how coarsely the modulator's spectrum is summarised
+// before the cross-synthesis: high values approach a per-bin vocoder (every
+// FFT bin carried over independently), low values smear neighbouring bins
+// together to emulate the broad-band channels of an analog vocoder.
+//
+// The wet output is mono — the same signal is sent to both stereo channels.
+//
+// Usage:
+//   group.add_effect("voc", "vocoder_pv", #{
+//     bands_count: 32.0,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   bands_count: Effective vocoder band count. 1024 = bin-perfect (no smear).
+//                Lower values average more neighbouring bins together.
+//                Typical range: 8.0 - 256.0.
+//   mix:         Dry/wet mix (0.0 = dry, 1.0 = wet).
+//   level:       Output level trim applied after the dry/wet mix.
+
+define_fx("vocoder_pv", |builder| {
+    builder
+        .param("bands_count", 32.0)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, bands_count, mix, level| {
+            // Per-path FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
+            let buf_mod = local_buf_ir(1.0, 2048.0);
+            let buf_car = local_buf_ir(1.0, 2048.0);
+
+            // Analyse modulator (voice) and carrier (synth) with 50% hop, Hann window.
+            let chain_mod = fft_kr(buf_mod, input[0], 0.5, 1.0, 1.0, 0.0);
+            let chain_car = fft_kr(buf_car, input[1], 0.5, 1.0, 1.0, 0.0);
+
+            // Smear modulator magnitudes across neighbouring bins to emulate a
+            // banded vocoder. 2048-pt FFT has 1024 useful bins, so smear width
+            // = (1024 / bands_count) - 1 yields roughly `bands_count` channels.
+            let smear_n = (1024.0 / bands_count - 1.0).max(0.0);
+            let smeared = pv_mag_smear_kr(chain_mod, smear_n);
+
+            // Cross-synthesis: magnitudes from smeared modulator, phases from carrier.
+            let voc = pv_copy_phase_kr(smeared, chain_car);
+
+            // Resynthesise — output is mono.
+            let wet = ifft_ar(voc, 1.0, 0.0);
+
+            // Strip DC offset that resynthesis can introduce.
+            let blocked = leak_dc_ar(wet, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * blocked) * level,
+                ((1.0 - mix) * input[1] + mix * blocked) * level
+            ]
+        })
+});

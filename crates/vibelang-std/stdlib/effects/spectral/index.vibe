@@ -8,3 +8,5 @@ import "stdlib/effects/spectral/spectral_morph.vibe";
 import "stdlib/effects/spectral/spectral_scrambler.vibe";
 import "stdlib/effects/spectral/spectral_gate.vibe";
 import "stdlib/effects/spectral/spectral_denoise.vibe";
+import "stdlib/effects/spectral/spectral_compressor.vibe";
+import "stdlib/effects/spectral/vocoder_pv.vibe";
