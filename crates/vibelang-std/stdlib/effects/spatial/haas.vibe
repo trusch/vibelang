@@ -1,3 +1,5 @@
+// kind=fx | category=spatial | flavor=haas | stereo=true | params=delay_time,mix,level
+//
 // Haas Effect (Stereo Widener)
 //
 // Creates stereo width using the Haas effect (precedence effect) with a short delay.
@@ -5,18 +7,21 @@
 // Usage:
 //   group.add_effect("haas", "haas", #{
 //     delay_time: 0.015,
-//     mix: 0.5
+//     mix: 0.5,
+//     level: 1.0
 //   });
 //
 // Parameters:
 //   delay_time: Delay time in seconds (0.005 to 0.04)
-//   mix: Effect intensity (0.0 = no effect, 1.0 = maximum)
+//   mix:        Effect intensity (0.0 = no effect, 1.0 = maximum)
+//   level:      Output trim applied after the dry/wet mix
 
 define_fx("haas", |builder| {
     builder
         .param("delay_time", 0.015)
         .param("mix", 0.5)
-        .body(|input, delay_time, mix| {
+        .param("level", 1.0)
+        .body(|input, delay_time, mix, level| {
             // Mix to mono
             let mono = (input[0] + input[1]) * 0.5;
 
@@ -27,13 +32,12 @@ define_fx("haas", |builder| {
             let haas_left = mono;
             let haas_right = delayed;
 
-            // Mix with original
-            let output = [
-                (1.0 - mix) * input[0] + mix * haas_left,
-                (1.0 - mix) * input[1] + mix * haas_right
-            ];
+            let wet_l = leak_dc_ar(haas_left, 0.995);
+            let wet_r = leak_dc_ar(haas_right, 0.995);
 
-            output
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-

@@ -1,3 +1,5 @@
+// kind=fx | category=utility | flavor=vocoder | stereo=true | params=bands,mix,level
+//
 // Vocoder Effect
 //
 // Classic vocoder effect using bandpass filter banks.
@@ -5,18 +7,21 @@
 // Usage:
 //   group.add_effect("voc", "vocoder", #{
 //     bands: 16.0,
-//     mix: 0.8
+//     mix: 0.8,
+//     level: 1.0
 //   });
 //
 // Parameters:
 //   bands: Number of frequency bands (8 to 32)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
 
 define_fx("vocoder", |builder| {
     builder
         .param("bands", 16.0)
         .param("mix", 0.8)
-        .body(|input, bands, mix| {
+        .param("level", 1.0)
+        .body(|input, bands, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
             // Simplified vocoder using multiple bandpass filters
@@ -29,9 +34,12 @@ define_fx("vocoder", |builder| {
 
             let wet = band1 + band2 + band3 + band4 + band5 + band6;
 
+            let wet_l = leak_dc_ar(wet, 0.995);
+            let wet_r = leak_dc_ar(wet, 0.995);
+
             [
-                (1.0 - mix) * input[0] + mix * wet,
-                (1.0 - mix) * input[1] + mix * wet
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });

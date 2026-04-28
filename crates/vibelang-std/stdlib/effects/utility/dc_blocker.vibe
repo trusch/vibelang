@@ -1,24 +1,37 @@
+// kind=fx | category=utility | flavor=dc_blocker | stereo=true | params=coef,mix,level
+//
 // DC Blocker Effect
 //
 // Removes DC offset from the signal using a high-pass filter.
 //
 // Usage:
 //   group.add_effect("dc_block", "dc_blocker", #{
-//     coef: 0.995
+//     coef: 0.995,
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   coef: Filter coefficient (0.9 to 0.999, higher = more bass removed)
+//   coef:  Filter coefficient (0.9 to 0.999, higher = more bass removed)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
+//
+// Pure-mix utility (DC blocker itself); skips the spec's redundant wet-path
+// leak_dc_ar(0.995) because the wet path *is* a DC blocker.
 
 define_fx("dc_blocker", |builder| {
     builder
         .param("coef", 0.995)
-        .body(|input, coef| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, coef, mix, level| {
             // Apply DC blocking filter
-            let blocked_left = leak_dc_ar(input[0], coef);
-            let blocked_right = leak_dc_ar(input[1], coef);
+            let wet_l = leak_dc_ar(input[0], coef);
+            let wet_r = leak_dc_ar(input[1], coef);
 
-            [blocked_left, blocked_right]
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-

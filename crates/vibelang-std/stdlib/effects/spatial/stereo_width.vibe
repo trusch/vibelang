@@ -1,19 +1,30 @@
+// kind=fx | category=spatial | flavor=stereo_width | stereo=true | params=width,mix,level
+//
 // Stereo Width Effect
 //
 // Controls the width of the stereo field from mono to super-wide.
 //
 // Usage:
 //   group.add_effect("width", "stereo_width", #{
-//     width: 1.5
+//     width: 1.5,
+//     mix: 1.0,
+//     level: 1.0
 //   });
 //
 // Parameters:
 //   width: Stereo width (0.0 = mono, 1.0 = normal, 2.0 = maximum width)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
+//
+// Pure-mix M/S manipulation; skips the spec's wet-path leak_dc_ar because
+// the signal path cannot introduce DC.
 
 define_fx("stereo_width", |builder| {
     builder
         .param("width", 1.5)
-        .body(|input, width| {
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, width, mix, level| {
             // Mid-side processing
             let mid = (input[0] + input[1]) * 0.5;
             let side = (input[0] - input[1]) * 0.5;
@@ -22,12 +33,12 @@ define_fx("stereo_width", |builder| {
             let side_widened = side * width;
 
             // Convert back to left-right
-            let output = [
-                mid + side_widened,
-                mid - side_widened
-            ];
+            let wet_l = mid + side_widened;
+            let wet_r = mid - side_widened;
 
-            output
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-
