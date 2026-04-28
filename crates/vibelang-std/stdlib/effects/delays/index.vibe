@@ -10,3 +10,6 @@ import "stdlib/effects/delays/dub_delay.vibe";
 import "stdlib/effects/delays/shimmer_delay.vibe";
 import "stdlib/effects/delays/reverse_delay.vibe";
 import "stdlib/effects/delays/slapback.vibe";
+import "stdlib/effects/delays/delay_bbd_analog.vibe";
+import "stdlib/effects/delays/delay_tape_wow.vibe";
+import "stdlib/effects/delays/delay_modulated_tape.vibe";

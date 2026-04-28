@@ -1,0 +1,80 @@
+// kind=fx | category=delay | flavor=tape_wow | stereo=true | params=time,feedback,wow_amount,flutter_amount,sat_amount,mix,level
+//
+// Tape Delay with Wow & Flutter
+// Inspired by: Maestro Echoplex, Roland RE-201 Space Echo, Echolette
+//
+// Echo line shaped by a slow ~0.5 Hz wow LFO and a fast ~7 Hz flutter LFO,
+// with tanh tape saturation on the feedback return and a low-pass for
+// HF roll-off. The wow and flutter rates are slightly detuned per side
+// for stereo de-correlation.
+//
+// Usage:
+//   group.add_effect("tape", "delay_tape_wow", #{
+//     time: 0.4,
+//     feedback: 0.5,
+//     wow_amount: 0.5,
+//     flutter_amount: 0.4,
+//     sat_amount: 0.4,
+//     mix: 0.3,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   time:           Delay time in seconds (0.02 to 2.0)
+//   feedback:       Feedback amount (0.0 to 0.95)
+//   wow_amount:     Slow pitch drift amount (0.0 to 1.0, ~0.3% depth)
+//   flutter_amount: Fast pitch wobble amount (0.0 to 1.0, ~0.05% depth)
+//   sat_amount:     Tape saturation amount (0.0 to 1.0)
+//   mix:            Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:          Final output trim (1.0 = unity)
+
+define_fx("delay_tape_wow")
+    .param("time", 0.4)
+    .param("feedback", 0.5)
+    .param("wow_amount", 0.5)
+    .param("flutter_amount", 0.4)
+    .param("sat_amount", 0.4)
+    .param("mix", 0.3)
+    .param("level", 1.0)
+    .body(|input, time, feedback, wow_amount, flutter_amount, sat_amount, mix, level| {
+        // Wow: slow ~0.5 Hz drift, ~0.3% of delay time at full depth
+        // Flutter: fast ~7 Hz wobble, ~0.05% of delay time at full depth
+        let wow_l = sin_osc_kr(0.5) * wow_amount * (time * 0.003);
+        let wow_r = sin_osc_kr(0.47) * wow_amount * (time * 0.003);
+        let flutter_l = sin_osc_kr(7.0) * flutter_amount * (time * 0.0005);
+        let flutter_r = sin_osc_kr(7.3) * flutter_amount * (time * 0.0005);
+
+        let mod_time_l = time + wow_l + flutter_l;
+        let mod_time_r = time + wow_r + flutter_r;
+
+        // First echo
+        let tap_l = delay_c_ar(input[0], 2.5, mod_time_l);
+        let tap_r = delay_c_ar(input[1], 2.5, mod_time_r);
+
+        // Tape saturation on the wet tap — drive scales with sat_amount
+        let drive = 1.0 + sat_amount * 2.0;
+        let sat_l = (tap_l * drive).tanh();
+        let sat_r = (tap_r * drive).tanh();
+
+        // High-frequency roll-off (tape head + bias filter)
+        let filt_l = lpf_ar(sat_l, 5500.0);
+        let filt_r = lpf_ar(sat_r, 5500.0);
+
+        // Feedback echo — one extra repeat through the same tape character
+        let fb_l = delay_c_ar(filt_l * feedback, 2.5, mod_time_l);
+        let fb_r = delay_c_ar(filt_r * feedback, 2.5, mod_time_r);
+        let fb_filt_l = lpf_ar((fb_l * drive).tanh(), 5500.0);
+        let fb_filt_r = lpf_ar((fb_r * drive).tanh(), 5500.0);
+
+        let processed_l = filt_l + fb_filt_l;
+        let processed_r = filt_r + fb_filt_r;
+
+        // DC-block the wet path before the dry/wet mix
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

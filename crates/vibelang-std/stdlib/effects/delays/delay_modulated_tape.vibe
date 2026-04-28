@@ -1,0 +1,87 @@
+// kind=fx | category=delay | flavor=modulated_tape | stereo=true | params=time,feedback,modulation,sat,hiss_amount,mix,level
+//
+// Modulated Tape Delay
+// Inspired by: Roland RE-201 with worn heads + tape hiss
+//
+// Tape echo with wow + flutter, tanh saturation, post-tape EQ (HP at 60 Hz,
+// gentle mid bump around 1.2 kHz, LP at 9 kHz) and an audible tape-hiss
+// layer (pink noise) bleeding through the wet path.
+//
+// Usage:
+//   group.add_effect("space_echo", "delay_modulated_tape", #{
+//     time: 0.45,
+//     feedback: 0.55,
+//     modulation: 0.6,
+//     sat: 0.5,
+//     hiss_amount: 0.15,
+//     mix: 0.3,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   time:        Delay time in seconds (0.02 to 2.0)
+//   feedback:    Feedback amount (0.0 to 0.95)
+//   modulation:  Combined wow + flutter amount (0.0 to 1.0)
+//   sat:         Tape saturation amount (0.0 to 1.0)
+//   hiss_amount: Tape hiss layer amount (0.0 to 1.0)
+//   mix:         Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:       Final output trim (1.0 = unity)
+
+define_fx("delay_modulated_tape")
+    .param("time", 0.45)
+    .param("feedback", 0.55)
+    .param("modulation", 0.6)
+    .param("sat", 0.5)
+    .param("hiss_amount", 0.15)
+    .param("mix", 0.3)
+    .param("level", 1.0)
+    .body(|input, time, feedback, modulation, sat, hiss_amount, mix, level| {
+        // Combined wow + flutter, scaled by modulation
+        let wow_l = sin_osc_kr(0.5) * modulation * (time * 0.003);
+        let wow_r = sin_osc_kr(0.47) * modulation * (time * 0.003);
+        let flutter_l = sin_osc_kr(7.0) * modulation * (time * 0.0005);
+        let flutter_r = sin_osc_kr(7.3) * modulation * (time * 0.0005);
+
+        let mod_time_l = time + wow_l + flutter_l;
+        let mod_time_r = time + wow_r + flutter_r;
+
+        // First echo
+        let tap_l = delay_c_ar(input[0], 2.5, mod_time_l);
+        let tap_r = delay_c_ar(input[1], 2.5, mod_time_r);
+
+        // Tape saturation
+        let drive = 1.0 + sat * 2.5;
+        let sat_l = (tap_l * drive).tanh();
+        let sat_r = (tap_r * drive).tanh();
+
+        // Post-tape EQ: HP @ 60 Hz, soft mid bump (+3 dB @ 1.2 kHz), LP @ 9 kHz
+        let hp_l = hpf_ar(sat_l, 60.0);
+        let hp_r = hpf_ar(sat_r, 60.0);
+        let mid_l = mid_eq_ar(hp_l, 1200.0, 1.0, 3.0);
+        let mid_r = mid_eq_ar(hp_r, 1200.0, 1.0, 3.0);
+        let lp_l = lpf_ar(mid_l, 9000.0);
+        let lp_r = lpf_ar(mid_r, 9000.0);
+
+        // Feedback echo through the same tape character
+        let fb_l = delay_c_ar(lp_l * feedback, 2.5, mod_time_l);
+        let fb_r = delay_c_ar(lp_r * feedback, 2.5, mod_time_r);
+        let fb_post_l = lpf_ar(hpf_ar((fb_l * drive).tanh(), 60.0), 9000.0);
+        let fb_post_r = lpf_ar(hpf_ar((fb_r * drive).tanh(), 60.0), 9000.0);
+
+        let echo_l = lp_l + fb_post_l;
+        let echo_r = lp_r + fb_post_r;
+
+        // Tape hiss layer — band-limited pink noise scaled by hiss_amount
+        let hiss = lpf_ar(hpf_ar(pink_noise_ar(), 800.0), 8000.0) * hiss_amount * 0.05;
+        let with_hiss_l = echo_l + hiss;
+        let with_hiss_r = echo_r + hiss;
+
+        // DC-block the wet path before the dry/wet mix
+        let wet_l = leak_dc_ar(with_hiss_l, 0.995);
+        let wet_r = leak_dc_ar(with_hiss_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

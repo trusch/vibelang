@@ -1,0 +1,70 @@
+// kind=fx | category=delay | flavor=bbd_analog | stereo=true | params=time,feedback,chorus_depth,lp_freq,mix,level
+//
+// BBD Analog Delay
+// Inspired by: Boss DM-2, Electro-Harmonix Memory Man, MXR Carbon Copy
+//
+// Bucket-brigade-style delay with chorus modulation on the read tap and a
+// low-pass filter in the feedback path. Each repeat darkens like a vintage
+// analog delay, with a gentle chorus shimmer from clock-jitter modulation.
+//
+// Usage:
+//   group.add_effect("bbd", "delay_bbd_analog", #{
+//     time: 0.35,
+//     feedback: 0.45,
+//     chorus_depth: 0.5,
+//     lp_freq: 3500.0,
+//     mix: 0.3,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   time:         Delay time in seconds (0.02 to 1.0)
+//   feedback:     Feedback amount (0.0 to 0.9)
+//   chorus_depth: Chorus modulation depth (0.0 to 1.0)
+//   lp_freq:      Low-pass cutoff for the feedback path in Hz (500 to 8000)
+//   mix:          Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:        Final output trim (1.0 = unity)
+
+define_fx("delay_bbd_analog")
+    .param("time", 0.35)
+    .param("feedback", 0.45)
+    .param("chorus_depth", 0.5)
+    .param("lp_freq", 3500.0)
+    .param("mix", 0.3)
+    .param("level", 1.0)
+    .body(|input, time, feedback, chorus_depth, lp_freq, mix, level| {
+        // Chorus LFO around 6 Hz — slightly different rate per side for stereo width
+        let chorus_l = sin_osc_kr(6.0) * chorus_depth * 0.0025;
+        let chorus_r = sin_osc_kr(5.7) * chorus_depth * 0.0025;
+
+        let tap_time_l = time + chorus_l;
+        let tap_time_r = time + chorus_r;
+
+        // First tap — read the chorus-modulated delay line
+        let tap_l = delay_c_ar(input[0], 1.5, tap_time_l);
+        let tap_r = delay_c_ar(input[1], 1.5, tap_time_r);
+
+        // Progressive HF loss in the feedback path (each repeat darker)
+        let dark_l = lpf_ar(tap_l, lp_freq);
+        let dark_r = lpf_ar(tap_r, lp_freq);
+
+        // Soft BBD compression on the tap
+        let comp_l = (dark_l * 1.2).tanh();
+        let comp_r = (dark_r * 1.2).tanh();
+
+        // Second tap with feedback-darkened return for an extra repeat
+        let fb_l = delay_c_ar(comp_l * feedback, 1.5, tap_time_l);
+        let fb_r = delay_c_ar(comp_r * feedback, 1.5, tap_time_r);
+
+        let processed_l = comp_l + lpf_ar(fb_l, lp_freq * 0.7);
+        let processed_r = comp_r + lpf_ar(fb_r, lp_freq * 0.7);
+
+        // DC-block the wet path before the dry/wet mix
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });
