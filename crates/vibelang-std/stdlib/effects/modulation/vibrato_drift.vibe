@@ -1,0 +1,101 @@
+// kind=fx | category=modulation | flavor=vibrato_drift | stereo=true | params=rate,depth,drift_amount,mix,level
+//
+// Vibrato with Chaos Drift
+//
+// A modulated `delay_c_ar` vibrato whose LFO rate and depth are themselves
+// modulated by a slow Lorenz chaotic generator. A pure sinusoidal vibrato
+// is too steady to sound like a human or like a piece of vintage hardware
+// where tape transport, tube heater, and motor jitter all conspire to
+// wobble the wobble. Feeding the LFO parameters from a Lorenz attractor
+// running at a few Hz gives the vibrato that organic, never-quite-the-
+// same drift.
+//
+// Implementation notes:
+//   - Lorenz drive uses `lorenz2_dl_kr` (the kr-rate, linear-interpolating
+//     2D Lorenz from sc3-plugins/BhobUGens) clamped to a slow iteration
+//     band (1-5 Hz). The plain `lorenz_l` UGen is ar-only; Lorenz2DL is
+//     the kr-rate sibling that's appropriate for control-rate drift.
+//   - Lorenz output amplitude is variable (~ +/- a few units depending on
+//     starting point); a 0.05 scale puts it in a useful +/- 0.5-ish band.
+//   - `drift_amount` sets how much the chaos modulates rate and depth.
+//     At 0 the effect is a plain stereo vibrato; at 1 the LFO rate and
+//     depth wander by ~+/-50%.
+//   - L and R LFOs are 90deg out of phase so the vibrato images across
+//     the stereo field instead of moving the whole sound up and down in
+//     pitch together.
+//
+// Usage:
+//   group.add_effect("vd", "vibrato_drift", #{
+//     rate: 5.0,
+//     depth: 0.002,
+//     drift_amount: 0.5,
+//     mix: 1.0,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   rate:         Base vibrato rate in Hz (1.0 to 10.0)
+//   depth:        Base vibrato depth in seconds (0.0005 to 0.005)
+//   drift_amount: Chaos modulation depth (0.0 = pure sine vibrato,
+//                 1.0 = heavy wander on rate and depth)
+//   mix:          Dry/wet mix (1.0 is the conventional vibrato setting)
+//   level:        Output trim applied after the dry/wet mix
+
+define_fx("vibrato_drift", |builder| {
+    builder
+        .param("rate", 5.0)
+        .param("depth", 0.002)
+        .param("drift_amount", 0.5)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, rate, depth, drift_amount, mix, level| {
+            // Slow Lorenz drift. minfreq/maxfreq of 1-5 Hz keeps the
+            // attractor iterating slowly enough that the modulation
+            // sounds like long-term wandering, not noise.
+            let chaos = lorenz2_dl_kr(
+                1.0,            // minfreq
+                5.0,            // maxfreq
+                10.0,           // s
+                28.0,           // r
+                2.6666667,      // b
+                0.02,           // h (Euler step)
+                0.090879182417163, // x0
+                0.0,            // y0
+                0.0             // z0
+            );
+            // Lorenz output runs in the order of +/- several units; scale
+            // it down so a 1.0 drift_amount is a recognisable wobble
+            // rather than a runaway.
+            let chaos_scaled = chaos * 0.05;
+
+            // Modulate rate and depth around their base values. The
+            // (1 + drift * chaos) form keeps both quantities positive
+            // for the typical chaos_scaled magnitude (~ +/- 0.5).
+            let rate_mod = rate * (1.0 + drift_amount * chaos_scaled);
+            let depth_mod = depth * (1.0 + drift_amount * chaos_scaled * 0.7);
+
+            // Stereo LFOs 90 deg apart so L and R wobble out of phase.
+            let lfo_l = sin_osc_kr(rate_mod, 0.0);
+            let lfo_r = sin_osc_kr(rate_mod, 1.5707963);
+
+            // Modulated delay times. 5 ms base sits well clear of the
+            // smallest reachable delay even at full depth + drift.
+            let dt_l = 0.005 + depth_mod * lfo_l;
+            let dt_r = 0.005 + depth_mod * lfo_r;
+
+            // Apply the modulated delay. 0.05 s max-delay headroom is
+            // ample for the 5 ms base + a few ms of swing.
+            let vib_l = delay_c_ar(input[0], 0.05, dt_l);
+            let vib_r = delay_c_ar(input[1], 0.05, dt_r);
+
+            // DC-block before the dry/wet mix — modulated delays can
+            // smear low-frequency content into a slow offset.
+            let wet_l = leak_dc_ar(vib_l, 0.995);
+            let wet_r = leak_dc_ar(vib_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

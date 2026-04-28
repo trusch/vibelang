@@ -1,0 +1,144 @@
+// kind=fx | category=modulation | flavor=barber_phaser | stereo=true | params=rate,depth,num_voices,mix,level
+//
+// Barber-Pole Phaser (Shepard-style endless rising)
+//
+// Four overlapping phaser voices whose allpass frequencies sweep
+// log-linearly from low to high. Each voice's amplitude follows a raised-
+// cosine window that opens at the start of its sweep and closes at the
+// end, so the discontinuity when the sweep wraps back to the bottom is
+// masked by the next voice peaking. The result is the classic Shepard /
+// Risset auditory illusion of a phaser that keeps rising forever (or
+// falling forever, if `rate` goes negative).
+//
+// Implementation notes:
+//   - Per-voice sawtooth LFOs at `rate` Hz, phase-spaced 0, 1/4, 1/2, 3/4
+//     of a cycle. Each saw is mapped exponentially to a delay time so the
+//     allpass notch sweeps log-uniformly across the spectrum.
+//   - Each voice carries a 4-stage `allpass_c_ar` cascade with mildly
+//     inharmonic delay multipliers (matches the per-stage spread used in
+//     `phaser_8stage`) so the four notches don't pile up at integer
+//     multiples.
+//   - Voice 0 (L) and voice 1 (R) are always at unity so the effect still
+//     works at `num_voices` = 0; voices 2 and 3 fade in via `num_voices`.
+//     The Shepard illusion only fully closes when all four voices are
+//     active and their windows are summing to a constant — at lower
+//     `num_voices` the listener will hear the wrap as a faint pulse, but
+//     that's a usable musical state, not a bug.
+//   - Voices alternate L/R inputs, the same trick `ensemble_chorus` uses
+//     to get stereo without doubling the LFO count.
+//
+// Usage:
+//   group.add_effect("barber", "barber_phaser", #{
+//     rate: 0.2,
+//     depth: 1.0,
+//     num_voices: 1.0,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   rate:       Sweep rate in Hz — also controls direction
+//               (positive = rising, negative = falling). 0.05 to 1.0 is
+//               the musical range; faster gets dizzy fast.
+//   depth:      Sweep range scale (0.0 = static, 1.0 = full ~5.6 octaves)
+//   num_voices: Voice taper (0.0 = first pair only, 1.0 = full 4-voice
+//               Shepard illusion)
+//   mix:        Dry/wet mix (0.5 is classic — notches need dry to be heard)
+//   level:      Output trim applied after the dry/wet mix
+
+define_fx("barber_phaser", |builder| {
+    builder
+        .param("rate", 0.2)
+        .param("depth", 1.0)
+        .param("num_voices", 1.0)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, rate, depth, num_voices, mix, level| {
+            // Four sawtooth ramps spaced 1/4 cycle apart. LFSaw `iphase`
+            // is 0..2 over one full cycle, so a 1/4-cycle offset is 0.5.
+            let saw0 = lf_saw_kr(rate, 0.0);
+            let saw1 = lf_saw_kr(rate, 0.5);
+            let saw2 = lf_saw_kr(rate, 1.0);
+            let saw3 = lf_saw_kr(rate, 1.5);
+
+            // Raised-cosine windows aligned with each saw: zero when
+            // saw = -1 (start of sweep), peak when saw = 0 (mid), zero
+            // when saw = +1 (end). Built from SinOsc with a +pi/2 base
+            // phase plus a per-voice 2*pi*n/4 offset so each window
+            // tracks its own saw.
+            let win0 = (1.0 - sin_osc_kr(rate, 1.5707963)) * 0.5;
+            let win1 = (1.0 - sin_osc_kr(rate, 3.1415927)) * 0.5;
+            let win2 = (1.0 - sin_osc_kr(rate, 4.7123890)) * 0.5;
+            let win3 = (1.0 - sin_osc_kr(rate, 6.2831853)) * 0.5;
+
+            // Fixed sweep endpoints. ~5.6 octaves between dt_max
+            // (allpass freq ~100 Hz) and dt_min (~5 kHz). dt_static is
+            // the centre we pull toward at depth = 0.
+            let dt_max = 0.005;
+            let dt_min = 0.0001;
+            let dt_static = 0.0007;
+
+            // Map each saw exponentially across the sweep range. Voices
+            // travel from dt_max down to dt_min as their saw climbs from
+            // -1 to +1, so the allpass notch rises in pitch.
+            let dt0_full = lin_exp_kr(saw0, -1.0, 1.0, dt_max, dt_min);
+            let dt1_full = lin_exp_kr(saw1, -1.0, 1.0, dt_max, dt_min);
+            let dt2_full = lin_exp_kr(saw2, -1.0, 1.0, dt_max, dt_min);
+            let dt3_full = lin_exp_kr(saw3, -1.0, 1.0, dt_max, dt_min);
+
+            // Depth blends each voice between its full sweep and a
+            // static centre. depth = 0 collapses the phaser to a fixed
+            // tone; depth = 1 gives the full sweep.
+            let dt0 = dt_static + (dt0_full - dt_static) * depth;
+            let dt1 = dt_static + (dt1_full - dt_static) * depth;
+            let dt2 = dt_static + (dt2_full - dt_static) * depth;
+            let dt3 = dt_static + (dt3_full - dt_static) * depth;
+
+            // Four 4-stage allpass cascades. Each voice alternates L/R
+            // input so the stereo image is wide without doubling LFOs.
+            // Allpass max-delay headroom of 0.012 comfortably exceeds
+            // dt * 2.03 even at dt_max.
+            let s0 = input[0];
+            s0 = allpass_c_ar(s0, 0.012, dt0,        0.0);
+            s0 = allpass_c_ar(s0, 0.012, dt0 * 1.27, 0.0);
+            s0 = allpass_c_ar(s0, 0.012, dt0 * 1.59, 0.0);
+            s0 = allpass_c_ar(s0, 0.012, dt0 * 2.03, 0.0);
+
+            let s1 = input[1];
+            s1 = allpass_c_ar(s1, 0.012, dt1,        0.0);
+            s1 = allpass_c_ar(s1, 0.012, dt1 * 1.27, 0.0);
+            s1 = allpass_c_ar(s1, 0.012, dt1 * 1.59, 0.0);
+            s1 = allpass_c_ar(s1, 0.012, dt1 * 2.03, 0.0);
+
+            let s2 = input[0];
+            s2 = allpass_c_ar(s2, 0.012, dt2,        0.0);
+            s2 = allpass_c_ar(s2, 0.012, dt2 * 1.27, 0.0);
+            s2 = allpass_c_ar(s2, 0.012, dt2 * 1.59, 0.0);
+            s2 = allpass_c_ar(s2, 0.012, dt2 * 2.03, 0.0);
+
+            let s3 = input[1];
+            s3 = allpass_c_ar(s3, 0.012, dt3,        0.0);
+            s3 = allpass_c_ar(s3, 0.012, dt3 * 1.27, 0.0);
+            s3 = allpass_c_ar(s3, 0.012, dt3 * 1.59, 0.0);
+            s3 = allpass_c_ar(s3, 0.012, dt3 * 2.03, 0.0);
+
+            // Voice taper: v0/v1 always at unity, v2/v3 fade in.
+            let v_extra = num_voices;
+
+            // Sum windowed voices. With all four windows active and
+            // 1/4-cycle phase spacing, sum_k (1 - cos(2*pi*k/4)) / 2 = 2,
+            // i.e. constant amplitude — the Shepard mask works.
+            let wet_l_sum = s0 * win0 + s2 * win2 * v_extra;
+            let wet_r_sum = s1 * win1 + s3 * win3 * v_extra;
+
+            // DC-block before the dry/wet mix — long allpass cascades
+            // can accumulate offset.
+            let wet_l = leak_dc_ar(wet_l_sum, 0.995);
+            let wet_r = leak_dc_ar(wet_r_sum, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});
