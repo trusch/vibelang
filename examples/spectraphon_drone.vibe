@@ -1,0 +1,16 @@
+// Spectraphon drone — Story A5 hello-world.
+// Verifies the spectraphon_side synthdef loads and produces sound:
+// a low static-spectrum drone, sweetened with a long jpverb tail.
+
+import "stdlib/instruments/spectral/spectraphon_side.vibe";
+import "stdlib/effects/reverbs/reverb_jpverb.vibe";
+
+let pad = voice("pad")
+    .synth("spectraphon_side")
+    .param("freq", 110.0)
+    .param("partials", 0.7)
+    .param("amp", 0.4)
+    .apply();
+
+voice("pad").fx("reverb_jpverb", #{ time: 4.0, mix: 0.5 });
+voice("pad").start();
