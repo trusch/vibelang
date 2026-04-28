@@ -1,0 +1,238 @@
+[
+  {
+    "name": "Convolution",
+    "description": "Real-time convolver. Strict convolution of two continuously changing inputs (target and kernel) using FFT internally.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Processing target signal"
+      },
+      {
+        "name": "kernel",
+        "type": "signal",
+        "default": 0,
+        "description": "Processing kernel signal (continuously changing)"
+      },
+      {
+        "name": "framesize",
+        "type": "float",
+        "default": 1024,
+        "description": "FFT frame size, must be a power of two (max 16384)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Convolution",
+    "functions": [
+      "convolution_ar"
+    ]
+  },
+  {
+    "name": "Convolution2",
+    "description": "Real-time fixed kernel convolver. Strict convolution with a fixed buffer kernel that can be updated using a trigger signal.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Processing target signal"
+      },
+      {
+        "name": "kernel",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index for the fixed kernel (size must be <= framesize)"
+      },
+      {
+        "name": "trigger",
+        "type": "signal",
+        "default": 0,
+        "description": "Update the kernel on a change from non-positive to positive value"
+      },
+      {
+        "name": "framesize",
+        "type": "float",
+        "default": 2048,
+        "description": "FFT frame size, must be a power of two (max 16384)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Convolution",
+    "functions": [
+      "convolution2_ar"
+    ]
+  },
+  {
+    "name": "Convolution2L",
+    "description": "Real-time convolver with linear interpolation. Like Convolution2 but linearly crossfades between buffers when the kernel is updated.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Processing target signal"
+      },
+      {
+        "name": "kernel",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index for the fixed kernel"
+      },
+      {
+        "name": "trigger",
+        "type": "signal",
+        "default": 0,
+        "description": "Update the kernel on a change from <=0 to >0"
+      },
+      {
+        "name": "framesize",
+        "type": "float",
+        "default": 2048,
+        "description": "FFT frame size, must be a power of two (max 16384)"
+      },
+      {
+        "name": "crossfade",
+        "type": "float",
+        "default": 1,
+        "description": "Number of periods over which the crossfade is performed (integer)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Convolution",
+    "functions": [
+      "convolution2l_ar"
+    ]
+  },
+  {
+    "name": "Convolution3",
+    "description": "Time-domain convolver with fixed kernel. Performs strict convolution in the time domain (only useful for very short kernels or control-rate signals).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Processing target signal"
+      },
+      {
+        "name": "kernel",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index for the fixed kernel"
+      },
+      {
+        "name": "trigger",
+        "type": "signal",
+        "default": 0,
+        "description": "Update the kernel on a change from <=0 to >0"
+      },
+      {
+        "name": "framesize",
+        "type": "float",
+        "default": 2048,
+        "description": "Maximum size of the buffer containing the kernel"
+      }
+    ],
+    "outputs": 1,
+    "category": "Convolution",
+    "functions": [
+      "convolution3_ar",
+      "convolution3_kr"
+    ]
+  },
+  {
+    "name": "StereoConvolution2L",
+    "description": "Stereo real-time convolver with linear interpolation. Convolves a mono input with two fixed kernel buffers (left/right) and outputs a stereo signal.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Processing target signal"
+      },
+      {
+        "name": "kernelL",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index for the left-channel fixed kernel"
+      },
+      {
+        "name": "kernelR",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer index for the right-channel fixed kernel"
+      },
+      {
+        "name": "trigger",
+        "type": "signal",
+        "default": 0,
+        "description": "Update the kernel on a change from <=0 to >0"
+      },
+      {
+        "name": "framesize",
+        "type": "float",
+        "default": 2048,
+        "description": "FFT frame size, must be a power of two (max 16384)"
+      },
+      {
+        "name": "crossfade",
+        "type": "float",
+        "default": 1,
+        "description": "Number of periods over which the crossfade is performed (integer)"
+      }
+    ],
+    "outputs": 2,
+    "category": "Convolution",
+    "functions": [
+      "stereo_convolution2l_ar"
+    ]
+  },
+  {
+    "name": "PartConv",
+    "description": "Real-time partitioned convolution. Mono impulse response can be arbitrarily long; CPU load grows with IR size. Requires a pre-prepared spectral buffer (see Buffer.preparePartConv).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Processing target signal"
+      },
+      {
+        "name": "fftsize",
+        "type": "float",
+        "default": 2048,
+        "description": "Spectral convolution partition size (twice partition size); blocksize must divide it with at least two blocks per partition"
+      },
+      {
+        "name": "irbufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number of the prepared spectral impulse-response data"
+      }
+    ],
+    "outputs": 1,
+    "category": "Convolution",
+    "functions": [
+      "part_conv_ar"
+    ]
+  }
+]
