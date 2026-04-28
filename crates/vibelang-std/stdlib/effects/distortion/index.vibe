@@ -9,3 +9,5 @@ import "stdlib/effects/distortion/lo_fi.vibe";
 import "stdlib/effects/distortion/vinyl.vibe";
 import "stdlib/effects/distortion/exciter.vibe";
 import "stdlib/effects/distortion/fuzz.vibe";
+import "stdlib/effects/distortion/drive_tube.vibe";
+import "stdlib/effects/distortion/drive_transistor.vibe";

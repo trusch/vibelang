@@ -1,0 +1,67 @@
+// kind=fx | category=distortion | flavor=tube | stereo=true | params=drive,bias,bright,mix,level
+//
+// Drive Tube — pre-amp tube emulation
+//
+// tanh soft-saturation with an asymmetric DC bias for even-harmonic content
+// (the warmth of a single-ended triode), an 80 Hz high-pass to keep the
+// low end from smearing under the non-linearity, and an optional "bright"
+// switch that pulls HF content forward pre-saturation — the way a guitar
+// amp's bright cap shapes what hits the tube.
+//
+// The asymmetric bias does introduce DC, so the wet path is leak_dc_ar'd
+// before the dry/wet mix.
+//
+// Usage:
+//   group.add_effect("amp", "drive_tube", #{
+//     drive: 4.0,
+//     bias: 0.2,
+//     bright: 0.0,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   drive:  Saturation drive (1.0 clean → 20.0 hot)
+//   bias:   Asymmetric DC offset for even harmonics (-0.5 to 0.5, 0.0 = symmetric)
+//   bright: Pre-saturation HF emphasis (0.0 = off, 1.0 = full)
+//   mix:    Dry/wet (insert default 1.0)
+//   level:  Output trim (1.0 = unity)
+
+define_fx("drive_tube")
+    .param("drive", 4.0)
+    .param("bias", 0.2)
+    .param("bright", 0.0)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, drive, bias, bright, mix, level| {
+        // 80 Hz high-pass — saturating subbass produces ugly intermod, every
+        // tube preamp's input cap does roughly this.
+        let cleaned_l = hpf_ar(input[0], 80.0);
+        let cleaned_r = hpf_ar(input[1], 80.0);
+
+        // Bright switch: blend in the HF half of the signal pre-saturation
+        // so harmonic generation is biased toward upper content.
+        let bright_l = cleaned_l + hpf_ar(cleaned_l, 3000.0) * bright;
+        let bright_r = cleaned_r + hpf_ar(cleaned_r, 3000.0) * bright;
+
+        // Drive into the saturator with the asymmetric DC offset baked in.
+        let driven_l = bright_l * drive + bias;
+        let driven_r = bright_r * drive + bias;
+
+        let sat_l = driven_l.tanh();
+        let sat_r = driven_r.tanh();
+
+        // Compensate so unity drive stays roughly unity.
+        let comp = 1.0 / drive.sqrt();
+        let processed_l = sat_l * comp;
+        let processed_r = sat_r * comp;
+
+        // DC-block — bias offset and asymmetric clipping both leave DC behind.
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

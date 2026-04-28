@@ -1,0 +1,69 @@
+// kind=fx | category=distortion | flavor=transistor | stereo=true | params=drive,asymmetry,lp_freq,mix,level
+//
+// Drive Transistor — solid-state warmth
+//
+// Asymmetric soft-clip with a tameable HF roll-off and a slight bass
+// shelf cut. Where drive_tube leans on even harmonics from a biased
+// triode curve, this leans on the harder, slightly fizzier knee of a
+// transistor stage — but kept musical via tanh and the post LP.
+//
+// The asymmetry param shifts the operating point on the tanh curve so
+// positive and negative excursions saturate at different thresholds,
+// giving the asymmetric harmonic spectrum that distinguishes solid-state
+// drive from a symmetric clip. lp_freq tames the resulting fizz.
+//
+// Usage:
+//   group.add_effect("ss", "drive_transistor", #{
+//     drive: 6.0,
+//     asymmetry: 0.3,
+//     lp_freq: 8000.0,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   drive:     Saturation drive (1.0 clean → 30.0 fuzzy)
+//   asymmetry: Pos/neg threshold offset (-0.5 to 0.5, 0.0 = symmetric)
+//   lp_freq:   Post-clip low-pass cutoff in Hz (typical 7000 to 9000)
+//   mix:       Dry/wet (insert default 1.0)
+//   level:     Output trim (1.0 = unity)
+
+define_fx("drive_transistor")
+    .param("drive", 6.0)
+    .param("asymmetry", 0.3)
+    .param("lp_freq", 8000.0)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, drive, asymmetry, lp_freq, mix, level| {
+        // Slight bass shelf cut — transistor stages typically have a coupling
+        // cap that thins the bottom; 100 Hz HP approximates that loss without
+        // gutting the low end.
+        let shelved_l = hpf_ar(input[0], 100.0);
+        let shelved_r = hpf_ar(input[1], 100.0);
+
+        // Drive plus asymmetry offset. The DC offset shifts where 0-crossing
+        // sits on the tanh curve, so + and - hit the knee at different points.
+        let driven_l = shelved_l * drive + asymmetry;
+        let driven_r = shelved_r * drive + asymmetry;
+
+        let clipped_l = driven_l.tanh();
+        let clipped_r = driven_r.tanh();
+
+        // Tame the upper fizz from clipping.
+        let tamed_l = lpf_ar(clipped_l, lp_freq);
+        let tamed_r = lpf_ar(clipped_r, lp_freq);
+
+        // Output compensation so unity drive stays near unity.
+        let comp = 1.0 / drive.sqrt();
+        let processed_l = tamed_l * comp;
+        let processed_r = tamed_r * comp;
+
+        // DC-block — the asymmetric offset and asymmetric clipping leave DC.
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });
