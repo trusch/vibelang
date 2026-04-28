@@ -1,0 +1,104 @@
+[
+  {
+    "name": "DiskIn",
+    "description": "Stream in audio from a file. Continuously plays a longer soundfile from disk via a buffer preloaded with one buffer size of sound.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "numChannels",
+        "type": "float",
+        "default": 1,
+        "description": "Number of channels in the buffer (must match the buffer; fixed at SynthDef compile time)"
+      },
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number to stream from (numFrames must be a power of two; >=65536 recommended)"
+      },
+      {
+        "name": "loop",
+        "type": "float",
+        "default": 0,
+        "description": "Loop mode (0=no loop, 1=loop)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Disk I/O",
+    "functions": [
+      "disk_in_ar"
+    ]
+  },
+  {
+    "name": "DiskOut",
+    "description": "Record to a soundfile to disk via a buffer prepared with Buffer.write (leaveOpen=true).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number to write to (prepared with /b_write or Buffer.write; numFrames must be a power of two)"
+      },
+      {
+        "name": "channelsArray",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of channels to write to the file (channel count must match the buffer)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Disk I/O",
+    "functions": [
+      "disk_out_ar"
+    ]
+  },
+  {
+    "name": "VDiskIn",
+    "description": "Stream in audio from a file with variable playback rate. Like DiskIn, but supports a rate input for varispeed playback.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "numChannels",
+        "type": "float",
+        "default": 1,
+        "description": "Number of channels in the buffer (must match the buffer; fixed at SynthDef compile time)"
+      },
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number to stream from (numFrames must be a power of two; >=65536 recommended)"
+      },
+      {
+        "name": "rate",
+        "type": "signal",
+        "default": 1,
+        "description": "Playback rate (1.0 = normal speed; rate < bufSize/(2*blockSize))"
+      },
+      {
+        "name": "loop",
+        "type": "float",
+        "default": 0,
+        "description": "Loop mode (0=no loop, 1=loop)"
+      },
+      {
+        "name": "sendID",
+        "type": "float",
+        "default": 0,
+        "description": "OSC reply ID; if non-zero, sends ['/diskin', nodeID, sendID, frame] on each buffer reload"
+      }
+    ],
+    "outputs": 1,
+    "category": "Disk I/O",
+    "functions": [
+      "v_disk_in_ar"
+    ]
+  }
+]
