@@ -1,0 +1,86 @@
+[
+  {
+    "name": "LinkTempo",
+    "description": "Get/set the tempo of the server's Ableton Link clock in cycles per second (cps). Returns -1.0 if Link session not started. Requires scsynth built with Link support.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 0,
+        "description": "If >0, sets the tempo (second argument) and publishes to other clients"
+      },
+      {
+        "name": "tempo",
+        "type": "float",
+        "default": 1,
+        "description": "Tempo to set in cycles per second (cps). Link allows BPM in [20, 999] which is cps in [1/3, 16.65]"
+      }
+    ],
+    "outputs": 1,
+    "category": "Link",
+    "functions": [
+      "link_tempo_kr"
+    ]
+  },
+  {
+    "name": "LinkPhase",
+    "description": "Access the phase of the server's Ableton Link clock. Phase runs from [0, quantum) with the current cps. Returns -1.0 if Link session not started. Requires scsynth built with Link support.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "quantum",
+        "type": "float",
+        "default": 1,
+        "description": "Quantum value the global step count is taken modulo by; clients sharing a quantum share the same phase"
+      }
+    ],
+    "outputs": 1,
+    "category": "Link",
+    "functions": [
+      "link_phase_kr"
+    ]
+  },
+  {
+    "name": "LinkJump",
+    "description": "Jump to a position within the quantum of the server's Ableton Link clock. Returns -1.0 if Link session not started, otherwise 0.0. Requires scsynth built with Link support.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 0,
+        "description": "Gate >0 invokes a jump using the following arguments"
+      },
+      {
+        "name": "beat",
+        "type": "float",
+        "default": 0,
+        "description": "Target beat b within 0 <= b < quantum"
+      },
+      {
+        "name": "quantum",
+        "type": "float",
+        "default": 1,
+        "description": "Quantum value identifying the beat within the induced grid"
+      },
+      {
+        "name": "force",
+        "type": "float",
+        "default": 0,
+        "description": "If >0, rudely re-maps the beat/time relationship for all peers; otherwise attempts to map the given beat to the given time"
+      }
+    ],
+    "outputs": 1,
+    "category": "Link",
+    "functions": [
+      "link_jump_kr"
+    ]
+  }
+]
