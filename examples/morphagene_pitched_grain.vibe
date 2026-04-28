@@ -1,0 +1,104 @@
+// Morphagene Vari-Speed-as-pitch — short splice played as a pitched chord.
+//
+// Hardware Morphagene under CLK + Morph ≥ 11:00 enters Time Stretch mode,
+// where the clock drives time and Vari-Speed becomes a pure pitch control,
+// decoupled from grain advance. That mode lands with Story D (granular
+// path + CLK modes); Story A has neither granular spawning nor CLK.
+//
+// What Story A *does* support cleanly is the underlying acoustic effect:
+// playing a short splice at a continuously variable rate transposes it.
+// This example layers four voices reading the same short splice at four
+// calibrated `vari_speed` values, producing a four-note chord whose tones
+// are each a varispeed-pitched copy of the same source slice.
+//
+// Vari-Speed → rate is an asymmetric cubic in the synthdef:
+//     rate = (v⁺)³ · 2.0   for v ≥ 0
+//     rate = (v⁻)³ · 4.4898 for v ≤ 0   (negative)
+// For positive v the inverse is v = (rate / 2)^(1/3); some useful values:
+//     unity         (rate 1.000) →  v ≈ 0.7937   ((0.5)^(1/3))
+//     +5 ST         (rate 1.335) →  v ≈ 0.8736
+//     octave up     (rate 2.000) →  v = 1.0
+//     -7 ST         (rate 0.667) →  v ≈ 0.6934
+//     -12 ST        (rate 0.500) →  v ≈ 0.6300
+// The four voices below stack a major triad + octave (root, M3, P5, +1 oct)
+// off a unity reference of v ≈ 0.7937. With true Time Stretch (Story D)
+// these would all read at the same time-rate but be independently pitched;
+// today they advance through the splice at different speeds, so a longer
+// splice will phase out of unison.
+//
+// Drop a stereo loop at `samples/loop.wav`. A pitched, sustained source
+// (vocal pad, sustained note, drone) makes the chord shape audible.
+
+import "stdlib/instruments/sampler/morphagene.vibe";
+import "stdlib/effects/reverbs/hall_reverb.vibe";
+
+set_tempo(72);
+
+let reel = sample("reel", "samples/loop.wav").loop_mode(true);
+
+// One short splice — 0.5 s at 48 kHz. Short enough that the four voices
+// stay roughly aligned across one cycle.
+let splice_start = 0.0;
+let splice_end   = 24000.0;
+
+// Vari-Speed values calibrated to a major triad + octave above unity.
+// Approximate equal-tempered intervals; finite cubic precision means
+// this is "tape-tuned", not micro-cent-accurate.
+let v_unison    = 0.7937;   // root, unity rate
+let v_major3    = 0.8593;   // +4 ST  (rate ≈ 1.260)
+let v_perfect5  = 0.9180;   // +7 ST  (rate ≈ 1.498)
+let v_octave    = 1.0;      // +12 ST (rate 2.000)
+
+let chord = define_group("PitchedChord", || {
+    let v1 = voice("root")
+        .on(reel).synth("morphagene")
+        .set_param("splice_start_frame", splice_start)
+        .set_param("splice_end_frame",   splice_end)
+        .set_param("vari_speed", v_unison)
+        .set_param("amp", 0.4)
+        .gain(db(-9));
+
+    let v2 = voice("third")
+        .on(reel).synth("morphagene")
+        .set_param("splice_start_frame", splice_start)
+        .set_param("splice_end_frame",   splice_end)
+        .set_param("vari_speed", v_major3)
+        .set_param("amp", 0.35)
+        .gain(db(-12));
+
+    let v3 = voice("fifth")
+        .on(reel).synth("morphagene")
+        .set_param("splice_start_frame", splice_start)
+        .set_param("splice_end_frame",   splice_end)
+        .set_param("vari_speed", v_perfect5)
+        .set_param("amp", 0.35)
+        .gain(db(-12));
+
+    let v4 = voice("oct")
+        .on(reel).synth("morphagene")
+        .set_param("splice_start_frame", splice_start)
+        .set_param("splice_end_frame",   splice_end)
+        .set_param("vari_speed", v_octave)
+        .set_param("amp", 0.3)
+        .gain(db(-15));
+
+    melody("hold_root").on(v1).notes("C3").apply();
+    melody("hold_third").on(v2).notes("C3").apply();
+    melody("hold_fifth").on(v3).notes("C3").apply();
+    melody("hold_oct").on(v4).notes("C3").apply();
+
+    fx("chord_verb")
+        .synth("hall_reverb")
+        .param("size", 0.7)
+        .param("decay", 0.65)
+        .param("damping", 0.4)
+        .param("mix", 0.4);
+});
+
+sequence("chord_main")
+    .loop_bars(8)
+    .clip(bars(0)..bars(8), melody("hold_root"))
+    .clip(bars(0)..bars(8), melody("hold_third"))
+    .clip(bars(0)..bars(8), melody("hold_fifth"))
+    .clip(bars(0)..bars(8), melody("hold_oct"))
+    .start();

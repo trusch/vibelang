@@ -1,0 +1,100 @@
+// Morphagene micromontage — tape-cut style splice sequencing.
+//
+// Demonstrates the *idea* of splice scheduling: short, distinct regions
+// of a single Reel triggered in sequence. Each "splice" is implemented as
+// its own voice with literal `splice_start_frame` / `splice_end_frame`
+// values — the per-voice approach available today (Story A).
+//
+// True hardware-style Organize-with-EOS-hold splice selection (a single
+// voice that switches between markers in a marker buffer at end-of-splice)
+// arrives with Story B. Once that lands, this example will collapse to a
+// single voice modulated by an `organize` parameter — until then, voice
+// duplication is the working idiom.
+//
+// Drop a stereo loop at `samples/loop.wav` (any length up to ~2.9 min,
+// 48 kHz preferred). With no sample present this script still runs but
+// outputs silence.
+
+import "stdlib/instruments/sampler/morphagene.vibe";
+import "stdlib/effects/reverbs/plate_reverb.vibe";
+
+set_tempo(110);
+
+let reel = sample("reel", "samples/loop.wav").loop_mode(true);
+
+// Four short splices carved out of the Reel by absolute frame offsets.
+// At 48 kHz: 24000 frames = 0.5 s, so each splice below is 0.5–1.0 s long.
+// Adjust to match the source material; values past BufFrames(reel) are
+// clipped by the synthdef's splice-end sentinel.
+let splices = define_group("Splices", || {
+    let a = voice("splice_a")
+        .on(reel)
+        .synth("morphagene")
+        .set_param("splice_start_frame",      0.0)
+        .set_param("splice_end_frame",    24000.0)
+        .set_param("vari_speed", 0.7937)         // ≈ unity rate (cube root of 0.5)
+        .set_param("slide", 0.0)
+        .set_param("amp", 0.55)
+        .gain(db(-6));
+
+    let b = voice("splice_b")
+        .on(reel)
+        .synth("morphagene")
+        .set_param("splice_start_frame",  48000.0)
+        .set_param("splice_end_frame",    96000.0)
+        .set_param("vari_speed", 0.63)           // ≈ -12 ST (rate ≈ 0.5)
+        .set_param("slide", 0.25)
+        .set_param("amp", 0.55)
+        .gain(db(-6));
+
+    let c = voice("splice_c")
+        .on(reel)
+        .synth("morphagene")
+        .set_param("splice_start_frame", 144000.0)
+        .set_param("splice_end_frame",   168000.0)
+        .set_param("vari_speed", -0.5)            // gentle reverse
+        .set_param("slide", 0.5)
+        .set_param("amp", 0.55)
+        .gain(db(-6));
+
+    let d = voice("splice_d")
+        .on(reel)
+        .synth("morphagene")
+        .set_param("splice_start_frame", 192000.0)
+        .set_param("splice_end_frame",   240000.0)
+        .set_param("vari_speed", 1.0)             // top forward (+12 ST)
+        .set_param("slide", 0.0)
+        .set_param("amp", 0.55)
+        .gain(db(-6));
+
+    // One short note per splice — fires the splice for ~one bar then
+    // releases it. Because each voice has fixed splice bounds, the
+    // sequencer chooses *which* splice plays next; the "Organize" of
+    // Story B will eventually fold this into a single voice.
+    melody("cut_a").on(a).notes("C3").apply();
+    melody("cut_b").on(b).notes("C3").apply();
+    melody("cut_c").on(c).notes("C3").apply();
+    melody("cut_d").on(d).notes("C3").apply();
+
+    fx("splice_verb")
+        .synth("plate_reverb")
+        .param("size", 0.5)
+        .param("decay", 0.4)
+        .param("damping", 0.5)
+        .param("mix", 0.25);
+});
+
+// Sequence the splices like a tape-cut score. Each clip is a single bar;
+// the result is a cut-up that mirrors the hardware's Organize-knob jump
+// pattern (without EOS hold — that requires Story B).
+sequence("micromontage")
+    .loop_bars(8)
+    .clip(bars(0)..bars(1), melody("cut_a"))
+    .clip(bars(1)..bars(2), melody("cut_c"))
+    .clip(bars(2)..bars(3), melody("cut_b"))
+    .clip(bars(3)..bars(4), melody("cut_d"))
+    .clip(bars(4)..bars(5), melody("cut_b"))
+    .clip(bars(5)..bars(6), melody("cut_a"))
+    .clip(bars(6)..bars(7), melody("cut_d"))
+    .clip(bars(7)..bars(8), melody("cut_c"))
+    .start();

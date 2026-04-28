@@ -1,0 +1,73 @@
+// Morphagene Sound-On-Sound decay — feedback-style loop blur.
+//
+// On hardware, Sound-On-Sound feeds the recorded loop back into the Reel
+// at each pass with a configurable feedback level (the SOS combo pot):
+// at unity feedback the loop persists indefinitely; below unity each
+// pass attenuates, producing the classic tape-style decay.
+//
+// SOS recording (`record_buf_ar` writing back into the Reel) is a Story B
+// feature — the Story A morphagene synthdef plays back only. To preview
+// the *audible* shape of SOS decay today, this example layers a
+// `dub_delay` feedback path onto the morphagene output. The feedback
+// value maps directly to the hardware SOS pot:
+//
+//      feedback = 0.0   →  no repeats        (full CCW, "live only")
+//      feedback = 0.7   →  several decaying repeats
+//      feedback = 0.95  →  near-unity loop   (full CW)
+//
+// This is **not** SOS — there is no rerecording into the buffer, so the
+// "loop" will not capture new live input the way the hardware does.
+// Once Story B's `record_buf_ar` path lands, this example will be
+// rewritten to drive the actual SOS recording loop. Until then it is the
+// closest sonic stand-in available with Story A.
+//
+// Drop a stereo loop at `samples/loop.wav`. Short percussive material
+// (one-shots, hits) produces the most recognisable SOS-style decay.
+
+import "stdlib/instruments/sampler/morphagene.vibe";
+import "stdlib/effects/delays/dub_delay.vibe";
+import "stdlib/effects/reverbs/hall_reverb.vibe";
+
+set_tempo(96);
+
+let reel = sample("reel", "samples/loop.wav").loop_mode(true);
+
+let sos = define_group("SOS", || {
+    // Unity playback (cube root of 0.5 ≈ 0.7937), short splice so each
+    // cycle hits the delay line at a predictable interval.
+    let v = voice("sos_src")
+        .on(reel)
+        .synth("morphagene")
+        .set_param("splice_start_frame",     0.0)
+        .set_param("splice_end_frame",   96000.0)   // 2.0 s @ 48 kHz
+        .set_param("vari_speed", 0.7937)
+        .set_param("slide", 0.0)
+        .set_param("amp", 0.5)
+        .gain(db(-9));
+
+    melody("sos_hold").on(v).notes("C3").apply();
+
+    // Stand-in feedback path: the dub_delay's `feedback` parameter is
+    // the per-pass loop level — i.e. the SOS pot's role on hardware.
+    // `time` is set to the splice length (2.0 s) so each repeat aligns
+    // with the splice cycle, matching the hardware loop.
+    fx("sos_loop")
+        .synth("dub_delay")
+        .param("time", 2.0)
+        .param("feedback", 0.78)        // ~ SOS pot at 2 o'clock
+        .param("cutoff", 3500.0)        // tape-style top-end roll-off
+        .param("mix", 0.65)
+        .param("level", 1.0);
+
+    fx("sos_room")
+        .synth("hall_reverb")
+        .param("size", 0.6)
+        .param("decay", 0.55)
+        .param("damping", 0.45)
+        .param("mix", 0.25);
+});
+
+sequence("sos_main")
+    .loop_bars(16)
+    .clip(bars(0)..bars(16), melody("sos_hold"))
+    .start();
