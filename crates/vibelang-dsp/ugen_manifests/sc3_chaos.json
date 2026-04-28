@@ -1,0 +1,156 @@
+[
+  {
+    "name": "LotkaVolterra",
+    "description": "2-species predator-prey chaotic system (Arneodo, Coullet, Tresser; Flake 1998: Computational Beauty of Nature, p. 187). Coupled ODEs solved via 4th-order Runge-Kutta: x' = x*(a - b*y); y' = y*(c*x - d). Outputs (x, y).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 1.5,
+        "description": "Equation variable (prey growth rate)"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 1.5,
+        "description": "Equation variable (predation rate)"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 0.5,
+        "description": "Equation variable (predator efficiency)"
+      },
+      {
+        "name": "d",
+        "type": "float",
+        "default": 1.5,
+        "description": "Equation variable (predator death rate)"
+      },
+      {
+        "name": "h",
+        "type": "float",
+        "default": 0.05,
+        "description": "Integration time step. Higher values increase rate but cause more instability"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 1,
+        "description": "Initial value of x (prey population)"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0.2,
+        "description": "Initial value of y (predator population)"
+      }
+    ],
+    "outputs": 2,
+    "category": "ChaosUGens (sc3-plugins)",
+    "functions": [
+      "lotka_volterra_ar"
+    ]
+  },
+  {
+    "name": "ArneodoCoulletTresser",
+    "description": "3-species predator-prey chaotic system (Arneodo, Coullet, Tresser; Flake 1998: Computational Beauty of Nature, p. 187). Coupled ODEs solved via 4th-order Runge-Kutta: x' = x*(1.1 - x/2 - y/2 - z/10); y' = y*(-0.5 + x/2 + y/10 - z/10); z' = z*(alpha + 0.2 - alpha*x - y/10 - z/10). Outputs (x, y, z).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hertz"
+      },
+      {
+        "name": "alpha",
+        "type": "float",
+        "default": 1.5,
+        "description": "Equation variable controlling third-species coupling"
+      },
+      {
+        "name": "h",
+        "type": "float",
+        "default": 0.05,
+        "description": "Integration time step. Higher values increase rate but cause more instability"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial value of y"
+      },
+      {
+        "name": "zi",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial value of z"
+      }
+    ],
+    "outputs": 3,
+    "category": "ChaosUGens (sc3-plugins)",
+    "functions": [
+      "arneodo_coullet_tresser_ar"
+    ]
+  },
+  {
+    "name": "DNoiseRing",
+    "description": "Demand-rate shift-register noise generator (Julian Parker & Till Bovermann, 2013). Bitwise-rotates an internal register and stochastically flips bit 0 based on change/chance probabilities. Output is the integer register state interpreted as a float.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "change",
+        "type": "signal",
+        "default": 0.5,
+        "description": "Probability that bit 0 will be set on each step (0..1)"
+      },
+      {
+        "name": "chance",
+        "type": "signal",
+        "default": 0.5,
+        "description": "Probability that the set bit is 1 vs 0 (0..1)"
+      },
+      {
+        "name": "shift",
+        "type": "signal",
+        "default": 1,
+        "description": "Number of bits to rotate the register right per step"
+      },
+      {
+        "name": "numBits",
+        "type": "signal",
+        "default": 8,
+        "description": "Width of the rotation register in bits"
+      },
+      {
+        "name": "resetval",
+        "type": "signal",
+        "default": 0,
+        "description": "Initial value of the register (set on reset)"
+      }
+    ],
+    "outputs": 1,
+    "category": "ChaosUGens (sc3-plugins)",
+    "functions": []
+  }
+]
