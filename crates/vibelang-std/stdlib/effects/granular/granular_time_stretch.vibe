@@ -1,0 +1,61 @@
+// kind=fx | category=granular | flavor=time_stretch | stereo=true | params=rate,grain_size,mix,level
+//
+// Granular Time Stretch Effect
+//
+// Continuously records the input into a circular buffer and reads it back
+// with TGrains at unity pitch but with the read position scrubbing at a
+// user-controlled rate. Pitch is preserved while the perceived speed of the
+// material can be slowed (rate < 1) or sped up (rate > 1). Stereo is
+// processed with two independent buffers.
+//
+// Usage:
+//   group.add_effect("tstretch", "granular_time_stretch", #{
+//     rate: 0.5,
+//     grain_size: 0.15,
+//     mix: 1.0,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   rate: Position scrub rate (0.25 = 4x slower, 1.0 = unity, 4.0 = 4x faster)
+//   grain_size: Grain duration in seconds (0.01 to 0.5)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet) — insert default 1.0
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("granular_time_stretch", |builder| {
+    builder
+        .param("rate", 1.0)
+        .param("grain_size", 0.15)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, rate, grain_size, mix, level| {
+            // ~2s circular buffers, one per channel.
+            let buf_l = local_buf_ir(1, 96000);
+            let buf_r = local_buf_ir(1, 96000);
+
+            // Always recording at unit speed. Loop=1 wraps the write head.
+            record_buf_ar(input[0], buf_l, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+            record_buf_ar(input[1], buf_r, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+
+            // Read position scrubs at variable rate. Base freq 0.5 Hz means
+            // one full sweep over the 2s buffer at rate=1.0. iphase=1.0
+            // starts at zero crossing so initial output begins at buffer 0.
+            let pos = lf_saw_kr(0.5 * rate, 1.0) * 0.5 + 0.5;
+
+            // Grain pitch fixed at 1.0 — only the position movement changes
+            // perceived speed. Dense triggers keep output continuous across
+            // the full rate range.
+            let trig = impulse_ar(30.0, 0.0);
+
+            let g_l = channels(t_grains_ar(2, trig, buf_l, 1.0, pos, grain_size, 0.0, 0.5, 4), 2);
+            let g_r = channels(t_grains_ar(2, trig, buf_r, 1.0, pos, grain_size, 0.0, 0.5, 4), 2);
+
+            let wet_l = leak_dc_ar((g_l[0] + g_l[1]) * 0.5, 0.995);
+            let wet_r = leak_dc_ar((g_r[0] + g_r[1]) * 0.5, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

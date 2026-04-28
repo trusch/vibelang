@@ -1,0 +1,59 @@
+// kind=fx | category=granular | flavor=warp1 | stereo=true | params=rate,freq_scale,window_size,mix,level
+//
+// Warp1 Processor Effect
+//
+// Continuously records the input into a circular buffer and reads it back
+// with `warp1_ar` — SuperCollider's overlap-add time-domain time stretcher
+// with independent pitch (freq_scale) and rate (pointer sweep) control.
+// Smoother and more spectrally stable than TGrains-based stretchers for
+// sustained material; less surgical for percussive sources.
+//
+// Usage:
+//   group.add_effect("warp", "warp1_processor", #{
+//     rate: 0.5,
+//     freq_scale: 1.0,
+//     window_size: 0.2,
+//     mix: 1.0,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   rate: Position scrub rate (0.25 = 4x slower, 1.0 = unity, 4.0 = 4x faster)
+//   freq_scale: Pitch scaling (0.5 = octave down, 1.0 = unity, 2.0 = octave up)
+//   window_size: Overlap-add window in seconds (0.05 to 0.4)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet) — insert default 1.0
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("warp1_processor", |builder| {
+    builder
+        .param("rate", 1.0)
+        .param("freq_scale", 1.0)
+        .param("window_size", 0.2)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, rate, freq_scale, window_size, mix, level| {
+            // ~2s circular buffers, one per channel.
+            let buf_l = local_buf_ir(1, 96000);
+            let buf_r = local_buf_ir(1, 96000);
+
+            // Continuous looping recording of the live input.
+            record_buf_ar(input[0], buf_l, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+            record_buf_ar(input[1], buf_r, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+
+            // Pointer sweep — base freq 0.5 Hz means one full pass over the
+            // 2s buffer at rate=1.0. iphase=1.0 starts at zero crossing.
+            let pointer = lf_saw_kr(0.5 * rate, 1.0) * 0.5 + 0.5;
+
+            // 4x window overlap, default Hann envelope (-1), cubic interp.
+            let w_l = warp1_ar(1, buf_l, pointer, freq_scale, window_size, -1, 4, 0.0, 1);
+            let w_r = warp1_ar(1, buf_r, pointer, freq_scale, window_size, -1, 4, 0.0, 1);
+
+            let wet_l = leak_dc_ar(w_l, 0.995);
+            let wet_r = leak_dc_ar(w_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

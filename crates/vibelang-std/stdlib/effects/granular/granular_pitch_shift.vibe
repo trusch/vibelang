@@ -1,0 +1,59 @@
+// kind=fx | category=granular | flavor=pitch_shift | stereo=true | params=pitch,grain_size,mix,level
+//
+// Granular Pitch Shift Effect
+//
+// Continuously records the input into a circular buffer and reads it back
+// with TGrains at a fixed pitch ratio. The grain read position scrubs
+// through the buffer at the same speed as the write head, so playback time
+// stays aligned with input — only the pitch changes. Stereo is processed
+// with two independent buffers to preserve channel separation.
+//
+// Usage:
+//   group.add_effect("pshift", "granular_pitch_shift", #{
+//     pitch: 1.5,
+//     grain_size: 0.1,
+//     mix: 1.0,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   pitch: Pitch ratio (0.5 = octave down, 1.0 = unity, 2.0 = octave up)
+//   grain_size: Grain duration in seconds (0.01 to 0.5)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet) — insert default 1.0
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("granular_pitch_shift", |builder| {
+    builder
+        .param("pitch", 1.0)
+        .param("grain_size", 0.1)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, pitch, grain_size, mix, level| {
+            // ~2s circular buffers, one per channel for true-stereo shifting.
+            let buf_l = local_buf_ir(1, 96000);
+            let buf_r = local_buf_ir(1, 96000);
+
+            // Continuous looping recording of the live input.
+            record_buf_ar(input[0], buf_l, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+            record_buf_ar(input[1], buf_r, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+
+            // Position pointer sweeps 0..1 over the 2s buffer at write speed,
+            // so grain reads chase the recording head. iphase=1.0 starts at
+            // zero crossing.
+            let pos = lf_saw_kr(0.5, 1.0) * 0.5 + 0.5;
+
+            // Dense triggers give 3-4x grain overlap at default grain_size.
+            let trig = impulse_ar(40.0, 0.0);
+
+            let g_l = channels(t_grains_ar(2, trig, buf_l, pitch, pos, grain_size, 0.0, 0.5, 4), 2);
+            let g_r = channels(t_grains_ar(2, trig, buf_r, pitch, pos, grain_size, 0.0, 0.5, 4), 2);
+
+            let wet_l = leak_dc_ar((g_l[0] + g_l[1]) * 0.5, 0.995);
+            let wet_r = leak_dc_ar((g_r[0] + g_r[1]) * 0.5, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

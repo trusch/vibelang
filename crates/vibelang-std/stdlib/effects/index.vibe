@@ -35,3 +35,6 @@ import "stdlib/effects/character/index.vibe";
 
 // Convolution (3 effects)
 import "stdlib/effects/convolution/index.vibe";
+
+// Granular (5 effects)
+import "stdlib/effects/granular/index.vibe";
