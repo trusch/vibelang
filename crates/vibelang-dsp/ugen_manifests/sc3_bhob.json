@@ -1,0 +1,942 @@
+[
+  {
+    "name": "MoogLadder",
+    "description": "Moog ladder filter emulation by Antti Huovilainen. 24 dB/oct resonant low-pass with self-oscillation. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "in", "type": "signal", "default": 0, "description": "Input signal to be filtered" },
+      { "name": "ffreq", "type": "float", "default": 440.0, "description": "Cutoff frequency in Hertz" },
+      { "name": "res", "type": "float", "default": 0.0, "description": "Resonance amount (0 to 1; self-oscillates near 1)" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["moog_ladder_ar", "moog_ladder_kr"]
+  },
+  {
+    "name": "RLPFD",
+    "description": "TB-303 style resonant low-pass filter with overdrive distortion. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "in", "type": "signal", "default": 0, "description": "Input signal to be filtered" },
+      { "name": "ffreq", "type": "float", "default": 440.0, "description": "Cutoff frequency in Hertz" },
+      { "name": "res", "type": "float", "default": 0.0, "description": "Resonance amount (0 to 1)" },
+      { "name": "dist", "type": "float", "default": 0.0, "description": "Distortion amount applied within the filter" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["rlpfd_ar", "rlpfd_kr"]
+  },
+  {
+    "name": "Streson",
+    "description": "String resonance filter (Karplus-Strong-style comb resonator). Based on Victor Lazzarini's csound opcode of the same name. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "input", "type": "signal", "default": 0, "description": "Audio input signal to excite the resonator" },
+      { "name": "delayTime", "type": "float", "default": 0.003, "description": "Delay line length in seconds (1/ffreq)" },
+      { "name": "res", "type": "float", "default": 0.9, "description": "Resonance amount (0 to 1)" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["streson_ar", "streson_kr"]
+  },
+  {
+    "name": "NLFiltN",
+    "description": "Non-linear filter with sigmoid clipping (non-interpolating). Implements Y[n] = a*Y[n-1] + b*Y[n-2] + d*Y[n-l]^2 + X[n] - c. Inherently unstable — pick sane values and move slowly. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "input", "type": "signal", "default": 0, "description": "Audio input signal" },
+      { "name": "a", "type": "float", "default": 0.0, "description": "Coefficient for Y[n-1]" },
+      { "name": "b", "type": "float", "default": 0.0, "description": "Coefficient for Y[n-2]" },
+      { "name": "d", "type": "float", "default": 0.0, "description": "Coefficient for the squared delayed feedback term Y[n-l]^2" },
+      { "name": "c", "type": "float", "default": 0.0, "description": "DC offset subtracted from the difference equation" },
+      { "name": "l", "type": "float", "default": 0.0, "description": "Delay length (in samples) for the squared feedback term" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["nl_filt_n_ar", "nl_filt_n_kr"]
+  },
+  {
+    "name": "NLFiltL",
+    "description": "Non-linear filter with sigmoid clipping (linear-interpolating). Variant of NLFiltN with linear interpolation on the delayed feedback. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "input", "type": "signal", "default": 0, "description": "Audio input signal" },
+      { "name": "a", "type": "float", "default": 0.0, "description": "Coefficient for Y[n-1]" },
+      { "name": "b", "type": "float", "default": 0.0, "description": "Coefficient for Y[n-2]" },
+      { "name": "d", "type": "float", "default": 0.0, "description": "Coefficient for the squared delayed feedback term Y[n-l]^2" },
+      { "name": "c", "type": "float", "default": 0.0, "description": "DC offset subtracted from the difference equation" },
+      { "name": "l", "type": "float", "default": 0.0, "description": "Delay length (in samples) for the squared feedback term" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["nl_filt_l_ar", "nl_filt_l_kr"]
+  },
+  {
+    "name": "NLFiltC",
+    "description": "Non-linear filter with sigmoid clipping (cubic-interpolating). Variant of NLFiltN with cubic interpolation on the delayed feedback. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "input", "type": "signal", "default": 0, "description": "Audio input signal" },
+      { "name": "a", "type": "float", "default": 0.0, "description": "Coefficient for Y[n-1]" },
+      { "name": "b", "type": "float", "default": 0.0, "description": "Coefficient for Y[n-2]" },
+      { "name": "d", "type": "float", "default": 0.0, "description": "Coefficient for the squared delayed feedback term Y[n-l]^2" },
+      { "name": "c", "type": "float", "default": 0.0, "description": "DC offset subtracted from the difference equation" },
+      { "name": "l", "type": "float", "default": 0.0, "description": "Delay length (in samples) for the squared feedback term" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["nl_filt_c_ar", "nl_filt_c_kr"]
+  },
+  {
+    "name": "TGrains2",
+    "description": "Buffer granulator with linear attack/decay envelope. Triggers spawn grains from a mono buffer with adjustable attack and decay times. From sc3-plugins BhobUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      { "name": "numChannels", "type": "float", "default": 2, "description": "Number of output channels (panning depends on count: 1=ignored, 2=Pan2, >2=PanAz)" },
+      { "name": "trigger", "type": "signal", "default": 0, "description": "Trigger signal — each rising edge starts a new grain" },
+      { "name": "bufnum", "type": "float", "default": 0, "description": "Index of the mono buffer to read grains from" },
+      { "name": "rate", "type": "float", "default": 1.0, "description": "Playback rate multiplier (1.0 = normal; multiplied internally by BufRate)" },
+      { "name": "centerPos", "type": "float", "default": 0, "description": "Position in seconds at which the grain envelope reaches maximum amplitude" },
+      { "name": "dur", "type": "float", "default": 0.1, "description": "Grain duration in seconds" },
+      { "name": "pan", "type": "float", "default": 0, "description": "Pan position for the grain (interpretation depends on numChannels)" },
+      { "name": "amp", "type": "float", "default": 0.1, "description": "Amplitude of the grain" },
+      { "name": "att", "type": "float", "default": 0.5, "description": "Attack time of the grain envelope in seconds" },
+      { "name": "dec", "type": "float", "default": 0.5, "description": "Decay time of the grain envelope in seconds" },
+      { "name": "interp", "type": "float", "default": 4, "description": "Buffer interpolation: 1 = none, 2 = linear, 4 = cubic" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["t_grains2_ar"]
+  },
+  {
+    "name": "TGrains3",
+    "description": "Buffer granulator with user-supplied window envelope. Like TGrains2 but the grain envelope is read from an additional buffer. From sc3-plugins BhobUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      { "name": "numChannels", "type": "float", "default": 2, "description": "Number of output channels" },
+      { "name": "trigger", "type": "signal", "default": 0, "description": "Trigger signal — each rising edge starts a new grain" },
+      { "name": "bufnum", "type": "float", "default": 0, "description": "Index of the mono audio buffer" },
+      { "name": "rate", "type": "float", "default": 1.0, "description": "Playback rate multiplier (1.0 = normal)" },
+      { "name": "centerPos", "type": "float", "default": 0, "description": "Position in seconds where the envelope peaks" },
+      { "name": "dur", "type": "float", "default": 0.1, "description": "Grain duration in seconds" },
+      { "name": "pan", "type": "float", "default": 0, "description": "Pan position for the grain" },
+      { "name": "amp", "type": "float", "default": 0.1, "description": "Amplitude of the grain" },
+      { "name": "att", "type": "float", "default": 0.5, "description": "Attack time of the grain envelope in seconds" },
+      { "name": "dec", "type": "float", "default": 0.5, "description": "Decay time of the grain envelope in seconds" },
+      { "name": "window", "type": "float", "default": 1, "description": "Buffer number containing the user envelope window" },
+      { "name": "interp", "type": "float", "default": 4, "description": "Buffer interpolation: 1 = none, 2 = linear, 4 = cubic" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["t_grains3_ar"]
+  },
+  {
+    "name": "Dbrown2",
+    "description": "Demand-rate brownian movement using Gendyn distributions. Returns numbers in the continuous range [lo, hi] with steps shaped by the chosen Gendy distribution. From sc3-plugins BhobUGens.",
+    "rates": ["demand"],
+    "inputs": [
+      { "name": "lo", "type": "float", "default": 0, "description": "Minimum value of the output range" },
+      { "name": "hi", "type": "float", "default": 1.0, "description": "Maximum value of the output range" },
+      { "name": "step", "type": "float", "default": 0.01, "description": "Maximum step between successive values" },
+      { "name": "dist", "type": "float", "default": 0, "description": "Gendyn distribution index (see Gendy1 for the available distributions)" },
+      { "name": "length", "type": "float", "default": 1e9, "description": "Number of values to produce (effectively infinite by default)" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["dbrown2"]
+  },
+  {
+    "name": "Dgauss",
+    "description": "Demand-rate gaussian random number generator. Returns floats in [lo, hi] drawn from a gaussian-like distribution. From sc3-plugins BhobUGens.",
+    "rates": ["demand"],
+    "inputs": [
+      { "name": "lo", "type": "float", "default": 0, "description": "Minimum value of the output range" },
+      { "name": "hi", "type": "float", "default": 1.0, "description": "Maximum value of the output range" },
+      { "name": "length", "type": "float", "default": 1e9, "description": "Number of values to produce (effectively infinite by default)" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["dgauss"]
+  },
+  {
+    "name": "GaussTrig",
+    "description": "Gaussian-distributed impulse generator. Produces impulses near a centre frequency, with timing jitter controlled by deviation. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "freq", "type": "float", "default": 440.0, "description": "Mean trigger frequency in Hertz" },
+      { "name": "dev", "type": "float", "default": 0.3, "description": "Deviation around freq (fractional, 0 = perfectly periodic)" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["gauss_trig_ar", "gauss_trig_kr"]
+  },
+  {
+    "name": "TBetaRand",
+    "description": "Triggered beta-distribution random generator. Emits a new value in [lo, hi] on each rising edge of trig, with shape controlled by prob1/prob2. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "lo", "type": "float", "default": 0, "description": "Minimum value of the output range" },
+      { "name": "hi", "type": "float", "default": 1.0, "description": "Maximum value of the output range" },
+      { "name": "prob1", "type": "float", "default": 1.0, "description": "Shape parameter biasing toward lo (lower than 1 pushes values toward lo)" },
+      { "name": "prob2", "type": "float", "default": 1.0, "description": "Shape parameter biasing toward hi (lower than 1 pushes values toward hi)" },
+      { "name": "trig", "type": "signal", "default": 0, "description": "Trigger signal — each rising edge produces a new value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["t_beta_rand_ar", "t_beta_rand_kr"]
+  },
+  {
+    "name": "TBrownRand",
+    "description": "Triggered brownian random walk generator. On each trigger emits a value within [lo, hi] obtained by stepping from the previous value using a Gendyn distribution. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "lo", "type": "float", "default": 0, "description": "Minimum value of the output range" },
+      { "name": "hi", "type": "float", "default": 1.0, "description": "Maximum value of the output range" },
+      { "name": "dev", "type": "float", "default": 1.0, "description": "Maximum step size between successive values" },
+      { "name": "dist", "type": "float", "default": 0, "description": "Gendyn distribution index" },
+      { "name": "trig", "type": "signal", "default": 0, "description": "Trigger signal — each rising edge produces a new value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["t_brown_rand_ar", "t_brown_rand_kr"]
+  },
+  {
+    "name": "TGaussRand",
+    "description": "Triggered gaussian random distribution. Emits a gaussian-distributed value in [lo, hi] on each rising edge of trig. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "lo", "type": "float", "default": 0, "description": "Minimum value of the output range" },
+      { "name": "hi", "type": "float", "default": 1.0, "description": "Maximum value of the output range" },
+      { "name": "trig", "type": "signal", "default": 0, "description": "Trigger signal — each rising edge produces a new value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["t_gauss_rand_ar", "t_gauss_rand_kr"]
+  },
+  {
+    "name": "Gendy4",
+    "description": "Dynamic stochastic synthesis generator (Xenakis Gendyn variant). Adds a sigmoid mapping for amplitude/duration distributions. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "ampdist", "type": "float", "default": 1, "description": "Amplitude distribution selector (0..6 — see Gendy1)" },
+      { "name": "durdist", "type": "float", "default": 1, "description": "Duration distribution selector (0..6 — see Gendy1)" },
+      { "name": "adparam", "type": "float", "default": 1.0, "description": "Parameter for the amplitude distribution" },
+      { "name": "ddparam", "type": "float", "default": 1.0, "description": "Parameter for the duration distribution" },
+      { "name": "minfreq", "type": "float", "default": 440, "description": "Minimum oscillation frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 660, "description": "Maximum oscillation frequency in Hertz" },
+      { "name": "ampscale", "type": "float", "default": 0.5, "description": "Scaling applied to amplitude deviations (0..1)" },
+      { "name": "durscale", "type": "float", "default": 0.5, "description": "Scaling applied to duration deviations (0..1)" },
+      { "name": "initCPs", "type": "float", "default": 12, "description": "Initial number of control points in the breakpoint waveform" },
+      { "name": "knum", "type": "float", "default": 12, "description": "Active control point count (must be <= initCPs)" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["gendy4_ar", "gendy4_kr"]
+  },
+  {
+    "name": "Gendy5",
+    "description": "Dynamic stochastic synthesis generator with linearly-interpolated breakpoints. Sibling of Gendy4 with a different waveform reconstruction. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "ampdist", "type": "float", "default": 1, "description": "Amplitude distribution selector (0..6)" },
+      { "name": "durdist", "type": "float", "default": 1, "description": "Duration distribution selector (0..6)" },
+      { "name": "adparam", "type": "float", "default": 1.0, "description": "Parameter for the amplitude distribution" },
+      { "name": "ddparam", "type": "float", "default": 1.0, "description": "Parameter for the duration distribution" },
+      { "name": "minfreq", "type": "float", "default": 440, "description": "Minimum oscillation frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 660, "description": "Maximum oscillation frequency in Hertz" },
+      { "name": "ampscale", "type": "float", "default": 0.5, "description": "Scaling applied to amplitude deviations (0..1)" },
+      { "name": "durscale", "type": "float", "default": 0.5, "description": "Scaling applied to duration deviations (0..1)" },
+      { "name": "initCPs", "type": "float", "default": 12, "description": "Initial number of control points" },
+      { "name": "knum", "type": "float", "default": 12, "description": "Active control point count" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["gendy5_ar", "gendy5_kr"]
+  },
+  {
+    "name": "Henon2DN",
+    "description": "Hénon map 2D chaotic generator (non-interpolating). x[n+1] = 1 - a*x[n]^2 + y[n], y[n+1] = b*x[n]. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "a", "type": "float", "default": 1.4, "description": "Hénon map parameter a" },
+      { "name": "b", "type": "float", "default": 0.3, "description": "Hénon map parameter b" },
+      { "name": "x0", "type": "float", "default": 0.30501993062401, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 0.20938865431933, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["henon2_dn_ar", "henon2_dn_kr"]
+  },
+  {
+    "name": "Henon2DL",
+    "description": "Hénon map 2D chaotic generator (linear-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "a", "type": "float", "default": 1.4, "description": "Hénon map parameter a" },
+      { "name": "b", "type": "float", "default": 0.3, "description": "Hénon map parameter b" },
+      { "name": "x0", "type": "float", "default": 0.30501993062401, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 0.20938865431933, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["henon2_dl_ar", "henon2_dl_kr"]
+  },
+  {
+    "name": "Henon2DC",
+    "description": "Hénon map 2D chaotic generator (cubic-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "a", "type": "float", "default": 1.4, "description": "Hénon map parameter a" },
+      { "name": "b", "type": "float", "default": 0.3, "description": "Hénon map parameter b" },
+      { "name": "x0", "type": "float", "default": 0.30501993062401, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 0.20938865431933, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["henon2_dc_ar", "henon2_dc_kr"]
+  },
+  {
+    "name": "HenonTrig",
+    "description": "Hénon map chaotic trigger generator. Same iteration as Henon2DN but with low-frequency defaults intended for triggering. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 5, "description": "Minimum trigger frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 10, "description": "Maximum trigger frequency in Hertz" },
+      { "name": "a", "type": "float", "default": 1.4, "description": "Hénon map parameter a" },
+      { "name": "b", "type": "float", "default": 0.3, "description": "Hénon map parameter b" },
+      { "name": "x0", "type": "float", "default": 0.30501993062401, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 0.20938865431933, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["henon_trig_ar", "henon_trig_kr"]
+  },
+  {
+    "name": "Gbman2DN",
+    "description": "Gingerbreadman map 2D chaotic generator (non-interpolating). x[n+1] = 1 - y[n] + |x[n]|, y[n+1] = x[n]. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "x0", "type": "float", "default": 1.2, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 2.1, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["gbman2_dn_ar", "gbman2_dn_kr"]
+  },
+  {
+    "name": "Gbman2DL",
+    "description": "Gingerbreadman map 2D chaotic generator (linear-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "x0", "type": "float", "default": 1.2, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 2.1, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["gbman2_dl_ar", "gbman2_dl_kr"]
+  },
+  {
+    "name": "Gbman2DC",
+    "description": "Gingerbreadman map 2D chaotic generator (cubic-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "x0", "type": "float", "default": 1.2, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 2.1, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["gbman2_dc_ar", "gbman2_dc_kr"]
+  },
+  {
+    "name": "GbmanTrig",
+    "description": "Gingerbreadman chaotic trigger generator. Low-frequency defaults intended for triggering. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 5, "description": "Minimum trigger frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 10, "description": "Maximum trigger frequency in Hertz" },
+      { "name": "x0", "type": "float", "default": 1.2, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 2.1, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["gbman_trig_ar", "gbman_trig_kr"]
+  },
+  {
+    "name": "Standard2DN",
+    "description": "Chirikov standard map 2D chaotic generator (non-interpolating). y[n+1] = (y[n] + k*sin(x[n])) mod 2π, x[n+1] = (x[n] + y[n+1]) mod 2π. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "k", "type": "float", "default": 1.4, "description": "Stochasticity parameter (chaos increases with k)" },
+      { "name": "x0", "type": "float", "default": 4.9789799812499, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 5.7473416156381, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["standard2_dn_ar", "standard2_dn_kr"]
+  },
+  {
+    "name": "Standard2DL",
+    "description": "Chirikov standard map 2D chaotic generator (linear-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "k", "type": "float", "default": 1.4, "description": "Stochasticity parameter" },
+      { "name": "x0", "type": "float", "default": 4.9789799812499, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 5.7473416156381, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["standard2_dl_ar", "standard2_dl_kr"]
+  },
+  {
+    "name": "Standard2DC",
+    "description": "Chirikov standard map 2D chaotic generator (cubic-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "k", "type": "float", "default": 1.4, "description": "Stochasticity parameter" },
+      { "name": "x0", "type": "float", "default": 4.9789799812499, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 5.7473416156381, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["standard2_dc_ar", "standard2_dc_kr"]
+  },
+  {
+    "name": "StandardTrig",
+    "description": "Chirikov standard map chaotic trigger generator. Low-frequency defaults intended for triggering. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 5, "description": "Minimum trigger frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 10, "description": "Maximum trigger frequency in Hertz" },
+      { "name": "k", "type": "float", "default": 1.4, "description": "Stochasticity parameter" },
+      { "name": "x0", "type": "float", "default": 4.9789799812499, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 5.7473416156381, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["standard_trig_ar", "standard_trig_kr"]
+  },
+  {
+    "name": "Latoocarfian2DN",
+    "description": "Latoocarfian 2D chaotic generator (non-interpolating). x[n+1] = sin(b*y[n]) + c*sin(b*x[n]); y[n+1] = sin(a*x[n]) + d*sin(a*y[n]). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "a", "type": "float", "default": 1, "description": "Latoocarfian parameter a" },
+      { "name": "b", "type": "float", "default": 3, "description": "Latoocarfian parameter b" },
+      { "name": "c", "type": "float", "default": 0.5, "description": "Latoocarfian parameter c" },
+      { "name": "d", "type": "float", "default": 0.5, "description": "Latoocarfian parameter d" },
+      { "name": "x0", "type": "float", "default": 0.34082301375036, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": -0.38270086971332, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["latoocarfian2_dn_ar", "latoocarfian2_dn_kr"]
+  },
+  {
+    "name": "Latoocarfian2DL",
+    "description": "Latoocarfian 2D chaotic generator (linear-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "a", "type": "float", "default": 1, "description": "Latoocarfian parameter a" },
+      { "name": "b", "type": "float", "default": 3, "description": "Latoocarfian parameter b" },
+      { "name": "c", "type": "float", "default": 0.5, "description": "Latoocarfian parameter c" },
+      { "name": "d", "type": "float", "default": 0.5, "description": "Latoocarfian parameter d" },
+      { "name": "x0", "type": "float", "default": 0.34082301375036, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": -0.38270086971332, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["latoocarfian2_dl_ar", "latoocarfian2_dl_kr"]
+  },
+  {
+    "name": "Latoocarfian2DC",
+    "description": "Latoocarfian 2D chaotic generator (cubic-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "a", "type": "float", "default": 1, "description": "Latoocarfian parameter a" },
+      { "name": "b", "type": "float", "default": 3, "description": "Latoocarfian parameter b" },
+      { "name": "c", "type": "float", "default": 0.5, "description": "Latoocarfian parameter c" },
+      { "name": "d", "type": "float", "default": 0.5, "description": "Latoocarfian parameter d" },
+      { "name": "x0", "type": "float", "default": 0.34082301375036, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": -0.38270086971332, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["latoocarfian2_dc_ar", "latoocarfian2_dc_kr"]
+  },
+  {
+    "name": "LatoocarfianTrig",
+    "description": "Latoocarfian chaotic trigger generator. Low-frequency defaults intended for triggering. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 5, "description": "Minimum trigger frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 10, "description": "Maximum trigger frequency in Hertz" },
+      { "name": "a", "type": "float", "default": 1, "description": "Latoocarfian parameter a" },
+      { "name": "b", "type": "float", "default": 3, "description": "Latoocarfian parameter b" },
+      { "name": "c", "type": "float", "default": 0.5, "description": "Latoocarfian parameter c" },
+      { "name": "d", "type": "float", "default": 0.5, "description": "Latoocarfian parameter d" },
+      { "name": "x0", "type": "float", "default": 0.34082301375036, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": -0.38270086971332, "description": "Initial y value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["latoocarfian_trig_ar", "latoocarfian_trig_kr"]
+  },
+  {
+    "name": "Lorenz2DN",
+    "description": "Lorenz 3D chaotic system, output projected to 2D (non-interpolating). Integrated by Euler step h: x' = s*(y-x); y' = x*(r-z) - y; z' = x*y - b*z. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "s", "type": "float", "default": 10, "description": "Lorenz σ (Prandtl number)" },
+      { "name": "r", "type": "float", "default": 28, "description": "Lorenz ρ (Rayleigh number)" },
+      { "name": "b", "type": "float", "default": 2.6666667, "description": "Lorenz β (8/3 ≈ 2.6666667)" },
+      { "name": "h", "type": "float", "default": 0.02, "description": "Euler integration step size" },
+      { "name": "x0", "type": "float", "default": 0.090879182417163, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 2.97077458055, "description": "Initial y value" },
+      { "name": "z0", "type": "float", "default": 24.282041054363, "description": "Initial z value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["lorenz2_dn_ar", "lorenz2_dn_kr"]
+  },
+  {
+    "name": "Lorenz2DL",
+    "description": "Lorenz attractor 2D chaotic generator (linear-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "s", "type": "float", "default": 10, "description": "Lorenz σ" },
+      { "name": "r", "type": "float", "default": 28, "description": "Lorenz ρ" },
+      { "name": "b", "type": "float", "default": 2.6666667, "description": "Lorenz β" },
+      { "name": "h", "type": "float", "default": 0.02, "description": "Euler step size" },
+      { "name": "x0", "type": "float", "default": 0.090879182417163, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 2.97077458055, "description": "Initial y value" },
+      { "name": "z0", "type": "float", "default": 24.282041054363, "description": "Initial z value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["lorenz2_dl_ar", "lorenz2_dl_kr"]
+  },
+  {
+    "name": "Lorenz2DC",
+    "description": "Lorenz attractor 2D chaotic generator (cubic-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "s", "type": "float", "default": 10, "description": "Lorenz σ" },
+      { "name": "r", "type": "float", "default": 28, "description": "Lorenz ρ" },
+      { "name": "b", "type": "float", "default": 2.6666667, "description": "Lorenz β" },
+      { "name": "h", "type": "float", "default": 0.02, "description": "Euler step size" },
+      { "name": "x0", "type": "float", "default": 0.090879182417163, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 2.97077458055, "description": "Initial y value" },
+      { "name": "z0", "type": "float", "default": 24.282041054363, "description": "Initial z value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["lorenz2_dc_ar", "lorenz2_dc_kr"]
+  },
+  {
+    "name": "LorenzTrig",
+    "description": "Lorenz attractor chaotic trigger generator. Same dynamics as Lorenz2DN, used to derive triggers. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "s", "type": "float", "default": 10, "description": "Lorenz σ" },
+      { "name": "r", "type": "float", "default": 28, "description": "Lorenz ρ" },
+      { "name": "b", "type": "float", "default": 2.6666667, "description": "Lorenz β" },
+      { "name": "h", "type": "float", "default": 0.02, "description": "Euler step size" },
+      { "name": "x0", "type": "float", "default": 0.090879182417163, "description": "Initial x value" },
+      { "name": "y0", "type": "float", "default": 2.97077458055, "description": "Initial y value" },
+      { "name": "z0", "type": "float", "default": 24.282041054363, "description": "Initial z value" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["lorenz_trig_ar", "lorenz_trig_kr"]
+  },
+  {
+    "name": "Fhn2DN",
+    "description": "FitzHugh-Nagumo neuron-firing oscillator (non-interpolating). 2D excitable model with input current i. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "urate", "type": "float", "default": 0.1, "description": "Update rate of the membrane potential u" },
+      { "name": "wrate", "type": "float", "default": 0.1, "description": "Update rate of the recovery variable w" },
+      { "name": "b0", "type": "float", "default": 0.6, "description": "Recovery offset parameter" },
+      { "name": "b1", "type": "float", "default": 0.8, "description": "Recovery slope parameter" },
+      { "name": "i", "type": "float", "default": 0.0, "description": "External input current driving the neuron" },
+      { "name": "u0", "type": "float", "default": 0.0, "description": "Initial membrane potential u" },
+      { "name": "w0", "type": "float", "default": 0.0, "description": "Initial recovery variable w" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["fhn2_dn_ar", "fhn2_dn_kr"]
+  },
+  {
+    "name": "Fhn2DL",
+    "description": "FitzHugh-Nagumo neuron-firing oscillator (linear-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "urate", "type": "float", "default": 0.1, "description": "Update rate of the membrane potential u" },
+      { "name": "wrate", "type": "float", "default": 0.1, "description": "Update rate of the recovery variable w" },
+      { "name": "b0", "type": "float", "default": 0.6, "description": "Recovery offset parameter" },
+      { "name": "b1", "type": "float", "default": 0.8, "description": "Recovery slope parameter" },
+      { "name": "i", "type": "float", "default": 0.0, "description": "External input current" },
+      { "name": "u0", "type": "float", "default": 0.0, "description": "Initial membrane potential u" },
+      { "name": "w0", "type": "float", "default": 0.0, "description": "Initial recovery variable w" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["fhn2_dl_ar", "fhn2_dl_kr"]
+  },
+  {
+    "name": "Fhn2DC",
+    "description": "FitzHugh-Nagumo neuron-firing oscillator (cubic-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 11025, "description": "Minimum iteration frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 22050, "description": "Maximum iteration frequency in Hertz" },
+      { "name": "urate", "type": "float", "default": 0.1, "description": "Update rate of the membrane potential u" },
+      { "name": "wrate", "type": "float", "default": 0.1, "description": "Update rate of the recovery variable w" },
+      { "name": "b0", "type": "float", "default": 0.6, "description": "Recovery offset parameter" },
+      { "name": "b1", "type": "float", "default": 0.8, "description": "Recovery slope parameter" },
+      { "name": "i", "type": "float", "default": 0.0, "description": "External input current" },
+      { "name": "u0", "type": "float", "default": 0.0, "description": "Initial membrane potential u" },
+      { "name": "w0", "type": "float", "default": 0.0, "description": "Initial recovery variable w" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["fhn2_dc_ar", "fhn2_dc_kr"]
+  },
+  {
+    "name": "FhnTrig",
+    "description": "FitzHugh-Nagumo neuron-based trigger generator. Same dynamics as Fhn2DN, with low-frequency defaults intended for triggering. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "minfreq", "type": "float", "default": 4, "description": "Minimum trigger frequency in Hertz" },
+      { "name": "maxfreq", "type": "float", "default": 10, "description": "Maximum trigger frequency in Hertz" },
+      { "name": "urate", "type": "float", "default": 0.1, "description": "Update rate of the membrane potential u" },
+      { "name": "wrate", "type": "float", "default": 0.1, "description": "Update rate of the recovery variable w" },
+      { "name": "b0", "type": "float", "default": 0.6, "description": "Recovery offset parameter" },
+      { "name": "b1", "type": "float", "default": 0.8, "description": "Recovery slope parameter" },
+      { "name": "i", "type": "float", "default": 0.0, "description": "External input current" },
+      { "name": "u0", "type": "float", "default": 0.0, "description": "Initial membrane potential u" },
+      { "name": "w0", "type": "float", "default": 0.0, "description": "Initial recovery variable w" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["fhn_trig_ar", "fhn_trig_kr"]
+  },
+  {
+    "name": "LFBrownNoise0",
+    "description": "Low-frequency brownian random walk (no interpolation). Steps between random values at freq using Gendyn distribution dist. From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "freq", "type": "float", "default": 20, "description": "Step frequency in Hertz" },
+      { "name": "dev", "type": "float", "default": 1.0, "description": "Maximum step size" },
+      { "name": "dist", "type": "float", "default": 0, "description": "Gendyn distribution index for step shape" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["lf_brown_noise0_ar", "lf_brown_noise0_kr"]
+  },
+  {
+    "name": "LFBrownNoise1",
+    "description": "Low-frequency brownian random walk (linear-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "freq", "type": "float", "default": 20, "description": "Step frequency in Hertz" },
+      { "name": "dev", "type": "float", "default": 1.0, "description": "Maximum step size" },
+      { "name": "dist", "type": "float", "default": 0, "description": "Gendyn distribution index for step shape" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["lf_brown_noise1_ar", "lf_brown_noise1_kr"]
+  },
+  {
+    "name": "LFBrownNoise2",
+    "description": "Low-frequency brownian random walk (cubic-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar", "kr"],
+    "inputs": [
+      { "name": "freq", "type": "float", "default": 20, "description": "Step frequency in Hertz" },
+      { "name": "dev", "type": "float", "default": 1.0, "description": "Maximum step size" },
+      { "name": "dist", "type": "float", "default": 0, "description": "Gendyn distribution index for step shape" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["lf_brown_noise2_ar", "lf_brown_noise2_kr"]
+  },
+  {
+    "name": "NestedAllpassN",
+    "description": "Two-stage nested allpass delay network (no interpolation), as proposed by Vercoe and Puckette. Useful for diffusion in reverbs. From sc3-plugins BhobUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      { "name": "in", "type": "signal", "default": 0, "description": "Input signal" },
+      { "name": "maxdelay1", "type": "float", "default": 0.036, "description": "Maximum delay time of stage 1 in seconds (allocates the delay buffer)" },
+      { "name": "delay1", "type": "float", "default": 0.036, "description": "Delay time of stage 1 in seconds" },
+      { "name": "gain1", "type": "float", "default": 0.08, "description": "Allpass gain for stage 1" },
+      { "name": "maxdelay2", "type": "float", "default": 0.03, "description": "Maximum delay time of stage 2 in seconds" },
+      { "name": "delay2", "type": "float", "default": 0.03, "description": "Delay time of stage 2 in seconds" },
+      { "name": "gain2", "type": "float", "default": 0.3, "description": "Allpass gain for stage 2" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["nested_allpass_n_ar"]
+  },
+  {
+    "name": "NestedAllpassL",
+    "description": "Two-stage nested allpass delay network (linear-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      { "name": "in", "type": "signal", "default": 0, "description": "Input signal" },
+      { "name": "maxdelay1", "type": "float", "default": 0.036, "description": "Maximum delay time of stage 1 in seconds" },
+      { "name": "delay1", "type": "float", "default": 0.036, "description": "Delay time of stage 1 in seconds" },
+      { "name": "gain1", "type": "float", "default": 0.08, "description": "Allpass gain for stage 1" },
+      { "name": "maxdelay2", "type": "float", "default": 0.03, "description": "Maximum delay time of stage 2 in seconds" },
+      { "name": "delay2", "type": "float", "default": 0.03, "description": "Delay time of stage 2 in seconds" },
+      { "name": "gain2", "type": "float", "default": 0.3, "description": "Allpass gain for stage 2" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["nested_allpass_l_ar"]
+  },
+  {
+    "name": "NestedAllpassC",
+    "description": "Two-stage nested allpass delay network (cubic-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      { "name": "in", "type": "signal", "default": 0, "description": "Input signal" },
+      { "name": "maxdelay1", "type": "float", "default": 0.036, "description": "Maximum delay time of stage 1 in seconds" },
+      { "name": "delay1", "type": "float", "default": 0.036, "description": "Delay time of stage 1 in seconds" },
+      { "name": "gain1", "type": "float", "default": 0.08, "description": "Allpass gain for stage 1" },
+      { "name": "maxdelay2", "type": "float", "default": 0.03, "description": "Maximum delay time of stage 2 in seconds" },
+      { "name": "delay2", "type": "float", "default": 0.03, "description": "Delay time of stage 2 in seconds" },
+      { "name": "gain2", "type": "float", "default": 0.3, "description": "Allpass gain for stage 2" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["nested_allpass_c_ar"]
+  },
+  {
+    "name": "DoubleNestedAllpassN",
+    "description": "Three-stage doubly nested allpass delay network (no interpolation). Vercoe/Puckette diffuser with three nested stages. From sc3-plugins BhobUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      { "name": "in", "type": "signal", "default": 0, "description": "Input signal" },
+      { "name": "maxdelay1", "type": "float", "default": 0.0047, "description": "Maximum delay time of stage 1 in seconds" },
+      { "name": "delay1", "type": "float", "default": 0.0047, "description": "Delay time of stage 1 in seconds" },
+      { "name": "gain1", "type": "float", "default": 0.15, "description": "Allpass gain for stage 1" },
+      { "name": "maxdelay2", "type": "float", "default": 0.022, "description": "Maximum delay time of stage 2 in seconds" },
+      { "name": "delay2", "type": "float", "default": 0.022, "description": "Delay time of stage 2 in seconds" },
+      { "name": "gain2", "type": "float", "default": 0.25, "description": "Allpass gain for stage 2" },
+      { "name": "maxdelay3", "type": "float", "default": 0.0083, "description": "Maximum delay time of stage 3 in seconds" },
+      { "name": "delay3", "type": "float", "default": 0.0083, "description": "Delay time of stage 3 in seconds" },
+      { "name": "gain3", "type": "float", "default": 0.3, "description": "Allpass gain for stage 3" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["double_nested_allpass_n_ar"]
+  },
+  {
+    "name": "DoubleNestedAllpassL",
+    "description": "Three-stage doubly nested allpass delay network (linear-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      { "name": "in", "type": "signal", "default": 0, "description": "Input signal" },
+      { "name": "maxdelay1", "type": "float", "default": 0.0047, "description": "Maximum delay time of stage 1 in seconds" },
+      { "name": "delay1", "type": "float", "default": 0.0047, "description": "Delay time of stage 1 in seconds" },
+      { "name": "gain1", "type": "float", "default": 0.15, "description": "Allpass gain for stage 1" },
+      { "name": "maxdelay2", "type": "float", "default": 0.022, "description": "Maximum delay time of stage 2 in seconds" },
+      { "name": "delay2", "type": "float", "default": 0.022, "description": "Delay time of stage 2 in seconds" },
+      { "name": "gain2", "type": "float", "default": 0.25, "description": "Allpass gain for stage 2" },
+      { "name": "maxdelay3", "type": "float", "default": 0.0083, "description": "Maximum delay time of stage 3 in seconds" },
+      { "name": "delay3", "type": "float", "default": 0.0083, "description": "Delay time of stage 3 in seconds" },
+      { "name": "gain3", "type": "float", "default": 0.3, "description": "Allpass gain for stage 3" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["double_nested_allpass_l_ar"]
+  },
+  {
+    "name": "DoubleNestedAllpassC",
+    "description": "Three-stage doubly nested allpass delay network (cubic-interpolating). From sc3-plugins BhobUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      { "name": "in", "type": "signal", "default": 0, "description": "Input signal" },
+      { "name": "maxdelay1", "type": "float", "default": 0.0047, "description": "Maximum delay time of stage 1 in seconds" },
+      { "name": "delay1", "type": "float", "default": 0.0047, "description": "Delay time of stage 1 in seconds" },
+      { "name": "gain1", "type": "float", "default": 0.15, "description": "Allpass gain for stage 1" },
+      { "name": "maxdelay2", "type": "float", "default": 0.022, "description": "Maximum delay time of stage 2 in seconds" },
+      { "name": "delay2", "type": "float", "default": 0.022, "description": "Delay time of stage 2 in seconds" },
+      { "name": "gain2", "type": "float", "default": 0.25, "description": "Allpass gain for stage 2" },
+      { "name": "maxdelay3", "type": "float", "default": 0.0083, "description": "Maximum delay time of stage 3 in seconds" },
+      { "name": "delay3", "type": "float", "default": 0.0083, "description": "Delay time of stage 3 in seconds" },
+      { "name": "gain3", "type": "float", "default": 0.3, "description": "Allpass gain for stage 3" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["double_nested_allpass_c_ar"]
+  },
+  {
+    "name": "PV_CommonMag",
+    "description": "Spectral processing: returns the bins whose magnitudes are within tolerance of each other in two FFT chains, optionally removing the rest. From sc3-plugins BhobUGens.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "First FFT buffer (output)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "Second FFT buffer (compared against)" },
+      { "name": "tolerance", "type": "float", "default": 0.0, "description": "Magnitude difference tolerance for matching bins" },
+      { "name": "remove", "type": "float", "default": 0.0, "description": "If non-zero, removes non-matching bins from bufferA" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["pv_common_mag_kr"]
+  },
+  {
+    "name": "PV_CommonMul",
+    "description": "Spectral processing: multiplies the magnitudes of bins common to two FFT chains, optionally removing the rest. From sc3-plugins BhobUGens.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "First FFT buffer (output)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "Second FFT buffer" },
+      { "name": "tolerance", "type": "float", "default": 0.0, "description": "Magnitude difference tolerance for matching bins" },
+      { "name": "remove", "type": "float", "default": 0.0, "description": "If non-zero, removes non-matching bins from bufferA" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["pv_common_mul_kr"]
+  },
+  {
+    "name": "PV_Compander",
+    "description": "Simple spectral compressor/expander. Bins above thresh are scaled by slopeAbove; bins below are scaled by slopeBelow. From sc3-plugins BhobUGens.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT buffer to process" },
+      { "name": "thresh", "type": "float", "default": 50, "description": "Magnitude threshold" },
+      { "name": "slopeBelow", "type": "float", "default": 1, "description": "Compression/expansion slope for bins below thresh" },
+      { "name": "slopeAbove", "type": "float", "default": 1, "description": "Compression/expansion slope for bins above thresh" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["pv_compander_kr"]
+  },
+  {
+    "name": "PV_Cutoff",
+    "description": "Spectral cutoff: zeros bins above (or below) a wipe position with smooth interpolation. From sc3-plugins BhobUGens.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT buffer to process" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "Second FFT buffer (used as reference)" },
+      { "name": "wipe", "type": "float", "default": 0.0, "description": "Wipe position from -1 (low cut) to 1 (high cut)" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["pv_cutoff_kr"]
+  },
+  {
+    "name": "PV_MagGate",
+    "description": "Spectral gate: zeros bins below or above thresh, optionally removing them entirely. From sc3-plugins BhobUGens.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT buffer to process" },
+      { "name": "thresh", "type": "float", "default": 1.0, "description": "Magnitude gate threshold" },
+      { "name": "remove", "type": "float", "default": 0.0, "description": "If non-zero, gates ABOVE thresh instead of below" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["pv_mag_gate_kr"]
+  },
+  {
+    "name": "PV_MagMinus",
+    "description": "Spectral subtraction: subtracts the magnitudes of bufferB from bufferA, clamped at zero. From sc3-plugins BhobUGens.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT buffer the result is written to" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT buffer subtracted from bufferA" },
+      { "name": "remove", "type": "float", "default": 1.0, "description": "If non-zero, removes bins of bufferA whose magnitude becomes <= 0" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["pv_mag_minus_kr"]
+  },
+  {
+    "name": "PV_MagScale",
+    "description": "Spectral scaling: multiplies the magnitudes of bufferA by the magnitudes of bufferB. From sc3-plugins BhobUGens.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT buffer the result is written to" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT buffer providing the scaling magnitudes" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["pv_mag_scale_kr"]
+  },
+  {
+    "name": "PV_Morph",
+    "description": "Spectral morphing between two FFT chains. morph in [0, 1] interpolates magnitudes/phases from bufferA to bufferB. From sc3-plugins BhobUGens.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "Source FFT buffer (morph = 0)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "Destination FFT buffer (morph = 1)" },
+      { "name": "morph", "type": "float", "default": 0.0, "description": "Morph amount: 0 = bufferA, 1 = bufferB" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["pv_morph_kr"]
+  },
+  {
+    "name": "PV_SoftWipe",
+    "description": "Spectral wipe: combines low bins from one input and high bins from the other with interpolation in the crossover region. From sc3-plugins BhobUGens.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT buffer providing the low-bin region (and result destination)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT buffer providing the high-bin region" },
+      { "name": "wipe", "type": "float", "default": 0.0, "description": "Wipe position from -1 (all bufferA) to 1 (all bufferB)" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["pv_soft_wipe_kr"]
+  },
+  {
+    "name": "PV_XFade",
+    "description": "Spectral crossfade: linearly interpolates between two FFT chains. From sc3-plugins BhobUGens.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT buffer A (fade = 0)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT buffer B (fade = 1)" },
+      { "name": "fade", "type": "float", "default": 0.0, "description": "Crossfade position: 0 = bufferA, 1 = bufferB" }
+    ],
+    "outputs": 1,
+    "category": "BhobUGens",
+    "functions": ["pv_xfade_kr"]
+  }
+]

@@ -1,0 +1,2367 @@
+[
+  {
+    "name": "ArrayMax",
+    "description": "Find the maximum value across an array of signals (sc3-plugins MCLDUGens). Outputs both the maximum value and the index of the channel where it was found. Sample-accurate.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "array",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of input signals to scan"
+      }
+    ],
+    "outputs": 2,
+    "category": "MCLDUGens",
+    "functions": [
+      "array_max_ar",
+      "array_max_kr"
+    ]
+  },
+  {
+    "name": "ArrayMin",
+    "description": "Find the minimum value across an array of signals (sc3-plugins MCLDUGens). Outputs both the minimum value and the index of the channel where it was found. Sample-accurate.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "array",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of input signals to scan"
+      }
+    ],
+    "outputs": 2,
+    "category": "MCLDUGens",
+    "functions": [
+      "array_min_ar",
+      "array_min_kr"
+    ]
+  },
+  {
+    "name": "BufMax",
+    "description": "Find the maximum sample value in a buffer (sc3-plugins MCLDUGens). Outputs both the maximum value and the frame index where it occurs. The scan happens whenever the gate goes from <=0 to >0.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number to scan"
+      },
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 1,
+        "description": "Re-trigger the scan on positive gate transitions"
+      }
+    ],
+    "outputs": 2,
+    "category": "MCLDUGens",
+    "functions": [
+      "buf_max_kr"
+    ]
+  },
+  {
+    "name": "BufMin",
+    "description": "Find the minimum sample value in a buffer (sc3-plugins MCLDUGens). Outputs both the minimum value and the frame index where it occurs. The scan happens whenever the gate goes from <=0 to >0.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number to scan"
+      },
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 1,
+        "description": "Re-trigger the scan on positive gate transitions"
+      }
+    ],
+    "outputs": 2,
+    "category": "MCLDUGens",
+    "functions": [
+      "buf_min_kr"
+    ]
+  },
+  {
+    "name": "Cepstrum",
+    "description": "Real cepstrum: PV chain that computes the cepstrum of an FFT chain and stores it in a buffer (sc3-plugins MCLDUGens). The cepstrum is the inverse FFT of the log magnitude spectrum, useful for pitch tracking and source/filter separation.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "cepbuf",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer to store the cepstrum frames"
+      },
+      {
+        "name": "fftchain",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "cepstrum_kr"
+    ]
+  },
+  {
+    "name": "ICepstrum",
+    "description": "Inverse cepstrum: PV chain that converts a cepstrum buffer back to an FFT chain (sc3-plugins MCLDUGens). Used to undo the Cepstrum transform after spectral envelope manipulation.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "cepchain",
+        "type": "signal",
+        "default": 0,
+        "description": "Input cepstrum chain"
+      },
+      {
+        "name": "fftbuf",
+        "type": "float",
+        "default": 0,
+        "description": "FFT buffer to write the resynthesised spectrum into"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "i_cepstrum_kr"
+    ]
+  },
+  {
+    "name": "PV_DiffMags",
+    "description": "DEPRECATED — renamed to PV_MagSubtract. Subtracts the magnitudes of FFT chain B from chain A (sc3-plugins MCLDUGens).",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufferA",
+        "type": "signal",
+        "default": 0,
+        "description": "First FFT chain (minuend)"
+      },
+      {
+        "name": "bufferB",
+        "type": "signal",
+        "default": 0,
+        "description": "Second FFT chain (subtrahend)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "pv_diff_mags_kr"
+    ]
+  },
+  {
+    "name": "PV_MagSubtract",
+    "description": "Subtract the magnitudes of FFT chain B from chain A bin-by-bin (sc3-plugins MCLDUGens). Optionally clip negative results to zero. Useful for spectral subtraction noise reduction.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufferA",
+        "type": "signal",
+        "default": 0,
+        "description": "First FFT chain (minuend) — output uses these phases"
+      },
+      {
+        "name": "bufferB",
+        "type": "signal",
+        "default": 0,
+        "description": "Second FFT chain (subtrahend)"
+      },
+      {
+        "name": "zerolimit",
+        "type": "float",
+        "default": 0,
+        "description": "If non-zero, clip negative magnitudes to zero"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "pv_mag_subtract_kr"
+    ]
+  },
+  {
+    "name": "PV_MagLog",
+    "description": "Take the natural logarithm of the magnitudes of an FFT chain (sc3-plugins MCLDUGens). Phases are preserved. Often used as a step in cepstrum-style processing.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "pv_mag_log_kr"
+    ]
+  },
+  {
+    "name": "PV_MagExp",
+    "description": "Apply the exponential function to the magnitudes of an FFT chain (sc3-plugins MCLDUGens). Phases are preserved. The inverse of PV_MagLog.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "pv_mag_exp_kr"
+    ]
+  },
+  {
+    "name": "PV_Whiten",
+    "description": "Spectral whitening of an FFT chain (sc3-plugins MCLDUGens). Tracks per-bin peak magnitudes in a tracking buffer and divides each bin by its tracked peak, flattening the spectrum. Useful as preprocessing for onset detection.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "trackbufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer for tracking per-bin peak magnitudes (must be allocated externally)"
+      },
+      {
+        "name": "relaxtime",
+        "type": "float",
+        "default": 2,
+        "description": "Time in seconds for tracked peaks to decay halfway"
+      },
+      {
+        "name": "floor",
+        "type": "float",
+        "default": 0.1,
+        "description": "Lower limit for the tracked magnitude — avoids division by zero / amplification of noise"
+      },
+      {
+        "name": "smear",
+        "type": "float",
+        "default": 0,
+        "description": "Number of adjacent bins to smear peaks across"
+      },
+      {
+        "name": "bindownsample",
+        "type": "float",
+        "default": 0,
+        "description": "Number of bins to downsample for peak tracking (0 = no downsampling)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "pv_whiten_kr"
+    ]
+  },
+  {
+    "name": "PV_MagSmooth",
+    "description": "Per-bin magnitude smoothing across consecutive FFT frames (sc3-plugins MCLDUGens). Acts as a one-pole low-pass filter applied independently to each bin's magnitude sequence.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "factor",
+        "type": "float",
+        "default": 0.1,
+        "description": "Smoothing factor (0 = no smoothing, near 1 = heavy smoothing)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "pv_mag_smooth_kr"
+    ]
+  },
+  {
+    "name": "PV_MagMulAdd",
+    "description": "Apply a linear transform to FFT magnitudes: new_mag = mag * mul + add (sc3-plugins MCLDUGens). Phases are preserved. Useful for gain staging and DC offsets in the spectral domain.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "mul",
+        "type": "float",
+        "default": 1,
+        "description": "Multiplier applied to each magnitude"
+      },
+      {
+        "name": "add",
+        "type": "float",
+        "default": 0,
+        "description": "Constant added to each magnitude after multiplication"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "pv_mag_mul_add_kr"
+    ]
+  },
+  {
+    "name": "PV_ExtractRepeat",
+    "description": "Extract or remove a repeating spectral pattern from an FFT chain (sc3-plugins MCLDUGens). Holds a memory buffer of recent magnitude history and flags bins that match (or differ from) a learned loop. Useful for source separation and de-looping.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "loopbuf",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer that stores the learned loop spectrum"
+      },
+      {
+        "name": "loopdur",
+        "type": "float",
+        "default": 1,
+        "description": "Duration of the loop in seconds"
+      },
+      {
+        "name": "memorytime",
+        "type": "float",
+        "default": 30,
+        "description": "How many seconds of memory to use when learning the loop"
+      },
+      {
+        "name": "which",
+        "type": "float",
+        "default": 0,
+        "description": "0 = output the repeating part, non-zero = output the residual"
+      },
+      {
+        "name": "ffthop",
+        "type": "float",
+        "default": 0.5,
+        "description": "FFT hop fraction (must match the producing FFT)"
+      },
+      {
+        "name": "thresh",
+        "type": "float",
+        "default": 1,
+        "description": "Threshold for deciding whether a bin is part of the repeat"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "pv_extract_repeat_kr"
+    ]
+  },
+  {
+    "name": "FFTPower",
+    "description": "Total power (sum of squared magnitudes) of an FFT chain (sc3-plugins MCLDUGens). Outputs once per FFT frame and holds the value between frames.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "square",
+        "type": "float",
+        "default": 1,
+        "description": "If 1, sum squared magnitudes (true power); if 0, sum magnitudes"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_power_kr"
+    ]
+  },
+  {
+    "name": "FFTDiffMags",
+    "description": "Sum of absolute differences between magnitudes of two FFT chains (sc3-plugins MCLDUGens). A simple spectral-distance feature, useful for change detection.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufferA",
+        "type": "signal",
+        "default": 0,
+        "description": "First FFT chain"
+      },
+      {
+        "name": "bufferB",
+        "type": "signal",
+        "default": 0,
+        "description": "Second FFT chain"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_diff_mags_kr"
+    ]
+  },
+  {
+    "name": "FFTFlux",
+    "description": "Spectral flux of an FFT chain (sc3-plugins MCLDUGens). Sum of squared bin-by-bin magnitude differences between successive frames; classic onset-detection feature.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "normalise",
+        "type": "float",
+        "default": 1,
+        "description": "If non-zero, normalise the differences by total frame energy"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_flux_kr"
+    ]
+  },
+  {
+    "name": "FFTFluxPos",
+    "description": "Positive-only spectral flux (sc3-plugins MCLDUGens). Like FFTFlux but only sums bins whose magnitude increased — biases detection toward note onsets rather than offsets.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "normalise",
+        "type": "float",
+        "default": 1,
+        "description": "If non-zero, normalise the differences by total frame energy"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_flux_pos_kr"
+    ]
+  },
+  {
+    "name": "FFTSubbandPower",
+    "description": "Power within each of N user-defined frequency subbands of an FFT chain (sc3-plugins MCLDUGens). Cutfreqs is a sorted list of band edges; output is one channel per subband (numbands+1 outputs in SuperCollider). Vibelang exposes the first output channel.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "cutfreqs",
+        "type": "signal",
+        "default": 0,
+        "description": "Sorted array of band edge frequencies in Hz"
+      },
+      {
+        "name": "square",
+        "type": "float",
+        "default": 1,
+        "description": "If 1, sum squared magnitudes (power); if 0, sum magnitudes"
+      },
+      {
+        "name": "scalemode",
+        "type": "float",
+        "default": 1,
+        "description": "Scaling mode for output (1 = normalised by bin count)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_subband_power_kr"
+    ]
+  },
+  {
+    "name": "FFTSubbandFlux",
+    "description": "Spectral flux computed independently within N user-defined frequency subbands (sc3-plugins MCLDUGens). One output channel per subband (numbands+1 in SuperCollider). Vibelang exposes the first output channel.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "cutfreqs",
+        "type": "signal",
+        "default": 0,
+        "description": "Sorted array of band edge frequencies in Hz"
+      },
+      {
+        "name": "posonly",
+        "type": "float",
+        "default": 0,
+        "description": "If non-zero, sum only positive bin-magnitude changes"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_subband_flux_kr"
+    ]
+  },
+  {
+    "name": "FFTPhaseDev",
+    "description": "Phase deviation onset-detection feature for an FFT chain (sc3-plugins MCLDUGens). Sums the deviations between observed phases and phases predicted from the previous two frames — peaks on transients.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "weight",
+        "type": "float",
+        "default": 0,
+        "description": "If non-zero, weight each bin's deviation by its magnitude"
+      },
+      {
+        "name": "powthresh",
+        "type": "float",
+        "default": 0.1,
+        "description": "Power threshold below which a bin is ignored"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_phase_dev_kr"
+    ]
+  },
+  {
+    "name": "FFTComplexDev",
+    "description": "Complex-domain onset-detection feature (sc3-plugins MCLDUGens). Distance between observed complex bins and bins predicted from the previous two frames; can be rectified to keep only positive (onset-like) changes.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "rectify",
+        "type": "float",
+        "default": 0,
+        "description": "If non-zero, only count bins whose magnitude grew"
+      },
+      {
+        "name": "powthresh",
+        "type": "float",
+        "default": 0.1,
+        "description": "Power threshold below which a bin is ignored"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_complex_dev_kr"
+    ]
+  },
+  {
+    "name": "FFTMKL",
+    "description": "Modified Kullback-Leibler divergence between successive FFT frames (sc3-plugins MCLDUGens). An onset-detection feature emphasising spectral novelty rather than energy change.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "epsilon",
+        "type": "float",
+        "default": 0.000001,
+        "description": "Small constant added inside the log to avoid log(0)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_mkl_kr"
+    ]
+  },
+  {
+    "name": "FFTCentroid",
+    "description": "DEPRECATED — use SpecCentroid instead. Spectral centroid of an FFT chain (sc3-plugins MCLDUGens).",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_centroid_kr"
+    ]
+  },
+  {
+    "name": "FFTSubbandFlatness",
+    "description": "Spectral flatness measured independently within N user-defined frequency subbands (sc3-plugins MCLDUGens). Each subband flatness is geometric-mean / arithmetic-mean of magnitudes. One channel per subband (numbands+1); vibelang exposes the first.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "chain",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "cutfreqs",
+        "type": "signal",
+        "default": 0,
+        "description": "Sorted array of band edge frequencies in Hz"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_subband_flatness_kr"
+    ]
+  },
+  {
+    "name": "FFTCrest",
+    "description": "Spectral crest factor over a frequency range (sc3-plugins MCLDUGens). Ratio of the maximum magnitude to the mean magnitude — high for tonal signals, low for noisy signals.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "freqlo",
+        "type": "float",
+        "default": 0,
+        "description": "Lower frequency bound in Hz"
+      },
+      {
+        "name": "freqhi",
+        "type": "float",
+        "default": 50000,
+        "description": "Upper frequency bound in Hz"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_crest_kr"
+    ]
+  },
+  {
+    "name": "FFTSpread",
+    "description": "Spectral spread (second moment) of an FFT chain (sc3-plugins MCLDUGens). Variance of bin frequencies weighted by magnitude, around the supplied centroid.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "centroid",
+        "type": "signal",
+        "default": 0,
+        "description": "Spectral centroid (typically from SpecCentroid.kr) — required for the calculation"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_spread_kr"
+    ]
+  },
+  {
+    "name": "FFTSlope",
+    "description": "Spectral slope of an FFT chain (sc3-plugins MCLDUGens). Linear-regression slope of magnitudes versus bin frequency — negative for typical natural sounds, near zero for noise.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_slope_kr"
+    ]
+  },
+  {
+    "name": "FFTPeak",
+    "description": "Strongest frequency peak in an FFT chain over a given frequency range (sc3-plugins MCLDUGens). Outputs the peak frequency in Hz and its magnitude.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Input FFT chain"
+      },
+      {
+        "name": "freqlo",
+        "type": "float",
+        "default": 0,
+        "description": "Lower frequency bound in Hz"
+      },
+      {
+        "name": "freqhi",
+        "type": "float",
+        "default": 50000,
+        "description": "Upper frequency bound in Hz"
+      }
+    ],
+    "outputs": 2,
+    "category": "MCLDUGens",
+    "functions": [
+      "fft_peak_kr"
+    ]
+  },
+  {
+    "name": "RosslerL",
+    "description": "Rössler chaotic attractor with linear interpolation (sc3-plugins MCLDUGens). Three-dimensional continuous-time chaos: x' = -y - z; y' = x + a*y; z' = b + z*(x - c). Outputs x, y, z as a three-channel signal.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 0.2,
+        "description": "Equation parameter a"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 0.2,
+        "description": "Equation parameter b"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 5.7,
+        "description": "Equation parameter c"
+      },
+      {
+        "name": "h",
+        "type": "float",
+        "default": 0.05,
+        "description": "Integration step size"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.1,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of y"
+      },
+      {
+        "name": "zi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of z"
+      }
+    ],
+    "outputs": 3,
+    "category": "MCLDUGens",
+    "functions": [
+      "rossler_l_ar"
+    ]
+  },
+  {
+    "name": "RosslerResL",
+    "description": "Rössler attractor driven by an external excitation, with a stiff coupling (sc3-plugins MCLDUGens). Same equations as RosslerL but the input signal perturbs the trajectory. Three-channel output.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Excitation input signal"
+      },
+      {
+        "name": "stiff",
+        "type": "float",
+        "default": 1.0,
+        "description": "Stiffness — how strongly the input perturbs the system"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 0.2,
+        "description": "Equation parameter a"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 0.2,
+        "description": "Equation parameter b"
+      },
+      {
+        "name": "c",
+        "type": "float",
+        "default": 5.7,
+        "description": "Equation parameter c"
+      },
+      {
+        "name": "h",
+        "type": "float",
+        "default": 0.05,
+        "description": "Integration step size"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.1,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of y"
+      },
+      {
+        "name": "zi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of z"
+      }
+    ],
+    "outputs": 3,
+    "category": "MCLDUGens",
+    "functions": [
+      "rossler_res_l_ar"
+    ]
+  },
+  {
+    "name": "FincoSprottL",
+    "description": "Finco-Sprott 'L' chaotic attractor with linear interpolation (sc3-plugins MCLDUGens). x' = y + z; y' = a*|x| - y; z' = 1 - x. Three-channel x, y, z output.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 2.45,
+        "description": "Equation parameter a"
+      },
+      {
+        "name": "h",
+        "type": "float",
+        "default": 0.05,
+        "description": "Integration step size"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of y"
+      },
+      {
+        "name": "zi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of z"
+      }
+    ],
+    "outputs": 3,
+    "category": "MCLDUGens",
+    "functions": [
+      "finco_sprott_l_ar"
+    ]
+  },
+  {
+    "name": "FincoSprottM",
+    "description": "Finco-Sprott 'M' chaotic attractor (sc3-plugins MCLDUGens). Three-channel x, y, z output. Note that parameter a is negative compared to the published version.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": -7,
+        "description": "Equation parameter a"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 4,
+        "description": "Equation parameter b"
+      },
+      {
+        "name": "h",
+        "type": "float",
+        "default": 0.05,
+        "description": "Integration step size"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of y"
+      },
+      {
+        "name": "zi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of z"
+      }
+    ],
+    "outputs": 3,
+    "category": "MCLDUGens",
+    "functions": [
+      "finco_sprott_m_ar"
+    ]
+  },
+  {
+    "name": "FincoSprottS",
+    "description": "Finco-Sprott 'S' chaotic attractor (sc3-plugins MCLDUGens). Three-channel x, y, z output.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hz"
+      },
+      {
+        "name": "a",
+        "type": "float",
+        "default": 8,
+        "description": "Equation parameter a"
+      },
+      {
+        "name": "b",
+        "type": "float",
+        "default": 2,
+        "description": "Equation parameter b"
+      },
+      {
+        "name": "h",
+        "type": "float",
+        "default": 0.05,
+        "description": "Integration step size"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of y"
+      },
+      {
+        "name": "zi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of z"
+      }
+    ],
+    "outputs": 3,
+    "category": "MCLDUGens",
+    "functions": [
+      "finco_sprott_s_ar"
+    ]
+  },
+  {
+    "name": "RMAFoodChainL",
+    "description": "Rosenzweig-MacArthur three-species food chain attractor (sc3-plugins MCLDUGens). Continuous-time predator-prey chaos with 12 parameters. Three-channel x, y, z output.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 22050,
+        "description": "Iteration frequency in Hz"
+      },
+      {
+        "name": "a1",
+        "type": "float",
+        "default": 5.0,
+        "description": "Equation parameter a1"
+      },
+      {
+        "name": "b1",
+        "type": "float",
+        "default": 3.0,
+        "description": "Equation parameter b1"
+      },
+      {
+        "name": "d1",
+        "type": "float",
+        "default": 0.4,
+        "description": "Equation parameter d1"
+      },
+      {
+        "name": "a2",
+        "type": "float",
+        "default": 0.1,
+        "description": "Equation parameter a2"
+      },
+      {
+        "name": "b2",
+        "type": "float",
+        "default": 2.0,
+        "description": "Equation parameter b2"
+      },
+      {
+        "name": "d2",
+        "type": "float",
+        "default": 0.01,
+        "description": "Equation parameter d2"
+      },
+      {
+        "name": "k",
+        "type": "float",
+        "default": 1.0943,
+        "description": "Equation parameter k"
+      },
+      {
+        "name": "r",
+        "type": "float",
+        "default": 0.8904,
+        "description": "Equation parameter r"
+      },
+      {
+        "name": "h",
+        "type": "float",
+        "default": 0.05,
+        "description": "Integration step size"
+      },
+      {
+        "name": "xi",
+        "type": "float",
+        "default": 0.1,
+        "description": "Initial value of x"
+      },
+      {
+        "name": "yi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of y"
+      },
+      {
+        "name": "zi",
+        "type": "float",
+        "default": 0,
+        "description": "Initial value of z"
+      }
+    ],
+    "outputs": 3,
+    "category": "MCLDUGens",
+    "functions": [
+      "rma_food_chain_l_ar"
+    ]
+  },
+  {
+    "name": "Perlin3",
+    "description": "3D Perlin noise (sc3-plugins MCLDUGens). Smooth, gradient-based noise sampled at the supplied (x, y, z) coordinate. Useful as a smoothly-varying random control signal.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "X coordinate to sample"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "Y coordinate to sample"
+      },
+      {
+        "name": "z",
+        "type": "signal",
+        "default": 0,
+        "description": "Z coordinate to sample"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "perlin3_ar",
+      "perlin3_kr"
+    ]
+  },
+  {
+    "name": "InsideOut",
+    "description": "Distortion that 'flips' the signal envelope inside out: samples close to zero become the loudest, and peaks become quietest (sc3-plugins MCLDUGens). Aggressive nonlinear distortion.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "inside_out_ar",
+      "inside_out_kr"
+    ]
+  },
+  {
+    "name": "WaveLoss",
+    "description": "Drop a configurable proportion of waveform segments between zero crossings (sc3-plugins MCLDUGens). Sounds like a glitchy bit-loss artefact. Drop is the count to drop, outof is the period.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "drop",
+        "type": "float",
+        "default": 20,
+        "description": "Number of zero-crossing segments to drop per group"
+      },
+      {
+        "name": "outof",
+        "type": "float",
+        "default": 40,
+        "description": "Group size — drop is taken out of every 'outof' segments"
+      },
+      {
+        "name": "mode",
+        "type": "float",
+        "default": 1,
+        "description": "1 = pseudo-random selection within each group, 2 = first-N pattern"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "wave_loss_ar",
+      "wave_loss_kr"
+    ]
+  },
+  {
+    "name": "Squiz",
+    "description": "Pitch-raising distortion by repeating short waveform chunks at a higher rate (sc3-plugins MCLDUGens). Roughly transposes upward without standard pitch-shifting artefacts; sounds gritty and lo-fi.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "pitchratio",
+        "type": "float",
+        "default": 2,
+        "description": "Pitch transposition ratio (>=1)"
+      },
+      {
+        "name": "zcperchunk",
+        "type": "float",
+        "default": 1,
+        "description": "Number of zero crossings per repeated chunk"
+      },
+      {
+        "name": "memlen",
+        "type": "float",
+        "default": 0.1,
+        "description": "Memory length in seconds"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "squiz_ar",
+      "squiz_kr"
+    ]
+  },
+  {
+    "name": "Logger",
+    "description": "Log an array of input values into a buffer on each trigger (sc3-plugins MCLDUGens). Useful for capturing analysis features over time. Buffer must have one channel per input.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number to log into"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger — write a frame on each positive transition"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset the write head to frame 0 on positive transitions"
+      },
+      {
+        "name": "inputArray",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of values to log on each trigger"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "logger_kr"
+    ]
+  },
+  {
+    "name": "ListTrig",
+    "description": "Trigger from a list of frame indices stored in a buffer (sc3-plugins MCLDUGens). Fires whenever the running sample index reaches the next entry. Useful for replaying detected onset times.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding sorted trigger frame indices"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset the read head on positive transitions"
+      },
+      {
+        "name": "offset",
+        "type": "float",
+        "default": 0,
+        "description": "Index offset added to each buffer entry"
+      },
+      {
+        "name": "numframes",
+        "type": "float",
+        "default": 0,
+        "description": "Total number of frames being scrubbed (defaults to BufFrames)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "list_trig_kr"
+    ]
+  },
+  {
+    "name": "ListTrig2",
+    "description": "Trigger from a list of inter-onset intervals stored in a buffer (sc3-plugins MCLDUGens). Like ListTrig but each entry is a delta time rather than an absolute frame index.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding inter-trigger intervals"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset the read head on positive transitions"
+      },
+      {
+        "name": "numframes",
+        "type": "float",
+        "default": 0,
+        "description": "Total number of frames being scrubbed (defaults to BufFrames)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "list_trig2_kr"
+    ]
+  },
+  {
+    "name": "GaussClass",
+    "description": "Gaussian-classifier on an input feature vector (sc3-plugins MCLDUGens). Reads a buffer of Gaussian classes (mean, inverse-covariance, weight) and outputs the index of the most likely class for the input vector.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer of class parameters (use GaussClass.classesToFloatArray to prepare)"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 0,
+        "description": "Gate — classification runs while gate > 0"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input feature vector to classify"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "gauss_class_kr"
+    ]
+  },
+  {
+    "name": "MIDelay",
+    "description": "Mutual-information-based delay estimator between two signals (sc3-plugins MCLDUGens). Reports the lag at which mutual information between the two streams is maximised. Originally Dan Stowell — currently disabled in upstream sc3-plugins.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in1",
+        "type": "signal",
+        "default": 0,
+        "description": "First input signal"
+      },
+      {
+        "name": "in2",
+        "type": "signal",
+        "default": 0,
+        "description": "Second input signal"
+      },
+      {
+        "name": "maxdelay",
+        "type": "float",
+        "default": 0.2,
+        "description": "Maximum delay considered, in seconds"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1,
+        "description": "Gate — analysis runs while gate > 0"
+      },
+      {
+        "name": "mibuf",
+        "type": "float",
+        "default": -1,
+        "description": "Optional buffer to write per-lag MI estimates into (-1 = none)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "mi_delay_kr"
+    ]
+  },
+  {
+    "name": "Friction",
+    "description": "Stick-slip friction filter (sc3-plugins MCLDUGens). Models a mass on a moving belt with friction, spring and damping — produces squeaks and bowed-string textures from arbitrary inputs.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal that drives the belt motion"
+      },
+      {
+        "name": "friction",
+        "type": "float",
+        "default": 0.5,
+        "description": "Friction coefficient between mass and belt"
+      },
+      {
+        "name": "spring",
+        "type": "float",
+        "default": 0.414,
+        "description": "Spring constant connecting the mass to the rest position"
+      },
+      {
+        "name": "damp",
+        "type": "float",
+        "default": 0.313,
+        "description": "Damping coefficient for the mass motion"
+      },
+      {
+        "name": "mass",
+        "type": "float",
+        "default": 0.1,
+        "description": "Mass of the moving body"
+      },
+      {
+        "name": "beltmass",
+        "type": "float",
+        "default": 1,
+        "description": "Mass of the belt (effective inertia of the input)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "friction_ar",
+      "friction_kr"
+    ]
+  },
+  {
+    "name": "Crest",
+    "description": "Time-domain crest factor over a sliding window (sc3-plugins MCLDUGens). Ratio of peak absolute value to RMS over numsamps samples — high for percussive signals, low for sustained ones.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "numsamps",
+        "type": "float",
+        "default": 400,
+        "description": "Window length in samples"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1,
+        "description": "Gate — analysis runs while gate > 0"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "crest_kr"
+    ]
+  },
+  {
+    "name": "Goertzel",
+    "description": "Goertzel single-bin DFT (sc3-plugins MCLDUGens). Efficient detector of energy at one specific frequency without doing a full FFT. Outputs the real and imaginary components of the bin.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "bufsize",
+        "type": "float",
+        "default": 1024,
+        "description": "Analysis window size in samples"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency to detect, in Hz"
+      },
+      {
+        "name": "hop",
+        "type": "float",
+        "default": 1,
+        "description": "Hop size as a fraction of bufsize"
+      }
+    ],
+    "outputs": 2,
+    "category": "MCLDUGens",
+    "functions": [
+      "goertzel_kr"
+    ]
+  },
+  {
+    "name": "SawDPW",
+    "description": "Sawtooth oscillator using the Differentiated Parabolic Wave (DPW) method (sc3-plugins MCLDUGens). Cheaper than a band-limited oscillator and noticeably better than a naive saw — has slight amplitude droop at very low frequencies.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Oscillator frequency in Hz"
+      },
+      {
+        "name": "iphase",
+        "type": "float",
+        "default": 0.0,
+        "description": "Initial phase in the range [-1, 1]"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "saw_dpw_ar",
+      "saw_dpw_kr"
+    ]
+  },
+  {
+    "name": "PulseDPW",
+    "description": "Pulse-wave oscillator built from two SawDPW oscillators (sc3-plugins MCLDUGens). Cheaper than a band-limited Pulse with similar audible quality. Width controls the duty cycle.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Oscillator frequency in Hz"
+      },
+      {
+        "name": "width",
+        "type": "float",
+        "default": 0.5,
+        "description": "Pulse width as a fraction (0 to 1)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "pulse_dpw_ar",
+      "pulse_dpw_kr"
+    ]
+  },
+  {
+    "name": "Getenv",
+    "description": "Read an environment variable from the SuperCollider server's process at synth instantiation time (sc3-plugins MCLDUGens). Scalar (init-rate) — value is fixed once the synth starts.",
+    "rates": [
+      "ir"
+    ],
+    "inputs": [
+      {
+        "name": "key",
+        "type": "float",
+        "default": 0,
+        "description": "Environment variable name (encoded as ASCII byte sequence in upstream SC)"
+      },
+      {
+        "name": "defaultval",
+        "type": "float",
+        "default": 0,
+        "description": "Value to use if the variable is not set or not numeric"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "getenv_ir"
+    ]
+  },
+  {
+    "name": "Clockmus",
+    "description": "Microsecond clock reading from the host system (sc3-plugins MCLDUGens). Useful for timing measurements inside a synthdef — e.g. to measure how long an audio block takes to compute.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "clockmus_kr"
+    ]
+  },
+  {
+    "name": "TextVU",
+    "description": "Print a text VU meter to stdout for diagnostic monitoring (sc3-plugins MCLDUGens). Pass-through — outputs the input unchanged. Width controls the bar character count.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 2,
+        "description": "Trigger / refresh rate. If a float, treated as Hz; otherwise as a trigger signal"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal to monitor"
+      },
+      {
+        "name": "label",
+        "type": "float",
+        "default": 0,
+        "description": "Label string (encoded as ASCII byte sequence in upstream SC)"
+      },
+      {
+        "name": "width",
+        "type": "float",
+        "default": 21,
+        "description": "Bar width in characters"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset the peak indicator on positive transitions"
+      },
+      {
+        "name": "ana",
+        "type": "signal",
+        "default": 0,
+        "description": "Analyser signal — pre-computed amplitude (defaults to Amplitude.kr internally)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "text_vu_ar",
+      "text_vu_kr"
+    ]
+  },
+  {
+    "name": "MeanTriggered",
+    "description": "Running mean of the input over the last N triggered samples (sc3-plugins MCLDUGens). Whenever trig fires, the current input is added to a circular buffer of length 'length' and the buffer's mean is output.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal sampled on each trigger"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger — sample on each positive transition"
+      },
+      {
+        "name": "length",
+        "type": "float",
+        "default": 10,
+        "description": "Number of past samples kept in the running window"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "mean_triggered_ar",
+      "mean_triggered_kr"
+    ]
+  },
+  {
+    "name": "MedianTriggered",
+    "description": "Running median of the input over the last N triggered samples (sc3-plugins MCLDUGens). Like MeanTriggered but outputs the median — robust against outliers, useful for trimming spurious onset-detection peaks.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal sampled on each trigger"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger — sample on each positive transition"
+      },
+      {
+        "name": "length",
+        "type": "float",
+        "default": 10,
+        "description": "Number of past samples kept in the running window"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "median_triggered_ar",
+      "median_triggered_kr"
+    ]
+  },
+  {
+    "name": "KMeansRT",
+    "description": "Real-time K-means clustering on incoming feature vectors (sc3-plugins MCLDUGens). Reads/writes centroids in a buffer, outputs the cluster index of the current input. Optionally keeps learning while running.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding the K centroids (rows = K, channels = ndims+1)"
+      },
+      {
+        "name": "k",
+        "type": "float",
+        "default": 5,
+        "description": "Number of clusters"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1,
+        "description": "Gate — clustering runs while gate > 0"
+      },
+      {
+        "name": "reset",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset learned centroids on positive transitions"
+      },
+      {
+        "name": "learn",
+        "type": "float",
+        "default": 1,
+        "description": "If non-zero, update centroids online; otherwise only classify"
+      },
+      {
+        "name": "inputdata",
+        "type": "signal",
+        "default": 0,
+        "description": "Input feature vector to classify"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "k_means_rt_kr"
+    ]
+  },
+  {
+    "name": "OnsetsDS",
+    "description": "Pseudo-UGen wrapping a complete onset-detection setup (sc3-plugins MCLDUGens): FFT, whitening, an onset-detection function, median filter, threshold and minimum-gap. DEPRECATED — Dan Stowell recommends Onsets.kr instead.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input audio signal (or pre-computed FFT chain if extchain is true)"
+      },
+      {
+        "name": "fftbuf",
+        "type": "float",
+        "default": 0,
+        "description": "FFT buffer (must be allocated externally)"
+      },
+      {
+        "name": "trackbuf",
+        "type": "float",
+        "default": 0,
+        "description": "Tracking buffer for PV_Whiten"
+      },
+      {
+        "name": "thresh",
+        "type": "float",
+        "default": 0.5,
+        "description": "Detection threshold"
+      },
+      {
+        "name": "type",
+        "type": "float",
+        "default": 0,
+        "description": "ODF type (0=power, 1=complex, 2=rcomplex, 3=phase, 4=wphase, 5=mkl)"
+      },
+      {
+        "name": "extchain",
+        "type": "float",
+        "default": 0,
+        "description": "If non-zero, treat 'in' as an existing FFT chain rather than audio"
+      },
+      {
+        "name": "relaxtime",
+        "type": "float",
+        "default": 0.1,
+        "description": "Whitening relax time in seconds"
+      },
+      {
+        "name": "floor",
+        "type": "float",
+        "default": 0.1,
+        "description": "Whitening floor"
+      },
+      {
+        "name": "smear",
+        "type": "float",
+        "default": 0,
+        "description": "Whitening smear in bins"
+      },
+      {
+        "name": "mingap",
+        "type": "float",
+        "default": 0.05,
+        "description": "Minimum gap between detected onsets, in seconds"
+      },
+      {
+        "name": "medianspan",
+        "type": "float",
+        "default": 11,
+        "description": "Number of frames in the median filter"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "onsets_ds_kr"
+    ]
+  },
+  {
+    "name": "PlaneTree",
+    "description": "Server-side hyperplane decision-tree classifier (sc3-plugins MCLDUGens). Reads a tree from a buffer (built language-side, e.g. via the KDTree quark) and emits the leaf path-integer for each input feature vector.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "treebuf",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer containing the tree node data"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1,
+        "description": "Gate — classification runs while gate > 0"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input feature vector to classify"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "plane_tree_kr"
+    ]
+  },
+  {
+    "name": "NearestN",
+    "description": "Server-side nearest-neighbour search in a kd-tree (sc3-plugins MCLDUGens). Returns 'num' nearest matches as [index, distSquared] pairs followed by a free slot, in 3*num output channels. Vibelang exposes the first output channel.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "treebuf",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer containing kd-tree node data (use NearestN.makeBufferData to prepare)"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1,
+        "description": "Gate — search runs while gate > 0"
+      },
+      {
+        "name": "num",
+        "type": "float",
+        "default": 1,
+        "description": "Number of nearest neighbours to find"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input feature vector to query"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "nearest_n_kr"
+    ]
+  },
+  {
+    "name": "MatchingP",
+    "description": "Matching-pursuit decomposition over a dictionary buffer (sc3-plugins MCLDUGens). Iteratively finds the best-matching atoms in the dictionary for the input signal and outputs the chosen indices and activation amplitudes.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "dict",
+        "type": "float",
+        "default": 0,
+        "description": "Dictionary buffer (rows = atoms, columns = atom samples)"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal to decompose"
+      },
+      {
+        "name": "dictsize",
+        "type": "float",
+        "default": 1,
+        "description": "Number of atoms in the dictionary"
+      },
+      {
+        "name": "ntofind",
+        "type": "float",
+        "default": 1,
+        "description": "Number of atoms to keep per analysis frame"
+      },
+      {
+        "name": "hop",
+        "type": "float",
+        "default": 1,
+        "description": "Hop size as a fraction of the atom length"
+      },
+      {
+        "name": "method",
+        "type": "float",
+        "default": 0,
+        "description": "Matching-pursuit method (0 = standard correlation)"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "matching_p_ar",
+      "matching_p_kr"
+    ]
+  },
+  {
+    "name": "MatchingPResynth",
+    "description": "Resynthesise a signal from matching-pursuit activations (sc3-plugins MCLDUGens). Pairs with MatchingP — given the dictionary and a list of [index, amplitude] activations it sums the chosen atoms back into a waveform.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "dict",
+        "type": "float",
+        "default": 0,
+        "description": "Dictionary buffer (must match the one used by MatchingP)"
+      },
+      {
+        "name": "method",
+        "type": "float",
+        "default": 0,
+        "description": "Resynthesis method (0 = sum of selected atoms)"
+      },
+      {
+        "name": "trigger",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger — start a new resynthesis frame on positive transitions"
+      },
+      {
+        "name": "residual",
+        "type": "signal",
+        "default": 0,
+        "description": "Optional residual signal to add to the resynthesis"
+      },
+      {
+        "name": "activs",
+        "type": "signal",
+        "default": 0,
+        "description": "Array of activations as [idx0, amp0, idx1, amp1, ...]"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "matching_p_resynth_ar",
+      "matching_p_resynth_kr"
+    ]
+  },
+  {
+    "name": "SOMTrain",
+    "description": "Train a Self-Organising Map on streaming input data (sc3-plugins MCLDUGens). Updates the supplied buffer in place. Outputs three values: best-match coordinate, current learning rate, current neighbourhood radius (vibelang exposes the first).",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding the SOM weights (allocate via SOMTrain.allocBuf)"
+      },
+      {
+        "name": "netsize",
+        "type": "float",
+        "default": 10,
+        "description": "Number of nodes per dimension of the SOM grid"
+      },
+      {
+        "name": "numdims",
+        "type": "float",
+        "default": 2,
+        "description": "Number of dimensions of the SOM grid (1-4)"
+      },
+      {
+        "name": "traindur",
+        "type": "float",
+        "default": 5000,
+        "description": "Total training duration in control-rate frames"
+      },
+      {
+        "name": "nhood",
+        "type": "float",
+        "default": 0.5,
+        "description": "Initial neighbourhood radius (fraction of grid size)"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1,
+        "description": "Gate — training runs while gate > 0"
+      },
+      {
+        "name": "initweight",
+        "type": "float",
+        "default": 1,
+        "description": "Initial learning weight"
+      },
+      {
+        "name": "inputdata",
+        "type": "signal",
+        "default": 0,
+        "description": "Input feature vector being mapped"
+      }
+    ],
+    "outputs": 3,
+    "category": "MCLDUGens",
+    "functions": [
+      "som_train_kr"
+    ]
+  },
+  {
+    "name": "SOMRd",
+    "description": "Read the best-matching node from a trained Self-Organising Map (sc3-plugins MCLDUGens). Outputs the integer coordinates of the BMU on the SOM grid (numdims channels). Vibelang exposes the first output channel.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding the trained SOM weights"
+      },
+      {
+        "name": "netsize",
+        "type": "float",
+        "default": 10,
+        "description": "Number of nodes per dimension of the SOM grid"
+      },
+      {
+        "name": "numdims",
+        "type": "float",
+        "default": 2,
+        "description": "Number of dimensions of the SOM grid (1-4)"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1,
+        "description": "Gate — readout runs while gate > 0"
+      },
+      {
+        "name": "inputdata",
+        "type": "signal",
+        "default": 0,
+        "description": "Input feature vector to look up"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "som_rd_ar",
+      "som_rd_kr"
+    ]
+  },
+  {
+    "name": "SOMAreaWr",
+    "description": "Write a feature vector into a region of a Self-Organising Map around supplied coordinates (sc3-plugins MCLDUGens). Lets you train a SOM by direct supervised insertion rather than competitive learning.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding the SOM weights"
+      },
+      {
+        "name": "netsize",
+        "type": "float",
+        "default": 10,
+        "description": "Number of nodes per dimension of the SOM grid"
+      },
+      {
+        "name": "numdims",
+        "type": "float",
+        "default": 2,
+        "description": "Number of dimensions of the SOM grid (1-4)"
+      },
+      {
+        "name": "nhood",
+        "type": "float",
+        "default": 0.5,
+        "description": "Neighbourhood radius around the coordinates"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1,
+        "description": "Gate — write runs while gate > 0"
+      },
+      {
+        "name": "inputdata",
+        "type": "signal",
+        "default": 0,
+        "description": "Input feature vector to write, followed by target coordinates"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "som_area_wr_kr"
+    ]
+  },
+  {
+    "name": "CQ_Diff",
+    "description": "Constant-Q magnitude-difference UGen, based on Qitch (sc3-plugins MCLDUGens). Compares two constant-Q analyses against a reference data buffer for pitch/spectrum matching.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in1",
+        "type": "signal",
+        "default": 0,
+        "description": "First constant-Q analysis stream"
+      },
+      {
+        "name": "in2",
+        "type": "signal",
+        "default": 0,
+        "description": "Second constant-Q analysis stream"
+      },
+      {
+        "name": "databufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Reference data buffer number"
+      }
+    ],
+    "outputs": 1,
+    "category": "MCLDUGens",
+    "functions": [
+      "cq_diff_kr"
+    ]
+  }
+]
