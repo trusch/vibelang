@@ -1,41 +1,68 @@
-// Spectraphon Side - Story A core synthdef (single-side SAO foundation)
+// Spectraphon Side - Stories A + C (single-side SAO + Array memory)
 //
-// Single-side spectral oscillator using a hardcoded saw-like spectrum
-// (mag[k] = 1/k for k = 1..64), split across an Odd bank (k = 1, 3, ..., 63)
-// and an Even bank (k = 2, 4, ..., 64). Each bank is built from 32 parallel
-// sin_osc_ar voices summed together — klang_ar would require a 32+32-element
-// signal array which exceeds Rhai's 16-arity limit, so the additive bank
-// is unrolled per the plan §7 fallback.
+// Single-side spectral oscillator with 64 harmonic partials split across an
+// Odd bank (k = 1, 3, ..., 63) and an Even bank (k = 2, 4, ..., 64). Each
+// bank is unrolled as 32 parallel sin_osc_ar voices summed together —
+// klang_ar would require a 32+32-element signal array which exceeds Rhai's
+// 16-arity limit, so the additive bank is unrolled per the plan §7 fallback.
+//
+// Story C — Array memory (this story):
+//   16 stored Arrays per side, each addressed by a 2-D Slide × Focus grid
+//   of N_GRID × N_GRID cells holding 64 partial magnitudes. Total buffer is
+//   N_ARRAYS × N_GRID × N_GRID × N_PARTIALS = 16 × 8 × 8 × 64 = 65536 floats.
+//
+//   SAM mode (mode=0): partial magnitudes come from `mag_sam` — a 1/k saw
+//     placeholder for now; Story B's FFT analyzer will replace this. When
+//     `capture_trig` is high in SAM mode, mag_sam is written into the cell
+//     `[array_idx, floor(slide·N_GRID), floor(focus·N_GRID), k-1]` via a
+//     phase-offset gating trick on buf_wr_kr.
+//
+//   SAO mode (mode=1): partial magnitudes are read back from the buffer
+//     using bilinear interpolation across the 4 cells around the current
+//     (slide, focus). 4 buf_rd_kr per partial × 64 partials = 256 lookups
+//     per side at kr rate.
+//
+//   DEVIATION (documented for Story C follow-up): vibelang has no script-
+//   level top-level buffer API yet (see kb/spectraphon-synthdef-plan.md
+//   §6.C3). This story uses local_buf_ir, which is per-synth and does NOT
+//   survive synthdef recompile — captured Arrays reset on hot-reload. A
+//   future ticket should add `allocate_buffer(frames, channels)` to
+//   vibelang-rhai and switch this synthdef to accept a `array_buf` bufnum
+//   parameter pointing at a script-allocated buffer. Default-preset baking
+//   (Array 0 = saw, 1 = square, 2 = noise) is also deferred to that ticket
+//   since `set_buf_ir` cannot fan out to 65536 cells in one call.
 //
 // Output convention (stereo channels mirror the hardware jacks):
 //   L = Odd  jack — odd partials. With merge_even=1 (default), Even folds
 //                   into Odd so unpatched-Even users hear all harmonics on L.
-//   R = secondary jack, selected per side:
-//       sub_cv_out=1  → Sub/CV: saw_ar(freq * 0.5) * 0.5 (Side A SAO sub-osc).
-//                       Wins over sine_out when both are set.
-//       sine_out=1    → Sine jack: clean sin_osc_ar(freq) at k=1.
-//                       Never gated by Partials — survives at partials=0,
-//                       per hardware §5 ("Sine output is the only path that
-//                       survives at Partials=0").
-//       both 0 (def)  → Even jack: even bank (or odd if merge_even=1),
-//                       gated by Partials like the hardware Even out.
+//   R = secondary jack, selected by `right_mode`:
+//       right_mode = 0 (def) → Even jack: even bank (or odd if merge_even=1),
+//                              gated by Partials like the hardware Even out.
+//       right_mode = 1       → Sine jack: clean sin_osc_ar(freq) at k=1.
+//                              Never gated by Partials — survives at partials=0.
+//       right_mode = 2       → Sub/CV: saw_ar(freq * 0.5) * 0.5 (Side A SAO sub).
 //
-// Story A scope only: NO SAM analyzer, NO Array memory, NO FM bus —
-// those land in Stories B / C / D. See kb/spectraphon-synthdef-plan.md
-// §3 (DSP arch), §4 (UGen mapping), §6.A (this story's scope).
+// NOTE on parameter count: Rhai closures cap at 10 args, so right_mode
+// folds the prior sine_out/sub_cv_out toggles into one selector, and
+// `sam_capture` folds mode+capture_trig together.
+//
+// Stories not yet integrated here: SAM analyzer (Story B), FM bus (Story D).
+// See kb/spectraphon-synthdef-plan.md §3 (DSP arch), §4 (UGen mapping),
+// §6.A (Story A), §6.C (Story C), §7 (storage format / risks).
 
 define_synthdef("spectraphon_side", |builder| {
     builder
         .param("freq", 220.0)
         .param("partials", 1.0)
-        .param("slide", 0.5)        // reserved for SAO Array X-axis (Story C)
-        .param("focus", 0.5)        // reserved for SAO Array Y-axis (Story C)
+        .param("slide", 0.5)        // SAO Array X-axis position (Story C)
+        .param("focus", 0.5)        // SAO Array Y-axis position (Story C)
         .param("amp", 0.3)
         .param("gate", 1.0)
         .param("merge_even", 1.0)   // 1 = even folds into odd (mono); 0 = odd-L / even-R split
-        .param("sine_out", 0.0)     // 1 = R becomes clean sine (k=1, ungated by Partials)
-        .param("sub_cv_out", 0.0)   // 1 = R becomes sub-osc saw at f0/2; wins over sine_out
-        .body(|freq, partials, slide, focus, amp, gate, merge_even, sine_out, sub_cv_out| {
+        .param("right_mode", 0.0)   // 0 = even-jack | 1 = sine | 2 = sub/CV
+        .param("sam_capture", 1.0)  // 0 = SAM (no capture) | 1 = SAO playback | 2 = SAM + capture
+        .param("array_idx", 0.0)    // 0..15 — which of the 16 stored Arrays to address
+        .body(|freq, partials, slide, focus, amp, gate, merge_even, right_mode, sam_capture, array_idx| {
 
             let env = envelope()
                 .asr(0.01, 1.0, 0.3)
@@ -43,30 +70,105 @@ define_synthdef("spectraphon_side", |builder| {
                 .cleanup_on_finish()
                 .build();
 
-            // Default saw-like spectrum: mag[k] = 1/k for k = 1..64.
             // The per-partial gate g[k] = clamp(partials*N - (k-1), 0, 1)
             // reveals harmonics low-to-high as `partials` sweeps CCW → CW;
             // CCW (partials=0) → silent, CW (partials=1) → full spectrum.
             let n = 64.0;
             let scale = partials * n;
 
+            // === Story C: shared 16-Array buffer + bilinear lookup ===
+            //
+            // Layout (flat 1D, row-major):
+            //   idx = array_idx * (N_GRID * N_GRID * N_PARTIALS)
+            //       + slide_cell * (N_GRID * N_PARTIALS)
+            //       + focus_cell * N_PARTIALS
+            //       + (k - 1)
+            // Strides for N_GRID=8, N_PARTIALS=64:
+            //   array_stride = 4096, row_stride = 512, cell_stride = 64.
+            let array_buf = local_buf_ir(1, 65536.0);
+
+            // Quantise slide/focus to grid cells. floor(x) = x - wrap(x,0,1)
+            // since vibelang has no Floor UGen.
+            let slide_pos = clip(slide, 0.0, 0.99999) * 8.0;
+            let focus_pos = clip(focus, 0.0, 0.99999) * 8.0;
+            let slide_lo = slide_pos - wrap_kr(slide_pos, 0.0, 1.0);
+            let focus_lo = focus_pos - wrap_kr(focus_pos, 0.0, 1.0);
+            let slide_hi = clip(slide_lo + 1.0, 0.0, 7.0);
+            let focus_hi = clip(focus_lo + 1.0, 0.0, 7.0);
+            let s_frac = slide_pos - slide_lo;
+            let f_frac = focus_pos - focus_lo;
+
+            // Bilinear weights — constant across all 64 partials in this kr cycle.
+            let w00 = (1.0 - s_frac) * (1.0 - f_frac);
+            let w01 = (1.0 - s_frac) * f_frac;
+            let w10 = s_frac * (1.0 - f_frac);
+            let w11 = s_frac * f_frac;
+
+            let arr_base = clip(array_idx, 0.0, 15.0) * 4096.0;
+            let base00 = arr_base + slide_lo * 512.0 + focus_lo * 64.0;
+            let base01 = arr_base + slide_lo * 512.0 + focus_hi * 64.0;
+            let base10 = arr_base + slide_hi * 512.0 + focus_lo * 64.0;
+            let base11 = arr_base + slide_hi * 512.0 + focus_hi * 64.0;
+
+            // sam_capture decode:
+            //   0 → SAO playback,  1 → SAM (no capture),  2 → SAM + capture.
+            // sao_mix is 1 only in state 0; sam_mix is 1 in states 1 and 2;
+            // cap_active is 1 only in state 2.
+            let sam_mix = clip(sam_capture, 0.0, 1.0);
+            let sao_mix = 1.0 - sam_mix;
+            let cap_active = clip(sam_capture - 1.0, 0.0, 1.0);
+
+            // Capture target = nearest (slide_lo, focus_lo) cell.
+            // When capture is inactive we offset the write phase by 1e9 — far
+            // past the 65536-frame buffer with loop=0, BufWr drops the write.
+            let cap_base = arr_base + slide_lo * 512.0 + focus_lo * 64.0;
+            let cap_offset = (1.0 - cap_active) * 1.0e9;
+
             // --- Odd bank: k = 1, 3, 5, ..., 63 ---------------------------
             let k = 1.0;
-            let odd_bank = sin_osc_ar(freq * k) * (1.0 / k)
+            let mag_sao = w00 * buf_rd_kr(1, array_buf, base00 + (k - 1.0), 0, 1)
+                        + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
+                        + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
+                        + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
+            let mag_sam = 1.0 / k;
+            buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
+            let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
+            let odd_bank = sin_osc_ar(freq * k) * mag_k
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * i + 1).to_float();
-                odd_bank = odd_bank + sin_osc_ar(freq * k) * (1.0 / k)
+                let mag_sao = w00 * buf_rd_kr(1, array_buf, base00 + (k - 1.0), 0, 1)
+                            + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
+                            + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
+                            + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
+                let mag_sam = 1.0 / k;
+                buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
+                let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
+                odd_bank = odd_bank + sin_osc_ar(freq * k) * mag_k
                     * clip(scale - (k - 1.0), 0.0, 1.0);
             }
 
             // --- Even bank: k = 2, 4, 6, ..., 64 --------------------------
             let k = 2.0;
-            let even_bank = sin_osc_ar(freq * k) * (1.0 / k)
+            let mag_sao = w00 * buf_rd_kr(1, array_buf, base00 + (k - 1.0), 0, 1)
+                        + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
+                        + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
+                        + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
+            let mag_sam = 1.0 / k;
+            buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
+            let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
+            let even_bank = sin_osc_ar(freq * k) * mag_k
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * (i + 1)).to_float();
-                even_bank = even_bank + sin_osc_ar(freq * k) * (1.0 / k)
+                let mag_sao = w00 * buf_rd_kr(1, array_buf, base00 + (k - 1.0), 0, 1)
+                            + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
+                            + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
+                            + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
+                let mag_sam = 1.0 / k;
+                buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
+                let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
+                even_bank = even_bank + sin_osc_ar(freq * k) * mag_k
                     * clip(scale - (k - 1.0), 0.0, 1.0);
             }
 
@@ -79,8 +181,7 @@ define_synthdef("spectraphon_side", |builder| {
             // Left = Odd jack (always). Partials-gated.
             let left_raw = odd_out;
 
-            // Right channel: 3-way selector via 0/1 floats.
-            //   sub_cv_out wins over sine_out (matches ticket spec)
+            // Right channel: 3-way selector via right_mode (0/1/2).
             //   sub/sine paths bypass the Partials gate (hardware Sub/CV
             //   and Sine outs are independent of the Partials knob).
             let default_right = (even_out * (1.0 - merge_even)
@@ -88,9 +189,9 @@ define_synthdef("spectraphon_side", |builder| {
             let sine_signal = sin_osc_ar(freq);
             let sub_signal  = saw_ar(freq * 0.5) * 0.5;
 
-            let active_sub     = sub_cv_out;
-            let active_sine    = sine_out * (1.0 - sub_cv_out);
-            let active_default = (1.0 - sine_out) * (1.0 - sub_cv_out);
+            let active_default = 1.0 - clip(right_mode, 0.0, 1.0);
+            let active_sub     = clip(right_mode - 1.0, 0.0, 1.0);
+            let active_sine    = 1.0 - active_default - active_sub;
 
             let right_raw = default_right * active_default
                           + sine_signal   * active_sine
