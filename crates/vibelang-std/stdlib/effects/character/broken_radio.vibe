@@ -1,0 +1,70 @@
+// kind=fx | category=character | flavor=broken_radio | stereo=true | params=tune_drift,dropout_rate,am_amount,noise_amount,mix,level
+//
+// Broken Radio
+//
+// AM-radio-through-static character: a Butterworth band-pass (~200-3000 Hz, the
+// classic AM voice band) whose center frifts slowly to mimic a detuning tube,
+// slow tremolo-style AM "pumping" on the carrier, random gate dropouts driven by
+// bipolar dust impulses, and a layer of band-limited static noise mixed in.
+//
+// Usage:
+//   group.add_effect("radio", "broken_radio", #{
+//     tune_drift: 0.5,
+//     dropout_rate: 0.3,
+//     am_amount: 0.4,
+//     noise_amount: 0.3,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   tune_drift:    Slow detune of band-pass center freq (0.0 to 1.0)
+//   dropout_rate:  Random gate-dropout density (0.0 to 1.0)
+//   am_amount:     AM-pump tremolo depth (0.0 to 1.0)
+//   noise_amount:  Static-noise level (0.0 to 1.0)
+//   mix:           Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:         Output level trim (1.0 = unity)
+
+define_fx("broken_radio")
+    .param("tune_drift", 0.5)
+    .param("dropout_rate", 0.3)
+    .param("am_amount", 0.4)
+    .param("noise_amount", 0.3)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, tune_drift, dropout_rate, am_amount, noise_amount, mix, level| {
+        // Slowly drifting band-pass center: nominal 1100 Hz ± up to ~700 Hz
+        let drift = lf_noise1_kr(0.3) * tune_drift * 700.0;
+        let center = 1100.0 + drift;
+
+        // AM "pump": slow sine tremolo on the carrier amplitude (~5 Hz)
+        let am = 1.0 - am_amount * 0.5 * (1.0 - sin_osc_kr(5.0, 0.0));
+
+        // Random dropouts: bipolar dust impulses smoothed into short envelopes,
+        // gate dips toward 0.05 during a dropout, sits at 1.0 otherwise.
+        let dust_trig = dust2_ar(dropout_rate * 6.0).abs();
+        let drop_env = decay2_ar(dust_trig, 0.003, 0.06);
+        let dropout_gate = (1.0 - drop_env.min(0.95)).max(0.05);
+
+        // AM voice band — Butterworth band-pass for flat-top body
+        let band_l = b_band_pass_ar(input[0], center, 3.32);
+        let band_r = b_band_pass_ar(input[1], center, 3.32);
+
+        // Tighter resonant peak inside the band for the "tinny" radio formant
+        let voice_l = bpf_ar(band_l, center, 0.6);
+        let voice_r = bpf_ar(band_r, center, 0.6);
+
+        // Static layer: white noise band-limited to the same voice band
+        let static_layer = bpf_ar(white_noise_ar(), center, 0.8) * noise_amount * 0.4;
+
+        let signal_l = voice_l * am * dropout_gate + static_layer;
+        let signal_r = voice_r * am * dropout_gate + static_layer;
+
+        let wet_l = leak_dc_ar(signal_l, 0.995);
+        let wet_r = leak_dc_ar(signal_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

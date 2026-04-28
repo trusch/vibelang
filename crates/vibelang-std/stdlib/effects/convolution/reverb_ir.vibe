@@ -1,0 +1,45 @@
+// kind=fx | category=convolution | flavor=ir | stereo=true | params=ir_buffer,framesize,mix,level
+//
+// Convolution Reverb (fixed IR)
+//
+// Stereo convolution reverb using a user-supplied impulse response buffer.
+// The IR length must be <= framesize (FFT size, power of two, max 16384).
+// For long IRs prefer reverb_partconv which uses partitioned convolution
+// for lower CPU at the cost of a one-time prepare step.
+//
+// Usage:
+//   group.add_effect("conv", "reverb_ir", #{
+//     ir_buffer: my_ir_buf,
+//     framesize: 2048.0,
+//     mix: 0.3,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   ir_buffer: Buffer number containing the IR (mono, length <= framesize)
+//   framesize: FFT frame size (power of two, max 16384)
+//   mix:       Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:     Output trim applied after the dry/wet mix
+
+define_fx("reverb_ir", |builder| {
+    builder
+        .param("ir_buffer", 0.0)
+        .param("framesize", 2048.0)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, ir_buffer, framesize, mix, level| {
+            // Reload the kernel whenever ir_buffer changes.
+            let trig = changed_kr(ir_buffer, 0.0);
+
+            let conv_l = convolution2_ar(input[0], ir_buffer, trig, framesize);
+            let conv_r = convolution2_ar(input[1], ir_buffer, trig, framesize);
+
+            let wet_l = leak_dc_ar(conv_l, 0.995);
+            let wet_r = leak_dc_ar(conv_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

@@ -1,0 +1,61 @@
+// kind=fx | category=character | flavor=telephone | stereo=true | params=muffled_amount,sat_amount,mix,level
+//
+// Telephone
+//
+// Classic phone-line band-limiting: 300 Hz HP + 3 kHz LP (the ITU G.712 voice
+// band approximated as a Butterworth band-pass), light tanh saturation for the
+// soft compander/codec character, harder tanh for "bad line" distortion, and a
+// quiet white-noise floor for line hiss.
+//
+// Usage:
+//   group.add_effect("phone", "telephone", #{
+//     muffled_amount: 0.5,
+//     sat_amount: 0.4,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   muffled_amount: Narrows the band beyond the standard 300-3000 Hz, more
+//                   muffled at 1.0 (0.0 to 1.0)
+//   sat_amount:     Soft-sat + line-distortion drive (0.0 to 1.0)
+//   mix:            Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:          Output level trim (1.0 = unity)
+
+define_fx("telephone")
+    .param("muffled_amount", 0.5)
+    .param("sat_amount", 0.4)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, muffled_amount, sat_amount, mix, level| {
+        // Voice band: nominal 300 Hz - 3000 Hz. center = sqrt(300*3000) ≈ 949 Hz,
+        // bandwidth = log2(3000/300) ≈ 3.32 octaves. muffled_amount narrows the
+        // band (down to ~1 octave) for the "speakerphone in a tin can" sound.
+        let bw = 3.32 - muffled_amount * 2.3;
+        let band_l = b_band_pass_ar(input[0], 949.0, bw);
+        let band_r = b_band_pass_ar(input[1], 949.0, bw);
+
+        // Soft saturation — codec / compander-style soft knee
+        let soft_drive = 1.0 + sat_amount * 1.5;
+        let soft_l = (band_l * soft_drive).tanh();
+        let soft_r = (band_r * soft_drive).tanh();
+
+        // Slight hard distortion for a bad-line edge
+        let hard_drive = 1.0 + sat_amount * 4.0;
+        let dist_l = (soft_l * hard_drive).tanh() * 0.7;
+        let dist_r = (soft_r * hard_drive).tanh() * 0.7;
+
+        // Line hiss — quiet white-noise floor band-limited into the voice band
+        let hiss = b_band_pass_ar(white_noise_ar(), 949.0, bw) * 0.008;
+
+        let signal_l = dist_l + hiss;
+        let signal_r = dist_r + hiss;
+
+        let wet_l = leak_dc_ar(signal_l, 0.995);
+        let wet_r = leak_dc_ar(signal_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

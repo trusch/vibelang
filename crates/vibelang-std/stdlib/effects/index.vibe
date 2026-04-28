@@ -32,3 +32,6 @@ import "stdlib/effects/spectral/index.vibe";
 
 // Character (3 effects)
 import "stdlib/effects/character/index.vibe";
+
+// Convolution (3 effects)
+import "stdlib/effects/convolution/index.vibe";

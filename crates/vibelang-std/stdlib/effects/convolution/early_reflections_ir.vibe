@@ -1,0 +1,45 @@
+// kind=fx | category=convolution | flavor=early_reflections_ir | stereo=true | params=ir_buffer,mix,level
+//
+// Early Reflections Convolution
+//
+// Convolves the input against the first ~93 ms of a supplied IR buffer.
+// Uses a small fixed FFT framesize (4096) so only the early-reflections
+// portion of the IR contributes; long late tails are truncated. Pair
+// this with a separate algorithmic reverb (e.g. plate_reverb) for the
+// late tail to keep CPU low while preserving spatial cues.
+//
+// Usage:
+//   group.add_effect("er", "early_reflections_ir", #{
+//     ir_buffer: room_ir_buf,
+//     mix: 0.3,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   ir_buffer: Buffer number containing the IR — only the first ~93 ms
+//              (4096 samples @ 44.1 kHz) are used as the kernel.
+//   mix:       Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:     Output trim applied after the dry/wet mix
+
+define_fx("early_reflections_ir", |builder| {
+    builder
+        .param("ir_buffer", 0.0)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, ir_buffer, mix, level| {
+            // 4096 samples ≈ 93 ms at 44.1 kHz / 85 ms at 48 kHz —
+            // the early-reflections window of typical room IRs.
+            let trig = changed_kr(ir_buffer, 0.0);
+
+            let conv_l = convolution2_ar(input[0], ir_buffer, trig, 4096.0);
+            let conv_r = convolution2_ar(input[1], ir_buffer, trig, 4096.0);
+
+            let wet_l = leak_dc_ar(conv_l, 0.995);
+            let wet_r = leak_dc_ar(conv_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

@@ -2,3 +2,6 @@
 import "stdlib/effects/character/cassette.vibe";
 import "stdlib/effects/character/vinyl_dust.vibe";
 import "stdlib/effects/character/tape_loop_lofi.vibe";
+import "stdlib/effects/character/broken_radio.vibe";
+import "stdlib/effects/character/telephone.vibe";
+import "stdlib/effects/character/chiptune.vibe";

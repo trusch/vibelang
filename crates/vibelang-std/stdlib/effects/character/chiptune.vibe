@@ -1,0 +1,60 @@
+// kind=fx | category=character | flavor=chiptune | stereo=true | params=pulse_width,decimation,mix,level
+//
+// Chiptune
+//
+// Re-synthesizes the input as 8-bit-style pulse waves: a band-limited Pulse
+// oscillator and a non-band-limited LFPulse harmonized an octave above are
+// driven by the input's tracked frequency (zero-crossing pitch follow) and
+// gated by the input's amplitude envelope. The output passes through a
+// sample-rate decimator for the bit-crushed NES/Game-Boy character.
+//
+// Usage:
+//   group.add_effect("chip", "chiptune", #{
+//     pulse_width: 0.5,
+//     decimation: 0.5,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   pulse_width: Width of the pulse waves, 0.5 = square (0.05 to 0.95)
+//   decimation:  Sample-rate crush amount, 0 = clean, 1 = ~4 kHz / 4 bit
+//                (0.0 to 1.0)
+//   mix:         Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:       Output level trim (1.0 = unity)
+
+define_fx("chiptune")
+    .param("pulse_width", 0.5)
+    .param("decimation", 0.5)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, pulse_width, decimation, mix, level| {
+        // Mono sum drives the trackers — pitch / amplitude follow are mono.
+        let mono = (input[0] + input[1]) * 0.5;
+
+        // Pitch follow via zero crossings, clamped to a sensible chiptune range.
+        let raw_freq = zero_crossing_ar(mono);
+        let tracked = raw_freq.max(80.0).min(2000.0);
+
+        // Amplitude follow shapes the synth voice.
+        let env = amplitude_ar(mono, 0.005, 0.05);
+
+        // Two-voice 8-bit voice: band-limited pulse at the tracked freq, plus
+        // a non-band-limited LFPulse one octave up for the brighter NES bite.
+        let lead = pulse_ar(tracked, pulse_width) * 0.6;
+        let octv = (lf_pulse_ar(tracked * 2.0, 0.0, pulse_width) - 0.5) * 0.4;
+        let voice = (lead + octv) * env;
+
+        // Decimator: rate 44100 Hz → 4000 Hz, bits 12 → 4 as decimation rises.
+        let dec_rate = 44100.0 - decimation * 40100.0;
+        let dec_bits = 12.0 - decimation * 8.0;
+        let crushed = decimator_ar(voice, dec_rate, dec_bits);
+
+        let wet_l = leak_dc_ar(crushed, 0.995);
+        let wet_r = leak_dc_ar(crushed, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

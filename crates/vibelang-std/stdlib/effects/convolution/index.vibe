@@ -1,0 +1,4 @@
+// Convolution Effects Index
+import "stdlib/effects/convolution/reverb_ir.vibe";
+import "stdlib/effects/convolution/reverb_partconv.vibe";
+import "stdlib/effects/convolution/early_reflections_ir.vibe";

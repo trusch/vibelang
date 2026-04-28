@@ -1,0 +1,44 @@
+// kind=fx | category=convolution | flavor=partconv | stereo=true | params=ir_buffer,framesize,mix,level
+//
+// Partitioned Convolution Reverb (long IR)
+//
+// Low-latency convolution reverb for arbitrarily long impulse responses.
+// Uses partitioned convolution (PartConv), which requires a pre-prepared
+// spectral IR buffer (SuperCollider's Buffer.preparePartConv). CPU load
+// grows with IR length but stays bounded per audio block.
+//
+// Usage:
+//   group.add_effect("conv", "reverb_partconv", #{
+//     ir_buffer: prepared_ir_buf,
+//     framesize: 2048.0,
+//     mix: 0.3,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   ir_buffer: Buffer number containing the prepared spectral IR data
+//   framesize: Spectral partition FFT size — twice the partition size.
+//              Block size must divide it with at least two blocks per
+//              partition. Power of two recommended.
+//   mix:       Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:     Output trim applied after the dry/wet mix
+
+define_fx("reverb_partconv", |builder| {
+    builder
+        .param("ir_buffer", 0.0)
+        .param("framesize", 2048.0)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, ir_buffer, framesize, mix, level| {
+            let conv_l = part_conv_ar(input[0], framesize, ir_buffer);
+            let conv_r = part_conv_ar(input[1], framesize, ir_buffer);
+
+            let wet_l = leak_dc_ar(conv_l, 0.995);
+            let wet_r = leak_dc_ar(conv_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});
