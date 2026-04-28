@@ -1250,5 +1250,251 @@
     "functions": [
       "p_sin_grain_ar"
     ]
+  },
+  {
+    "name": "Vibrato",
+    "description": "Slow frequency modulation around a fundamental, with optional onset delay and noise on rate/depth. Models singer/string-instrument vibrato.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Fundamental frequency in Hertz. At ar, must be a UGen (e.g. DC.ar), not a constant"
+      },
+      {
+        "name": "rate",
+        "type": "float",
+        "default": 6,
+        "description": "Vibrato rate in Hertz (speed of wobble)"
+      },
+      {
+        "name": "depth",
+        "type": "float",
+        "default": 0.02,
+        "description": "Vibrato depth as a proportion of the fundamental (0.02 = 2%)"
+      },
+      {
+        "name": "delay",
+        "type": "float",
+        "default": 0,
+        "description": "Delay in seconds before vibrato is established"
+      },
+      {
+        "name": "onset",
+        "type": "float",
+        "default": 0,
+        "description": "Transition time in seconds from no vibrato to full vibrato after the delay"
+      },
+      {
+        "name": "rateVariation",
+        "type": "float",
+        "default": 0.04,
+        "description": "Noise on the rate as a proportion of the rate; updates once per vibrato cycle"
+      },
+      {
+        "name": "depthVariation",
+        "type": "float",
+        "default": 0.1,
+        "description": "Noise on the depth as a proportion of the depth; updates once per vibrato cycle"
+      },
+      {
+        "name": "iphase",
+        "type": "float",
+        "default": 0,
+        "description": "Initial phase of vibrato modulation"
+      },
+      {
+        "name": "trig",
+        "type": "float",
+        "default": 0,
+        "description": "Restart vibrato when trig transitions from <=0 to >0"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "vibrato_ar",
+      "vibrato_kr"
+    ]
+  },
+  {
+    "name": "AmpComp",
+    "description": "Basic psychoacoustic amplitude compensation. Returns (root/freq)^exp so higher frequencies (perceived as louder) are attenuated.",
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 261.6256,
+        "description": "Input frequency value. For freq == root, output is 1.0"
+      },
+      {
+        "name": "root",
+        "type": "float",
+        "default": 261.6256,
+        "description": "Root frequency relative to which the curve is calculated (usually the lowest freq)"
+      },
+      {
+        "name": "exp",
+        "type": "float",
+        "default": 0.3333,
+        "description": "Exponent: how steep the curve falls off as freq rises"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "amp_comp_ar",
+      "amp_comp_kr",
+      "amp_comp_ir"
+    ]
+  },
+  {
+    "name": "AmpCompA",
+    "description": "Psychoacoustic amplitude compensation using the ANSI A-weighting (Fletcher-Munson) curve. Only valid at standardized amplitude.",
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1000,
+        "description": "Input frequency value. For freq == root, output is rootAmp"
+      },
+      {
+        "name": "root",
+        "type": "float",
+        "default": 0,
+        "description": "Root frequency relative to which the curve is calculated. Non-modulatable"
+      },
+      {
+        "name": "minAmp",
+        "type": "float",
+        "default": 0.32,
+        "description": "Amplitude at the minimum point of the curve (around 2512 Hz). Non-modulatable"
+      },
+      {
+        "name": "rootAmp",
+        "type": "float",
+        "default": 1.0,
+        "description": "Amplitude at the root frequency. Non-modulatable"
+      }
+    ],
+    "outputs": 1,
+    "category": "Analysis",
+    "functions": [
+      "amp_comp_a_ar",
+      "amp_comp_a_kr",
+      "amp_comp_a_ir"
+    ]
+  },
+  {
+    "name": "ModDif",
+    "description": "Minimum difference of two values in modulo arithmetics. Returns the shorter of the two arc distances on a circle. Useful for wraparound math.",
+    "rates": [
+      "ar",
+      "kr",
+      "ir"
+    ],
+    "inputs": [
+      {
+        "name": "x",
+        "type": "float",
+        "default": 0,
+        "description": "First input value"
+      },
+      {
+        "name": "y",
+        "type": "float",
+        "default": 0,
+        "description": "Second input value"
+      },
+      {
+        "name": "mod",
+        "type": "float",
+        "default": 1,
+        "description": "Modulo (maximum value, double the maximal difference)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "functions": [
+      "mod_dif_ar",
+      "mod_dif_kr",
+      "mod_dif_ir"
+    ]
+  },
+  {
+    "name": "Unwrap",
+    "description": "Phase-unwrap helper. Adds offsets of (hi-lo) when the input crosses a wrap boundary so a wrapping signal becomes monotonic across cycles.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal to unwrap"
+      },
+      {
+        "name": "lo",
+        "type": "float",
+        "default": 0,
+        "description": "Lower wrap boundary"
+      },
+      {
+        "name": "hi",
+        "type": "float",
+        "default": 1,
+        "description": "Upper wrap boundary"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "functions": [
+      "unwrap_ar",
+      "unwrap_kr"
+    ]
+  },
+  {
+    "name": "LFCub",
+    "description": "Sine-like low frequency oscillator made of two cubic pieces. Smoother than LFPar.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hertz"
+      },
+      {
+        "name": "iphase",
+        "type": "float",
+        "default": 0,
+        "description": "Initial phase offset from 0 to 2"
+      }
+    ],
+    "outputs": 1,
+    "category": "Oscillators",
+    "functions": [
+      "lf_cub_ar",
+      "lf_cub_kr"
+    ]
   }
 ]
