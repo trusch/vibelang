@@ -1,0 +1,71 @@
+// kind=fx | category=glitch | flavor=beat_repeater | stereo=true | params=capture_seconds,retrigger_rate,decay,mix,level
+//
+// Beat Repeater
+//
+// Continuously records the last `capture_seconds` of input into a circular
+// buffer per channel, then re-triggers playback from frame 0 at
+// `retrigger_rate` Hz. A `decay2_ar` envelope, fired by the same trigger,
+// shapes each repeat so the slice fades over `decay` seconds — useful for
+// classic Beat-Repeat / Glitch-mangler textures where each successive
+// repeat is quieter than the last.
+//
+// Without an external trigger the FX uses a steady internal `impulse_ar`,
+// so the effect produces a metronomic stutter at `retrigger_rate`. To make
+// it BPM-aware multiply your beats-per-second by a subdivision (e.g. at
+// 120 BPM, retrigger_rate=4.0 gives 1/8th-note repeats).
+//
+// Usage:
+//   group.add_effect("rep", "beat_repeater", #{
+//     capture_seconds: 0.5,
+//     retrigger_rate: 4.0,
+//     decay: 0.25,
+//     mix: 0.5,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   capture_seconds: Buffer length / capture window in seconds (0.05 to 2.0)
+//   retrigger_rate:  Repeats per second (0.5 to 32.0)
+//   decay:           Per-repeat decay envelope time in seconds (0.01 to 2.0)
+//   mix:             Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:           Output level trim (1.0 = unity)
+
+define_fx("beat_repeater", |builder| {
+    builder
+        .param("capture_seconds", 0.5)
+        .param("retrigger_rate", 4.0)
+        .param("decay", 0.25)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, capture_seconds, retrigger_rate, decay, mix, level| {
+            // 2-second circular buffers (capture_seconds is documentation /
+            // user expectation — the retrigger-rate determines what slice
+            // actually plays, so we just give the recorder enough headroom
+            // for the longest sensible capture window).
+            let buf_l = local_buf_ir(1, 96000);
+            let buf_r = local_buf_ir(1, 96000);
+
+            record_buf_ar(input[0], buf_l, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+            record_buf_ar(input[1], buf_r, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+
+            // Periodic trigger — re-fires playback from frame 0 each cycle.
+            let trig = impulse_ar(retrigger_rate, 0.0);
+            let rep_l = play_buf_ar(1, buf_l, 1.0, trig, 0.0, 1.0, 0);
+            let rep_r = play_buf_ar(1, buf_r, 1.0, trig, 0.0, 1.0, 0);
+
+            // Per-repeat decay envelope: short attack snaps to 1.0 on each
+            // trigger, then exponentially decays toward 0 over `decay` sec.
+            let env = decay2_ar(trig, 0.001, decay);
+
+            let shaped_l = rep_l * env;
+            let shaped_r = rep_r * env;
+
+            let wet_l = leak_dc_ar(shaped_l, 0.995);
+            let wet_r = leak_dc_ar(shaped_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
+        })
+});

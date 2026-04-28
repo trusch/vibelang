@@ -1,0 +1,60 @@
+// kind=fx | category=character | flavor=bitcrush_pro | stereo=true | params=sample_rate,bits,dither_amount,mix,level
+//
+// Bitcrush Pro
+//
+// Studio-grade bit-crusher: low-amplitude pink-noise dither is added to the
+// input *before* the quantizer to break up correlated quantisation artefacts
+// (the same trick mastering converters use), then `decimator_ar` drops the
+// signal to the target sample rate / bit depth, and `smooth_decimator_ar` at
+// the same rate softens the resampled steps so the output has digital grit
+// without harsh aliasing.
+//
+// Usage:
+//   group.add_effect("crush", "bitcrush_pro", #{
+//     sample_rate: 8000.0,
+//     bits: 8.0,
+//     dither_amount: 0.5,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   sample_rate:   Target sample rate in Hz (1000.0 to 44100.0)
+//   bits:          Target bit depth, non-integer allowed (1.0 to 16.0)
+//   dither_amount: Pink-noise dither level injected pre-quantizer (0.0 to 1.0,
+//                  scales to ~0.005 amplitude at full)
+//   mix:           Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:         Output level trim (1.0 = unity)
+
+define_fx("bitcrush_pro")
+    .param("sample_rate", 8000.0)
+    .param("bits", 8.0)
+    .param("dither_amount", 0.5)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, sample_rate, bits, dither_amount, mix, level| {
+        // Pink-noise dither: independent per channel, scaled small enough that
+        // it sits below the lowest quantisation step at typical settings.
+        let dither_l = pink_noise_ar() * dither_amount * 0.005;
+        let dither_r = pink_noise_ar() * dither_amount * 0.005;
+
+        let dithered_l = input[0] + dither_l;
+        let dithered_r = input[1] + dither_r;
+
+        // Quantise: rate + bit-depth reduction.
+        let crushed_l = decimator_ar(dithered_l, sample_rate, bits);
+        let crushed_r = decimator_ar(dithered_r, sample_rate, bits);
+
+        // Smooth the resampled steps at the same target rate. 0.3 smoothing
+        // keeps the bit-crush character while taming the worst alias spikes.
+        let smoothed_l = smooth_decimator_ar(crushed_l, sample_rate, 0.3);
+        let smoothed_r = smooth_decimator_ar(crushed_r, sample_rate, 0.3);
+
+        let wet_l = leak_dc_ar(smoothed_l, 0.995);
+        let wet_r = leak_dc_ar(smoothed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

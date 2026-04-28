@@ -1,0 +1,70 @@
+// kind=fx | category=glitch | flavor=stutter_repeat | stereo=true | params=subdivision,gate_pattern,mix,level
+//
+// Stutter Repeat
+//
+// Continuously records the input into a 1-second circular buffer per channel
+// and re-triggers playback from the top of the slice every `subdivision`
+// seconds — a classic IDM/breakbeat stutter. A slow pulse-LFO at one quarter
+// of the retrigger rate gates the wet output to create rhythmic on/off
+// patterns; `gate_pattern` is the gate's duty cycle so 1.0 lets everything
+// through while smaller values chop holes in the repeats.
+//
+// Set `subdivision` to a musical period in seconds:
+//   1/4  at 120 BPM = 0.500
+//   1/8  at 120 BPM = 0.250
+//   1/16 at 120 BPM = 0.125
+//   1/32 at 120 BPM = 0.0625
+//
+// Usage:
+//   group.add_effect("stut", "stutter_repeat", #{
+//     subdivision: 0.125,
+//     gate_pattern: 0.5,
+//     mix: 0.5,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   subdivision:  Period between retriggers in seconds (0.03 to 1.0)
+//   gate_pattern: Wet-output gate duty cycle. 1.0 = open (no gate),
+//                 0.5 = even chop, 0.0 = silent (0.0 to 1.0)
+//   mix:          Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:        Output level trim (1.0 = unity)
+
+define_fx("stutter_repeat", |builder| {
+    builder
+        .param("subdivision", 0.125)
+        .param("gate_pattern", 0.5)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, subdivision, gate_pattern, mix, level| {
+            // 1-second circular buffers (48000 frames @ 48 kHz).
+            let buf_l = local_buf_ir(1, 48000);
+            let buf_r = local_buf_ir(1, 48000);
+
+            // Continuously record, looping back to frame 0 at end of buffer.
+            record_buf_ar(input[0], buf_l, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+            record_buf_ar(input[1], buf_r, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+
+            // Re-anchor the playhead to startPos=0 every `subdivision` seconds
+            // so playback restarts from the freshest chunk of the loop.
+            let trig = impulse_ar(1.0 / subdivision, 0.0);
+            let stut_l = play_buf_ar(1, buf_l, 1.0, trig, 0.0, 1.0, 0);
+            let stut_r = play_buf_ar(1, buf_r, 1.0, trig, 0.0, 1.0, 0);
+
+            // Rhythmic chop gate at one quarter the retrigger rate so each
+            // gate cell spans 4 stutters. lf_pulse_ar's width = duty cycle:
+            // 1.0 = always 1, 0.0 = always 0, 0.5 = even on/off.
+            let gate = lf_pulse_ar(0.25 / subdivision, 0.0, gate_pattern);
+
+            let gated_l = stut_l * gate;
+            let gated_r = stut_r * gate;
+
+            let wet_l = leak_dc_ar(gated_l, 0.995);
+            let wet_r = leak_dc_ar(gated_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
+        })
+});
