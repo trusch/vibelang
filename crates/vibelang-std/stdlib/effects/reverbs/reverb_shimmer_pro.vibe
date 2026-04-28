@@ -1,0 +1,94 @@
+// kind=fx | category=reverb | flavor=shimmer_pro | stereo=true | params=time,shimmer_amount,mix,level
+//
+// Shimmer Reverb (Pro)
+//
+// JPverb wet path with a phase-vocoder pitch-shifted feedback loop. The wet
+// stereo output is run per channel through `fft_kr` -> `pv_bin_shift_kr`
+// (stretch=2.0, i.e. +12 semitones / one octave up) -> `ifft_ar` and the
+// shifted signal is fed back into the JPverb input scaled by
+// `shimmer_amount`. Each pass through the loop transposes the tail up
+// another octave, building the cascading harmonic stack characteristic of
+// Strymon BigSky / Eventide Space style shimmer reverbs but with a clean PV
+// transposition instead of the delay-based pitch approximation used in the
+// older `shimmer_reverb` effect.
+//
+// Usage:
+//   group.add_effect("shim", "reverb_shimmer_pro", #{
+//     time: 3.0,
+//     shimmer_amount: 0.5,
+//     mix: 0.3,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   time:           JPverb reverb time in seconds (0.1 to 60)
+//   shimmer_amount: Amount of pitch-shifted signal fed back into the
+//                   JPverb input (0.0 = clean JPverb, 1.0 = self-oscillating
+//                   shimmer cascade — keep <~0.7 in practice)
+//   mix:            Dry/wet crossfade (0.0 = dry, 1.0 = wet)
+//   level:          Output level trim applied after the dry/wet mix
+
+define_fx("reverb_shimmer_pro", |builder| {
+    builder
+        .param("time", 3.0)
+        .param("shimmer_amount", 0.5)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, time, shimmer_amount, mix, level| {
+            // Read the previous block's pitch-shifted feedback (2 channels).
+            let fb = local_in_ar(2.0);
+            let fb_l = channel(fb, 0);
+            let fb_r = channel(fb, 1);
+
+            // Mix dry input to mono and add scaled feedback. The feedback is
+            // mixed to mono on the way in so JPverb's stereo decorrelation
+            // continues to act on a single source rather than re-spreading
+            // an already-stereo image.
+            let dry_mono = (input[0] + input[1]) * 0.5;
+            let fb_mono = (fb_l + fb_r) * 0.5;
+            let verb_in = dry_mono + fb_mono * shimmer_amount;
+
+            // JPverb (stereo out). Non-exposed params left at musical defaults:
+            // damp=0.3, size=1.0, earlyDiff=0.707, modDepth=0.1, modFreq=2.0,
+            // low/mid/high=1.0, lowcut=500 Hz, highcut=2000 Hz.
+            let verb = j_pverb_ar(
+                verb_in, time, 0.3, 1.0,
+                0.707, 0.1, 2.0,
+                1.0, 1.0, 1.0,
+                500.0, 2000.0
+            );
+            let verb_l = channel(verb, 0);
+            let verb_r = channel(verb, 1);
+
+            // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
+            let buf_l = local_buf_ir(1.0, 2048.0);
+            let buf_r = local_buf_ir(1.0, 2048.0);
+
+            // Analyse with 50% hop and Hann window.
+            let chain_l = fft_kr(buf_l, verb_l, 0.5, 1.0, 1.0, 0.0);
+            let chain_r = fft_kr(buf_r, verb_r, 0.5, 1.0, 1.0, 0.0);
+
+            // Pitch shift +12 semitones (one octave up) by stretching bin
+            // indices by 2.0. PV_BinShift moves magnitude AND phase together
+            // so this is a true frequency scaling, not a magnitude-only shift.
+            let shifted_chain_l = pv_bin_shift_kr(chain_l, 2.0, 0.0, 1.0);
+            let shifted_chain_r = pv_bin_shift_kr(chain_r, 2.0, 0.0, 1.0);
+
+            // Resynthesise the shifted feedback signal.
+            let shifted_l = ifft_ar(shifted_chain_l, 1.0, 0.0);
+            let shifted_r = ifft_ar(shifted_chain_r, 1.0, 0.0);
+
+            // Send the pitch-shifted wet back to the local feedback bus for
+            // the next block to read via local_in_ar.
+            local_out_ar([shifted_l, shifted_r]);
+
+            // DC-block both wet channels before the dry/wet mix.
+            let wet_l = leak_dc_ar(verb_l, 0.995);
+            let wet_r = leak_dc_ar(verb_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
+        })
+});
