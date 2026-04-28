@@ -1,0 +1,106 @@
+[
+  {
+    "name": "MdaPiano",
+    "description": "Piano synthesiser ported from Paul Kellett's MDA VST plugin (sc3-plugins). Stereo output with width control. Monophonic — retrigger via gate. Most parameters update only on note-on.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "signal",
+        "default": 440,
+        "description": "Frequency of the note in Hz"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 1,
+        "description": "Note-on when gate goes from nonpositive to positive; note-off on the reverse"
+      },
+      {
+        "name": "vel",
+        "type": "signal",
+        "default": 100,
+        "description": "Velocity (0 to 127)"
+      },
+      {
+        "name": "decay",
+        "type": "float",
+        "default": 0.8,
+        "description": "Time for notes to decay after the initial strike"
+      },
+      {
+        "name": "release",
+        "type": "float",
+        "default": 0.8,
+        "description": "Time for notes to decay after the key is released"
+      },
+      {
+        "name": "hard",
+        "type": "float",
+        "default": 0.8,
+        "description": "Hardness of the strike"
+      },
+      {
+        "name": "velhard",
+        "type": "float",
+        "default": 0.8,
+        "description": "Velocity sensitivity of strike hardness"
+      },
+      {
+        "name": "muffle",
+        "type": "float",
+        "default": 0.8,
+        "description": "High-frequency damping"
+      },
+      {
+        "name": "velmuff",
+        "type": "float",
+        "default": 0.8,
+        "description": "Velocity sensitivity of muffling"
+      },
+      {
+        "name": "velcurve",
+        "type": "float",
+        "default": 0.8,
+        "description": "Velocity response curve"
+      },
+      {
+        "name": "stereo",
+        "type": "float",
+        "default": 0.2,
+        "description": "Width of the stereo effect (0 to 1) — low notes pan left, high notes right"
+      },
+      {
+        "name": "tune",
+        "type": "float",
+        "default": 0.5,
+        "description": "Overall tuning"
+      },
+      {
+        "name": "random",
+        "type": "float",
+        "default": 0.1,
+        "description": "Randomness in note tuning"
+      },
+      {
+        "name": "stretch",
+        "type": "float",
+        "default": 0.1,
+        "description": "Stretch tuning (higher notes pushed higher)"
+      },
+      {
+        "name": "sustain",
+        "type": "signal",
+        "default": 0,
+        "description": "If positive, acts as if the sustain pedal is pressed"
+      }
+    ],
+    "outputs": 2,
+    "category": "MdaUGens",
+    "functions": [
+      "mda_piano_ar"
+    ]
+  }
+]
