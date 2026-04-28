@@ -1,0 +1,146 @@
+[
+  {
+    "name": "BlitB3",
+    "description": "Band-limited impulse generator based on B-spline interpolation of order 3. Produces a clean impulse train suitable for integration into saw/square/triangle waveforms. From sc3-plugins AntiAliasingOscillators (Nam, Valimaki, Abel, Smith 2010).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hertz. Maximum is sampling rate / 4 (period of 4 samples)"
+      }
+    ],
+    "outputs": 1,
+    "category": "AntiAliasingOscillators",
+    "functions": [
+      "blit_b3_ar"
+    ]
+  },
+  {
+    "name": "BlitB3Saw",
+    "description": "BLIT-derived sawtooth waveform. Band-limited impulse generator (B-spline order 3) integrated to produce a sawtooth. Perceptually indistinguishable from analogue saw up to ~5kHz. From sc3-plugins AntiAliasingOscillators.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hertz. Maximum is sampling rate / 4"
+      },
+      {
+        "name": "leak",
+        "type": "float",
+        "default": 0.99,
+        "description": "Leaky integrator coefficient. 0 returns the impulse train; values approaching 1.0 fill the inter-impulse space producing a smooth saw"
+      }
+    ],
+    "outputs": 1,
+    "category": "AntiAliasingOscillators",
+    "functions": [
+      "blit_b3_saw_ar"
+    ]
+  },
+  {
+    "name": "BlitB3Square",
+    "description": "Bipolar BLIT-derived square waveform. Band-limited impulse generator (B-spline order 3) alternating polarity and integrated to produce a square wave. From sc3-plugins AntiAliasingOscillators.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hertz. Frequency only updates at the close of each period"
+      },
+      {
+        "name": "leak",
+        "type": "float",
+        "default": 0.99,
+        "description": "Leaky integrator coefficient. 0 returns the impulse train; values approaching 1.0 produce a smooth square"
+      }
+    ],
+    "outputs": 1,
+    "category": "AntiAliasingOscillators",
+    "functions": [
+      "blit_b3_square_ar"
+    ]
+  },
+  {
+    "name": "BlitB3Tri",
+    "description": "Bipolar BLIT-derived triangle waveform. Band-limited impulse generator (B-spline order 3) doubly integrated to produce a triangle. Richer than LFTri but less efficient. From sc3-plugins AntiAliasingOscillators.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hertz"
+      },
+      {
+        "name": "leak",
+        "type": "float",
+        "default": 0.99,
+        "description": "First leaky integrator coefficient (square stage)"
+      },
+      {
+        "name": "leak2",
+        "type": "float",
+        "default": 0.99,
+        "description": "Second leaky integrator coefficient (triangle stage)"
+      }
+    ],
+    "outputs": 1,
+    "category": "AntiAliasingOscillators",
+    "functions": [
+      "blit_b3_tri_ar"
+    ]
+  },
+  {
+    "name": "DPW3Tri",
+    "description": "Triangle waveform generated via a 3rd-order differentiated polynomial waveform. Very clean above 200 Hz; some distortion creeps in for lower frequencies. From sc3-plugins AntiAliasingOscillators.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hertz"
+      }
+    ],
+    "outputs": 1,
+    "category": "AntiAliasingOscillators",
+    "functions": [
+      "dpw3_tri_ar"
+    ]
+  },
+  {
+    "name": "DPW4Saw",
+    "description": "Sawtooth waveform generated via a 4th-order differentiated polynomial waveform. Internally uses DPW2 below 400 Hz with a crossfade to DPW4 in the 400-600 Hz region (Valimaki, Nam, Smith, Abel 2010). From sc3-plugins AntiAliasingOscillators.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hertz"
+      }
+    ],
+    "outputs": 1,
+    "category": "AntiAliasingOscillators",
+    "functions": [
+      "dpw4_saw_ar"
+    ]
+  }
+]
