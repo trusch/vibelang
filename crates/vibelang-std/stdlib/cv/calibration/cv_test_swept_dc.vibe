@@ -1,0 +1,31 @@
+// kind=cv | category=calibration | flavor=swept_dc | range=-10..+10 V | params=period,gate
+//
+// Slow DC ramp `-1.0 → +1.0` audio (= `-10 V → +10 V` at the jack under the
+// standard `1.0 = +10 V` convention), repeating with period `period` seconds
+// (default 10 s). Implemented as a low-frequency sawtooth so the ramp resets
+// instantly at the top of each cycle; the discontinuity is intentional —
+// it's how you can spot the cycle on a multimeter or scope.
+//
+// Use this to:
+//   • Verify the DC-coupled output reaches the documented ±10 V rails.
+//   • Measure the actual peak voltage at the jack and compare to the spec —
+//     if your interface tops out at ±5 V or ±12 V, this synthdef tells you
+//     the trim factor to apply at the routing stage.
+//   • Spot-check cable polarity (positive ramp → positive at the jack tip).
+//
+// `period` is in seconds (sawtooth frequency = `1 / period`). Default 10 s
+// gives a slow enough sweep to read on a hand-held DMM.
+//
+// Output is hard-clipped to ±1.0 per the CV contract (kb/stdlib-cv-spec.md
+// §2.3); `lf_saw_ar` already produces -1..+1, so the clip is a no-op
+// safeguard if `period` is ever modulated to extreme values.
+
+define_synthdef("cv_test_swept_dc")
+    .param("period", 10.0)
+    .param("gate", 1.0)
+    .body(|period, gate| {
+        let freq = 1.0 / period;
+        let ramp = lf_saw_ar(freq, 0.0) * gate;
+        let clipped = clip_ar(ramp, -1.0, 1.0);
+        [clipped]
+    });

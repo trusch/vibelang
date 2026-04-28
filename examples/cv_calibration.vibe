@@ -1,0 +1,50 @@
+// CV calibration patch — Story 0 hello-world.
+//
+// Routes the three calibration synthdefs to ES-3 jacks 1, 2, and 3 so you
+// can verify the DC-coupled output reaches the documented voltages with a
+// multimeter at the jack.
+//
+// Run scsynth with at least 8 output channels — vibelang's CLI accepts
+// `--output-channels 8` (see `crates/vibelang-cli/src/main.rs:339`). The
+// JACK side then needs to be patched so vibelang's outputs 1..8 land on the
+// ES-3's ADAT input pairs.
+//
+// Expected meter readings (under the standard `1.0 audio = +10 V` convention,
+// see `kb/stdlib-cv-spec.md` §1):
+//
+//   Jack 1 — slow `±10 V` sweep, period 10 s.
+//   Jack 2 — stepped: `0 V → +1 V → +2 V → +3 V`, 3 s per step, repeating.
+//   Jack 3 — steady `+5.000 V`.
+//
+// If your interface does not reach ±10 V, jack 1's measured peak voltage is
+// the trim factor you apply at the routing stage.
+
+import "stdlib/cv/calibration/cv_test_swept_dc.vibe";
+import "stdlib/cv/calibration/cv_voct_calib.vibe";
+import "stdlib/cv/calibration/cv_v5_steady.vibe";
+
+// One group per CV jack. `.output([N-1, N])` pins the group's link synth to
+// hardware bus pair starting at N-1. The CV synthdef writes one channel
+// (the L of the pair); the R channel of each pair is silent and reserved
+// until the multi-output routing work in
+// `kb/voice-multi-output-cv-routing-plan.md` lands.
+group("cv1").output([0, 1]);
+group("cv2").output([2, 3]);
+group("cv3").output([4, 5]);
+
+voice("ramp")
+    .synth("cv_test_swept_dc")
+    .param("period", 10.0)
+    .group("cv1")
+    .start();
+
+voice("voct")
+    .synth("cv_voct_calib")
+    .param("step_secs", 3.0)
+    .group("cv2")
+    .start();
+
+voice("five")
+    .synth("cv_v5_steady")
+    .group("cv3")
+    .start();

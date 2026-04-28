@@ -1,0 +1,33 @@
+// kind=cv | category=calibration | flavor=voct_calib | range=0..+3 V | params=step_secs,gate
+//
+// 1V/oct calibration sequence. Steps through `0 V → +1 V → +2 V → +3 V`,
+// holding each level for `step_secs` seconds (default 3 s) before advancing.
+// After +3 V the counter wraps back to 0 V and the cycle repeats.
+//
+// Under the standard `1.0 = +10 V` convention this means the audio output
+// holds at `0.0 → 0.1 → 0.2 → 0.3` audio in turn — exactly one octave's
+// worth of V/oct CV per step.
+//
+// Use this to:
+//   • Calibrate a downstream quantizer or V/oct VCO: it should pitch up by
+//     one octave between each step. If it does not, your interface's volts-
+//     per-sample is wrong; measure with `cv_test_swept_dc` and trim.
+//   • Sanity-check note-to-CV conversion patches by feeding the CV through
+//     a Eurorack VCO and listening for the four-step pitch ladder.
+//
+// Implementation: an `impulse_kr` fires every `step_secs` seconds, advancing
+// a `stepper_kr` counter that cycles 0..3. The integer step is multiplied
+// by `0.1` (= `1 V` audio coefficient) and converted to audio rate. Output
+// is hard-clipped per the CV contract; under nominal operation the signal
+// never exceeds 0.3, so the clip is a safeguard.
+
+define_synthdef("cv_voct_calib")
+    .param("step_secs", 3.0)
+    .param("gate", 1.0)
+    .body(|step_secs, gate| {
+        let trig = impulse_kr(1.0 / step_secs);
+        let step = stepper_kr(trig, 0.0, 0.0, 3.0, 1.0, 0.0);
+        let cv = k2_a_ar(step * 0.1) * gate;
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });

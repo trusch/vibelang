@@ -1,0 +1,22 @@
+// kind=cv | category=calibration | flavor=v5_steady | range=0..+5 V | params=gate
+//
+// Constant +5 V reference. Routes a steady `+0.5` audio sample to the jack,
+// which under the standard `1.0 = +10 V` convention measures `+5.000 V` at a
+// DC-coupled output (e.g. ES-3).
+//
+// Use this to:
+//   • Verify the +5V level used by `gate` and `trigger` synthdefs.
+//   • Provide a permanent gate-high reference for modules that need a held gate.
+//   • Sanity-check meter polarity and DC scale across a setup.
+//
+// Output is hard-clipped per the CV contract (kb/stdlib-cv-spec.md §2.3) even
+// though the static value never approaches the rails — the clip stage stays
+// in place so the synthdef matches the reference skeleton.
+
+define_synthdef("cv_v5_steady")
+    .param("gate", 1.0)
+    .body(|gate| {
+        let cv = dc_ar(0.5) * gate;
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });
