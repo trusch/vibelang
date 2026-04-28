@@ -12,3 +12,6 @@ import "stdlib/effects/reverbs/reverb_greyhole.vibe";
 import "stdlib/effects/reverbs/reverb_fdn8.vibe";
 import "stdlib/effects/reverbs/reverb_gated.vibe";
 import "stdlib/effects/reverbs/reverb_reverse.vibe";
+import "stdlib/effects/reverbs/reverb_shimmer_pro.vibe";
+import "stdlib/effects/reverbs/reverb_infinite.vibe";
+import "stdlib/effects/reverbs/reverb_ducked.vibe";

@@ -1,0 +1,53 @@
+// kind=fx | category=modulation | flavor=ring_mod_modulated | stereo=true | params=carrier_min,carrier_max,sweep_rate,mix,level
+//
+// Ring Mod Modulated (LFO-Swept Carrier)
+//
+// Classic ring modulation but with the carrier frequency continuously swept
+// by a slow sine LFO. With `carrier_min` in the sub-audio range and
+// `carrier_max` up in the audio range, the carrier glides from tremolo-like
+// amplitude wobble at the bottom of the sweep into bell-like inharmonic
+// sidebands at the top. Setting both carrier ends inside the audio range
+// gives a metallic vibrato; both in sub-audio gives a rhythmic chop.
+//
+// Usage:
+//   group.add_effect("rmod", "ring_mod_modulated", #{
+//     carrier_min: 50.0,
+//     carrier_max: 800.0,
+//     sweep_rate: 0.3,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   carrier_min: Lowest carrier frequency in Hz (sub-audio to audio)
+//   carrier_max: Highest carrier frequency in Hz
+//   sweep_rate:  LFO rate in Hz that sweeps the carrier (0.05 to 10.0)
+//   mix:         Dry/wet mix
+//   level:       Output trim applied after the dry/wet mix
+
+define_fx("ring_mod_modulated", |builder| {
+    builder
+        .param("carrier_min", 50.0)
+        .param("carrier_max", 800.0)
+        .param("sweep_rate", 0.3)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, carrier_min, carrier_max, sweep_rate, mix, level| {
+            // Slow LFO at kr maps to [carrier_min, carrier_max]. sin_osc_kr
+            // sits in [-1, 1] so lin_lin handles the bipolar→unipolar mapping
+            // for us.
+            let lfo = sin_osc_kr(sweep_rate, 0.0);
+            let carrier_freq = lin_lin_kr(lfo, -1.0, 1.0, carrier_min, carrier_max);
+
+            // Audio-rate carrier swept by the LFO-derived frequency.
+            let carrier = sin_osc_ar(carrier_freq, 0.0);
+
+            let wet_l = leak_dc_ar(input[0] * carrier, 0.995);
+            let wet_r = leak_dc_ar(input[1] * carrier, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

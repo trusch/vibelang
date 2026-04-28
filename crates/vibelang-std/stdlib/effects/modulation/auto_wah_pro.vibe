@@ -1,0 +1,64 @@
+// kind=fx | category=modulation | flavor=auto_wah_pro | stereo=true | params=sensitivity,q,range_min,range_max,mix,level
+//
+// Auto-Wah Pro
+//
+// Envelope-following wah with explicit Q control and a user-defined sweep
+// range. An amplitude follower (`amplitude_kr`) tracks the input level and
+// drives a Butterworth bandpass cutoff between `range_min` and `range_max`.
+// `sensitivity` scales the env before the range mapping, so quieter material
+// can still reach the top of the sweep, and loud material can be tamed.
+// `q` sets filter resonance via bandwidth in octaves (`bw = 1/q`) — higher
+// `q` gives a tighter, more vocal "yow" character.
+//
+// Usage:
+//   group.add_effect("wah", "auto_wah_pro", #{
+//     sensitivity: 1.0,
+//     q: 2.0,
+//     range_min: 250.0,
+//     range_max: 3000.0,
+//     mix: 1.0,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   sensitivity: Envelope-to-cutoff scaling (0.1 to 4.0)
+//   q:           Filter resonance, higher = narrower (0.5 to 8.0)
+//   range_min:   Lowest cutoff frequency in Hz
+//   range_max:   Highest cutoff frequency in Hz
+//   mix:         Dry/wet mix
+//   level:       Output trim applied after the dry/wet mix
+
+define_fx("auto_wah_pro", |builder| {
+    builder
+        .param("sensitivity", 1.0)
+        .param("q", 2.0)
+        .param("range_min", 250.0)
+        .param("range_max", 3000.0)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, sensitivity, q, range_min, range_max, mix, level| {
+            // Per-channel envelope follower at kr — cheaper than ar and the
+            // bandpass cutoff doesn't need audio-rate detail. Scale the env
+            // by sensitivity, then clip to [0, 1] so the lin_lin mapping
+            // stays inside the user-defined range.
+            let env_l = clip_kr(amplitude_kr(input[0], 0.01, 0.1) * sensitivity, 0.0, 1.0);
+            let env_r = clip_kr(amplitude_kr(input[1], 0.01, 0.1) * sensitivity, 0.0, 1.0);
+
+            let cutoff_l = lin_lin_kr(env_l, 0.0, 1.0, range_min, range_max);
+            let cutoff_r = lin_lin_kr(env_r, 0.0, 1.0, range_min, range_max);
+
+            // Butterworth bandpass: bw is in octaves, so q acts as a true
+            // resonance control via the reciprocal.
+            let bw = 1.0 / q;
+            let wah_l = b_band_pass_ar(input[0], cutoff_l, bw);
+            let wah_r = b_band_pass_ar(input[1], cutoff_r, bw);
+
+            let wet_l = leak_dc_ar(wah_l, 0.995);
+            let wet_r = leak_dc_ar(wah_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

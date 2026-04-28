@@ -1,0 +1,93 @@
+// kind=fx | category=modulation | flavor=phaser_8stage | stereo=true | params=rate,depth,feedback,mix,level
+//
+// 8-Stage Phaser
+//
+// Eight cascaded `allpass_c_ar` stages with LFO-modulated delay times and a
+// true feedback path (via `local_in_ar` / `local_out_ar`). Doubling the stage
+// count over a classic 4-stage MXR-style phaser produces a denser comb of
+// notches and a deeper sweep — closer in character to studio rack phasers
+// (Eventide Instant Phaser, Bel BF20). Stereo width is provided by a 90°
+// phase offset between the left and right LFOs.
+//
+// Per-stage delays are spread by mildly inharmonic ratios so the eight notches
+// do not pile up at integer multiples of each other.
+//
+// Usage:
+//   group.add_effect("ph", "phaser_8stage", #{
+//     rate: 0.5,
+//     depth: 0.0008,
+//     feedback: 0.5,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   rate:     LFO rate in Hz (0.05 to 5.0)
+//   depth:    Modulation depth in seconds (0.0 to 0.0015)
+//   feedback: Feedback through the chain (0.0 to 0.95 — gets resonant near 1)
+//   mix:      Dry/wet mix (notches require some dry to be audible — 0.5 is classic)
+//   level:    Output trim applied after the dry/wet mix
+
+define_fx("phaser_8stage", |builder| {
+    builder
+        .param("rate", 0.5)
+        .param("depth", 0.0008)
+        .param("feedback", 0.5)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, rate, depth, feedback, mix, level| {
+            // Stereo LFOs 90 degrees apart so the notches sweep out of phase
+            // between channels — gives the phaser a wide, swirling field.
+            let lfo_l = sin_osc_kr(rate, 0.0);
+            let lfo_r = sin_osc_kr(rate, 1.5707963);
+
+            // Base delay sits a touch below 1 ms so even at zero depth the
+            // chain colours the signal subtly.
+            let dt_l = 0.0006 + depth * lfo_l;
+            let dt_r = 0.0006 + depth * lfo_r;
+
+            // Read the previous block's chain output as feedback. Two channels
+            // so the L and R chains stay independent.
+            let fb = local_in_ar(2.0);
+            let fb_l = channel(fb, 0);
+            let fb_r = channel(fb, 1);
+
+            // Mix feedback into the chain input, soft-saturated to keep the
+            // loop from blowing up at high feedback settings.
+            let s_l = tanh_ar(input[0] + fb_l * feedback);
+            let s_r = tanh_ar(input[1] + fb_r * feedback);
+
+            // Eight allpass stages with mildly inharmonic delay multipliers.
+            // The 0.005 max-delay headroom comfortably exceeds dt * 2.31.
+            s_l = allpass_c_ar(s_l, 0.005, dt_l,        0.0);
+            s_l = allpass_c_ar(s_l, 0.005, dt_l * 1.13, 0.0);
+            s_l = allpass_c_ar(s_l, 0.005, dt_l * 1.27, 0.0);
+            s_l = allpass_c_ar(s_l, 0.005, dt_l * 1.41, 0.0);
+            s_l = allpass_c_ar(s_l, 0.005, dt_l * 1.59, 0.0);
+            s_l = allpass_c_ar(s_l, 0.005, dt_l * 1.79, 0.0);
+            s_l = allpass_c_ar(s_l, 0.005, dt_l * 2.03, 0.0);
+            s_l = allpass_c_ar(s_l, 0.005, dt_l * 2.31, 0.0);
+
+            s_r = allpass_c_ar(s_r, 0.005, dt_r,        0.0);
+            s_r = allpass_c_ar(s_r, 0.005, dt_r * 1.13, 0.0);
+            s_r = allpass_c_ar(s_r, 0.005, dt_r * 1.27, 0.0);
+            s_r = allpass_c_ar(s_r, 0.005, dt_r * 1.41, 0.0);
+            s_r = allpass_c_ar(s_r, 0.005, dt_r * 1.59, 0.0);
+            s_r = allpass_c_ar(s_r, 0.005, dt_r * 1.79, 0.0);
+            s_r = allpass_c_ar(s_r, 0.005, dt_r * 2.03, 0.0);
+            s_r = allpass_c_ar(s_r, 0.005, dt_r * 2.31, 0.0);
+
+            // Send the chain output to the local feedback bus for next block.
+            local_out_ar([s_l, s_r]);
+
+            // DC-block before the dry/wet mix — long allpass chains can
+            // accumulate offset, especially with feedback.
+            let wet_l = leak_dc_ar(s_l, 0.995);
+            let wet_r = leak_dc_ar(s_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});
