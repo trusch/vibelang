@@ -1,0 +1,100 @@
+// Morphagene Story A — Reel + basic varispeed playback (single splice)
+//
+// Single-splice synthdef that loops a stereo buffer with continuous
+// Vari-Speed control. Per `kb/morphagene-synthdef-plan.md` §6.A — the
+// foundation; usable on its own.
+//
+// The active Reel is a server-side buffer passed in via `bufnum` (the user
+// loads it; the synthdef does not). Splice bounds default to the whole
+// buffer: leaving `splice_end_frame` at 0 selects `BufFrames(bufnum)` so
+// the synth plays the full Reel as one splice. Multi-splice metadata is
+// Story B.
+//
+// Vari-Speed mapping (per the Make Noise manual's "12 up / 26 down"):
+//   vari_speed = +1   → rate = +2.0           (forward 12 ST, 2^(12/12))
+//   vari_speed =  0   → rate =  0.0           (12:00 halt)
+//   vari_speed = -1   → rate = -4.4898        (reverse 26 ST, 2^(26/12))
+// The two halves are independent cubics so resolution is finer near 0
+// (musically usable wow/flutter modulation) and the curve passes smoothly
+// through zero — no dead-zone needed.
+//
+// Story A scope ONLY. Out of scope: splice metadata, Organize / Shift,
+// SOS recording, granular path, Morph staircase, EOSG, CLK modes, CV-out
+// envelope follower (skipped per ticket; would complicate channel layout).
+//
+// Stereo limitation (v1): the .vibe DSL surfaces only the first output of
+// PlayBuf, so a stereo Reel is read as its left channel duplicated to
+// L / R. Hardware Morphagene's "L (Mono)" jack normalises identically when
+// only L is patched, so this matches one supported routing. True dual-
+// channel reads land alongside the granular path in Story C.
+
+define_synthdef("morphagene", |builder| {
+    builder
+        .param("bufnum", 0.0)
+        .param("splice_start_frame", 0.0)
+        .param("splice_end_frame", 0.0)   // 0 = whole buffer (BufFrames(bufnum))
+        .param("vari_speed", 0.0)         // bipolar -1..+1, 0 = halt
+        .param("slide", 0.0)              // 0..1, start position within splice
+        .param("play_gate", 1.0)          // 0/1; 0 silences output (synth alive)
+        .param("play_retrigger", 0.0)     // rising edge restarts from start
+        .param("gate", 1.0)               // synth-instance lifecycle (note on/off)
+        .param("amp", 0.5)
+        .body(|bufnum, splice_start_frame, splice_end_frame, vari_speed,
+               slide, play_gate, play_retrigger, gate, amp| {
+
+            // --- Vari-Speed → rate ---------------------------------------------
+            // Asymmetric cubic. Splitting positive/negative halves lets the
+            // forward and reverse maxima differ (2.0 vs 4.4898) while keeping
+            // the curve smooth at zero — both halves vanish as v → 0.
+            let v_pos = vari_speed.max(0.0);
+            let v_neg = vari_speed.min(0.0);
+            let rate = (v_pos * v_pos * v_pos) * 2.0
+                     + (v_neg * v_neg * v_neg) * 4.4898;
+
+            // --- Splice bounds -------------------------------------------------
+            // splice_end_frame == 0 sentinels "whole buffer". `clip(end, 0, 1)`
+            // is 0 when end is exactly 0 and saturates to 1 for any end ≥ 1
+            // frame — a cheap branch-free select between BufFrames and the
+            // user-supplied end.
+            let buf_n = buf_frames_kr(bufnum);
+            let end_is_set = clip(splice_end_frame, 0.0, 1.0);
+            let end_use = (1.0 - end_is_set) * buf_n
+                        + end_is_set * splice_end_frame;
+            let splice_len = end_use - splice_start_frame;
+            let start_pos = splice_start_frame + slide * splice_len;
+
+            // --- Playback ------------------------------------------------------
+            // BufRateScale keeps playback calibrated when the Reel SR ≠ server
+            // SR (Morphagene Reels are 48 kHz natively).
+            let buf_scale = buf_rate_scale_kr(bufnum);
+            let raw = play_buf_ar(
+                2,                          // numChannels: stereo Reel
+                bufnum,
+                rate * buf_scale,
+                play_retrigger,             // rising edge restarts from start_pos
+                start_pos,
+                1.0,                        // loop: continuous within splice
+                0.0                         // doneAction: envelope handles freeing
+            );
+
+            // --- Play-gate hold + instance envelope ----------------------------
+            // play_gate falling silences the output without freeing the synth
+            // (Morphagene "Play LOW = stop at EOS" semantics). The 5 ms lag
+            // hides edge clicks. Separately, `gate` drives a short ASR so the
+            // synth instance is freed cleanly when the triggering note ends.
+            let gate_lag = lag_ar(play_gate, 0.005);
+            let env = envelope()
+                .asr(0.005, 1.0, 0.02)
+                .gate(gate)
+                .cleanup_on_finish()
+                .build();
+
+            // --- Final mix: gate, amp, DC-block --------------------------------
+            // DC-block on the output per the ticket's required behavior #5.
+            let mixed = raw * gate_lag * env * amp;
+            let left  = leak_dc_ar(mixed, 0.995);
+            let right = leak_dc_ar(mixed, 0.995);
+
+            [left, right]
+        })
+});

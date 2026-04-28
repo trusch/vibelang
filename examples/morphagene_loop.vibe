@@ -1,0 +1,52 @@
+// Morphagene Story A example — load a stereo .wav as the Reel, loop it
+// through the morphagene synthdef with mid-Slide and a slow Vari-Speed
+// modulation, send the result through a hall reverb.
+//
+// Drop a stereo loop at `samples/loop.wav` (any length up to 2.9 min,
+// 48 kHz preferred). With no sample present this script still runs but
+// outputs silence.
+
+import "stdlib/instruments/sampler/morphagene.vibe";
+import "stdlib/effects/reverbs/hall_reverb.vibe";
+import "stdlib/modulators/lfo/lfo_sine.vibe";
+
+set_tempo(90);
+
+let reel = sample("reel", "samples/loop.wav").loop_mode(true);
+
+// Slow Vari-Speed wobble — sweeps between a touch reverse and ~1.6× forward,
+// demonstrating the cubic-near-center curve (resolution is finest near 0).
+let vs_lfo = modulator("vs_lfo")
+    .synth("lfo_sine")
+    .param("rate", 0.12)
+    .param("lo", -0.3)
+    .param("hi", 0.5)
+    .apply();
+
+let morph = define_group("Morphagene", || {
+    // .on(reel) sets bufnum from the loaded sample; .synth() then overrides
+    // the auto-selected sample_voice with our morphagene synthdef.
+    let v = voice("morph")
+        .on(reel)
+        .synth("morphagene")
+        .set_param("slide", 0.5)        // start halfway into the splice
+        .set_param("amp", 0.6)
+        .modulate("vari_speed", vs_lfo)
+        .gain(db(-9));
+
+    // Single hold note keeps the synth instance alive; play_gate=1 (default)
+    // means the Reel loops continuously inside the splice.
+    melody("morph_hold").on(v).notes("C3").apply();
+
+    fx("morph_verb")
+        .synth("hall_reverb")
+        .param("size", 0.7)
+        .param("decay", 0.6)
+        .param("damping", 0.4)
+        .param("mix", 0.35);
+});
+
+sequence("main")
+    .loop_bars(16)
+    .clip(bars(0)..bars(16), melody("morph_hold"))
+    .start();
