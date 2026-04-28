@@ -1,0 +1,72 @@
+// kind=fx | category=reverb | flavor=ducked | stereo=true | params=time,ducking,threshold,mix,level
+//
+// Ducked Reverb Effect
+//
+// JPverb tail auto-ducked by the dry input's amplitude envelope. When the
+// dry source is loud the wet path is gain-reduced so the reverb steps out
+// of the way; when dry goes quiet the tail blooms back up. Useful on
+// vocals, leads and busy sources where a static wet/dry balance muddies
+// transients.
+//
+// Usage:
+//   group.add_effect("verb", "reverb_ducked", #{
+//     time: 2.5,
+//     ducking: 0.7,
+//     threshold: 0.1,
+//     mix: 0.3,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   time:      Reverberation time in seconds (0.1 to 60)
+//   ducking:   Ducking amount (0.0 = no ducking, 1.0 = strong). Scales the
+//              compander's slope_above toward zero so loud dry crushes the wet.
+//   threshold: Compander threshold on the dry envelope (0.0 to 1.0)
+//   mix:       Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:     Final output trim (1.0 = unity)
+
+define_fx("reverb_ducked", |builder| {
+    builder
+        .param("time", 2.5)
+        .param("ducking", 0.7)
+        .param("threshold", 0.1)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, time, ducking, threshold, mix, level| {
+            // Mono mix of the dry input — feeds both the verb and the sidechain.
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // JPverb wet path. Non-exposed params left at musical defaults:
+            // damp=0.3, size=1.0, earlyDiff=0.707, modDepth=0.1, modFreq=2.0,
+            // low/mid/high=1.0, lowcut=500 Hz, highcut=2000 Hz.
+            let wet_node = j_pverb_ar(
+                mono, time, 0.3, 1.0,
+                0.707, 0.1, 2.0,
+                1.0, 1.0, 1.0,
+                500.0, 2000.0
+            );
+            let wet_left = channel(wet_node, 0);
+            let wet_right = channel(wet_node, 1);
+
+            // Sidechain envelope from the dry mono signal. Fast attack catches
+            // transients; medium release lets the verb breathe back in.
+            let sc_env = amplitude_ar(mono, 0.005, 0.1);
+
+            // ducking=0 -> slope_above=1.0 (no compression).
+            // ducking=1 -> slope_above=0.05 (heavy gain reduction above thresh).
+            let slope_above = 1.0 - ducking * 0.95;
+
+            // Compress the wet channels with the dry envelope as control.
+            let ducked_left = compander_ar(wet_left, sc_env, threshold, 1.0, slope_above, 0.005, 0.1);
+            let ducked_right = compander_ar(wet_right, sc_env, threshold, 1.0, slope_above, 0.005, 0.1);
+
+            // DC-block the wet path before the dry/wet mix.
+            let wet_l = leak_dc_ar(ducked_left, 0.995);
+            let wet_r = leak_dc_ar(ducked_right, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
+        })
+});
