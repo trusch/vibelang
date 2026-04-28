@@ -1,0 +1,85 @@
+// Morphagene Story C example — granular path with Gene-Size + Morph sweep.
+//
+// Story C extends the synthdef with a `grain_buf_ar`-based granular branch
+// driven by two new params: `gene_size` (0..1, cubic-mapped to grain
+// duration in seconds) and `morph` (0..1, the spawn-cadence staircase
+// gap → 1:1 → 2:1 → 3:1 + per-grain pan → 4:1 + per-grain pitch-up).
+//
+// The example sweeps both controls slowly so a single hold note traces the
+// full character arc:
+//   gene_size: triangle 0.0 → 0.85 → 0.0 over 16 bars — opens from the
+//   whole-splice playback (Story A path), through long granular grains,
+//   into the click/pulsar regime, and back. The branch crossfade kicks in
+//   at gene_size = 0.02 with a 5 ms lag, so the transition into granular
+//   territory is audible but not abrupt.
+//
+//   morph: rising saw 0.0 → 1.0 over 8 bars (two cycles per gene_size
+//   sweep). This walks the spawn-cadence staircase twice — gap, seamless,
+//   2× overlap, 3× + panning, 4× + pitch-up — for each gene_size phase.
+//
+// At small gene_size the result is dense pulsar/dust; at moderate
+// gene_size with morph past 12:00 the source disintegrates into a panned
+// cloud; at morph past 2:30 random pitch-up adds the manual's "???*"
+// chimera octaves. Drop a stereo loop at `samples/loop.wav` (48 kHz
+// preferred) — a sustained pad or vocal makes the grain identity audible.
+// With no sample present this script still runs but outputs silence.
+
+import "stdlib/instruments/sampler/morphagene.vibe";
+import "stdlib/effects/reverbs/plate_reverb.vibe";
+import "stdlib/modulators/lfo/lfo_tri.vibe";
+import "stdlib/modulators/lfo/lfo_saw.vibe";
+
+set_tempo(96);
+
+let reel = sample("reel", "samples/loop.wav").loop_mode(true);
+
+// Gene-Size LFO: triangle, 1 cycle per 16 bars at 96 BPM (≈ 0.025 Hz).
+// Range capped at 0.85 — beyond that the grain duration approaches the
+// 50 µs floor and the output becomes pulsar noise; useful but extreme.
+let gene_size_lfo = modulator("gene_size_lfo")
+    .synth("lfo_tri")
+    .param("rate", 0.025)         // 1 cycle / 16 bars at 96 BPM
+    .param("lo", 0.0)
+    .param("hi", 0.85)
+    .param("phase", 0.0)
+    .apply();
+
+// Morph LFO: rising saw, 1 cycle per 8 bars (2× faster than Gene-Size).
+// Walks 0.0 → 1.0 → reset, traversing the full spawn-cadence staircase
+// twice during one Gene-Size sweep so the user hears each Morph regime
+// at multiple grain sizes.
+let morph_lfo = modulator("morph_lfo")
+    .synth("lfo_saw")
+    .param("rate", 0.05)          // 1 cycle / 8 bars at 96 BPM
+    .param("lo", 0.0)
+    .param("hi", 1.0)
+    .param("phase", 0.0)
+    .apply();
+
+let granular = define_group("Granular", || {
+    let v = voice("morph_grain")
+        .on(reel)
+        .synth("morphagene")
+        .set_param("num_splices", 1.0)        // single splice = whole reel
+        .set_param("vari_speed", 0.7937)      // ≈ unity rate (cube root of 0.5)
+        .set_param("slide", 0.0)
+        .modulate("gene_size", gene_size_lfo)
+        .modulate("morph", morph_lfo)
+        .gain(db(-9));
+
+    // One held note keeps the synth instance alive; the LFOs drive the
+    // grain layer directly.
+    melody("morph_hold").on(v).notes("C3").apply();
+
+    fx("granular_verb")
+        .synth("plate_reverb")
+        .param("size", 0.7)
+        .param("decay", 0.55)
+        .param("damping", 0.45)
+        .param("mix", 0.35);
+});
+
+sequence("granular_main")
+    .loop_bars(16)
+    .clip(bars(0)..bars(16), melody("morph_hold"))
+    .start();

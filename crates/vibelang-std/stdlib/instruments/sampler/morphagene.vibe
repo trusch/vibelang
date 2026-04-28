@@ -1,110 +1,94 @@
-// Morphagene Story A + B — Reel + Splice metadata + Organize/Shift + SOS
+// Morphagene Story A + B + C — Reel + Splice metadata + Granular path
 //
-// Multi-splice reel with continuous Vari-Speed playback, Organize/Shift
-// splice selection (with EOS-hold semantics), runtime splice-marker
-// drop, and Sound-On-Sound recording. Per `kb/morphagene-synthdef-plan.md`
-// §3 (Reel/Splice/Gene hierarchy), §4 (UGen mapping), §6.B.
+// Multi-splice reel with continuous Vari-Speed playback, Organize-driven
+// splice selection (with EOS-hold semantics), Sound-On-Sound recording,
+// and a `grain_buf_ar`-based granular layer with the full Morph staircase
+// (gap → 1:1 → 2:1 → 3:1 + per-grain pan → 4:1 + per-grain pitch-up).
+// Per `kb/morphagene-synthdef-plan.md` §3 (Reel/Splice/Gene hierarchy),
+// §4 (UGen mapping), §6.B + §6.C.
 //
-// Splice model (B1, B2, B3, B4):
+// Splice model (Story B):
 //   The Reel is logically divided into `num_splices` evenly-spaced splices.
 //   For splice index i: start = i · BufFrames / num_splices,
 //                       end   = (i+1) · BufFrames / num_splices.
 //   This matches the manual's "splices distributed evenly across Organize
-//   range" property literally — every splice knob arc covers 1/N of the
-//   Reel, and the audible boundaries fall on sample-accurate grid points.
+//   range" property literally.
 //
-//   Two LocalBufs back the metadata layer per the ticket:
-//     marker_buf  : 300-frame buffer; receives current playback frame on
-//                   each rising edge of `splice_trig` (B4 write side).
-//                   The playback path uses even-spacing; the marker buffer
-//                   captures user-dropped positions for future stories /
-//                   future "load custom markers" workflows.
-//     count_buf   : 1-frame cell tracking how many runtime markers have
-//                   been written. Stepper output, gated by splice_trig.
-//     committed_buf : 1-frame cell carrying committed_idx forward by one
-//                   control block — needed to break the feedback loop
-//                   (committed → splice_len → phasor → EOS → committed).
-//                   One-block latency is inaudible (control rate, splice
-//                   transitions are user-paced).
+// Selection logic (Story B):
+//   pending_idx = floor(organize · num_splices), clamped. committed_idx is
+//   Latch(pending_idx, trig=eos) — a knob turn re-paints the Splice LED
+//   immediately but the audible switch defers to end-of-splice. The
+//   committed value is bounced through a 1-frame LocalBuf to break the
+//   committed → splice_len → phasor → eos → committed feedback loop.
 //
-// Selection logic (B2 + B3):
-//   pending_idx = organize_idx when Organize was touched in the last
-//   500 ms ("recently-touched Organize wins"), else shift_idx from a
-//   wrapping Stepper on shift_trig rising edges. organize_idx is
-//   floor(organize · num_splices); both values clamp to [0, num_splices−1].
-//   committed_idx = Latch(pending_idx, trig=eos_trig). The Latch only
-//   re-samples on rising EOS, giving the manual's "splice change
-//   announced but deferred to next end-of-splice" semantic.
+// EOS detection (Story B):
+//   The playback Phasor advances `rate · buf_rate_scale` per sample inside
+//   [0, splice_len). At a wrap, |Δphase| ≈ splice_len; in steady state,
+//   |Δphase| = |rate|. Threshold at splice_len/2 separates the two cleanly
+//   under any Vari-Speed direction. Decimated to kr for the Latch.
 //
-// EOS detection:
-//   The playback Phasor advances `rate · buf_rate_scale` per sample within
-//   [0, splice_len). At a wrap (forward or reverse), |Δphase| ~ splice_len
-//   while normal advance is |rate|. Threshold at splice_len/2 separates
-//   the two cleanly under any vari_speed. The trigger is converted to kr
-//   for the Latch; a2_k_kr decimates one-block-wide enough for the slow
-//   user-paced splice transitions we care about.
+// Granular path (Story C):
+//   Gene-Size in [0, 1] maps via cubic curve to gene_dur_sec ∈ [splice_len,
+//   50 µs]. The granular branch uses `grain_buf_ar` (numChannels=2) with
+//   per-grain Tukey/Hanning envelope, cubic interpolation, and
+//   maxGrains=64 to bound CPU. Morph staircase is encoded as a piecewise
+//   spawn-rate factor (0.67 → 1 → 2 → 3 → flat → 4) divided by gene_dur
+//   to get the Impulse spawn frequency, lagged 5 ms ("Dynamic Enveloping").
+//   Per-grain pan latches white-noise ramped in over Morph 0.55..0.85.
+//   Per-grain pitch-up multiplies rate by `1 + TRand(0, pitch_amt)` ramped
+//   in over Morph 0.85..1.0 with max +0.8 (≈ +10 ST). The whole-splice
+//   path (Story A's Phasor+BufRd) is preserved and used when Gene-Size is
+//   below a 0.02 threshold; transitions cross-fade over 5 ms via Lag on
+//   the active flag.
 //
-// SOS recording (B5):
+// SOS recording (Story B):
 //   record_buf_ar overdubs into the Reel with
 //     recLevel = (1 - sos_norm) · rec_active
 //     preLevel =      sos_norm  · rec_active   (loop feedback)
-//   Recording is forward-only at unit rate (Vari-Speed never affects
-//   recording, per plan §5). The recorder Phasor is independent of the
-//   playback Phasor so reverse-Vari-Speed playback during SOS leaves the
-//   commit-direction unchanged. loop=0 hard-stops at end-of-Reel.
+//   Forward-only at unit rate; loop=0 hard-stops at end-of-Reel. The
+//   recorder Phasor is independent of the playback Phasor so reverse
+//   Vari-Speed during SOS does not flip the commit direction.
 //
-// Auto-Level (B6): deferred for v1 per ticket. input_gain hard-coded 1.0
-//   inside the recLevel expression; expose as a synthdef parameter when a
-//   future ticket wires up the Peak/3-second-window logic.
+// Param budget — Rhai closures cap at 10 args. Story B's `shift_trig` and
+// `splice_trig` are dropped here to make room for `gene_size` and `morph`.
+// Rationale: Organize already covers splice selection (the recently-
+// touched-wins logic was Shift-only sugar), and runtime marker drops are
+// out of scope for the granular layer. The marker-buffer write side from
+// Story B drops with the param; users wanting marker editing layer it on
+// top via a separate synthdef.
 //
-// Param budget — Rhai closures cap at 10 args, so Story A's `amp`,
-// `play_gate`, `play_retrigger`, `splice_start_frame`, `splice_end_frame`
-// are dropped to make room. Replacements:
-//   - `amp` → routing-side `.gain(...)` (already used in the example)
-//   - `play_gate` → normalled-HIGH default (always loops within splice;
-//     Morphagene's "Play unpatched = always loop" matches this)
-//   - `play_retrigger` → not exposed; Organize/Shift transitions are the
-//     primary retrigger, and the Phasor's wrap handles steady-state loops
-//   - `splice_start_frame` / `splice_end_frame` → derived from num_splices
-//     + committed_idx (no longer user-supplied; the marker buffer is the
-//     extension point for non-uniform splices)
-//
-// Stereo limitation (carried from Story A): vibelang's BufRd surfaces the
-// first output channel of a stereo buffer; SOS records mono via
-// sound_in_channel(0). True dual-channel reads + stereo SOS land alongside
-// the granular path in Story C.
+// Stereo: the granular path delivers true stereo via grain_buf_ar's
+// numChannels=2 + per-grain pan; the whole-splice branch still surfaces
+// channel-0 of the stereo Reel through BufRd (mono→duplicated). The
+// branch crossfade therefore widens at the Gene-Size 0.02 threshold.
 
 define_synthdef("morphagene", |builder| {
     builder
         .param("bufnum", 0.0)
         .param("num_splices", 1.0)        // 1..300, evenly-spaced division of Reel
         .param("organize", 0.0)           // 0..1 splice select knob+CV
-        .param("shift_trig", 0.0)         // rising edge → step splice up
-        .param("splice_trig", 0.0)        // rising edge → drop marker at current pos
         .param("sos", 0.0)                // 0..1 SOS mix (preLevel / 1-recLevel)
         .param("rec_active", 0.0)         // 0/1 recording gate (RecordBuf run input)
         .param("vari_speed", 0.0)         // bipolar -1..+1, 0 = halt
         .param("slide", 0.0)              // 0..1 start position within splice
+        .param("gene_size", 0.0)          // 0..1 grain duration (cubic; 0 = whole splice)
+        .param("morph", 0.0)              // 0..1 spawn cadence + pan + pitch-up
         .param("gate", 1.0)               // synth-instance lifecycle
-        .body(|bufnum, num_splices, organize, shift_trig, splice_trig,
-               sos, rec_active, vari_speed, slide, gate| {
+        .body(|bufnum, num_splices, organize, sos, rec_active,
+               vari_speed, slide, gene_size, morph, gate| {
 
             // --- Reel buffer info ----------------------------------------------
             let buf_n = buf_frames_kr(bufnum);
             let buf_scale = buf_rate_scale_kr(bufnum);
+            let buf_sr = buf_sample_rate_kr(bufnum);
 
-            // --- Splice metadata buffers (B1) ----------------------------------
-            // 300-frame marker buffer + 1-frame runtime counter + 1-frame
-            // committed-idx feedback cell. clear_buf_ir zeroes them at synth
-            // init so stale values from previous instances can't leak in.
-            let marker_buf = local_buf_ir(1, 300.0);
-            let count_buf = local_buf_ir(1, 1.0);
+            // --- Splice metadata buffers ---------------------------------------
+            // Single 1-frame committed-idx feedback cell; clear_buf_ir zeroes it
+            // at synth init so the first block starts at splice 0.
             let committed_buf = local_buf_ir(1, 1.0);
-            let _z0 = clear_buf_ir(marker_buf);
-            let _z1 = clear_buf_ir(count_buf);
             let _z2 = clear_buf_ir(committed_buf);
 
-            // --- Vari-Speed → rate (Story A retained) --------------------------
+            // --- Vari-Speed → rate ---------------------------------------------
             // Asymmetric cubic per the manual's "12 up / 26 down" spec; smooth
             // through zero, finer-near-center, no dead-zone needed.
             let v_pos = vari_speed.max(0.0);
@@ -112,35 +96,16 @@ define_synthdef("morphagene", |builder| {
             let rate = (v_pos * v_pos * v_pos) * 2.0
                      + (v_neg * v_neg * v_neg) * 4.4898;
 
-            // --- Splice selection (B2 + B3) ------------------------------------
-            // max_idx = num_splices - 1, floored at 0 so num_splices=1 still
-            // produces idx=0 with a well-formed Stepper range.
+            // --- Splice selection (Organize) -----------------------------------
+            // max_idx = num_splices - 1, floored at 0.
             let max_idx = (num_splices - 1.0).max(0.0);
-
-            // Shift Stepper: each rising edge of shift_trig increments by 1,
-            // wrapping at max_idx back to 0 (Stepper's natural wrap behavior).
-            let shift_idx = stepper_kr(shift_trig, 0.0, 0.0, max_idx, 1.0, 0.0);
-
-            // Organize: floor(organize · num_splices) — clamp organize just
-            // shy of 1.0 so the floor still lands inside the valid range, then
-            // floor via UGen.
+            // Clamp shy of 1.0 so floor(organize · num_splices) lands inside
+            // [0, num_splices-1] without ever hitting num_splices itself.
             let organize_pos = clip(organize, 0.0, 0.99999) * num_splices;
             let organize_idx = floor(organize_pos);
+            let pending_idx = clip(organize_idx, 0.0, max_idx);
 
-            // "Recently-touched Organize wins": Changed fires on any organize
-            // movement; Trig holds the flag at 1.0 for 0.5 s. While held,
-            // Organize drives pending_idx; otherwise Shift's stepper drives.
-            let organize_changed = changed_kr(organize, 0.001);
-            let org_active = trig_kr(organize_changed, 0.5);
-            let pending_idx = clip(
-                organize_idx * org_active + shift_idx * (1.0 - org_active),
-                0.0,
-                max_idx,
-            );
-
-            // --- Committed splice idx feedback ---------------------------------
-            // Read the committed idx written one block ago. First block reads
-            // 0 (cleared above), so we always start at splice 0.
+            // --- Committed splice idx feedback (one-block latency) -------------
             let committed_idx = buf_rd_kr(1, committed_buf, 0.0, 0, 1);
 
             // Splice bounds: even spacing, computed from the committed idx.
@@ -148,27 +113,20 @@ define_synthdef("morphagene", |builder| {
             let splice_start_frame = committed_idx * splice_len_frames;
             let splice_offset = slide * splice_len_frames;
 
-            // --- Playback Phasor + BufRd ---------------------------------------
-            // Phasor wraps in [0, splice_len_frames); audio-rate read position
-            // is splice_start + slide_offset + phase, modulo splice_len. The
-            // wrap-modulo is implicit because Phasor saturates at `end`.
+            // --- Whole-splice playback path (Story A — Phasor + BufRd) ---------
+            // Audio-rate read position is splice_start + slide_offset + phase,
+            // wrapped within splice_len. BufRd cubic interpolation; mono read
+            // (channel 0) duplicated below.
             let phase = phasor_ar(0.0, rate * buf_scale, 0.0, splice_len_frames, 0.0);
             let read_pos = splice_start_frame
                          + wrap_ar(phase + splice_offset, 0.0, splice_len_frames);
-
-            // BufRd cubic interpolation; numChannels=2 surfaces channel-0 of
-            // the stereo Reel (see file-level note on the stereo limitation).
             let raw = buf_rd_ar(2, bufnum, read_pos, 1.0, 4.0);
 
-            // --- EOS detection -------------------------------------------------
-            // |Δphase| ≈ splice_len at a wrap; |rate · buf_scale| in steady
-            // state. Threshold at splice_len/2 cleanly separates them under
-            // any Vari-Speed setting (forward or reverse).
+            // --- EOS detection (kr) --------------------------------------------
             let phase_prev = delay1_ar(phase);
             let phase_diff = phase - phase_prev;
             let abs_diff = abs(phase_diff);
             let wrap_excess = abs_diff - splice_len_frames * 0.5;
-            // sign(x) is -1/0/+1; max(sign, 0) collapses to 0/1 — the EOS gate.
             let eos_trig_ar = sign(wrap_excess).max(0.0);
             let eos_trig = a2_k_kr(eos_trig_ar);
 
@@ -176,34 +134,97 @@ define_synthdef("morphagene", |builder| {
             let new_committed = latch_kr(pending_idx, eos_trig);
             let _wrote_committed = buf_wr_kr(new_committed, committed_buf, 0.0, 0);
 
-            // --- Splice marker write (B4 — write side) -------------------------
-            // splice_trig rising edge:
-            //   1. samples the current playback frame (read_pos decimated to kr)
-            //   2. writes it to marker_buf[count] via buf_wr_kr's phase input
-            //   3. increments count via Stepper (wraps at 299, the buffer size)
-            // The "phase = count when triggered, else huge" trick — used in
-            // spectraphon_side for SAM capture — gates the buf_wr to fire only
-            // on the trigger sample. preLevel-style gating (loop=0 + offset
-            // beyond buffer length when inactive) drops the write silently.
-            let read_pos_kr = a2_k_kr(read_pos);
-            let count_now = stepper_kr(splice_trig, 0.0, 0.0, 299.0, 1.0, 0.0);
-            // Inactive (no trigger this block) → push write phase past buffer
-            // length so loop=0 BufWr drops the write. Trigger is rising-edge
-            // sticky inside Stepper; we re-derive the per-block trigger via
-            // Trig1 to gate the write itself.
-            let splice_pulse = trig1_kr(splice_trig, 0.001);
-            let cap_offset = (1.0 - splice_pulse) * 1.0e9;
-            let _wrote_marker = buf_wr_kr(read_pos_kr, marker_buf, count_now + cap_offset, 0);
-            // Mirror the count into count_buf so external consumers can
-            // introspect the runtime marker tally.
-            let _wrote_count = buf_wr_kr(count_now, count_buf, 0.0, 0);
+            // --- Gene-Size mapping (C1) ----------------------------------------
+            // gene_dur_sec = mix(splice_len_sec, 50µs, gene_size_n^3).
+            // Cubic shape: most of the knob travel is in long-grain territory;
+            // sub-millisecond pulsar grains live in the last quarter turn.
+            let gene_size_n = clip(gene_size, 0.0, 1.0);
+            let gs_cubed = gene_size_n.pow(3.0);
+            let splice_len_sec = splice_len_frames / buf_sr.max(1.0);
+            let gene_min_sec = 50.0e-6;
+            let gene_dur_sec = splice_len_sec * (1.0 - gs_cubed)
+                             + gene_min_sec * gs_cubed;
 
-            // --- SOS RecordBuf (B5) --------------------------------------------
-            // Recording advances at unit rate, forward-only — Vari-Speed
-            // never affects the recorder offset. loop=0 hard-stops at the
-            // end of the Reel; users re-arm by toggling rec_active off/on.
-            // input_gain is hard-coded 1.0; Auto-Level wires it to a peak
-            // tracker in a future ticket.
+            // --- Morph staircase (C3) ------------------------------------------
+            // Piecewise spawn-rate factor mirroring the manual's panel arc:
+            //   0.00..0.25  : 0.67 → 1.00   (gap-of-silence closing)
+            //   0.25..0.50  : 1.00 → 2.00   (overlap, second instance enters)
+            //   0.50..0.55  : 2.00 → 3.00   (third instance enters)
+            //   0.55..0.70  : 3.00         (panning ramps in — see C4)
+            //   0.70..0.85  : 3.00 → 4.00   (fourth instance enters)
+            //   0.85..1.00  : 4.00 + per-grain pitch-up (see C5)
+            // Each segment is a clipped ramp summed onto a 0.67 baseline.
+            let morph_n = clip(morph, 0.0, 1.0);
+            let r0 = clip(morph_n * 4.0, 0.0, 1.0) * 0.33;
+            let r1 = clip((morph_n - 0.25) * 4.0, 0.0, 1.0);
+            let r2 = clip((morph_n - 0.50) * 20.0, 0.0, 1.0);
+            let r3 = clip((morph_n - 0.70) * 6.6667, 0.0, 1.0);
+            let spawn_rate_factor = 0.67 + r0 + r1 + r2 + r3;
+
+            // spawn_rate_hz = factor / gene_dur_sec, clamped to a sane ceiling
+            // so the tiniest gene_dur (~50 µs) doesn't push Impulse past audio
+            // rate. 4 kHz is well above any rhythmic spawn density and still
+            // safely below Nyquist concerns at 48 kHz.
+            let raw_rate_hz = spawn_rate_factor / gene_dur_sec.max(1.0e-6);
+            let spawn_rate_hz = clip(raw_rate_hz, 0.05, 4000.0);
+            // 5 ms lag on spawn rate — vibelang's stand-in for the manual's
+            // "Dynamic Enveloping" smoothing of grain-rate parameter jumps.
+            let smoothed_rate = lag_kr(spawn_rate_hz, 0.005);
+            let spawn_trig = impulse_ar(smoothed_rate, 0.0);
+            let spawn_trig_kr = a2_k_kr(spawn_trig);
+
+            // --- Per-grain pan (C4) --------------------------------------------
+            // pan_amount ramps 0..1 across Morph 0.55..0.85.
+            let pan_amount = clip((morph_n - 0.55) * 3.3333, 0.0, 1.0);
+            let pan_raw = white_noise_kr() * pan_amount;
+            let grain_pan = latch_kr(pan_raw, spawn_trig_kr);
+
+            // --- Per-grain pitch-up (C5) ---------------------------------------
+            // pitch_amount ramps 0..0.8 across Morph 0.85..1.0. TRand returns
+            // a fresh random in [0, pitch_amount] on each rising trigger and
+            // holds until the next — already per-grain latched by definition.
+            let pitch_amount = clip((morph_n - 0.85) * 6.6667, 0.0, 1.0) * 0.8;
+            let pitch_rand = t_rand_kr(0.0, pitch_amount, spawn_trig_kr);
+            let grain_rate = rate * (1.0 + pitch_rand);
+
+            // --- Granular branch (C2) ------------------------------------------
+            // Grain start position = splice_start + slide·splice_len, expressed
+            // as a fraction of the whole Reel (grain_buf_ar takes pos in [0,1]).
+            let grain_start_frame = splice_start_frame + splice_offset;
+            let grain_pos_norm = grain_start_frame / buf_n.max(1.0);
+
+            // grain_buf_ar(numChannels, trigger, dur, sndbuf, rate, pos,
+            //              interp, pan, envbufnum, maxGrains)
+            // envbufnum = -1 → built-in Hann window; maxGrains = 64 caps CPU
+            // under 4× overlap with high spawn rates.
+            let grain = grain_buf_ar(
+                2.0,                  // numChannels = stereo
+                spawn_trig,           // trigger (ar)
+                gene_dur_sec,         // dur (seconds, per-grain)
+                bufnum,               // sndbuf
+                grain_rate,           // rate (vari-speed × pitch-up)
+                grain_pos_norm,       // pos in reel
+                4.0,                  // interp = cubic
+                grain_pan,            // pan (per-grain via Latch)
+                -1.0,                 // envbufnum = default Hann
+                64.0,                 // maxGrains
+            );
+            let grain_lr = channels(grain, 2);
+            let grain_l = grain_lr[0];
+            let grain_r = grain_lr[1];
+
+            // --- Branch crossfade (C6) -----------------------------------------
+            // Gene-Size below 0.02 routes to the whole-splice path (cheaper and
+            // bit-identical to a single-grain-per-cycle granular at full size).
+            // The crossfade is a hard switch lagged by 5 ms to avoid clicks.
+            let granular_active = clip((gene_size_n - 0.02) * 1000.0, 0.0, 1.0);
+            let smooth_active = lag_ar(granular_active, 0.005);
+            let mix_l = raw * (1.0 - smooth_active) + grain_l * smooth_active;
+            let mix_r = raw * (1.0 - smooth_active) + grain_r * smooth_active;
+
+            // --- SOS RecordBuf (Story B) ---------------------------------------
+            // Recording advances at unit rate, forward-only — Vari-Speed never
+            // affects the recorder offset. loop=0 hard-stops at end-of-Reel.
             let rec_pos = phasor_ar(0.0, 1.0, 0.0, buf_n, 0.0);
             let in_mono = sound_in_channel(0);
             let sos_norm = clip(sos, 0.0, 1.0);
@@ -216,21 +237,20 @@ define_synthdef("morphagene", |builder| {
                 rec_active,                       // run
                 0.0,                              // loop=0 (hard-stop at end)
                 1.0,                              // trigger
-                0.0,                              // doneAction (env handles freeing)
+                0.0,                              // doneAction
             );
 
             // --- Output --------------------------------------------------------
             // Synth-instance ASR keeps the synth alive for held notes; DC-block
-            // on each output channel for the same reason as Story A.
+            // each output channel.
             let env = envelope()
                 .asr(0.005, 1.0, 0.02)
                 .gate(gate)
                 .cleanup_on_finish()
                 .build();
 
-            let mixed = raw * env;
-            let left  = leak_dc_ar(mixed, 0.995);
-            let right = leak_dc_ar(mixed, 0.995);
+            let left  = leak_dc_ar(mix_l * env, 0.995);
+            let right = leak_dc_ar(mix_r * env, 0.995);
 
             [left, right]
         })
