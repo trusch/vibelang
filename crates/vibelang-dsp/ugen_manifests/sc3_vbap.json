@@ -1,0 +1,158 @@
+[
+  {
+    "name": "VBAP",
+    "description": "Vector Base Amplitude Panning (sc3-plugins). Multichannel panner for arbitrary 2D or 3D loudspeaker arrays. Pans a mono source to numChans speakers using the VBAP algorithm by Ville Pulkki — selects the active speaker pair (2D) or triplet (3D) and computes amplitude gains so the perceived source comes from the requested direction. The bufnum input must reference a buffer prepared by VBAPSpeakerArray (loadToBuffer/sendToBuffer) describing the array geometry. Spread (0–100) widens the source from a point to a wider region by activating more speakers.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "numChans",
+        "type": "float",
+        "default": 4,
+        "description": "Number of output channels (must match the speaker count in the geometry buffer)"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal to pan"
+      },
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding the speaker geometry data produced by VBAPSpeakerArray.loadToBuffer/sendToBuffer"
+      },
+      {
+        "name": "azimuth",
+        "type": "float",
+        "default": 0,
+        "description": "Azimuth angle in degrees, -180 to 180 (0 = front, 90 = left, -90 = right)"
+      },
+      {
+        "name": "elevation",
+        "type": "float",
+        "default": 0,
+        "description": "Elevation angle in degrees, -90 to 90 (only meaningful for 3D arrays). Default 0 = horizontal plane"
+      },
+      {
+        "name": "spread",
+        "type": "float",
+        "default": 0,
+        "description": "Source spread, 0 to 100. 0 = point source, 100 = signal radiates from all speakers equally"
+      }
+    ],
+    "outputs": 4,
+    "category": "VBAP",
+    "functions": [
+      "vbap_ar",
+      "vbap_kr"
+    ]
+  },
+  {
+    "name": "CircleRamp",
+    "description": "Phasor designed for circular panning (sc3-plugins). Lag-style smoother that wraps around a circular range — useful for smoothly ramping an azimuth value past the -180/180 boundary without sweeping the long way around. Picks the shortest direction between the current and target value within [circmin, circmax].",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Target value to ramp towards (typically an azimuth in degrees)"
+      },
+      {
+        "name": "lagTime",
+        "type": "float",
+        "default": 0.1,
+        "description": "60 dB lag time in seconds"
+      },
+      {
+        "name": "circmin",
+        "type": "float",
+        "default": -180,
+        "description": "Minimum of the circular range (default -180 for azimuth in degrees)"
+      },
+      {
+        "name": "circmax",
+        "type": "float",
+        "default": 180,
+        "description": "Maximum of the circular range (default 180 for azimuth in degrees)"
+      }
+    ],
+    "outputs": 1,
+    "category": "VBAP",
+    "functions": [
+      "circle_ramp_ar",
+      "circle_ramp_kr"
+    ]
+  },
+  {
+    "name": "VBAPSpeakerArray",
+    "description": "Builder for a VBAP loudspeaker geometry buffer (sc3-plugins). Computes the speaker pairs (2D) or triplets (3D) and the inverse matrices used by the VBAP UGen, then loads the result into a buffer. Pass the resulting buffer's bufnum to VBAP.",
+    "rates": [
+      "builder"
+    ],
+    "inputs": [
+      {
+        "name": ".dim(n)",
+        "type": "method",
+        "default": "2",
+        "description": "Dimensionality of the speaker array, 2 or 3."
+      },
+      {
+        "name": ".speakers(directions)",
+        "type": "method",
+        "default": null,
+        "description": "Speaker directions. For dim=2 pass an array of azimuth angles in degrees; for dim=3 pass an array of [azimuth, elevation] pairs."
+      },
+      {
+        "name": ".add_speaker(speaker)",
+        "type": "method",
+        "default": null,
+        "description": "Append a single VBAPSpeaker entry to the array."
+      },
+      {
+        "name": ".load_to_buffer()",
+        "type": "method",
+        "default": null,
+        "description": "Compute the geometry data and load it into a buffer; returns the buffer."
+      }
+    ],
+    "outputs": 1,
+    "category": "VBAP",
+    "functions": [
+      "vbap_speaker_array"
+    ]
+  },
+  {
+    "name": "VBAPSpeaker",
+    "description": "Single speaker definition for a VBAPSpeakerArray (sc3-plugins). Describes one loudspeaker by its azimuth (in degrees from the front) and optional elevation (in degrees above the horizontal plane).",
+    "rates": [
+      "builder"
+    ],
+    "inputs": [
+      {
+        "name": ".azimuth(deg)",
+        "type": "method",
+        "default": "0",
+        "description": "Azimuth angle in degrees, -180 to 180."
+      },
+      {
+        "name": ".elevation(deg)",
+        "type": "method",
+        "default": "0",
+        "description": "Elevation angle in degrees, -90 to 90."
+      }
+    ],
+    "outputs": 1,
+    "category": "VBAP",
+    "functions": [
+      "vbap_speaker"
+    ]
+  }
+]
