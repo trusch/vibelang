@@ -1,0 +1,156 @@
+[
+  {
+    "name": "CrossoverDistortion",
+    "description": "Class B/AB power amp distortion simulation. Models the crossover distortion that occurs when the signal crosses zero. For class B simulations set smooth to ~0.3 (+/- 0.2); for class AB set smooth near 1.0. Port of LADSPA plugin (plugin ID 1404). From sc3-plugins DistortionUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "amp",
+        "type": "signal",
+        "default": 0.5,
+        "description": "Controls the point at which the output signal becomes linear"
+      },
+      {
+        "name": "smooth",
+        "type": "signal",
+        "default": 0.5,
+        "description": "Degree of smoothing of the crossover point"
+      }
+    ],
+    "outputs": 1,
+    "category": "Distortion",
+    "functions": [
+      "crossover_distortion_ar"
+    ]
+  },
+  {
+    "name": "Decimator",
+    "description": "Sample rate and bit depth reduction. Decimates the input signal — accepts non-integer values for both rate and bits, allowing smooth transitions between clean and lo-fi signals. Port of LADSPA plugin (plugin ID 1202). From sc3-plugins DistortionUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "rate",
+        "type": "signal",
+        "default": 44100,
+        "description": "Sample rate at which the signal will be resampled (Hz)"
+      },
+      {
+        "name": "bits",
+        "type": "signal",
+        "default": 24,
+        "description": "Bit depth that the signal will be reduced to (non-integer values allowed)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Distortion",
+    "functions": [
+      "decimator_ar"
+    ]
+  },
+  {
+    "name": "SmoothDecimator",
+    "description": "Smooth sample rate reduction. Decimates the input signal with adjustable smoothing of the resampled output. From sc3-plugins DistortionUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "rate",
+        "type": "signal",
+        "default": 44100,
+        "description": "Rate at which the output signal will be resampled (Hz)"
+      },
+      {
+        "name": "smoothing",
+        "type": "signal",
+        "default": 0.5,
+        "description": "Amount of smoothing applied to the resampled output (0 to 1)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Distortion",
+    "functions": [
+      "smooth_decimator_ar"
+    ]
+  },
+  {
+    "name": "SineShaper",
+    "description": "Sine-based wave shaper. Applies a sinusoidal transfer function to the input — soft saturation distortion limited by the supplied limit value. Port of a LADSPA plugin. From sc3-plugins DistortionUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "limit",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Limit at which the sinusoidal shaping caps the output"
+      }
+    ],
+    "outputs": 1,
+    "category": "Distortion",
+    "functions": [
+      "sine_shaper_ar"
+    ]
+  },
+  {
+    "name": "Disintegrator",
+    "description": "Amplifies random half-cycles of the input by a multiplier. Set multiplier to 0 and vary probability for a weird fade effect; set multiplier to -1 and probability to 0.5 to turn pitched sounds into noise. Port of LADSPA plugin (plugin ID 1846). From sc3-plugins DistortionUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "probability",
+        "type": "signal",
+        "default": 0.5,
+        "description": "Probability that a given half-cycle is amplified (0 to 1)"
+      },
+      {
+        "name": "multiplier",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Gain applied to selected half-cycles (e.g. -1 inverts, 0 mutes)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Distortion",
+    "functions": [
+      "disintegrator_ar"
+    ]
+  }
+]
