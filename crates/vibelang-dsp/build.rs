@@ -20,6 +20,15 @@ struct UGenManifest {
     #[serde(default)]
     #[allow(dead_code)]
     functions: Option<Vec<String>>,
+    /// Server-side UGen class to emit, defaults to `name`. Used to expose
+    /// BinaryOpUGen / UnaryOpUGen variants under friendlier names (e.g. an
+    /// entry named "Hypot" emits `BinaryOpUGen` with `special_index = 23`).
+    #[serde(default)]
+    ugen_class: Option<String>,
+    /// Special index passed to the server (operator selector for
+    /// BinaryOpUGen / UnaryOpUGen). Defaults to 0.
+    #[serde(default)]
+    special_index: Option<i16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -298,10 +307,12 @@ fn main() {
             }
             writeln!(f, "    ];").unwrap();
             writeln!(f, "    with_builder(|builder| {{").unwrap();
+            let emitted_class = ugen.ugen_class.as_deref().unwrap_or(name);
+            let special_index = ugen.special_index.unwrap_or(0);
             writeln!(
                 f,
-                "        builder.add_node(\"{}\".to_string(), {}, inputs, {}, 0)",
-                name, rate_enum, outputs
+                "        builder.add_node(\"{}\".to_string(), {}, inputs, {}, {})",
+                emitted_class, rate_enum, outputs, special_index
             )
             .unwrap();
             writeln!(f, "    }})").unwrap();

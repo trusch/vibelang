@@ -1,0 +1,563 @@
+[
+  {
+    "name": "HOAEncoder1",
+    "description": "Higher-Order Ambisonic encoder (order 1) from the SC-HOA quark by Florian Grond. Pans a mono source into a 1st-order ambisonic soundfield (4 channels, ACN/SN3D) with optional near-field spherical-wave encoding. NOTE: this manifest covers only the order-specific server UGens. The HOAEncoder.ar pseudo-UGen wrapper (which dispatches by `order` argument) is sclang-only and not included.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to encode"},
+      {"name": "gain_0", "type": "float", "default": 0, "description": "Gain in dB"},
+      {"name": "radius_0", "type": "float", "default": 2.0, "description": "Source distance in metres (only relevant when plane_spherical = 1)"},
+      {"name": "azimuth_0", "type": "float", "default": 0, "description": "Azimuth in radians (-pi to pi, 0 = front)"},
+      {"name": "elevation_0", "type": "float", "default": 0, "description": "Elevation in radians (-pi/2 to pi/2)"},
+      {"name": "plane_spherical", "type": "float", "default": 0, "description": "0 = plane wave encoding, 1 = spherical (near-field) encoding"},
+      {"name": "speaker_radius_0", "type": "float", "default": 1.07, "description": "Reproduction speaker layout radius in metres"}
+    ],
+    "outputs": 4,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAEncoder2",
+    "description": "Higher-Order Ambisonic encoder (order 2) from the SC-HOA quark — pans a mono source into a 2nd-order ambisonic soundfield (9 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to encode"},
+      {"name": "gain_0", "type": "float", "default": 0, "description": "Gain in dB"},
+      {"name": "radius_0", "type": "float", "default": 2.0, "description": "Source distance in metres (only relevant when plane_spherical = 1)"},
+      {"name": "azimuth_0", "type": "float", "default": 0, "description": "Azimuth in radians (-pi to pi, 0 = front)"},
+      {"name": "elevation_0", "type": "float", "default": 0, "description": "Elevation in radians (-pi/2 to pi/2)"},
+      {"name": "plane_spherical", "type": "float", "default": 0, "description": "0 = plane wave encoding, 1 = spherical (near-field) encoding"},
+      {"name": "speaker_radius_0", "type": "float", "default": 1.07, "description": "Reproduction speaker layout radius in metres"}
+    ],
+    "outputs": 9,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAEncoder3",
+    "description": "Higher-Order Ambisonic encoder (order 3) from the SC-HOA quark — pans a mono source into a 3rd-order ambisonic soundfield (16 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to encode"},
+      {"name": "gain_0", "type": "float", "default": 0, "description": "Gain in dB"},
+      {"name": "radius_0", "type": "float", "default": 2.0, "description": "Source distance in metres (only relevant when plane_spherical = 1)"},
+      {"name": "azimuth_0", "type": "float", "default": 0, "description": "Azimuth in radians (-pi to pi, 0 = front)"},
+      {"name": "elevation_0", "type": "float", "default": 0, "description": "Elevation in radians (-pi/2 to pi/2)"},
+      {"name": "plane_spherical", "type": "float", "default": 0, "description": "0 = plane wave encoding, 1 = spherical (near-field) encoding"},
+      {"name": "speaker_radius_0", "type": "float", "default": 1.07, "description": "Reproduction speaker layout radius in metres"}
+    ],
+    "outputs": 16,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAEncoder4",
+    "description": "Higher-Order Ambisonic encoder (order 4) from the SC-HOA quark — pans a mono source into a 4th-order ambisonic soundfield (25 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to encode"},
+      {"name": "gain_0", "type": "float", "default": 0, "description": "Gain in dB"},
+      {"name": "radius_0", "type": "float", "default": 2.0, "description": "Source distance in metres (only relevant when plane_spherical = 1)"},
+      {"name": "azimuth_0", "type": "float", "default": 0, "description": "Azimuth in radians (-pi to pi, 0 = front)"},
+      {"name": "elevation_0", "type": "float", "default": 0, "description": "Elevation in radians (-pi/2 to pi/2)"},
+      {"name": "plane_spherical", "type": "float", "default": 0, "description": "0 = plane wave encoding, 1 = spherical (near-field) encoding"},
+      {"name": "speaker_radius_0", "type": "float", "default": 1.07, "description": "Reproduction speaker layout radius in metres"}
+    ],
+    "outputs": 25,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAEncoder5",
+    "description": "Higher-Order Ambisonic encoder (order 5) from the SC-HOA quark — pans a mono source into a 5th-order ambisonic soundfield (36 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to encode"},
+      {"name": "gain_0", "type": "float", "default": 0, "description": "Gain in dB"},
+      {"name": "radius_0", "type": "float", "default": 2.0, "description": "Source distance in metres (only relevant when plane_spherical = 1)"},
+      {"name": "azimuth_0", "type": "float", "default": 0, "description": "Azimuth in radians (-pi to pi, 0 = front)"},
+      {"name": "elevation_0", "type": "float", "default": 0, "description": "Elevation in radians (-pi/2 to pi/2)"},
+      {"name": "plane_spherical", "type": "float", "default": 0, "description": "0 = plane wave encoding, 1 = spherical (near-field) encoding"},
+      {"name": "speaker_radius_0", "type": "float", "default": 1.07, "description": "Reproduction speaker layout radius in metres"}
+    ],
+    "outputs": 36,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAEncLebedev061",
+    "description": "SC-HOA encoder for the 6-capsule Lebedev microphone array, 1st order (4 b-format channels). Encodes the 6 capsule signals into ACN/SN3D-ordered b-format. Use HOAEncLebedev06.loadRadialFilters and convolve the output if you need radial-filter compensation. NOTE: HOAEncEigenMike{1..4} (32-capsule EigenMike), HOAEncLebedev26{1..3} (26-capsule), and HOAEncLebedev50{1..5} (50-capsule) all exceed Rhai's 16-input limit and are omitted from this manifest.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Lebedev capsule input 1"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "Lebedev capsule input 2"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "Lebedev capsule input 3"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "Lebedev capsule input 4"},
+      {"name": "in5", "type": "signal", "default": 0, "description": "Lebedev capsule input 5"},
+      {"name": "in6", "type": "signal", "default": 0, "description": "Lebedev capsule input 6"},
+      {"name": "gain", "type": "float", "default": 0, "description": "Output gain in dB"}
+    ],
+    "outputs": 4,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOALibEnc3D1",
+    "description": "SC-HOA HOALibrary-based 3D encoder (order 1) — encodes a mono source by azimuth/elevation into 1st-order b-format (4 channels). Implementation derived from the HOALibrary; output gain in the HOALibEnc3D wrapper is applied in sclang as a post-multiplier.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to encode"},
+      {"name": "azi", "type": "float", "default": 0, "description": "Azimuth in radians"},
+      {"name": "ele", "type": "float", "default": 0, "description": "Elevation in radians"}
+    ],
+    "outputs": 4,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOALibEnc3D2",
+    "description": "SC-HOA HOALibrary-based 3D encoder (order 2) — encodes into 2nd-order b-format (9 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to encode"},
+      {"name": "azi", "type": "float", "default": 0, "description": "Azimuth in radians"},
+      {"name": "ele", "type": "float", "default": 0, "description": "Elevation in radians"}
+    ],
+    "outputs": 9,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOALibEnc3D3",
+    "description": "SC-HOA HOALibrary-based 3D encoder (order 3) — encodes into 3rd-order b-format (16 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to encode"},
+      {"name": "azi", "type": "float", "default": 0, "description": "Azimuth in radians"},
+      {"name": "ele", "type": "float", "default": 0, "description": "Elevation in radians"}
+    ],
+    "outputs": 16,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOALibEnc3D4",
+    "description": "SC-HOA HOALibrary-based 3D encoder (order 4) — encodes into 4th-order b-format (25 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to encode"},
+      {"name": "azi", "type": "float", "default": 0, "description": "Azimuth in radians"},
+      {"name": "ele", "type": "float", "default": 0, "description": "Elevation in radians"}
+    ],
+    "outputs": 25,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOALibEnc3D5",
+    "description": "SC-HOA HOALibrary-based 3D encoder (order 5) — encodes into 5th-order b-format (36 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to encode"},
+      {"name": "azi", "type": "float", "default": 0, "description": "Azimuth in radians"},
+      {"name": "ele", "type": "float", "default": 0, "description": "Elevation in radians"}
+    ],
+    "outputs": 36,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAmbiPanner1",
+    "description": "SC-HOA ambisonic panner (order 1) — pans a mono source into 1st-order b-format (4 channels). Similar to HOAEncoder but using the simpler HOALibrary-style panning kernel without near-field/radius controls.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to pan"},
+      {"name": "azi", "type": "float", "default": 0, "description": "Azimuth in radians"},
+      {"name": "ele", "type": "float", "default": 0, "description": "Elevation in radians"}
+    ],
+    "outputs": 4,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAmbiPanner2",
+    "description": "SC-HOA ambisonic panner (order 2) — pans a mono source into 2nd-order b-format (9 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to pan"},
+      {"name": "azi", "type": "float", "default": 0, "description": "Azimuth in radians"},
+      {"name": "ele", "type": "float", "default": 0, "description": "Elevation in radians"}
+    ],
+    "outputs": 9,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAmbiPanner3",
+    "description": "SC-HOA ambisonic panner (order 3) — pans a mono source into 3rd-order b-format (16 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to pan"},
+      {"name": "azi", "type": "float", "default": 0, "description": "Azimuth in radians"},
+      {"name": "ele", "type": "float", "default": 0, "description": "Elevation in radians"}
+    ],
+    "outputs": 16,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAmbiPanner4",
+    "description": "SC-HOA ambisonic panner (order 4) — pans a mono source into 4th-order b-format (25 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to pan"},
+      {"name": "azi", "type": "float", "default": 0, "description": "Azimuth in radians"},
+      {"name": "ele", "type": "float", "default": 0, "description": "Elevation in radians"}
+    ],
+    "outputs": 25,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAmbiPanner5",
+    "description": "SC-HOA ambisonic panner (order 5) — pans a mono source into 5th-order b-format (36 channels).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "Mono source signal to pan"},
+      {"name": "azi", "type": "float", "default": 0, "description": "Azimuth in radians"},
+      {"name": "ele", "type": "float", "default": 0, "description": "Elevation in radians"}
+    ],
+    "outputs": 36,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOADecLebedev061",
+    "description": "SC-HOA decoder to a 6-point Lebedev speaker layout, decoding from 1st-order b-format (4 channels in, 6 speaker outs). Optionally apply HRIR convolution via HOADecLebedev06.loadHrirFilters for binaural rendering.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0 (W)"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1 (Y)"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2 (Z)"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3 (X)"},
+      {"name": "inputs_gain", "type": "float", "default": 0, "description": "Input gain in dB applied to b-format channels"},
+      {"name": "outputs_gain", "type": "float", "default": 0, "description": "Output gain in dB applied to speaker channels"},
+      {"name": "yes", "type": "float", "default": 1, "description": "Internal selector flag (typically 1; named `yes` in the underlying Faust UGen)"},
+      {"name": "speakers_radius", "type": "float", "default": 1, "description": "Speaker layout radius in metres"}
+    ],
+    "outputs": 6,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOADecLebedev262",
+    "description": "SC-HOA decoder to a 26-point Lebedev speaker layout, decoding from 2nd-order b-format (9 channels in, 26 speaker outs). NOTE: HOADecLebedev263 (3rd-order, 16 b-format inputs + 4 args = 20 inputs total) exceeds Rhai's 16-input limit and is omitted.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3"},
+      {"name": "in5", "type": "signal", "default": 0, "description": "B-format ACN channel 4"},
+      {"name": "in6", "type": "signal", "default": 0, "description": "B-format ACN channel 5"},
+      {"name": "in7", "type": "signal", "default": 0, "description": "B-format ACN channel 6"},
+      {"name": "in8", "type": "signal", "default": 0, "description": "B-format ACN channel 7"},
+      {"name": "in9", "type": "signal", "default": 0, "description": "B-format ACN channel 8"},
+      {"name": "inputs_gain", "type": "float", "default": 0, "description": "Input gain in dB applied to b-format channels"},
+      {"name": "outputs_gain", "type": "float", "default": 0, "description": "Output gain in dB applied to speaker channels"},
+      {"name": "yes", "type": "float", "default": 1, "description": "Internal selector flag (typically 1)"},
+      {"name": "speakers_radius", "type": "float", "default": 1, "description": "Speaker layout radius in metres"}
+    ],
+    "outputs": 26,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOADecLebedev501",
+    "description": "SC-HOA decoder to a 50-point Lebedev speaker layout, decoding from 1st-order b-format (4 channels in, 50 speaker outs).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0 (W)"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1 (Y)"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2 (Z)"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3 (X)"},
+      {"name": "inputs_gain", "type": "float", "default": 0, "description": "Input gain in dB applied to b-format channels"},
+      {"name": "outputs_gain", "type": "float", "default": 0, "description": "Output gain in dB applied to speaker channels"},
+      {"name": "yes", "type": "float", "default": 1, "description": "Internal selector flag (typically 1)"},
+      {"name": "speakers_radius", "type": "float", "default": 1, "description": "Speaker layout radius in metres"}
+    ],
+    "outputs": 50,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOADecLebedev502",
+    "description": "SC-HOA decoder to a 50-point Lebedev speaker layout, decoding from 2nd-order b-format (9 channels in, 50 speaker outs). NOTE: orders 3-5 (HOADecLebedev503/504/505) exceed Rhai's 16-input limit and are omitted.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3"},
+      {"name": "in5", "type": "signal", "default": 0, "description": "B-format ACN channel 4"},
+      {"name": "in6", "type": "signal", "default": 0, "description": "B-format ACN channel 5"},
+      {"name": "in7", "type": "signal", "default": 0, "description": "B-format ACN channel 6"},
+      {"name": "in8", "type": "signal", "default": 0, "description": "B-format ACN channel 7"},
+      {"name": "in9", "type": "signal", "default": 0, "description": "B-format ACN channel 8"},
+      {"name": "inputs_gain", "type": "float", "default": 0, "description": "Input gain in dB applied to b-format channels"},
+      {"name": "outputs_gain", "type": "float", "default": 0, "description": "Output gain in dB applied to speaker channels"},
+      {"name": "yes", "type": "float", "default": 1, "description": "Internal selector flag (typically 1)"},
+      {"name": "speakers_radius", "type": "float", "default": 1, "description": "Speaker layout radius in metres"}
+    ],
+    "outputs": 50,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "ITU5001",
+    "description": "SC-HOA ITU 5.0 speaker decoder (order 1). Decodes 1st-order b-format (4 channels) to a standard ITU-R BS.775 5.0 speaker layout (L, R, C, Ls, Rs). Used internally by HOADec5_0.ar(order: 1, ...).",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0 (W)"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1 (Y)"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2 (Z)"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3 (X)"},
+      {"name": "gain", "type": "float", "default": 1, "description": "Output gain (linear amplitude — the wrapper passes gain.ampdb)"},
+      {"name": "lf_hf", "type": "float", "default": 0, "description": "Low/high-frequency dual-band decoder selector"},
+      {"name": "mute", "type": "float", "default": 0, "description": "Mute flag (0 = unmuted, 1 = muted)"},
+      {"name": "xover", "type": "float", "default": 400, "description": "Crossover frequency in Hz between LF and HF decoder branches"}
+    ],
+    "outputs": 5,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "ITU5002",
+    "description": "SC-HOA ITU 5.0 speaker decoder (order 2). Decodes 2nd-order b-format (9 channels) to a standard ITU-R BS.775 5.0 speaker layout (L, R, C, Ls, Rs). NOTE: ITU5003/ITU5004 (orders 3 and 4) exceed Rhai's 16-input limit and are omitted; the wrapper does not implement order 5.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3"},
+      {"name": "in5", "type": "signal", "default": 0, "description": "B-format ACN channel 4"},
+      {"name": "in6", "type": "signal", "default": 0, "description": "B-format ACN channel 5"},
+      {"name": "in7", "type": "signal", "default": 0, "description": "B-format ACN channel 6"},
+      {"name": "in8", "type": "signal", "default": 0, "description": "B-format ACN channel 7"},
+      {"name": "in9", "type": "signal", "default": 0, "description": "B-format ACN channel 8"},
+      {"name": "gain", "type": "float", "default": 1, "description": "Output gain (linear amplitude — the wrapper passes gain.ampdb)"},
+      {"name": "lf_hf", "type": "float", "default": 0, "description": "Low/high-frequency dual-band decoder selector"},
+      {"name": "mute", "type": "float", "default": 0, "description": "Mute flag (0 = unmuted, 1 = muted)"},
+      {"name": "xover", "type": "float", "default": 400, "description": "Crossover frequency in Hz between LF and HF decoder branches"}
+    ],
+    "outputs": 5,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAAzimuthRotator1",
+    "description": "SC-HOA azimuth rotator (order 1) — rotates a 1st-order b-format soundfield around the vertical (Z) axis. NOTE: orders 3-5 exceed Rhai's 16-input limit and are omitted.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0 (W)"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1 (Y)"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2 (Z)"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3 (X)"},
+      {"name": "az", "type": "float", "default": 0, "description": "Rotation angle in radians around the Z axis"}
+    ],
+    "outputs": 4,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAAzimuthRotator2",
+    "description": "SC-HOA azimuth rotator (order 2) — rotates a 2nd-order b-format soundfield around the vertical (Z) axis.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3"},
+      {"name": "in5", "type": "signal", "default": 0, "description": "B-format ACN channel 4"},
+      {"name": "in6", "type": "signal", "default": 0, "description": "B-format ACN channel 5"},
+      {"name": "in7", "type": "signal", "default": 0, "description": "B-format ACN channel 6"},
+      {"name": "in8", "type": "signal", "default": 0, "description": "B-format ACN channel 7"},
+      {"name": "in9", "type": "signal", "default": 0, "description": "B-format ACN channel 8"},
+      {"name": "az", "type": "float", "default": 0, "description": "Rotation angle in radians around the Z axis"}
+    ],
+    "outputs": 9,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOARotator1",
+    "description": "SC-HOA full XYZ rotator (order 1) — rotates a 1st-order b-format soundfield by pitch, roll, and yaw. NOTE: orders 3-5 are not supported by SC-HOA's HOATransRotateXYZ wrapper, and HOARotator3 would exceed Rhai's 16-input limit anyway.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0 (W)"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1 (Y)"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2 (Z)"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3 (X)"},
+      {"name": "pitch", "type": "float", "default": 0, "description": "Pitch (rotation around X axis) in radians"},
+      {"name": "roll", "type": "float", "default": 0, "description": "Roll (rotation around Y axis) in radians"},
+      {"name": "yaw", "type": "float", "default": 0, "description": "Yaw (rotation around Z axis) in radians"}
+    ],
+    "outputs": 4,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOARotator2",
+    "description": "SC-HOA full XYZ rotator (order 2) — rotates a 2nd-order b-format soundfield by pitch, roll, and yaw.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3"},
+      {"name": "in5", "type": "signal", "default": 0, "description": "B-format ACN channel 4"},
+      {"name": "in6", "type": "signal", "default": 0, "description": "B-format ACN channel 5"},
+      {"name": "in7", "type": "signal", "default": 0, "description": "B-format ACN channel 6"},
+      {"name": "in8", "type": "signal", "default": 0, "description": "B-format ACN channel 7"},
+      {"name": "in9", "type": "signal", "default": 0, "description": "B-format ACN channel 8"},
+      {"name": "pitch", "type": "float", "default": 0, "description": "Pitch (rotation around X axis) in radians"},
+      {"name": "roll", "type": "float", "default": 0, "description": "Roll (rotation around Y axis) in radians"},
+      {"name": "yaw", "type": "float", "default": 0, "description": "Yaw (rotation around Z axis) in radians"}
+    ],
+    "outputs": 9,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAMirror1",
+    "description": "SC-HOA mirror transform (order 1) — flips a 1st-order b-format soundfield along the front-back, left-right, and/or up-down axes. NOTE: orders 3-5 exceed Rhai's 16-input limit and are omitted.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0 (W)"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1 (Y)"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2 (Z)"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3 (X)"},
+      {"name": "front_back", "type": "float", "default": 0, "description": "Front-back mirror flag (0 = no flip, 1 = flip)"},
+      {"name": "left_right", "type": "float", "default": 0, "description": "Left-right mirror flag (0 = no flip, 1 = flip)"},
+      {"name": "up_down", "type": "float", "default": 0, "description": "Up-down mirror flag (0 = no flip, 1 = flip)"}
+    ],
+    "outputs": 4,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOAMirror2",
+    "description": "SC-HOA mirror transform (order 2) — flips a 2nd-order b-format soundfield along the front-back, left-right, and/or up-down axes.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3"},
+      {"name": "in5", "type": "signal", "default": 0, "description": "B-format ACN channel 4"},
+      {"name": "in6", "type": "signal", "default": 0, "description": "B-format ACN channel 5"},
+      {"name": "in7", "type": "signal", "default": 0, "description": "B-format ACN channel 6"},
+      {"name": "in8", "type": "signal", "default": 0, "description": "B-format ACN channel 7"},
+      {"name": "in9", "type": "signal", "default": 0, "description": "B-format ACN channel 8"},
+      {"name": "front_back", "type": "float", "default": 0, "description": "Front-back mirror flag (0 = no flip, 1 = flip)"},
+      {"name": "left_right", "type": "float", "default": 0, "description": "Left-right mirror flag (0 = no flip, 1 = flip)"},
+      {"name": "up_down", "type": "float", "default": 0, "description": "Up-down mirror flag (0 = no flip, 1 = flip)"}
+    ],
+    "outputs": 9,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOABeamDirac2HOA1",
+    "description": "SC-HOA Dirac (delta) beamformer to HOA (order 1) — extracts a directional beam from 1st-order b-format and re-encodes it back to 1st-order b-format. NOTE: orders 3-5 exceed Rhai's 16-input limit and are omitted.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0 (W)"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1 (Y)"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2 (Z)"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3 (X)"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Beam azimuth in radians"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Beam elevation in radians"},
+      {"name": "gain", "type": "float", "default": 0, "description": "Beam level/gain"},
+      {"name": "on", "type": "float", "default": 1, "description": "Beam on/off (1 = active, 0 = bypassed)"},
+      {"name": "timer_manual", "type": "float", "default": 0, "description": "Manual-timer flag for the internal envelope"},
+      {"name": "crossfade", "type": "float", "default": 1, "description": "Crossfade time/factor between beam states"},
+      {"name": "focus", "type": "float", "default": 0, "description": "Beam focus/sharpness"}
+    ],
+    "outputs": 4,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOABeamDirac2HOA2",
+    "description": "SC-HOA Dirac (delta) beamformer to HOA (order 2) — extracts a directional beam from 2nd-order b-format and re-encodes it back to 2nd-order b-format.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3"},
+      {"name": "in5", "type": "signal", "default": 0, "description": "B-format ACN channel 4"},
+      {"name": "in6", "type": "signal", "default": 0, "description": "B-format ACN channel 5"},
+      {"name": "in7", "type": "signal", "default": 0, "description": "B-format ACN channel 6"},
+      {"name": "in8", "type": "signal", "default": 0, "description": "B-format ACN channel 7"},
+      {"name": "in9", "type": "signal", "default": 0, "description": "B-format ACN channel 8"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Beam azimuth in radians"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Beam elevation in radians"},
+      {"name": "gain", "type": "float", "default": 0, "description": "Beam level/gain"},
+      {"name": "on", "type": "float", "default": 1, "description": "Beam on/off (1 = active, 0 = bypassed)"},
+      {"name": "timer_manual", "type": "float", "default": 0, "description": "Manual-timer flag for the internal envelope"},
+      {"name": "crossfade", "type": "float", "default": 1, "description": "Crossfade time/factor between beam states"},
+      {"name": "focus", "type": "float", "default": 0, "description": "Beam focus/sharpness"}
+    ],
+    "outputs": 9,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOABeamHCardio2HOA1",
+    "description": "SC-HOA hyper-cardioid beamformer to HOA (order 1) — extracts a hyper-cardioid beam from 1st-order b-format and re-encodes it back to 1st-order b-format. NOTE: order 3 exceeds Rhai's 16-input limit; orders 4-5 are not implemented in SC-HOA's HOABeamHCard2Hoa wrapper.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0 (W)"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1 (Y)"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2 (Z)"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3 (X)"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Beam azimuth in radians"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Beam elevation in radians"},
+      {"name": "int_float", "type": "float", "default": 0, "description": "Integer/float interpolation flag"},
+      {"name": "order", "type": "float", "default": 1, "description": "Cardioid pattern order (1 = hyper-cardioid)"}
+    ],
+    "outputs": 4,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOABeamHCardio2HOA2",
+    "description": "SC-HOA hyper-cardioid beamformer to HOA (order 2) — extracts a hyper-cardioid beam from 2nd-order b-format and re-encodes it back to 2nd-order b-format.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3"},
+      {"name": "in5", "type": "signal", "default": 0, "description": "B-format ACN channel 4"},
+      {"name": "in6", "type": "signal", "default": 0, "description": "B-format ACN channel 5"},
+      {"name": "in7", "type": "signal", "default": 0, "description": "B-format ACN channel 6"},
+      {"name": "in8", "type": "signal", "default": 0, "description": "B-format ACN channel 7"},
+      {"name": "in9", "type": "signal", "default": 0, "description": "B-format ACN channel 8"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Beam azimuth in radians"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Beam elevation in radians"},
+      {"name": "int_float", "type": "float", "default": 0, "description": "Integer/float interpolation flag"},
+      {"name": "order", "type": "float", "default": 1, "description": "Cardioid pattern order (1 = hyper-cardioid)"}
+    ],
+    "outputs": 9,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOABeamHCardio2Mono1",
+    "description": "SC-HOA hyper-cardioid beamformer to mono (order 1) — extracts a single mono beam from 1st-order b-format. NOTE: order 3 exceeds Rhai's 16-input limit; orders 4-5 are not implemented in SC-HOA's HOABeamHCard2Mono wrapper.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0 (W)"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1 (Y)"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2 (Z)"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3 (X)"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Beam azimuth in radians"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Beam elevation in radians"},
+      {"name": "output_gain", "type": "float", "default": 0, "description": "Output gain in dB"}
+    ],
+    "outputs": 1,
+    "category": "SC-HOA"
+  },
+  {
+    "name": "HOABeamHCardio2Mono2",
+    "description": "SC-HOA hyper-cardioid beamformer to mono (order 2) — extracts a single mono beam from 2nd-order b-format.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in1", "type": "signal", "default": 0, "description": "B-format ACN channel 0"},
+      {"name": "in2", "type": "signal", "default": 0, "description": "B-format ACN channel 1"},
+      {"name": "in3", "type": "signal", "default": 0, "description": "B-format ACN channel 2"},
+      {"name": "in4", "type": "signal", "default": 0, "description": "B-format ACN channel 3"},
+      {"name": "in5", "type": "signal", "default": 0, "description": "B-format ACN channel 4"},
+      {"name": "in6", "type": "signal", "default": 0, "description": "B-format ACN channel 5"},
+      {"name": "in7", "type": "signal", "default": 0, "description": "B-format ACN channel 6"},
+      {"name": "in8", "type": "signal", "default": 0, "description": "B-format ACN channel 7"},
+      {"name": "in9", "type": "signal", "default": 0, "description": "B-format ACN channel 8"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Beam azimuth in radians"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Beam elevation in radians"},
+      {"name": "output_gain", "type": "float", "default": 0, "description": "Output gain in dB"}
+    ],
+    "outputs": 1,
+    "category": "SC-HOA"
+  }
+]

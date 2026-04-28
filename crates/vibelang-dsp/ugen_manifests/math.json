@@ -326,5 +326,591 @@
       "exp_exp_ar",
       "exp_exp_kr"
     ]
+  },
+  {
+    "name": "Sum3",
+    "description": "Fused 3-input adder. Equivalent to a + b + c but cheaper than chaining BinaryOpUGen Adds.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "First input signal"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Second input signal"
+      },
+      {
+        "name": "c",
+        "type": "signal",
+        "default": 0,
+        "description": "Third input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math"
+  },
+  {
+    "name": "Sum4",
+    "description": "Fused 4-input adder. Equivalent to a + b + c + d but cheaper than chaining BinaryOpUGen Adds.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "First input signal"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Second input signal"
+      },
+      {
+        "name": "c",
+        "type": "signal",
+        "default": 0,
+        "description": "Third input signal"
+      },
+      {
+        "name": "d",
+        "type": "signal",
+        "default": 0,
+        "description": "Fourth input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math"
+  },
+  {
+    "name": "Ring1",
+    "description": "Ring modulator variant 1: a * (b + 1) == a*b + a. BinaryOpUGen wrapper (special-index 30).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal b"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 30
+  },
+  {
+    "name": "Ring2",
+    "description": "Ring modulator variant 2: a*b + a + b. BinaryOpUGen wrapper (special-index 31).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal b"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 31
+  },
+  {
+    "name": "Ring3",
+    "description": "Ring modulator variant 3: a*a*b. BinaryOpUGen wrapper (special-index 32).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal b"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 32
+  },
+  {
+    "name": "Ring4",
+    "description": "Ring modulator variant 4: a*a*b - a*b*b. BinaryOpUGen wrapper (special-index 33).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal b"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 33
+  },
+  {
+    "name": "Hypot",
+    "description": "Euclidean hypotenuse: sqrt(a*a + b*b). BinaryOpUGen wrapper (special-index 23).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal b"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 23
+  },
+  {
+    "name": "HypotApx",
+    "description": "Cheap hypotenuse approximation: |a| + |b| - sqrt(2)/2 * min(|a|, |b|). BinaryOpUGen wrapper (special-index 24).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal b"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 24
+  },
+  {
+    "name": "Atan2",
+    "description": "Two-argument arctangent atan2(y, x), result in radians [-pi, pi]. BinaryOpUGen wrapper (special-index 22).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "y coordinate"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "x coordinate"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 22
+  },
+  {
+    "name": "SumSqr",
+    "description": "Sum of squares: a*a + b*b. BinaryOpUGen wrapper (special-index 35).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal b"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 35
+  },
+  {
+    "name": "DifSqr",
+    "description": "Difference of squares: a*a - b*b. BinaryOpUGen wrapper (special-index 34).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal b"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 34
+  },
+  {
+    "name": "SqrSum",
+    "description": "Square of sum: (a + b)^2. BinaryOpUGen wrapper (special-index 36).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal b"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 36
+  },
+  {
+    "name": "SqrDif",
+    "description": "Square of difference: (a - b)^2. BinaryOpUGen wrapper (special-index 37).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal b"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 37
+  },
+  {
+    "name": "AbsDif",
+    "description": "Absolute difference: |a - b|. BinaryOpUGen wrapper (special-index 38).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal b"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 38
+  },
+  {
+    "name": "Thresh",
+    "description": "Pass input through unchanged if its absolute value is >= threshold, else output 0. BinaryOpUGen wrapper (special-index 39).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "thresh",
+        "type": "float",
+        "default": 0,
+        "description": "Threshold value (compared against |in|)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 39
+  },
+  {
+    "name": "AMClip",
+    "description": "Two-quadrant multiply: a * max(0, b). Useful as a half-wave-rectified amplitude modulator. BinaryOpUGen wrapper (special-index 40).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Carrier signal a"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Modulator signal b (negative values clipped to 0)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 40
+  },
+  {
+    "name": "ScaleNeg",
+    "description": "Scale only the negative portion of the input by `b`; positive values pass through unchanged. BinaryOpUGen wrapper (special-index 41).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "scale",
+        "type": "float",
+        "default": 1,
+        "description": "Scale factor for negative values"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 41
+  },
+  {
+    "name": "Clip2",
+    "description": "Symmetric clip to [-b, +b]. BinaryOpUGen wrapper (special-index 42).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "max",
+        "type": "float",
+        "default": 1,
+        "description": "Symmetric clipping bound"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 42
+  },
+  {
+    "name": "Wrap2",
+    "description": "Symmetric wrap into [-b, +b]. BinaryOpUGen wrapper (special-index 45).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "max",
+        "type": "float",
+        "default": 1,
+        "description": "Symmetric wrap bound"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 45
+  },
+  {
+    "name": "Fold2",
+    "description": "Symmetric fold into [-b, +b]. BinaryOpUGen wrapper (special-index 44).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "max",
+        "type": "float",
+        "default": 1,
+        "description": "Symmetric fold bound"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 44
+  },
+  {
+    "name": "Excess",
+    "description": "Output the portion of input outside [-b, +b]; complement of Clip2 (in - clip2(in, b)). BinaryOpUGen wrapper (special-index 43).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "max",
+        "type": "float",
+        "default": 1,
+        "description": "Symmetric bound used for the clip portion"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 43
+  },
+  {
+    "name": "FirstArg",
+    "description": "Pass through the first argument unchanged while still listing the second as a UGen input (forces evaluation order / dependency). BinaryOpUGen wrapper (special-index 46).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "Pass-through signal"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "Dependency input (evaluated but not used in the output)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "BinaryOpUGen",
+    "special_index": 46
   }
 ]
