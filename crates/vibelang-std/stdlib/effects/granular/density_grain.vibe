@@ -1,0 +1,62 @@
+// kind=fx | category=granular | flavor=density_grain | stereo=true | params=density_min,density_max,mod_freq,grain_size,mix,level
+//
+// Density Grain Effect
+//
+// TGrains with LFO-modulated grain density. A sine LFO sweeps the trigger
+// rate between `density_min` and `density_max` so the grain stream swells
+// and thins rhythmically — produces a breathing, pulsing granular texture.
+//
+// Usage:
+//   group.add_effect("dgrain", "density_grain", #{
+//     density_min: 5.0,
+//     density_max: 60.0,
+//     mod_freq: 0.25,
+//     grain_size: 0.1,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   density_min: Lowest grain rate in grains/sec (LFO trough)
+//   density_max: Highest grain rate in grains/sec (LFO peak)
+//   mod_freq: Density LFO frequency in Hz (0.05 to 5)
+//   grain_size: Grain duration in seconds (0.01 to 0.5)
+//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("density_grain", |builder| {
+    builder
+        .param("density_min", 5.0)
+        .param("density_max", 60.0)
+        .param("mod_freq", 0.25)
+        .param("grain_size", 0.1)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, density_min, density_max, mod_freq, grain_size, mix, level| {
+            // ~2s circular buffers, one per channel.
+            let buf_l = local_buf_ir(1, 96000);
+            let buf_r = local_buf_ir(1, 96000);
+
+            record_buf_ar(input[0], buf_l, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+            record_buf_ar(input[1], buf_r, 0, 1.0, 0.0, 1.0, 1, 1, 0);
+
+            // sin_osc_kr returns -1..1; map to 0..1 then to [min, max].
+            let lfo01 = sin_osc_kr(mod_freq, 0.0) * 0.5 + 0.5;
+            let density = density_min + (density_max - density_min) * lfo01;
+
+            let trig = impulse_ar(density, 0.0);
+            let pos_l = white_noise_ar() * 0.25 + 0.5;
+            let pos_r = white_noise_ar() * 0.25 + 0.5;
+
+            let g_l = channels(t_grains_ar(2, trig, buf_l, 1.0, pos_l, grain_size, 0.0, 0.5, 4), 2);
+            let g_r = channels(t_grains_ar(2, trig, buf_r, 1.0, pos_r, grain_size, 0.0, 0.5, 4), 2);
+
+            let wet_l = leak_dc_ar((g_l[0] + g_l[1]) * 0.5, 0.995);
+            let wet_r = leak_dc_ar((g_r[0] + g_r[1]) * 0.5, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

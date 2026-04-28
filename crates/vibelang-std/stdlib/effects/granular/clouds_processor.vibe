@@ -1,0 +1,66 @@
+// kind=fx | category=granular | flavor=clouds | stereo=true | params=position,size,density,texture,blend,mix,level
+//
+// Clouds Processor Effect
+//
+// Wraps the Mutable Instruments Clouds port (mi_clouds_ar) as a stereo
+// granular texture processor. Defaults to GRANULAR playback mode for a
+// classic one-knob shimmer pad — feed any sustained source and reach for
+// `density` + `texture` to bloom it into a cloud.
+//
+// REQUIRES: mi-UGens plugin installed in your SuperCollider extensions.
+//
+// Usage:
+//   group.add_effect("clouds", "clouds_processor", #{
+//     position: 0.5,
+//     size: 0.5,
+//     density: 0.5,
+//     texture: 0.5,
+//     blend: 1.0,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   position: Playback position in the internal 8s buffer (0 to 1)
+//   size: Grain size (0 to 1)
+//   density: Grain density (0..0.5 = periodic, 0.5..1 = random; 0.5 ≈ silent)
+//   texture: Grain texture / window shape (0 to 1)
+//   blend: Internal Clouds dry/wet — the "Blend" knob on the hardware (0 to 1)
+//   mix: Outer dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("clouds_processor", |builder| {
+    builder
+        .param("position", 0.5)
+        .param("size", 0.5)
+        .param("density", 0.5)
+        .param("texture", 0.5)
+        .param("blend", 1.0)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, position, size, density, texture, blend, mix, level| {
+            // Clouds takes a single audio input; sum to mono and let the
+            // UGen's internal `spread=1.0` re-spatialise the wet output.
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // mi_clouds_ar args: in, pit, pos, size, dens, tex, drywet,
+            //   in_gain, spread, rvb, fb, freeze, mode, lofi, trig
+            // Fixed: pit=0 (no pitch shift), in_gain=1, spread=1 (full),
+            //        rvb=0, fb=0, freeze=0, mode=0 (GRANULAR), lofi=0, trig=0
+            let cl = channels(
+                mi_clouds_ar(
+                    mono, 0.0, position, size, density, texture, blend,
+                    1.0, 1.0, 0.0, 0.0, 0, 0, 0, 0
+                ),
+                2
+            );
+
+            let wet_l = leak_dc_ar(cl[0], 0.995);
+            let wet_r = leak_dc_ar(cl[1], 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});
