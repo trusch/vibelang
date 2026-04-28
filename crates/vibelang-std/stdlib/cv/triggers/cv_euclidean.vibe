@@ -1,0 +1,36 @@
+// kind=cv | category=trigger | flavor=euclidean | range=0..+5V | params=clock,hits,total,rotation
+//
+// Euclidean rhythm gate. Distributes `hits` triggers as evenly as possible
+// across `total` clock steps (Bjorklund-style) and emits 5 ms +5V pulses on
+// the steps that land on a hit. `rotation` shifts the pattern start.
+// Example: hits=3, total=8, rotation=0 -> "x..x..x." advanced by `clock`.
+//
+// Hit predicate uses the standard floor((k*hits)/total) increment test,
+// equivalent to ((k*hits) mod total) < hits, evaluated per step.
+//
+// CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
+
+define_synthdef("cv_euclidean")
+    .param("clock", 0.0)
+    .param("hits", 3.0)
+    .param("total", 8.0)
+    .param("rotation", 0.0)
+    .body(|clock, hits, total, rotation| {
+        // Step counter [0, total-1] advancing on every `clock` rising edge.
+        let step = stepper_ar(clock, 0.0, 0.0, total - 1.0, 1.0, 0.0);
+
+        // Apply rotation, wrap into [0, total).
+        let step_r = (step + rotation).modulo(total);
+
+        // Bresenham-style euclidean hit test:
+        //   hit on step k iff ((k * hits) mod total) < hits.
+        let beat_idx = (step_r * hits).modulo(total);
+        let is_hit = in_range_ar(beat_idx, 0.0, hits - 1.0);
+
+        // Pass the clock impulse only on hit steps.
+        let gated = clock * is_hit;
+
+        // Stretch to a 5 ms pulse and scale to +5V.
+        let pulse = trig1_ar(gated, 0.005);
+        clip_ar(pulse * 0.5, -1.0, 1.0)
+    });

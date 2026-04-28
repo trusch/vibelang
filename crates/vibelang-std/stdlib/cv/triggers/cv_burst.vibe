@@ -1,0 +1,35 @@
+// kind=cv | category=trigger | flavor=burst | range=0..+5V | params=trig_in,count,rate_hz
+//
+// Burst generator. On each rising edge of `trig_in`, emit `count` triggers
+// at `rate_hz`, each a 5 ms +5V pulse.
+//
+// Implementation: each rising edge of `trig_in` opens a window of length
+// `count / rate_hz` seconds via Trig1. A free-running impulse oscillator at
+// `rate_hz` is gated by that window, then each impulse is stretched to 5 ms.
+// (The first impulse is phase-aligned to the next zero-crossing of the
+// internal oscillator, not exactly to the trigger edge — accept up to one
+// `rate_hz` period of jitter on burst-start.)
+//
+// CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
+
+define_synthdef("cv_burst")
+    .param("trig_in", 0.0)
+    .param("count", 3.0)
+    .param("rate_hz", 10.0)
+    .body(|trig_in, count, rate_hz| {
+        // Window length: just enough to cover `count` ticks at `rate_hz`.
+        let window_dur = count / rate_hz;
+
+        // Hold the window high for `window_dur` seconds on every rising edge.
+        let window = trig1_ar(trig_in, window_dur);
+
+        // Internal pulse engine running at the burst rate.
+        let imp = impulse_ar(rate_hz, 0.0);
+
+        // Pass impulses only while the burst window is open.
+        let gated = imp * window;
+
+        // Stretch each impulse to a 5 ms +5V pulse and clip.
+        let pulse = trig1_ar(gated, 0.005);
+        clip_ar(pulse * 0.5, -1.0, 1.0)
+    });

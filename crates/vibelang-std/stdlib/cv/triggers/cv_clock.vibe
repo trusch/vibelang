@@ -1,0 +1,24 @@
+// kind=cv | category=clock | flavor=pulse-train | range=0..+5V | params=bpm,division
+//
+// Tempo-locked clock pulse train at `bpm * division / 60` Hz.
+// `division`: 1 = quarter note, 2 = eighth, 4 = sixteenth.
+// Each tick is a 5 ms +5V pulse.
+//
+// CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
+
+define_synthdef("cv_clock")
+    .param("bpm", 120.0)
+    .param("division", 1.0)
+    .body(|bpm, division| {
+        // Pulse rate in Hz = beats/min * subdivisions/beat / 60 s.
+        let freq = bpm * division / 60.0;
+
+        // Free-running single-sample impulse train at `freq` Hz.
+        let imp = impulse_ar(freq, 0.0);
+
+        // Stretch each impulse to a 5 ms gate-high pulse.
+        let pulse = trig1_ar(imp, 0.005);
+
+        // Scale 1.0 -> 0.5 audio (= +5V), hard clip to +/-1.0.
+        clip_ar(pulse * 0.5, -1.0, 1.0)
+    });
