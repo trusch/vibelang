@@ -1,0 +1,398 @@
+[
+  {
+    "name": "PV_Add",
+    "description": "Complex addition of two FFT chains. Sums real and imaginary parts of bufferA and bufferB.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT chain A (also receives the result)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT chain B" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_add_kr"]
+  },
+  {
+    "name": "PV_Copy",
+    "description": "Copies the spectral frame from bufferA into bufferB. Allows parallel processing of FFT data without multiple FFT UGens. Both buffers must be the same size.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "Source FFT chain" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "Destination FFT chain (must match bufferA size)" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_copy_kr"]
+  },
+  {
+    "name": "PV_CopyPhase",
+    "description": "Combines magnitudes from bufferA with phases from bufferB.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT chain providing magnitudes" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT chain providing phases" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_copy_phase_kr"]
+  },
+  {
+    "name": "PV_Conj",
+    "description": "Complex conjugate. Reverses the sign of the imaginary part of each bin. Component for analysis or transformation processes.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_conj_kr"]
+  },
+  {
+    "name": "PV_Div",
+    "description": "Complex division of two FFT chains. Useful for transfer-function estimation by dividing output spectrum by input spectrum.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT chain A (numerator, also receives the result)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT chain B (denominator)" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_div_kr"]
+  },
+  {
+    "name": "PV_Max",
+    "description": "Output copies bins with the maximum magnitude of the two FFT chains.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT chain A (also receives the result)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT chain B" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_max_kr"]
+  },
+  {
+    "name": "PV_Min",
+    "description": "Output copies bins with the minimum magnitude of the two FFT chains.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT chain A (also receives the result)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT chain B" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_min_kr"]
+  },
+  {
+    "name": "PV_Mul",
+    "description": "Complex multiplication of two FFT chains. Multiplies (RealA*RealB - ImagA*ImagB, ImagA*RealB + RealA*ImagB) per bin.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT chain A (also receives the result)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT chain B" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_mul_kr"]
+  },
+  {
+    "name": "PV_MagAbove",
+    "description": "Pass only bins whose magnitude is above a threshold; zero the rest.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "threshold", "type": "float", "default": 0, "description": "Magnitude threshold; bins at or below this are zeroed" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_mag_above_kr"]
+  },
+  {
+    "name": "PV_MagBelow",
+    "description": "Pass only bins whose magnitude is below a threshold; zero the rest.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "threshold", "type": "float", "default": 0, "description": "Magnitude threshold; bins at or above this are zeroed" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_mag_below_kr"]
+  },
+  {
+    "name": "PV_MagClip",
+    "description": "Clip bin magnitudes to a maximum threshold.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "threshold", "type": "float", "default": 0, "description": "Maximum magnitude; larger values are clamped down to this" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_mag_clip_kr"]
+  },
+  {
+    "name": "PV_MagDiv",
+    "description": "Divides magnitudes of bufferA by magnitudes of bufferB while keeping phases of bufferA.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT chain A (numerator, also receives the result)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT chain B (denominator)" },
+      { "name": "zeroed", "type": "float", "default": 0.0001, "description": "Replacement value when bufferB bins are zero (avoids divide-by-zero)" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_mag_div_kr"]
+  },
+  {
+    "name": "PV_MagMul",
+    "description": "Multiplies magnitudes of bufferA by magnitudes of bufferB; keeps phases of bufferA.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT chain A (also receives the result)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT chain B" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_mag_mul_kr"]
+  },
+  {
+    "name": "PV_MagSquared",
+    "description": "Squares the magnitudes of all bins, then renormalises to the previous peak. Makes weak bins weaker.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_mag_squared_kr"]
+  },
+  {
+    "name": "PV_MagFreeze",
+    "description": "Freezes magnitudes at their current values when freeze > 0; magnitudes update normally otherwise.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "freeze", "type": "float", "default": 0, "description": "If > 0, magnitudes are frozen at their current levels" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_mag_freeze_kr"]
+  },
+  {
+    "name": "PV_MagShift",
+    "description": "Shift and stretch the positions of bin magnitudes (phases unchanged). Crude frequency shifter/scaler.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "stretch", "type": "float", "default": 1.0, "description": "Multiplicative factor on bin index (>1 stretches up)" },
+      { "name": "shift", "type": "float", "default": 0, "description": "Additive offset on bin index" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_mag_shift_kr"]
+  },
+  {
+    "name": "PV_MagSmear",
+    "description": "Average a bin's magnitude with its neighbors. Higher 'bins' values raise CPU usage.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "bins", "type": "float", "default": 0, "description": "Number of neighbouring bins on each side to include in the average" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_mag_smear_kr"]
+  },
+  {
+    "name": "PV_MagNoise",
+    "description": "Multiplies bin magnitudes by white noise.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_mag_noise_kr"]
+  },
+  {
+    "name": "PV_BinScramble",
+    "description": "Randomises the order of FFT bins. The trigger picks a new random ordering.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "wipe", "type": "float", "default": 0, "description": "Scrambles more bins as wipe moves from 0 to 1" },
+      { "name": "width", "type": "float", "default": 0.2, "description": "Maximum randomised distance of a bin from its original location, in [0, 1]" },
+      { "name": "trig", "type": "float", "default": 0, "description": "Trigger that selects a new random ordering" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_bin_scramble_kr"]
+  },
+  {
+    "name": "PV_BinShift",
+    "description": "Shift and stretch the positions of FFT bins (magnitude and phase together). Crude frequency shifter/scaler.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "stretch", "type": "float", "default": 1.0, "description": "Multiplicative factor on bin index" },
+      { "name": "shift", "type": "float", "default": 0, "description": "Additive offset on bin index" },
+      { "name": "interp", "type": "float", "default": 0, "description": "0 = no interpolation, 1 = linear interpolation between bins" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_bin_shift_kr"]
+  },
+  {
+    "name": "PV_BinWipe",
+    "description": "Combine low bins from one FFT chain and high bins from the other. wipe selects the crossover point.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT chain A (also receives the result)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT chain B" },
+      { "name": "wipe", "type": "float", "default": 0, "description": "Crossover position in [-1, 1]; 0 = all A, >0 fills from bottom up with B, <0 from top down" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_bin_wipe_kr"]
+  },
+  {
+    "name": "PV_BrickWall",
+    "description": "Zero bins above or below a cutoff. wipe > 0 acts like high-pass (clears from bottom up); wipe < 0 acts like low-pass (clears from top down).",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "wipe", "type": "float", "default": 0, "description": "Cutoff position in [-1, 1]; 0 = no effect" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_brick_wall_kr"]
+  },
+  {
+    "name": "PV_LocalMax",
+    "description": "Pass only bins whose magnitude is above a threshold and above their nearest neighbours.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "threshold", "type": "float", "default": 0, "description": "Magnitude threshold" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_local_max_kr"]
+  },
+  {
+    "name": "PV_Diffuser",
+    "description": "Adds a different constant random phase shift to each bin. The trigger picks a new set of random phases.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "trig", "type": "float", "default": 0, "description": "Trigger that selects a new set of random phases" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_diffuser_kr"]
+  },
+  {
+    "name": "PV_RandComb",
+    "description": "Randomly clear bins. wipe selects how many are cleared; the trigger picks a new random ordering.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "wipe", "type": "float", "default": 0, "description": "Clears more bins in a random order as wipe moves from 0 to 1" },
+      { "name": "trig", "type": "float", "default": 0, "description": "Trigger that selects a new random ordering" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_rand_comb_kr"]
+  },
+  {
+    "name": "PV_RandWipe",
+    "description": "Crossfades between two FFT chains by copying bins of bufferB into bufferA in a random order.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT chain A (also receives the result)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT chain B" },
+      { "name": "wipe", "type": "float", "default": 0, "description": "Copies more bins from bufferB as wipe moves from 0 to 1" },
+      { "name": "trig", "type": "float", "default": 0, "description": "Trigger that selects a new random ordering" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_rand_wipe_kr"]
+  },
+  {
+    "name": "PV_RectComb",
+    "description": "Make a series of gaps in the spectrum (rectangular comb).",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "numTeeth", "type": "float", "default": 0, "description": "Number of teeth in the comb" },
+      { "name": "phase", "type": "float", "default": 0, "description": "Starting phase of the comb pulse" },
+      { "name": "width", "type": "float", "default": 0.5, "description": "Pulse width of the comb in [0, 1]" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_rect_comb_kr"]
+  },
+  {
+    "name": "PV_RectComb2",
+    "description": "Alternates blocks of bins between two FFT chains (rectangular comb of two inputs).",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "bufferA", "type": "signal", "default": 0, "description": "FFT chain A (also receives the result)" },
+      { "name": "bufferB", "type": "signal", "default": 0, "description": "FFT chain B" },
+      { "name": "numTeeth", "type": "float", "default": 0, "description": "Number of teeth in the comb" },
+      { "name": "phase", "type": "float", "default": 0, "description": "Starting phase of the comb pulse" },
+      { "name": "width", "type": "float", "default": 0.5, "description": "Pulse width of the comb in [0, 1]" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_rect_comb2_kr"]
+  },
+  {
+    "name": "PV_PhaseShift",
+    "description": "Shift the phase of all bins by a given amount, optionally accumulating across calls.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "shift", "type": "float", "default": 0, "description": "Phase shift in radians" },
+      { "name": "integrate", "type": "float", "default": 0, "description": "If > 0, integrate the phase shift across calls (accumulating shift)" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_phase_shift_kr"]
+  },
+  {
+    "name": "PV_PhaseShift90",
+    "description": "Shift phase of all bins by 90 degrees.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_phase_shift90_kr"]
+  },
+  {
+    "name": "PV_PhaseShift270",
+    "description": "Shift phase of all bins by 270 degrees.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_phase_shift270_kr"]
+  },
+  {
+    "name": "PV_ConformalMap",
+    "description": "Applies the conformal mapping z -> (z - a) / (1 - z*conj(a)) to the phase vocoder bins, where a = areal + i*aimag. Usually keep |a| < 1; large values produce noisy artifacts.",
+    "rates": ["kr"],
+    "inputs": [
+      { "name": "buffer", "type": "signal", "default": 0, "description": "FFT chain" },
+      { "name": "areal", "type": "float", "default": 0, "description": "Real part of a" },
+      { "name": "aimag", "type": "float", "default": 0, "description": "Imaginary part of a" }
+    ],
+    "outputs": 1,
+    "category": "FFT",
+    "functions": ["pv_conformal_map_kr"]
+  }
+]

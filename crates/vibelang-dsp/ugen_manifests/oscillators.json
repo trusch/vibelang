@@ -354,34 +354,6 @@
     ]
   },
   {
-    "name": "Triangle",
-    "description": "Band-limited triangle wave oscillator.",
-    "rates": [
-      "ar",
-      "kr"
-    ],
-    "inputs": [
-      {
-        "name": "freq",
-        "type": "float",
-        "default": 440,
-        "description": "Frequency in Hertz"
-      },
-      {
-        "name": "phase",
-        "type": "float",
-        "default": 0,
-        "description": "Phase offset from 0 to 1"
-      }
-    ],
-    "outputs": 1,
-    "category": "Oscillators",
-    "functions": [
-      "triangle_ar",
-      "triangle_kr"
-    ]
-  },
-  {
     "name": "LFPar",
     "description": "Low frequency parabolic wave oscillator. Generates a parabolic wave shape.",
     "rates": [
