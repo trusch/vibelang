@@ -1,0 +1,176 @@
+[
+  {
+    "name": "AmplitudeMod",
+    "description": "Amplitude follower with separate attack and release smoothing — extracts the envelope of the input as a control signal. Similar to Amplitude but exposes both rates of an asymmetric one-pole. From sc3-plugins BlackrainUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Input signal whose amplitude is tracked"
+      },
+      {
+        "name": "attackTime",
+        "type": "signal",
+        "default": 0.01,
+        "description": "Smoothing time when the envelope rises (seconds, -60dB convergence)"
+      },
+      {
+        "name": "releaseTime",
+        "type": "signal",
+        "default": 0.01,
+        "description": "Smoothing time when the envelope falls (seconds, -60dB convergence)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Blackrain",
+    "functions": [
+      "amplitude_mod_ar",
+      "amplitude_mod_kr"
+    ]
+  },
+  {
+    "name": "BMoog",
+    "description": "Moog-style ladder filter with selectable response mode and tanh-shaped saturation in the feedback path. Ports the classic 4-pole topology with smooth nonlinear self-resonance. From sc3-plugins BlackrainUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "signal",
+        "default": 440.0,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "q",
+        "type": "signal",
+        "default": 0.2,
+        "description": "Resonance amount (0 to 1) — values approaching 1 self-oscillate"
+      },
+      {
+        "name": "mode",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Filter response: 0 = LP24, 1 = HP24, 2 = BP24"
+      },
+      {
+        "name": "saturation",
+        "type": "signal",
+        "default": 0.95,
+        "description": "Drive amount applied inside the feedback path before the tanh stage"
+      }
+    ],
+    "outputs": 1,
+    "category": "Blackrain",
+    "functions": [
+      "b_moog_ar"
+    ]
+  },
+  {
+    "name": "IIRFilter",
+    "description": "Direct-form 2nd-order resonant IIR filter (biquad) — single-input, single-output multi-pole filter useful as a lighter alternative to RLPF/RHPF when only one slope is needed. From sc3-plugins BlackrainUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "signal",
+        "default": 440.0,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "rq",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Reciprocal of Q — bandwidth as a fraction of cutoff (smaller is narrower/more resonant)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Blackrain",
+    "functions": [
+      "iir_filter_ar"
+    ]
+  },
+  {
+    "name": "SVF",
+    "description": "Chamberlin state-variable filter with simultaneously-mixable lowpass / bandpass / highpass / notch / peak outputs. Each response is computed in parallel and summed by the corresponding mix gain — ideal for smooth morphs between filter types. From sc3-plugins BlackrainUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "signal",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "cutoff",
+        "type": "signal",
+        "default": 2200.0,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "res",
+        "type": "signal",
+        "default": 0.1,
+        "description": "Resonance amount (0 to 1) — values approaching 1 self-oscillate"
+      },
+      {
+        "name": "lowpass",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Mix gain for the low-pass response"
+      },
+      {
+        "name": "bandpass",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Mix gain for the band-pass response"
+      },
+      {
+        "name": "highpass",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Mix gain for the high-pass response"
+      },
+      {
+        "name": "notch",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Mix gain for the notch (band-reject) response"
+      },
+      {
+        "name": "peak",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Mix gain for the peak response"
+      }
+    ],
+    "outputs": 1,
+    "category": "Blackrain",
+    "functions": [
+      "svf_ar",
+      "svf_kr"
+    ]
+  }
+]

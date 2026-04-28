@@ -1,0 +1,580 @@
+[
+  {
+    "name": "LPF1",
+    "description": "First-order one-pole low-pass filter. Gentle 6 dB/octave roll-off — ideal as a smoothing stage or for taking the edge off bright sources without colouring the resonance. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "signal",
+        "default": 1000,
+        "description": "Cutoff frequency in Hertz"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "lpf1_ar",
+      "lpf1_kr"
+    ]
+  },
+  {
+    "name": "LPF18",
+    "description": "Three-pole resonant low-pass filter with non-linear distortion stage modelled after the Moog ladder. The dist parameter drives the internal feedback path, producing softly saturating resonance. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "signal",
+        "default": 100,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "res",
+        "type": "signal",
+        "default": 1,
+        "description": "Resonance amount (0 to 1) — values approaching 1 self-oscillate"
+      },
+      {
+        "name": "dist",
+        "type": "signal",
+        "default": 0.4,
+        "description": "Distortion drive applied inside the feedback path (0 to 1)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "lpf18_ar"
+    ]
+  },
+  {
+    "name": "LPFVS6",
+    "description": "Variable-slope six-pole low-pass filter. The slope input morphs the response between gentle and steep cut-off without retuning the cutoff frequency. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "signal",
+        "default": 1000,
+        "description": "Cutoff frequency in Hertz"
+      },
+      {
+        "name": "slope",
+        "type": "signal",
+        "default": 0.5,
+        "description": "Filter slope (0 to 1) — higher values increase the roll-off steepness"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "lpfvs6_ar",
+      "lpfvs6_kr"
+    ]
+  },
+  {
+    "name": "BLBufRd",
+    "description": "Band-limited buffer reader using a windowed-sinc interpolation kernel. Cleaner than BufRd's linear/cubic interpolation when reading at non-integer rates — drastically reduces aliasing when pitching buffers up. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "signal",
+        "default": 0,
+        "description": "Buffer number to read from"
+      },
+      {
+        "name": "phase",
+        "type": "signal",
+        "default": 0,
+        "description": "Read position in samples"
+      },
+      {
+        "name": "ratio",
+        "type": "signal",
+        "default": 1,
+        "description": "Pitch ratio applied to the read — values > 1 raise pitch, < 1 lower it"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "bl_buf_rd_ar",
+      "bl_buf_rd_kr"
+    ]
+  },
+  {
+    "name": "Clipper4",
+    "description": "Four-times oversampled hard clipper. Clips the input to the lo/hi range with internal upsampling to suppress aliasing typically introduced by hard clipping. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lo",
+        "type": "signal",
+        "default": -0.8,
+        "description": "Lower clipping threshold"
+      },
+      {
+        "name": "hi",
+        "type": "signal",
+        "default": 0.8,
+        "description": "Upper clipping threshold"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "clipper4_ar"
+    ]
+  },
+  {
+    "name": "Clipper8",
+    "description": "Eight-times oversampled hard clipper. Same behaviour as Clipper4 with deeper internal oversampling for further reduced aliasing — at the cost of additional CPU. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lo",
+        "type": "signal",
+        "default": -0.8,
+        "description": "Lower clipping threshold"
+      },
+      {
+        "name": "hi",
+        "type": "signal",
+        "default": 0.8,
+        "description": "Upper clipping threshold"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "clipper8_ar"
+    ]
+  },
+  {
+    "name": "SoftClipper4",
+    "description": "Four-times oversampled cubic soft clipper. Applies a smooth saturating transfer function with internal upsampling — much cleaner than SuperCollider's stock .softclip when driven hard. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "soft_clipper4_ar"
+    ]
+  },
+  {
+    "name": "SoftClipper8",
+    "description": "Eight-times oversampled cubic soft clipper. Same behaviour as SoftClipper4 with deeper oversampling for the cleanest possible saturation — at higher CPU cost. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "soft_clipper8_ar"
+    ]
+  },
+  {
+    "name": "SoftClipAmp4",
+    "description": "Four-times oversampled soft-clipping amplifier. Combines a pregain stage with the SoftClipper4 transfer function — useful as an inline drive/saturation effect. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "pregain",
+        "type": "signal",
+        "default": 1,
+        "description": "Gain applied to the signal before the soft-clip stage"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "soft_clip_amp4_ar"
+    ]
+  },
+  {
+    "name": "SoftClipAmp8",
+    "description": "Eight-times oversampled soft-clipping amplifier. Combines a pregain stage with the SoftClipper8 transfer function for the smoothest oversampled drive in the pack. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "pregain",
+        "type": "signal",
+        "default": 1,
+        "description": "Gain applied to the signal before the soft-clip stage"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "soft_clip_amp8_ar"
+    ]
+  },
+  {
+    "name": "OSWrap4",
+    "description": "Four-times oversampled wrap. Wraps the signal cyclically into the lo/hi range — values outside the range fold around the bounds with phase continuity. The oversampling reduces aliasing artefacts from the hard wrap discontinuity. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lo",
+        "type": "signal",
+        "default": -1.0,
+        "description": "Lower wrap bound"
+      },
+      {
+        "name": "hi",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Upper wrap bound"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "os_wrap4_ar"
+    ]
+  },
+  {
+    "name": "OSWrap8",
+    "description": "Eight-times oversampled wrap. Same behaviour as OSWrap4 with deeper oversampling for further reduced aliasing of the wrap discontinuity. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lo",
+        "type": "signal",
+        "default": -1.0,
+        "description": "Lower wrap bound"
+      },
+      {
+        "name": "hi",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Upper wrap bound"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "os_wrap8_ar"
+    ]
+  },
+  {
+    "name": "OSFold4",
+    "description": "Four-times oversampled fold. Reflects the signal back into the lo/hi range — produces classic wavefolding distortion (cf. Buchla 259) with internal oversampling to suppress the aliasing typical of folders. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lo",
+        "type": "signal",
+        "default": -1.0,
+        "description": "Lower fold bound"
+      },
+      {
+        "name": "hi",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Upper fold bound"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "os_fold4_ar"
+    ]
+  },
+  {
+    "name": "OSFold8",
+    "description": "Eight-times oversampled fold. Same wavefolding behaviour as OSFold4 with deeper oversampling — useful when driving the folder hard with bright sources. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "lo",
+        "type": "signal",
+        "default": -1.0,
+        "description": "Lower fold bound"
+      },
+      {
+        "name": "hi",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Upper fold bound"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "os_fold8_ar"
+    ]
+  },
+  {
+    "name": "OSTrunc4",
+    "description": "Four-times oversampled bit/amplitude truncation (quantizer). Rounds the input to multiples of quant, producing chunky stair-step distortion with reduced aliasing compared to a naive sample-rate quantize. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "quant",
+        "type": "signal",
+        "default": 0.5,
+        "description": "Quantization step size — input is rounded to multiples of this value"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "os_trunc4_ar"
+    ]
+  },
+  {
+    "name": "OSTrunc8",
+    "description": "Eight-times oversampled amplitude truncation (quantizer). Same behaviour as OSTrunc4 with deeper oversampling for cleaner stair-step distortion. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "quant",
+        "type": "signal",
+        "default": 0.5,
+        "description": "Quantization step size — input is rounded to multiples of this value"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "os_trunc8_ar"
+    ]
+  },
+  {
+    "name": "DriveNoise",
+    "description": "Drive-dependent noise injector. Mixes amplitude-correlated noise into the signal — louder input adds proportionally more noise, modelling the noise floor of overdriven analogue stages. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "amount",
+        "type": "signal",
+        "default": 1,
+        "description": "Noise amount — scales the level of the injected noise"
+      },
+      {
+        "name": "multi",
+        "type": "signal",
+        "default": 5,
+        "description": "Drive multiplier — controls how strongly input level couples into the noise generator"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "drive_noise_ar"
+    ]
+  },
+  {
+    "name": "PeakEQ4",
+    "description": "Four-times oversampled peaking parametric EQ. Boosts or cuts a single resonant peak with reduced aliasing on the resonance — useful when sweeping or modulating at audio rate. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "signal",
+        "default": 1200.0,
+        "description": "Centre frequency of the peak in Hertz"
+      },
+      {
+        "name": "rs",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Reciprocal of Q — bandwidth of the peak (smaller is narrower)"
+      },
+      {
+        "name": "db",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Gain at the peak in decibels (negative cuts, positive boosts)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "peak_eq4_ar"
+    ]
+  },
+  {
+    "name": "PeakEQ2",
+    "description": "Two-times oversampled peaking parametric EQ. Same topology as PeakEQ4 with lighter oversampling — a good balance between aliasing rejection and CPU. From sc3-plugins BerlachUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "freq",
+        "type": "signal",
+        "default": 1200.0,
+        "description": "Centre frequency of the peak in Hertz"
+      },
+      {
+        "name": "rs",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Reciprocal of Q — bandwidth of the peak (smaller is narrower)"
+      },
+      {
+        "name": "db",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Gain at the peak in decibels (negative cuts, positive boosts)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Berlach",
+    "functions": [
+      "peak_eq2_ar"
+    ]
+  }
+]

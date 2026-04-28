@@ -1,0 +1,60 @@
+[
+  {
+    "name": "BBlockerBuf",
+    "description": "Audio-rate Betablocker virtual machine voice. Reads a 256-byte program out of the supplied buffer and runs Dave Griffiths' Betablocker stack-machine bytecode at audio rate, emitting up to 9 simultaneous output channels (one per VM voice slot). Inspired by the Betablocker handheld livecoding instrument. From sc3-plugins BetablockerUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "signal",
+        "default": 440.0,
+        "description": "Clock frequency for the VM in Hertz — controls how fast bytecodes are executed"
+      },
+      {
+        "name": "bufnum",
+        "type": "signal",
+        "default": 0,
+        "description": "Buffer holding the 256-byte program (load via BBlockerProgram.makeBuffer or asLocalBuf)"
+      },
+      {
+        "name": "startpoint",
+        "type": "signal",
+        "default": 0,
+        "description": "Initial program counter offset (0 to 255)"
+      }
+    ],
+    "outputs": 9,
+    "category": "Betablocker",
+    "functions": [
+      "b_blocker_buf_ar"
+    ]
+  },
+  {
+    "name": "DetaBlockerBuf",
+    "description": "Demand-rate Betablocker bytecode stream. Runs Dave Griffiths' Betablocker stack-machine over a 256-byte program loaded from a buffer, emitting one VM output value per demand pull — typically wrapped in Demand.ar for clocked playback. From sc3-plugins BetablockerUGens.",
+    "rates": [
+      "demand"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "signal",
+        "default": 0,
+        "description": "Buffer holding the 256-byte program (load via BBlockerProgram.makeBuffer or asLocalBuf)"
+      },
+      {
+        "name": "startpoint",
+        "type": "signal",
+        "default": 0,
+        "description": "Initial program counter offset (0 to 255)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Betablocker",
+    "functions": [
+      "deta_blocker_buf"
+    ]
+  }
+]

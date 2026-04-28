@@ -1,0 +1,268 @@
+[
+  {
+    "name": "Coyote",
+    "description": "Amplitude-tracking onset detector for percussive material. Returns a trigger pulse when the input's tracked amplitude exceeds a threshold, with separate slow/fast envelope followers and a minimum duration to avoid double-triggering. By Batuhan Bozkurt. From sc3-plugins BatUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Input signal whose amplitude is tracked"
+      },
+      {
+        "name": "trackFall",
+        "type": "signal",
+        "default": 0.2,
+        "description": "Fall time of the amplitude tracker in seconds"
+      },
+      {
+        "name": "slowLag",
+        "type": "signal",
+        "default": 0.2,
+        "description": "Smoothing time of the slow envelope follower in seconds"
+      },
+      {
+        "name": "fastLag",
+        "type": "signal",
+        "default": 0.01,
+        "description": "Smoothing time of the fast envelope follower in seconds"
+      },
+      {
+        "name": "fastMul",
+        "type": "signal",
+        "default": 0.5,
+        "description": "Multiplier applied to the fast envelope when comparing against the slow envelope"
+      },
+      {
+        "name": "thresh",
+        "type": "signal",
+        "default": 0.05,
+        "description": "Minimum amplitude required to fire a trigger"
+      },
+      {
+        "name": "minDur",
+        "type": "signal",
+        "default": 0.1,
+        "description": "Minimum time between triggers in seconds (prevents double-triggering)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Bat",
+    "functions": [
+      "coyote_kr"
+    ]
+  },
+  {
+    "name": "TrigAvg",
+    "description": "Triggered averaging accumulator. Computes the running mean of the input between successive triggers — useful for measuring per-grain or per-event statistics from a control stream. By Batuhan Bozkurt. From sc3-plugins BatUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Input signal to average"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger signal — non-positive to positive transitions reset the average and emit the previous window's mean"
+      }
+    ],
+    "outputs": 1,
+    "category": "Bat",
+    "functions": [
+      "trig_avg_kr"
+    ]
+  },
+  {
+    "name": "WAmp",
+    "description": "Window-based amplitude follower. Computes the average absolute value of the input over a sliding window of fixed duration — gives a smoother and less peaky envelope than a one-pole follower. By Batuhan Bozkurt. From sc3-plugins BatUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Input signal whose amplitude is tracked"
+      },
+      {
+        "name": "winSize",
+        "type": "signal",
+        "default": 0.1,
+        "description": "Sliding window length in seconds"
+      }
+    ],
+    "outputs": 1,
+    "category": "Bat",
+    "functions": [
+      "w_amp_kr"
+    ]
+  },
+  {
+    "name": "MarkovSynth",
+    "description": "Markov-chain audio resynthesis. While isRecording is non-zero, learns a first-order transition table over the input's amplitude trajectory; once switched off, generates new audio by walking the learned chain. Produces glitchy, granular variations on the source material. By Batuhan Bozkurt. From sc3-plugins BatUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Input signal to learn from while recording"
+      },
+      {
+        "name": "isRecording",
+        "type": "signal",
+        "default": 1,
+        "description": "Non-zero to keep learning transitions; zero to freeze the table and synthesize from it"
+      },
+      {
+        "name": "waitTime",
+        "type": "signal",
+        "default": 2,
+        "description": "Time spent at each Markov state before transitioning, in seconds"
+      },
+      {
+        "name": "tableSize",
+        "type": "signal",
+        "default": 10,
+        "description": "Number of discrete states in the transition table — higher values track the source more faithfully"
+      }
+    ],
+    "outputs": 1,
+    "category": "Bat",
+    "functions": [
+      "markov_synth_ar"
+    ]
+  },
+  {
+    "name": "FrameCompare",
+    "description": "FFT-frame difference metric. Compares two frequency-domain buffers (FFT outputs) and returns a scalar similarity measure weighted by wAmount. Useful for spectral matching, novelty detection or audio thumbnailing. By Batuhan Bozkurt. From sc3-plugins BatUGens.",
+    "rates": [
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "buffer1",
+        "type": "signal",
+        "default": 0,
+        "description": "First FFT buffer to compare"
+      },
+      {
+        "name": "buffer2",
+        "type": "signal",
+        "default": 0,
+        "description": "Second FFT buffer to compare"
+      },
+      {
+        "name": "wAmount",
+        "type": "signal",
+        "default": 0.5,
+        "description": "Weighting amount applied to the magnitude/phase comparison (0 to 1)"
+      }
+    ],
+    "outputs": 1,
+    "category": "Bat",
+    "functions": [
+      "frame_compare_kr"
+    ]
+  },
+  {
+    "name": "NeedleRect",
+    "description": "Scanline reader over a virtual image rectangle — sweeps a 'needle' across the rectangular region at a fixed rate, emitting normalised X/Y coordinates as audio-rate streams. Originally designed for image-driven sonification. By Batuhan Bozkurt. From sc3-plugins BatUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "rate",
+        "type": "signal",
+        "default": 1.0,
+        "description": "Scanning rate — frames per second over the rectangle"
+      },
+      {
+        "name": "imgWidth",
+        "type": "signal",
+        "default": 100,
+        "description": "Total image width in pixels"
+      },
+      {
+        "name": "imgHeight",
+        "type": "signal",
+        "default": 100,
+        "description": "Total image height in pixels"
+      },
+      {
+        "name": "rectX",
+        "type": "signal",
+        "default": 0,
+        "description": "X origin of the scan rectangle in pixels"
+      },
+      {
+        "name": "rectY",
+        "type": "signal",
+        "default": 0,
+        "description": "Y origin of the scan rectangle in pixels"
+      },
+      {
+        "name": "rectW",
+        "type": "signal",
+        "default": 100,
+        "description": "Width of the scan rectangle in pixels"
+      },
+      {
+        "name": "rectH",
+        "type": "signal",
+        "default": 100,
+        "description": "Height of the scan rectangle in pixels"
+      }
+    ],
+    "outputs": 1,
+    "category": "Bat",
+    "functions": [
+      "needle_rect_ar"
+    ]
+  },
+  {
+    "name": "SkipNeedle",
+    "description": "Random index generator that 'skips' through a numeric range at a configurable rate — useful for driving BufRd phase as a glitchy random scrubber. By Batuhan Bozkurt. From sc3-plugins BatUGens.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "range",
+        "type": "signal",
+        "default": 44100,
+        "description": "Upper bound of the integer range scanned (exclusive)"
+      },
+      {
+        "name": "rate",
+        "type": "signal",
+        "default": 10,
+        "description": "Number of skips per second"
+      },
+      {
+        "name": "offset",
+        "type": "signal",
+        "default": 0,
+        "description": "Lower bound added to each emitted index"
+      }
+    ],
+    "outputs": 1,
+    "category": "Bat",
+    "functions": [
+      "skip_needle_ar"
+    ]
+  }
+]
