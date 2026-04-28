@@ -112,28 +112,6 @@
     ]
   },
   {
-    "name": "Slope",
-    "description": "Measures the rate of change (slope/derivative) of a signal per sample.",
-    "rates": [
-      "ar",
-      "kr"
-    ],
-    "inputs": [
-      {
-        "name": "in",
-        "type": "signal",
-        "default": 0,
-        "description": "Input signal"
-      }
-    ],
-    "outputs": 1,
-    "category": "Analysis",
-    "functions": [
-      "slope_ar",
-      "slope_kr"
-    ]
-  },
-  {
     "name": "ZeroCrossing",
     "description": "Zero crossing frequency. Estimates frequency by counting zero crossings.",
     "rates": [
