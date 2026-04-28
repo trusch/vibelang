@@ -1,0 +1,11 @@
+// kind=cv | category=pitch | flavor=v_oct_static | range=±10V | params=midi_note
+//
+// Static V/oct from MIDI note. C4 (60) → 0V; +1 octave per 12 semitones.
+// CV contract: 1.0 audio = +10V, so the internal scale is voct/10 in volts.
+// Hard-clipped to ±1.0 (±10V, ±12 octaves around C4) — no leak_dc, no soft-sat.
+define_synthdef("cv_voct_from_midi")
+    .param("midi_note", 60.0)  // 60 = C4 → 0V
+    .body(|midi_note| {
+        let voct = (midi_note - 60.0) / 12.0;
+        clip(voct, -1.0, 1.0)
+    });

@@ -1,0 +1,28 @@
+// kind=cv | category=pitch | flavor=v_oct_drift | range=±10V | params=rate,depth_cents
+//
+// Sub-audio random walk around 0V, intended for vibrato or microtonal
+// detuning when summed with another V/oct source. The output is a small
+// V/oct deviation centred at 0; sum it with a static or sequenced V/oct
+// to get a drifting pitch.
+//
+// `rate` (Hz) sets how fast the drift wanders. Implemented with LFNoise2
+// (quadratic-interpolated random walk) — smooth enough for vibrato, no
+// audible stepping. Lorenz would also work but a quadratic-interp noise
+// is cheap and gives the same "slowly wandering analog" character at
+// the depths typical for pitch drift.
+//
+// `depth_cents` is the peak deviation in cents (1/100 of a semitone).
+// Conversion: 1 cent = 1/1200 of an octave; in this synthdef's [-1,+1]
+// CV space where 1.0 = 12 octaves, 1 cent = 1/14400. Scaling LFNoise2's
+// ±1 output by depth_cents/14400 gives a peak-to-peak excursion of
+// ±depth_cents cents on the V/oct line.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+define_synthdef("cv_drift")
+    .param("rate", 4.0)          // Hz — drift speed
+    .param("depth_cents", 5.0)   // cents — peak deviation (±)
+    .body(|rate, depth_cents| {
+        let noise = lf_noise2_kr(rate);
+        let voct_drift = noise * (depth_cents / 14400.0);
+        clip(voct_drift, -1.0, 1.0)
+    });

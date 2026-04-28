@@ -1,0 +1,50 @@
+// kind=cv | category=pitch | flavor=v_oct_seq | range=±10V | params=clock,length,note0..note7
+//
+// 8-step MIDI-note sequencer. Each rising edge of `clock` advances the step;
+// `length` (1..8) sets how many steps before wrapping. Each step is a MIDI
+// note number (default 60 = C4) which is converted to V/oct on the way out.
+//
+// Step selection is done with overlapping triangular masks so the output is
+// sample-accurate at the trigger boundary — the Stepper jumps in one block,
+// and the masks resolve to a clean integer index, so there's no zipper from
+// fractional indexing. (Vibelang has no `select_kr(array)` wrapper, so this
+// mask sum stands in for it.)
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+define_synthdef("cv_voct_seq", |builder| {
+    builder
+        .param("clock", 0.0)       // rising edge advances step
+        .param("length", 8.0)      // 1..8 active steps
+        .param("note0", 60.0)
+        .param("note1", 62.0)
+        .param("note2", 64.0)
+        .param("note3", 67.0)
+        .param("note4", 60.0)
+        .param("note5", 62.0)
+        .param("note6", 64.0)
+        .param("note7", 67.0)
+        .body(|clock, length, note0, note1, note2, note3,
+               note4, note5, note6, note7| {
+            // Stepper wraps at max_idx = length-1, so changing `length` at
+            // runtime still yields a valid integer index within [0, length).
+            let max_idx = (length - 1.0).max(0.0);
+            let idx = stepper_kr(clock, 0.0, 0.0, max_idx, 1.0, 0.0);
+
+            // Triangular kernel: m_k = max(1 - |idx - k|, 0). For integer
+            // idx, exactly one mask is 1.0 and the rest are 0.0.
+            let m0 = (1.0 - abs(idx - 0.0)).max(0.0);
+            let m1 = (1.0 - abs(idx - 1.0)).max(0.0);
+            let m2 = (1.0 - abs(idx - 2.0)).max(0.0);
+            let m3 = (1.0 - abs(idx - 3.0)).max(0.0);
+            let m4 = (1.0 - abs(idx - 4.0)).max(0.0);
+            let m5 = (1.0 - abs(idx - 5.0)).max(0.0);
+            let m6 = (1.0 - abs(idx - 6.0)).max(0.0);
+            let m7 = (1.0 - abs(idx - 7.0)).max(0.0);
+
+            let midi = m0 * note0 + m1 * note1 + m2 * note2 + m3 * note3
+                     + m4 * note4 + m5 * note5 + m6 * note6 + m7 * note7;
+
+            let voct = (midi - 60.0) / 12.0;
+            clip(voct, -1.0, 1.0)
+        })
+});

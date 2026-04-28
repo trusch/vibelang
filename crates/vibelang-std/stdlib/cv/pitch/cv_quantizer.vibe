@@ -1,0 +1,86 @@
+// kind=cv | category=pitch | flavor=v_oct_quantizer | range=±10V | params=cv_in,scale,root
+//
+// Snap a continuous V/oct input to the nearest scale degree.
+//
+// scale enum: 0=chromatic, 1=major, 2=minor, 3=pent_major, 4=pent_minor,
+//             5=whole_tone, 6=just_intonation (≈chromatic in 12-TET)
+// root: semitone offset of the scale root from C, 0..11. Default 0 (= C).
+//
+// Implementation — nearest-neighbor via a per-class delta table:
+//   1. Round input to chromatic semitone.
+//   2. Take the semitone class k = round(semi) mod 12 (after subtracting
+//      the root, so the table is always written in C).
+//   3. Look up delta[scale][k]: a signed semitone shift that moves k to
+//      the nearest in-scale tone. Tied midpoints (e.g. k=1 between 0 and
+//      2 in major) snap UP, which keeps wraps across the octave boundary
+//      monotonic — k=11 in a scale missing 11 (e.g. major) snaps to 12,
+//      i.e. the next octave's 0.
+//   4. Output (semi_int + delta) / 12, hard-clipped to ±1.0.
+//
+// Each delta table is encoded as a signed sum of class masks
+// (m_k = 1 when class==K, else 0, built from a triangular kernel on the
+// integer-rounded class). With chromatic-rounded k, exactly one mask is
+// 1.0, so the mask sum is effectively a Select. Vibelang has no
+// `select_kr(array)` wrapper, hence the mask-sum stand-in.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+define_synthdef("cv_quantizer", |builder| {
+    builder
+        .param("cv_in", 0.0)   // continuous V/oct input, ±1.0
+        .param("scale", 0.0)   // scale enum (see header)
+        .param("root", 0.0)    // root offset in semitones from C, 0..11
+        .body(|cv_in, scale, root| {
+            // Quantize on a root-relative axis so the delta tables are
+            // always written for C; the root shift cancels at the end.
+            let semi_continuous = cv_in * 12.0 - root;
+            let semi_int = round(semi_continuous);
+
+            // floor-mod to keep k ∈ [0, 12) for negative semitones too.
+            let octave = floor(semi_int / 12.0);
+            let k = semi_int - octave * 12.0;
+
+            // Class masks. Only the 11 classes actually referenced by a
+            // delta table are built (k=0 carries delta=0 in every scale).
+            let mk1  = (1.0 - abs(k - 1.0)).max(0.0);
+            let mk2  = (1.0 - abs(k - 2.0)).max(0.0);
+            let mk3  = (1.0 - abs(k - 3.0)).max(0.0);
+            let mk4  = (1.0 - abs(k - 4.0)).max(0.0);
+            let mk5  = (1.0 - abs(k - 5.0)).max(0.0);
+            let mk6  = (1.0 - abs(k - 6.0)).max(0.0);
+            let mk7  = (1.0 - abs(k - 7.0)).max(0.0);
+            let mk8  = (1.0 - abs(k - 8.0)).max(0.0);
+            let mk9  = (1.0 - abs(k - 9.0)).max(0.0);
+            let mk10 = (1.0 - abs(k - 10.0)).max(0.0);
+            let mk11 = (1.0 - abs(k - 11.0)).max(0.0);
+
+            // Per-scale deltas.
+            //  major     [0,2,4,5,7,9,11]: +1 at {1,3,6,8,10}
+            let d_major = mk1 + mk3 + mk6 + mk8 + mk10;
+            //  minor     [0,2,3,5,7,8,10]: +1 at {1,4,6,9,11}
+            let d_minor = mk1 + mk4 + mk6 + mk9 + mk11;
+            //  pent_maj  [0,2,4,7,9]:      +1 at {1,3,6,8,11}, −1 at {5,10}
+            let d_pent_major = mk1 + mk3 + mk6 + mk8 + mk11 - mk5 - mk10;
+            //  pent_min  [0,3,5,7,10]:     +1 at {2,4,6,9,11}, −1 at {1,8}
+            let d_pent_minor = mk2 + mk4 + mk6 + mk9 + mk11 - mk1 - mk8;
+            //  whole     [0,2,4,6,8,10]:   +1 at every odd k
+            let d_whole = mk1 + mk3 + mk5 + mk7 + mk9 + mk11;
+            //  chromatic and just_intonation: delta = 0 (omitted from sum)
+
+            // Scale-selection masks. With integer scale, exactly one is 1.
+            let s1 = (1.0 - abs(scale - 1.0)).max(0.0);
+            let s2 = (1.0 - abs(scale - 2.0)).max(0.0);
+            let s3 = (1.0 - abs(scale - 3.0)).max(0.0);
+            let s4 = (1.0 - abs(scale - 4.0)).max(0.0);
+            let s5 = (1.0 - abs(scale - 5.0)).max(0.0);
+
+            let delta = s1 * d_major
+                      + s2 * d_minor
+                      + s3 * d_pent_major
+                      + s4 * d_pent_minor
+                      + s5 * d_whole;
+
+            let snapped_semi = semi_int + delta + root;
+            let voct_q = snapped_semi / 12.0;
+            clip(voct_q, -1.0, 1.0)
+        })
+});
