@@ -1,0 +1,511 @@
+[
+  {
+    "name": "DWGPlucked",
+    "description": "Digital waveguide physical model of a plucked-string instrument.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Sound frequency in Hz."
+      },
+      {
+        "name": "amp",
+        "type": "float",
+        "default": 0.5,
+        "description": "Key pulsation strength (0..1)."
+      },
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 1,
+        "description": "Releases synth when value changes from > 0 to 0."
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0.14,
+        "description": "Relative pluck position from 0 to 1."
+      },
+      {
+        "name": "c1",
+        "type": "float",
+        "default": 1.0,
+        "description": "Inverse of DC decay time."
+      },
+      {
+        "name": "c3",
+        "type": "float",
+        "default": 30.0,
+        "description": "High-frequency loss factor."
+      },
+      {
+        "name": "inp",
+        "type": "signal",
+        "default": 0,
+        "description": "Plucking signal — can be the first part of a plucked sample for commuted synthesis."
+      },
+      {
+        "name": "release",
+        "type": "float",
+        "default": 0.1,
+        "description": "Release time in seconds."
+      }
+    ],
+    "outputs": 1,
+    "category": "DWGUGens"
+  },
+  {
+    "name": "DWGPluckedStiff",
+    "description": "Digital waveguide plucked-string model with string-stiffness inharmonicity, after Rauhala & Välimäki (2006), 'Tunable dispersion filter design for piano synthesis'.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Sound frequency in Hz."
+      },
+      {
+        "name": "amp",
+        "type": "float",
+        "default": 0.5,
+        "description": "Key pulsation strength (0..1)."
+      },
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 1,
+        "description": "Releases synth when value changes from > 0 to 0."
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0.14,
+        "description": "Relative pluck position from 0 to 1."
+      },
+      {
+        "name": "c1",
+        "type": "float",
+        "default": 1.0,
+        "description": "Inverse of DC decay time."
+      },
+      {
+        "name": "c3",
+        "type": "float",
+        "default": 30.0,
+        "description": "High-frequency loss factor."
+      },
+      {
+        "name": "inp",
+        "type": "signal",
+        "default": 0,
+        "description": "Plucking signal — can be the first part of a plucked sample for commuted synthesis."
+      },
+      {
+        "name": "release",
+        "type": "float",
+        "default": 0.1,
+        "description": "Release time in seconds."
+      },
+      {
+        "name": "fB",
+        "type": "float",
+        "default": 2.0,
+        "description": "Inharmonicity factor — controls the dispersive stiffness of the string."
+      }
+    ],
+    "outputs": 1,
+    "category": "DWGUGens"
+  },
+  {
+    "name": "DWGPlucked2",
+    "description": "Digital waveguide plucked-string model with two strings coupled by the gc parameter (suitable for piano-like dual-string sympathetic excitation).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Sound frequency in Hz."
+      },
+      {
+        "name": "amp",
+        "type": "float",
+        "default": 0.5,
+        "description": "Key pulsation strength (0..1)."
+      },
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 1,
+        "description": "Releases synth when value changes from > 0 to 0."
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0.14,
+        "description": "Relative pluck position from 0 to 1."
+      },
+      {
+        "name": "c1",
+        "type": "float",
+        "default": 1.0,
+        "description": "Inverse of DC decay time."
+      },
+      {
+        "name": "c3",
+        "type": "float",
+        "default": 30.0,
+        "description": "High-frequency loss factor."
+      },
+      {
+        "name": "inp",
+        "type": "signal",
+        "default": 0,
+        "description": "Plucking signal — can be the first part of a plucked sample for commuted synthesis."
+      },
+      {
+        "name": "release",
+        "type": "float",
+        "default": 0.1,
+        "description": "Release time in seconds."
+      },
+      {
+        "name": "mistune",
+        "type": "float",
+        "default": 1.008,
+        "description": "Detuning factor for the second string relative to the first."
+      },
+      {
+        "name": "mp",
+        "type": "float",
+        "default": 0.55,
+        "description": "Excitation mixer between the two strings — 1 = first only, 0 = second only."
+      },
+      {
+        "name": "gc",
+        "type": "float",
+        "default": 0.01,
+        "description": "String coupling factor between the two strings."
+      }
+    ],
+    "outputs": 1,
+    "category": "DWGUGens"
+  },
+  {
+    "name": "DWGBowedSimple",
+    "description": "Simple digital waveguide physical model of a bowed-string instrument. Output should be passed through DWGSoundBoard for a more realistic timbre.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Sound frequency in Hz."
+      },
+      {
+        "name": "velb",
+        "type": "float",
+        "default": 0.5,
+        "description": "Bow velocity."
+      },
+      {
+        "name": "force",
+        "type": "float",
+        "default": 1.0,
+        "description": "Bow normal force."
+      },
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 1,
+        "description": "Releases synth when value changes from > 0 to 0."
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0.14,
+        "description": "Relative bow position from 0 to 1."
+      },
+      {
+        "name": "release",
+        "type": "float",
+        "default": 0.1,
+        "description": "Release time in seconds."
+      },
+      {
+        "name": "c1",
+        "type": "float",
+        "default": 1.0,
+        "description": "Inverse of DC decay time."
+      },
+      {
+        "name": "c3",
+        "type": "float",
+        "default": 30.0,
+        "description": "High-frequency loss factor."
+      }
+    ],
+    "outputs": 1,
+    "category": "DWGUGens"
+  },
+  {
+    "name": "DWGBowed",
+    "description": "Digital waveguide physical model of a bowed-string instrument with string-impedance and inharmonicity controls. Output should be passed through DWGSoundBoard for a more realistic timbre.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Sound frequency in Hz."
+      },
+      {
+        "name": "velb",
+        "type": "float",
+        "default": 0.5,
+        "description": "Bow velocity."
+      },
+      {
+        "name": "force",
+        "type": "float",
+        "default": 1.0,
+        "description": "Bow normal force."
+      },
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 1,
+        "description": "Releases synth when value changes from > 0 to 0."
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0.14,
+        "description": "Relative bow position from 0 to 1."
+      },
+      {
+        "name": "release",
+        "type": "float",
+        "default": 0.1,
+        "description": "Release time in seconds."
+      },
+      {
+        "name": "c1",
+        "type": "float",
+        "default": 1.0,
+        "description": "Inverse of DC decay time."
+      },
+      {
+        "name": "c3",
+        "type": "float",
+        "default": 3.0,
+        "description": "High-frequency loss factor."
+      },
+      {
+        "name": "impZ",
+        "type": "float",
+        "default": 0.55,
+        "description": "String impedance."
+      },
+      {
+        "name": "fB",
+        "type": "float",
+        "default": 2.0,
+        "description": "Inharmonicity factor."
+      }
+    ],
+    "outputs": 1,
+    "category": "DWGUGens"
+  },
+  {
+    "name": "DWGBowedTor",
+    "description": "Digital waveguide bowed-string model that augments DWGBowed with a torsional-wave companion waveguide (mistuned, with its own decay and impedance), modelling string twist alongside transverse vibration.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Sound frequency in Hz."
+      },
+      {
+        "name": "velb",
+        "type": "float",
+        "default": 0.5,
+        "description": "Bow velocity."
+      },
+      {
+        "name": "force",
+        "type": "float",
+        "default": 1.0,
+        "description": "Bow normal force."
+      },
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 1,
+        "description": "Releases synth when value changes from > 0 to 0."
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0.14,
+        "description": "Relative bow position from 0 to 1."
+      },
+      {
+        "name": "release",
+        "type": "float",
+        "default": 0.1,
+        "description": "Release time in seconds."
+      },
+      {
+        "name": "c1",
+        "type": "float",
+        "default": 1.0,
+        "description": "Inverse of DC decay time."
+      },
+      {
+        "name": "c3",
+        "type": "float",
+        "default": 3.0,
+        "description": "High-frequency loss factor."
+      },
+      {
+        "name": "impZ",
+        "type": "float",
+        "default": 0.55,
+        "description": "String impedance."
+      },
+      {
+        "name": "fB",
+        "type": "float",
+        "default": 2.0,
+        "description": "Inharmonicity factor."
+      },
+      {
+        "name": "mistune",
+        "type": "float",
+        "default": 5.2,
+        "description": "Relative frequency of the torsional waves."
+      },
+      {
+        "name": "c1tor",
+        "type": "float",
+        "default": 1.0,
+        "description": "Inverse of DC decay time for the torsional wave."
+      },
+      {
+        "name": "c3tor",
+        "type": "float",
+        "default": 3000.0,
+        "description": "High-frequency loss factor for the torsional wave."
+      },
+      {
+        "name": "iZtor",
+        "type": "float",
+        "default": 1.8,
+        "description": "Torsional-wave string impedance."
+      }
+    ],
+    "outputs": 1,
+    "category": "DWGUGens"
+  },
+  {
+    "name": "DWGSoundBoard",
+    "description": "Resonating soundboard model — a parallel bank of eight tunable delay lines with decay and damping. Used downstream of DWGPlucked / DWGBowed to give the string output a body resonance.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "inp",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal (typically the output of a DWGPlucked or DWGBowed UGen)."
+      },
+      {
+        "name": "c1",
+        "type": "float",
+        "default": 20.0,
+        "description": "Inverse of DC decay time for the soundboard resonators."
+      },
+      {
+        "name": "c3",
+        "type": "float",
+        "default": 20.0,
+        "description": "High-frequency loss factor for the soundboard resonators."
+      },
+      {
+        "name": "mix",
+        "type": "float",
+        "default": 0.8,
+        "description": "Wet/dry mix between the resonated signal and the dry input (0..1)."
+      },
+      {
+        "name": "d1",
+        "type": "float",
+        "default": 199.0,
+        "description": "Delay length in samples for resonator 1."
+      },
+      {
+        "name": "d2",
+        "type": "float",
+        "default": 211.0,
+        "description": "Delay length in samples for resonator 2."
+      },
+      {
+        "name": "d3",
+        "type": "float",
+        "default": 223.0,
+        "description": "Delay length in samples for resonator 3."
+      },
+      {
+        "name": "d4",
+        "type": "float",
+        "default": 227.0,
+        "description": "Delay length in samples for resonator 4."
+      },
+      {
+        "name": "d5",
+        "type": "float",
+        "default": 229.0,
+        "description": "Delay length in samples for resonator 5."
+      },
+      {
+        "name": "d6",
+        "type": "float",
+        "default": 233.0,
+        "description": "Delay length in samples for resonator 6."
+      },
+      {
+        "name": "d7",
+        "type": "float",
+        "default": 239.0,
+        "description": "Delay length in samples for resonator 7."
+      },
+      {
+        "name": "d8",
+        "type": "float",
+        "default": 241.0,
+        "description": "Delay length in samples for resonator 8."
+      }
+    ],
+    "outputs": 1,
+    "category": "DWGUGens"
+  }
+]
