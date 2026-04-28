@@ -1,0 +1,55 @@
+// kind=fx | category=pitch | flavor=harmonizer_2voice | stereo=true | params=voice1_semitones,voice2_semitones,mix,level
+//
+// Two-Voice Harmonizer
+//
+// Generates two pitch-shifted voices alongside the dry signal using
+// time-domain granular pitch shifting. Each voice processes L/R
+// independently to preserve the stereo image. The two wet voices are
+// summed (averaged) and then DC-blocked before the dry/wet blend per the
+// stdlib effects spec.
+//
+// Defaults (+3, +5 semitones) sit a major third and perfect fifth above the
+// source — a stock "thirds + fifths" stack used on vocals and leads. Set a
+// negative value to harmonise below the source.
+//
+// Usage:
+//   group.add_effect("harm", "harmonizer_2voice", #{
+//     voice1_semitones: 3.0,
+//     voice2_semitones: 5.0,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   voice1_semitones: Voice 1 interval in semitones (negative = down)
+//   voice2_semitones: Voice 2 interval in semitones
+//   mix: Dry/wet blend (0.0 = dry, 1.0 = only the harmony stack)
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("harmonizer_2voice", |builder| {
+    builder
+        .param("voice1_semitones", 3.0)
+        .param("voice2_semitones", 5.0)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, voice1_semitones, voice2_semitones, mix, level| {
+            let r1 = (2.0).pow(voice1_semitones / 12.0);
+            let r2 = (2.0).pow(voice2_semitones / 12.0);
+
+            let v1_l = pitch_shift_ar(input[0], 0.1, r1, 0.0, 0.004);
+            let v1_r = pitch_shift_ar(input[1], 0.1, r1, 0.0, 0.004);
+            let v2_l = pitch_shift_ar(input[0], 0.1, r2, 0.0, 0.004);
+            let v2_r = pitch_shift_ar(input[1], 0.1, r2, 0.0, 0.004);
+
+            let stack_l = (v1_l + v2_l) * 0.5;
+            let stack_r = (v1_r + v2_r) * 0.5;
+
+            let wet_l = leak_dc_ar(stack_l, 0.995);
+            let wet_r = leak_dc_ar(stack_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

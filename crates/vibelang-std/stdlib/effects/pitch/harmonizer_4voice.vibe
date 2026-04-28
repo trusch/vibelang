@@ -1,0 +1,66 @@
+// kind=fx | category=pitch | flavor=harmonizer_4voice | stereo=true | params=voice1_semitones,voice2_semitones,voice3_semitones,voice4_semitones,mix,level
+//
+// Four-Voice Harmonizer
+//
+// Stacks four pitch-shifted voices over the dry signal using time-domain
+// granular pitch shifting. Each voice processes L/R independently. The
+// four wet voices are summed (averaged) and then DC-blocked before the
+// dry/wet blend per the stdlib effects spec.
+//
+// Defaults (+3, +5, +7, +12) build a stacked triad with the upper octave —
+// a "stadium harmony" stack on vocals/leads, or a quick-and-dirty chord
+// generator from a monophonic source. Set negatives to drop voices below.
+//
+// Usage:
+//   group.add_effect("harm", "harmonizer_4voice", #{
+//     voice1_semitones: 3.0,
+//     voice2_semitones: 5.0,
+//     voice3_semitones: 7.0,
+//     voice4_semitones: 12.0,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   voice1_semitones: Voice 1 interval in semitones (default: 3 — minor third)
+//   voice2_semitones: Voice 2 interval in semitones (default: 5 — perfect fourth)
+//   voice3_semitones: Voice 3 interval in semitones (default: 7 — perfect fifth)
+//   voice4_semitones: Voice 4 interval in semitones (default: 12 — octave)
+//   mix: Dry/wet blend (0.0 = dry, 1.0 = only the harmony stack)
+//   level: Output trim applied after the dry/wet mix
+
+define_fx("harmonizer_4voice", |builder| {
+    builder
+        .param("voice1_semitones", 3.0)
+        .param("voice2_semitones", 5.0)
+        .param("voice3_semitones", 7.0)
+        .param("voice4_semitones", 12.0)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, voice1_semitones, voice2_semitones, voice3_semitones, voice4_semitones, mix, level| {
+            let r1 = (2.0).pow(voice1_semitones / 12.0);
+            let r2 = (2.0).pow(voice2_semitones / 12.0);
+            let r3 = (2.0).pow(voice3_semitones / 12.0);
+            let r4 = (2.0).pow(voice4_semitones / 12.0);
+
+            let v1_l = pitch_shift_ar(input[0], 0.1, r1, 0.0, 0.004);
+            let v1_r = pitch_shift_ar(input[1], 0.1, r1, 0.0, 0.004);
+            let v2_l = pitch_shift_ar(input[0], 0.1, r2, 0.0, 0.004);
+            let v2_r = pitch_shift_ar(input[1], 0.1, r2, 0.0, 0.004);
+            let v3_l = pitch_shift_ar(input[0], 0.1, r3, 0.0, 0.004);
+            let v3_r = pitch_shift_ar(input[1], 0.1, r3, 0.0, 0.004);
+            let v4_l = pitch_shift_ar(input[0], 0.1, r4, 0.0, 0.004);
+            let v4_r = pitch_shift_ar(input[1], 0.1, r4, 0.0, 0.004);
+
+            let stack_l = (v1_l + v2_l + v3_l + v4_l) * 0.25;
+            let stack_r = (v1_r + v2_r + v3_r + v4_r) * 0.25;
+
+            let wet_l = leak_dc_ar(stack_l, 0.995);
+            let wet_r = leak_dc_ar(stack_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

@@ -1,0 +1,3 @@
+// Pitch Effects Index
+import "stdlib/effects/pitch/harmonizer_2voice.vibe";
+import "stdlib/effects/pitch/harmonizer_4voice.vibe";
