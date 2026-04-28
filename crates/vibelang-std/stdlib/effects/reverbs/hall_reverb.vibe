@@ -1,3 +1,5 @@
+// kind=fx | category=reverb | flavor=hall | stereo=true | params=size,decay,damping,predelay,mix,level
+//
 // Hall Reverb Effect
 // Inspired by: Lexicon 480L, TC Electronic Hall of Fame
 //
@@ -5,11 +7,12 @@
 // Great for orchestral, ambient, and cinematic sounds.
 //
 // Parameters:
-//   size: Hall size (0.0 = small, 1.0 = cathedral)
-//   decay: Decay time (0.0 to 1.0)
-//   damping: High frequency damping (0.0 to 1.0)
+//   size:     Hall size (0.0 = small, 1.0 = cathedral)
+//   decay:    Decay time (0.0 to 1.0)
+//   damping:  High frequency damping (0.0 to 1.0)
 //   predelay: Pre-delay in seconds (0.0 to 0.1)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:      Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:    Final output trim (1.0 = unity)
 
 define_fx("hall_reverb", |builder| {
     builder
@@ -18,7 +21,8 @@ define_fx("hall_reverb", |builder| {
         .param("damping", 0.4)
         .param("predelay", 0.02)
         .param("mix", 0.35)
-        .body(|input, size, decay, damping, predelay, mix| {
+        .param("level", 1.0)
+        .body(|input, size, decay, damping, predelay, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
             // Pre-delay for source separation
@@ -43,12 +47,16 @@ define_fx("hall_reverb", |builder| {
             let damped = lpf_ar(combined, 8000.0 - damping * 4000.0);
 
             // Stereo decorrelation
-            let left = damped + delay_c_ar(damped, 0.05, 0.011) * 0.3;
-            let right = damped + delay_c_ar(damped, 0.05, 0.017) * 0.3;
+            let left = (damped + delay_c_ar(damped, 0.05, 0.011) * 0.3) * 0.7;
+            let right = (damped + delay_c_ar(damped, 0.05, 0.017) * 0.3) * 0.7;
+
+            // DC-block the wet path before the dry/wet mix
+            let wet_l = leak_dc_ar(left, 0.995);
+            let wet_r = leak_dc_ar(right, 0.995);
 
             [
-                (1.0 - mix) * input[0] + mix * left * 0.7,
-                (1.0 - mix) * input[1] + mix * right * 0.7
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });

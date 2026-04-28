@@ -1,3 +1,5 @@
+// kind=fx | category=reverb | flavor=room | stereo=true | params=size,brightness,mix,level
+//
 // Room Reverb Effect
 // Inspired by: Universal Audio Ocean Way, Waves IR rooms
 //
@@ -5,16 +7,18 @@
 // Perfect for adding space to drums, vocals, and instruments.
 //
 // Parameters:
-//   size: Room size (0.0 = closet, 1.0 = large room)
+//   size:       Room size (0.0 = closet, 1.0 = large room)
 //   brightness: High frequency content (0.0 to 1.0)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:        Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:      Final output trim (1.0 = unity)
 
 define_fx("room_reverb", |builder| {
     builder
         .param("size", 0.4)
         .param("brightness", 0.5)
         .param("mix", 0.25)
-        .body(|input, size, brightness, mix| {
+        .param("level", 1.0)
+        .body(|input, size, brightness, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
             // Early reflections (room walls simulation)
@@ -38,12 +42,16 @@ define_fx("room_reverb", |builder| {
             let left_er = er1 + er3 * 0.7 + er5 * 0.5;
             let right_er = er2 + er4 * 0.7 + er5 * 0.5;
 
-            let wet_left = filtered + left_er * 0.3;
-            let wet_right = filtered + right_er * 0.3;
+            let wet_left = (filtered + left_er * 0.3) * 0.8;
+            let wet_right = (filtered + right_er * 0.3) * 0.8;
+
+            // DC-block the wet path before the dry/wet mix
+            let wet_l = leak_dc_ar(wet_left, 0.995);
+            let wet_r = leak_dc_ar(wet_right, 0.995);
 
             [
-                (1.0 - mix) * input[0] + mix * wet_left * 0.8,
-                (1.0 - mix) * input[1] + mix * wet_right * 0.8
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });

@@ -1,34 +1,46 @@
+// kind=fx | category=reverb | flavor=minimal | stereo=true | params=room,damp,mix,level
+//
 // Minimal Reverb Effect (debug helper)
 //
-// Purpose-built to verify that the FreeVerb UGen path is working without
-// any extra dry/wet math or stereo trickery. This effect simply sums the
-// incoming stereo signal to mono, runs it through FreeVerb, and then copies
-// the wet output to both channels.
+// Purpose-built to verify that the FreeVerb UGen path is working with the
+// minimum amount of additional DSP. Sums the incoming stereo signal to mono,
+// runs it through FreeVerb, then applies the standard spec-compliant
+// dry/wet mix and output trim.
 //
 // Usage:
 //   group.add_effect("verb_debug", "reverb_minimal", #{
 //     room: 0.6,
-//     damp: 0.4
+//     damp: 0.4,
+//     mix: 0.3,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   room: Room size (0.0 to 1.0)
-//   damp: High-frequency damping (0.0 to 1.0)
+//   room:  Room size (0.0 to 1.0)
+//   damp:  High-frequency damping (0.0 to 1.0)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level: Final output trim (1.0 = unity)
 
 define_fx("reverb_minimal", |builder| {
     builder
         .param("room", 0.6)
         .param("damp", 0.4)
-        .body(|input, room, damp| {
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, room, damp, mix, level| {
             // Collapse to mono so we only need a single FreeVerb output.
             let mono = (input[0] + input[1]) * 0.5;
 
-            // Run FreeVerb fully wet (mix=1.0) and duplicate the result to stereo.
+            // Run FreeVerb fully wet and duplicate to stereo.
             let wet = free_verb_ar(mono, 1.0, room, damp);
-            let stereo = dup(wet, 2);
 
-            stereo
+            // DC-block the wet path before the dry/wet mix
+            let wet_l = leak_dc_ar(wet, 0.995);
+            let wet_r = leak_dc_ar(wet, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
         })
 });
-
-

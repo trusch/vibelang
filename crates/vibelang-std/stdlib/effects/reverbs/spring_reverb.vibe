@@ -1,3 +1,5 @@
+// kind=fx | category=reverb | flavor=spring | stereo=true | params=tension,diffusion,mix,level
+//
 // Spring Reverb Effect
 // Inspired by: Fender Twin Reverb, Hammond reverb tanks
 //
@@ -5,16 +7,18 @@
 // Perfect for guitars, organs, and vintage sounds.
 //
 // Parameters:
-//   tension: Spring tension affecting decay and tone (0.0 to 1.0)
+//   tension:   Spring tension affecting decay and tone (0.0 to 1.0)
 //   diffusion: Spread of the reverb (0.0 to 1.0)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   mix:       Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:     Final output trim (1.0 = unity)
 
 define_fx("spring_reverb", |builder| {
     builder
         .param("tension", 0.5)
         .param("diffusion", 0.6)
         .param("mix", 0.35)
-        .body(|input, tension, diffusion, mix| {
+        .param("level", 1.0)
+        .body(|input, tension, diffusion, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
             // Spring simulation using comb filters with slightly detuned delays
@@ -46,9 +50,13 @@ define_fx("spring_reverb", |builder| {
             let left = modulated;
             let right = delay_c_ar(modulated, 0.01, 0.003);
 
+            // DC-block the wet path before the dry/wet mix
+            let wet_l = leak_dc_ar(left, 0.995);
+            let wet_r = leak_dc_ar(right, 0.995);
+
             [
-                (1.0 - mix) * input[0] + mix * left,
-                (1.0 - mix) * input[1] + mix * right
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });

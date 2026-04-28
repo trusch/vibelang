@@ -1,3 +1,5 @@
+// kind=fx | category=reverb | flavor=shimmer | stereo=true | params=size,shimmer,pitch,decay,mix,level
+//
 // Shimmer Reverb Effect
 // Inspired by: Strymon BigSky, Eventide Space, Brian Eno ambient productions
 //
@@ -5,11 +7,12 @@
 // Perfect for ambient, post-rock, and cinematic soundscapes.
 //
 // Parameters:
-//   size: Reverb size (0.0 to 1.0)
+//   size:    Reverb size (0.0 to 1.0)
 //   shimmer: Amount of pitch-shifted feedback (0.0 to 1.0)
-//   pitch: Pitch shift interval (0.5 = octave down, 2.0 = octave up)
-//   decay: Reverb decay (0.0 to 1.0)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   pitch:   Pitch shift interval (0.5 = octave down, 2.0 = octave up)
+//   decay:   Reverb decay (0.0 to 1.0)
+//   mix:     Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:   Final output trim (1.0 = unity)
 
 define_fx("shimmer_reverb", |builder| {
     builder
@@ -18,7 +21,8 @@ define_fx("shimmer_reverb", |builder| {
         .param("pitch", 2.0)
         .param("decay", 0.6)
         .param("mix", 0.4)
-        .body(|input, size, shimmer, pitch, decay, mix| {
+        .param("level", 1.0)
+        .body(|input, size, shimmer, pitch, decay, mix, level| {
             let mono = (input[0] + input[1]) * 0.5;
 
             // Main reverb
@@ -46,12 +50,16 @@ define_fx("shimmer_reverb", |builder| {
             let modulated = delay_c_ar(smoothed, 0.05, 0.02 + mod_lfo);
 
             // Wide stereo spread
-            let left = modulated;
-            let right = delay_c_ar(modulated, 0.02, 0.007);
+            let left = modulated * 0.6;
+            let right = delay_c_ar(modulated, 0.02, 0.007) * 0.6;
+
+            // DC-block the wet path before the dry/wet mix
+            let wet_l = leak_dc_ar(left, 0.995);
+            let wet_r = leak_dc_ar(right, 0.995);
 
             [
-                (1.0 - mix) * input[0] + mix * left * 0.6,
-                (1.0 - mix) * input[1] + mix * right * 0.6
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });

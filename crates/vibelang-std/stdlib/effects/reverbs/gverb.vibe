@@ -1,3 +1,5 @@
+// kind=fx | category=reverb | flavor=gverb | stereo=true | params=roomsize,revtime,damping,spread,drylevel,earlylevel,taillevel,mix,level
+//
 // GVerb Reverb Effect
 //
 // High quality reverb with early reflections and extensive controls.
@@ -11,18 +13,20 @@
 //     drylevel: 0.7,
 //     earlylevel: 0.7,
 //     taillevel: 0.5,
-//     mix: 0.35
+//     mix: 0.3,
+//     level: 1.0
 //   });
 //
 // Parameters:
-//   roomsize: Room size in meters (1 to 300)
-//   revtime: Reverberation time in seconds
-//   damping: High frequency damping (0.0 to 1.0)
-//   spread: Stereo spread (0 to 43)
-//   drylevel: Dry signal level (0.0 to 1.0)
+//   roomsize:   Room size in meters (1 to 300)
+//   revtime:    Reverberation time in seconds
+//   damping:    High frequency damping (0.0 to 1.0)
+//   spread:     Stereo spread (0 to 43)
+//   drylevel:   Dry signal level (0.0 to 1.0)
 //   earlylevel: Early reflections level (0.0 to 1.0)
-//   taillevel: Reverb tail level (0.0 to 1.0)
-//   mix: Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   taillevel:  Reverb tail level (0.0 to 1.0)
+//   mix:        Dry/wet crossfade (0.0 = dry, 1.0 = wet)
+//   level:      Output level multiplier (1.0 = unity)
 
 define_fx("gverb", |builder| {
     builder
@@ -33,20 +37,24 @@ define_fx("gverb", |builder| {
         .param("drylevel", 0.7)
         .param("earlylevel", 0.7)
         .param("taillevel", 0.5)
-        .param("mix", 0.35)
-        .body(|input, roomsize, revtime, damping, spread, drylevel, earlylevel, taillevel, mix| {
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, roomsize, revtime, damping, spread, drylevel, earlylevel, taillevel, mix, level| {
             // Mix to mono for the reverb input
             let mono = (input[0] + input[1]) * 0.5;
 
-            // Split the stereo outputs and apply dry/wet mix manually
+            // GVerb (stereo out).
             let wet_node = g_verb_ar(mono, roomsize, revtime, damping, 0.5, spread, drylevel, earlylevel, taillevel, 300.0);
             let wet_left = channel(wet_node, 0);
             let wet_right = channel(wet_node, 1);
 
+            // DC-block the wet path before the dry/wet mix
+            let wet_l = leak_dc_ar(wet_left, 0.995);
+            let wet_r = leak_dc_ar(wet_right, 0.995);
+
             [
-                (1.0 - mix) * input[0] + mix * wet_left,
-                (1.0 - mix) * input[1] + mix * wet_right
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
             ]
         })
 });
-
