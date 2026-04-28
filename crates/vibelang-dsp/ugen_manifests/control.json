@@ -298,6 +298,28 @@
     ]
   },
   {
+    "name": "Slope",
+    "description": "Rate of change of a signal in units per second: (in[i] - in[i-1]) * sample_rate.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal whose slope will be measured"
+      }
+    ],
+    "outputs": 1,
+    "category": "Control",
+    "functions": [
+      "slope_ar",
+      "slope_kr"
+    ]
+  },
+  {
     "name": "LFGauss",
     "description": "Gaussian function oscillator. Generates a repeated Gaussian (bell curve) shape.",
     "rates": [

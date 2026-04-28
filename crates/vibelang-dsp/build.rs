@@ -2,37 +2,205 @@
 //!
 //! Generates UGen wrapper functions from JSON manifests.
 
-use serde_json::Value;
+use serde::Deserialize;
+use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Deserialize)]
+struct UGenManifest {
+    name: String,
+    description: String,
+    rates: Vec<String>,
+    inputs: Vec<UGenInput>,
+    outputs: u32,
+    category: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    functions: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UGenInput {
+    name: String,
+    #[serde(rename = "type")]
+    ty: String,
+    #[serde(default)]
+    default: Option<serde_json::Value>,
+    description: String,
+}
+
+// `demand` is the SuperCollider demand-rate (used by Dseq, Dser, Dwhite, …).
+// `builder` flags documentation-only fluent-API entries (e.g. `envelope`).
+const ALLOWED_RATES: &[&str] = &["ar", "kr", "ir", "demand", "builder"];
+const ALLOWED_INPUT_TYPES: &[&str] = &["signal", "float", "int", "method"];
+
+/// `^[A-Z][A-Za-z0-9_]*$` — PascalCase identifier, with optional underscores
+/// to accommodate SuperCollider's PV_* family (PV_HainsworthFoote, PV_MagAbove, …).
+fn is_valid_ugen_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_uppercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// `^[a-z][a-zA-Z0-9_]*$` — leading lowercase, then alphanumerics or underscore.
+/// Relaxed from the strict snake_case rule to accommodate the existing manifests'
+/// camelCase convention (`numChannels`, `attackTime`, …). The build script normalises
+/// to snake_case in the generated Rust regardless.
+fn is_valid_input_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn validate(file: &Path, ugen: &UGenManifest) -> Result<(), String> {
+    if ugen.rates.is_empty() {
+        return Err(format!("UGen '{}' has empty rates list", ugen.name));
+    }
+    for r in &ugen.rates {
+        if !ALLOWED_RATES.contains(&r.as_str()) {
+            return Err(format!(
+                "UGen '{}' has invalid rate '{}' (allowed: {:?})",
+                ugen.name, r, ALLOWED_RATES
+            ));
+        }
+    }
+
+    let is_builder_only = ugen.rates.iter().all(|r| r == "builder");
+
+    // UGen name must be PascalCase, except for builder-only entries (which are
+    // documentation pseudo-entries — e.g. `envelope` — and follow function-name
+    // conventions instead of UGen conventions).
+    if !is_builder_only && !is_valid_ugen_name(&ugen.name) {
+        return Err(format!(
+            "UGen '{}' name does not match ^[A-Z][A-Za-z0-9]*$ (file: {})",
+            ugen.name,
+            file.display()
+        ));
+    }
+
+    for inp in &ugen.inputs {
+        if !ALLOWED_INPUT_TYPES.contains(&inp.ty.as_str()) {
+            return Err(format!(
+                "UGen '{}' input '{}' has invalid type '{}' (allowed: {:?})",
+                ugen.name, inp.name, inp.ty, ALLOWED_INPUT_TYPES
+            ));
+        }
+        // method-typed inputs are documentation for chainable API calls
+        // (e.g. `.attack(time)`); they don't follow identifier rules.
+        if inp.ty != "method" && !is_valid_input_name(&inp.name) {
+            return Err(format!(
+                "UGen '{}' input '{}' does not match ^[a-z][a-zA-Z0-9_]*$",
+                ugen.name, inp.name
+            ));
+        }
+        // Touch description so the field is exercised by validation.
+        if inp.description.is_empty() {
+            return Err(format!(
+                "UGen '{}' input '{}' has empty description",
+                ugen.name, inp.name
+            ));
+        }
+    }
+
+    if ugen.description.is_empty() {
+        return Err(format!("UGen '{}' has empty description", ugen.name));
+    }
+    if ugen.category.is_empty() {
+        return Err(format!("UGen '{}' has empty category", ugen.name));
+    }
+
+    Ok(())
+}
+
+fn load_and_validate() -> Vec<UGenManifest> {
+    let manifests_dir = Path::new("ugen_manifests");
+    let mut manifest: Vec<UGenManifest> = Vec::new();
+    let mut seen_names: HashSet<String> = HashSet::new();
+
+    let entries = match fs::read_dir(manifests_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            println!(
+                "cargo:warning=failed to read ugen_manifests dir: {}",
+                e
+            );
+            panic!("failed to read ugen_manifests dir: {}", e);
+        }
+    };
+
+    let mut paths: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("json"))
+        .collect();
+    paths.sort(); // deterministic ordering across builds
+
+    for path in paths {
+        println!("cargo:rerun-if-changed={}", path.display());
+        let body = match fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(e) => {
+                println!("cargo:warning=failed to read {}: {}", path.display(), e);
+                panic!("failed to read {}: {}", path.display(), e);
+            }
+        };
+        let parsed: Vec<UGenManifest> = match serde_json::from_str(&body) {
+            Ok(v) => v,
+            Err(e) => {
+                println!(
+                    "cargo:warning={}: schema parse error: {}",
+                    path.display(),
+                    e
+                );
+                panic!(
+                    "Failed to parse manifest {} against UGenManifest schema: {}",
+                    path.display(),
+                    e
+                );
+            }
+        };
+        for ugen in parsed {
+            if let Err(msg) = validate(&path, &ugen) {
+                println!("cargo:warning={}: {}", path.display(), msg);
+                panic!(
+                    "manifest validation failed in {}: {}",
+                    path.display(),
+                    msg
+                );
+            }
+            if !seen_names.insert(ugen.name.clone()) {
+                let msg = format!(
+                    "duplicate UGen name '{}' (also defined elsewhere)",
+                    ugen.name
+                );
+                println!("cargo:warning={}: {}", path.display(), msg);
+                panic!("{} in {}", msg, path.display());
+            }
+            manifest.push(ugen);
+        }
+    }
+
+    manifest
+}
 
 fn main() {
     println!("cargo:rerun-if-changed=ugen_manifests");
+
+    let manifest = load_and_validate();
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("generated.rs");
     let mut f = File::create(&dest_path).unwrap();
 
-    // Read all manifest files from the ugen_manifests directory
-    let mut manifest: Vec<Value> = Vec::new();
-    let manifests_dir = Path::new("ugen_manifests");
-
-    if let Ok(entries) = fs::read_dir(manifests_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                println!("cargo:rerun-if-changed={}", path.display());
-                let manifest_str = fs::read_to_string(&path).unwrap();
-                let mut category_manifest: Vec<Value> =
-                    serde_json::from_str(&manifest_str).unwrap();
-                manifest.append(&mut category_manifest);
-            }
-        }
-    }
-
-    // Generate the code
     writeln!(f, "// AUTO-GENERATED FILE - DO NOT EDIT").unwrap();
     writeln!(f, "// Generated from ugen_manifests/*.json\n").unwrap();
     writeln!(f, "use crate::errors::*;").unwrap();
@@ -42,32 +210,25 @@ fn main() {
 
     // Generate one function per UGen rate (snake_case_ar, snake_case_kr, etc.)
     for ugen in &manifest {
-        let name = ugen["name"].as_str().unwrap();
-        let rates = ugen["rates"].as_array().unwrap();
+        let name = &ugen.name;
+        let rates = &ugen.rates;
 
         // Skip documentation-only entries (like fluent builder API docs)
-        let has_only_builder_rate = rates.iter().all(|r| r.as_str() == Some("builder"));
+        let has_only_builder_rate = rates.iter().all(|r| r == "builder");
         if has_only_builder_rate {
             continue;
         }
 
-        let description = ugen
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let inputs = ugen["inputs"].as_array().unwrap();
-        let outputs = ugen["outputs"].as_i64().unwrap();
-        let category = ugen
-            .get("category")
-            .and_then(|v| v.as_str())
-            .unwrap_or("General");
+        let description = ugen.description.as_str();
+        let inputs = &ugen.inputs;
+        let outputs = ugen.outputs as i64;
+        let category = ugen.category.as_str();
 
         let snake_name = to_snake_case(name);
 
         // Generate one function for each rate
-        for rate in rates {
-            let rate_str = rate.as_str().unwrap();
-            let rate_enum = match rate_str {
+        for rate_str in rates {
+            let rate_enum = match rate_str.as_str() {
                 "ar" => "Rate::Audio",
                 "kr" => "Rate::Control",
                 "ir" => "Rate::Scalar",
@@ -81,8 +242,7 @@ fn main() {
             let mut param_names = Vec::new();
 
             for input in inputs.iter() {
-                let param_name = input["name"].as_str().unwrap();
-                let escaped_name = param_to_snake_case(param_name);
+                let escaped_name = param_to_snake_case(&input.name);
                 dyn_params.push(format!("{}: &Dynamic", escaped_name));
                 param_names.push(escaped_name);
             }
@@ -92,16 +252,13 @@ fn main() {
             writeln!(f, "///").unwrap();
             writeln!(f, "/// # Parameters").unwrap();
             for input in inputs.iter() {
-                let param_name = input["name"].as_str().unwrap();
-                let param_desc = input
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let param_default = input.get("default").and_then(|v| {
+                let param_name = input.name.as_str();
+                let param_desc = input.description.as_str();
+                let param_default = input.default.as_ref().and_then(|v| {
                     if v.is_f64() {
-                        Some(v.as_f64().unwrap())
+                        v.as_f64()
                     } else if v.is_i64() {
-                        Some(v.as_i64().unwrap() as f64)
+                        v.as_i64().map(|n| n as f64)
                     } else {
                         None
                     }
@@ -161,20 +318,19 @@ fn main() {
     .unwrap();
 
     for ugen in &manifest {
-        let name = ugen["name"].as_str().unwrap();
-        let rates = ugen["rates"].as_array().unwrap();
+        let name = &ugen.name;
+        let rates = &ugen.rates;
 
         // Skip documentation-only entries (like fluent builder API docs)
-        let has_only_builder_rate = rates.iter().all(|r| r.as_str() == Some("builder"));
+        let has_only_builder_rate = rates.iter().all(|r| r == "builder");
         if has_only_builder_rate {
             continue;
         }
 
-        let inputs = ugen["inputs"].as_array().unwrap();
+        let inputs = &ugen.inputs;
         let snake_name = to_snake_case(name);
 
-        for rate in rates {
-            let rate_str = rate.as_str().unwrap();
+        for rate_str in rates {
             let func_name = format!("{}_{}", snake_name, rate_str);
 
             // Register for all possible arities (0 to N) to support default arguments
@@ -183,20 +339,20 @@ fn main() {
                 let mut call_args = Vec::new();
 
                 for input in inputs.iter().take(arity) {
-                    let param_name = input["name"].as_str().unwrap();
-                    let escaped_name = param_to_snake_case(param_name);
+                    let escaped_name = param_to_snake_case(&input.name);
                     closure_params.push(format!("{}: Dynamic", escaped_name));
                     call_args.push(format!("&{}", escaped_name));
                 }
 
                 for input in inputs.iter().skip(arity) {
                     let default_val = input
-                        .get("default")
+                        .default
+                        .as_ref()
                         .and_then(|v| {
                             if v.is_f64() {
-                                Some(v.as_f64().unwrap())
+                                v.as_f64()
                             } else if v.is_i64() {
-                                Some(v.as_i64().unwrap() as f64)
+                                v.as_i64().map(|n| n as f64)
                             } else {
                                 None
                             }
@@ -244,9 +400,10 @@ fn to_snake_case(s: &str) -> String {
     for (i, &c) in chars.iter().enumerate() {
         if c.is_uppercase() {
             if i > 0 {
-                let prev_lower = chars[i - 1].is_lowercase();
+                let prev = chars[i - 1];
+                let prev_lower = prev.is_lowercase();
                 let next_lower = chars.get(i + 1).map(|c| c.is_lowercase()).unwrap_or(false);
-                if prev_lower || next_lower {
+                if (prev_lower || next_lower) && prev != '_' {
                     result.push('_');
                 }
             }
@@ -274,3 +431,4 @@ fn escape_keyword(s: &str) -> String {
         _ => s.to_string(),
     }
 }
+
