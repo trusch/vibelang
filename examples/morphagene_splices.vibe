@@ -1,0 +1,64 @@
+// Morphagene Story B example — multi-splice reel with sequencer-driven
+// Organize selection.
+//
+// The Reel is divided into 4 evenly-spaced splices via num_splices=4. A
+// rising-saw LFO sweeps the Organize knob across [0, 1) at one cycle per
+// 8 bars, so each bar selects a different splice. Because the synthdef
+// applies EOS-hold semantics (Latch on Organize at end-of-splice), splice
+// switches do NOT chop the audio mid-grain — the playhead finishes the
+// current splice before jumping. Audible effect: a clean four-step splice
+// rotation that mirrors the hardware Morphagene's behavior under a
+// 5 V analog sequencer driving Organize CV.
+//
+// Drop a stereo loop at `samples/loop.wav` (any length up to ~2.9 min,
+// 48 kHz preferred). With no sample present this script still runs but
+// outputs silence.
+
+import "stdlib/instruments/sampler/morphagene.vibe";
+import "stdlib/effects/reverbs/plate_reverb.vibe";
+import "stdlib/modulators/lfo/lfo_saw.vibe";
+
+set_tempo(110);
+
+let reel = sample("reel", "samples/loop.wav").loop_mode(true);
+
+// Sequencer-style Organize driver: rising saw over 8 bars at 110 BPM
+// (≈ 0.0573 Hz). Mapped to [0.0, 0.999] so floor(organize · 4) cycles
+// 0 → 1 → 2 → 3 → 0 across the loop without ever hitting 1.0 (which
+// would clip to splice 3, leaving 0 unvisited at the saw's reset edge).
+let organize_seq = modulator("organize_seq")
+    .synth("lfo_saw")
+    .param("rate", 0.0573)        // 1 cycle per 8 bars at 110 BPM
+    .param("lo", 0.0)
+    .param("hi", 0.999)
+    .param("phase", 0.0)
+    .apply();
+
+let splices = define_group("Splices", || {
+    // Single voice — Story B's single-voice splice-select supersedes the
+    // four-voice idiom that morphagene_micromontage.vibe uses for Story A.
+    let v = voice("morph")
+        .on(reel)
+        .synth("morphagene")
+        .set_param("num_splices", 4.0)
+        .set_param("vari_speed", 0.7937)   // ≈ unity rate (cube root of 0.5)
+        .set_param("slide", 0.0)
+        .modulate("organize", organize_seq)
+        .gain(db(-9));
+
+    // Single hold note keeps the synth instance alive; the sequencer-driven
+    // Organize modulation does the splice cycling internally.
+    melody("morph_hold").on(v).notes("C3").apply();
+
+    fx("morph_verb")
+        .synth("plate_reverb")
+        .param("size", 0.6)
+        .param("decay", 0.5)
+        .param("damping", 0.45)
+        .param("mix", 0.3);
+});
+
+sequence("main")
+    .loop_bars(8)
+    .clip(bars(0)..bars(8), melody("morph_hold"))
+    .start();
