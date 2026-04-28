@@ -1,0 +1,72 @@
+// kind=fx | category=character | flavor=tape_loop_lofi | stereo=true | params=loop_length,sat_amount,dropout_chance,lp_freq,mix,level
+//
+// Tape Loop (Lo-Fi)
+//
+// Simulates a degraded tape loop: a recirculating delay line of up to ~4 seconds
+// (CombL with internal feedback) acts as the loop buffer, with saturation and a
+// low-pass on the loop output, plus random dropouts (envelopes triggered by Dust2
+// impulses) to mimic dirty splices and tape damage.
+//
+// Implementation note: a comb_l_ar with a long decay time provides the recirculating
+// loop — `loop_length` is the loop period; the comb's internal feedback gain sustains
+// the loop while still slowly fading. Saturation/LP/dropout shape the loop output.
+//
+// Usage:
+//   group.add_effect("loop", "tape_loop_lofi", #{
+//     loop_length: 2.0,
+//     sat_amount: 0.5,
+//     dropout_chance: 0.2,
+//     lp_freq: 6000.0,
+//     mix: 0.7,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   loop_length:    Loop period in seconds (0.1 to 4.0)
+//   sat_amount:     Saturation on loop output (0.0 to 1.0)
+//   dropout_chance: Random-dropout density — higher = more dropouts (0.0 to 1.0)
+//   lp_freq:        Low-pass cutoff on loop output in Hz (1000 to 16000)
+//   mix:            Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:          Output level trim (1.0 = unity)
+
+define_fx("tape_loop_lofi")
+    .param("loop_length", 2.0)
+    .param("sat_amount", 0.5)
+    .param("dropout_chance", 0.2)
+    .param("lp_freq", 6000.0)
+    .param("mix", 0.7)
+    .param("level", 1.0)
+    .body(|input, loop_length, sat_amount, dropout_chance, lp_freq, mix, level| {
+        // Random dropout gate: Dust2 impulses (rectified) shaped into short
+        // attack/decay envelopes; gate dips toward 0.05 during a dropout, sits at 1.0 otherwise.
+        let dust_trig = dust2_ar(dropout_chance * 4.0).abs();
+        let drop_env = decay2_ar(dust_trig, 0.005, 0.08);
+        let dropout_gate = (1.0 - drop_env.min(0.95)).max(0.05);
+
+        // Recirculating loop: comb_l_ar with long decay = sustained tape loop
+        // (4-sec max delay-line size, loop_length sets the period).
+        let loop_l = comb_l_ar(input[0], 4.0, loop_length, 8.0);
+        let loop_r = comb_l_ar(input[1], 4.0, loop_length, 8.0);
+
+        // Saturation on loop output
+        let drive = 1.0 + sat_amount * 3.0;
+        let sat_l = (loop_l * drive).tanh();
+        let sat_r = (loop_r * drive).tanh();
+
+        // LP filter
+        let filtered_l = lpf_ar(sat_l, lp_freq);
+        let filtered_r = lpf_ar(sat_r, lp_freq);
+
+        // Apply dropouts
+        let gated_l = filtered_l * dropout_gate;
+        let gated_r = filtered_r * dropout_gate;
+
+        // DC-block the wet path before the dry/wet mix
+        let wet_l = leak_dc_ar(gated_l, 0.995);
+        let wet_r = leak_dc_ar(gated_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

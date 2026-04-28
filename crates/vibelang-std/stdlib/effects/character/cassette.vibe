@@ -1,0 +1,69 @@
+// kind=fx | category=character | flavor=cassette | stereo=true | params=wow_amount,flutter_amount,hiss_amount,sat_amount,mix,level
+//
+// Cassette Tape
+//
+// Full cassette character chain: wow (~0.5 Hz pitch drift) and flutter (~7 Hz pitch
+// jitter), gentle bit/sample-rate decimation for the lo-fi grain, tape EQ (low shelf
+// cut + 12 kHz roll-off), tanh tape compression, and 1/f tape hiss.
+//
+// Usage:
+//   group.add_effect("cass", "cassette", #{
+//     wow_amount: 0.5,
+//     flutter_amount: 0.4,
+//     hiss_amount: 0.5,
+//     sat_amount: 0.4,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   wow_amount:     Slow pitch wobble depth (0.0 to 1.0)
+//   flutter_amount: Fast pitch jitter depth (0.0 to 1.0)
+//   hiss_amount:    1/f tape hiss level (0.0 to 1.0, scales to ~0.005 at full)
+//   sat_amount:     Tape compression / soft saturation (0.0 to 1.0)
+//   mix:            Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:          Output level trim (1.0 = unity)
+
+define_fx("cassette")
+    .param("wow_amount", 0.5)
+    .param("flutter_amount", 0.4)
+    .param("hiss_amount", 0.5)
+    .param("sat_amount", 0.4)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, wow_amount, flutter_amount, hiss_amount, sat_amount, mix, level| {
+        // Wow: ~0.5 Hz, up to ±5 ms pitch drift
+        let wow_lfo = sin_osc_ar(0.5, 0.0) * wow_amount * 0.005;
+        // Flutter: ~7 Hz, up to ±0.7 ms pitch jitter
+        let flutter_lfo = sin_osc_ar(7.0, 0.0) * flutter_amount * 0.0007;
+
+        let warble_l = delay_c_ar(input[0], 0.05, 0.01 + wow_lfo + flutter_lfo);
+        let warble_r = delay_c_ar(input[1], 0.05, 0.01 + wow_lfo + flutter_lfo);
+
+        // Subtle bit/rate degradation: 22.05 kHz / 12 bits
+        let crushed_l = decimator_ar(warble_l, 22050.0, 12.0);
+        let crushed_r = decimator_ar(warble_r, 22050.0, 12.0);
+
+        // Tape EQ: -2 dB low shelf at 200 Hz, then 12 kHz LP for tape head response
+        let shelved_l = b_low_shelf_ar(crushed_l, 200.0, 1.0, -2.0);
+        let shelved_r = b_low_shelf_ar(crushed_r, 200.0, 1.0, -2.0);
+        let eq_l = lpf_ar(shelved_l, 12000.0);
+        let eq_r = lpf_ar(shelved_r, 12000.0);
+
+        // Tape compression / soft saturation
+        let drive = 1.0 + sat_amount * 2.0;
+        let sat_l = (eq_l * drive).tanh();
+        let sat_r = (eq_r * drive).tanh();
+
+        // 1/f tape hiss
+        let hiss = pink_noise_ar() * hiss_amount * 0.005;
+
+        // DC-block the wet path before the dry/wet mix
+        let wet_l = leak_dc_ar(sat_l + hiss, 0.995);
+        let wet_r = leak_dc_ar(sat_r + hiss, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

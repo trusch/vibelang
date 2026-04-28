@@ -1,0 +1,4 @@
+// Character Effects Index
+import "stdlib/effects/character/cassette.vibe";
+import "stdlib/effects/character/vinyl_dust.vibe";
+import "stdlib/effects/character/tape_loop_lofi.vibe";

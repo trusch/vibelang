@@ -1,0 +1,56 @@
+// kind=fx | category=character | flavor=vinyl_dust | stereo=true | params=dust_density,hum_amount,hf_loss,mix,level
+//
+// Vinyl Dust
+//
+// Adds vinyl-style noise floor: bipolar dust impulses (Dust2) band-limited to keep
+// them clicky-not-piercing, side hum at 50 Hz, and a low-pass that attenuates the
+// top end to mimic record wear. Lighter and more focused than the full `vinyl`
+// effect — dust + hum + HF loss only, no wow/flutter.
+//
+// Usage:
+//   group.add_effect("dust", "vinyl_dust", #{
+//     dust_density: 30.0,
+//     hum_amount: 0.04,
+//     hf_loss: 8000.0,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   dust_density: Average dust impulses per second (0.0 to 200.0)
+//   hum_amount:   50 Hz hum level (0.0 to 0.2)
+//   hf_loss:      LP filter cutoff for HF roll-off in Hz (2000 to 16000)
+//   mix:          Dry/wet mix (0.0 = dry, 1.0 = wet)
+//   level:        Output level trim (1.0 = unity)
+
+define_fx("vinyl_dust")
+    .param("dust_density", 30.0)
+    .param("hum_amount", 0.04)
+    .param("hf_loss", 8000.0)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, dust_density, hum_amount, hf_loss, mix, level| {
+        // HF loss — record-wear LP
+        let worn_l = lpf_ar(input[0], hf_loss);
+        let worn_r = lpf_ar(input[1], hf_loss);
+
+        // Bipolar dust impulses, band-limited
+        let dust = dust2_ar(dust_density);
+        let dust_band = lpf_ar(dust, 8000.0);
+
+        // 50 Hz mains hum
+        let hum = sin_osc_ar(50.0, 0.0) * hum_amount;
+
+        // Mix dust + hum into the worn signal
+        let dirty_l = worn_l + dust_band * 0.3 + hum;
+        let dirty_r = worn_r + dust_band * 0.3 + hum;
+
+        // DC-block the wet path before the dry/wet mix
+        let wet_l = leak_dc_ar(dirty_l, 0.995);
+        let wet_r = leak_dc_ar(dirty_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });
