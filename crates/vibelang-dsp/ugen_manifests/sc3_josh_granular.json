@@ -1,0 +1,535 @@
+[
+  {
+    "name": "MonoGrain",
+    "description": "Granulates a real-time mono input. Spawns overlapping grains of length `winsize` at the rate `grainrate`, with optional per-grain randomisation of window length. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0, "description": "Mono audio input to granulate"},
+      {"name": "winsize", "type": "float", "default": 0.1, "description": "Window (grain) size in seconds"},
+      {"name": "grainrate", "type": "float", "default": 10, "description": "Rate of new grain creation in Hz"},
+      {"name": "winrandpct", "type": "float", "default": 0, "description": "Per-grain window-size randomness as a fraction of winsize (0..1)"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["mono_grain_ar"]
+  },
+  {
+    "name": "MonoGrainBF",
+    "description": "Granulates a real-time mono input and pans each grain into a first-order B-format (W, X, Y, Z) field. Per-grain azimuth/elevation can be randomised independently. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in", "type": "signal", "default": 0, "description": "Mono audio input to granulate"},
+      {"name": "winsize", "type": "float", "default": 0.1, "description": "Window (grain) size in seconds"},
+      {"name": "grainrate", "type": "float", "default": 10, "description": "Rate of new grain creation in Hz"},
+      {"name": "winrandpct", "type": "float", "default": 0, "description": "Per-grain window-size randomness as a fraction of winsize"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "azrand", "type": "float", "default": 0, "description": "Per-grain azimuth deviation, fraction of azimuth"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "elrand", "type": "float", "default": 0, "description": "Per-grain elevation deviation, fraction of elevation"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius (1=on radius, <1=inside, >1=outside)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["mono_grain_bf_ar"]
+  },
+  {
+    "name": "SinGrain",
+    "description": "Granular synthesis of sinusoidal grains using the built-in Hanning-style envelope. Each trigger spawns a grain of length `dur` at frequency `freq`. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds (polled at grain creation)"},
+      {"name": "freq", "type": "float", "default": 440, "description": "Sine frequency in Hz (polled at grain creation)"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["sin_grain_ar"]
+  },
+  {
+    "name": "SinGrainB",
+    "description": "Granular synthesis of sinusoidal grains using a user-supplied envelope buffer. Each trigger spawns a grain of length `dur` at `freq` shaped by `envbuf`. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds (polled at grain creation)"},
+      {"name": "freq", "type": "float", "default": 440, "description": "Sine frequency in Hz (polled at grain creation)"},
+      {"name": "envbuf", "type": "float", "default": 0, "description": "Buffer holding the grain envelope shape"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["sin_grain_b_ar"]
+  },
+  {
+    "name": "SinGrainI",
+    "description": "Granular synthesis of sinusoidal grains using two user-supplied envelope buffers, interpolated by `ifac`. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds (polled at grain creation)"},
+      {"name": "freq", "type": "float", "default": 440, "description": "Sine frequency in Hz (polled at grain creation)"},
+      {"name": "envbuf1", "type": "float", "default": 0, "description": "First envelope buffer"},
+      {"name": "envbuf2", "type": "float", "default": 0, "description": "Second envelope buffer"},
+      {"name": "ifac", "type": "float", "default": 0.5, "description": "Interpolation factor 0..1 (0=envbuf1, 1=envbuf2)"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["sin_grain_i_ar"]
+  },
+  {
+    "name": "SinGrainBF",
+    "description": "SinGrain with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds (polled at grain creation)"},
+      {"name": "freq", "type": "float", "default": 440, "description": "Sine frequency in Hz (polled at grain creation)"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius (1=on radius, <1=inside, >1=outside)"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["sin_grain_bf_ar"]
+  },
+  {
+    "name": "SinGrainBBF",
+    "description": "SinGrainB (single envelope buffer) with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds (polled at grain creation)"},
+      {"name": "freq", "type": "float", "default": 440, "description": "Sine frequency in Hz (polled at grain creation)"},
+      {"name": "envbuf", "type": "float", "default": 0, "description": "Buffer holding the grain envelope shape"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["sin_grain_bbf_ar"]
+  },
+  {
+    "name": "SinGrainIBF",
+    "description": "SinGrainI (two interpolated envelope buffers) with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds (polled at grain creation)"},
+      {"name": "freq", "type": "float", "default": 440, "description": "Sine frequency in Hz (polled at grain creation)"},
+      {"name": "envbuf1", "type": "float", "default": 0, "description": "First envelope buffer"},
+      {"name": "envbuf2", "type": "float", "default": 0, "description": "Second envelope buffer"},
+      {"name": "ifac", "type": "float", "default": 0.5, "description": "Interpolation factor 0..1 between envelopes"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["sin_grain_ibf_ar"]
+  },
+  {
+    "name": "FMGrain",
+    "description": "Granular synthesis of FM-synthesised grains using the built-in envelope. Each grain runs an FM oscillator with carrier `carfreq`, modulator `modfreq`, modulation `index`. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "carfreq", "type": "float", "default": 440, "description": "Carrier frequency in Hz"},
+      {"name": "modfreq", "type": "float", "default": 200, "description": "Modulator frequency in Hz"},
+      {"name": "index", "type": "float", "default": 1, "description": "Index of modulation"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["fm_grain_ar"]
+  },
+  {
+    "name": "FMGrainB",
+    "description": "FMGrain with a user-supplied envelope buffer. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "carfreq", "type": "float", "default": 440, "description": "Carrier frequency in Hz"},
+      {"name": "modfreq", "type": "float", "default": 200, "description": "Modulator frequency in Hz"},
+      {"name": "index", "type": "float", "default": 1, "description": "Index of modulation"},
+      {"name": "envbuf", "type": "float", "default": 0, "description": "Buffer holding the grain envelope shape"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["fm_grain_b_ar"]
+  },
+  {
+    "name": "FMGrainI",
+    "description": "FMGrain with two interpolated envelope buffers, blended by `ifac`. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "carfreq", "type": "float", "default": 440, "description": "Carrier frequency in Hz"},
+      {"name": "modfreq", "type": "float", "default": 200, "description": "Modulator frequency in Hz"},
+      {"name": "index", "type": "float", "default": 1, "description": "Index of modulation"},
+      {"name": "envbuf1", "type": "float", "default": 0, "description": "First envelope buffer"},
+      {"name": "envbuf2", "type": "float", "default": 0, "description": "Second envelope buffer"},
+      {"name": "ifac", "type": "float", "default": 0.5, "description": "Interpolation factor 0..1 between envelopes"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["fm_grain_i_ar"]
+  },
+  {
+    "name": "FMGrainBF",
+    "description": "FMGrain with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "carfreq", "type": "float", "default": 440, "description": "Carrier frequency in Hz"},
+      {"name": "modfreq", "type": "float", "default": 200, "description": "Modulator frequency in Hz"},
+      {"name": "index", "type": "float", "default": 1, "description": "Index of modulation"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["fm_grain_bf_ar"]
+  },
+  {
+    "name": "FMGrainBBF",
+    "description": "FMGrainB (single envelope buffer) with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "carfreq", "type": "float", "default": 440, "description": "Carrier frequency in Hz"},
+      {"name": "modfreq", "type": "float", "default": 200, "description": "Modulator frequency in Hz"},
+      {"name": "index", "type": "float", "default": 1, "description": "Index of modulation"},
+      {"name": "envbuf", "type": "float", "default": 0, "description": "Buffer holding the grain envelope shape"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["fm_grain_bbf_ar"]
+  },
+  {
+    "name": "FMGrainIBF",
+    "description": "FMGrainI (two interpolated envelope buffers) with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "carfreq", "type": "float", "default": 440, "description": "Carrier frequency in Hz"},
+      {"name": "modfreq", "type": "float", "default": 200, "description": "Modulator frequency in Hz"},
+      {"name": "index", "type": "float", "default": 1, "description": "Index of modulation"},
+      {"name": "envbuf1", "type": "float", "default": 0, "description": "First envelope buffer"},
+      {"name": "envbuf2", "type": "float", "default": 0, "description": "Second envelope buffer"},
+      {"name": "ifac", "type": "float", "default": 0.5, "description": "Interpolation factor 0..1 between envelopes"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["fm_grain_ibf_ar"]
+  },
+  {
+    "name": "BufGrain",
+    "description": "Granular synthesis sampling from a buffer with the built-in envelope. Each grain plays from `pos` at `rate` for `dur` seconds, with selectable interpolation. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "sndbuf", "type": "float", "default": 0, "description": "Buffer holding the source audio"},
+      {"name": "rate", "type": "float", "default": 1, "description": "Playback rate of the sampled sound"},
+      {"name": "pos", "type": "float", "default": 0, "description": "Grain start position in buffer (0=start, 1=end)"},
+      {"name": "interp", "type": "float", "default": 2, "description": "Interpolation: 1=none, 2=linear, 4=cubic"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["buf_grain_ar"]
+  },
+  {
+    "name": "BufGrainB",
+    "description": "BufGrain with a user-supplied envelope buffer. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "sndbuf", "type": "float", "default": 0, "description": "Buffer holding the source audio"},
+      {"name": "rate", "type": "float", "default": 1, "description": "Playback rate of the sampled sound"},
+      {"name": "pos", "type": "float", "default": 0, "description": "Grain start position in buffer (0=start, 1=end)"},
+      {"name": "interp", "type": "float", "default": 2, "description": "Interpolation: 1=none, 2=linear, 4=cubic"},
+      {"name": "envbuf", "type": "float", "default": 0, "description": "Buffer holding the grain envelope shape"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["buf_grain_b_ar"]
+  },
+  {
+    "name": "BufGrainI",
+    "description": "BufGrain with two interpolated envelope buffers, blended by `ifac`. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "sndbuf", "type": "float", "default": 0, "description": "Buffer holding the source audio"},
+      {"name": "rate", "type": "float", "default": 1, "description": "Playback rate of the sampled sound"},
+      {"name": "pos", "type": "float", "default": 0, "description": "Grain start position in buffer (0=start, 1=end)"},
+      {"name": "interp", "type": "float", "default": 2, "description": "Interpolation: 1=none, 2=linear, 4=cubic"},
+      {"name": "envbuf1", "type": "float", "default": 0, "description": "First envelope buffer"},
+      {"name": "envbuf2", "type": "float", "default": 0, "description": "Second envelope buffer"},
+      {"name": "ifac", "type": "float", "default": 0.5, "description": "Interpolation factor 0..1 between envelopes"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["buf_grain_i_ar"]
+  },
+  {
+    "name": "BufGrainBF",
+    "description": "BufGrain with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "sndbuf", "type": "float", "default": 0, "description": "Buffer holding the source audio"},
+      {"name": "rate", "type": "float", "default": 1, "description": "Playback rate"},
+      {"name": "pos", "type": "float", "default": 0, "description": "Grain start position 0..1"},
+      {"name": "interp", "type": "float", "default": 2, "description": "Interpolation: 1=none, 2=linear, 4=cubic"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["buf_grain_bf_ar"]
+  },
+  {
+    "name": "BufGrainBBF",
+    "description": "BufGrainB (single envelope buffer) with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "sndbuf", "type": "float", "default": 0, "description": "Buffer holding the source audio"},
+      {"name": "rate", "type": "float", "default": 1, "description": "Playback rate"},
+      {"name": "pos", "type": "float", "default": 0, "description": "Grain start position 0..1"},
+      {"name": "interp", "type": "float", "default": 2, "description": "Interpolation: 1=none, 2=linear, 4=cubic"},
+      {"name": "envbuf", "type": "float", "default": 0, "description": "Buffer holding the grain envelope shape"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["buf_grain_bbf_ar"]
+  },
+  {
+    "name": "BufGrainIBF",
+    "description": "BufGrainI (two interpolated envelope buffers) with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "sndbuf", "type": "float", "default": 0, "description": "Buffer holding the source audio"},
+      {"name": "rate", "type": "float", "default": 1, "description": "Playback rate"},
+      {"name": "pos", "type": "float", "default": 0, "description": "Grain start position 0..1"},
+      {"name": "interp", "type": "float", "default": 2, "description": "Interpolation: 1=none, 2=linear, 4=cubic"},
+      {"name": "envbuf1", "type": "float", "default": 0, "description": "First envelope buffer"},
+      {"name": "envbuf2", "type": "float", "default": 0, "description": "Second envelope buffer"},
+      {"name": "ifac", "type": "float", "default": 0.5, "description": "Interpolation factor 0..1 between envelopes"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["buf_grain_ibf_ar"]
+  },
+  {
+    "name": "InGrain",
+    "description": "Granulates an arbitrary input signal with the built-in envelope. Each trigger spawns a grain of length `dur` taken from `in`. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "in", "type": "signal", "default": 0, "description": "Audio input to granulate"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["in_grain_ar"]
+  },
+  {
+    "name": "InGrainB",
+    "description": "InGrain with a user-supplied envelope buffer. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "in", "type": "signal", "default": 0, "description": "Audio input to granulate"},
+      {"name": "envbuf", "type": "float", "default": 0, "description": "Buffer holding the grain envelope shape"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["in_grain_b_ar"]
+  },
+  {
+    "name": "InGrainI",
+    "description": "InGrain with two interpolated envelope buffers, blended by `ifac`. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "in", "type": "signal", "default": 0, "description": "Audio input to granulate"},
+      {"name": "envbuf1", "type": "float", "default": 0, "description": "First envelope buffer"},
+      {"name": "envbuf2", "type": "float", "default": 0, "description": "Second envelope buffer"},
+      {"name": "ifac", "type": "float", "default": 0.5, "description": "Interpolation factor 0..1 between envelopes"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["in_grain_i_ar"]
+  },
+  {
+    "name": "InGrainBF",
+    "description": "InGrain with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "in", "type": "signal", "default": 0, "description": "Audio input to granulate"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["in_grain_bf_ar"]
+  },
+  {
+    "name": "InGrainBBF",
+    "description": "InGrainB (single envelope buffer) with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "in", "type": "signal", "default": 0, "description": "Audio input to granulate"},
+      {"name": "envbuf", "type": "float", "default": 0, "description": "Buffer holding the grain envelope shape"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["in_grain_bbf_ar"]
+  },
+  {
+    "name": "InGrainIBF",
+    "description": "InGrainI (two interpolated envelope buffers) with first-order B-format Ambisonic panning per grain. Outputs W, X, Y, Z channels. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "in", "type": "signal", "default": 0, "description": "Audio input to granulate"},
+      {"name": "envbuf1", "type": "float", "default": 0, "description": "First envelope buffer"},
+      {"name": "envbuf2", "type": "float", "default": 0, "description": "Second envelope buffer"},
+      {"name": "ifac", "type": "float", "default": 0.5, "description": "Interpolation factor 0..1 between envelopes"},
+      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians (-pi..pi)"},
+      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians (-0.5pi..0.5pi)"},
+      {"name": "rho", "type": "float", "default": 1, "description": "Speaker radius"},
+      {"name": "wComp", "type": "float", "default": 0, "description": "If non-zero, compensate W channel by 1/sqrt(2)"}
+    ],
+    "outputs": 4,
+    "category": "JoshUGens (Granular)",
+    "functions": ["in_grain_ibf_ar"]
+  },
+  {
+    "name": "GrainSinJ",
+    "description": "Josh Parmenter's variant of GrainSin: multi-channel sinusoidal granulator with per-grain panning, an optional user envelope buffer, and configurable maxGrains. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 1, "description": "Number of output channels"},
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "freq", "type": "float", "default": 440, "description": "Sine frequency in Hz"},
+      {"name": "pan", "type": "float", "default": 0, "description": "Pan position; for stereo (-1..1), for >2 channels uses PanAz"},
+      {"name": "envbufnum", "type": "float", "default": -1, "description": "Envelope buffer number; -1 uses the built-in Hanning envelope"},
+      {"name": "maxGrains", "type": "float", "default": 512, "description": "Maximum simultaneously active grains (allocated at init)"},
+      {"name": "grainAmp", "type": "float", "default": 1, "description": "Per-grain amplitude scalar"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["grain_sin_j_ar"]
+  },
+  {
+    "name": "GrainFMJ",
+    "description": "Josh Parmenter's variant of GrainFM: multi-channel FM granulator with per-grain panning, optional user envelope buffer, and configurable maxGrains. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 1, "description": "Number of output channels"},
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "carfreq", "type": "float", "default": 440, "description": "Carrier frequency in Hz"},
+      {"name": "modfreq", "type": "float", "default": 200, "description": "Modulator frequency in Hz"},
+      {"name": "index", "type": "float", "default": 1, "description": "Index of modulation"},
+      {"name": "pan", "type": "float", "default": 0, "description": "Pan position; for stereo (-1..1), for >2 channels uses PanAz"},
+      {"name": "envbufnum", "type": "float", "default": -1, "description": "Envelope buffer number; -1 uses the built-in Hanning envelope"},
+      {"name": "maxGrains", "type": "float", "default": 512, "description": "Maximum simultaneously active grains"},
+      {"name": "grainAmp", "type": "float", "default": 1, "description": "Per-grain amplitude scalar"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["grain_fm_j_ar"]
+  },
+  {
+    "name": "GrainBufJ",
+    "description": "Josh Parmenter's variant of GrainBuf: multi-channel buffer granulator with per-grain panning, optional user envelope buffer, configurable maxGrains, and a loop flag. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 1, "description": "Number of output channels"},
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "sndbuf", "type": "float", "default": 0, "description": "Buffer holding the source audio"},
+      {"name": "rate", "type": "float", "default": 1, "description": "Playback rate of the sampled sound"},
+      {"name": "pos", "type": "float", "default": 0, "description": "Grain start position in buffer (0=start, 1=end)"},
+      {"name": "interp", "type": "float", "default": 2, "description": "Interpolation: 1=none, 2=linear, 4=cubic"},
+      {"name": "pan", "type": "float", "default": 0, "description": "Pan position"},
+      {"name": "envbufnum", "type": "float", "default": -1, "description": "Envelope buffer number; -1 uses the built-in Hanning envelope"},
+      {"name": "maxGrains", "type": "float", "default": 512, "description": "Maximum simultaneously active grains"},
+      {"name": "grainAmp", "type": "float", "default": 1, "description": "Per-grain amplitude scalar"},
+      {"name": "loop", "type": "float", "default": 0, "description": "If non-zero, the grain loops within the buffer"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["grain_buf_j_ar"]
+  },
+  {
+    "name": "GrainInJ",
+    "description": "Josh Parmenter's variant of GrainIn: multi-channel input granulator with per-grain panning, optional user envelope buffer, and configurable maxGrains. From sc3-plugins JoshUGens.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "numChannels", "type": "float", "default": 1, "description": "Number of output channels"},
+      {"name": "trigger", "type": "signal", "default": 0, "description": "kr or ar trigger; non-positive to positive transition spawns a grain"},
+      {"name": "dur", "type": "float", "default": 1, "description": "Grain duration in seconds"},
+      {"name": "in", "type": "signal", "default": 0, "description": "Audio input to granulate"},
+      {"name": "pan", "type": "float", "default": 0, "description": "Pan position"},
+      {"name": "envbufnum", "type": "float", "default": -1, "description": "Envelope buffer number; -1 uses the built-in Hanning envelope"},
+      {"name": "maxGrains", "type": "float", "default": 512, "description": "Maximum simultaneously active grains"},
+      {"name": "grainAmp", "type": "float", "default": 1, "description": "Per-grain amplitude scalar"}
+    ],
+    "outputs": 1,
+    "category": "JoshUGens (Granular)",
+    "functions": ["grain_in_j_ar"]
+  }
+]
