@@ -1,0 +1,52 @@
+// kind=fx | category=spectral | flavor=diffuser | stereo=true | params=trig,mix,level
+//
+// Spectral Diffuser
+//
+// Adds a different constant random phase shift to each FFT bin, breaking
+// transients and turning percussive material into a diffuse cloud. A rising
+// edge on `trig` re-rolls the phase set.
+//
+// Usage:
+//   group.add_effect("diff", "spectral_diffuser", #{
+//     trig: 0.0,
+//     mix: 0.6,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   trig:  Trigger. Rising edge picks a new random phase set.
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet).
+//   level: Output level trim applied after the dry/wet mix.
+
+define_fx("spectral_diffuser", |builder| {
+    builder
+        .param("trig", 0.0)
+        .param("mix", 0.6)
+        .param("level", 1.0)
+        .body(|input, trig, mix, level| {
+            // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
+            let buf_l = local_buf_ir(1.0, 2048.0);
+            let buf_r = local_buf_ir(1.0, 2048.0);
+
+            // Analyse with 50% hop and Hann window.
+            let chain_l = fft_kr(buf_l, input[0], 0.5, 1.0, 1.0, 0.0);
+            let chain_r = fft_kr(buf_r, input[1], 0.5, 1.0, 1.0, 0.0);
+
+            // Random per-bin phase shift; trigger re-rolls the phase set.
+            let diffused_l = pv_diffuser_kr(chain_l, trig);
+            let diffused_r = pv_diffuser_kr(chain_r, trig);
+
+            // Resynthesise.
+            let wet_l = ifft_ar(diffused_l, 1.0, 0.0);
+            let wet_r = ifft_ar(diffused_r, 1.0, 0.0);
+
+            // Strip DC offset that resynthesis can introduce.
+            let blocked_l = leak_dc_ar(wet_l, 0.995);
+            let blocked_r = leak_dc_ar(wet_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * blocked_l) * level,
+                ((1.0 - mix) * input[1] + mix * blocked_r) * level
+            ]
+        })
+});

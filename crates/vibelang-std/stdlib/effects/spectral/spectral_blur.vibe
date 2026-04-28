@@ -1,0 +1,52 @@
+// kind=fx | category=spectral | flavor=blur | stereo=true | params=bins,mix,level
+//
+// Spectral Blur
+//
+// Smears each FFT bin's magnitude with its neighbours, softening transients
+// and turning sharp tones into wash. Higher `bins` widens the smearing kernel
+// and costs more CPU.
+//
+// Usage:
+//   group.add_effect("blur", "spectral_blur", #{
+//     bins: 20.0,
+//     mix: 0.7,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   bins:  Neighbouring bins on each side to average (0 - 100).
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet).
+//   level: Output level trim applied after the dry/wet mix.
+
+define_fx("spectral_blur", |builder| {
+    builder
+        .param("bins", 10.0)
+        .param("mix", 0.7)
+        .param("level", 1.0)
+        .body(|input, bins, mix, level| {
+            // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
+            let buf_l = local_buf_ir(1.0, 2048.0);
+            let buf_r = local_buf_ir(1.0, 2048.0);
+
+            // Analyse with 50% hop and Hann window.
+            let chain_l = fft_kr(buf_l, input[0], 0.5, 1.0, 1.0, 0.0);
+            let chain_r = fft_kr(buf_r, input[1], 0.5, 1.0, 1.0, 0.0);
+
+            // Average each bin with its `bins` neighbours.
+            let smeared_l = pv_mag_smear_kr(chain_l, bins);
+            let smeared_r = pv_mag_smear_kr(chain_r, bins);
+
+            // Resynthesise.
+            let wet_l = ifft_ar(smeared_l, 1.0, 0.0);
+            let wet_r = ifft_ar(smeared_r, 1.0, 0.0);
+
+            // Strip DC offset that resynthesis can introduce.
+            let blocked_l = leak_dc_ar(wet_l, 0.995);
+            let blocked_r = leak_dc_ar(wet_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * blocked_l) * level,
+                ((1.0 - mix) * input[1] + mix * blocked_r) * level
+            ]
+        })
+});
