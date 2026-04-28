@@ -1,0 +1,89 @@
+// kind=fx | category=pitch | flavor=auto_tune_vibe | stereo=true | params=scale_root,scale_mode,snap_strength,mix,level
+//
+// Auto-Tune (Pitch Snap)
+//
+// Tracks the input pitch with `pitch_kr`, computes the offset to the nearest
+// scale tone, and pitch-shifts the signal to snap onto the grid via
+// `pitch_shift_ar`. With `snap_strength = 1.0` the output locks rigidly to
+// the scale (the classic T-Pain effect); fractional values blend between the
+// detected pitch and the snapped target for a softer correction.
+//
+// `scale_mode` defines the quantization grid in semitones:
+//   1.0  — chromatic (every semitone)
+//   2.0  — whole-tone scale
+//   3.0  — diminished triad spacing
+//   4.0  — augmented triad spacing
+//   12.0 — octaves only
+//
+// `scale_root` is added as a transposition offset, so the grid lines pass
+// through (root, root + step, root + 2·step, ...).
+//
+// Pitch detection runs on a mono sum of the input so both channels snap to
+// the same target ratio — this avoids the L/R drifting apart when the source
+// is already a stereo bus. The detected frequency is clamped above 20 Hz to
+// keep the log/ratio math finite when the input drops below the detection
+// threshold.
+//
+// Usage:
+//   group.add_effect("tune", "auto_tune_vibe", #{
+//     scale_root: 0.0,
+//     scale_mode: 1.0,
+//     snap_strength: 1.0,
+//     mix: 1.0,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   scale_root:    Transposition offset in semitones (0 = A=440 grid)
+//   scale_mode:    Quantization step in semitones (1 = chromatic, 2 = whole-tone, 12 = octaves)
+//   snap_strength: Blend between detected and snapped pitch (0 = bypass, 1 = full snap)
+//   mix:           Dry/wet blend (0.0 = dry, 1.0 = only the tuned signal)
+//   level:         Output trim applied after the dry/wet mix
+
+define_fx("auto_tune_vibe", |builder| {
+    builder
+        .param("scale_root", 0.0)
+        .param("scale_mode", 1.0)
+        .param("snap_strength", 1.0)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, scale_root, scale_mode, snap_strength, mix, level| {
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Pitch tracker — kr-rate; outputs [freq, hasFreq]
+            let detected = channels(
+                pitch_kr(mono, 440.0, 60.0, 4000.0, 100.0, 16.0, 1.0, 0.01, 0.5, 1.0),
+                2,
+            );
+            let detected_freq = max(detected[0], 20.0);
+
+            // MIDI note number = log2(freq/440) * 12 + 69
+            // ln(freq/440) * (12 / ln(2)) gives the same result without log2.
+            let midi = ln(detected_freq / 440.0) * 17.31234049066756 + 69.0;
+
+            // Snap (midi - root) to the nearest multiple of scale_mode, then
+            // translate back. Guard against scale_mode == 0 with a max(0.001).
+            let step = max(scale_mode, 0.001);
+            let offset = midi - scale_root;
+            let quantized = round(offset / step) * step;
+            let target_midi = scale_root + quantized;
+
+            // Blend between detected and snapped MIDI by snap_strength.
+            let blended_midi = midi + (target_midi - midi) * snap_strength;
+
+            // Pitch-shift ratio = 2 ^ ((target - detected) / 12)
+            let semi_offset = blended_midi - midi;
+            let ratio = pow(2.0, semi_offset / 12.0);
+
+            let shifted_l = pitch_shift_ar(input[0], 0.1, ratio, 0.0, 0.004);
+            let shifted_r = pitch_shift_ar(input[1], 0.1, ratio, 0.0, 0.004);
+
+            let wet_l = leak_dc_ar(shifted_l, 0.995);
+            let wet_r = leak_dc_ar(shifted_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

@@ -1,0 +1,60 @@
+// kind=fx | category=pitch | flavor=freq_shifter_ssb | stereo=true | params=shift_hz,mix,level
+//
+// Single-Sideband Frequency Shifter
+//
+// True SSB frequency shifter built from a Hilbert transform and a quadrature
+// (cos/sin) oscillator pair. Unlike `pitch_shift_ar`, which scales every
+// partial by the same ratio (preserving harmonic relationships), this shifts
+// every component by the same fixed *number of Hertz*. The result is
+// inharmonic — a 100 Hz fundamental over a 200 Hz partial becomes 150 / 250
+// when shifted by +50 Hz. Small shifts produce metallic / clangorous tones;
+// large shifts disintegrate pitched material into noise-like textures.
+//
+// Implementation:
+//
+//   x(t) → Hilbert(x) = (a, b)  where b = a phase-shifted by 90°
+//   y(t) = a · cos(2π·f·t) − b · sin(2π·f·t)
+//
+// A negative `shift_hz` flips the sign on the sin term automatically (since
+// SinOsc handles negative frequencies by running phase backward), so the same
+// formula handles both upper and lower sidebands.
+//
+// Each channel is processed independently to preserve the stereo image.
+//
+// Usage:
+//   group.add_effect("ssb", "freq_shifter_ssb", #{
+//     shift_hz: 50.0,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   shift_hz: Frequency shift amount in Hz (-500 to +500; positive = up)
+//   mix:      Dry/wet blend (0.0 = dry, 1.0 = only the shifted signal)
+//   level:    Output trim applied after the dry/wet mix
+
+define_fx("freq_shifter_ssb", |builder| {
+    builder
+        .param("shift_hz", 50.0)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, shift_hz, mix, level| {
+            let h_l = channels(hilbert_ar(input[0]), 2);
+            let h_r = channels(hilbert_ar(input[1]), 2);
+
+            // Quadrature oscillator pair: cosine = sin shifted by π/2
+            let cos_osc = sin_osc_ar(shift_hz, 1.5707963267948966);
+            let sin_osc = sin_osc_ar(shift_hz, 0.0);
+
+            let shifted_l = h_l[0] * cos_osc - h_l[1] * sin_osc;
+            let shifted_r = h_r[0] * cos_osc - h_r[1] * sin_osc;
+
+            let wet_l = leak_dc_ar(shifted_l, 0.995);
+            let wet_r = leak_dc_ar(shifted_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

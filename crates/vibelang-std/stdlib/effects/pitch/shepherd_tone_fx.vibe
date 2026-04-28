@@ -1,0 +1,104 @@
+// kind=fx | category=pitch | flavor=shepherd_tone_fx | stereo=true | params=rate,num_voices,mix,level
+//
+// Shepherd-Tone Effect — Eternally Rising Pitch
+//
+// Four parallel pitch shifters whose pitch ratios sweep through one octave
+// each, phase-offset by a quarter cycle, and gated by bell-shaped amplitude
+// envelopes that go to zero at the cycle boundary. The phase discontinuity
+// where each voice resets from the top of its octave back to the bottom is
+// masked by the envelope, producing the auditory illusion of a pitch that
+// keeps rising forever (Shepherd / Risset glissando).
+//
+// Each voice has:
+//   pitch_ratio_i = 2 ^ phase_i           // 1.0 → 2.0 (one octave rise)
+//   amp_envelope  = sin(phase_i · π)      // 0 → 1 → 0 bell over the cycle
+//
+// Voices 0..3 are phase-offset by 0.0, 0.25, 0.5, 0.75 so the active band
+// of pitch is always covered by at least one fading-up and one fading-down
+// voice. `num_voices` (1..4, fractional allowed) acts as a smooth fade gate
+// over the voice stack — at `num_voices = 1` only the first voice is
+// audible, at `4` the full Shepherd stack runs.
+//
+// `rate` is the sweep speed in cycles per second; classic Risset glissandi
+// sit around 0.1–0.5 Hz (one octave rise every 2–10 seconds).
+//
+// Usage:
+//   group.add_effect("shep", "shepherd_tone_fx", #{
+//     rate: 0.25,
+//     num_voices: 4.0,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   rate:       Octave-sweep rate in Hz (0.05 to ~2.0)
+//   num_voices: Active voice count, 1.0 to 4.0 (fractional crossfades the top voice)
+//   mix:        Dry/wet blend (0.0 = dry, 1.0 = only the Shepherd stack)
+//   level:      Output trim applied after the dry/wet mix
+
+define_fx("shepherd_tone_fx", |builder| {
+    builder
+        .param("rate", 0.25)
+        .param("num_voices", 4.0)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, rate, num_voices, mix, level| {
+            // Master phase ramp: lf_saw_ar is -1..1, normalise to 0..1.
+            let saw = lf_saw_ar(rate, 0.0);
+            let phase = saw * 0.5 + 0.5;
+
+            // Four voices, phase-offset by quarter-cycles. wrap(0, 1) keeps
+            // the offset phases in the canonical range so the bell envelope
+            // and pitch-ratio formulas behave the same for every voice.
+            let p0 = phase;
+            let p1 = wrap(phase + 0.25, 0.0, 1.0);
+            let p2 = wrap(phase + 0.5, 0.0, 1.0);
+            let p3 = wrap(phase + 0.75, 0.0, 1.0);
+
+            // Pitch ratio sweeps 1.0 → 2.0 across the cycle (one octave rise).
+            let r0 = pow(2.0, p0);
+            let r1 = pow(2.0, p1);
+            let r2 = pow(2.0, p2);
+            let r3 = pow(2.0, p3);
+
+            // Bell-shaped amplitude envelopes: sin(phase · π) is 0 at the
+            // cycle edges and 1 at the centre. sin_osc_ar with freq = 0
+            // collapses to sin(phase_modulator), which is exactly what we
+            // want here.
+            let pi = 3.141592653589793;
+            let a0 = sin_osc_ar(0.0, p0 * pi);
+            let a1 = sin_osc_ar(0.0, p1 * pi);
+            let a2 = sin_osc_ar(0.0, p2 * pi);
+            let a3 = sin_osc_ar(0.0, p3 * pi);
+
+            // Voice gates from num_voices: clip(num_voices - i, 0, 1) gives
+            // a smooth fade as num_voices crosses each integer threshold.
+            let g0 = clip(num_voices, 0.0, 1.0);
+            let g1 = clip(num_voices - 1.0, 0.0, 1.0);
+            let g2 = clip(num_voices - 2.0, 0.0, 1.0);
+            let g3 = clip(num_voices - 3.0, 0.0, 1.0);
+
+            let s0_l = pitch_shift_ar(input[0], 0.1, r0, 0.0, 0.004) * a0 * g0;
+            let s1_l = pitch_shift_ar(input[0], 0.1, r1, 0.0, 0.004) * a1 * g1;
+            let s2_l = pitch_shift_ar(input[0], 0.1, r2, 0.0, 0.004) * a2 * g2;
+            let s3_l = pitch_shift_ar(input[0], 0.1, r3, 0.0, 0.004) * a3 * g3;
+
+            let s0_r = pitch_shift_ar(input[1], 0.1, r0, 0.0, 0.004) * a0 * g0;
+            let s1_r = pitch_shift_ar(input[1], 0.1, r1, 0.0, 0.004) * a1 * g1;
+            let s2_r = pitch_shift_ar(input[1], 0.1, r2, 0.0, 0.004) * a2 * g2;
+            let s3_r = pitch_shift_ar(input[1], 0.1, r3, 0.0, 0.004) * a3 * g3;
+
+            // Bell envelopes peak at 1.0 so summed worst case is ~2.0 with
+            // adjacent voices both near peak; scale by 0.5 to keep headroom.
+            let sum_l = (s0_l + s1_l + s2_l + s3_l) * 0.5;
+            let sum_r = (s0_r + s1_r + s2_r + s3_r) * 0.5;
+
+            let wet_l = leak_dc_ar(sum_l, 0.995);
+            let wet_r = leak_dc_ar(sum_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});
