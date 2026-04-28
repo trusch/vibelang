@@ -1,0 +1,68 @@
+// kind=fx | category=pitch | flavor=formant_shifter | stereo=true | params=pitch_semitones,formant_shift,mix,level
+//
+// Formant-Compensated Pitch Shifter
+//
+// Pitch-shifts the input with time-domain granular shifting, then runs
+// the shifted signal through three parallel formant resonators tuned
+// around the canonical /a/-vowel formants (F1 ~ 650 Hz, F2 ~ 1080 Hz,
+// F3 ~ 2650 Hz — male range). The `formant_shift` multiplier scales the
+// formant centre frequencies, decoupling perceived vocal-tract size
+// from pitch.
+//
+// This lets pitch and formants move independently:
+//   - Pitch up + formant_shift = 1.0 → no "chipmunk" effect
+//   - Pitch down + formant_shift = 1.0 → no "Darth Vader"
+//   - Pitch unchanged + formant_shift > 1.0 → brighter / smaller voice
+//   - Pitch unchanged + formant_shift < 1.0 → deeper / larger voice
+//
+// Each channel is processed independently. Formant outputs are summed
+// and scaled, then DC-blocked before the dry/wet blend per the stdlib
+// effects spec.
+//
+// Usage:
+//   group.add_effect("fmt", "formant_shifter", #{
+//     pitch_semitones: 0.0,
+//     formant_shift: 1.0,
+//     mix: 1.0,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   pitch_semitones: Pitch shift in semitones (0 = none, +12 = octave up)
+//   formant_shift:   Formant centre-frequency multiplier
+//                    (1.0 = neutral, ~1.3 = female-ish, ~0.8 = deeper)
+//   mix:             Dry/wet blend (0.0 = dry, 1.0 = only the formant path)
+//   level:           Output trim applied after the dry/wet mix
+
+define_fx("formant_shifter", |builder| {
+    builder
+        .param("pitch_semitones", 0.0)
+        .param("formant_shift", 1.0)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, pitch_semitones, formant_shift, mix, level| {
+            let ratio = (2.0).pow(pitch_semitones / 12.0);
+
+            let shifted_l = pitch_shift_ar(input[0], 0.1, ratio, 0.0, 0.004);
+            let shifted_r = pitch_shift_ar(input[1], 0.1, ratio, 0.0, 0.004);
+
+            let f1 = 650.0 * formant_shift;
+            let f2 = 1080.0 * formant_shift;
+            let f3 = 2650.0 * formant_shift;
+
+            let formant_l = (formlet_ar(shifted_l, f1, 0.005, 0.04)
+                          + formlet_ar(shifted_l, f2, 0.005, 0.03)
+                          + formlet_ar(shifted_l, f3, 0.005, 0.02)) * 0.4;
+            let formant_r = (formlet_ar(shifted_r, f1, 0.005, 0.04)
+                          + formlet_ar(shifted_r, f2, 0.005, 0.03)
+                          + formlet_ar(shifted_r, f3, 0.005, 0.02)) * 0.4;
+
+            let wet_l = leak_dc_ar(formant_l, 0.995);
+            let wet_r = leak_dc_ar(formant_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

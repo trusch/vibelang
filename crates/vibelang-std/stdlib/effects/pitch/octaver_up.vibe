@@ -1,0 +1,51 @@
+// kind=fx | category=pitch | flavor=octaver_up | stereo=true | params=amount,lp_freq,mix,level
+//
+// Upper-Octave Octaver
+//
+// Generates a pitch-shifted voice one octave above the dry signal using
+// time-domain granular pitch shifting, with a low-pass filter on the
+// shifted signal to mellow the upper octave and tame granular artifacts.
+// Each channel is processed independently to preserve the stereo image.
+// The shifted/filtered signal is DC-blocked before the dry/wet blend per
+// the stdlib effects spec.
+//
+// Useful as a 12-string-style sparkle layer on guitars, a "shimmer" on
+// pads/leads, or a Pog/OC-2-style upper-octave doubler. With `mix = 1.0`
+// it can also be used as a dedicated upper-octave send.
+//
+// Usage:
+//   group.add_effect("oct", "octaver_up", #{
+//     amount: 0.8,
+//     lp_freq: 4000.0,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   amount:  Level of the shifted voice (0.0 = silent, 1.0 = unity)
+//   lp_freq: Low-pass cutoff applied to the shifted signal in Hz
+//   mix:     Dry/wet blend (0.0 = dry, 1.0 = only the upper octave)
+//   level:   Output trim applied after the dry/wet mix
+
+define_fx("octaver_up", |builder| {
+    builder
+        .param("amount", 0.8)
+        .param("lp_freq", 4000.0)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, amount, lp_freq, mix, level| {
+            let shifted_l = pitch_shift_ar(input[0], 0.1, 2.0, 0.0, 0.004);
+            let shifted_r = pitch_shift_ar(input[1], 0.1, 2.0, 0.0, 0.004);
+
+            let filtered_l = lpf_ar(shifted_l, lp_freq) * amount;
+            let filtered_r = lpf_ar(shifted_r, lp_freq) * amount;
+
+            let wet_l = leak_dc_ar(filtered_l, 0.995);
+            let wet_r = leak_dc_ar(filtered_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});

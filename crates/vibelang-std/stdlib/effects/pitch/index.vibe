@@ -1,3 +1,6 @@
 // Pitch Effects Index
 import "stdlib/effects/pitch/harmonizer_2voice.vibe";
 import "stdlib/effects/pitch/harmonizer_4voice.vibe";
+import "stdlib/effects/pitch/octaver_up.vibe";
+import "stdlib/effects/pitch/octaver_down.vibe";
+import "stdlib/effects/pitch/formant_shifter.vibe";

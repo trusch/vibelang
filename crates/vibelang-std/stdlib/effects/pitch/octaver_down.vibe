@@ -1,0 +1,52 @@
+// kind=fx | category=pitch | flavor=octaver_down | stereo=true | params=amount,lp_freq,mix,level
+//
+// Sub-Octave Octaver
+//
+// Generates a pitch-shifted voice one octave below the dry signal using
+// time-domain granular pitch shifting, with a low-pass filter on the
+// shifted signal — defaulted to 800 Hz — to keep the sub clean and
+// bass-only, in the style of the Boss OC-2 / Mooer Tender Octaver. Each
+// channel is processed independently. The shifted/filtered signal is
+// DC-blocked before the dry/wet blend per the stdlib effects spec.
+//
+// Stack under guitars/synths for a sub-bass reinforcement, or use with
+// `mix = 1.0` as a dedicated sub-bass send. The low-pass strips out the
+// granular high-frequency artifacts that pitch_shift_ar produces when
+// shifting downward, leaving a clean sub.
+//
+// Usage:
+//   group.add_effect("sub", "octaver_down", #{
+//     amount: 0.8,
+//     lp_freq: 800.0,
+//     mix: 0.5,
+//     level: 1.0,
+//   });
+//
+// Parameters:
+//   amount:  Level of the shifted voice (0.0 = silent, 1.0 = unity)
+//   lp_freq: Low-pass cutoff applied to the shifted signal in Hz
+//   mix:     Dry/wet blend (0.0 = dry, 1.0 = only the sub octave)
+//   level:   Output trim applied after the dry/wet mix
+
+define_fx("octaver_down", |builder| {
+    builder
+        .param("amount", 0.8)
+        .param("lp_freq", 800.0)
+        .param("mix", 0.5)
+        .param("level", 1.0)
+        .body(|input, amount, lp_freq, mix, level| {
+            let shifted_l = pitch_shift_ar(input[0], 0.1, 0.5, 0.0, 0.004);
+            let shifted_r = pitch_shift_ar(input[1], 0.1, 0.5, 0.0, 0.004);
+
+            let filtered_l = lpf_ar(shifted_l, lp_freq) * amount;
+            let filtered_r = lpf_ar(shifted_r, lp_freq) * amount;
+
+            let wet_l = leak_dc_ar(filtered_l, 0.995);
+            let wet_r = leak_dc_ar(filtered_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+            ]
+        })
+});
