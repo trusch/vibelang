@@ -1,0 +1,54 @@
+// kind=fx | category=spectral | flavor=phase_shift | stereo=true | params=shift_radians,mix,level
+//
+// Spectral Phase Shift
+//
+// Shifts the phase of every FFT bin by a constant amount. Magnitudes are
+// untouched, so the timbre stays close to the source while transients soften
+// and stereo image widens. Try sweeping `shift_radians` slowly for a
+// chorus-like phase smear.
+//
+// Usage:
+//   group.add_effect("ps", "spectral_phase_shift", #{
+//     shift_radians: 1.5708,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   shift_radians: Phase shift applied to every bin, in radians (0 = no
+//                  effect, pi/2 = quarter turn, pi = invert).
+//   mix:           Dry/wet mix (0.0 = dry, 1.0 = wet).
+//   level:         Output level trim applied after the dry/wet mix.
+
+define_fx("spectral_phase_shift", |builder| {
+    builder
+        .param("shift_radians", 0.0)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, shift_radians, mix, level| {
+            // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
+            let buf_l = local_buf_ir(1.0, 2048.0);
+            let buf_r = local_buf_ir(1.0, 2048.0);
+
+            // Analyse with 50% hop and Hann window.
+            let chain_l = fft_kr(buf_l, input[0], 0.5, 1.0, 1.0, 0.0);
+            let chain_r = fft_kr(buf_r, input[1], 0.5, 1.0, 1.0, 0.0);
+
+            // Apply the same phase rotation to every bin (no integration).
+            let shifted_l = pv_phase_shift_kr(chain_l, shift_radians, 0.0);
+            let shifted_r = pv_phase_shift_kr(chain_r, shift_radians, 0.0);
+
+            // Resynthesise.
+            let wet_l = ifft_ar(shifted_l, 1.0, 0.0);
+            let wet_r = ifft_ar(shifted_r, 1.0, 0.0);
+
+            // Strip DC offset that resynthesis can introduce.
+            let blocked_l = leak_dc_ar(wet_l, 0.995);
+            let blocked_r = leak_dc_ar(wet_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * blocked_l) * level,
+                ((1.0 - mix) * input[1] + mix * blocked_r) * level
+            ]
+        })
+});

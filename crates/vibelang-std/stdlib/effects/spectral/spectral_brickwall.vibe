@@ -1,0 +1,56 @@
+// kind=fx | category=spectral | flavor=brickwall | stereo=true | params=width,mix,level
+//
+// Spectral Brick Wall
+//
+// Zeroes a contiguous range of FFT bins above or below a cutoff. Acts as a
+// brick-wall low-pass when `width` is negative (clears bins from the top down)
+// and a brick-wall high-pass when positive (clears bins from the bottom up).
+// The transition is hard — no slope — so this is a surgical filter rather than
+// a musical one.
+//
+// Usage:
+//   group.add_effect("bw", "spectral_brickwall", #{
+//     width: -0.5,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   width: Cutoff position in [-1, 1]. 0 = no effect.
+//          > 0 clears bins from the bottom up (high-pass);
+//          < 0 clears bins from the top down (low-pass).
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet).
+//   level: Output level trim applied after the dry/wet mix.
+
+define_fx("spectral_brickwall", |builder| {
+    builder
+        .param("width", 0.0)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, width, mix, level| {
+            // Per-channel FFT buffers (2048 frames -> ~46 ms at 44.1 kHz).
+            let buf_l = local_buf_ir(1.0, 2048.0);
+            let buf_r = local_buf_ir(1.0, 2048.0);
+
+            // Analyse with 50% hop and Hann window.
+            let chain_l = fft_kr(buf_l, input[0], 0.5, 1.0, 1.0, 0.0);
+            let chain_r = fft_kr(buf_r, input[1], 0.5, 1.0, 1.0, 0.0);
+
+            // Hard cutoff at the bin selected by `width`.
+            let cut_l = pv_brick_wall_kr(chain_l, width);
+            let cut_r = pv_brick_wall_kr(chain_r, width);
+
+            // Resynthesise.
+            let wet_l = ifft_ar(cut_l, 1.0, 0.0);
+            let wet_r = ifft_ar(cut_r, 1.0, 0.0);
+
+            // Strip DC offset that resynthesis can introduce.
+            let blocked_l = leak_dc_ar(wet_l, 0.995);
+            let blocked_r = leak_dc_ar(wet_r, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * blocked_l) * level,
+                ((1.0 - mix) * input[1] + mix * blocked_r) * level
+            ]
+        })
+});

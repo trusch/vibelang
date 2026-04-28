@@ -1,0 +1,68 @@
+// kind=fx | category=spectral | flavor=morph | stereo=true | params=morph_amount,mix,level
+//
+// Spectral Morph
+//
+// Crossfades two FFT chains. The left input drives the primary chain; the
+// right input is treated as a side-chain. `morph_amount` slides between an
+// additive blend (sum of both spectra) and a multiplicative blend
+// (cross-synthesis — the side-chain shapes the primary's spectrum). At 0 the
+// output is the additive sum; at 1 it is pure cross-synthesis.
+//
+// Cross-synthesis tends to be quieter and timbrally narrower than the additive
+// blend, so reach for `level` to compensate when sweeping `morph_amount`.
+//
+// Usage:
+//   group.add_effect("morph", "spectral_morph", #{
+//     morph_amount: 0.5,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   morph_amount: 0.0 = additive sum of both chains,
+//                 1.0 = multiplicative (cross-synthesis) of both chains.
+//   mix:          Dry/wet mix (0.0 = dry, 1.0 = wet).
+//   level:        Output level trim applied after the dry/wet mix.
+
+define_fx("spectral_morph", |builder| {
+    builder
+        .param("morph_amount", 0.5)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, morph_amount, mix, level| {
+            // Four FFT buffers — one per (path, channel) pair, since pv_add_kr
+            // and pv_mul_kr both overwrite their first chain in place.
+            let buf_add_a = local_buf_ir(1.0, 2048.0);
+            let buf_add_b = local_buf_ir(1.0, 2048.0);
+            let buf_mul_a = local_buf_ir(1.0, 2048.0);
+            let buf_mul_b = local_buf_ir(1.0, 2048.0);
+
+            // Analyse main (input[0]) and side-chain (input[1]) with 50% hop.
+            let chain_add_a = fft_kr(buf_add_a, input[0], 0.5, 1.0, 1.0, 0.0);
+            let chain_add_b = fft_kr(buf_add_b, input[1], 0.5, 1.0, 1.0, 0.0);
+            let chain_mul_a = fft_kr(buf_mul_a, input[0], 0.5, 1.0, 1.0, 0.0);
+            let chain_mul_b = fft_kr(buf_mul_b, input[1], 0.5, 1.0, 1.0, 0.0);
+
+            // Additive blend: complex sum of the two chains.
+            let added = pv_add_kr(chain_add_a, chain_add_b);
+            // Multiplicative blend: complex product (cross-synthesis).
+            let multiplied = pv_mul_kr(chain_mul_a, chain_mul_b);
+
+            // Resynthesise both spectra.
+            let wet_add = ifft_ar(added, 1.0, 0.0);
+            let wet_mul = ifft_ar(multiplied, 1.0, 0.0);
+
+            // Time-domain crossfade between the two morph paths.
+            let morphed = (1.0 - morph_amount) * wet_add + morph_amount * wet_mul;
+
+            // Strip DC offset that the spectral ops can introduce.
+            let blocked = leak_dc_ar(morphed, 0.995);
+
+            // Output the morphed signal on both channels (the morph collapses
+            // the side-chain into a single spectrum).
+            [
+                ((1.0 - mix) * input[0] + mix * blocked) * level,
+                ((1.0 - mix) * input[1] + mix * blocked) * level
+            ]
+        })
+});

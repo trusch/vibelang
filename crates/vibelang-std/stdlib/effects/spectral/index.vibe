@@ -2,3 +2,6 @@
 import "stdlib/effects/spectral/spectral_freeze.vibe";
 import "stdlib/effects/spectral/spectral_blur.vibe";
 import "stdlib/effects/spectral/spectral_diffuser.vibe";
+import "stdlib/effects/spectral/spectral_brickwall.vibe";
+import "stdlib/effects/spectral/spectral_phase_shift.vibe";
+import "stdlib/effects/spectral/spectral_morph.vibe";
