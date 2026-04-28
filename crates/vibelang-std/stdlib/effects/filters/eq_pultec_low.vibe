@@ -1,0 +1,50 @@
+// kind=fx | category=filter | flavor=pultec_low | stereo=true | params=freq,boost,cut,mix,level
+//
+// Pultec EQP-1A Low-Frequency Push-Pull
+//
+// The classic "Pultec trick": boost AND cut at the same low frequency. Because
+// the boost (low shelf) and cut (peak attenuation) curves don't overlap exactly,
+// the result is a fat low end with a scooped low-mid — the sound that put this
+// EQ on every classic record. Flat-out boosts can't do this; the magic is in
+// using both knobs at once.
+//
+// Usage:
+//   group.add_effect("pultec", "eq_pultec_low", #{
+//     freq: 100.0,
+//     boost: 4.0,
+//     cut: 3.0,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   freq:  Low corner frequency in Hz (60.0 to 200.0 — typical Pultec range)
+//   boost: Low shelf boost in dB (0.0 to 12.0)
+//   cut:   Peak cut in dB at the same freq (0.0 to 12.0; applied as -cut)
+//   mix:   Dry/wet mix (1.0 = full wet, insert default)
+//   level: Output level trim (1.0 = unity)
+
+define_fx("eq_pultec_low")
+    .param("freq", 100.0)
+    .param("boost", 4.0)
+    .param("cut", 3.0)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, freq, boost, cut, mix, level| {
+        // Low shelf boost
+        let boosted_l = b_low_shelf_ar(input[0], freq, 1.0, boost);
+        let boosted_r = b_low_shelf_ar(input[1], freq, 1.0, boost);
+
+        // Peak cut at the same freq with a wide-ish Q so the dip sits just
+        // above the shelf — this is the asymmetry that makes the trick work.
+        let processed_l = b_peak_eq_ar(boosted_l, freq, 0.7, 0.0 - cut);
+        let processed_r = b_peak_eq_ar(boosted_r, freq, 0.7, 0.0 - cut);
+
+        let wet_l = leak_dc_ar(processed_l, 0.995);
+        let wet_r = leak_dc_ar(processed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

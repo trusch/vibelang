@@ -1,0 +1,56 @@
+// kind=fx | category=character | flavor=console_summing | stereo=true | params=drive,hf_cut,mix,level
+//
+// Console Summing
+//
+// Mix-bus emulation of an analog summing amp: tanh soft saturation for the
+// odd-harmonic glue, a slight HF shelf cut for the air-loss every transformer
+// path imposes, and a touch of cross-channel modulation so the two sides
+// breathe together rather than sounding like two parallel digital chains.
+//
+// Sit this on the master or on a sum bus. Even with drive at 1.0 it adds
+// a small cohesion you can hear when bypassing it.
+//
+// Usage:
+//   group.add_effect("console", "console_summing", #{
+//     drive: 1.4,
+//     hf_cut: 1.5,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   drive:  Saturation drive (1.0 = clean unity, 4.0 = thick)
+//   hf_cut: HF shelf cut in dB at 12 kHz (0.0 to 4.0 — typical analog roll-off)
+//   mix:    Dry/wet mix (1.0 = full wet, insert default)
+//   level:  Output level trim (1.0 = unity)
+
+define_fx("console_summing")
+    .param("drive", 1.4)
+    .param("hf_cut", 1.5)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, drive, hf_cut, mix, level| {
+        // Slight HF shelf cut at 12 kHz — every transformer/Class A path loses
+        // a touch of air. Apply -hf_cut dB.
+        let shelved_l = b_hi_shelf_ar(input[0], 12000.0, 1.0, 0.0 - hf_cut);
+        let shelved_r = b_hi_shelf_ar(input[1], 12000.0, 1.0, 0.0 - hf_cut);
+
+        // Cross-mod harmonics: each channel sees a small amount of the other
+        // through the saturator. This is what summing amps do that parallel
+        // digital chains don't — both sides share a non-linearity.
+        let xfeed = 0.05;
+        let mixed_l = shelved_l + shelved_r * xfeed;
+        let mixed_r = shelved_r + shelved_l * xfeed;
+
+        // tanh saturation, divided back so unity drive stays unity.
+        let sat_l = (mixed_l * drive).tanh() / drive.sqrt();
+        let sat_r = (mixed_r * drive).tanh() / drive.sqrt();
+
+        let wet_l = leak_dc_ar(sat_l, 0.995);
+        let wet_r = leak_dc_ar(sat_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

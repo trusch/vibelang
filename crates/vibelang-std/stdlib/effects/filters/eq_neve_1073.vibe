@@ -1,0 +1,69 @@
+// kind=fx | category=filter | flavor=neve_1073 | stereo=true | params=low_freq,low_gain,mid_freq,mid_gain,mid_q,high_freq,high_gain,mix,level
+//
+// Neve 1073 Console EQ
+//
+// Three-band console EQ with the 1073's typical voicing: low shelf, swept mid
+// peak, fixed-ish high shelf, with a final tanh stage to model the transformer
+// + Class A output non-linearity. Adds a subtle "glue" even at unity — the
+// reason engineers reach for one even when the EQ pots are at 0.
+//
+// Usage:
+//   group.add_effect("neve", "eq_neve_1073", #{
+//     low_freq: 110.0,
+//     low_gain: 3.0,
+//     mid_freq: 1600.0,
+//     mid_gain: 2.0,
+//     mid_q: 0.7,
+//     high_freq: 12000.0,
+//     high_gain: 2.0,
+//     mix: 1.0,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   low_freq:  Low shelf corner in Hz (35, 60, 110, 220 are the original steps)
+//   low_gain:  Low shelf gain in dB (-16 to +16)
+//   mid_freq:  Mid peak frequency in Hz (360, 700, 1600, 3200, 4800, 7200)
+//   mid_gain:  Mid peak gain in dB (-18 to +18)
+//   mid_q:     Mid peak Q — 1073 mids are broad; 0.7 is the classic feel
+//   high_freq: High shelf corner in Hz (typically fixed at 12 kHz on a 1073)
+//   high_gain: High shelf gain in dB (-16 to +16)
+//   mix:       Dry/wet mix (1.0 = full wet, insert default)
+//   level:     Output level trim (1.0 = unity)
+
+define_fx("eq_neve_1073")
+    .param("low_freq", 110.0)
+    .param("low_gain", 0.0)
+    .param("mid_freq", 1600.0)
+    .param("mid_gain", 0.0)
+    .param("mid_q", 0.7)
+    .param("high_freq", 12000.0)
+    .param("high_gain", 0.0)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body(|input, low_freq, low_gain, mid_freq, mid_gain, mid_q, high_freq, high_gain, mix, level| {
+        // Three-band EQ chain: low shelf -> mid peak -> high shelf
+        let low_l = b_low_shelf_ar(input[0], low_freq, 1.0, low_gain);
+        let low_r = b_low_shelf_ar(input[1], low_freq, 1.0, low_gain);
+
+        let mid_l = b_peak_eq_ar(low_l, mid_freq, mid_q, mid_gain);
+        let mid_r = b_peak_eq_ar(low_r, mid_freq, mid_q, mid_gain);
+
+        let eq_l = b_hi_shelf_ar(mid_l, high_freq, 1.0, high_gain);
+        let eq_r = b_hi_shelf_ar(mid_r, high_freq, 1.0, high_gain);
+
+        // Subtle transformer/Class A warmth — gentle drive, divided back so
+        // unity stays unity. The non-linearity is what gives the 1073 its
+        // signature even at flat EQ settings.
+        let warmth_drive = 1.3;
+        let warmed_l = (eq_l * warmth_drive).tanh() / warmth_drive.sqrt();
+        let warmed_r = (eq_r * warmth_drive).tanh() / warmth_drive.sqrt();
+
+        let wet_l = leak_dc_ar(warmed_l, 0.995);
+        let wet_r = leak_dc_ar(warmed_r, 0.995);
+
+        [
+            ((1.0 - mix) * input[0] + mix * wet_l) * level,
+            ((1.0 - mix) * input[1] + mix * wet_r) * level
+        ]
+    });

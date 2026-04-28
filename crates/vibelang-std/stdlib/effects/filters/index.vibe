@@ -6,5 +6,7 @@ import "stdlib/effects/filters/moog_filter.vibe";
 import "stdlib/effects/filters/comb_filter.vibe";
 import "stdlib/effects/filters/formant_filter.vibe";
 import "stdlib/effects/filters/eq_three_band.vibe";
+import "stdlib/effects/filters/eq_pultec_low.vibe";
+import "stdlib/effects/filters/eq_neve_1073.vibe";
 import "stdlib/effects/filters/ladder_filter.vibe";
 import "stdlib/effects/filters/resonator.vibe";
