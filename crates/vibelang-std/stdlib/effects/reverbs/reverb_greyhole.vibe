@@ -1,0 +1,65 @@
+// kind=fx | category=reverb | flavor=greyhole | stereo=true | params=delay_time,damp,size,diff,feedback,mod_depth,mod_freq,mix,level
+//
+// Greyhole Reverb / Echo Effect
+//
+// Complex echo-like effect inspired by the classic Eventide unit.
+// A diffuser (similar to JPverb's) connected in a feedback loop with a
+// long modulated delay line — excels at spacey washes of sound.
+//
+// Usage:
+//   group.add_effect("grey", "reverb_greyhole", #{
+//     delay_time: 0.5,
+//     damp: 0.5,
+//     size: 1.0,
+//     diff: 0.7,
+//     feedback: 0.7,
+//     mod_depth: 0.1,
+//     mod_freq: 2.0,
+//     mix: 0.3,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   delay_time: Approximate delay time in seconds (0.1 to 60)
+//   damp:       High-frequency damping as the delay decays (0.0 to 1.0)
+//   size:       Internal delay-line size scaling (0.5 to 5.0)
+//   diff:       Diffusion shape (0.0 to 1.0); >= 0.707 = smooth exp decay
+//   feedback:   Feedback amount (0.0 to 1.0); 1.0 = infinite sustain
+//   mod_depth:  Delay modulation depth (0.0 to 1.0)
+//   mod_freq:   Delay modulation frequency in Hz (0 to 10)
+//   mix:        Dry/wet crossfade (0.0 = dry, 1.0 = wet)
+//   level:      Output level multiplier (0.0 to 1.0+)
+
+define_fx("reverb_greyhole", |builder| {
+    builder
+        .param("delay_time", 0.5)
+        .param("damp", 0.5)
+        .param("size", 1.0)
+        .param("diff", 0.7)
+        .param("feedback", 0.7)
+        .param("mod_depth", 0.1)
+        .param("mod_freq", 2.0)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, delay_time, damp, size, diff, feedback, mod_depth, mod_freq, mix, level| {
+            // Mix stereo input to mono for the greyhole input.
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Greyhole (stereo out).
+            let wet_node = greyhole_ar(
+                mono, delay_time, damp, size,
+                diff, feedback, mod_depth, mod_freq
+            );
+            let wet_left = channel(wet_node, 0);
+            let wet_right = channel(wet_node, 1);
+
+            // DC-block the wet signal so long feedback tails don't drift.
+            let blocked_left = leak_dc_ar(wet_left, 0.995);
+            let blocked_right = leak_dc_ar(wet_right, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * blocked_left) * level,
+                ((1.0 - mix) * input[1] + mix * blocked_right) * level
+            ]
+        })
+});

@@ -1,0 +1,57 @@
+// kind=fx | category=reverb | flavor=jpverb | stereo=true | params=time,damp,size,mix,level
+//
+// JPverb Reverb Effect
+//
+// Algorithmic reverb inspired by vintage Lexicon and Alesis units.
+// Produces long, lush, chorused reverberation tails — well-suited to
+// synthetic sources rather than realistic spaces.
+//
+// Usage:
+//   group.add_effect("verb", "reverb_jpverb", #{
+//     time: 2.0,
+//     damp: 0.3,
+//     size: 1.0,
+//     mix: 0.3,
+//     level: 1.0
+//   });
+//
+// Parameters:
+//   time:  Reverberation time in seconds (0.1 to 60)
+//   damp:  High-frequency damping (0.0 to 1.0)
+//   size:  Internal delay-line size scaling (0.5 to 5.0)
+//   mix:   Dry/wet crossfade (0.0 = dry, 1.0 = wet)
+//   level: Output level multiplier (0.0 to 1.0+)
+
+define_fx("reverb_jpverb", |builder| {
+    builder
+        .param("time", 2.0)
+        .param("damp", 0.3)
+        .param("size", 1.0)
+        .param("mix", 0.3)
+        .param("level", 1.0)
+        .body(|input, time, damp, size, mix, level| {
+            // Mix stereo input to mono for the reverb input.
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // JPverb (stereo out). Non-exposed params left at musical defaults:
+            // earlyDiff=0.707, modDepth=0.1, modFreq=2.0, low/mid/high=1.0,
+            // lowcut=500 Hz, highcut=2000 Hz.
+            let wet_node = j_pverb_ar(
+                mono, time, damp, size,
+                0.707, 0.1, 2.0,
+                1.0, 1.0, 1.0,
+                500.0, 2000.0
+            );
+            let wet_left = channel(wet_node, 0);
+            let wet_right = channel(wet_node, 1);
+
+            // DC-block the wet signal so long tails don't drift.
+            let blocked_left = leak_dc_ar(wet_left, 0.995);
+            let blocked_right = leak_dc_ar(wet_right, 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * blocked_left) * level,
+                ((1.0 - mix) * input[1] + mix * blocked_right) * level
+            ]
+        })
+});
