@@ -406,5 +406,215 @@
     "functions": [
       "warp1_ar"
     ]
+  },
+  {
+    "name": "LocalBuf",
+    "description": "Allocate a buffer local to the synth. The output is the buffer number, usable by any UGen that takes a bufnum input.",
+    "rates": [
+      "ir"
+    ],
+    "inputs": [
+      {
+        "name": "numChannels",
+        "type": "float",
+        "default": 1,
+        "description": "Number of channels"
+      },
+      {
+        "name": "numFrames",
+        "type": "float",
+        "default": 1,
+        "description": "Number of frames"
+      }
+    ],
+    "outputs": 1,
+    "category": "Buffers",
+    "functions": [
+      "local_buf_ir"
+    ]
+  },
+  {
+    "name": "MaxLocalBufs",
+    "description": "Set the maximum number of local buffers in a synth. Used internally by LocalBuf.",
+    "rates": [
+      "ir"
+    ],
+    "inputs": [
+      {
+        "name": "numBufs",
+        "type": "float",
+        "default": 0,
+        "description": "Maximum number of local buffers in this synth"
+      }
+    ],
+    "outputs": 1,
+    "category": "Buffers",
+    "functions": [
+      "max_local_bufs_ir"
+    ]
+  },
+  {
+    "name": "SetBuf",
+    "description": "Set buffer slots from a list of values at synth init time.",
+    "rates": [
+      "ir"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer to write into"
+      },
+      {
+        "name": "offset",
+        "type": "float",
+        "default": 0,
+        "description": "Starting frame offset in buffer"
+      },
+      {
+        "name": "values",
+        "type": "signal",
+        "default": 0,
+        "description": "Value(s) to write into the buffer"
+      }
+    ],
+    "outputs": 1,
+    "category": "Buffers",
+    "functions": [
+      "set_buf_ir"
+    ]
+  },
+  {
+    "name": "ClearBuf",
+    "description": "Set all buffer slots to zero at synth init time. Important when randomly accessing buffer slots in a LocalBuf to avoid reading stale data.",
+    "rates": [
+      "ir"
+    ],
+    "inputs": [
+      {
+        "name": "buffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer to clear"
+      }
+    ],
+    "outputs": 1,
+    "category": "Buffers",
+    "functions": [
+      "clear_buf_ir"
+    ]
+  },
+  {
+    "name": "ScopeOut",
+    "description": "Server-side scope output. Writes its inputs into a buffer for visualisation by Stethoscope or similar GUI tools.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Scope buffer number to write into"
+      },
+      {
+        "name": "inputArray",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal(s) to write to the scope buffer"
+      }
+    ],
+    "outputs": 1,
+    "category": "Buffers",
+    "functions": [
+      "scope_out_ar",
+      "scope_out_kr"
+    ]
+  },
+  {
+    "name": "ScopeOut2",
+    "description": "Server-side scope output (newer implementation). Writes its inputs into an internally-allocated scope buffer keyed by scopeNum.",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "scopeNum",
+        "type": "float",
+        "default": 0,
+        "description": "Scope buffer index"
+      },
+      {
+        "name": "maxFrames",
+        "type": "float",
+        "default": 4096,
+        "description": "Maximum number of frames in the scope buffer"
+      },
+      {
+        "name": "scopeFrames",
+        "type": "float",
+        "default": 4096,
+        "description": "Number of frames per push (period). Defaults to maxFrames"
+      },
+      {
+        "name": "inputArray",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal(s) to write to the scope buffer"
+      }
+    ],
+    "outputs": 1,
+    "category": "Buffers",
+    "functions": [
+      "scope_out2_ar",
+      "scope_out2_kr"
+    ]
+  },
+  {
+    "name": "SimpleLoopBuf",
+    "description": "Simple looping buffer player. Plays back a buffer between loopStart and loopEnd frames, restarting on each positive-going trigger.",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "numChannels",
+        "type": "float",
+        "default": 1,
+        "description": "Number of channels in the buffer"
+      },
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer number to play"
+      },
+      {
+        "name": "loopStart",
+        "type": "float",
+        "default": 0,
+        "description": "Loop start frame"
+      },
+      {
+        "name": "loopEnd",
+        "type": "float",
+        "default": 99999,
+        "description": "Loop end frame (clamped to buffer length)"
+      },
+      {
+        "name": "trigger",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger to (re)start playback at loopStart on positive-going zero crossing"
+      }
+    ],
+    "outputs": 1,
+    "category": "Buffers",
+    "functions": [
+      "simple_loop_buf_ar"
+    ]
   }
 ]
