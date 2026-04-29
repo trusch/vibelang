@@ -1,14 +1,43 @@
-// Morphagene Story A + B + C + D — Reel + Splice metadata + Granular path
-//                                    + Synchronization (CLK / EOSG modes).
+// Morphagene Story A + B + C + D + E — Reel + Splice metadata + Granular
+//                                       path + Synchronization (CLK / EOSG
+//                                       modes) + Reel persistence.
 //
 // Multi-splice reel with continuous Vari-Speed playback, Organize-driven
 // splice selection (with EOS-hold semantics), Sound-On-Sound recording,
 // a `grain_buf_ar`-based granular layer with the full Morph staircase
 // (gap → 1:1 → 2:1 → 3:1 + per-grain pan → 4:1 + per-grain pitch-up),
-// and Story D's clocked playback modes (Gene Shift, Time Stretch) plus
-// the EOSG (End-of-Gene/Splice Gate) computation. Per
+// Story D's clocked playback modes (Gene Shift, Time Stretch) plus the
+// EOSG (End-of-Gene/Splice Gate) computation, and Story E's Reel
+// persistence model — a thin .vibe wrapper around `allocate_buffer` /
+// `sample` so SOS-recorded content survives hot-reload. Per
 // `kb/morphagene-synthdef-plan.md` §3 (Reel/Splice/Gene hierarchy),
-// §4 (UGen mapping), §6.B + §6.C + §6.D.
+// §4 (UGen mapping), §6.B + §6.C + §6.D + §6.E.
+//
+// Story E — Reel persistence (script-tier, see `kb/morphagene-reel-howto.md`):
+//   The Reel is just a script-allocated buffer wired into the synthdef's
+//   `bufnum` param. `fn reel(name, frames, channels)` calls the existing
+//   `allocate_buffer` Rhai API (commit 7a6eebe) — the same name → same
+//   bufnum across reloads, contents persist as long as the call stays in
+//   the script. A `sample()`-backed alternative (`fn reel_from_sample`)
+//   is provided when you want the Reel seeded from a `.wav` (the .wav
+//   reload re-seeds, so SOS overdubs are not preserved by that path —
+//   use `reel(...)` for SOS-safe Reels).
+//
+//   Splice metadata travels with the script as a Rhai array on the Reel
+//   object (`r.splices`) — no separate metadata buffer, no Rust-side
+//   Reel registry. The synthdef itself still divides the Reel evenly into
+//   `num_splices` regions; `splices.len()` is what the helper writes into
+//   `num_splices`. Custom splice positions (uneven spacing or `.wav` cue
+//   chunks) are deferred to a follow-up `vibelang-sfz` ticket that
+//   extends the wav loader.
+//
+//   Default-array preset baking is the `morphagene_reel_fill` synthdef
+//   defined below: a one-shot fill that writes a generated waveform
+//   (saw / square / sine / noise / silence) into the Reel via
+//   `record_buf_ar` with `loop=0` + `doneAction=2`. The fill voice frees
+//   itself when the buffer is full. Re-runs on every script execution
+//   that calls `reel_fill_preset` — guard with a `let _bake = false`
+//   flag during normal use so SOS recordings aren't overwritten.
 //
 // Splice model (Story B):
 //   The Reel is logically divided into `num_splices` evenly-spaced splices.
@@ -371,3 +400,149 @@ define_synthdef("morphagene", |builder| {
             [left, right]
         })
 });
+
+// =====================================================================
+// Story E — Reel persistence: helpers + default-preset fill synthdef
+// =====================================================================
+//
+// The Reel concept is a thin script-tier wrapper around `allocate_buffer`.
+// The runtime's reload diff treats unchanged `(name, frames, channels)`
+// tuples as no-ops, so the SC buffer is reused across hot-reload and any
+// SOS-recorded content stays intact.
+//
+// Splice metadata is stored as a Rhai array on the Reel object map.
+// `reel_attach(voice, reel)` wires `bufnum` and `num_splices` onto the
+// morphagene voice. The synthdef divides the Reel evenly into
+// `num_splices` regions today (see file header §3 + Splice model);
+// arbitrary splice positions are a follow-up extension.
+
+// One-shot fill synthdef. Writes a generated waveform (saw/square/sine/
+// noise/silence) into `bufnum` via `record_buf_ar` with `loop=0` so the
+// recorder stops at end-of-buffer; `doneAction=2` then frees this synth.
+// Body args: 4 — well under the 10-arg Rhai cap.
+//
+//   preset:  0 → saw, 1 → square, 2 → sine, 3 → pink noise, ≥4 → silence.
+//   freq:    fundamental of the generated waveform (Hz). The Reel is so
+//            long that "fundamental" is more about loop period inside the
+//            reel than pitch — pick something that gives a useful number
+//            of cycles per Reel (e.g. 110 Hz × 8 s ≈ 880 cycles).
+//   amp:     output amplitude written into the buffer (0..1).
+define_synthdef("morphagene_reel_fill", |builder| {
+    builder
+        .param("bufnum", 0.0)
+        .param("preset", 0.0)
+        .param("freq", 110.0)
+        .param("amp", 0.6)
+        .body(|bufnum, preset, freq, amp| {
+            // Mode-mix coefficients via cumulative-clip differences —
+            // exactly one is 1.0 for any integer preset value.
+            let m_le_0 = clip(1.0 - preset, 0.0, 1.0);
+            let m_le_1 = clip(2.0 - preset, 0.0, 1.0);
+            let m_le_2 = clip(3.0 - preset, 0.0, 1.0);
+            let m_le_3 = clip(4.0 - preset, 0.0, 1.0);
+            let saw_mix   = m_le_0;
+            let sq_mix    = m_le_1 - m_le_0;
+            let sn_mix    = m_le_2 - m_le_1;
+            let noise_mix = m_le_3 - m_le_2;
+            // (silence at preset ≥ 4 → all four mixes are zero)
+
+            let saw_sig   = saw_ar(freq);
+            let sq_sig    = pulse_ar(freq, 0.5);
+            let sn_sig    = sin_osc_ar(freq);
+            let noise_sig = pink_noise_ar();
+
+            let val = (saw_sig * saw_mix
+                     + sq_sig  * sq_mix
+                     + sn_sig  * sn_mix
+                     + noise_sig * noise_mix) * amp;
+
+            // Write linearly from frame 0; loop=0 + doneAction=2 means
+            // the recorder fills the buffer once then frees this synth.
+            // Mono input writes channel 0 of each frame (mirrors the
+            // SOS recorder in the main morphagene synthdef).
+            record_buf_ar(val, bufnum, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 2.0);
+
+            // Silent stereo output — synthdefs need to return signals.
+            [val * 0.0, val * 0.0]
+        })
+});
+
+// `reel(name, frames, channels)` — allocate a persistent Reel buffer.
+//
+// Returns a Rhai object map with:
+//   .name      — the script-side name (also the allocate_buffer key)
+//   .bufnum    — SC buffer number, feed to set_param("bufnum", r.bufnum)
+//   .frames    — buffer length in frames (float)
+//   .channels  — channel count (1 or 2)
+//   .splices   — Rhai array of normalized splice positions (0..1).
+//                Initially empty; set with `r.splices = [...]` or
+//                `r.splices.push(pos)`. Length is what gets written
+//                into the synthdef's `num_splices` param by reel_attach.
+//
+// 8.35M frames × 1 channel ≈ 8 MB at 32-bit float — large but within the
+// scsynth `-b 4096` script-buffer pool. For shorter loops, pick a smaller
+// frame count (e.g. 480000 = 10 s @ 48 kHz).
+fn reel(name, frames, channels) {
+    let buf = allocate_buffer(name, frames, channels);
+    return #{
+        name: name,
+        bufnum: buf.bufnum,
+        frames: frames.to_float(),
+        channels: channels,
+        splices: [],
+    };
+}
+
+// `reel_attach(voice, reel)` — wire a Reel onto a morphagene voice.
+//
+// Sets `bufnum` from the Reel's allocate_buffer handle, and
+// `num_splices` from `reel.splices.len()` (clamped to ≥ 1 — a Reel
+// without explicit splices is a single-splice whole-Reel reader).
+// Returns the voice for chaining.
+fn reel_attach(voice, reel) {
+    let n_splices = reel.splices.len();
+    if n_splices < 1 {
+        n_splices = 1;
+    }
+    return voice
+        .set_param("bufnum", reel.bufnum)
+        .set_param("num_splices", n_splices.to_float());
+}
+
+// `reel_fill_preset(reel, preset)` — bake a default waveform into the Reel.
+//
+// Spawns a one-shot `morphagene_reel_fill` voice that writes a saw / square
+// / sine / pink-noise / silence pattern into the Reel buffer, then frees
+// itself when the buffer is full (doneAction=2 on the inner record_buf_ar).
+//
+// Re-runs on every script reload that calls this. To keep SOS recordings
+// safe across edits, gate the call behind a flag:
+//
+//     let bake_default = false;
+//     if bake_default { reel_fill_preset(r, 0); }   // or guard at app layer
+//
+// preset values:
+//   0 → saw      (descending harmonics, comb-filtered grain texture)
+//   1 → square   (odd-harmonic-only, hollow grain texture)
+//   2 → sine     (single-harmonic — useful for clean "pure tone" baseline)
+//   3 → pink noise (broadband — useful for granular texture without pitch)
+//   4 → silence  (explicitly clears the Reel via near-zero amp)
+fn reel_fill_preset(reel, preset) {
+    let voice_name = "morphagene_reel_fill_" + reel.name;
+    return voice(voice_name)
+        .synth("morphagene_reel_fill")
+        .set_param("bufnum", reel.bufnum)
+        .set_param("preset", preset.to_float());
+}
+
+// .wav-backed Reels: keep the existing pattern from
+// `examples/morphagene_loop.vibe` —
+//
+//     let reel = sample("reel", "samples/loop.wav").loop_mode(true);
+//     let v = voice("morph").on(reel).synth("morphagene")...
+//
+// `voice.on(sample_handle)` wires the SC bufnum from the loaded .wav.
+// Hot-reload re-loads the .wav, so any SOS-overdubbed content during
+// the previous session is overwritten by the on-disk source on every
+// edit. Use `reel(...)` + `allocate_buffer` (above) when SOS recordings
+// must survive hot-reload.

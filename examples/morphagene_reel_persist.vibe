@@ -1,0 +1,94 @@
+// Morphagene Story E example — Reel persistence (pure .vibe).
+//
+// Demonstrates the script-tier Reel concept: an `allocate_buffer`-backed
+// persistent buffer that survives hot-reload, splice metadata stored as
+// a Rhai array on the Reel object, and a one-shot default-preset bake
+// via the `morphagene_reel_fill` synthdef.
+//
+// Why Story E lives here and not in Rust (as it once did): the
+// `allocate_buffer` Rhai API (commit 7a6eebe) already gives us
+// "script-allocated buffer that persists across hot-reload". A Reel is
+// just that buffer with a few helper functions wrapped around it. No
+// Rust-side Reel registry, no parallel Reel type, no new core APIs.
+//
+// What this script does:
+//
+//   1. Allocates a 10-second Reel (480 000 frames @ 48 kHz, mono).
+//   2. Bakes a default saw waveform into it once (`bake_default = true`).
+//      Edit the script with `bake_default = false` after first run to
+//      preserve any SOS overdubs across reloads.
+//   3. Splices the Reel into 4 logical regions via the Rhai array — the
+//      synthdef divides the Reel evenly so this maps to length quarters.
+//   4. Plays the Reel through the morphagene granular path, sweeping
+//      Organize across the 4 splices via an LFO.
+//
+// Hot-reload acceptance: after the first run with `bake_default = true`,
+// flip the flag to `false`, edit something irrelevant in the script
+// (e.g. the LFO rate), save — the saw waveform should stay audible
+// because the Reel buffer is not freed and re-allocated.
+
+import "stdlib/instruments/sampler/morphagene.vibe";
+import "stdlib/effects/reverbs/plate_reverb.vibe";
+import "stdlib/modulators/lfo/lfo_saw.vibe";
+
+set_tempo(110);
+
+// 10 seconds at 48 kHz. Mono is enough for the morphagene synthdef's
+// `record_buf_ar` SOS path (which writes channel 0). Use channels=2 if
+// you want stereo Reel content seeded from a sample later.
+let r = reel("morph_reel", 480000, 1);
+
+// 4 splices, evenly spaced (the synthdef enforces even spacing — the
+// array length is what matters for `num_splices`).
+r.splices = [0.0, 0.25, 0.5, 0.75];
+
+// Default-preset bake. Set to `false` after the first run if you want
+// SOS overdubs to persist across reloads — the saw waveform gets
+// written once and then survives any number of hot-reloads.
+let bake_default = true;
+if bake_default {
+    // 110 Hz × 10 s ≈ 1100 cycles of saw across the Reel — plenty of
+    // sub-grain density for the granular path.
+    reel_fill_preset(r, 0);
+}
+
+// Sequencer-driven Organize: rising saw over 8 bars at 110 BPM rotates
+// through the 4 splices once per cycle.
+let organize_seq = voice("organize_seq")
+    .synth("lfo_saw")
+    .set_param("rate", 0.0573)        // 1 cycle / 8 bars at 110 BPM
+    .set_param("lo", 0.0)
+    .set_param("hi", 0.999)
+    .set_param("phase", 0.0);
+
+let morph_grp = define_group("Morphagene", || {
+    let v = voice("morph")
+        .synth("morphagene")
+        .set_param("vari_speed", 0.7937)   // ≈ unity-rate (cube root of 0.5)
+        .set_param("slide", 0.0)
+        .set_param("gene_size", 0.4)        // mid-grain — granular path
+        .set_param("morph", 0.5)            // 2:1 overlap, no pan/pitch yet
+        .set_param("amp", 0.55)
+        .gain(db(-9));
+
+    // Wire the Reel onto the voice — sets bufnum + num_splices.
+    reel_attach(v, r);
+
+    v.param("organize").modulate_by(organize_seq, "out");
+
+    // Single hold note keeps the synth instance alive; Organize sweeps
+    // the splice selection internally.
+    melody("morph_hold").on(v).notes("C3").apply();
+
+    fx("morph_verb")
+        .synth("plate_reverb")
+        .param("size", 0.55)
+        .param("decay", 0.5)
+        .param("damping", 0.45)
+        .param("mix", 0.3);
+});
+
+sequence("main")
+    .loop_bars(8)
+    .clip(bars(0)..bars(8), melody("morph_hold"))
+    .start();
