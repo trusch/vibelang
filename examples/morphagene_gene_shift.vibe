@@ -1,0 +1,71 @@
+// Morphagene Story D — Gene Shift.
+//
+// Hardware Morphagene under (CLK patched) ∧ (Morph < 11:00, ≈ 0.46) ∧
+// (Gene-Size > full-CCW) enters Gene-Shift mode: each clock pulse
+// advances the playhead by exactly one Gene's worth of frames, in the
+// Vari-Speed-determined direction. Useful for chronological synchronous
+// granulation — clocked, pointillist scrubbing through the splice.
+//
+// In Story D the synthdef detects this regime from its inputs:
+//   - `clk` rising edges → Schmidt-cleaned, k2a-promoted spawn trigger
+//   - `clk` patched      → amplitude follower thresholded > 0.02
+//   - `gene_size > 0.02` → granular path eligible
+//   - `morph < 0.46`     → Gene Shift (vs Time Stretch above the band)
+//
+// Position advance per clock = `gene_dur_frames * sign(rate)`. With
+// `vari_speed > 0` the playhead shifts forward; with `vari_speed < 0`
+// it shifts backward; at exactly 0 (12:00 halt) the playhead stays put
+// and each clock just retriggers the same Gene — a "stuck" effect.
+//
+// This example uses a moderate clock and small Gene-Size so each pulse
+// is an audible micro-event, with Vari-Speed slightly below unity so
+// the chronological walk through the splice is forward but pitched
+// down a touch.
+//
+// Drop a stereo loop at `samples/loop.wav`. Material with rhythmic or
+// transient detail (drum loop, percussion, dialog) makes the per-pulse
+// Gene boundaries easy to hear.
+
+import "stdlib/instruments/sampler/morphagene.vibe";
+import "stdlib/effects/reverbs/plate_reverb.vibe";
+import "stdlib/cv/triggers/cv_clock.vibe";
+
+set_tempo(110);
+
+let reel = sample("reel", "samples/loop.wav").loop_mode(true);
+
+// Tempo-locked clock: 110 BPM × division=4 = 7.33 Hz (16th-note pulses).
+// At gene_size ≈ 0.2 the gene is a few hundred ms; each clock advances
+// the read-head by that much, producing a chunky scrub.
+let shift_clock = modulator("shift_clock")
+    .synth("cv_clock")
+    .param("bpm", 110.0)
+    .param("division", 4.0)         // 16th-note pulses → 7.33 Hz
+    .apply();
+
+let shift = define_group("GeneShift", || {
+    let v = voice("morph_shift")
+        .on(reel)
+        .synth("morphagene")
+        .set_param("num_splices", 1.0)        // single splice = whole reel
+        .set_param("slide", 0.0)
+        .set_param("vari_speed", 0.7937)      // ≈ unity rate (cube root of 0.5)
+        .set_param("gene_size", 0.2)          // short Gene; chunky shift
+        .set_param("morph", 0.2)              // < 0.46 → Gene Shift
+        .modulate("clk", shift_clock)
+        .gain(db(-9));
+
+    melody("shift_hold").on(v).notes("C3").apply();
+
+    fx("shift_verb")
+        .synth("plate_reverb")
+        .param("size", 0.55)
+        .param("decay", 0.4)
+        .param("damping", 0.5)
+        .param("mix", 0.25);
+});
+
+sequence("shift_main")
+    .loop_bars(8)
+    .clip(bars(0)..bars(8), melody("shift_hold"))
+    .start();

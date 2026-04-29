@@ -1,0 +1,84 @@
+// Morphagene Story D — Time Stretch.
+//
+// Hardware Morphagene under (CLK patched) ∧ (Morph ≥ 11:00, ≈ 0.46) ∧
+// (Gene-Size > full-CCW) enters Time-Stretch mode: the clock drives the
+// time-axis advance through the splice (one Gene-Size step per pulse),
+// while Vari-Speed becomes pure pitch — independent of how fast the time
+// axis moves. Slow the clock and the splice plays back stretched without
+// dropping pitch; speed the clock and it compresses.
+//
+// In Story D the synthdef detects this regime entirely from its inputs:
+//   - `clk` rising edges → Schmidt-cleaned, k2a-promoted spawn trigger
+//   - `clk` patched      → amplitude follower thresholded > 0.02 over a
+//                          1.5 s window (covers the 0.286 Hz floor)
+//   - `gene_size > 0.02` → granular path eligible (whole-splice path is
+//                          the autonomous Story A varispeed loop)
+//   - `morph ≥ 0.46`     → Time Stretch (vs Gene Shift below the band)
+//
+// This example wires `cv_clock` at a slow rate into the morphagene `clk`
+// input, holds Morph above the threshold, sets a moderate Gene-Size for
+// audible grain identity, and uses Vari-Speed to transpose the result.
+//
+// Sweep ideas: slow the clock to 0.5 Hz to hear extreme stretch; speed
+// it to 4–8 Hz to hear the splice compressed. The kb plan §6.D D4 calls
+// out a 1/3.5 s … 18 Hz valid range; outside, behavior degrades (slow:
+// stutter; fast: read overruns) but is not enforced in DSP.
+//
+// Drop a stereo loop at `samples/loop.wav`. Sustained, pitched material
+// (vocal pad, drone, sustained note) makes the time-stretch shape clear;
+// short percussive material works too but the stretch is less audible.
+
+import "stdlib/instruments/sampler/morphagene.vibe";
+import "stdlib/effects/reverbs/hall_reverb.vibe";
+import "stdlib/cv/triggers/cv_clock.vibe";
+import "stdlib/modulators/lfo/lfo_sine.vibe";
+
+set_tempo(96);
+
+let reel = sample("reel", "samples/loop.wav").loop_mode(true);
+
+// Tempo-locked clock: 96 BPM × division=2 = 192 BPM = 3.2 Hz pulses.
+// Each pulse advances one Gene-Size step through the splice. With
+// gene_size ≈ 0.4 (a few-Hz spawn rate at unity), the splice traverses
+// in ~ splice_len_sec / gene_dur_sec clocks.
+let stretch_clock = modulator("stretch_clock")
+    .synth("cv_clock")
+    .param("bpm", 96.0)
+    .param("division", 2.0)         // 8th-note pulses → 3.2 Hz
+    .apply();
+
+// Slow Vari-Speed wobble — in Time Stretch this is *pitch*, not time.
+// Range -0.3..+0.3 ≈ ±1 octave-ish around unity (cubic mapping).
+let pitch_lfo = modulator("pitch_lfo")
+    .synth("lfo_sine")
+    .param("rate", 0.07)            // 1 cycle ≈ 14 s
+    .param("lo", -0.3)
+    .param("hi", 0.5)
+    .apply();
+
+let stretch = define_group("TimeStretch", || {
+    let v = voice("morph_stretch")
+        .on(reel)
+        .synth("morphagene")
+        .set_param("num_splices", 1.0)        // single splice = whole reel
+        .set_param("slide", 0.0)
+        .set_param("gene_size", 0.4)          // mid-range; not pulsar
+        .set_param("morph", 0.6)              // > 0.46 → Time Stretch
+        .modulate("clk", stretch_clock)
+        .modulate("vari_speed", pitch_lfo)    // becomes pitch in Stretch
+        .gain(db(-9));
+
+    melody("stretch_hold").on(v).notes("C3").apply();
+
+    fx("stretch_verb")
+        .synth("hall_reverb")
+        .param("size", 0.75)
+        .param("decay", 0.7)
+        .param("damping", 0.4)
+        .param("mix", 0.4);
+});
+
+sequence("stretch_main")
+    .loop_bars(16)
+    .clip(bars(0)..bars(16), melody("stretch_hold"))
+    .start();

@@ -1,11 +1,14 @@
-// Morphagene Story A + B + C — Reel + Splice metadata + Granular path
+// Morphagene Story A + B + C + D — Reel + Splice metadata + Granular path
+//                                    + Synchronization (CLK / EOSG modes).
 //
 // Multi-splice reel with continuous Vari-Speed playback, Organize-driven
 // splice selection (with EOS-hold semantics), Sound-On-Sound recording,
-// and a `grain_buf_ar`-based granular layer with the full Morph staircase
-// (gap → 1:1 → 2:1 → 3:1 + per-grain pan → 4:1 + per-grain pitch-up).
-// Per `kb/morphagene-synthdef-plan.md` §3 (Reel/Splice/Gene hierarchy),
-// §4 (UGen mapping), §6.B + §6.C.
+// a `grain_buf_ar`-based granular layer with the full Morph staircase
+// (gap → 1:1 → 2:1 → 3:1 + per-grain pan → 4:1 + per-grain pitch-up),
+// and Story D's clocked playback modes (Gene Shift, Time Stretch) plus
+// the EOSG (End-of-Gene/Splice Gate) computation. Per
+// `kb/morphagene-synthdef-plan.md` §3 (Reel/Splice/Gene hierarchy),
+// §4 (UGen mapping), §6.B + §6.C + §6.D.
 //
 // Splice model (Story B):
 //   The Reel is logically divided into `num_splices` evenly-spaced splices.
@@ -41,22 +44,61 @@
 //   below a 0.02 threshold; transitions cross-fade over 5 ms via Lag on
 //   the active flag.
 //
-// SOS recording (Story B):
-//   record_buf_ar overdubs into the Reel with
-//     recLevel = (1 - sos_norm) · rec_active
-//     preLevel =      sos_norm  · rec_active   (loop feedback)
-//   Forward-only at unit rate; loop=0 hard-stops at end-of-Reel. The
-//   recorder Phasor is independent of the playback Phasor so reverse
-//   Vari-Speed during SOS does not flip the commit direction.
+// Synchronization (Story D):
+//   The `clk` param accepts a kr-rate clock signal (e.g. cv_clock output
+//   at 0.5 amplitude = +5 V scale). Schmidt(0.05, 0.25) cleans it; a
+//   delay1+diff yields a one-sample-wide rising-edge trigger. CLK-patched
+//   detection uses `amplitude_kr(clk, 0.001, 1.5)` thresholded at 0.02 —
+//   the 1.5 s release tolerates clocks down to ~0.7 Hz before deciding the
+//   patch is gone.
 //
-// Param budget — Rhai closures cap at 10 args. Story B's `shift_trig` and
-// `splice_trig` are dropped here to make room for `gene_size` and `morph`.
-// Rationale: Organize already covers splice selection (the recently-
-// touched-wins logic was Shift-only sugar), and runtime marker drops are
-// out of scope for the granular layer. The marker-buffer write side from
-// Story B drops with the param; users wanting marker editing layer it on
-// top via a separate synthdef.
+//   Mode select (kr, gated by clk_patched ∧ gene_size_n > 0.02):
+//     - Morph ≥ 0.46  →  Time Stretch  (clock drives time; rate = pitch)
+//     - Morph < 0.46  →  Gene Shift    (clock advances pos by ±gene_dur)
+//   Outside this band the autonomous Impulse spawner (Story C) runs. The
+//   transition is cross-faded over 5 ms via Lag on the mode flags so a
+//   clock pluck-in isn't a hard click.
 //
+//   Spawn trigger blend:
+//     spawn = autonomous_impulse · auto_mode + clk_rising · clock_mode
+//   Both are audio-rate (clk_rising is k2a-promoted from kr).
+//
+//   Position advance (Stepper at clk_rising):
+//     Time Stretch:  step = +gene_dur_frames           (forward only)
+//     Gene Shift:    step = ±gene_dur_frames · sign(rate)
+//   Wraps at [0, splice_len_frames). In autonomous mode this Stepper is
+//   inert (step=0 ⇒ no change). The output is XFADED with the Story A/C
+//   slide-offset, so autonomous mode preserves slide and clock modes use
+//   the accumulated offset.
+//
+//   EOSG (D1) is computed as `t_delay(spawn_trig, gene_dur_sec)` followed
+//   by a 5 ms `trig1` gate, scaled to 10 V. The result is held in a
+//   variable (`_eosg_out`) — voice synthdefs return [left, right] only
+//   today, so the EOSG is a documented internal signal. Exposing it as a
+//   sidecar CV output arrives with Story E (Reel registry / persistence).
+//
+//   Clock-rate clamping (D4): not enforced in DSP. The plan calls for
+//   warn/clip at [1/3.5 s, 18 Hz] for Time Stretch; rate measurement via
+//   sweep_kr+latch was deferred — out-of-range clocks just produce coarser
+//   stutter (slow) or read overruns (fast). Document for future revision.
+//
+// SOS recording (Story B, refactored for Story D):
+//   `rec_active` was dropped to free a synthdef slot for `clk` (Rhai 10-arg
+//   body cap). REC is now inferred from `sos > 0.001`:
+//     sos = 0      →  not recording (Reel plays back unchanged)
+//     sos > 0      →  SOS recording with that mix
+//     recLevel = (1 - sos) · rec_active_internal
+//     preLevel =      sos  · rec_active_internal
+//   Trade-off: hardware "REC active, SOS = 0" overwrite mode requires a
+//   small sos > 0.001 to engage. The fully-CCW "live only" semantic is
+//   approximated by sos very close to 0. Forward-only at unit rate;
+//   loop=0 hard-stops at end-of-Reel. The recorder Phasor is independent
+//   of the playback Phasor so reverse Vari-Speed during SOS does not flip
+//   the commit direction.
+//
+// Param budget — Rhai closures cap at 10 args. Dropped across stories:
+//   - Story B's `shift_trig` and `splice_trig` (no runtime marker drops).
+//   - Story D's `rec_active` (folded into `sos > 0`, see above).
 // Stereo: the granular path delivers true stereo via grain_buf_ar's
 // numChannels=2 + per-grain pan; the whole-splice branch still surfaces
 // channel-0 of the stereo Reel through BufRd (mono→duplicated). The
@@ -67,14 +109,14 @@ define_synthdef("morphagene", |builder| {
         .param("bufnum", 0.0)
         .param("num_splices", 1.0)        // 1..300, evenly-spaced division of Reel
         .param("organize", 0.0)           // 0..1 splice select knob+CV
-        .param("sos", 0.0)                // 0..1 SOS mix (preLevel / 1-recLevel)
-        .param("rec_active", 0.0)         // 0/1 recording gate (RecordBuf run input)
+        .param("sos", 0.0)                // 0..1 SOS mix; > 0 also gates recording
+        .param("clk", 0.0)                // kr clock signal (rising edge ≈ +5 V pulse)
         .param("vari_speed", 0.0)         // bipolar -1..+1, 0 = halt
         .param("slide", 0.0)              // 0..1 start position within splice
         .param("gene_size", 0.0)          // 0..1 grain duration (cubic; 0 = whole splice)
         .param("morph", 0.0)              // 0..1 spawn cadence + pan + pitch-up
         .param("gate", 1.0)               // synth-instance lifecycle
-        .body(|bufnum, num_splices, organize, sos, rec_active,
+        .body(|bufnum, num_splices, organize, sos, clk,
                vari_speed, slide, gene_size, morph, gate| {
 
             // --- Reel buffer info ----------------------------------------------
@@ -103,7 +145,9 @@ define_synthdef("morphagene", |builder| {
             // [0, num_splices-1] without ever hitting num_splices itself.
             let organize_pos = clip(organize, 0.0, 0.99999) * num_splices;
             let organize_idx = floor(organize_pos);
-            let pending_idx = clip(organize_idx, 0.0, max_idx);
+            // Use clip_kr UGen (Dynamic arity) since max_idx is a NodeRef —
+            // the hand-rolled clip(NodeRef, f64, f64) helper rejects that.
+            let pending_idx = clip_kr(organize_idx, 0.0, max_idx);
 
             // --- Committed splice idx feedback (one-block latency) -------------
             let committed_idx = buf_rd_kr(1, committed_buf, 0.0, 0, 1);
@@ -128,7 +172,7 @@ define_synthdef("morphagene", |builder| {
             let abs_diff = abs(phase_diff);
             let wrap_excess = abs_diff - splice_len_frames * 0.5;
             let eos_trig_ar = sign(wrap_excess).max(0.0);
-            let eos_trig = a2_k_kr(eos_trig_ar);
+            let eos_trig = a2k_kr(eos_trig_ar);
 
             // Latch pending_idx on rising EOS, write back to feedback cell.
             let new_committed = latch_kr(pending_idx, eos_trig);
@@ -170,8 +214,45 @@ define_synthdef("morphagene", |builder| {
             // 5 ms lag on spawn rate — vibelang's stand-in for the manual's
             // "Dynamic Enveloping" smoothing of grain-rate parameter jumps.
             let smoothed_rate = lag_kr(spawn_rate_hz, 0.005);
-            let spawn_trig = impulse_ar(smoothed_rate, 0.0);
-            let spawn_trig_kr = a2_k_kr(spawn_trig);
+
+            // --- Story D: CLK input + mode detection ---------------------------
+            // Schmidt cleans the kr CLK (cv_clock outputs ≈ 0.5 amplitude at
+            // +5 V; threshold 0.25 with 0.05 hysteresis catches it cleanly).
+            let clk_clean = schmidt_kr(clk, 0.05, 0.25);
+            let clk_prev = delay1_kr(clk_clean);
+            let clk_rising_kr = (clk_clean - clk_prev).max(0.0);
+
+            // CLK-patched: amplitude follower with a 1.5 s release tolerates
+            // clock periods up to ~1.4 s (≈ 0.7 Hz) before declaring "no
+            // clock" — covers the Time-Stretch range (1/3.5 s to 18 Hz)
+            // comfortably. Threshold 0.02 with ×100 gain → near-binary.
+            let clk_env = amplitude_kr(clk, 0.001, 1.5);
+            let clk_patched = clip((clk_env - 0.02) * 100.0, 0.0, 1.0);
+
+            // Granular eligibility for clock modes (must be > 0.02 to enter
+            // the granular path; otherwise the whole-splice path runs and
+            // CLK is ignored).
+            let granular_eligible = clip((gene_size_n - 0.02) * 1000.0, 0.0, 1.0);
+
+            // Morph 11:00 ≈ 0.46 splits the two clock modes.
+            let morph_above_46 = clip((morph_n - 0.46) * 1000.0, 0.0, 1.0);
+            let stretch_mode = clk_patched * granular_eligible * morph_above_46;
+            let shift_mode   = clk_patched * granular_eligible * (1.0 - morph_above_46);
+            let clock_mode   = stretch_mode + shift_mode;
+            let auto_mode    = 1.0 - clock_mode;
+
+            // --- Spawn trigger blend (Story D) ---------------------------------
+            // Autonomous Impulse runs in auto_mode; CLK rising edge runs in
+            // clock_mode. Lag on the mode flags so the crossover is glitch-
+            // free (5 ms — same time-constant as the gene-size branch
+            // crossfade and the spawn-rate "Dynamic Enveloping" lag).
+            let auto_trig_ar = impulse_ar(smoothed_rate, 0.0);
+            let clk_rising_ar = k2a_ar(clk_rising_kr);
+            let auto_mode_ar = lag_ar(auto_mode, 0.005);
+            let clock_mode_ar = 1.0 - auto_mode_ar;
+            let spawn_trig = auto_trig_ar * auto_mode_ar
+                           + clk_rising_ar * clock_mode_ar;
+            let spawn_trig_kr = a2k_kr(spawn_trig);
 
             // --- Per-grain pan (C4) --------------------------------------------
             // pan_amount ramps 0..1 across Morph 0.55..0.85.
@@ -187,10 +268,32 @@ define_synthdef("morphagene", |builder| {
             let pitch_rand = t_rand_kr(0.0, pitch_amount, spawn_trig_kr);
             let grain_rate = rate * (1.0 + pitch_rand);
 
+            // --- Story D: Position advance for clock modes ---------------------
+            // gene_dur in frames; signed step = +gene_dur in Time Stretch,
+            // ±gene_dur · sign(rate) in Gene Shift, 0 otherwise.
+            let gene_dur_frames = gene_dur_sec * buf_sr;
+            let v_sign = sign(rate);
+            let pos_step = stretch_mode * gene_dur_frames
+                         + shift_mode   * gene_dur_frames * v_sign;
+
+            // Stepper accumulates pos_step at every CLK rising edge; wraps
+            // within [0, splice_len_frames). In auto_mode pos_step = 0, so
+            // the accumulator is inert and the offset stays at 0.
+            let pos_acc = stepper_kr(clk_rising_kr, 0.0,
+                                     0.0, splice_len_frames,
+                                     pos_step, 0.0);
+
+            // Mix offset: auto mode uses Story A/C slide_offset; clock modes
+            // use the Stepper accumulator. Lagged 5 ms to avoid clicks at
+            // mode transitions.
+            let mode_blend = lag_kr(clock_mode, 0.005);
+            let mixed_offset = splice_offset * (1.0 - mode_blend)
+                             + pos_acc * mode_blend;
+
             // --- Granular branch (C2) ------------------------------------------
-            // Grain start position = splice_start + slide·splice_len, expressed
-            // as a fraction of the whole Reel (grain_buf_ar takes pos in [0,1]).
-            let grain_start_frame = splice_start_frame + splice_offset;
+            // Grain start position = splice_start + offset, expressed as a
+            // fraction of the whole Reel (grain_buf_ar takes pos in [0,1]).
+            let grain_start_frame = splice_start_frame + mixed_offset;
             let grain_pos_norm = grain_start_frame / buf_n.max(1.0);
 
             // grain_buf_ar(numChannels, trigger, dur, sndbuf, rate, pos,
@@ -202,7 +305,7 @@ define_synthdef("morphagene", |builder| {
                 spawn_trig,           // trigger (ar)
                 gene_dur_sec,         // dur (seconds, per-grain)
                 bufnum,               // sndbuf
-                grain_rate,           // rate (vari-speed × pitch-up)
+                grain_rate,           // rate (vari-speed × pitch-up; pitch in stretch)
                 grain_pos_norm,       // pos in reel
                 4.0,                  // interp = cubic
                 grain_pan,            // pan (per-grain via Latch)
@@ -222,9 +325,22 @@ define_synthdef("morphagene", |builder| {
             let mix_l = raw * (1.0 - smooth_active) + grain_l * smooth_active;
             let mix_r = raw * (1.0 - smooth_active) + grain_r * smooth_active;
 
-            // --- SOS RecordBuf (Story B) ---------------------------------------
-            // Recording advances at unit rate, forward-only — Vari-Speed never
-            // affects the recorder offset. loop=0 hard-stops at end-of-Reel.
+            // --- Story D: EOSG (D1) --------------------------------------------
+            // Per kb plan §6.D D1: spawn_trig delayed by gene_dur, then a
+            // 5 ms gate, scaled to 10 V. Steady under Vari-Speed because
+            // gene_dur_sec is in time, not samples (manual §3c).
+            // Computed but not exposed — voice synthdefs return [left,right]
+            // only; CV-output infrastructure for voices arrives with Story E.
+            let _eosg_pulse = t_delay_ar(spawn_trig, gene_dur_sec);
+            let _eosg_out = trig1_ar(_eosg_pulse, 0.005) * 10.0;
+
+            // --- SOS RecordBuf (Story B, refactored) ---------------------------
+            // Recording active iff sos > 0.001 (rec_active param dropped to
+            // make room for clk). Forward-only at unit rate; loop=0 hard-
+            // stops at end-of-Reel. The recorder Phasor is independent of
+            // the playback Phasor so reverse Vari-Speed during SOS does not
+            // flip the commit direction.
+            let rec_active_internal = clip((sos - 0.001) * 10000.0, 0.0, 1.0);
             let rec_pos = phasor_ar(0.0, 1.0, 0.0, buf_n, 0.0);
             let in_mono = sound_in_channel(0);
             let sos_norm = clip(sos, 0.0, 1.0);
@@ -232,12 +348,12 @@ define_synthdef("morphagene", |builder| {
                 in_mono,
                 bufnum,
                 rec_pos,
-                (1.0 - sos_norm) * rec_active,    // recLevel
-                sos_norm * rec_active,            // preLevel (loop feedback)
-                rec_active,                       // run
-                0.0,                              // loop=0 (hard-stop at end)
-                1.0,                              // trigger
-                0.0,                              // doneAction
+                (1.0 - sos_norm) * rec_active_internal,    // recLevel
+                sos_norm * rec_active_internal,            // preLevel (loop feedback)
+                rec_active_internal,                       // run
+                0.0,                                       // loop=0 (hard-stop at end)
+                1.0,                                       // trigger
+                0.0,                                       // doneAction
             );
 
             // --- Output --------------------------------------------------------
