@@ -5,7 +5,7 @@ use crate::compat::{Instant, RwLock};
 use crate::handlers::default_routes_for_voice;
 use crate::state::{State, VoiceState};
 use crate::traits::{VoiceConfig, Voices};
-use crate::types::{NodeId, ParamMap, VoiceId};
+use crate::types::{BusId, ControlBusId, NodeId, ParamMap, VoiceId};
 use crate::validation::Validate;
 use crate::{Error, Result};
 use async_trait::async_trait;
@@ -599,13 +599,20 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             return Err(Error::SynthDefNotFound(config.synthdef.clone()));
         }
 
-        // Allocate one audio bus per declared output port. Synthdefs without
-        // an explicit port set resolve to the legacy `[("out", 2)]` default,
-        // so a single stereo pair is reserved — same shape as before.
+        // Allocate a bus per declared output port. Ar ports take an audio-bus
+        // chunk of `port.channels` consecutive IDs; Kr ports take one control
+        // bus from the segregated free list. The rate is implicit in the
+        // stored `BusId` — `free_voice_output_buses` re-resolves it from the
+        // synthdef descriptor when releasing.
         let ports = state.synthdef_outputs(&config.synthdef);
         let mut output_buses = Vec::with_capacity(ports.len());
         for port in &ports {
-            let bus = state.alloc_audio_bus(port.channels);
+            let bus = match port.rate {
+                vibelang_dsp::PortRate::Ar => state.alloc_audio_bus(port.channels),
+                vibelang_dsp::PortRate::Kr => {
+                    BusId::new(state.alloc_control_bus().raw())
+                }
+            };
             output_buses.push((port.name.clone(), bus));
         }
 
@@ -1338,26 +1345,31 @@ fn midi_to_freq(note: u8) -> f32 {
     440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0)
 }
 
-/// Return every audio bus chunk owned by `voice` to the allocator.
+/// Return every bus owned by `voice` to its respective allocator.
 ///
-/// The chunk widths must match the values that were passed to
-/// `alloc_audio_bus` at voice creation, so we re-resolve the synthdef's
-/// port set rather than tracking widths on the voice. Synthdefs that have
-/// since been redeclared with a different port shape would mismatch here,
-/// but reload tears voices down before changing synthdef metadata, so the
-/// shape is stable for the lifetime of any individual voice.
+/// Ar ports go back to the audio-bus free list with the same chunk width
+/// they were allocated with; Kr ports go back to the control-bus free list.
+/// We re-resolve the synthdef descriptor rather than tracking rate/width on
+/// the voice — reload tears voices down before changing synthdef metadata,
+/// so the descriptor is stable for the lifetime of any individual voice.
+/// Unknown ports (synthdef redeclared mid-flight) fall back to the legacy
+/// stereo Ar shape, matching the prior behaviour.
 fn free_voice_output_buses(state: &mut State, voice: &VoiceState) {
     if voice.output_buses.is_empty() {
         return;
     }
     let ports = state.synthdef_outputs(&voice.config.synthdef);
     for (port_name, bus_id) in &voice.output_buses {
-        let channels = ports
-            .iter()
-            .find(|p| p.name == *port_name)
-            .map(|p| p.channels)
-            .unwrap_or(2);
-        state.free_audio_bus(*bus_id, channels);
+        let port = ports.iter().find(|p| p.name == *port_name);
+        match port.map(|p| p.rate).unwrap_or(vibelang_dsp::PortRate::Ar) {
+            vibelang_dsp::PortRate::Ar => {
+                let channels = port.map(|p| p.channels).unwrap_or(2);
+                state.free_audio_bus(*bus_id, channels);
+            }
+            vibelang_dsp::PortRate::Kr => {
+                state.free_control_bus(ControlBusId::new(bus_id.raw()));
+            }
+        }
     }
 }
 
@@ -2708,5 +2720,155 @@ mod tests {
         let mut state_write = state.write().await;
         let bus = state_write.alloc_audio_bus(2);
         assert_eq!(bus.raw(), 16, "freed stereo pair must be reused");
+    }
+
+    // =========================================================================
+    // Multi-output v2 Story 2: control-bus alloc per kr port
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_mixed_rate_voice_alloc_audio_and_control() {
+        // 4-port synthdef with rates [Ar, Ar, Kr, Kr]: two audio mono ports
+        // and two control ports. Each Ar port consumes one audio bus ID; each
+        // Kr port consumes one control bus ID — segregated free lists.
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_multiport_synthdef(
+            &state,
+            "mixed_synth",
+            vec![
+                OutputPort { name: "l".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort { name: "r".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort { name: "env".into(), channels: 1, rate: vibelang_dsp::PortRate::Kr },
+                OutputPort { name: "lfo".into(), channels: 1, rate: vibelang_dsp::PortRate::Kr },
+            ],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("voice", "mixed_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        let state_read = state.read().await;
+        let voice = state_read.voices.get(&voice_id).unwrap();
+        assert_eq!(voice.output_buses.len(), 4);
+        let names: Vec<&str> = voice
+            .output_buses
+            .iter()
+            .map(|(n, _)| n.as_str())
+            .collect();
+        assert_eq!(names, vec!["l", "r", "env", "lfo"]);
+
+        // 2 Ar ports of width 1 → 2 audio bus IDs carved from the audio pool.
+        assert_eq!(
+            state_read.audio_buses.allocated_count(),
+            2,
+            "two Ar ports advance the audio counter by 2",
+        );
+        // 2 Kr ports → 2 control bus IDs carved from the control pool.
+        assert_eq!(
+            state_read.control_buses.allocated_count(),
+            2,
+            "two Kr ports advance the control counter by 2",
+        );
+
+        // Pools are segregated: control IDs start at 1000, audio at 16.
+        let l = voice.output_buses[0].1.raw();
+        let r = voice.output_buses[1].1.raw();
+        let env = voice.output_buses[2].1.raw();
+        let lfo = voice.output_buses[3].1.raw();
+        assert!(l < 1000 && r < 1000, "Ar ports own audio-bus IDs");
+        assert!(env >= 1000 && lfo >= 1000, "Kr ports own control-bus IDs");
+        assert_ne!(env, lfo, "two Kr ports get distinct control IDs");
+    }
+
+    #[tokio::test]
+    async fn test_mixed_rate_voice_drop_frees_both_kinds() {
+        // After a delete, both the audio chunks and the control buses are
+        // back in their respective pools — re-creating the same voice reuses
+        // them, so neither counter advances further.
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_multiport_synthdef(
+            &state,
+            "mixed_synth",
+            vec![
+                OutputPort { name: "l".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort { name: "r".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort { name: "env".into(), channels: 1, rate: vibelang_dsp::PortRate::Kr },
+                OutputPort { name: "lfo".into(), channels: 1, rate: vibelang_dsp::PortRate::Kr },
+            ],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("voice", "mixed_synth", GroupId::new(1));
+        handler.create(voice_id, config.clone()).await.unwrap();
+
+        let buses_before: Vec<u32> = {
+            let s = state.read().await;
+            s.voices
+                .get(&voice_id)
+                .unwrap()
+                .output_buses
+                .iter()
+                .map(|(_, b)| b.raw())
+                .collect()
+        };
+
+        handler.delete(voice_id).await.unwrap();
+
+        // Counters do not advance on free.
+        {
+            let s = state.read().await;
+            assert_eq!(s.audio_buses.allocated_count(), 2);
+            assert_eq!(s.control_buses.allocated_count(), 2);
+        }
+
+        // Re-create — every port reuses a freed ID from the matching pool.
+        let voice2 = VoiceId::new(2);
+        handler.create(voice2, config).await.unwrap();
+
+        let s = state.read().await;
+        assert_eq!(s.audio_buses.allocated_count(), 2, "audio pool reused");
+        assert_eq!(s.control_buses.allocated_count(), 2, "control pool reused");
+
+        let buses_after: Vec<u32> = s
+            .voices
+            .get(&voice2)
+            .unwrap()
+            .output_buses
+            .iter()
+            .map(|(_, b)| b.raw())
+            .collect();
+        let mut a = buses_before;
+        a.sort();
+        let mut b = buses_after;
+        b.sort();
+        assert_eq!(a, b, "freed bus set must equal reused bus set");
+    }
+
+    #[tokio::test]
+    async fn test_alloc_free_alloc_reuse_for_both_pools() {
+        // Direct hammer test for the State wrappers — alloc, free, alloc must
+        // hand back the same ID for each pool, independently.
+        let state = Arc::new(RwLock::new(State::default()));
+        let mut s = state.write().await;
+
+        // Audio pool: alloc → free → alloc returns the same starting ID.
+        let a1 = s.alloc_audio_bus(1);
+        s.free_audio_bus(a1, 1);
+        let a2 = s.alloc_audio_bus(1);
+        assert_eq!(a1.raw(), a2.raw(), "audio bus is reused after free");
+
+        // Control pool: alloc → free → alloc returns the same ID.
+        let c1 = s.alloc_control_bus();
+        s.free_control_bus(c1);
+        let c2 = s.alloc_control_bus();
+        assert_eq!(c1.raw(), c2.raw(), "control bus is reused after free");
+
+        // The two pools live in disjoint ranges (audio < 1000 ≤ control).
+        assert!(a2.raw() < 1000);
+        assert!(c2.raw() >= 1000);
     }
 }

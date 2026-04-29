@@ -983,6 +983,19 @@ impl State {
         self.alloc_audio_bus(2)
     }
 
+    /// Allocate a control bus from the segregated control-bus free list.
+    ///
+    /// Used for kr-rate output ports — `Out.kr` writes to a control bus that
+    /// `MapN` later maps onto a target voice param. Reuses freed IDs FIFO.
+    pub fn alloc_control_bus(&mut self) -> ControlBusId {
+        self.control_buses.allocate()
+    }
+
+    /// Return a control bus to the pool for reuse.
+    pub fn free_control_bus(&mut self, id: ControlBusId) {
+        self.control_buses.free(id);
+    }
+
     /// Drain every route mixer synth owned by `voice_id` from
     /// [`State::route_synths`], returning their node IDs and recycling the
     /// IDs back into the node-id pool.
