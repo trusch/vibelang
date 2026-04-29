@@ -1,0 +1,232 @@
+// Mutable Instruments Marbles — multi-output recreation.
+//
+// Hardware Marbles fans out two sections — the T (trigger) section with three
+// gate streams (T1/T2/T3) and the X (pitch CV) section with three quantized
+// V/oct streams (X1/X2/X3) — totalling six independent outputs. That shape
+// maps cleanly onto the multi-output v1 routing surface (see
+// `kb/voice-multioutput-howto.md`), so this synthdef declares all six ports
+// and lets the script wire each one to its own destination.
+//
+// Output ports (one signal per port, audio-rate, 0.5 audio = +5V for triggers,
+// ±1.0 audio = ±1 octave V/oct for pitches):
+//
+//   t1 — primary clocked trigger stream. Master clock at `1 / clock` Hz with
+//        `bias_t`-thresholded firing decision. With bias_t=1 every clock fires
+//        (steady pulse train); bias_t=0.5 fires ~50%; bias_t=0 stays silent.
+//   t2 — sibling stream sharing the master clock but using a decorrelated
+//        `lf_noise2_kr` source whose rate is shifted by `+spread_t`. Tends
+//        toward syncopated subdivisions when `spread_t` is high.
+//   t3 — second sibling stream with rate shifted by `-spread_t`. Combined with
+//        T2 this gives a three-voice rhythmic complex around a shared clock.
+//   x1 — primary quantized pitch CV. Gaussian random walk seeded by T1's clock
+//        edge (so X1 advances whenever T1 evaluates a fire decision, regardless
+//        of whether the gate fires). Centre = `bias_x`, width = `spread_x`.
+//   x2 — sibling pitch with an independent gaussian seed but shared Markov
+//        memory (the same `length`-driven LF source blend), so X1/X2 wander
+//        around correlated patterns rather than being statistically independent.
+//   x3 — third pitch sibling, same construction.
+//
+// Params (7, comfortably within the 10-arg `body_map` limit):
+//   clock        : base trigger period in seconds, 0.05..2.0 (20Hz down to
+//                  0.5Hz). Internally inverted to drive `impulse_kr(1/clock)`.
+//   bias_t       : 0..1 firing probability per clock tick. The threshold is
+//                  `(1 - 2*bias_t)` so bias_t=0 → threshold=+1 (no fires),
+//                  bias_t=1 → threshold=−1 (every fire). Sample-and-hold of an
+//                  `lf_noise2_kr` stream is compared against this threshold
+//                  per master-clock edge.
+//   spread_t     : 0..1 rhythmic-spread amount. Decorrelates the T2/T3 noise
+//                  rates from T1's master rate (T2 = master*(1 + 0.5*spread_t),
+//                  T3 = master*(1 - 0.3*spread_t)) and adds a small white-noise
+//                  jitter onto the firing threshold so adjacent ticks don't all
+//                  resolve identically.
+//   bias_x       : 0..1 mean of the X-section gaussian walk, mapped to V/oct
+//                  via `(bias_x - 0.5) * 2.0` so 0.5 sits at 0V (C4-equivalent).
+//   spread_x     : 0..1 standard-deviation of the gaussian walk, in V/oct
+//                  units. spread_x=1.0 sweeps roughly ±1 octave around bias_x.
+//   length       : 1..16 Markov "deja vu" memory length. The fresh draw is
+//                  blended with a periodic `lf_noise1_kr` shape whose period
+//                  is `length` clocks (rate = 1/length); blend weight grows
+//                  with length so length=1 is mostly fresh-random and
+//                  length=16 strongly recalls a slowly-evolving pattern.
+//                  Approximation matches `cv_marbles.vibe`'s memory model
+//                  rather than implementing a true N-step shift register —
+//                  vibelang's kr-domain UGens do not yet expose a clean
+//                  variable-length delay line at synthdef-load time.
+//   quant_steps  : 1..36 pitch-quantization resolution per octave. Default 12
+//                  is the standard chromatic grid; 7 gives a diatonic feel
+//                  without specifying the key (hand quantize downstream with
+//                  `cv_quantizer` for proper key snapping); larger values
+//                  approach unquantized smooth pitch.
+//
+// DSP outline:
+//   1. Master clock = `impulse_kr(1/clock)`.
+//   2. Per-stream decisions: latch `lf_noise2_kr` on the master clock;
+//      compute a per-stream threshold `(1 - 2*bias_t) + small jitter`;
+//      `in_range_kr(latched, threshold, 1.0)` is the fire decision.
+//   3. Multiply the audio-rate clock impulses by the kr fire-decision
+//      (converted to ar) and stretch with `trig1_ar` for a ~5 ms gate.
+//   4. X-section: triangular-distribution walk (mean of three white noises)
+//      offset by `bias_x` and scaled by `spread_x`; blended with a periodic
+//      `lf_noise1_kr` memory source whose rate is `1/length`. Latched on the
+//      T1 fire decision so X advances only on accepted T1 ticks.
+//   5. Quantize each X via `floor(x * quant_steps + 0.5) / quant_steps`,
+//      where `floor(y) = y - wrap_kr(y, 0.0, 1.0)` (vibelang has no Floor
+//      UGen — same trick as `spectraphon_side` uses for its grid lookup).
+//   6. Convert each kr signal to ar via `k2a_ar` and clip to ±1.0 to honour
+//      the CV contract documented in `kb/stdlib-cv-spec.md`.
+//
+// Routing notes: in v1 (audio-domain only) the X-port outputs cannot be
+// wired to a destination voice's `freq` param directly — that capability is
+// scheduled for the v2 CV-to-param routing work (see
+// `kb/voice-multi-output-cv-routing-plan.md` Phase 2). Today the most useful
+// patterns are: route each port to a dedicated group for monitoring, send
+// T-ports to ES-3 jacks via group output pinning (`group("t1").output([0,1])`
+// in the cv_calibration style), or pair this synthdef with the existing
+// `Modulator` API for parameter modulation. The sibling file
+// `crates/vibelang-std/stdlib/cv/eurorack/cv_marbles.vibe` keeps its
+// single-output V/oct shape for users on the legacy single-port path.
+
+define_synthdef("marbles", |builder| {
+    builder
+        .output("t1")        // 1ch — clocked trigger (5ms gates)
+        .output("t2")        // 1ch — decorrelated trigger sibling
+        .output("t3")        // 1ch — decorrelated trigger sibling
+        .output("x1")        // 1ch — quantized V/oct pitch
+        .output("x2")        // 1ch — quantized V/oct pitch
+        .output("x3")        // 1ch — quantized V/oct pitch
+        .param("clock", 0.25)
+        .param("bias_t", 0.5)
+        .param("spread_t", 0.3)
+        .param("bias_x", 0.5)
+        .param("spread_x", 0.5)
+        .param("length", 4.0)
+        .param("quant_steps", 12.0)
+        .body_map(|p| {
+
+            // Unpack params into local bindings for readability.
+            let clock = p.clock;
+            let bias_t = p.bias_t;
+            let spread_t = p.spread_t;
+            let bias_x = p.bias_x;
+            let spread_x = p.spread_x;
+            let length = p.length;
+            let quant_steps = p.quant_steps;
+
+            // === Master clock =============================================
+            // `clock` is in seconds; invert (with epsilon) for impulse rate.
+            let clock_hz = 1.0 / (clock + 0.001);
+            let master_kr = impulse_kr(clock_hz, 0.0);
+            let master_ar = impulse_ar(clock_hz, 0.0);
+
+            // === T section ================================================
+            // Three lf_noise2_kr streams at slightly different rates so that
+            // their sample-and-held values on the shared master clock are
+            // statistically decorrelated. spread_t skews T2/T3 outward from
+            // the master rate to give the "natural rhythm" feel.
+            let n1 = lf_noise2_kr(clock_hz);
+            let n2 = lf_noise2_kr(clock_hz * (1.0 + spread_t * 0.5));
+            let n3 = lf_noise2_kr(clock_hz * (1.0 - spread_t * 0.3 + 0.0001));
+
+            // Sample-and-hold each noise stream on master_kr.
+            let l1 = latch_kr(n1, master_kr);
+            let l2 = latch_kr(n2, master_kr);
+            let l3 = latch_kr(n3, master_kr);
+
+            // bias_t ∈ [0,1] → threshold ∈ [+1, -1].
+            // jitter via white_noise * spread_t * 0.3 makes adjacent ticks
+            // diverge slightly even at the same bias.
+            let base_thresh = 1.0 - 2.0 * bias_t;
+            let jitter1 = latch_kr(white_noise_kr(), master_kr) * spread_t * 0.3;
+            let jitter2 = latch_kr(white_noise_kr(), master_kr) * spread_t * 0.3;
+            let jitter3 = latch_kr(white_noise_kr(), master_kr) * spread_t * 0.3;
+            let thresh1 = clip(base_thresh + jitter1, -1.0, 1.0);
+            let thresh2 = clip(base_thresh + jitter2, -1.0, 1.0);
+            let thresh3 = clip(base_thresh + jitter3, -1.0, 1.0);
+
+            // Fire decision per stream — 1 if latched noise ≥ threshold.
+            let fire1 = in_range_kr(l1, thresh1, 1.0);
+            let fire2 = in_range_kr(l2, thresh2, 1.0);
+            let fire3 = in_range_kr(l3, thresh3, 1.0);
+
+            // Gate the audio-rate master with each kr fire decision and
+            // stretch to a 5 ms +5V pulse (matches cv_clock convention).
+            let t1_imp = master_ar * k2a_ar(fire1);
+            let t2_imp = master_ar * k2a_ar(fire2);
+            let t3_imp = master_ar * k2a_ar(fire3);
+            let t1_out = clip_ar(trig1_ar(t1_imp, 0.005) * 0.5, -1.0, 1.0);
+            let t2_out = clip_ar(trig1_ar(t2_imp, 0.005) * 0.5, -1.0, 1.0);
+            let t3_out = clip_ar(trig1_ar(t3_imp, 0.005) * 0.5, -1.0, 1.0);
+
+            // === X section ================================================
+            // Triangular-distribution gaussian walk via mean of three uniform
+            // draws — peaked at 0, narrower than uniform (matches cv_marbles).
+            // Per-stream independent draws so the three Xs are decorrelated
+            // when length=1 (no memory).
+            let g1a = white_noise_kr();
+            let g1b = white_noise_kr();
+            let g1c = white_noise_kr();
+            let gauss1 = (g1a + g1b + g1c) / 3.0;
+
+            let g2a = white_noise_kr();
+            let g2b = white_noise_kr();
+            let g2c = white_noise_kr();
+            let gauss2 = (g2a + g2b + g2c) / 3.0;
+
+            let g3a = white_noise_kr();
+            let g3b = white_noise_kr();
+            let g3c = white_noise_kr();
+            let gauss3 = (g3a + g3b + g3c) / 3.0;
+
+            // Map bias_x ∈ [0,1] to a centred V/oct offset in [-1,+1].
+            let centre = (bias_x - 0.5) * 2.0;
+            let walk1 = centre + gauss1 * spread_x;
+            let walk2 = centre + gauss2 * spread_x;
+            let walk3 = centre + gauss3 * spread_x;
+
+            // Markov memory: lf_noise1_kr cycles its waveform once per second
+            // at rate=1.0, so rate = 1/length gives a period of `length`
+            // seconds. Three independently-phased copies for X1/X2/X3 so the
+            // memory shape is correlated but not identical across streams.
+            let mem_rate = 1.0 / (length + 0.001);
+            let mem1 = centre + lf_noise1_kr(mem_rate) * spread_x;
+            let mem2 = centre + lf_noise1_kr(mem_rate * 1.21) * spread_x;
+            let mem3 = centre + lf_noise1_kr(mem_rate * 0.83 + 0.0001) * spread_x;
+
+            // Memory blend weight: 0 at length=0, ~0.5 at length=1, ~0.94 at
+            // length=16 (saturating). Matches cv_marbles.vibe's blend curve.
+            let mem_mix = length / (length + 1.0);
+            let x1_src = walk1 * (1.0 - mem_mix) + mem1 * mem_mix;
+            let x2_src = walk2 * (1.0 - mem_mix) + mem2 * mem_mix;
+            let x3_src = walk3 * (1.0 - mem_mix) + mem3 * mem_mix;
+
+            // T1's sample-instant — used as the X-section seed clock per the
+            // ticket spec ("gaussian random walk seeded by T1"). Latching on
+            // master_kr * fire1 (rather than just master_kr) means X only
+            // advances on T1's accepted ticks; X stays flat between fires so
+            // missed T1 beats hold the previous pitch — the natural Marbles
+            // behaviour where a quiet T section freezes the pitch grid.
+            let x_clock = master_kr * fire1;
+            let x1_held = latch_kr(x1_src, x_clock);
+            let x2_held = latch_kr(x2_src, x_clock);
+            let x3_held = latch_kr(x3_src, x_clock);
+
+            // Quantize to `quant_steps` per octave (default 12).
+            // round(y) = floor(y + 0.5); floor(z) = z - wrap_kr(z, 0, 1).
+            // Same wrap-trick `spectraphon_side` uses since vibelang has no
+            // Floor UGen.
+            let qs = quant_steps + 0.0001;
+            let q1_in = x1_held * qs + 0.5;
+            let q2_in = x2_held * qs + 0.5;
+            let q3_in = x3_held * qs + 0.5;
+            let x1_q = (q1_in - wrap_kr(q1_in, 0.0, 1.0)) / qs;
+            let x2_q = (q2_in - wrap_kr(q2_in, 0.0, 1.0)) / qs;
+            let x3_q = (q3_in - wrap_kr(q3_in, 0.0, 1.0)) / qs;
+
+            // Convert kr to ar and clip to the ±1.0 CV contract envelope.
+            let x1_out = clip_ar(k2a_ar(x1_q), -1.0, 1.0);
+            let x2_out = clip_ar(k2a_ar(x2_q), -1.0, 1.0);
+            let x3_out = clip_ar(k2a_ar(x3_q), -1.0, 1.0);
+
+            [t1_out, t2_out, t3_out, x1_out, x2_out, x3_out]
+        })
+});
