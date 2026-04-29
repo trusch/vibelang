@@ -16,12 +16,11 @@ let reel = sample("reel", "samples/loop.wav").loop_mode(true);
 
 // Slow Vari-Speed wobble — sweeps between a touch reverse and ~1.6× forward,
 // demonstrating the cubic-near-center curve (resolution is finest near 0).
-let vs_lfo = modulator("vs_lfo")
+let vs_lfo = voice("vs_lfo")
     .synth("lfo_sine")
-    .param("rate", 0.12)
-    .param("lo", -0.3)
-    .param("hi", 0.5)
-    .apply();
+    .set_param("rate", 0.12)
+    .set_param("lo", -0.3)
+    .set_param("hi", 0.5);
 
 let morph = define_group("Morphagene", || {
     // .on(reel) sets bufnum from the loaded sample; .synth() then overrides
@@ -31,8 +30,9 @@ let morph = define_group("Morphagene", || {
         .synth("morphagene")
         .set_param("slide", 0.5)        // start halfway into the splice
         .set_param("amp", 0.6)
-        .modulate("vari_speed", vs_lfo)
         .gain(db(-9));
+
+    v.param("vari_speed").modulate_by(vs_lfo, "out");
 
     // Single hold note keeps the synth instance alive; play_gate=1 (default)
     // means the Reel loops continuously inside the splice.

@@ -27,12 +27,11 @@ set_tempo(72);
 // into noticeable cross-FM and back. Mid-band depth is the most
 // musically useful range; the cubic shape near zero (in the lfo_sine)
 // keeps subtle settings audible.
-let fm_lfo = modulator("fm_lfo")
+let fm_lfo = voice("fm_lfo")
     .synth("lfo_sine")
-    .param("rate", 0.08)
-    .param("lo", 0.02)
-    .param("hi", 0.22)
-    .apply();
+    .set_param("rate", 0.08)
+    .set_param("lo", 0.02)
+    .set_param("hi", 0.22);
 
 // Side A drives the chord root. Side B follows A at +7 semitones
 // (`routing_mode = 2.0`); freq_b is unused while Follow is engaged.
@@ -48,9 +47,11 @@ let chord = define_group("SpectraChord", || {
         .set_param("focus", 0.7)            // moderately dense
         .set_param("routing_mode", 2.0)     // B = A · 1.4983 (perfect fifth)
         .set_param("a_fm_index", 0.05)      // light B-side modulation by A
-        .modulate("b_fm_index", fm_lfo)     // breathing FM into A from B
         .set_param("amp", 0.22)
         .gain(db(-9));
+
+    // Breathing FM into A from B — target-first kr routing.
+    v.param("b_fm_index").modulate_by(fm_lfo, "out");
 
     // Hold the chord — the synthdef's envelope sustains while gate=1.
     melody("chord_hold").on(v).notes("A2").apply();

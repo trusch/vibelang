@@ -26,13 +26,12 @@ let reel = sample("reel", "samples/loop.wav").loop_mode(true);
 // (≈ 0.0573 Hz). Mapped to [0.0, 0.999] so floor(organize · 4) cycles
 // 0 → 1 → 2 → 3 → 0 across the loop without ever hitting 1.0 (which
 // would clip to splice 3, leaving 0 unvisited at the saw's reset edge).
-let organize_seq = modulator("organize_seq")
+let organize_seq = voice("organize_seq")
     .synth("lfo_saw")
-    .param("rate", 0.0573)        // 1 cycle per 8 bars at 110 BPM
-    .param("lo", 0.0)
-    .param("hi", 0.999)
-    .param("phase", 0.0)
-    .apply();
+    .set_param("rate", 0.0573)    // 1 cycle per 8 bars at 110 BPM
+    .set_param("lo", 0.0)
+    .set_param("hi", 0.999)
+    .set_param("phase", 0.0);
 
 let splices = define_group("Splices", || {
     // Single voice — Story B's single-voice splice-select supersedes the
@@ -43,8 +42,9 @@ let splices = define_group("Splices", || {
         .set_param("num_splices", 4.0)
         .set_param("vari_speed", 0.7937)   // ≈ unity rate (cube root of 0.5)
         .set_param("slide", 0.0)
-        .modulate("organize", organize_seq)
         .gain(db(-9));
+
+    v.param("organize").modulate_by(organize_seq, "out");
 
     // Single hold note keeps the synth instance alive; the sequencer-driven
     // Organize modulation does the splice cycling internally.

@@ -37,11 +37,10 @@ let reel = sample("reel", "samples/loop.wav").loop_mode(true);
 // Tempo-locked clock: 110 BPM × division=4 = 7.33 Hz (16th-note pulses).
 // At gene_size ≈ 0.2 the gene is a few hundred ms; each clock advances
 // the read-head by that much, producing a chunky scrub.
-let shift_clock = modulator("shift_clock")
+let shift_clock = voice("shift_clock")
     .synth("cv_clock")
-    .param("bpm", 110.0)
-    .param("division", 4.0)         // 16th-note pulses → 7.33 Hz
-    .apply();
+    .set_param("bpm", 110.0)
+    .set_param("division", 4.0);    // 16th-note pulses → 7.33 Hz
 
 let shift = define_group("GeneShift", || {
     let v = voice("morph_shift")
@@ -52,8 +51,9 @@ let shift = define_group("GeneShift", || {
         .set_param("vari_speed", 0.7937)      // ≈ unity rate (cube root of 0.5)
         .set_param("gene_size", 0.2)          // short Gene; chunky shift
         .set_param("morph", 0.2)              // < 0.46 → Gene Shift
-        .modulate("clk", shift_clock)
         .gain(db(-9));
+
+    v.param("clk").modulate_by(shift_clock, "out");
 
     melody("shift_hold").on(v).notes("C3").apply();
 

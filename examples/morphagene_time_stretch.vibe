@@ -41,20 +41,18 @@ let reel = sample("reel", "samples/loop.wav").loop_mode(true);
 // Each pulse advances one Gene-Size step through the splice. With
 // gene_size ≈ 0.4 (a few-Hz spawn rate at unity), the splice traverses
 // in ~ splice_len_sec / gene_dur_sec clocks.
-let stretch_clock = modulator("stretch_clock")
+let stretch_clock = voice("stretch_clock")
     .synth("cv_clock")
-    .param("bpm", 96.0)
-    .param("division", 2.0)         // 8th-note pulses → 3.2 Hz
-    .apply();
+    .set_param("bpm", 96.0)
+    .set_param("division", 2.0);    // 8th-note pulses → 3.2 Hz
 
 // Slow Vari-Speed wobble — in Time Stretch this is *pitch*, not time.
 // Range -0.3..+0.3 ≈ ±1 octave-ish around unity (cubic mapping).
-let pitch_lfo = modulator("pitch_lfo")
+let pitch_lfo = voice("pitch_lfo")
     .synth("lfo_sine")
-    .param("rate", 0.07)            // 1 cycle ≈ 14 s
-    .param("lo", -0.3)
-    .param("hi", 0.5)
-    .apply();
+    .set_param("rate", 0.07)        // 1 cycle ≈ 14 s
+    .set_param("lo", -0.3)
+    .set_param("hi", 0.5);
 
 let stretch = define_group("TimeStretch", || {
     let v = voice("morph_stretch")
@@ -64,9 +62,10 @@ let stretch = define_group("TimeStretch", || {
         .set_param("slide", 0.0)
         .set_param("gene_size", 0.4)          // mid-range; not pulsar
         .set_param("morph", 0.6)              // > 0.46 → Time Stretch
-        .modulate("clk", stretch_clock)
-        .modulate("vari_speed", pitch_lfo)    // becomes pitch in Stretch
         .gain(db(-9));
+
+    v.param("clk").modulate_by(stretch_clock, "out");
+    v.param("vari_speed").modulate_by(pitch_lfo, "out");  // becomes pitch in Stretch
 
     melody("stretch_hold").on(v).notes("C3").apply();
 

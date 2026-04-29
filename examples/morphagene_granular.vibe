@@ -36,25 +36,23 @@ let reel = sample("reel", "samples/loop.wav").loop_mode(true);
 // Gene-Size LFO: triangle, 1 cycle per 16 bars at 96 BPM (≈ 0.025 Hz).
 // Range capped at 0.85 — beyond that the grain duration approaches the
 // 50 µs floor and the output becomes pulsar noise; useful but extreme.
-let gene_size_lfo = modulator("gene_size_lfo")
+let gene_size_lfo = voice("gene_size_lfo")
     .synth("lfo_tri")
-    .param("rate", 0.025)         // 1 cycle / 16 bars at 96 BPM
-    .param("lo", 0.0)
-    .param("hi", 0.85)
-    .param("phase", 0.0)
-    .apply();
+    .set_param("rate", 0.025)     // 1 cycle / 16 bars at 96 BPM
+    .set_param("lo", 0.0)
+    .set_param("hi", 0.85)
+    .set_param("phase", 0.0);
 
 // Morph LFO: rising saw, 1 cycle per 8 bars (2× faster than Gene-Size).
 // Walks 0.0 → 1.0 → reset, traversing the full spawn-cadence staircase
 // twice during one Gene-Size sweep so the user hears each Morph regime
 // at multiple grain sizes.
-let morph_lfo = modulator("morph_lfo")
+let morph_lfo = voice("morph_lfo")
     .synth("lfo_saw")
-    .param("rate", 0.05)          // 1 cycle / 8 bars at 96 BPM
-    .param("lo", 0.0)
-    .param("hi", 1.0)
-    .param("phase", 0.0)
-    .apply();
+    .set_param("rate", 0.05)      // 1 cycle / 8 bars at 96 BPM
+    .set_param("lo", 0.0)
+    .set_param("hi", 1.0)
+    .set_param("phase", 0.0);
 
 let granular = define_group("Granular", || {
     let v = voice("morph_grain")
@@ -63,9 +61,10 @@ let granular = define_group("Granular", || {
         .set_param("num_splices", 1.0)        // single splice = whole reel
         .set_param("vari_speed", 0.7937)      // ≈ unity rate (cube root of 0.5)
         .set_param("slide", 0.0)
-        .modulate("gene_size", gene_size_lfo)
-        .modulate("morph", morph_lfo)
         .gain(db(-9));
+
+    v.param("gene_size").modulate_by(gene_size_lfo, "out");
+    v.param("morph").modulate_by(morph_lfo, "out");
 
     // One held note keeps the synth instance alive; the LFOs drive the
     // grain layer directly.

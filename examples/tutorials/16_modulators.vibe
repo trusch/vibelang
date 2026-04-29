@@ -9,20 +9,24 @@
 set_tempo(120);
 
 // ============================================================
-// MODULATOR API
+// MODULATOR API (target-first kr routing)
 // ============================================================
 //
-// modulator("my_lfo")           // Name your modulator
-//   .synth("lfo_sine")          // Choose the modulator type
-//   .param("rate", 2.0)         // Speed in Hz
-//   .param("lo", 200.0)         // Minimum output value
-//   .param("hi", 2000.0)        // Maximum output value
-//   .apply();
+// A modulator is just a voice whose synthdef declares an .output_kr
+// port. Wire its output into a target voice's param via
+// voice.param(name).modulate_by(source, port).
 //
-// voice("name")
-//   .on("my_synth")
-//   .modulate("cutoff", my_lfo)  // Connect modulator to param
-//   .apply();
+// // Define the kr source — a voice running an LFO synthdef.
+// let my_lfo = voice("my_lfo")
+//   .synth("lfo_sine")          // Choose the modulator type
+//   .set_param("rate", 2.0)     // Speed in Hz
+//   .set_param("lo", 200.0)     // Minimum output value
+//   .set_param("hi", 2000.0);   // Maximum output value
+//
+// // Define the target voice and route the kr port into its param.
+// let v = voice("name")
+//   .on("my_synth");
+// v.param("cutoff").modulate_by(my_lfo, "out");
 
 // ============================================================
 // EXAMPLE: Filter Sweep with Triangle LFO
@@ -32,6 +36,7 @@ set_tempo(120);
 // First, define a triangle LFO modulator synthdef
 // Note: We use basic math instead of lin_lin_kr for portability
 define_modulator("lfo_tri")
+    .output_kr("out")     // 1ch — kr CV (triangle LFO)
     .param("rate", 1.0)
     .param("lo", 0.0)
     .param("hi", 1.0)
@@ -61,19 +66,18 @@ define_synthdef("sweep_synth")
 });
 
 // Create a slow triangle LFO for smooth up/down filter sweep
-let filter_lfo = modulator("filter_lfo")
+let filter_lfo = voice("filter_lfo")
     .synth("lfo_tri")
-    .param("rate", 2.) // 1 seconds per cycle
-    .param("lo", 800.0) // Dark (300 Hz cutoff)
-    .param("hi", 3000.0) // Bright (3000 Hz cutoff)
-    .apply();
-    
-// Create voice and connect the modulator
+    .set_param("rate", 2.)     // 1 seconds per cycle
+    .set_param("lo", 800.0)    // Dark (300 Hz cutoff)
+    .set_param("hi", 3000.0);  // Bright (3000 Hz cutoff)
+
+// Create voice and route the kr port into its cutoff param
 let bass = voice("bass")
     .on("sweep_synth")
-    .modulate("cutoff", filter_lfo) // LFO controls filter cutoff
     .gain(db(-6))
     .apply();
+bass.param("cutoff").modulate_by(filter_lfo, "out"); // LFO controls filter cutoff
 
 // Play a sustained bass note to hear the sweep
 melody("bass_line")

@@ -7,6 +7,7 @@
 // CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
 
 define_synthdef("cv_clock")
+    .output_kr("out")     // 1ch — kr CV (clock pulse train)
     .param("bpm", 120.0)
     .param("division", 1.0)
     .body(|bpm, division| {
@@ -14,11 +15,11 @@ define_synthdef("cv_clock")
         let freq = bpm * division / 60.0;
 
         // Free-running single-sample impulse train at `freq` Hz.
-        let imp = impulse_ar(freq, 0.0);
+        let imp = impulse_kr(freq, 0.0);
 
         // Stretch each impulse to a 5 ms gate-high pulse.
-        let pulse = trig1_ar(imp, 0.005);
+        let pulse = trig1_kr(imp, 0.005);
 
         // Scale 1.0 -> 0.5 audio (= +5V), hard clip to +/-1.0.
-        clip_ar(pulse * 0.5, -1.0, 1.0)
+        [clip_kr(pulse * 0.5, -1.0, 1.0)]
     });

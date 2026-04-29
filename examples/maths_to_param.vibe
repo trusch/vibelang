@@ -103,7 +103,19 @@ let bass = voice("bass")
 // mapping the target param's input to the source kr bus. Removing the
 // route or deleting either voice tears the mapping down on the next
 // reload (Story 8 covers reload semantics for kr ports).
+//
+// Two equally-valid surface forms install the *same* registry entry —
+// the source-first reading reads better when ONE source fans out to
+// MANY params; the target-first reading reads better when ONE target
+// receives MANY modulators. Both produce a byte-identical
+// param_routes row, so feel free to pick whichever scans best per
+// patch (per the v2 docs). Below — the source-first form, currently
+// in use:
 m.output("ch1").to_param(bass, "cutoff");
+
+// Equivalent target-first form (uncomment to use either; both wire the
+// exact same kr bus → /n_map mapping):
+// bass.param("cutoff").modulate_by(m, "ch1");
 
 // === Hold the bass tone ==============================================
 // A long, held note so the filter sweep is audible across many cycles.
