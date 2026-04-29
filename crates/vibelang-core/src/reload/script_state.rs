@@ -479,6 +479,14 @@ pub struct ScriptState {
     /// stub in `handlers/routes.rs`).
     pub routes: RouteMap,
 
+    /// Per-route FX chain (Story 6b): list of FX synthdef names per `(voice, port)`.
+    ///
+    /// Parallel to `routes` and keyed identically. Empty/missing entries mean
+    /// "no per-port FX" (legacy direct port→link wiring). Populated by the Rhai
+    /// `RouteHandle.fx([...])` surface; consumed by route-diff machinery to
+    /// emit FX synth lifecycle alongside the mixer link.
+    pub route_fx_chains: HashMap<(VoiceId, String), Vec<String>>,
+
     /// Recordings to start (native only).
     #[cfg(not(target_arch = "wasm32"))]
     pub recordings: HashMap<RecordingId, RecordingConfig>,
@@ -720,9 +728,30 @@ impl ScriptState {
         self.routes.insert((voice_id, port_name.into()), dest);
     }
 
+    /// Set the per-port FX chain for a voice's named output port (Story 6b).
+    ///
+    /// Empty `fx_chain` clears any prior chain (matching the legacy direct
+    /// port→link wiring). Independent of [`Self::set_route`] — terminal verbs
+    /// in the Rhai surface call both to commit a `.fx([...]).to(...)` chain.
+    pub fn set_route_fx_chain(
+        &mut self,
+        voice_id: VoiceId,
+        port_name: impl Into<String>,
+        fx_chain: Vec<String>,
+    ) {
+        let key = (voice_id, port_name.into());
+        if fx_chain.is_empty() {
+            self.route_fx_chains.remove(&key);
+        } else {
+            self.route_fx_chains.insert(key, fx_chain);
+        }
+    }
+
     /// Remove the route for a voice's named output port, if any.
     pub fn clear_route(&mut self, voice_id: VoiceId, port_name: &str) {
-        self.routes.remove(&(voice_id, port_name.to_string()));
+        let key = (voice_id, port_name.to_string());
+        self.routes.remove(&key);
+        self.route_fx_chains.remove(&key);
     }
 }
 

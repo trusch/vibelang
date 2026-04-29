@@ -422,6 +422,20 @@ pub fn effect_exists(name: &str) -> bool {
     get_effect_registry().lock().unwrap().contains_key(name)
 }
 
+/// Get the names of all registered FX synthdefs.
+///
+/// Snapshot of the EFFECT_REGISTRY name set at call time. Used by Rhai-side
+/// validators (e.g. `RouteHandle.fx([...])`) to render "did-you-mean" hints
+/// when the script names an FX that isn't registered.
+pub fn get_all_effect_names() -> Vec<String> {
+    get_effect_registry()
+        .lock()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect()
+}
+
 /// Check if a Modulator exists in the registry.
 pub fn modulator_synthdef_exists(name: &str) -> bool {
     get_modulator_registry().lock().unwrap().contains_key(name)
@@ -435,6 +449,16 @@ pub fn synthdef_or_effect_exists(name: &str) -> bool {
 /// Register a SynthDef IR in the registry (for auto-generated synthdefs).
 pub fn register_synthdef_ir(name: String, ir: GraphIR) {
     let mut registry = get_synthdef_registry().lock().unwrap();
+    registry.insert(name, ir);
+}
+
+/// Register an Effect IR in the registry (for auto-generated effects and tests).
+///
+/// Mirror of [`register_synthdef_ir`] for the FX side. Used by Rhai-surface
+/// tests that need to seed the effect registry without running a full
+/// `define_fx(...).body(...)` builder pipeline.
+pub fn register_effect_ir(name: String, ir: GraphIR) {
+    let mut registry = get_effect_registry().lock().unwrap();
     registry.insert(name, ir);
 }
 
