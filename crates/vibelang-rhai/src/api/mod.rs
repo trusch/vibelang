@@ -9,6 +9,7 @@ pub mod helpers;
 pub mod melody;
 pub mod modulator;
 pub mod pattern;
+pub mod route;
 pub mod sample;
 pub mod sequence;
 pub mod voice;
@@ -20,11 +21,15 @@ pub fn clear_all_registries() {
     pattern::clear_registry();
     melody::clear_registry();
     sequence::clear_registry();
+    #[cfg(not(target_arch = "wasm32"))]
+    reel::clear_registry();
 }
 
 // Native-only modules (require file I/O)
 #[cfg(not(target_arch = "wasm32"))]
 pub mod recording;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod reel;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sfz;
 
@@ -50,6 +55,9 @@ pub fn register_api(engine: &mut Engine) {
     // Register voice API
     voice::register(engine);
 
+    // Register route API (RouteHandle terminal verbs)
+    route::register(engine);
+
     // Register pattern API
     pattern::register(engine);
 
@@ -68,6 +76,10 @@ pub fn register_api(engine: &mut Engine) {
     // Register SFZ API (native only - requires file I/O)
     #[cfg(not(target_arch = "wasm32"))]
     sfz::register(engine);
+
+    // Register Reel API (native only - requires file I/O for cue chunks)
+    #[cfg(not(target_arch = "wasm32"))]
+    reel::register(engine);
 
     // Register Recording API (native only - requires file I/O)
     #[cfg(not(target_arch = "wasm32"))]

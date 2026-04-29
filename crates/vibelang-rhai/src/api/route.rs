@@ -1,0 +1,75 @@
+//! Route API for Rhai scripts.
+//!
+//! `RouteHandle` is the chainable builder produced by
+//! [`Voice::output(name|idx)`](super::voice::Voice). It carries the resolved
+//! `(voice_id, port_name)` and exposes the three terminal verbs
+//! (`to`, `to_main`, `mute`) that install a [`RouteDest`] into the
+//! [`ScriptState`](vibelang_core::reload::ScriptState) routes map.
+//!
+//! Re-routing the same `(voice_id, port_name)` overwrites the prior dest
+//! (`HashMap::insert` semantics on
+//! [`ScriptState::set_route`](vibelang_core::reload::ScriptState::set_route)).
+//! Additive fan-out is deferred to a later story.
+
+use rhai::{CustomType, Engine, TypeBuilder};
+use vibelang_core::handlers::RouteDest;
+use vibelang_core::types::VoiceId;
+
+use super::group::GroupHandle;
+use crate::context;
+
+/// Chainable handle for installing a route on a voice's named output port.
+///
+/// Constructed by [`Voice::output`](super::voice::Voice). Terminal verbs
+/// consume the handle to commit the route to the script state.
+#[derive(Debug, Clone, CustomType)]
+pub struct RouteHandle {
+    /// Resolved voice ID — the source voice for this route.
+    voice_id: VoiceId,
+    /// Resolved port name — already validated against the synthdef's
+    /// declared `OutputPort` set when the handle was created.
+    port_name: String,
+}
+
+impl RouteHandle {
+    pub(crate) fn new(voice_id: VoiceId, port_name: String) -> Self {
+        Self {
+            voice_id,
+            port_name,
+        }
+    }
+
+    /// Install a route to the given group's mix bus.
+    pub fn to(self, group: GroupHandle) -> Self {
+        let group_id = context::get_or_create_group_id(&group.path);
+        context::with_state(|state| {
+            state.set_route(self.voice_id, self.port_name.clone(), RouteDest::Group(group_id));
+        });
+        self
+    }
+
+    /// Install a route straight to the main hardware output (bus 0), bypassing
+    /// any group routing.
+    pub fn to_main(self) -> Self {
+        context::with_state(|state| {
+            state.set_route(self.voice_id, self.port_name.clone(), RouteDest::Main);
+        });
+        self
+    }
+
+    /// Install a muted route — the port's signal is discarded.
+    pub fn mute(self) -> Self {
+        context::with_state(|state| {
+            state.set_route(self.voice_id, self.port_name.clone(), RouteDest::Muted);
+        });
+        self
+    }
+}
+
+/// Register the `RouteHandle` type and its terminal verbs with a Rhai engine.
+pub fn register(engine: &mut Engine) {
+    engine.build_type::<RouteHandle>();
+    engine.register_fn("to", RouteHandle::to);
+    engine.register_fn("to_main", RouteHandle::to_main);
+    engine.register_fn("mute", RouteHandle::mute);
+}

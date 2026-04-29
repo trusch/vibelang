@@ -5,6 +5,7 @@
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::collections::HashMap;
 use vibelang_core::traits::VoiceConfig;
+use vibelang_dsp::OutputPort;
 #[cfg(feature = "midi")]
 use vibelang_core::types::MidiDeviceId;
 #[cfg(not(target_arch = "wasm32"))]
@@ -14,6 +15,7 @@ use vibelang_core::types::{ModulatorId, SampleId};
 #[cfg(feature = "midi")]
 use super::midi::MidiDevice;
 use super::modulator::Modulator;
+use super::route::RouteHandle;
 use super::sample::SampleHandle;
 #[cfg(not(target_arch = "wasm32"))]
 use super::sfz::SfzHandle;
@@ -406,6 +408,61 @@ impl Voice {
         self
     }
 
+    /// Begin a route from this voice's named output port.
+    ///
+    /// Resolves `name` against the voice's synthdef's declared
+    /// [`OutputPort`] set; the returned [`RouteHandle`] commits the route
+    /// when one of the terminal verbs (`to`, `to_main`, `mute`) is called.
+    /// Re-routing the same `(voice, port)` replaces the prior destination.
+    ///
+    /// Errors if the synthdef has not declared a port with this name —
+    /// the message cites the available port names so users can fix the typo.
+    pub fn output_by_name(
+        &mut self,
+        name: &str,
+    ) -> Result<RouteHandle, Box<EvalAltResult>> {
+        self.resolve_name();
+        let ports = self.declared_output_ports();
+        if ports.iter().any(|p| p.name == name) {
+            let voice_id = context::get_or_create_voice_id(&self.name);
+            Ok(RouteHandle::new(voice_id, name.to_string()))
+        } else {
+            Err(unknown_port_error(self, &ports, name))
+        }
+    }
+
+    /// Begin a route from this voice's output port at the given 0-based index.
+    ///
+    /// Index resolution uses the synthdef's declared
+    /// [`OutputPort`] order. Out-of-range indices error with the
+    /// available port count and names.
+    pub fn output_by_idx(
+        &mut self,
+        idx: i64,
+    ) -> Result<RouteHandle, Box<EvalAltResult>> {
+        self.resolve_name();
+        let ports = self.declared_output_ports();
+        let len = ports.len() as i64;
+        if idx < 0 || idx >= len {
+            return Err(idx_out_of_range_error(self, &ports, idx));
+        }
+        let port_name = ports[idx as usize].name.clone();
+        let voice_id = context::get_or_create_voice_id(&self.name);
+        Ok(RouteHandle::new(voice_id, port_name))
+    }
+
+    /// Resolve the declared `OutputPort` set for this voice's synthdef.
+    ///
+    /// Falls back to the implicit legacy `[("out", 2)]` set when the synthdef
+    /// has not been registered yet (matches `SynthDef::new` defaults).
+    fn declared_output_ports(&self) -> Vec<OutputPort> {
+        let synth = self.synth_name.as_deref().unwrap_or("");
+        if synth.is_empty() {
+            return legacy_output_ports();
+        }
+        vibelang_dsp::get_synthdef_outputs(synth).unwrap_or_else(legacy_output_ports)
+    }
+
     /// Mute the voice (chainable).
     pub fn mute(mut self) -> Self {
         self.muted = true;
@@ -616,6 +673,61 @@ pub fn register(engine: &mut Engine) {
     // Actions
     engine.register_fn("apply", Voice::apply);
     engine.register_fn("run", Voice::run);
+
+    // Multi-output routing entry point — name and 0-based index overloads.
+    engine.register_fn("output", Voice::output_by_name);
+    engine.register_fn("output", Voice::output_by_idx);
+}
+
+/// Implicit legacy output port set for synthdefs that did not call `.output(...)`.
+///
+/// Mirrors [`vibelang_dsp::SynthDef::new`] defaults — one stereo `out` port.
+fn legacy_output_ports() -> Vec<OutputPort> {
+    vec![OutputPort {
+        name: "out".to_string(),
+        channels: 2,
+    }]
+}
+
+fn unknown_port_error(voice: &Voice, ports: &[OutputPort], name: &str) -> Box<EvalAltResult> {
+    let synth = voice.synth_name.as_deref().unwrap_or("<unset>");
+    let available = available_port_list(ports);
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "Voice '{}' synthdef '{}' has no output port named '{}' (available: {})",
+            voice.name, synth, name, available
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
+fn idx_out_of_range_error(voice: &Voice, ports: &[OutputPort], idx: i64) -> Box<EvalAltResult> {
+    let synth = voice.synth_name.as_deref().unwrap_or("<unset>");
+    let available = available_port_list(ports);
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "Voice '{}' synthdef '{}' output index {} out of range (have {} ports: {})",
+            voice.name,
+            synth,
+            idx,
+            ports.len(),
+            available
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
+fn available_port_list(ports: &[OutputPort]) -> String {
+    if ports.is_empty() {
+        return "<none>".to_string();
+    }
+    ports
+        .iter()
+        .map(|p| format!("'{}'", p.name))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[cfg(test)]
@@ -939,5 +1051,235 @@ mod tests {
         assert_eq!(v.modulations.get("param2"), Some(&ModulatorId::new(200)));
         assert_eq!(v.modulations.get("param3"), Some(&ModulatorId::new(300)));
         assert_eq!(v.modulations.get("param4"), Some(&ModulatorId::new(400)));
+    }
+
+    // ==================== Output / Routing Tests ====================
+    //
+    // The synthdef-output registry in vibelang-dsp::api is a process-wide
+    // singleton, so each test runs in a uniquely-named synth/voice scope to
+    // stay isolated even when cargo runs them in parallel.
+
+    use vibelang_core::handlers::RouteDest;
+    use vibelang_dsp::{register_synthdef_outputs, OutputPort};
+
+    fn declare_synth_with_ports(synth: &str, port_names: &[&str]) {
+        let ports: Vec<OutputPort> = port_names
+            .iter()
+            .map(|n| OutputPort {
+                name: (*n).to_string(),
+                channels: 1,
+            })
+            .collect();
+        register_synthdef_outputs(synth.to_string(), ports);
+    }
+
+    #[test]
+    fn test_voice_output_by_name_round_trip() {
+        with_test_context(|| {
+            let synth = "story8_round_trip_named";
+            declare_synth_with_ports(synth, &["sine", "even", "odd"]);
+
+            let group_path = "main/fx_evens_named".to_string();
+            let group = super::super::group::GroupHandle::new(group_path.clone());
+            let group_id = context::get_or_create_group_id(&group_path);
+
+            let mut v = test_voice("vox_named").synth(synth.to_string());
+            v.output_by_name("even")
+                .expect("named output resolves")
+                .to(group);
+
+            let voice_id = context::get_or_create_voice_id("vox_named");
+            context::with_state(|state| {
+                let dest = state.routes.get(&(voice_id, "even".to_string()));
+                assert_eq!(dest, Some(&RouteDest::Group(group_id)));
+            });
+        });
+    }
+
+    #[test]
+    fn test_voice_output_by_idx_round_trip() {
+        with_test_context(|| {
+            let synth = "story8_round_trip_idx";
+            // Indices: 0=sine, 1=even, 2=odd
+            declare_synth_with_ports(synth, &["sine", "even", "odd"]);
+
+            let group_path = "main/fx_odds_idx".to_string();
+            let group = super::super::group::GroupHandle::new(group_path.clone());
+            let group_id = context::get_or_create_group_id(&group_path);
+
+            let mut v = test_voice("vox_idx").synth(synth.to_string());
+            v.output_by_idx(2).expect("idx 2 resolves").to(group);
+
+            let voice_id = context::get_or_create_voice_id("vox_idx");
+            context::with_state(|state| {
+                let dest = state.routes.get(&(voice_id, "odd".to_string()));
+                assert_eq!(dest, Some(&RouteDest::Group(group_id)));
+            });
+        });
+    }
+
+    #[test]
+    fn test_voice_output_unknown_name_errors_with_port_list() {
+        with_test_context(|| {
+            let synth = "story8_unknown_name";
+            declare_synth_with_ports(synth, &["sine", "even", "odd"]);
+
+            let mut v = test_voice("vox_unknown").synth(synth.to_string());
+            let err = v
+                .output_by_name("triangle")
+                .expect_err("unknown port name must error");
+            let msg = err.to_string();
+            assert!(msg.contains("triangle"), "msg = {}", msg);
+            assert!(msg.contains("'sine'"), "msg = {}", msg);
+            assert!(msg.contains("'even'"), "msg = {}", msg);
+            assert!(msg.contains("'odd'"), "msg = {}", msg);
+        });
+    }
+
+    #[test]
+    fn test_voice_output_idx_out_of_range_errors_with_port_list() {
+        with_test_context(|| {
+            let synth = "story8_oor_idx";
+            declare_synth_with_ports(synth, &["sine", "even"]);
+
+            let mut v = test_voice("vox_oor").synth(synth.to_string());
+            let err = v
+                .output_by_idx(5)
+                .expect_err("idx out of range must error");
+            let msg = err.to_string();
+            assert!(msg.contains("5"), "msg = {}", msg);
+            assert!(msg.contains("2"), "msg = {}", msg); // ports count
+            assert!(msg.contains("'sine'"), "msg = {}", msg);
+            assert!(msg.contains("'even'"), "msg = {}", msg);
+
+            // Negative index also errors.
+            let err_neg = v
+                .output_by_idx(-1)
+                .expect_err("negative idx must error");
+            assert!(err_neg.to_string().contains("-1"));
+        });
+    }
+
+    #[test]
+    fn test_voice_output_to_main_and_mute() {
+        with_test_context(|| {
+            let synth = "story8_main_mute";
+            declare_synth_with_ports(synth, &["sub", "click"]);
+
+            let mut v = test_voice("vox_mm").synth(synth.to_string());
+            v.output_by_name("sub").expect("sub").to_main();
+            v.output_by_name("click").expect("click").mute();
+
+            let voice_id = context::get_or_create_voice_id("vox_mm");
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "sub".to_string())),
+                    Some(&RouteDest::Main)
+                );
+                assert_eq!(
+                    state.routes.get(&(voice_id, "click".to_string())),
+                    Some(&RouteDest::Muted)
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn test_voice_output_re_route_replaces_prior_dest() {
+        with_test_context(|| {
+            let synth = "story8_replaces";
+            declare_synth_with_ports(synth, &["even"]);
+
+            let g1_path = "main/replaces_g1".to_string();
+            let g2_path = "main/replaces_g2".to_string();
+            let g1 = super::super::group::GroupHandle::new(g1_path.clone());
+            let g2 = super::super::group::GroupHandle::new(g2_path.clone());
+            let g1_id = context::get_or_create_group_id(&g1_path);
+            let g2_id = context::get_or_create_group_id(&g2_path);
+
+            let mut v = test_voice("vox_replace").synth(synth.to_string());
+            v.output_by_name("even").expect("first").to(g1);
+            // First route installed.
+            let voice_id = context::get_or_create_voice_id("vox_replace");
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "even".to_string())),
+                    Some(&RouteDest::Group(g1_id))
+                );
+            });
+
+            // Re-route to a different group; prior dest must be replaced (not
+            // accumulated — additive fan-out is v2).
+            v.output_by_name("even").expect("second").to(g2);
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "even".to_string())),
+                    Some(&RouteDest::Group(g2_id))
+                );
+                // Exactly one entry for this (voice, port).
+                let count = state
+                    .routes
+                    .keys()
+                    .filter(|(vid, port)| *vid == voice_id && port == "even")
+                    .count();
+                assert_eq!(count, 1);
+            });
+
+            // Re-route across destination variants too.
+            v.output_by_name("even").expect("third").to_main();
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "even".to_string())),
+                    Some(&RouteDest::Main)
+                );
+            });
+
+            v.output_by_name("even").expect("fourth").mute();
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "even".to_string())),
+                    Some(&RouteDest::Muted)
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn test_voice_output_name_idx_round_trip_resolve_same_port() {
+        // Index N must resolve to the same name as the Nth declared port.
+        with_test_context(|| {
+            let synth = "story8_name_idx_match";
+            declare_synth_with_ports(synth, &["a", "b", "c", "d"]);
+
+            let group_path = "main/match_grp".to_string();
+            let g_id = context::get_or_create_group_id(&group_path);
+
+            // Idx 2 → "c"
+            let mut v_idx = test_voice("vox_match_idx").synth(synth.to_string());
+            v_idx
+                .output_by_idx(2)
+                .expect("idx 2")
+                .to(super::super::group::GroupHandle::new(group_path.clone()));
+            let id_idx = context::get_or_create_voice_id("vox_match_idx");
+
+            // Name "c"
+            let mut v_name = test_voice("vox_match_name").synth(synth.to_string());
+            v_name
+                .output_by_name("c")
+                .expect("name c")
+                .to(super::super::group::GroupHandle::new(group_path));
+            let id_name = context::get_or_create_voice_id("vox_match_name");
+
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(id_idx, "c".to_string())),
+                    Some(&RouteDest::Group(g_id))
+                );
+                assert_eq!(
+                    state.routes.get(&(id_name, "c".to_string())),
+                    Some(&RouteDest::Group(g_id))
+                );
+            });
+        });
     }
 }

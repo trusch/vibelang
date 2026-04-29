@@ -6,7 +6,7 @@
 //! Note: This module uses a callback function to deploy synthdefs to scsynth.
 //! The callback must be set by the host application (CLI) before using these functions.
 
-use crate::builder::SynthDef;
+use crate::builder::{OutputPort, SynthDef};
 use crate::encoder::encode_synthdef;
 use crate::errors::SynthDefError;
 use crate::graph::GraphIR;
@@ -23,6 +23,10 @@ static SYNTHDEF_REGISTRY: OnceLock<Mutex<HashMap<String, GraphIR>>> = OnceLock::
 static EFFECT_REGISTRY: OnceLock<Mutex<HashMap<String, GraphIR>>> = OnceLock::new();
 // Global registry of modulators (control-rate synthdefs)
 static MODULATOR_REGISTRY: OnceLock<Mutex<HashMap<String, GraphIR>>> = OnceLock::new();
+// Per-synthdef declared output port set (script-side; populated alongside the IR
+// at deploy time so the Rhai surface can resolve `voice.output(name|idx)`).
+static SYNTHDEF_OUTPUTS_REGISTRY: OnceLock<Mutex<HashMap<String, Vec<OutputPort>>>> =
+    OnceLock::new();
 // Callback for deploying synthdef bytes to scsynth
 static DEPLOY_CALLBACK: OnceLock<Mutex<Option<DeployCallback>>> = OnceLock::new();
 
@@ -36,6 +40,38 @@ fn get_effect_registry() -> &'static Mutex<HashMap<String, GraphIR>> {
 
 fn get_modulator_registry() -> &'static Mutex<HashMap<String, GraphIR>> {
     MODULATOR_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn get_synthdef_outputs_registry() -> &'static Mutex<HashMap<String, Vec<OutputPort>>> {
+    SYNTHDEF_OUTPUTS_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record the declared output port set for a synthdef name.
+///
+/// Called by [`SynthDefBuilderHandle::body`] / `body_map` at deploy time so
+/// later script-side code (e.g. the Rhai `voice.output(...)` surface) can
+/// resolve port names and indices without re-running the builder.
+pub fn register_synthdef_outputs(name: String, outputs: Vec<OutputPort>) {
+    let mut registry = get_synthdef_outputs_registry().lock().unwrap();
+    registry.insert(name, outputs);
+}
+
+/// Look up the declared output port set for a registered synthdef.
+///
+/// Returns `None` for unknown synthdefs — callers should treat that as the
+/// implicit legacy `[("out", 2)]` set (matches [`crate::builder::SynthDef::new`]
+/// defaults).
+pub fn get_synthdef_outputs(name: &str) -> Option<Vec<OutputPort>> {
+    get_synthdef_outputs_registry()
+        .lock()
+        .unwrap()
+        .get(name)
+        .cloned()
+}
+
+/// Clear the synthdef output-port registry. Useful for tests and reload.
+pub fn clear_synthdef_outputs_registry() {
+    get_synthdef_outputs_registry().lock().unwrap().clear();
 }
 
 fn get_deploy_callback() -> &'static Mutex<Option<DeployCallback>> {
@@ -224,16 +260,20 @@ impl SynthDefBuilderHandle {
 
     pub fn body(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
         let name = self.synthdef.name.clone();
+        let outputs = self.synthdef.outputs.clone();
         let ir = self.build(closure).map_err(synthdef_error_to_eval)?;
+        register_synthdef_outputs(name.clone(), outputs);
         deploy_synthdef_ir(&name, ir).map_err(synthdef_error_to_eval)
     }
 
     pub fn body_map(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
         let name = self.synthdef.name.clone();
+        let outputs = self.synthdef.outputs.clone();
         let ir = self
             .synthdef
             .build_body_map_closure_with_options(closure, true)
             .map_err(synthdef_error_to_eval)?;
+        register_synthdef_outputs(name.clone(), outputs);
         deploy_synthdef_ir(&name, ir).map_err(synthdef_error_to_eval)
     }
 }
