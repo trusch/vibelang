@@ -863,6 +863,17 @@ pub struct State {
     /// (bus 0 is the main stereo output). Frees go to a free-list and are
     /// reused, keeping bus IDs bounded across long live-reload sessions.
     pub audio_buses: AudioBusAllocator,
+
+    // =========================================================================
+    // Routing
+    // =========================================================================
+    /// Per-route mixer synth node IDs, keyed by `(voice_id, port_name)`.
+    ///
+    /// Populated by [`crate::handlers::RoutesHandler::finalize`] when a route
+    /// is added; drained when a route is removed/changed or its owning voice
+    /// is deleted. The synth reads the voice's port audio bus and writes to
+    /// the destination group's audio bus (or bus 0 for `RouteDest::Main`).
+    pub route_synths: HashMap<(VoiceId, String), NodeId>,
 }
 
 impl Default for State {
@@ -893,6 +904,7 @@ impl Default for State {
             node_ids: FreeListAllocator::new(1000, u32::MAX), // Reserve low IDs for system nodes
             buffer_ids: FreeListAllocator::new(0, u32::MAX),
             audio_buses: AudioBusAllocator::default(),
+            route_synths: HashMap::new(),
         }
     }
 }
@@ -948,6 +960,30 @@ impl State {
     /// — each group gets its own stereo pair for audio routing.
     pub fn alloc_bus_id(&mut self) -> BusId {
         self.alloc_audio_bus(2)
+    }
+
+    /// Drain every route mixer synth owned by `voice_id` from
+    /// [`State::route_synths`], returning their node IDs and recycling the
+    /// IDs back into the node-id pool.
+    ///
+    /// Used by voice deletion to tear down all per-port mixer synths in one
+    /// pass without needing the route diff. The caller is responsible for
+    /// freeing the corresponding nodes on the backend.
+    pub fn take_voice_route_nodes(&mut self, voice_id: VoiceId) -> Vec<NodeId> {
+        let keys: Vec<(VoiceId, String)> = self
+            .route_synths
+            .keys()
+            .filter(|(vid, _)| *vid == voice_id)
+            .cloned()
+            .collect();
+        let mut nodes = Vec::with_capacity(keys.len());
+        for key in keys {
+            if let Some(node_id) = self.route_synths.remove(&key) {
+                self.node_ids.free(node_id.raw());
+                nodes.push(node_id);
+            }
+        }
+        nodes
     }
 
     /// Resolve the output-port set for a synthdef name.

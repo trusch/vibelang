@@ -366,6 +366,187 @@ fn write_ugen_input(buf: &mut Vec<u8>, ugen_idx: i32, output_idx: i32) -> std::i
     Ok(())
 }
 
+/// Create the `port_to_group_link_1` synthdef bytes.
+///
+/// Routes one mono audio bus into a stereo destination bus by duplicating
+/// the mono signal across both output channels:
+///
+/// ```supercollider
+/// SynthDef("port_to_group_link_1", { |in_bus=0, out_bus=0|
+///     Out.ar(out_bus, In.ar(in_bus, 1).dup)
+/// })
+/// ```
+///
+/// Used by `RoutesHandler::finalize` to tap a voice's mono output port and
+/// mix it into a group's stereo audio bus.
+pub fn create_port_to_group_link_1_bytes() -> Result<Vec<u8>, std::io::Error> {
+    let mut buf = Vec::new();
+
+    // File header
+    buf.write_all(b"SCgf")?;
+    buf.write_all(&2i32.to_be_bytes())?; // version 2
+    buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+
+    // Name
+    let name = b"port_to_group_link_1";
+    buf.push(name.len() as u8);
+    buf.write_all(name)?;
+
+    // No constants
+    buf.write_all(&0i32.to_be_bytes())?;
+
+    // Parameters: in_bus=0, out_bus=0
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+
+    buf.write_all(&2i32.to_be_bytes())?;
+    let in_bus_name = b"in_bus";
+    buf.push(in_bus_name.len() as u8);
+    buf.write_all(in_bus_name)?;
+    buf.write_all(&0i32.to_be_bytes())?;
+    let out_bus_name = b"out_bus";
+    buf.push(out_bus_name.len() as u8);
+    buf.write_all(out_bus_name)?;
+    buf.write_all(&1i32.to_be_bytes())?;
+
+    // UGens:
+    // 0: Control (2 control outputs: in_bus, out_bus)
+    // 1: In.ar (1 audio output, mono, reads in_bus)
+    // 2: Out.ar (writes In[0] twice → stereo dup at out_bus)
+    buf.write_all(&3i32.to_be_bytes())?;
+
+    // UGen 0: Control
+    let control_name = b"Control";
+    buf.push(control_name.len() as u8);
+    buf.write_all(control_name)?;
+    buf.push(1); // control rate
+    buf.write_all(&0i32.to_be_bytes())?; // 0 inputs
+    buf.write_all(&2i32.to_be_bytes())?; // 2 outputs
+    buf.write_all(&0i16.to_be_bytes())?; // special index
+    buf.push(1); // output 0 rate
+    buf.push(1); // output 1 rate
+
+    // UGen 1: In.ar(in_bus, 1) → mono
+    let in_name = b"In";
+    buf.push(in_name.len() as u8);
+    buf.write_all(in_name)?;
+    buf.push(2); // audio rate
+    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
+    buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono)
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
+    buf.push(2); // output rate
+
+    // UGen 2: Out.ar(out_bus, mono, mono) → mono duplicated to stereo
+    let out_name = b"Out";
+    buf.push(out_name.len() as u8);
+    buf.write_all(out_name)?;
+    buf.push(2); // audio rate
+    buf.write_all(&3i32.to_be_bytes())?; // 3 inputs
+    buf.write_all(&0i32.to_be_bytes())?; // 0 outputs
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
+    write_ugen_input(&mut buf, 1, 0)?; // In[0] (left channel)
+    write_ugen_input(&mut buf, 1, 0)?; // In[0] again (right channel — dup)
+
+    // No variants
+    buf.write_all(&0i16.to_be_bytes())?;
+
+    Ok(buf)
+}
+
+/// Create the `port_to_group_link_2` synthdef bytes.
+///
+/// Routes a stereo audio bus into a stereo destination bus, passing through
+/// both channels unchanged:
+///
+/// ```supercollider
+/// SynthDef("port_to_group_link_2", { |in_bus=0, out_bus=0|
+///     Out.ar(out_bus, In.ar(in_bus, 2))
+/// })
+/// ```
+///
+/// Used by `RoutesHandler::finalize` to tap a voice's stereo output port
+/// and mix it into a group's stereo audio bus.
+pub fn create_port_to_group_link_2_bytes() -> Result<Vec<u8>, std::io::Error> {
+    let mut buf = Vec::new();
+
+    // File header
+    buf.write_all(b"SCgf")?;
+    buf.write_all(&2i32.to_be_bytes())?; // version 2
+    buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+
+    // Name
+    let name = b"port_to_group_link_2";
+    buf.push(name.len() as u8);
+    buf.write_all(name)?;
+
+    // No constants
+    buf.write_all(&0i32.to_be_bytes())?;
+
+    // Parameters: in_bus=0, out_bus=0
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+
+    buf.write_all(&2i32.to_be_bytes())?;
+    let in_bus_name = b"in_bus";
+    buf.push(in_bus_name.len() as u8);
+    buf.write_all(in_bus_name)?;
+    buf.write_all(&0i32.to_be_bytes())?;
+    let out_bus_name = b"out_bus";
+    buf.push(out_bus_name.len() as u8);
+    buf.write_all(out_bus_name)?;
+    buf.write_all(&1i32.to_be_bytes())?;
+
+    // UGens:
+    // 0: Control (2 control outputs: in_bus, out_bus)
+    // 1: In.ar (2 audio outputs: left, right; reads in_bus)
+    // 2: Out.ar (writes left + right → stereo passthrough at out_bus)
+    buf.write_all(&3i32.to_be_bytes())?;
+
+    // UGen 0: Control
+    let control_name = b"Control";
+    buf.push(control_name.len() as u8);
+    buf.write_all(control_name)?;
+    buf.push(1); // control rate
+    buf.write_all(&0i32.to_be_bytes())?;
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    buf.push(1);
+    buf.push(1);
+
+    // UGen 1: In.ar(in_bus, 2) → stereo
+    let in_name = b"In";
+    buf.push(in_name.len() as u8);
+    buf.write_all(in_name)?;
+    buf.push(2); // audio rate
+    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
+    buf.write_all(&2i32.to_be_bytes())?; // 2 outputs (stereo)
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
+    buf.push(2); // output 0 rate
+    buf.push(2); // output 1 rate
+
+    // UGen 2: Out.ar(out_bus, left, right)
+    let out_name = b"Out";
+    buf.push(out_name.len() as u8);
+    buf.write_all(out_name)?;
+    buf.push(2); // audio rate
+    buf.write_all(&3i32.to_be_bytes())?;
+    buf.write_all(&0i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
+    write_ugen_input(&mut buf, 1, 0)?; // In[0] = left
+    write_ugen_input(&mut buf, 1, 1)?; // In[1] = right
+
+    // No variants
+    buf.write_all(&0i16.to_be_bytes())?;
+
+    Ok(buf)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,5 +558,34 @@ mod tests {
         assert_eq!(&bytes[0..4], b"SCgf");
         // Should have reasonable size
         assert!(bytes.len() > 100);
+    }
+
+    #[test]
+    fn test_create_port_to_group_link_1_bytes() {
+        let bytes = create_port_to_group_link_1_bytes().unwrap();
+        assert_eq!(&bytes[0..4], b"SCgf");
+        assert_eq!(&bytes[4..8], &2i32.to_be_bytes());
+        // Name "port_to_group_link_1" must be present in the encoded body.
+        let needle = b"port_to_group_link_1";
+        assert!(
+            bytes.windows(needle.len()).any(|w| w == needle),
+            "synthdef name not found in encoded bytes"
+        );
+        // in_bus / out_bus param names must be encoded.
+        assert!(bytes.windows(6).any(|w| w == b"in_bus"));
+        assert!(bytes.windows(7).any(|w| w == b"out_bus"));
+    }
+
+    #[test]
+    fn test_create_port_to_group_link_2_bytes() {
+        let bytes = create_port_to_group_link_2_bytes().unwrap();
+        assert_eq!(&bytes[0..4], b"SCgf");
+        let needle = b"port_to_group_link_2";
+        assert!(
+            bytes.windows(needle.len()).any(|w| w == needle),
+            "synthdef name not found in encoded bytes"
+        );
+        assert!(bytes.windows(6).any(|w| w == b"in_bus"));
+        assert!(bytes.windows(7).any(|w| w == b"out_bus"));
     }
 }

@@ -23,7 +23,10 @@ pub use midi::{
     MIDI_REPLY_PITCH_BEND, MIDI_REPLY_START, MIDI_REPLY_STOP,
 };
 pub use recording::create_recording_synthdefs;
-pub use routing::create_system_link_audio_bytes;
+pub use routing::{
+    create_port_to_group_link_1_bytes, create_port_to_group_link_2_bytes,
+    create_system_link_audio_bytes,
+};
 pub use sample::create_sample_synthdefs;
 pub use sfz::{create_sfz_synthdefs, create_sfz_voice_synthdef};
 

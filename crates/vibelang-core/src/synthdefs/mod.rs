@@ -62,6 +62,19 @@ pub fn generate_builtins() -> Vec<(String, Vec<u8>)> {
         ));
     }
 
+    // Add per-port → group mixer synthdefs (RoutesHandler::finalize taps these
+    // to wire each voice's output port into its destination group's audio bus).
+    if let Ok(bytes) = system_synthdefs::create_port_to_group_link_1_bytes() {
+        all_defs.push(("port_to_group_link_1".to_string(), bytes));
+    } else {
+        tracing::warn!("Failed to create port_to_group_link_1 from vibelang-dsp");
+    }
+    if let Ok(bytes) = system_synthdefs::create_port_to_group_link_2_bytes() {
+        all_defs.push(("port_to_group_link_2".to_string(), bytes));
+    } else {
+        tracing::warn!("Failed to create port_to_group_link_2 from vibelang-dsp");
+    }
+
     // Add all system synthdefs from vibelang-dsp
     // This includes: MIDI, recording, sample voices, SFZ voices
     all_defs.extend(system_synthdefs::create_all_system_synthdefs());

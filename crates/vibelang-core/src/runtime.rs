@@ -33,8 +33,8 @@ use crate::compat::{timeout, Duration};
 use crate::handlers::RecordingsHandler;
 use crate::handlers::{
     EffectsHandler, FadesHandler, GroupsHandler, MelodiesHandler, ModulatorsHandler,
-    PatternsHandler, SamplesHandler, SequencesHandler, SfzHandler, SynthDefsHandler,
-    TransportHandler, VoicesHandler,
+    PatternsHandler, RouteMap, RoutesHandler, SamplesHandler, SequencesHandler, SfzHandler,
+    SynthDefsHandler, TransportHandler, VoicesHandler,
 };
 #[cfg(feature = "midi")]
 use crate::message::MidiMessage;
@@ -112,6 +112,14 @@ pub struct Runtime<B: Backend> {
     #[cfg(feature = "midi")]
     tick_count: u32,
 
+    /// Last applied per-voice routing map.
+    ///
+    /// Updated at the end of each [`Self::apply_reload`] so the next reload
+    /// can produce a `RouteDiff` against this baseline. Mirrors the
+    /// `ScriptState::routes` shape; populated only when the Rhai surface
+    /// (Story 8) starts emitting routes.
+    current_routes: RouteMap,
+
     /// Whether the MIDI clock thread has been started (for tick() users).
     #[cfg(feature = "midi")]
     clock_thread_started: bool,
@@ -130,6 +138,14 @@ pub struct Runtime<B: Backend> {
     modulators: ModulatorsHandler<B>,
     samples: SamplesHandler<B>,
     sfz: SfzHandler<B>,
+    /// Per-voice output routing — turns voice port audio buses into mixer
+    /// synths feeding their destination group's bus.
+    ///
+    /// `routes.finalize(diff)` is invoked from [`Self::apply_reload`] between
+    /// the voice creation/update phase and `groups.finalize()` so that the
+    /// mixer synths sit between voices and the group link synth in SC tree
+    /// order (voices → routes → effects → link synth → main).
+    routes: RoutesHandler<B>,
     #[cfg(not(target_arch = "wasm32"))]
     recordings: RecordingsHandler<B>,
     synthdefs: SynthDefsHandler<B>,
@@ -176,6 +192,7 @@ impl<B: Backend> Runtime<B> {
             modulators: ModulatorsHandler::new(backend.clone(), state.clone()),
             samples: SamplesHandler::new(backend.clone(), state.clone()),
             sfz: SfzHandler::new(backend.clone(), state.clone()),
+            routes: RoutesHandler::new(backend.clone(), state.clone()),
             #[cfg(not(target_arch = "wasm32"))]
             recordings: RecordingsHandler::new(backend.clone(), state.clone()),
             synthdefs: SynthDefsHandler::new(backend.clone(), state.clone()),
@@ -185,6 +202,7 @@ impl<B: Backend> Runtime<B> {
             tick_count: 0,
             #[cfg(feature = "midi")]
             clock_thread_started: false,
+            current_routes: RouteMap::new(),
         }
     }
 
@@ -1469,6 +1487,27 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
+
+        // =========================================================================
+        // Phase 4.7: Finalize routes (per-voice port → group mixer synths)
+        // =========================================================================
+        // Spawned between the voice creation/update phase and the group
+        // link-synth phase so the SC tree order is voices → routes → effects →
+        // link synth → main bus. The diff is computed against the
+        // last-applied [`Self::current_routes`] snapshot.
+        let route_diff = RoutesHandler::<B>::diff(&self.current_routes, &new_state.routes);
+        if !route_diff.is_empty() {
+            tracing::debug!(
+                "Reload: finalizing routes (additions={}, removals={}, changes={})",
+                route_diff.additions.len(),
+                route_diff.removals.len(),
+                route_diff.changes.len()
+            );
+            if let Err(e) = self.routes.finalize(&route_diff).await {
+                tracing::error!("Reload: routes.finalize failed: {}", e);
+            }
+        }
+        self.current_routes = new_state.routes.clone();
 
         // =========================================================================
         // Phase 5: Finalize groups (create link synths)

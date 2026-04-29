@@ -5,12 +5,18 @@
 //! A `RouteDest` says where a single port's signal should go: into a group's
 //! mix bus, straight to main, or discarded.
 //!
-//! Story 6a wires up the type registry and the diff machinery only —
-//! [`RoutesHandler::finalize`] is a logging stub. Story 6b emits the mixer
-//! synths that actually realize the route changes.
+//! Story 6a wired up the type registry and the diff machinery only. Story 6b
+//! (this file) realizes the diff: [`RoutesHandler::finalize`] instantiates a
+//! `port_to_group_link_<channels>` mixer synth for each added route, frees
+//! the mixer for each removed route, and swaps the mixer for changed routes.
 
-use crate::types::{GroupId, VoiceId};
+use crate::backend::{AddAction, Backend};
+use crate::compat::RwLock;
+use crate::state::State;
+use crate::types::{BusId, GroupId, NodeId, ParamMap, VoiceId};
+use crate::{Error, Result};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Where a voice's output port should send its audio.
 ///
@@ -69,11 +75,20 @@ impl RouteDiff {
 
 /// Computes and applies per-voice routing changes.
 ///
-/// Story 6a only ships the diff; [`RoutesHandler::finalize`] is a logging
-/// stub until Story 6b wires up the mixer synths.
-pub struct RoutesHandler;
+/// The handler holds the backend and shared state; [`Self::diff`] is a pure
+/// static helper (no `self`) and [`Self::finalize`] is the imperative method
+/// that emits backend calls.
+pub struct RoutesHandler<B: Backend> {
+    backend: Arc<B>,
+    state: Arc<RwLock<State>>,
+}
 
-impl RoutesHandler {
+impl<B: Backend> RoutesHandler<B> {
+    /// Create a new routes handler.
+    pub fn new(backend: Arc<B>, state: Arc<RwLock<State>>) -> Self {
+        Self { backend, state }
+    }
+
     /// Compute the additions, removals, and destination changes between two route maps.
     pub fn diff(old: &RouteMap, new: &RouteMap) -> RouteDiff {
         let mut diff = RouteDiff::default();
@@ -108,43 +123,222 @@ impl RoutesHandler {
         diff
     }
 
-    /// Apply a route diff.
+    /// Apply a route diff: free old mixer synths, instantiate new ones.
     ///
-    /// **Story 6a stub** — logs each addition / removal / change at debug level
-    /// but performs no synth emission. Story 6b will replace this with mixer
-    /// synth creation and teardown driven by the diff.
-    pub fn finalize(diff: &RouteDiff) {
-        for r in &diff.additions {
-            tracing::debug!(
-                "RoutesHandler::finalize (stub) add: voice={:?} port={:?} -> {:?}",
-                r.voice_id,
-                r.port_name,
-                r.dest
-            );
+    /// Order:
+    /// 1. Free mixer synths for *removals* and the old destination of *changes*.
+    /// 2. Instantiate mixer synths for *additions* and the new destination of *changes*.
+    ///
+    /// Step 1 runs before step 2 so a moved route can reuse the same node-id
+    /// pool slot; both steps drop the state lock before each backend call to
+    /// preserve the project's lock discipline.
+    pub async fn finalize(&self, diff: &RouteDiff) -> Result<()> {
+        if diff.is_empty() {
+            return Ok(());
         }
-        for r in &diff.removals {
-            tracing::debug!(
-                "RoutesHandler::finalize (stub) remove: voice={:?} port={:?} (was {:?})",
-                r.voice_id,
-                r.port_name,
-                r.dest
-            );
+
+        // ============================================================
+        // Step 1: free old mixers (removals + old side of changes)
+        // ============================================================
+        let nodes_to_free: Vec<NodeId> = {
+            let mut state = self.state.write().await;
+            let mut nodes = Vec::new();
+            for r in &diff.removals {
+                if let Some(node_id) = state
+                    .route_synths
+                    .remove(&(r.voice_id, r.port_name.clone()))
+                {
+                    state.free_node_id(node_id);
+                    nodes.push(node_id);
+                } else {
+                    tracing::debug!(
+                        "RoutesHandler::finalize: no live mixer for removed route voice={:?} port={:?} (already freed?)",
+                        r.voice_id,
+                        r.port_name
+                    );
+                }
+            }
+            for c in &diff.changes {
+                if let Some(node_id) = state
+                    .route_synths
+                    .remove(&(c.voice_id, c.port_name.clone()))
+                {
+                    state.free_node_id(node_id);
+                    nodes.push(node_id);
+                }
+            }
+            nodes
+        };
+        for node_id in nodes_to_free {
+            tracing::debug!("RoutesHandler::finalize: freeing mixer node {:?}", node_id);
+            let _ = self.backend.free_node(node_id).await;
+        }
+
+        // ============================================================
+        // Step 2: spawn new mixers (additions + new side of changes)
+        // ============================================================
+        for r in &diff.additions {
+            if let Err(e) = self.spawn_route(r.voice_id, &r.port_name, &r.dest).await {
+                tracing::warn!(
+                    "RoutesHandler::finalize: failed to spawn mixer for addition {:?}/{:?}: {}",
+                    r.voice_id,
+                    r.port_name,
+                    e
+                );
+            }
         }
         for c in &diff.changes {
-            tracing::debug!(
-                "RoutesHandler::finalize (stub) change: voice={:?} port={:?} {:?} -> {:?}",
-                c.voice_id,
-                c.port_name,
-                c.old_dest,
-                c.new_dest
-            );
+            if let Err(e) = self
+                .spawn_route(c.voice_id, &c.port_name, &c.new_dest)
+                .await
+            {
+                tracing::warn!(
+                    "RoutesHandler::finalize: failed to spawn mixer for change {:?}/{:?}: {}",
+                    c.voice_id,
+                    c.port_name,
+                    e
+                );
+            }
         }
+
+        Ok(())
+    }
+
+    /// Instantiate one mixer synth for `(voice, port) → dest`.
+    ///
+    /// `Muted` destinations short-circuit (no mixer is created). `Main` routes
+    /// target bus 0 (hardware stereo out); `Group(id)` routes target the group's
+    /// audio bus. The synthdef variant (`port_to_group_link_1` vs `_2`) is
+    /// chosen from the port's declared channel count.
+    async fn spawn_route(
+        &self,
+        voice_id: VoiceId,
+        port_name: &str,
+        dest: &RouteDest,
+    ) -> Result<()> {
+        if matches!(dest, RouteDest::Muted) {
+            tracing::debug!(
+                "RoutesHandler: muted route voice={:?} port={:?} — skipping mixer",
+                voice_id,
+                port_name
+            );
+            return Ok(());
+        }
+
+        let (node_id, group_node, in_bus, channels, out_bus) = {
+            let mut state = self.state.write().await;
+
+            let voice = state
+                .voices
+                .get(&voice_id)
+                .ok_or(Error::VoiceNotFound(voice_id))?;
+
+            let in_bus = voice
+                .output_buses
+                .iter()
+                .find(|(name, _)| name == port_name)
+                .map(|(_, bus)| *bus)
+                .ok_or_else(|| {
+                    Error::SynthDefNotFound(format!(
+                        "port {:?} on voice {:?}",
+                        port_name, voice_id
+                    ))
+                })?;
+
+            let synthdef = voice.config.synthdef.clone();
+            let voice_group_id = voice.config.group;
+
+            let ports = state.synthdef_outputs(&synthdef);
+            let channels = ports
+                .iter()
+                .find(|p| p.name == port_name)
+                .map(|p| p.channels)
+                .unwrap_or(2);
+
+            // The mixer synth is parented on the *voice's* group node so that
+            // it sits in tree order between voice synths (added at Tail) and
+            // the group's link synth (effects insert Before link). This gives
+            // the runtime tick order: voices → routes → effects → link.
+            let voice_group = state
+                .groups
+                .get(&voice_group_id)
+                .ok_or(Error::GroupNotFound(voice_group_id))?;
+            let group_node = voice_group.node_id;
+
+            let out_bus = match dest {
+                RouteDest::Group(g) => {
+                    let dest_group = state.groups.get(g).ok_or(Error::GroupNotFound(*g))?;
+                    dest_group.audio_bus
+                }
+                RouteDest::Main => BusId::new(0),
+                RouteDest::Muted => unreachable!("filtered above"),
+            };
+
+            let node_id = state.alloc_node_id();
+            state
+                .route_synths
+                .insert((voice_id, port_name.to_string()), node_id);
+
+            (node_id, group_node, in_bus, channels, out_bus)
+        };
+
+        let synthdef_name = match channels {
+            1 => "port_to_group_link_1",
+            2 => "port_to_group_link_2",
+            n => {
+                return Err(Error::SynthDefNotFound(format!(
+                    "no port_to_group_link_<channels> built-in for {} channels",
+                    n
+                )));
+            }
+        };
+
+        let mut params = ParamMap::new();
+        params.insert("in_bus".to_string(), in_bus.0 as f32);
+        params.insert("out_bus".to_string(), out_bus.0 as f32);
+
+        tracing::debug!(
+            "RoutesHandler: spawning {} (node={:?}) voice={:?} port={:?} in_bus={} out_bus={} group_node={:?}",
+            synthdef_name,
+            node_id,
+            voice_id,
+            port_name,
+            in_bus.0,
+            out_bus.0,
+            group_node
+        );
+
+        self.backend
+            .create_synth(
+                synthdef_name,
+                node_id,
+                group_node,
+                AddAction::Tail,
+                &params,
+            )
+            .await
+            .map_err(Error::backend)?;
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::BufferInfo;
+    use crate::compat::Instant;
+    use crate::state::{GroupState, VoiceState};
+    use crate::traits::VoiceConfig;
+    use crate::types::{BufferId, ParamMap};
+    use std::collections::HashMap;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Mutex;
+
+    // =========================================================================
+    // Diff tests (Story 6a — preserved)
+    // =========================================================================
 
     fn make_map(entries: &[((u32, &str), RouteDest)]) -> RouteMap {
         entries
@@ -162,7 +356,7 @@ mod tests {
             ((2, "right"), RouteDest::Muted),
         ]);
 
-        let diff = RoutesHandler::diff(&old, &new);
+        let diff = RoutesHandler::<MockBackend>::diff(&old, &new);
 
         assert_eq!(diff.additions.len(), 3);
         assert!(diff.removals.is_empty());
@@ -177,7 +371,7 @@ mod tests {
             ((2, "right"), RouteDest::Muted),
         ]);
 
-        let diff = RoutesHandler::diff(&routes, &routes);
+        let diff = RoutesHandler::<MockBackend>::diff(&routes, &routes);
         assert!(diff.is_empty());
     }
 
@@ -189,7 +383,7 @@ mod tests {
             ((2, "out"), RouteDest::Main),
         ]);
 
-        let diff = RoutesHandler::diff(&old, &new);
+        let diff = RoutesHandler::<MockBackend>::diff(&old, &new);
 
         assert_eq!(diff.additions.len(), 1);
         let added = &diff.additions[0];
@@ -208,7 +402,7 @@ mod tests {
         ]);
         let new = make_map(&[((1, "out"), RouteDest::Group(GroupId::new(1)))]);
 
-        let diff = RoutesHandler::diff(&old, &new);
+        let diff = RoutesHandler::<MockBackend>::diff(&old, &new);
 
         assert!(diff.additions.is_empty());
         assert_eq!(diff.removals.len(), 1);
@@ -224,7 +418,7 @@ mod tests {
         let old = make_map(&[((1, "out"), RouteDest::Group(GroupId::new(1)))]);
         let new = make_map(&[((1, "out"), RouteDest::Group(GroupId::new(2)))]);
 
-        let diff = RoutesHandler::diff(&old, &new);
+        let diff = RoutesHandler::<MockBackend>::diff(&old, &new);
 
         assert!(diff.additions.is_empty());
         assert!(diff.removals.is_empty());
@@ -238,26 +432,579 @@ mod tests {
 
     #[test]
     fn diff_changed_dest_main_to_muted() {
-        // Cross-variant change: not just GroupId-to-GroupId.
         let old = make_map(&[((3, "fx_send"), RouteDest::Main)]);
         let new = make_map(&[((3, "fx_send"), RouteDest::Muted)]);
 
-        let diff = RoutesHandler::diff(&old, &new);
+        let diff = RoutesHandler::<MockBackend>::diff(&old, &new);
 
         assert_eq!(diff.changes.len(), 1);
         assert_eq!(diff.changes[0].old_dest, RouteDest::Main);
         assert_eq!(diff.changes[0].new_dest, RouteDest::Muted);
     }
 
-    #[test]
-    fn diff_finalize_stub_runs_without_panic() {
-        let old = RouteMap::new();
-        let new = make_map(&[
-            ((1, "out"), RouteDest::Group(GroupId::new(1))),
-            ((2, "out"), RouteDest::Main),
-        ]);
-        let diff = RoutesHandler::diff(&old, &new);
-        // Stub must not panic on any combination of additions/removals/changes.
-        RoutesHandler::finalize(&diff);
+    // =========================================================================
+    // Mock backend
+    // =========================================================================
+
+    #[derive(Debug)]
+    struct MockError;
+
+    impl std::fmt::Display for MockError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "mock error")
+        }
+    }
+    impl std::error::Error for MockError {}
+
+    #[derive(Debug, Clone)]
+    struct CreateSynthCall {
+        def: String,
+        node: NodeId,
+        #[allow(dead_code)]
+        target: NodeId,
+        in_bus: f32,
+        out_bus: f32,
+    }
+
+    struct MockBackend {
+        synths_created: AtomicU32,
+        nodes_freed: AtomicU32,
+        last_creates: Mutex<Vec<CreateSynthCall>>,
+        last_frees: Mutex<Vec<NodeId>>,
+    }
+
+    impl MockBackend {
+        fn new() -> Self {
+            Self {
+                synths_created: AtomicU32::new(0),
+                nodes_freed: AtomicU32::new(0),
+                last_creates: Mutex::new(Vec::new()),
+                last_frees: Mutex::new(Vec::new()),
+            }
+        }
+        fn synths_created(&self) -> u32 {
+            self.synths_created.load(Ordering::Relaxed)
+        }
+        fn nodes_freed(&self) -> u32 {
+            self.nodes_freed.load(Ordering::Relaxed)
+        }
+        fn creates(&self) -> Vec<CreateSynthCall> {
+            self.last_creates.lock().unwrap().clone()
+        }
+        fn frees(&self) -> Vec<NodeId> {
+            self.last_frees.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Backend for MockBackend {
+        type Error = MockError;
+
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_synth(
+            &self,
+            def: &str,
+            node: NodeId,
+            target: NodeId,
+            _action: AddAction,
+            params: &ParamMap,
+        ) -> std::result::Result<(), Self::Error> {
+            self.synths_created.fetch_add(1, Ordering::Relaxed);
+            self.last_creates.lock().unwrap().push(CreateSynthCall {
+                def: def.to_string(),
+                node,
+                target,
+                in_bus: *params.get("in_bus").unwrap_or(&-1.0),
+                out_bus: *params.get("out_bus").unwrap_or(&-1.0),
+            });
+            Ok(())
+        }
+
+        async fn create_group(
+            &self,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_node(&self, node: NodeId) -> std::result::Result<(), Self::Error> {
+            self.nodes_freed.fetch_add(1, Ordering::Relaxed);
+            self.last_frees.lock().unwrap().push(node);
+            Ok(())
+        }
+
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames: 0,
+                channels: 0,
+                sample_rate: 0.0,
+            })
+        }
+
+        async fn alloc_buffer(
+            &self,
+            _id: BufferId,
+            frames: u32,
+            channels: u16,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames,
+                channels,
+                sample_rate: 0.0,
+            })
+        }
+
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn current_time(&self) -> Instant {
+            Instant::now()
+        }
+    }
+
+    // =========================================================================
+    // Finalize harness
+    // =========================================================================
+
+    /// Build a state pre-populated with a voice routed to group `dest_group`.
+    /// Returns (handler, backend, state, voice_id, port_name, dest_group_id).
+    async fn setup_voice_in_group(
+        port_channels: u8,
+    ) -> (
+        RoutesHandler<MockBackend>,
+        Arc<MockBackend>,
+        Arc<RwLock<State>>,
+        VoiceId,
+        String,
+        GroupId,
+    ) {
+        let backend = Arc::new(MockBackend::new());
+        let state = Arc::new(RwLock::new(State::default()));
+        let handler = RoutesHandler::new(backend.clone(), state.clone());
+
+        let voice_id = VoiceId::new(42);
+        let voice_group_id = GroupId::new(1);
+        let dest_group_id = GroupId::new(2);
+        let port_name = "out".to_string();
+
+        {
+            let mut s = state.write().await;
+            s.synthdefs.insert("test_synth".to_string());
+            s.synthdef_outputs.insert(
+                "test_synth".to_string(),
+                vec![vibelang_dsp::OutputPort {
+                    name: port_name.clone(),
+                    channels: port_channels,
+                }],
+            );
+
+            let voice_group_node = s.alloc_node_id();
+            let voice_group_bus = s.alloc_audio_bus(2);
+            s.groups.insert(
+                voice_group_id,
+                GroupState {
+                    id: voice_group_id,
+                    name: "voice_group".to_string(),
+                    parent: None,
+                    node_id: voice_group_node,
+                    audio_bus: voice_group_bus,
+                    link_synth_node_id: None,
+                    muted: false,
+                    soloed: false,
+                    params: ParamMap::new(),
+                    output_bus: None,
+                },
+            );
+
+            let dest_node = s.alloc_node_id();
+            let dest_bus = s.alloc_audio_bus(2);
+            s.groups.insert(
+                dest_group_id,
+                GroupState {
+                    id: dest_group_id,
+                    name: "dest".to_string(),
+                    parent: None,
+                    node_id: dest_node,
+                    audio_bus: dest_bus,
+                    link_synth_node_id: None,
+                    muted: false,
+                    soloed: false,
+                    params: ParamMap::new(),
+                    output_bus: None,
+                },
+            );
+
+            let port_bus = s.alloc_audio_bus(port_channels);
+            s.voices.insert(
+                voice_id,
+                VoiceState {
+                    id: voice_id,
+                    config: VoiceConfig::new("v", "test_synth", voice_group_id),
+                    active_nodes: Vec::new(),
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![(port_name.clone(), port_bus)],
+                },
+            );
+        }
+
+        (
+            handler,
+            backend,
+            state,
+            voice_id,
+            port_name,
+            dest_group_id,
+        )
+    }
+
+    #[tokio::test]
+    async fn finalize_addition_creates_one_mixer_synth_for_default_group_route() {
+        // One voice, one default-routed port: one mixer synth created, audible
+        // signal at group bus.
+        let (handler, backend, state, voice_id, port_name, dest_group_id) =
+            setup_voice_in_group(2).await;
+
+        let mut diff = RouteDiff::default();
+        diff.additions.push(Route {
+            voice_id,
+            port_name: port_name.clone(),
+            dest: RouteDest::Group(dest_group_id),
+        });
+
+        handler.finalize(&diff).await.unwrap();
+
+        assert_eq!(backend.synths_created(), 1, "one mixer synth created");
+        assert_eq!(backend.nodes_freed(), 0, "nothing freed on pure addition");
+
+        let creates = backend.creates();
+        assert_eq!(creates[0].def, "port_to_group_link_2");
+
+        let dest_bus = state
+            .read()
+            .await
+            .groups
+            .get(&dest_group_id)
+            .unwrap()
+            .audio_bus
+            .0 as f32;
+        assert_eq!(creates[0].out_bus, dest_bus);
+
+        let port_bus = state
+            .read()
+            .await
+            .voices
+            .get(&voice_id)
+            .unwrap()
+            .output_buses[0]
+            .1
+             .0 as f32;
+        assert_eq!(creates[0].in_bus, port_bus);
+
+        // route_synths must remember the node so a later removal can free it.
+        assert!(state
+            .read()
+            .await
+            .route_synths
+            .contains_key(&(voice_id, port_name)));
+    }
+
+    #[tokio::test]
+    async fn finalize_addition_uses_mono_synthdef_for_one_channel_port() {
+        let (handler, backend, _state, voice_id, port_name, dest_group_id) =
+            setup_voice_in_group(1).await;
+
+        let mut diff = RouteDiff::default();
+        diff.additions.push(Route {
+            voice_id,
+            port_name,
+            dest: RouteDest::Group(dest_group_id),
+        });
+
+        handler.finalize(&diff).await.unwrap();
+
+        let creates = backend.creates();
+        assert_eq!(creates[0].def, "port_to_group_link_1");
+    }
+
+    #[tokio::test]
+    async fn finalize_main_route_targets_bus_zero() {
+        let (handler, backend, _state, voice_id, port_name, _dest_group) =
+            setup_voice_in_group(2).await;
+
+        let mut diff = RouteDiff::default();
+        diff.additions.push(Route {
+            voice_id,
+            port_name,
+            dest: RouteDest::Main,
+        });
+
+        handler.finalize(&diff).await.unwrap();
+
+        let creates = backend.creates();
+        assert_eq!(creates.len(), 1);
+        assert_eq!(creates[0].out_bus, 0.0, "Main route writes to bus 0");
+    }
+
+    #[tokio::test]
+    async fn finalize_muted_route_creates_no_mixer() {
+        let (handler, backend, state, voice_id, port_name, _dest_group) =
+            setup_voice_in_group(2).await;
+
+        let mut diff = RouteDiff::default();
+        diff.additions.push(Route {
+            voice_id,
+            port_name: port_name.clone(),
+            dest: RouteDest::Muted,
+        });
+
+        handler.finalize(&diff).await.unwrap();
+
+        assert_eq!(backend.synths_created(), 0);
+        assert_eq!(backend.nodes_freed(), 0);
+        assert!(!state
+            .read()
+            .await
+            .route_synths
+            .contains_key(&(voice_id, port_name)));
+    }
+
+    #[tokio::test]
+    async fn finalize_change_frees_old_and_creates_new_mixer() {
+        // Move route from group A → group B: old mixer freed, new mixer instantiated.
+        let (handler, backend, state, voice_id, port_name, dest_a) =
+            setup_voice_in_group(2).await;
+
+        // Add a second destination group B alongside A.
+        let dest_b = GroupId::new(99);
+        {
+            let mut s = state.write().await;
+            let node = s.alloc_node_id();
+            let bus = s.alloc_audio_bus(2);
+            s.groups.insert(
+                dest_b,
+                GroupState {
+                    id: dest_b,
+                    name: "B".to_string(),
+                    parent: None,
+                    node_id: node,
+                    audio_bus: bus,
+                    link_synth_node_id: None,
+                    muted: false,
+                    soloed: false,
+                    params: ParamMap::new(),
+                    output_bus: None,
+                },
+            );
+        }
+
+        // First, add a route to A.
+        let mut add_diff = RouteDiff::default();
+        add_diff.additions.push(Route {
+            voice_id,
+            port_name: port_name.clone(),
+            dest: RouteDest::Group(dest_a),
+        });
+        handler.finalize(&add_diff).await.unwrap();
+        let node_a = state
+            .read()
+            .await
+            .route_synths
+            .get(&(voice_id, port_name.clone()))
+            .copied()
+            .unwrap();
+
+        // Now move: change A → B.
+        let mut change_diff = RouteDiff::default();
+        change_diff.changes.push(RouteChange {
+            voice_id,
+            port_name: port_name.clone(),
+            old_dest: RouteDest::Group(dest_a),
+            new_dest: RouteDest::Group(dest_b),
+        });
+        handler.finalize(&change_diff).await.unwrap();
+
+        // Old node freed, new node created.
+        assert!(backend.frees().contains(&node_a), "old mixer was freed");
+        let creates = backend.creates();
+        assert_eq!(creates.len(), 2, "one create on add, one on change");
+        let bus_b = state
+            .read()
+            .await
+            .groups
+            .get(&dest_b)
+            .unwrap()
+            .audio_bus
+            .0 as f32;
+        assert_eq!(creates[1].out_bus, bus_b);
+
+        // route_synths now points to the new node — its bus targets group B,
+        // which proves we re-spawned rather than just rerouting an existing
+        // synth. (The new node id may equal node_a if the freed id was
+        // recycled by the allocator — that is intentional and harmless.)
+        let node_after = state
+            .read()
+            .await
+            .route_synths
+            .get(&(voice_id, port_name))
+            .copied()
+            .unwrap();
+        assert_eq!(
+            node_after, creates[1].node,
+            "route_synths key now tracks the second create"
+        );
+    }
+
+    #[tokio::test]
+    async fn finalize_removal_frees_mixer() {
+        let (handler, backend, state, voice_id, port_name, dest) =
+            setup_voice_in_group(2).await;
+
+        let mut add_diff = RouteDiff::default();
+        add_diff.additions.push(Route {
+            voice_id,
+            port_name: port_name.clone(),
+            dest: RouteDest::Group(dest),
+        });
+        handler.finalize(&add_diff).await.unwrap();
+
+        let mut rm_diff = RouteDiff::default();
+        rm_diff.removals.push(Route {
+            voice_id,
+            port_name: port_name.clone(),
+            dest: RouteDest::Group(dest),
+        });
+        handler.finalize(&rm_diff).await.unwrap();
+
+        assert_eq!(backend.nodes_freed(), 1);
+        assert!(!state
+            .read()
+            .await
+            .route_synths
+            .contains_key(&(voice_id, port_name)));
+    }
+
+    #[tokio::test]
+    async fn finalize_voice_delete_path_clears_all_owned_mixers() {
+        // "Voice deleted: all owned mixer synths freed; no stale In.ar reads."
+        // We simulate the voice-delete path by populating routes for two ports
+        // on the same voice, then calling State::take_voice_route_nodes (which
+        // is what VoicesHandler::delete invokes) and freeing on the backend.
+        let (handler, backend, state, voice_id, _port_a, dest) =
+            setup_voice_in_group(2).await;
+
+        // Add a second port to the voice and a second route.
+        {
+            let mut s = state.write().await;
+            let extra_bus = s.audio_buses.alloc(2);
+            s.voices
+                .get_mut(&voice_id)
+                .unwrap()
+                .output_buses
+                .push(("aux".to_string(), extra_bus));
+            // Update the synthdef registration so 'aux' has channels=2 too.
+            s.synthdef_outputs.insert(
+                "test_synth".to_string(),
+                vec![
+                    vibelang_dsp::OutputPort {
+                        name: "out".to_string(),
+                        channels: 2,
+                    },
+                    vibelang_dsp::OutputPort {
+                        name: "aux".to_string(),
+                        channels: 2,
+                    },
+                ],
+            );
+        }
+        let mut add_diff = RouteDiff::default();
+        add_diff.additions.push(Route {
+            voice_id,
+            port_name: "out".to_string(),
+            dest: RouteDest::Group(dest),
+        });
+        add_diff.additions.push(Route {
+            voice_id,
+            port_name: "aux".to_string(),
+            dest: RouteDest::Group(dest),
+        });
+        handler.finalize(&add_diff).await.unwrap();
+
+        assert_eq!(state.read().await.route_synths.len(), 2);
+        assert_eq!(backend.synths_created(), 2);
+
+        // Voice-delete path: drain all route synths owned by this voice.
+        let drained = {
+            let mut s = state.write().await;
+            s.take_voice_route_nodes(voice_id)
+        };
+        assert_eq!(drained.len(), 2, "both port mixers drained");
+        assert!(state.read().await.route_synths.is_empty());
+
+        for node in drained {
+            backend.free_node(node).await.unwrap();
+        }
+        assert_eq!(backend.nodes_freed(), 2);
+    }
+
+    #[tokio::test]
+    async fn finalize_no_changes_is_a_no_op() {
+        let backend = Arc::new(MockBackend::new());
+        let state = Arc::new(RwLock::new(State::default()));
+        let handler = RoutesHandler::new(backend.clone(), state.clone());
+
+        handler.finalize(&RouteDiff::default()).await.unwrap();
+
+        assert_eq!(backend.synths_created(), 0);
+        assert_eq!(backend.nodes_freed(), 0);
     }
 }

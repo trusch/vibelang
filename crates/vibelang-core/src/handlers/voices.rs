@@ -626,15 +626,22 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     }
 
     async fn delete(&self, id: VoiceId) -> Result<()> {
-        let nodes_to_free = {
+        let (nodes_to_free, route_nodes_to_free) = {
             let mut state = self.state.write().await;
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
             free_voice_output_buses(&mut state, &voice);
-            voice.active_nodes
+            let route_nodes = state.take_voice_route_nodes(id);
+            (voice.active_nodes, route_nodes)
         };
 
         // Free all active synth nodes (lock released)
         for node_id in nodes_to_free {
+            let _ = self.backend.free_node(node_id).await;
+        }
+        // Free per-port route mixer synths so they no longer read from the
+        // voice's freed audio bus (avoids stale `In.ar` reads when the bus
+        // is recycled to a later voice).
+        for node_id in route_nodes_to_free {
             let _ = self.backend.free_node(node_id).await;
         }
 
@@ -642,12 +649,20 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     }
 
     async fn graceful_delete(&self, id: VoiceId) -> Result<()> {
-        let nodes_to_release = {
+        let (nodes_to_release, route_nodes_to_free) = {
             let mut state = self.state.write().await;
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
             free_voice_output_buses(&mut state, &voice);
-            voice.active_nodes
+            let route_nodes = state.take_voice_route_nodes(id);
+            (voice.active_nodes, route_nodes)
         };
+
+        // Free route mixers immediately — graceful delete does not extend to
+        // the routing layer (the mixer is fed by the voice synth, which is
+        // about to fade silent anyway).
+        for node_id in route_nodes_to_free {
+            let _ = self.backend.free_node(node_id).await;
+        }
 
         // Set gate=0 on all active synth nodes to trigger release envelope.
         // The synths will free themselves via doneAction=2 when the envelope completes.
