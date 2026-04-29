@@ -1,0 +1,178 @@
+// Spectraphon Story F2 — capture an Array from audio input, then play it
+// back as SAO.
+//
+// Walks through the full Spectraphon Array workflow on a single side:
+//
+//   Bars 0–7   SAM + capture (sam_capture = 4)
+//              Real-time FFT analyses JACK audio input ch 0; the per-frame
+//              `mag[1..64]` is written into the Array cell at
+//              (floor(slide·8), floor(focus·8)). Two slow fades sweep
+//              `slide` across [0, 1] (one full pass) and `focus` across
+//              [0, 1] (two passes), filling the 8×8 grid in a serpentine
+//              pattern over 8 bars.
+//
+//   Bar 8      Step transition (instant): sam_capture 4 → 0 (SAO).
+//              The bank now reads the captured Array via bilinear
+//              interpolation across (slide, focus) instead of the live
+//              FFT. Audio input is no longer used.
+//
+//   Bars 8–15  SAO playback. A second pair of fades scans the captured
+//              Array in a different trajectory than the capture — diagonal
+//              vs. serpentine — so each cell is revisited from new
+//              directions and the bilinear interpolation between cells
+//              becomes audible.
+//
+// Hardware-input requirement: this example only produces interesting
+// output if there is audible signal on JACK input ch 0 during bars 0–7.
+// Patch a synth, voice, or microphone in. With silence on the input the
+// captured Array stores `mag[k] ≈ 0`, and SAO playback is silent — that
+// is the correct "no input → no spectrum" behaviour, not a bug.
+//
+// Limitation: the Array buffer is `local_buf_ir`, scoped to the synth
+// instance. Captures do not survive a hot-reload of the synthdef. See
+// kb/spectraphon-howto.md §4b and §9 for the planned upgrade path.
+//
+// References: kb/spectraphon-howto.md §3, §4, §8d.
+//             kb/spectraphon-synthdef-plan.md §3.b, §6.C.
+
+import "stdlib/instruments/spectral/spectraphon_side.vibe";
+import "stdlib/effects/reverbs/reverb_jpverb.vibe";
+
+set_tempo(80);
+
+// One voice held for the entire 16-bar sequence. `freq = 110.0` puts the
+// playback fundamental at A2; the harmonic bank will play 64 partials
+// from there, with their amplitudes coming first from the live SAM
+// analysis and then from the captured Array.
+let capture_demo = define_group("ArrayCapture", || {
+    let v = voice("spec")
+        .synth("spectraphon_side")
+        .set_param("freq", 110.0)
+        .set_param("partials", 0.85)
+        .set_param("merge_even", 1.0)        // Even folds into Odd → mono
+        .set_param("right_mode", 1.0)        // R = clean Sine for reference pitch
+        .set_param("array_idx", 0.0)         // capture into / play back from Array 0
+        .set_param("sam_capture", 4.0)       // start in SAM-with-capture
+        .set_param("slide", 0.0)
+        .set_param("focus", 0.0)
+        .set_param("amp", 0.25)
+        .gain(db(-9));
+
+    melody("hold").on(v).notes("A2").apply();
+
+    // ---- Capture phase fades (bars 0–7) -----------------------------
+    //
+    // Slide does one slow pass 0 → 1 across all 8 bars of capture so
+    // every column of the 8×8 grid gets visited.
+    fade("cap_slide")
+        .on_voice("spec")
+        .param("slide")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(8)
+        .curve("linear")
+        .apply();
+
+    // Focus does two faster passes (0 → 1, 0 → 1) over the same 8 bars
+    // so every cell in the 8×8 grid is hit at least once. (The serpentine
+    // doesn't quite cover all 64 cells uniformly — corners and the
+    // diagonal get more frames than the centre — but every cell index
+    // is reached.)
+    fade("cap_focus_a")
+        .on_voice("spec")
+        .param("focus")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(4)
+        .curve("linear")
+        .apply();
+    fade("cap_focus_b")
+        .on_voice("spec")
+        .param("focus")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(4)
+        .curve("linear")
+        .apply();
+
+    // ---- Mode flip at bar 8 (instant) -------------------------------
+    //
+    // `curve("step")` jumps at the end of the fade. From 4 → 0 in 1 ms
+    // → at bar 8.001 the synthdef sees mode 0 (SAO). The intermediate
+    // values 3, 2, 1 are not visited because step holds the source value
+    // until end-of-fade. Avoids the Noise/Chaos/SAM intermediate modes.
+    fade("mode_flip")
+        .on_voice("spec")
+        .param("sam_capture")
+        .from(4.0)
+        .to(0.0)
+        .over_bars(1)
+        .curve("step")
+        .apply();
+
+    // ---- Playback phase fades (bars 8–15) ---------------------------
+    //
+    // Diagonal scan across the captured Array — slide and focus both
+    // sweep 0 → 1 → 0 over 8 bars. Different trajectory than the capture
+    // so the bilinear interpolation between cells is audible (each cell
+    // is approached from a new corner).
+    fade("play_slide_up")
+        .on_voice("spec")
+        .param("slide")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(4)
+        .curve("sine_in_out")
+        .apply();
+    fade("play_slide_down")
+        .on_voice("spec")
+        .param("slide")
+        .from(1.0)
+        .to(0.0)
+        .over_bars(4)
+        .curve("sine_in_out")
+        .apply();
+
+    fade("play_focus_up")
+        .on_voice("spec")
+        .param("focus")
+        .from(0.0)
+        .to(1.0)
+        .over_bars(4)
+        .curve("sine_in_out")
+        .apply();
+    fade("play_focus_down")
+        .on_voice("spec")
+        .param("focus")
+        .from(1.0)
+        .to(0.0)
+        .over_bars(4)
+        .curve("sine_in_out")
+        .apply();
+
+    fx("capture_verb")
+        .synth("reverb_jpverb")
+        .param("time", 3.5)
+        .param("size", 0.7)
+        .param("damping", 0.4)
+        .param("mix", 0.35);
+});
+
+// 16-bar arrangement: capture in the first half, play back in the second.
+// The mode flip at bar 8 is a 1-bar step fade; the playback fades start
+// at bar 8 so the SAO scan begins immediately after the flip lands.
+sequence("array_capture")
+    .loop_bars(16)
+    .clip(bars(0)..bars(16), melody("hold"))
+    // Capture phase
+    .clip(bars(0)..bars(8),  fade("cap_slide"))
+    .clip(bars(0)..bars(4),  fade("cap_focus_a"))
+    .clip(bars(4)..bars(8),  fade("cap_focus_b"))
+    // Mode flip
+    .clip(bars(8)..bars(9),  fade("mode_flip"))
+    // Playback phase
+    .clip(bars(8)..bars(12), fade("play_slide_up"))
+    .clip(bars(12)..bars(16),fade("play_slide_down"))
+    .clip(bars(8)..bars(12), fade("play_focus_up"))
+    .clip(bars(12)..bars(16),fade("play_focus_down"))
+    .start();

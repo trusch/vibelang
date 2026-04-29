@@ -1,0 +1,69 @@
+// Spectraphon Story F1 — dual-side chord patch with FM and Follow.
+//
+// Demonstrates `spectraphon_dual`'s two distinguishing features over
+// stacking two `spectraphon_side` voices:
+//
+//   1. The audio-rate FM bus between the two sides — each side's clean
+//      reference sine modulates the other side's f0 with depth scaled
+//      by the carrier (`a_fm_index`, `b_fm_index`).
+//   2. The Follow-mode pitch ratio menu (`routing_mode`) — sets B's
+//      pitch as a fixed musical interval above A.
+//
+// The 4-channel output `[odd_a, even_a, odd_b, even_b]` is summed into
+// stereo by panning the A bank slightly left and the B bank slightly
+// right. With `routing_mode=2` (perfect fifth) and a touch of FM index,
+// the sides produce the spectral chord families described in
+// `kb/spectraphon-synthdef-plan.md` §3.e.
+//
+// See also: kb/spectraphon-howto.md §6, §7, §8c.
+
+import "stdlib/instruments/spectral/spectraphon_dual.vibe";
+import "stdlib/effects/reverbs/reverb_jpverb.vibe";
+import "stdlib/modulators/lfo/lfo_sine.vibe";
+
+set_tempo(72);
+
+// Slow LFO on the FM bus depth — sweeps from clean unison-of-fifths
+// into noticeable cross-FM and back. Mid-band depth is the most
+// musically useful range; the cubic shape near zero (in the lfo_sine)
+// keeps subtle settings audible.
+let fm_lfo = modulator("fm_lfo")
+    .synth("lfo_sine")
+    .param("rate", 0.08)
+    .param("lo", 0.02)
+    .param("hi", 0.22)
+    .apply();
+
+// Side A drives the chord root. Side B follows A at +7 semitones
+// (`routing_mode = 2.0`); freq_b is unused while Follow is engaged.
+// `partials = 0.85` reveals 54 of 64 partials at the per-partial mask;
+// `focus = 0.7` then multiplies the reveal scale by 1.55× (denser
+// timbre) per the dual synthdef's focus_scale mapping.
+let chord = define_group("SpectraChord", || {
+    let v = voice("dual")
+        .synth("spectraphon_dual")
+        .set_param("freq_a", 110.0)        // A2
+        .set_param("partials", 0.85)
+        .set_param("slide", 0.6)            // tilt toward odd partials
+        .set_param("focus", 0.7)            // moderately dense
+        .set_param("routing_mode", 2.0)     // B = A · 1.4983 (perfect fifth)
+        .set_param("a_fm_index", 0.05)      // light B-side modulation by A
+        .modulate("b_fm_index", fm_lfo)     // breathing FM into A from B
+        .set_param("amp", 0.22)
+        .gain(db(-9));
+
+    // Hold the chord — the synthdef's envelope sustains while gate=1.
+    melody("chord_hold").on(v).notes("A2").apply();
+
+    fx("chord_verb")
+        .synth("reverb_jpverb")
+        .param("time", 5.5)
+        .param("size", 0.85)
+        .param("damping", 0.3)
+        .param("mix", 0.45);
+});
+
+sequence("chord_main")
+    .loop_bars(16)
+    .clip(bars(0)..bars(16), melody("chord_hold"))
+    .start();
