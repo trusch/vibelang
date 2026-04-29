@@ -1,0 +1,79 @@
+// OteyPiano — Clayton Otey's digital-waveguide piano physical model
+// (sc3-plugins OteyPianoUGens). Proof-of-life for the >20-input UGen
+// `register_raw_fn` fallback (kb/synthdef-arity-limits-plan.md §3.1, §5
+// ticket 6 / Story 4).
+//
+// The underlying `OteyPiano` UGen has 24 control inputs — past Rhai's
+// 20-arg `def_register!` cap — so the call site uses the array-wrapping
+// convention: `otey_piano_ar([a, b, c, ..., 24 args])`. Defaults are
+// **not** applied on this path; exact arity is enforced inside the
+// generated `register_raw_fn` closure.
+//
+// CPU note: this is the per-note model (string + soundboard). The
+// upstream schelp recommends releasing the voice as soon as the note
+// finishes — the synthdef wires `cleanup_on_finish()` on the gate
+// envelope so script-side `voice.gate(0.0)` frees the synth.
+//
+// Exposed params (small, opinionated subset; the remaining 18 model
+// constants stay at OteyPiano's documented defaults):
+//   freq        — pitch in Hz (passes straight through to OteyPiano).
+//   amp         — output trim after the global VCA envelope.
+//   gate        — ASR gate. 0 → release + cleanup.
+//   vel         — hammer velocity (0..1). Brighter at higher values.
+//   rho         — string density multiplier; bigger ρ = darker, slower.
+//   loss        — string loss factor; bigger = faster decay.
+//   detune      — detune among the 3 strings per note (≈0.0003 default).
+
+define_synthdef("otey_piano", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.6)
+        .param("gate", 1.0)
+        .param("vel", 0.7)
+        .param("rho", 1.0)
+        .param("loss", 1.0)
+        .param("detune", 0.0003)
+        .body(|freq, amp, gate, vel, rho, loss, detune| {
+            // ASR envelope — hammer model already produces its own decay,
+            // so the outer envelope is just a release/cleanup wrapper.
+            let env = envelope()
+                .asr(0.0, 1.0, 0.1)
+                .gate(gate)
+                .cleanup_on_finish()
+                .build();
+
+            // 24-arg array call — defaults from `OteyPiano.sc` baked in
+            // for every parameter not exposed at the synthdef surface.
+            let piano = otey_piano_ar([
+                freq,        // 1  freq
+                vel,         // 2  vel
+                gate,        // 3  t_gate (re-trigger on rising edge of gate)
+                0.35,        // 4  rmin
+                2.0,         // 5  rmax
+                4.0,         // 6  rampl
+                8.0,         // 7  rampr
+                1.0,         // 8  rcore
+                0.07,        // 9  lmin
+                1.4,         // 10 lmax
+                -4.0,        // 11 lampl
+                4.0,         // 12 lampr
+                rho,         // 13 rho
+                1.0,         // 14 e (Young's modulus)
+                1.0,         // 15 zb (bridge impedance)
+                0.0,         // 16 zh (hammer impedance)
+                1.0,         // 17 mh (hammer mass)
+                0.2,         // 18 k  (hammer force)
+                1.0,         // 19 alpha (hysteresis)
+                1.0,         // 20 p  (stiffness exponent)
+                0.142,       // 21 hpos (hammer striking position)
+                loss,        // 22 loss
+                detune,      // 23 detune
+                1.0,         // 24 hammer_type (1=Stulov, 2=Banks)
+            ]);
+
+            // The schelp example trims by 0.1 before panning — the model's
+            // raw output level is hot. Keep the same trim, then apply the
+            // amp control and outer envelope.
+            piano * env * amp * 0.1
+        })
+});

@@ -1,0 +1,157 @@
+[
+  {
+    "name": "OteyPiano",
+    "description": "Digital waveguide piano physical model wrapping Clayton Otey's code (sc3-plugins OteyPianoUGens). Per-note model includes string + soundboard; CPU-expensive — release voices when finished. Uses 24 inputs (freq, vel, t_gate, hammer / string / bridge / loss params, hammer_type) and emits a single audio-rate channel. Because the input count exceeds Rhai's 20-arg `def_register!` cap, callable from .vibe as `otey_piano_ar([...24 args])` via the array-wrapping `register_raw_fn` fallback (kb/synthdef-arity-limits-plan.md §3.1).",
+    "rates": [
+      "ar"
+    ],
+    "inputs": [
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440.0,
+        "description": "Sound frequency in Hz."
+      },
+      {
+        "name": "vel",
+        "type": "float",
+        "default": 1.0,
+        "description": "Key pulsation velocity (0..1)."
+      },
+      {
+        "name": "t_gate",
+        "type": "signal",
+        "default": 0.0,
+        "description": "Retrigger note — non-zero edge fires a hammer strike. Drive from a TriggerControl to avoid continuous retriggering."
+      },
+      {
+        "name": "rmin",
+        "type": "float",
+        "default": 0.35,
+        "description": "Minimum string radius."
+      },
+      {
+        "name": "rmax",
+        "type": "float",
+        "default": 2.0,
+        "description": "Maximum string radius."
+      },
+      {
+        "name": "rampl",
+        "type": "float",
+        "default": 4.0,
+        "description": "Radius left sigmoidal shape (rmin → rmax transition slope, low end)."
+      },
+      {
+        "name": "rampr",
+        "type": "float",
+        "default": 8.0,
+        "description": "Radius right sigmoidal shape (rmin → rmax transition slope, high end)."
+      },
+      {
+        "name": "rcore",
+        "type": "float",
+        "default": 1.0,
+        "description": "Cord nucleus radius."
+      },
+      {
+        "name": "lmin",
+        "type": "float",
+        "default": 0.07,
+        "description": "Minimum string length."
+      },
+      {
+        "name": "lmax",
+        "type": "float",
+        "default": 1.4,
+        "description": "Maximum string length."
+      },
+      {
+        "name": "lampl",
+        "type": "float",
+        "default": -4.0,
+        "description": "Length left sigmoidal shape (lmin → lmax transition slope, low end)."
+      },
+      {
+        "name": "lampr",
+        "type": "float",
+        "default": 4.0,
+        "description": "Length right sigmoidal shape (lmin → lmax transition slope, high end)."
+      },
+      {
+        "name": "rho",
+        "type": "float",
+        "default": 1.0,
+        "description": "String density multiplier."
+      },
+      {
+        "name": "e",
+        "type": "float",
+        "default": 1.0,
+        "description": "Young's modulus multiplier (string stiffness)."
+      },
+      {
+        "name": "zb",
+        "type": "float",
+        "default": 1.0,
+        "description": "Bridge impedance multiplier."
+      },
+      {
+        "name": "zh",
+        "type": "float",
+        "default": 0.0,
+        "description": "Hammer impedance multiplier."
+      },
+      {
+        "name": "mh",
+        "type": "float",
+        "default": 1.0,
+        "description": "Hammer mass multiplier."
+      },
+      {
+        "name": "k",
+        "type": "float",
+        "default": 0.2,
+        "description": "Hammer force multiplier."
+      },
+      {
+        "name": "alpha",
+        "type": "float",
+        "default": 1.0,
+        "description": "Hammer hysteresis multiplier."
+      },
+      {
+        "name": "p",
+        "type": "float",
+        "default": 1.0,
+        "description": "Hammer stiffness exponent multiplier."
+      },
+      {
+        "name": "hpos",
+        "type": "float",
+        "default": 0.142,
+        "description": "Hammer striking position along string (0..1)."
+      },
+      {
+        "name": "loss",
+        "type": "float",
+        "default": 1.0,
+        "description": "String loss factor."
+      },
+      {
+        "name": "detune",
+        "type": "float",
+        "default": 0.0003,
+        "description": "Detuning among the 3 strings per note."
+      },
+      {
+        "name": "hammer_type",
+        "type": "float",
+        "default": 1.0,
+        "description": "Hammer model — 1 = Stulov, 2 = Banks."
+      }
+    ],
+    "outputs": 1,
+    "category": "OteyPianoUGens"
+  }
+]
