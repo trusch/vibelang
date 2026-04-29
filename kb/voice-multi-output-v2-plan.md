@@ -110,6 +110,9 @@ Phasing:
 **Q5 — multiple `to_param` routes from one source port**
 **Allowed.** One source port can drive params on multiple voices. Registry stores `Vec<RouteDest::Param>` per source. Group dests stay single (replace semantics) — fan-out to multiple groups is v3.
 
+**Q5b — multi-source fan-in to one param (`env + lfo → cutoff`)**
+**Now supported.** When N ≥ 2 kr sources route to the same `(target_voice, target_param)`, the runtime allocates an intermediate control bus and spawns a `param_kr_sum_<N>` summer synth (N in 2..=8) that sums the source buses; the target's `/n_map` then binds to the intermediate bus instead of any one source. Teardown is incremental: removing one of N sources respawns a smaller summer, dropping to N=1 collapses back to direct `/n_map`, dropping to N=0 emits the unmap sentinel. Hot-reload preserves the summer when the source set is unchanged (the empty-diff short-circuit in `finalize_params`). Both `.to_param` and `.modulate_by` feed the same registry, so the API surface direction doesn't matter for fan-in.
+
 ## 6. Risks
 
 | Risk | Likelihood | Mitigation |
@@ -128,7 +131,20 @@ Phasing:
 ## 8. NOT in v2
 
 - Sample-accurate trigger ports (would need `Out.tr` semantics) — defer.
-- Multi-source fan-in to a single param (averaging/summing modulators) — defer.
+- ~~Multi-source fan-in to a single param (averaging/summing modulators)~~ —
+  **landed**: `param_kr_sum_<n>` summer synthdefs + `State::param_summers`
+  bookkeeping in `RoutesHandler::finalize_params`. Unweighted sum only;
+  weighted/scaled-per-source mix is v3.
+- Multi-source fan-in beyond 8 sources — truncated with a warning. Build a
+  hierarchical summer (`sum(sum(a,b,c,d), sum(e,f,g,h), ...)`) in v3 if a
+  patch ever needs it.
+- ar-rate fan-in to one bus — keep using sub-groups (the audio-rate fan-in
+  pattern is mix-bus summing at the group level, which the v1 routing
+  machinery already covers).
+- Fan-out to multiple **groups** from one port — registry-side support is
+  trivial but each fan-out leg needs its own `port_to_group_link_<n>` mixer
+  synth, plus a teardown story that interleaves with the existing single-
+  destination replace semantics. v3.
 - ar→kr auto-coercion — defer.
 - Full Modulator removal — v3.
 
