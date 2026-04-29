@@ -1,0 +1,16 @@
+// kind=cv | category=utility | flavor=max | range=-10..+10 V | params=a,b
+//
+// Maximum of two CVs — sample-by-sample `max(a, b)`. Equivalent to the
+// Maths "max" output: useful for combining two envelopes into an upper-envelope
+// follower, OR-style trigger merging, or floor-clamping one CV against another.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_max")
+    .param("a", 0.0)
+    .param("b", 0.0)
+    .body(|a, b| {
+        let out = max(a, b);
+        let clipped = clip_ar(out, -1.0, 1.0);
+        [clipped]
+    });

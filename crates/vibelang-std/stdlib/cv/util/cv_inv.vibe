@@ -1,0 +1,16 @@
+// kind=cv | category=utility | flavor=inv | range=-10..+10 V | params=a
+//
+// Polarity invert — `-a`. Equivalent to the Maths INV output. Flips the sign
+// of the input CV; a `+5 V` input becomes `-5 V`, a `-3 V` input becomes
+// `+3 V`. Useful for negative-going envelopes, V/oct downward transposition,
+// or producing a complementary pair of LFOs from a single source.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_inv")
+    .param("a", 0.0)
+    .body(|a| {
+        let out = a * -1.0;
+        let clipped = clip_ar(out, -1.0, 1.0);
+        [clipped]
+    });

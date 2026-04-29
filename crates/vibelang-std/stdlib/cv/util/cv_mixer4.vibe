@@ -1,0 +1,31 @@
+// kind=cv | category=utility | flavor=mixer4 | range=-10..+10 V | params=in1,in2,in3,in4,gain1,gain2,gain3,gain4
+//
+// 4-input CV summing mixer with per-channel attenuverters. Each input is
+// scaled by its `gainN` (default 1.0; negatives invert that channel) before
+// summing. The final sum is hard-clipped to ±1.0 per the CV contract.
+//
+// Default gains of 1.0 mean the raw `inN + inN + inN + inN` sum can exceed
+// the rails — that's intentional; if you want a true unity-sum mixer, set
+// gains to 0.25 each. The clip stage protects the DAC and the downstream
+// module from any over-rail excursion.
+//
+// Inputs may be V/oct lines, gates, envelopes, LFOs — anything that lives
+// in the ±1.0 audio band. Pair with `cv_inv` upstream, or use a negative
+// gain here, to subtract one channel.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_mixer4")
+    .param("in1", 0.0)
+    .param("in2", 0.0)
+    .param("in3", 0.0)
+    .param("in4", 0.0)
+    .param("gain1", 1.0)
+    .param("gain2", 1.0)
+    .param("gain3", 1.0)
+    .param("gain4", 1.0)
+    .body(|in1, in2, in3, in4, gain1, gain2, gain3, gain4| {
+        let sum = in1 * gain1 + in2 * gain2 + in3 * gain3 + in4 * gain4;
+        let clipped = clip_ar(sum, -1.0, 1.0);
+        [clipped]
+    });

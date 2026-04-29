@@ -1,0 +1,20 @@
+// kind=cv | category=utility | flavor=diff | range=-10..+10 V | params=a,b
+//
+// Difference of two CVs — `a - b`. Useful for computing relative offsets
+// (e.g. transposition deltas on V/oct lines), building bipolar control from
+// a pair of unipolar sources, or as the second half of a sum/difference pair
+// alongside `cv_mixer4`.
+//
+// Sum can exceed the rails when two ±10 V signals reinforce; the final
+// `clip_ar` snaps the output back into the ±1.0 audio band per the contract.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_diff")
+    .param("a", 0.0)
+    .param("b", 0.0)
+    .body(|a, b| {
+        let out = a - b;
+        let clipped = clip_ar(out, -1.0, 1.0);
+        [clipped]
+    });

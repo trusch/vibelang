@@ -1,0 +1,26 @@
+// kind=cv | category=utility | flavor=scale_offset | range=-10..+10 V | params=cv_in,scale,offset
+//
+// Affine transform on a CV — `cv_in * scale + offset`, hard-clipped to ±1.0.
+// The Maths "scale & offset" / "attenuverter + bias" combo in one synthdef.
+//
+//   scale  = +1 unity, +0.5 halve, -1 invert. Range is unconstrained;
+//            the output clip catches any over-rail excursion.
+//   offset = static DC added after scaling. `+0.5` adds +5 V, `-0.25` adds
+//            -2.5 V (under the standard `1.0 = +10 V` convention).
+//
+// Use it to remap a 0..+10 V envelope down to 0..+3 V (`scale = 0.3,
+// offset = 0`), to bias an LFO around a non-zero centre point
+// (`scale = 0.2, offset = 0.5` → ±2 V around +5 V), or to invert + reposition
+// a CV in one stage.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_scale_offset")
+    .param("cv_in", 0.0)
+    .param("scale", 1.0)
+    .param("offset", 0.0)
+    .body(|cv_in, scale, offset| {
+        let out = cv_in * scale + offset;
+        let clipped = clip_ar(out, -1.0, 1.0);
+        [clipped]
+    });

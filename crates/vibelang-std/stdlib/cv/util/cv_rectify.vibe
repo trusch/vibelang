@@ -1,0 +1,31 @@
+// kind=cv | category=utility | flavor=rectify | range=0..+10 V | params=cv_in,mode
+//
+// Rectifier. Folds a bipolar CV onto a unipolar (≥0) output.
+//
+//   mode = 0  → full-wave: `|cv_in|`. Output mirrors negative excursions
+//               into positive ones; an LFO that swung ±5 V now swings 0..+5 V
+//               at twice the rate.
+//   mode = 1  → half-wave: `max(cv_in, 0.0)`. Output passes the positive
+//               half of the input and clamps the negative half to 0.
+//
+// `mode` is selected with a triangular mask kernel — `m_full = 1` when
+// `mode = 0`, `m_half = 1` when `mode = 1`, both 0 elsewhere — so the
+// branch is sample-accurate without needing a `select_kr`.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_rectify")
+    .param("cv_in", 0.0)
+    .param("mode", 0.0)
+    .body(|cv_in, mode| {
+        let full = abs(cv_in);
+        let half = max(cv_in, 0.0);
+
+        // Triangular kernel: integer mode picks exactly one branch.
+        let m_full = (1.0 - abs(mode - 0.0)).max(0.0);
+        let m_half = (1.0 - abs(mode - 1.0)).max(0.0);
+
+        let out = m_full * full + m_half * half;
+        let clipped = clip_ar(out, -1.0, 1.0);
+        [clipped]
+    });

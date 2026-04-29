@@ -1,0 +1,16 @@
+// kind=cv | category=utility | flavor=min | range=-10..+10 V | params=a,b
+//
+// Minimum of two CVs — sample-by-sample `min(a, b)`. Equivalent to the
+// Maths "min" output: useful for clipping one CV against a ceiling, gating
+// one signal by another's threshold, or building lower-envelope followers.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_min")
+    .param("a", 0.0)
+    .param("b", 0.0)
+    .body(|a, b| {
+        let out = min(a, b);
+        let clipped = clip_ar(out, -1.0, 1.0);
+        [clipped]
+    });
