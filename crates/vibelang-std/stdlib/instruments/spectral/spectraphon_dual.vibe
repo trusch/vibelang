@@ -1,11 +1,10 @@
-// Spectraphon Dual - Story D (D1-D5 combined)
+// Spectraphon Dual - Story D + Arity-impl Story 3 (body_map migration).
 //
 // Two Spectraphon sides (A, B) wired into one synthdef with the FM bus and
 // Follow routing per kb/spectraphon-synthdef-plan.md §3.f + §6.D + §7.
 //
 // Each side is a 32-odd + 32-even unrolled additive bank (mirroring the
-// Story A pattern from spectraphon_side.vibe — 1/k saw default spectrum,
-// per-partial reveal mask gated by `partials`). The two sides are pitched
+// Story A pattern from spectraphon_side.vibe). The two sides are pitched
 // independently (freq_a, freq_b), summed nowhere internally; the four
 // jacks come out as a 4-element output array [odd_a, even_a, odd_b, even_b].
 //
@@ -30,53 +29,102 @@
 //   2 = follow, +7 semitones  (B = freq_a · 1.4983, perfect fifth)
 //   3 = follow, +12 semitones (B = freq_a · 2.0, octave)
 //   4 = follow, +19 semitones (B = freq_a · 2.9966, octave + fifth)
-//   The discrete-interval menu folds the ticket's separate `routing_mode`
-//   + `b_voct_offset` params into a single param to fit the 10-arg cap.
 //   Sync mode is **not implemented** in v1 — per §7 it would require a
 //   custom phase-reset bank or per-partial sin_osc_fb_ar phase hooks, both
 //   significantly more invasive than the rest of this synthdef. Documented
 //   as a follow-up story.
 //
-// Parameter folding (Rhai 10-arg body cap; spectraphon_side.vibe hits the
-// same wall):
-//   * `mode_a` / `mode_b` dropped — both sides fixed at SAO with the
-//     Story A 1/k saw default spectrum. (Story B SAM analyzer + Story C
-//     Array memory addressing live in spectraphon_side.vibe; bringing
-//     them into the dual is a future story since 4 SAM analyzers + dual
-//     Array buffers + cross-FM all in one synthdef would blow the param
-//     budget many times over.)
-//   * `array_idx_a` / `array_idx_b` dropped — implicit Array 0.
-//   * `partials`, `slide`, `focus` shared between sides. `slide` acts as
-//     an odd-vs-even bank balance (Erbe's "balance between odd and even
-//     harmonics" gloss, §3d), `focus` as a multiplier on the per-partial
-//     reveal scale (proxy for "density of partials"). These are simplified
-//     stand-ins for the SAO Array lookup that spectraphon_side.vibe does;
-//     see §6.D2 for the planned upgrade.
-//   * `gate` retained — needed for envelope cleanup_on_finish and voice freeing.
+// Per-side modes (`mode_a` / `mode_b`, quantised to nearest integer 0..1):
+//   0 = SAO — additive bank with the Story A 1/k saw default spectrum
+//       (per-partial reveal mask gated by `partials_X`).
+//   1 = SAM — additive bank with per-partial magnitudes driven by a live
+//       2048-frame FFT (Hann window, 50% hop) of `sound_in_ar(0)`. Each
+//       side picks its own analyser fundamental from `slide_X` (log-mapped
+//       50..800 Hz, kb plan §3.d), so the two sides can analyse different
+//       harmonic grids of the same input. The FFT chain is shared between
+//       sides — only the per-partial bin reads diverge.
 //
-// Final 10-arg signature: freq_a, freq_b, partials, slide, focus, amp,
-// a_fm_index, b_fm_index, routing_mode, gate.
+// Modes 2 (Chaos) / 3 (Noise) and mode 4 (SAM-with-capture) live in
+// `spectraphon_side.vibe` and are deliberately omitted here. Wiring four
+// chaos/noise voices + dual capture/playback Array buffers into the dual
+// would push the SC synthdef definition past the 64 KB UDP limit (the
+// side file already runs 256 buf_rd UGens for its single Array lookup —
+// see kb/spectraphon-synthdef-plan.md §3.b for the budget). Use a pair
+// of `spectraphon_side` voices when those modes are needed; the dual is
+// the SAO/SAM cross-FM patch.
+//
+// Restored params (Arity-impl Story 3 — `.body_map` lifts the 10-arg cap):
+//   * `mode_a` / `mode_b` — per-side SAO/SAM mode select.
+//   * `array_idx_a` / `array_idx_b` — declared for forward compatibility.
+//     Reserved for the future SAO-from-Array variant; the v1 dual reads
+//     SAO magnitudes from the implicit 1/k saw, not the Array buffer, so
+//     these params are inert today. Setting them does not error; they
+//     drive nothing until the Array-backed dual lands.
+//   * `partials_a` / `partials_b` — per-side reveal cursor (was: shared).
+//     `partials_X * 64` gives the index of the highest-revealed partial.
+//   * `slide_a` / `slide_b` — per-side. In SAO acts as odd-vs-even bank
+//     balance; in SAM also drives the analyser fundamental.
+//   * `focus_a` / `focus_b` — per-side multiplier on the per-partial reveal
+//     scale (proxy for "density of partials").
+//
+// Final signature (16 named params, `.body_map`-dispatched):
+//   freq_a, freq_b, amp, gate,
+//   a_fm_index, b_fm_index, routing_mode,
+//   partials_a, partials_b, slide_a, slide_b, focus_a, focus_b,
+//   mode_a, mode_b, array_idx_a, array_idx_b.
 //
 // Output: 4-channel array [odd_a, even_a, odd_b, even_b]. Users wanting a
 // stereo mix can sum or pan downstream.
 //
 // References: kb/spectraphon-synthdef-plan.md §3.f, §4 (FM bus, Follow,
 // Sync rows), §6.D, §7. Bank construction pattern: spectraphon_side.vibe.
+// Migration plan: kb/synthdef-arity-limits-plan.md §4.1 Phase 3 + §5
+// ticket 3.
 
 define_synthdef("spectraphon_dual", |builder| {
     builder
         .param("freq_a", 220.0)
         .param("freq_b", 220.0)
-        .param("partials", 1.0)
-        .param("slide", 0.5)
-        .param("focus", 0.5)
         .param("amp", 0.3)
+        .param("gate", 1.0)
         .param("a_fm_index", 0.0)   // A's sine into B (depth scaled by f0_b Hz)
         .param("b_fm_index", 0.0)   // B's sine into A (depth scaled by f0_a Hz)
         .param("routing_mode", 0.0) // 0=indep, 1=unison, 2=+5, 3=+8, 4=+5+8
-        .param("gate", 1.0)
-        .body(|freq_a, freq_b, partials, slide, focus, amp,
-               a_fm_index, b_fm_index, routing_mode, gate| {
+        .param("partials_a", 1.0)
+        .param("partials_b", 1.0)
+        .param("slide_a", 0.5)
+        .param("slide_b", 0.5)
+        .param("focus_a", 0.5)
+        .param("focus_b", 0.5)
+        .param("mode_a", 0.0)       // 0=SAO | 1=SAM (live FFT). 2/3/4 reserved.
+        .param("mode_b", 0.0)
+        .param("array_idx_a", 0.0)  // reserved — SAO-from-Array is a future story
+        .param("array_idx_b", 0.0)
+        .body_map(|p| {
+
+            // Unpack params from the body_map into local bindings so the
+            // rest of the body reads exactly like a positional `body(...)`.
+            let freq_a       = p.freq_a;
+            let freq_b       = p.freq_b;
+            let amp          = p.amp;
+            let gate         = p.gate;
+            let a_fm_index   = p.a_fm_index;
+            let b_fm_index   = p.b_fm_index;
+            let routing_mode = p.routing_mode;
+            let partials_a   = p.partials_a;
+            let partials_b   = p.partials_b;
+            let slide_a      = p.slide_a;
+            let slide_b      = p.slide_b;
+            let focus_a      = p.focus_a;
+            let focus_b      = p.focus_b;
+            let mode_a       = p.mode_a;
+            let mode_b       = p.mode_b;
+            // array_idx_a / array_idx_b unpacked solely to keep the param
+            // list visible to LSP completion; SAO-from-Array is deferred
+            // (see header). Marking them as locals avoids "unused param"
+            // confusion if a future edit wires them up.
+            let _array_idx_a = p.array_idx_a;
+            let _array_idx_b = p.array_idx_b;
 
             let env = envelope()
                 .asr(0.01, 1.0, 0.3)
@@ -125,87 +173,151 @@ define_synthdef("spectraphon_dual", |builder| {
             let freq_a_fm = freq_a     + b_fm_index * sin_b_pre * freq_a;
             let freq_b_fm = freq_b_eff + a_fm_index * sin_a_pre * freq_b_eff;
 
-            // === Per-partial mask shared across sides ==========================
+            // === Per-side reveal masks =========================================
             //
             // n=64 total partials per side, split 32 odd + 32 even.
-            // `scale = partials * n` gives the reveal cursor position; per-partial
-            // weight = clip(scale - (k-1), 0, 1) → CCW silent, CW full spectrum.
+            // `scale_X = partials_X * n` is the reveal cursor; per-partial
+            // weight = clip(scale_X - (k-1), 0, 1) → CCW silent, CW full spectrum.
+            // `focus_X` multiplies the cursor (proxy for density of partials).
+            // `slide_X` becomes an odd-vs-even bank balance: slide=0 favours
+            // even, slide=1 favours odd; both banks always pass at least 0.5x.
             let n = 64.0;
-            let scale = partials * n;
+            let scale_eff_a = partials_a * n * (focus_a * 1.5 + 0.5);
+            let scale_eff_b = partials_b * n * (focus_b * 1.5 + 0.5);
+            let odd_gain_a  = 0.5 + slide_a * 0.5;
+            let even_gain_a = 1.0 - slide_a * 0.5;
+            let odd_gain_b  = 0.5 + slide_b * 0.5;
+            let even_gain_b = 1.0 - slide_b * 0.5;
 
-            // Slide acts as odd/even bank balance. slide=0 favours even,
-            // slide=1 favours odd; both banks always pass at least 0.5x.
-            let odd_gain  = 0.5 + slide * 0.5;
-            let even_gain = 1.0 - slide * 0.5;
+            // === Per-side mode decode (SAO vs SAM) =============================
+            //
+            // mode_X integer in {0, 1}; the [2..4] range is reserved (see
+            // header). Two coefficients per side: sao_mix_X = 1 at mode=0,
+            // sam_mix_X = 1 at mode≥1. Branchless via clip-difference, same
+            // approach as spectraphon_side.vibe's m_le_n decode.
+            let m_le_0_a = clip(1.0 - mode_a, 0.0, 1.0);
+            let sao_mix_a = m_le_0_a;
+            let sam_mix_a = 1.0 - m_le_0_a;
+            let m_le_0_b = clip(1.0 - mode_b, 0.0, 1.0);
+            let sao_mix_b = m_le_0_b;
+            let sam_mix_b = 1.0 - m_le_0_b;
 
-            // Focus scales the reveal cursor — proxy for "density of partials".
-            // focus=0 → 0.5x scale (sparse), focus=1 → 2.0x (dense).
-            let focus_scale = focus * 1.5 + 0.5;
-            let scale_eff = scale * focus_scale;
+            // === SAM analyser (shared FFT chain) ===============================
+            //
+            // Hardware audio input ch 0. The 2048-frame FFT (Hann window,
+            // 50% hop) writes magnitudes/phases into fft_buf; bin_data_kr
+            // reads (mag, freq) per bin out of the active chain. Per-side
+            // f0_analyze_X drives where each side samples the bin grid.
+            let analyze_in = sound_in_ar(0.0);
+            let fft_buf    = local_buf_ir(1.0, 2048.0);
+            let chain      = fft_kr(fft_buf, analyze_in, 0.5, 1.0, 1.0, 0.0);
+
+            let f0_analyze_a = 50.0 * pow(16.0, clip(slide_a, 0.0, 1.0));
+            let f0_analyze_b = 50.0 * pow(16.0, clip(slide_b, 0.0, 1.0));
+            let bin_per_hz = 2048.0 / 44100.0;
+            let mag_scale  = 0.001953125;  // ~ 1/(N/4) for a unit sine on a bin
+            let lag_t      = 0.02;         // 60 dB lag time (~55 Hz one-pole)
+            let bin_max    = 1023.0;       // FFT-size 2048 → Nyquist bin index
 
             // === Side A — Odd bank (k = 1, 3, 5, ..., 63) ======================
+            //
+            // SAO mag = 1/k (default saw spectrum). SAM mag = lagged FFT bin.
+            // The per-partial reveal mask gates both modes equivalently.
             let k = 1.0;
-            let mag_k = 1.0 / k;
+            let mag_sao = 1.0 / k;
+            let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
+            let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                                 * mag_scale, lag_t);
+            let mag_k = mag_sao * sao_mix_a + mag_sam * sam_mix_a;
             let odd_a = sin_osc_ar(freq_a_fm * k) * mag_k
-                * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+                * clip(scale_eff_a - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * i + 1).to_float();
-                let mag_k = 1.0 / k;
+                let mag_sao = 1.0 / k;
+                let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
+                let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                                     * mag_scale, lag_t);
+                let mag_k = mag_sao * sao_mix_a + mag_sam * sam_mix_a;
                 odd_a = odd_a + sin_osc_ar(freq_a_fm * k) * mag_k
-                    * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+                    * clip(scale_eff_a - (k - 1.0), 0.0, 1.0);
             }
-            odd_a = odd_a * odd_gain;
+            odd_a = odd_a * odd_gain_a;
 
             // === Side A — Even bank (k = 2, 4, 6, ..., 64) =====================
             let k = 2.0;
-            let mag_k = 1.0 / k;
+            let mag_sao = 1.0 / k;
+            let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
+            let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                                 * mag_scale, lag_t);
+            let mag_k = mag_sao * sao_mix_a + mag_sam * sam_mix_a;
             let even_a = sin_osc_ar(freq_a_fm * k) * mag_k
-                * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+                * clip(scale_eff_a - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * (i + 1)).to_float();
-                let mag_k = 1.0 / k;
+                let mag_sao = 1.0 / k;
+                let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
+                let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                                     * mag_scale, lag_t);
+                let mag_k = mag_sao * sao_mix_a + mag_sam * sam_mix_a;
                 even_a = even_a + sin_osc_ar(freq_a_fm * k) * mag_k
-                    * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+                    * clip(scale_eff_a - (k - 1.0), 0.0, 1.0);
             }
-            even_a = even_a * even_gain;
+            even_a = even_a * even_gain_a;
 
             // === Side B — Odd bank ============================================
             let k = 1.0;
-            let mag_k = 1.0 / k;
+            let mag_sao = 1.0 / k;
+            let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
+            let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                                 * mag_scale, lag_t);
+            let mag_k = mag_sao * sao_mix_b + mag_sam * sam_mix_b;
             let odd_b = sin_osc_ar(freq_b_fm * k) * mag_k
-                * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+                * clip(scale_eff_b - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * i + 1).to_float();
-                let mag_k = 1.0 / k;
+                let mag_sao = 1.0 / k;
+                let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
+                let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                                     * mag_scale, lag_t);
+                let mag_k = mag_sao * sao_mix_b + mag_sam * sam_mix_b;
                 odd_b = odd_b + sin_osc_ar(freq_b_fm * k) * mag_k
-                    * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+                    * clip(scale_eff_b - (k - 1.0), 0.0, 1.0);
             }
-            odd_b = odd_b * odd_gain;
+            odd_b = odd_b * odd_gain_b;
 
             // === Side B — Even bank ===========================================
             let k = 2.0;
-            let mag_k = 1.0 / k;
+            let mag_sao = 1.0 / k;
+            let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
+            let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                                 * mag_scale, lag_t);
+            let mag_k = mag_sao * sao_mix_b + mag_sam * sam_mix_b;
             let even_b = sin_osc_ar(freq_b_fm * k) * mag_k
-                * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+                * clip(scale_eff_b - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * (i + 1)).to_float();
-                let mag_k = 1.0 / k;
+                let mag_sao = 1.0 / k;
+                let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
+                let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                                     * mag_scale, lag_t);
+                let mag_k = mag_sao * sao_mix_b + mag_sam * sam_mix_b;
                 even_b = even_b + sin_osc_ar(freq_b_fm * k) * mag_k
-                    * clip(scale_eff - (k - 1.0), 0.0, 1.0);
+                    * clip(scale_eff_b - (k - 1.0), 0.0, 1.0);
             }
-            even_b = even_b * even_gain;
+            even_b = even_b * even_gain_b;
 
             // === Output stage =================================================
             //
-            // Per-channel DC block, then global VCA = env * amp * partials
-            // (the * partials supplies the hardware Partials-knob global VCA
-            // on top of the per-partial reveal mask, matching spectraphon_side
-            // line 264).
-            let g = env * amp * partials;
-            let out_odd_a  = leak_dc_ar(odd_a,  0.995) * g;
-            let out_even_a = leak_dc_ar(even_a, 0.995) * g;
-            let out_odd_b  = leak_dc_ar(odd_b,  0.995) * g;
-            let out_even_b = leak_dc_ar(even_b, 0.995) * g;
+            // Per-channel DC block, then per-side global VCA = env * amp *
+            // partials_X (the * partials supplies the hardware Partials-knob
+            // global VCA on top of the per-partial reveal mask, matching
+            // spectraphon_side line 264).
+            let g_a = env * amp * partials_a;
+            let g_b = env * amp * partials_b;
+            let out_odd_a  = leak_dc_ar(odd_a,  0.995) * g_a;
+            let out_even_a = leak_dc_ar(even_a, 0.995) * g_a;
+            let out_odd_b  = leak_dc_ar(odd_b,  0.995) * g_b;
+            let out_even_b = leak_dc_ar(even_b, 0.995) * g_b;
 
             [out_odd_a, out_even_a, out_odd_b, out_even_b]
         })

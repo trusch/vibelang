@@ -42,9 +42,12 @@ let chord = define_group("SpectraChord", || {
     let v = voice("dual")
         .synth("spectraphon_dual")
         .set_param("freq_a", 110.0)        // A2
-        .set_param("partials", 0.85)
-        .set_param("slide", 0.6)            // tilt toward odd partials
-        .set_param("focus", 0.7)            // moderately dense
+        .set_param("partials_a", 0.85)
+        .set_param("partials_b", 0.85)
+        .set_param("slide_a", 0.6)          // tilt toward odd partials
+        .set_param("slide_b", 0.6)
+        .set_param("focus_a", 0.7)          // moderately dense
+        .set_param("focus_b", 0.7)
         .set_param("routing_mode", 2.0)     // B = A · 1.4983 (perfect fifth)
         .set_param("a_fm_index", 0.05)      // light B-side modulation by A
         .set_param("amp", 0.22)
