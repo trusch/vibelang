@@ -884,6 +884,23 @@ pub struct State {
     /// the destination group's audio bus (or bus 0 for `RouteDest::Main`).
     pub route_synths: HashMap<(VoiceId, String), NodeId>,
 
+    /// Per-route FX synth node IDs, keyed by `(voice_id, port_name)`.
+    ///
+    /// Story 6a: when a route's `Route::fx_chain` is non-empty,
+    /// [`crate::handlers::RoutesHandler::finalize`] spawns one FX synth per
+    /// chain link and records their node IDs here in chain order. Drained on
+    /// route removal/change (or voice delete) so the backend `free_node`
+    /// dispatch + node-ID recycling stays symmetric with `route_synths`.
+    pub route_fx_synths: HashMap<(VoiceId, String), Vec<NodeId>>,
+
+    /// Per-route intermediate audio buses, keyed by `(voice_id, port_name)`.
+    ///
+    /// Story 6a: each entry lists `(BusId, channels)` for the audio buses
+    /// allocated between consecutive FX synths in a per-port chain. `channels`
+    /// is preserved per-bus so [`AudioBusAllocator::free`] gets the same width
+    /// it was alloc'd with on teardown. Empty/absent for routes with no FX.
+    pub route_fx_buses: HashMap<(VoiceId, String), Vec<(BusId, u8)>>,
+
     /// Default per-voice port routes installed at voice-create time.
     ///
     /// Story 5: when a voice is created, the runtime walks the synthdef's
@@ -925,6 +942,8 @@ impl Default for State {
             buffer_ids: FreeListAllocator::new(0, u32::MAX),
             audio_buses: AudioBusAllocator::default(),
             route_synths: HashMap::new(),
+            route_fx_synths: HashMap::new(),
+            route_fx_buses: HashMap::new(),
             default_routes: HashMap::new(),
         }
     }
@@ -996,25 +1015,48 @@ impl State {
         self.control_buses.free(id);
     }
 
-    /// Drain every route mixer synth owned by `voice_id` from
-    /// [`State::route_synths`], returning their node IDs and recycling the
-    /// IDs back into the node-id pool.
+    /// Drain every route mixer synth (and any per-port FX chain) owned by
+    /// `voice_id`, returning the node IDs to free on the backend and recycling
+    /// the IDs back into the node-id pool. Per-port intermediate audio buses
+    /// recorded in [`State::route_fx_buses`] are returned to the audio-bus
+    /// free pool internally — only node IDs are surfaced to the caller.
     ///
-    /// Used by voice deletion to tear down all per-port mixer synths in one
-    /// pass without needing the route diff. The caller is responsible for
-    /// freeing the corresponding nodes on the backend.
+    /// Used by voice deletion to tear down everything a voice's routes own in
+    /// one pass without needing a route diff. The caller is responsible for
+    /// freeing the returned nodes on the backend.
     pub fn take_voice_route_nodes(&mut self, voice_id: VoiceId) -> Vec<NodeId> {
-        let keys: Vec<(VoiceId, String)> = self
-            .route_synths
-            .keys()
-            .filter(|(vid, _)| *vid == voice_id)
-            .cloned()
-            .collect();
+        let mut keys: HashSet<(VoiceId, String)> = HashSet::new();
+        for (k, _) in self.route_synths.iter() {
+            if k.0 == voice_id {
+                keys.insert(k.clone());
+            }
+        }
+        for (k, _) in self.route_fx_synths.iter() {
+            if k.0 == voice_id {
+                keys.insert(k.clone());
+            }
+        }
+        for (k, _) in self.route_fx_buses.iter() {
+            if k.0 == voice_id {
+                keys.insert(k.clone());
+            }
+        }
         let mut nodes = Vec::with_capacity(keys.len());
         for key in keys {
             if let Some(node_id) = self.route_synths.remove(&key) {
                 self.node_ids.free(node_id.raw());
                 nodes.push(node_id);
+            }
+            if let Some(fx_nodes) = self.route_fx_synths.remove(&key) {
+                for fx_node in fx_nodes {
+                    self.node_ids.free(fx_node.raw());
+                    nodes.push(fx_node);
+                }
+            }
+            if let Some(fx_buses) = self.route_fx_buses.remove(&key) {
+                for (bus, channels) in fx_buses {
+                    self.audio_buses.free(bus, channels);
+                }
             }
         }
         nodes
