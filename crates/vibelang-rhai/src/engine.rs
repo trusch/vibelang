@@ -307,6 +307,59 @@ impl ScriptEngine {
         Ok(state)
     }
 
+    /// Execute a script from a file and return state, AST, and any registered
+    /// MIDI callbacks captured during execution (native + `midi` feature only).
+    ///
+    /// The returned `AST` is the compiled script source — the runtime needs it
+    /// to invoke `FnPtr` callbacks (e.g. `mpk.on_note(|n, v, on| ...)`) after
+    /// the original script run has finished.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "midi"))]
+    pub fn execute_file_full(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<(
+        ScriptState,
+        rhai::AST,
+        std::collections::HashMap<u64, rhai::FnPtr>,
+    )> {
+        let path = path.as_ref();
+
+        let script = std::fs::read_to_string(path)?;
+
+        let base_path = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        self.setup_module_resolver(base_path);
+
+        api::clear_all_registries();
+        crate::reset_exit_code();
+
+        context::init_context();
+        context::set_current_file(Some(path.to_path_buf()));
+        context::set_import_paths(self.import_paths.clone());
+
+        let ast = self.engine.compile(&script).map_err(Error::from);
+        let ast = match ast {
+            Ok(a) => a,
+            Err(e) => {
+                context::clear_context();
+                return Err(e);
+            }
+        };
+
+        let result = self.engine.run_ast(&ast).map_err(Error::from);
+
+        let state = context::take_state();
+        let midi_callbacks = context::take_midi_callbacks();
+        context::clear_context();
+
+        if crate::get_exit_code().is_some() {
+            return Ok((state, ast, midi_callbacks));
+        }
+
+        result?;
+
+        Ok((state, ast, midi_callbacks))
+    }
+
     /// Execute an AST (pre-compiled script).
     pub fn execute_ast(&mut self, ast: &rhai::AST) -> Result<ScriptState> {
         // Clear object registries before each execution

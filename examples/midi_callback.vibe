@@ -1,0 +1,33 @@
+// MIDI callback smoke test — verifies that script-registered FnPtr
+// callbacks fire when matching MIDI messages arrive at the runtime.
+//
+// Usage (with a connected MIDI controller named "MPK" or similar):
+//   vibe run examples/midi_callback.vibe
+//
+// Then play a key on the device. Each note on/off emits a `[script]` log
+// line (because the engine routes `print()` through the log system).
+//
+// If you don't have a hardware controller, route any MIDI source to the
+// matched device — e.g. `aconnect` a virtual port — and the callback will
+// fire there too.
+
+set_tempo(120);
+
+// Pick the first available input device by index. Replace 0 with a name
+// substring (e.g. midi_device("MPK")) for a stable lookup across machines.
+let mpk = midi_device(0);
+
+// Register a note callback. Args are: note (0–127), velocity (0–127),
+// is_on (true on note-on, false on note-off).
+mpk.on_note(|note, velocity, is_on| {
+    if is_on {
+        print("note on:  " + note + " vel=" + velocity);
+    } else {
+        print("note off: " + note);
+    }
+});
+
+// CC callback — args: cc number, value (both 0–127).
+mpk.on_cc(|cc, value| {
+    print("cc " + cc + " = " + value);
+});

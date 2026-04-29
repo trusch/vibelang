@@ -653,6 +653,20 @@ impl<B: Backend> Runtime<B> {
         &self.backend
     }
 
+    /// Get the MIDI callback notification receiver.
+    ///
+    /// Returns a shared, mutex-guarded receiver that yields one
+    /// [`MidiEventNotification`] per matched script-registered callback firing.
+    /// Used by the CLI's `midi_dispatcher` task to deliver MIDI events into Rhai
+    /// `FnPtr`s registered via `mpk.on_note(...)` etc.
+    #[cfg(feature = "midi")]
+    pub fn midi_callback_receiver(
+        &self,
+    ) -> Arc<std::sync::Mutex<tokio::sync::mpsc::Receiver<crate::handlers::MidiEventNotification>>>
+    {
+        self.midi.callback_receiver()
+    }
+
     /// Load all built-in synthdefs from vibelang-dsp.
     ///
     /// This should be called during initialization to ensure essential

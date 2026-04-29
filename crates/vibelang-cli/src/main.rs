@@ -2,6 +2,8 @@
 //!
 //! This is the main entry point for the vibelang command-line tool with full TUI support.
 
+#[cfg(feature = "midi")]
+mod midi_dispatcher;
 mod render;
 mod tui;
 
@@ -424,6 +426,19 @@ async fn run_simple_mode(
     // Get state handle before spawning runtime (needed for HTTP API)
     let state_handle = runtime.state().clone();
 
+    // Spawn the MIDI dispatcher task. It owns the latest compiled AST + script
+    // FnPtr callback map, and invokes the right closure for each runtime-emitted
+    // MidiEventNotification. Captured `running` flag drives shutdown.
+    #[cfg(feature = "midi")]
+    let midi_dispatch_tx = {
+        let dispatcher_engine = Arc::new(make_dispatcher_engine());
+        midi_dispatcher::spawn(
+            dispatcher_engine,
+            runtime.midi_callback_receiver(),
+            running.clone(),
+        )
+    };
+
     // Start HTTP API server if requested (before spawning runtime task since runtime is moved)
     #[cfg(feature = "api")]
     if api {
@@ -484,7 +499,7 @@ async fn run_simple_mode(
 
     // Execute initial script
     info!("Loading script: {}", file.display());
-    let state = execute_script(&file, &include_paths, &ext_config)?;
+    let output = execute_script(&file, &include_paths, &ext_config)?;
 
     // Wait for all synthdefs queued during script execution to be loaded
     // This ensures modulators and voices can find their synthdefs
@@ -496,14 +511,30 @@ async fn run_simple_mode(
     if let Some(exit_code) = vibelang_rhai::get_exit_code() {
         info!("Script requested exit with code {}", exit_code);
         // Apply state before exiting (for any cleanup)
-        let _ = handle.send(ReloadMessage::Apply { state }.into()).await;
+        let _ = handle
+            .send(ReloadMessage::Apply { state: output.state }.into())
+            .await;
         // Stop the running flag so the runtime task exits
         running.store(false, Ordering::SeqCst);
         // Exit with the requested code
         std::process::exit(exit_code);
     }
 
-    handle.send(ReloadMessage::Apply { state }.into()).await?;
+    // Push the initial AST + callback map to the dispatcher before applying
+    // state, so the first MIDI event after reconciliation finds the right FnPtr.
+    #[cfg(feature = "midi")]
+    {
+        let _ = midi_dispatch_tx
+            .send(midi_dispatcher::DispatchState {
+                ast: output.ast,
+                callbacks: output.midi_callbacks,
+            })
+            .await;
+    }
+
+    handle
+        .send(ReloadMessage::Apply { state: output.state }.into())
+        .await?;
 
     // Wait for state to be fully applied before starting transport
     // This ensures MIDI devices are registered before transport starts,
@@ -525,6 +556,8 @@ async fn run_simple_mode(
         let include_paths_clone = include_paths.clone();
         let ext_config_clone = ext_config.clone();
         let handle_clone = handle.clone();
+        #[cfg(feature = "midi")]
+        let midi_dispatch_tx_clone = midi_dispatch_tx.clone();
 
         // Setup file watcher
         let mut watcher = RecommendedWatcher::new(
@@ -556,9 +589,18 @@ async fn run_simple_mode(
 
                     info!("File changed, reloading...");
                     match execute_script(&file_clone, &include_paths_clone, &ext_config_clone) {
-                        Ok(state) => {
+                        Ok(output) => {
+                            #[cfg(feature = "midi")]
+                            {
+                                let _ = midi_dispatch_tx_clone
+                                    .send(midi_dispatcher::DispatchState {
+                                        ast: output.ast,
+                                        callbacks: output.midi_callbacks,
+                                    })
+                                    .await;
+                            }
                             if let Err(e) = handle_clone
-                                .send(ReloadMessage::Apply { state }.into())
+                                .send(ReloadMessage::Apply { state: output.state }.into())
                                 .await
                             {
                                 error!("Failed to apply reload: {}", e);
@@ -784,6 +826,18 @@ async fn run_tui_mode(
     // Create shutdown flag
     let running = Arc::new(AtomicBool::new(true));
 
+    // Spawn the MIDI dispatcher task (must happen before `runtime` is moved
+    // into the runtime task below).
+    #[cfg(feature = "midi")]
+    let midi_dispatch_tx = {
+        let dispatcher_engine = Arc::new(make_dispatcher_engine());
+        midi_dispatcher::spawn(
+            dispatcher_engine,
+            runtime.midi_callback_receiver(),
+            running.clone(),
+        )
+    };
+
     // Create channels
     let (state_tx, mut state_rx) = mpsc::channel::<vibelang_core::State>(32);
     let (reload_tx, mut reload_rx) = mpsc::channel::<PathBuf>(16);
@@ -817,8 +871,20 @@ async fn run_tui_mode(
 
     // Run initial script
     match execute_script(&file, &include_paths, &ext_config) {
-        Ok(state) => {
-            if let Err(e) = handle.send(ReloadMessage::Apply { state }.into()).await {
+        Ok(output) => {
+            #[cfg(feature = "midi")]
+            {
+                let _ = midi_dispatch_tx
+                    .send(midi_dispatcher::DispatchState {
+                        ast: output.ast,
+                        callbacks: output.midi_callbacks,
+                    })
+                    .await;
+            }
+            if let Err(e) = handle
+                .send(ReloadMessage::Apply { state: output.state }.into())
+                .await
+            {
                 log::error!("Failed to apply script: {}", e);
                 app.process_event(tui::TuiEvent::Error(format!("{}", e)));
             } else {
@@ -866,6 +932,8 @@ async fn run_tui_mode(
     let include_paths_clone = include_paths.clone();
     let ext_config_clone = ext_config.clone();
     let reload_running = running.clone();
+    #[cfg(feature = "midi")]
+    let reload_dispatch_tx = midi_dispatch_tx.clone();
     let reload_task = tokio::spawn(async move {
         let mut last_reload = Instant::now();
         while reload_running.load(Ordering::SeqCst) {
@@ -878,13 +946,22 @@ async fn run_tui_mode(
 
                 log::info!("Reloading: {}", changed_file.display());
                 match execute_script(&changed_file, &include_paths_clone, &ext_config_clone) {
-                    Ok(state) => {
+                    Ok(output) => {
                         // NOTE: We skip sync_and_wait here for hot reloads to avoid blocking
                         // the tick loop and causing audio gaps. Synthdefs are loaded async
                         // and will be available for subsequent reloads. Initial load still
                         // syncs to ensure synthdefs are ready before first playback.
+                        #[cfg(feature = "midi")]
+                        {
+                            let _ = reload_dispatch_tx
+                                .send(midi_dispatcher::DispatchState {
+                                    ast: output.ast,
+                                    callbacks: output.midi_callbacks,
+                                })
+                                .await;
+                        }
                         if let Err(e) = reload_handle
-                            .send(ReloadMessage::Apply { state }.into())
+                            .send(ReloadMessage::Apply { state: output.state }.into())
                             .await
                         {
                             log::error!("Failed to apply reload: {}", e);
@@ -1321,11 +1398,23 @@ fn build_extension_config(
     }
 }
 
+/// Output of a script execution — always includes the resolved [`ScriptState`];
+/// when `midi` is on, also includes the compiled AST and any `FnPtr` callbacks
+/// the script registered via `mpk.on_note(...)` / `on_cc(...)` / etc., so the
+/// CLI can hand them off to `midi_dispatcher` for live event delivery.
+struct ScriptOutput {
+    state: vibelang_core::reload::ScriptState,
+    #[cfg(feature = "midi")]
+    ast: rhai::AST,
+    #[cfg(feature = "midi")]
+    midi_callbacks: std::collections::HashMap<u64, rhai::FnPtr>,
+}
+
 fn execute_script(
     file: &PathBuf,
     include_paths: &[PathBuf],
     ext_settings: &ExtensionSettings,
-) -> Result<vibelang_core::reload::ScriptState> {
+) -> Result<ScriptOutput> {
     let mut engine = ScriptEngine::new();
 
     // Register extensions if enabled
@@ -1364,12 +1453,27 @@ fn execute_script(
         engine.add_import_path(parent.to_path_buf());
     }
 
-    // Use execute_file which sets up the module resolver properly
-    let state = engine
-        .execute_file(file)
-        .map_err(|e| anyhow::anyhow!("Script error: {}", e))?;
-
-    Ok(state)
+    // Use execute_file which sets up the module resolver properly.
+    // With `midi`, also capture the compiled AST + registered FnPtr callbacks
+    // so the CLI's `midi_dispatcher` can call them when MIDI events arrive.
+    #[cfg(feature = "midi")]
+    {
+        let (state, ast, midi_callbacks) = engine
+            .execute_file_full(file)
+            .map_err(|e| anyhow::anyhow!("Script error: {}", e))?;
+        Ok(ScriptOutput {
+            state,
+            ast,
+            midi_callbacks,
+        })
+    }
+    #[cfg(not(feature = "midi"))]
+    {
+        let state = engine
+            .execute_file(file)
+            .map_err(|e| anyhow::anyhow!("Script error: {}", e))?;
+        Ok(ScriptOutput { state })
+    }
 }
 
 /// Evaluate a code string dynamically (for /eval endpoint).
@@ -1422,6 +1526,32 @@ fn evaluate_code(
         .map_err(|e| anyhow::anyhow!("Eval error: {}", e))?;
 
     Ok(state)
+}
+
+/// Build a Rhai engine for dispatching MIDI callbacks.
+///
+/// The dispatcher engine is separate from the per-execution `ScriptEngine` so
+/// it can outlive script reloads and be shared across the dispatcher task.
+/// It registers the same VibeLang API + DSP API used during script execution
+/// so user callbacks (e.g. `print(n)`) resolve normally.
+#[cfg(feature = "midi")]
+fn make_dispatcher_engine() -> rhai::Engine {
+    let mut engine = rhai::Engine::new();
+    engine.set_max_expr_depths(4096, 4096);
+    engine.set_max_call_levels(4096);
+    engine.on_print(|text| log::info!("[script] {}", text));
+    engine.on_debug(|text, source, pos| {
+        let loc = match (source, pos) {
+            (Some(src), pos) if !pos.is_none() => format!(" ({}:{})", src, pos),
+            (Some(src), _) => format!(" ({})", src),
+            (None, pos) if !pos.is_none() => format!(" ({})", pos),
+            _ => String::new(),
+        };
+        log::debug!("[script]{} {}", loc, text);
+    });
+    vibelang_rhai::api::register_api(&mut engine);
+    vibelang_dsp::register_dsp_api(&mut engine);
+    engine
 }
 
 /// Extract the synthdef name from SuperCollider synthdef bytes.
