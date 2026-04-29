@@ -910,6 +910,18 @@ pub struct State {
     /// reload time, with explicit user routes taking precedence over defaults.
     /// Drained on voice delete so a re-created voice gets fresh defaults.
     pub default_routes: HashMap<(VoiceId, String), crate::handlers::RouteDest>,
+
+    /// Active Param-route mappings: source `(voice_id, port_name)` → list of
+    /// `(target_voice_id, target_param_name)` currently `/n_map`-bound to the
+    /// source's control bus.
+    ///
+    /// Multi-output v2 Story 3: tracks the *applied* baseline (what the
+    /// backend currently has), not a desired state. Maintained by
+    /// [`crate::handlers::RoutesHandler::finalize_params`] — additions push
+    /// onto the source's Vec, removals retain it; entries with empty Vecs are
+    /// pruned. [`Self::take_voice_param_routes`] drains both source-side and
+    /// target-side appearances on voice delete.
+    pub param_routes: HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
 }
 
 impl Default for State {
@@ -945,6 +957,7 @@ impl Default for State {
             route_fx_synths: HashMap::new(),
             route_fx_buses: HashMap::new(),
             default_routes: HashMap::new(),
+            param_routes: HashMap::new(),
         }
     }
 }
@@ -1071,6 +1084,41 @@ impl State {
     pub fn take_voice_default_routes(&mut self, voice_id: VoiceId) {
         self.default_routes
             .retain(|(vid, _), _| *vid != voice_id);
+    }
+
+    /// Drain every Param-route entry that mentions `voice_id` from
+    /// [`State::param_routes`], on either the source side or the target side.
+    ///
+    /// Returns the source-side drains as
+    /// `((source_voice, source_port), [(target_voice, target_param), ...])`
+    /// so the caller can issue `/n_map ... -1` on each `(target, param)` pair
+    /// (the source's bus is going away with the voice). Target-side scrubbing
+    /// is done in-place: any `(voice_id, *)` tuple in any other source's Vec
+    /// is removed; entries whose Vec drops to empty after scrubbing are
+    /// pruned. The deleted target voice's synth nodes are about to be freed
+    /// anyway, so unmapping them is moot — only the source-side state needs
+    /// caller follow-up.
+    pub fn take_voice_param_routes(
+        &mut self,
+        voice_id: VoiceId,
+    ) -> Vec<((VoiceId, String), Vec<(VoiceId, String)>)> {
+        let source_keys: Vec<(VoiceId, String)> = self
+            .param_routes
+            .keys()
+            .filter(|(vid, _)| *vid == voice_id)
+            .cloned()
+            .collect();
+        let mut drained = Vec::with_capacity(source_keys.len());
+        for key in source_keys {
+            if let Some(targets) = self.param_routes.remove(&key) {
+                drained.push((key, targets));
+            }
+        }
+        self.param_routes.retain(|_, targets| {
+            targets.retain(|(t_vid, _)| *t_vid != voice_id);
+            !targets.is_empty()
+        });
+        drained
     }
 
     /// Resolve the output-port set for a synthdef name.

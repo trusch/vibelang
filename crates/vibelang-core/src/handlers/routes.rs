@@ -145,6 +145,44 @@ impl RouteDiff {
     }
 }
 
+/// Multi-target Param routes: source `(voice_id, port_name)` →
+/// list of `(target_voice_id, target_param_name)` pairs.
+///
+/// One source kr port can drive params on multiple target voices, so unlike
+/// [`RouteMap`] the value is a list. Diffed by [`RoutesHandler::diff_params`]
+/// and applied by [`RoutesHandler::finalize_params`], which issues `/n_map`
+/// for each `(source_bus, target_param)` pair on the target voice's currently
+/// active synth nodes. Mirrors [`crate::state::State::param_routes`] which
+/// holds the *applied* baseline.
+pub type ParamRouteMap = HashMap<(VoiceId, String), Vec<(VoiceId, String)>>;
+
+/// A single Param route — one source kr port → one target param.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ParamRoute {
+    pub source_voice: VoiceId,
+    pub source_port: String,
+    pub target_voice: VoiceId,
+    pub target_param: String,
+}
+
+/// Difference between two [`ParamRouteMap`]s.
+///
+/// Param routes don't have a Group/Main-style "change" axis: changing a
+/// target's source port is just `removal(old) + addition(new)`. The diff is
+/// computed at `(source, target)`-tuple granularity rather than per source
+/// key, so a fan-out add or single-target removal both fall out naturally.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ParamRouteDiff {
+    pub additions: Vec<ParamRoute>,
+    pub removals: Vec<ParamRoute>,
+}
+
+impl ParamRouteDiff {
+    pub fn is_empty(&self) -> bool {
+        self.additions.is_empty() && self.removals.is_empty()
+    }
+}
+
 /// Computes and applies per-voice routing changes.
 ///
 /// The handler holds the backend and shared state; [`Self::diff`] is a pure
@@ -300,6 +338,178 @@ impl<B: Backend> RoutesHandler<B> {
                     c.port_name,
                     e
                 );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compute the additions and removals between two Param-route maps.
+    ///
+    /// Operates at `(source, target)`-tuple granularity: a source key whose
+    /// target list shrinks contributes one removal per dropped target; a key
+    /// whose target list grows contributes one addition per new target. There
+    /// is no "change" axis (changing a target's bound source port is just a
+    /// remove + add against different source keys).
+    pub fn diff_params(old: &ParamRouteMap, new: &ParamRouteMap) -> ParamRouteDiff {
+        let mut diff = ParamRouteDiff::default();
+
+        for ((src_voice, src_port), new_targets) in new {
+            let old_targets = old.get(&(*src_voice, src_port.clone()));
+            for (tgt_voice, tgt_param) in new_targets {
+                let in_old = old_targets
+                    .map(|v| v.iter().any(|t| t.0 == *tgt_voice && t.1 == *tgt_param))
+                    .unwrap_or(false);
+                if !in_old {
+                    diff.additions.push(ParamRoute {
+                        source_voice: *src_voice,
+                        source_port: src_port.clone(),
+                        target_voice: *tgt_voice,
+                        target_param: tgt_param.clone(),
+                    });
+                }
+            }
+        }
+
+        for ((src_voice, src_port), old_targets) in old {
+            let new_targets = new.get(&(*src_voice, src_port.clone()));
+            for (tgt_voice, tgt_param) in old_targets {
+                let in_new = new_targets
+                    .map(|v| v.iter().any(|t| t.0 == *tgt_voice && t.1 == *tgt_param))
+                    .unwrap_or(false);
+                if !in_new {
+                    diff.removals.push(ParamRoute {
+                        source_voice: *src_voice,
+                        source_port: src_port.clone(),
+                        target_voice: *tgt_voice,
+                        target_param: tgt_param.clone(),
+                    });
+                }
+            }
+        }
+
+        diff
+    }
+
+    /// Apply a Param-route diff: unmap removed mappings, /n_map added ones.
+    ///
+    /// Order, mirroring [`Self::finalize`]:
+    /// 1. Removals first — issue `/n_map node param -1` (the scsynth unmap
+    ///    sentinel) on every currently active synth node of the target voice
+    ///    so the param reverts to its synthdef-declared default value. Drop
+    ///    the entry from [`State::param_routes`].
+    /// 2. Additions — look up the source port's control bus on the source
+    ///    voice's `output_buses`, then `/n_map` the target param to that bus
+    ///    on every currently active synth node of the target voice. Record
+    ///    the mapping in [`State::param_routes`] so voice-delete teardown
+    ///    can find it.
+    ///
+    /// Drops the state lock before each backend call to preserve lock
+    /// discipline.
+    pub async fn finalize_params(&self, diff: &ParamRouteDiff) -> Result<()> {
+        if diff.is_empty() {
+            return Ok(());
+        }
+
+        // Step 1: removals — collect target nodes under lock, then unmap.
+        let removal_ops: Vec<(Vec<NodeId>, String)> = {
+            let mut state = self.state.write().await;
+            let mut ops = Vec::with_capacity(diff.removals.len());
+            for r in &diff.removals {
+                let src_key = (r.source_voice, r.source_port.clone());
+                let mut empty_now = false;
+                if let Some(targets) = state.param_routes.get_mut(&src_key) {
+                    targets.retain(|(tv, tp)| {
+                        !(*tv == r.target_voice && *tp == r.target_param)
+                    });
+                    empty_now = targets.is_empty();
+                }
+                if empty_now {
+                    state.param_routes.remove(&src_key);
+                }
+                let nodes: Vec<NodeId> = state
+                    .voices
+                    .get(&r.target_voice)
+                    .map(|v| {
+                        v.active_nodes
+                            .iter()
+                            .copied()
+                            .chain(v.note_nodes.values().copied())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                ops.push((nodes, r.target_param.clone()));
+            }
+            ops
+        };
+        for (nodes, param) in removal_ops {
+            for node in nodes {
+                // u32::MAX casts to -1i32 in the OSC `/n_map` payload — the
+                // scsynth unmap sentinel that reverts the param to its
+                // synthdef-declared default value.
+                if let Err(e) = self
+                    .backend
+                    .map_param_to_bus(node, &param, u32::MAX)
+                    .await
+                {
+                    tracing::warn!(
+                        "RoutesHandler::finalize_params: unmap failed node={:?} param={:?}: {}",
+                        node,
+                        param,
+                        e
+                    );
+                }
+            }
+        }
+
+        // Step 2: additions — look up source bus, register, map on target nodes.
+        let addition_ops: Vec<(Vec<NodeId>, String, u32)> = {
+            let mut state = self.state.write().await;
+            let mut ops = Vec::with_capacity(diff.additions.len());
+            for r in &diff.additions {
+                let bus = match state.voices.get(&r.source_voice).and_then(|v| {
+                    v.output_buses
+                        .iter()
+                        .find(|(n, _)| *n == r.source_port)
+                        .map(|(_, b)| *b)
+                }) {
+                    Some(b) => b,
+                    None => {
+                        tracing::warn!(
+                            "RoutesHandler::finalize_params: source port {:?} not found on voice {:?}, skipping addition",
+                            r.source_port,
+                            r.source_voice
+                        );
+                        continue;
+                    }
+                };
+                let src_key = (r.source_voice, r.source_port.clone());
+                let entry = state.param_routes.entry(src_key).or_default();
+                let target_pair = (r.target_voice, r.target_param.clone());
+                if !entry.iter().any(|t| *t == target_pair) {
+                    entry.push(target_pair);
+                }
+                let nodes: Vec<NodeId> = state
+                    .voices
+                    .get(&r.target_voice)
+                    .map(|v| {
+                        v.active_nodes
+                            .iter()
+                            .copied()
+                            .chain(v.note_nodes.values().copied())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                ops.push((nodes, r.target_param.clone(), bus.raw()));
+            }
+            ops
+        };
+        for (nodes, param, bus) in addition_ops {
+            for node in nodes {
+                self.backend
+                    .map_param_to_bus(node, &param, bus)
+                    .await
+                    .map_err(Error::backend)?;
             }
         }
 
@@ -827,11 +1037,19 @@ mod tests {
         params: ParamMap,
     }
 
+    #[derive(Debug, Clone, PartialEq)]
+    struct MapCall {
+        node: NodeId,
+        param: String,
+        bus: u32,
+    }
+
     struct MockBackend {
         synths_created: AtomicU32,
         nodes_freed: AtomicU32,
         last_creates: Mutex<Vec<CreateSynthCall>>,
         last_frees: Mutex<Vec<NodeId>>,
+        last_maps: Mutex<Vec<MapCall>>,
     }
 
     impl MockBackend {
@@ -841,6 +1059,7 @@ mod tests {
                 nodes_freed: AtomicU32::new(0),
                 last_creates: Mutex::new(Vec::new()),
                 last_frees: Mutex::new(Vec::new()),
+                last_maps: Mutex::new(Vec::new()),
             }
         }
         fn synths_created(&self) -> u32 {
@@ -854,6 +1073,9 @@ mod tests {
         }
         fn frees(&self) -> Vec<NodeId> {
             self.last_frees.lock().unwrap().clone()
+        }
+        fn maps(&self) -> Vec<MapCall> {
+            self.last_maps.lock().unwrap().clone()
         }
     }
 
@@ -960,10 +1182,15 @@ mod tests {
 
         async fn map_param_to_bus(
             &self,
-            _node: NodeId,
-            _param: &str,
-            _bus: u32,
+            node: NodeId,
+            param: &str,
+            bus: u32,
         ) -> std::result::Result<(), Self::Error> {
+            self.last_maps.lock().unwrap().push(MapCall {
+                node,
+                param: param.to_string(),
+                bus,
+            });
             Ok(())
         }
 
@@ -1678,5 +1905,528 @@ mod tests {
         assert!(s.route_synths.is_empty(), "link mixer registry cleared");
         assert!(s.route_fx_synths.is_empty(), "fx synth registry cleared");
         assert!(s.route_fx_buses.is_empty(), "fx bus registry cleared");
+    }
+
+    // =========================================================================
+    // Param-route diff + finalize_params (Multi-output v2 Story 3)
+    // =========================================================================
+
+    /// Build a state with two voices: a `source` voice owning a single kr
+    /// output port (control bus) and a `target` voice with `active_synth_count`
+    /// pre-populated `active_nodes`. Returns
+    /// `(handler, backend, state, source_voice, source_port, target_voice,
+    ///   target_param, source_control_bus, target_active_nodes)`.
+    async fn setup_param_route_pair(
+        active_synth_count: usize,
+    ) -> (
+        RoutesHandler<MockBackend>,
+        Arc<MockBackend>,
+        Arc<RwLock<State>>,
+        VoiceId,
+        String,
+        VoiceId,
+        String,
+        BusId,
+        Vec<NodeId>,
+    ) {
+        let backend = Arc::new(MockBackend::new());
+        let state = Arc::new(RwLock::new(State::default()));
+        let handler = RoutesHandler::new(backend.clone(), state.clone());
+
+        let source_voice = VoiceId::new(10);
+        let target_voice = VoiceId::new(20);
+        let voice_group_id = GroupId::new(1);
+        let source_port = "env".to_string();
+        let target_param = "cutoff".to_string();
+
+        let mut active_target_nodes = Vec::with_capacity(active_synth_count);
+        let source_control_bus;
+
+        {
+            let mut s = state.write().await;
+
+            s.synthdefs.insert("kr_synth".to_string());
+            s.synthdef_outputs.insert(
+                "kr_synth".to_string(),
+                vec![vibelang_dsp::OutputPort {
+                    name: source_port.clone(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Kr,
+                }],
+            );
+            s.synthdefs.insert("ar_synth".to_string());
+            s.synthdef_outputs.insert(
+                "ar_synth".to_string(),
+                vec![vibelang_dsp::OutputPort {
+                    name: "out".to_string(),
+                    channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
+                }],
+            );
+
+            let voice_group_node = s.alloc_node_id();
+            let voice_group_bus = s.alloc_audio_bus(2);
+            s.groups.insert(
+                voice_group_id,
+                GroupState {
+                    id: voice_group_id,
+                    name: "g".to_string(),
+                    parent: None,
+                    node_id: voice_group_node,
+                    audio_bus: voice_group_bus,
+                    link_synth_node_id: None,
+                    muted: false,
+                    soloed: false,
+                    params: ParamMap::new(),
+                    output_bus: None,
+                },
+            );
+
+            // Source voice: kr port → one control bus.
+            let kr_bus = s.alloc_control_bus();
+            source_control_bus = BusId::new(kr_bus.raw());
+            s.voices.insert(
+                source_voice,
+                VoiceState {
+                    id: source_voice,
+                    config: VoiceConfig::new("source", "kr_synth", voice_group_id),
+                    active_nodes: Vec::new(),
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![(source_port.clone(), source_control_bus)],
+                },
+            );
+
+            // Target voice: pre-populate `active_synth_count` active synth
+            // node IDs so finalize_params has something to /n_map onto.
+            for _ in 0..active_synth_count {
+                active_target_nodes.push(s.alloc_node_id());
+            }
+            let target_audio_bus = s.alloc_audio_bus(2);
+            s.voices.insert(
+                target_voice,
+                VoiceState {
+                    id: target_voice,
+                    config: VoiceConfig::new("target", "ar_synth", voice_group_id),
+                    active_nodes: active_target_nodes.clone(),
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![("out".to_string(), target_audio_bus)],
+                },
+            );
+        }
+
+        (
+            handler,
+            backend,
+            state,
+            source_voice,
+            source_port,
+            target_voice,
+            target_param,
+            source_control_bus,
+            active_target_nodes,
+        )
+    }
+
+    fn make_param_map(
+        entries: &[((u32, &str), &[(u32, &str)])],
+    ) -> ParamRouteMap {
+        entries
+            .iter()
+            .map(|((vid, port), targets)| {
+                (
+                    (VoiceId::new(*vid), (*port).to_string()),
+                    targets
+                        .iter()
+                        .map(|(tv, tp)| (VoiceId::new(*tv), (*tp).to_string()))
+                        .collect::<Vec<(VoiceId, String)>>(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn diff_params_empty_to_one_target_returns_one_addition() {
+        let old = ParamRouteMap::new();
+        let new = make_param_map(&[((10, "env"), &[(20, "cutoff")])]);
+        let diff = RoutesHandler::<MockBackend>::diff_params(&old, &new);
+        assert_eq!(diff.additions.len(), 1);
+        assert_eq!(diff.removals.len(), 0);
+        assert_eq!(diff.additions[0].source_voice, VoiceId::new(10));
+        assert_eq!(diff.additions[0].source_port, "env");
+        assert_eq!(diff.additions[0].target_voice, VoiceId::new(20));
+        assert_eq!(diff.additions[0].target_param, "cutoff");
+    }
+
+    #[test]
+    fn diff_params_identical_returns_empty() {
+        let routes = make_param_map(&[((10, "env"), &[(20, "cutoff"), (21, "amp")])]);
+        let diff = RoutesHandler::<MockBackend>::diff_params(&routes, &routes);
+        assert!(diff.is_empty());
+    }
+
+    #[test]
+    fn diff_params_target_added_to_existing_source_is_an_addition() {
+        // Same source key, target list grew by one — that one entry shows up
+        // as an addition; the existing target stays untouched.
+        let old = make_param_map(&[((10, "env"), &[(20, "cutoff")])]);
+        let new = make_param_map(&[((10, "env"), &[(20, "cutoff"), (21, "amp")])]);
+        let diff = RoutesHandler::<MockBackend>::diff_params(&old, &new);
+        assert_eq!(diff.additions.len(), 1);
+        assert_eq!(diff.removals.len(), 0);
+        assert_eq!(diff.additions[0].target_voice, VoiceId::new(21));
+        assert_eq!(diff.additions[0].target_param, "amp");
+    }
+
+    #[test]
+    fn diff_params_target_removed_from_existing_source_is_a_removal() {
+        let old = make_param_map(&[((10, "env"), &[(20, "cutoff"), (21, "amp")])]);
+        let new = make_param_map(&[((10, "env"), &[(20, "cutoff")])]);
+        let diff = RoutesHandler::<MockBackend>::diff_params(&old, &new);
+        assert_eq!(diff.removals.len(), 1);
+        assert_eq!(diff.additions.len(), 0);
+        assert_eq!(diff.removals[0].target_voice, VoiceId::new(21));
+        assert_eq!(diff.removals[0].target_param, "amp");
+    }
+
+    #[tokio::test]
+    async fn finalize_params_addition_maps_target_param_to_source_bus_on_active_node() {
+        // Single Param route: mapping persists, target reads source bus.
+        let (
+            handler,
+            backend,
+            state,
+            source_voice,
+            source_port,
+            target_voice,
+            target_param,
+            source_bus,
+            target_nodes,
+        ) = setup_param_route_pair(1).await;
+
+        let mut diff = ParamRouteDiff::default();
+        diff.additions.push(ParamRoute {
+            source_voice,
+            source_port: source_port.clone(),
+            target_voice,
+            target_param: target_param.clone(),
+        });
+        handler.finalize_params(&diff).await.unwrap();
+
+        let maps = backend.maps();
+        assert_eq!(maps.len(), 1, "one /n_map issued for one active node");
+        assert_eq!(maps[0].node, target_nodes[0]);
+        assert_eq!(maps[0].param, target_param);
+        assert_eq!(maps[0].bus, source_bus.raw());
+
+        let s = state.read().await;
+        let key = (source_voice, source_port);
+        let recorded = s.param_routes.get(&key).expect("source key tracked");
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0], (target_voice, target_param));
+    }
+
+    #[tokio::test]
+    async fn finalize_params_multiple_targets_from_same_source() {
+        // Multiple Param routes from same source: all targets see the source signal.
+        let (handler, backend, state, source_voice, source_port, _, _, source_bus, _) =
+            setup_param_route_pair(0).await;
+
+        // Build two extra target voices, each with one active synth node.
+        let target_a = VoiceId::new(100);
+        let target_b = VoiceId::new(101);
+        let (node_a, node_b);
+        {
+            let mut s = state.write().await;
+            node_a = s.alloc_node_id();
+            node_b = s.alloc_node_id();
+            let bus_a = s.alloc_audio_bus(2);
+            let bus_b = s.alloc_audio_bus(2);
+            let group = s.voices.values().next().unwrap().config.group;
+            s.voices.insert(
+                target_a,
+                VoiceState {
+                    id: target_a,
+                    config: VoiceConfig::new("ta", "ar_synth", group),
+                    active_nodes: vec![node_a],
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![("out".to_string(), bus_a)],
+                },
+            );
+            s.voices.insert(
+                target_b,
+                VoiceState {
+                    id: target_b,
+                    config: VoiceConfig::new("tb", "ar_synth", group),
+                    active_nodes: vec![node_b],
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![("out".to_string(), bus_b)],
+                },
+            );
+        }
+
+        let mut diff = ParamRouteDiff::default();
+        diff.additions.push(ParamRoute {
+            source_voice,
+            source_port: source_port.clone(),
+            target_voice: target_a,
+            target_param: "cutoff".to_string(),
+        });
+        diff.additions.push(ParamRoute {
+            source_voice,
+            source_port: source_port.clone(),
+            target_voice: target_b,
+            target_param: "amp".to_string(),
+        });
+        handler.finalize_params(&diff).await.unwrap();
+
+        let maps = backend.maps();
+        assert_eq!(maps.len(), 2, "one /n_map per (target voice, param) pair");
+        assert!(maps
+            .iter()
+            .any(|m| m.node == node_a && m.param == "cutoff" && m.bus == source_bus.raw()));
+        assert!(maps
+            .iter()
+            .any(|m| m.node == node_b && m.param == "amp" && m.bus == source_bus.raw()));
+
+        let s = state.read().await;
+        let recorded = s
+            .param_routes
+            .get(&(source_voice, source_port))
+            .expect("source key tracked");
+        assert_eq!(recorded.len(), 2, "both targets registered under the source");
+    }
+
+    #[tokio::test]
+    async fn finalize_params_removal_unmaps_target_to_default() {
+        // Removed route: target param returns to default (we issue the
+        // scsynth unmap sentinel `/n_map node param -1`).
+        let (
+            handler,
+            backend,
+            state,
+            source_voice,
+            source_port,
+            target_voice,
+            target_param,
+            _source_bus,
+            target_nodes,
+        ) = setup_param_route_pair(1).await;
+
+        let route = ParamRoute {
+            source_voice,
+            source_port: source_port.clone(),
+            target_voice,
+            target_param: target_param.clone(),
+        };
+        let mut add = ParamRouteDiff::default();
+        add.additions.push(route.clone());
+        handler.finalize_params(&add).await.unwrap();
+        assert_eq!(backend.maps().len(), 1);
+
+        let mut rm = ParamRouteDiff::default();
+        rm.removals.push(route);
+        handler.finalize_params(&rm).await.unwrap();
+
+        let maps = backend.maps();
+        assert_eq!(maps.len(), 2, "addition + unmap");
+        let unmap = &maps[1];
+        assert_eq!(unmap.node, target_nodes[0]);
+        assert_eq!(unmap.param, target_param);
+        assert_eq!(
+            unmap.bus,
+            u32::MAX,
+            "removed Param emits the scsynth unmap sentinel (-1 as u32::MAX)",
+        );
+
+        let s = state.read().await;
+        assert!(
+            !s.param_routes.contains_key(&(source_voice, source_port)),
+            "source key pruned when its target list goes empty",
+        );
+    }
+
+    #[tokio::test]
+    async fn finalize_params_changed_target_unmaps_old_and_maps_new() {
+        // Story 3 spec: "Changed Param: unmap old + map new". A change at the
+        // diff layer is a removal + addition pair; verify both are issued.
+        let (
+            handler,
+            backend,
+            state,
+            source_voice,
+            source_port,
+            _,
+            _,
+            source_bus,
+            _,
+        ) = setup_param_route_pair(0).await;
+
+        let target_a = VoiceId::new(100);
+        let target_b = VoiceId::new(101);
+        let (node_a, node_b);
+        {
+            let mut s = state.write().await;
+            node_a = s.alloc_node_id();
+            node_b = s.alloc_node_id();
+            let bus_a = s.alloc_audio_bus(2);
+            let bus_b = s.alloc_audio_bus(2);
+            let group = s.voices.values().next().unwrap().config.group;
+            s.voices.insert(
+                target_a,
+                VoiceState {
+                    id: target_a,
+                    config: VoiceConfig::new("ta", "ar_synth", group),
+                    active_nodes: vec![node_a],
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![("out".to_string(), bus_a)],
+                },
+            );
+            s.voices.insert(
+                target_b,
+                VoiceState {
+                    id: target_b,
+                    config: VoiceConfig::new("tb", "ar_synth", group),
+                    active_nodes: vec![node_b],
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![("out".to_string(), bus_b)],
+                },
+            );
+        }
+
+        // First map source → A; then change to source → B.
+        let mut add = ParamRouteDiff::default();
+        add.additions.push(ParamRoute {
+            source_voice,
+            source_port: source_port.clone(),
+            target_voice: target_a,
+            target_param: "cutoff".to_string(),
+        });
+        handler.finalize_params(&add).await.unwrap();
+
+        let mut chg = ParamRouteDiff::default();
+        chg.removals.push(ParamRoute {
+            source_voice,
+            source_port: source_port.clone(),
+            target_voice: target_a,
+            target_param: "cutoff".to_string(),
+        });
+        chg.additions.push(ParamRoute {
+            source_voice,
+            source_port: source_port.clone(),
+            target_voice: target_b,
+            target_param: "cutoff".to_string(),
+        });
+        handler.finalize_params(&chg).await.unwrap();
+
+        let maps = backend.maps();
+        assert_eq!(maps.len(), 3, "addition, then unmap of A, then map of B");
+        // First call: initial addition on A.
+        assert_eq!(maps[0].node, node_a);
+        assert_eq!(maps[0].bus, source_bus.raw());
+        // Second call: unmap of A.
+        assert_eq!(maps[1].node, node_a);
+        assert_eq!(maps[1].bus, u32::MAX);
+        // Third call: new mapping on B.
+        assert_eq!(maps[2].node, node_b);
+        assert_eq!(maps[2].bus, source_bus.raw());
+
+        let s = state.read().await;
+        let recorded = s
+            .param_routes
+            .get(&(source_voice, source_port))
+            .expect("source key still present");
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0], (target_b, "cutoff".to_string()));
+    }
+
+    #[tokio::test]
+    async fn finalize_params_voice_delete_drains_source_and_target_sides() {
+        // Voice delete cleans both source-side AND target-side routes.
+        // Build: source S has kr port. Three targets T0 / T1 / T2. S→T0
+        // and S→T1 are param routes. Also another source S2 routes to T0.
+        // Deleting T0 should:
+        //   - remove the S→T0 entry from S's source list (target-side cleanup)
+        //   - remove the S2→T0 entry similarly
+        //   - leave S→T1 intact
+        // Deleting S should:
+        //   - drain S's entire entry (source-side cleanup) and surface the
+        //     remaining (T1, *) tuples to the caller for unmap dispatch.
+        let backend = Arc::new(MockBackend::new());
+        let state = Arc::new(RwLock::new(State::default()));
+        let _handler: RoutesHandler<MockBackend> =
+            RoutesHandler::new(backend.clone(), state.clone());
+
+        let s_voice = VoiceId::new(1);
+        let s2_voice = VoiceId::new(2);
+        let t0 = VoiceId::new(10);
+        let t1 = VoiceId::new(11);
+        {
+            let mut st = state.write().await;
+            st.param_routes.insert(
+                (s_voice, "env".to_string()),
+                vec![
+                    (t0, "cutoff".to_string()),
+                    (t1, "amp".to_string()),
+                ],
+            );
+            st.param_routes.insert(
+                (s2_voice, "lfo".to_string()),
+                vec![(t0, "freq".to_string())],
+            );
+        }
+
+        // Delete T0 — target-side scrubbing only; no source key matches T0.
+        let drained_t0 = {
+            let mut st = state.write().await;
+            st.take_voice_param_routes(t0)
+        };
+        assert!(
+            drained_t0.is_empty(),
+            "no source-side entries belong to target voice T0",
+        );
+        let s = state.read().await;
+        assert_eq!(
+            s.param_routes
+                .get(&(s_voice, "env".to_string()))
+                .map(|v| v.len()),
+            Some(1),
+            "S still routes to T1 only; T0 entry removed",
+        );
+        assert_eq!(
+            s.param_routes.get(&(s_voice, "env".to_string())).unwrap()[0],
+            (t1, "amp".to_string()),
+        );
+        assert!(
+            !s.param_routes.contains_key(&(s2_voice, "lfo".to_string())),
+            "S2's only target was T0; entry pruned to empty and removed",
+        );
+        drop(s);
+
+        // Delete S — drains the source key, returns the remaining
+        // `(target, param)` pairs to the caller.
+        let drained_s = {
+            let mut st = state.write().await;
+            st.take_voice_param_routes(s_voice)
+        };
+        assert_eq!(drained_s.len(), 1, "one source key drained from S");
+        assert_eq!(drained_s[0].0, (s_voice, "env".to_string()));
+        assert_eq!(drained_s[0].1, vec![(t1, "amp".to_string())]);
+        let s = state.read().await;
+        assert!(
+            s.param_routes.is_empty(),
+            "all param-route bookkeeping is now drained",
+        );
     }
 }
