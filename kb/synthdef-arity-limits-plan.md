@@ -180,6 +180,8 @@ engine.register_raw_fn(
 
 The unpacking is mechanical — codegen handles it once. Default-arg overloads up to 20 still go through `register_fn` (same path as today).
 
+**Addendum (2026-04-29, hotfix `arity-2-hotfix-register-raw-fn-must-use-array-param-not-dynamic-typed-slots`):** The sketch above is wrong on a load-bearing detail — `register_raw_fn` performs **exact** `TypeId` matching at dispatch, so a slot list of `&[TypeId::of::<Dynamic>(); N]` never matches a user call like `big_arity24_ar(1.0, 2.0, …)` (Rhai builds a lookup of `N × TypeId::of::<f64>()`). The function is registered but never called. There is no "wildcard" `Dynamic` slot in `register_raw_fn` — that exists only in the `register_fn` typed-tuple path. The actual fix is to register a **single `rhai::Array` parameter** (`&[TypeId::of::<rhai::Array>()]`), unpack the array inside the closure, and validate `array.len() == N` with a clean runtime error otherwise. User-side calls for >20-input UGens therefore **must** wrap arguments in `[…]`: `big_arity24_ar([1.0, 2.0, …, 24.0])`. Defaults are not filled by Rhai on this path — exact arity is required. The `≤20` `register_fn` path is unchanged and continues to support default-argument overloads. Codegen lives in `crates/vibelang-dsp/build.rs` and the round-trip is exercised by `crates/vibelang-dsp/tests/high_arity_codegen.rs`.
+
 ### 3.2 Why not B alone?
 
 - Slower: every UGen call goes through `Dynamic`-cast unpacking instead of typed trait dispatch.

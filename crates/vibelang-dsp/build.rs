@@ -344,21 +344,24 @@ fn main() {
         for rate_str in rates {
             let func_name = format!("{}_{}", snake_name, rate_str);
 
-            // Register for all possible arities (0 to N) to support default arguments.
-            // Arities ≤ 20 use `register_fn` (typed-tuple `IntoFuncArgs`/`def_register!`
-            // path). Arities > 20 exceed Rhai's `def_register!(A:20, …)` cap and fall
-            // back to `register_raw_fn` with manual `&mut FnCallArgs` unpacking — see
-            // `kb/synthdef-arity-limits-plan.md` §3.1, §4.1 Phase 4.
-            for arity in 0..=inputs.len() {
+            // Register per-arity overloads so default arguments work for
+            // calls with fewer than `inputs.len()` positional args. Arities
+            // ≤ 20 use `register_fn` (typed-tuple `IntoFuncArgs` / `def_register!`
+            // path). UGens with > 20 inputs exceed Rhai's `def_register!(A:20, …)`
+            // cap *and* `register_raw_fn`'s exact-TypeId matching defeats a
+            // `&[Dynamic; N]` slot for `f64`-typed user calls — so the >20 case
+            // falls back to a single `rhai::Array` parameter, validated and
+            // unpacked inside the closure. See `kb/synthdef-arity-limits-plan.md`
+            // §3.1.
+            let positional_max = inputs.len().min(20);
+            for arity in 0..=positional_max {
                 let mut closure_params = Vec::new();
                 let mut call_args = Vec::new();
-                let mut explicit_names = Vec::new();
 
                 for input in inputs.iter().take(arity) {
                     let escaped_name = param_to_snake_case(&input.name);
                     closure_params.push(format!("{}: Dynamic", escaped_name));
                     call_args.push(format!("&{}", escaped_name));
-                    explicit_names.push(escaped_name);
                 }
 
                 for input in inputs.iter().skip(arity) {
@@ -378,33 +381,7 @@ fn main() {
                     call_args.push(format!("&Dynamic::from({}f64)", default_val));
                 }
 
-                if arity > 20 {
-                    writeln!(f, "    engine.register_raw_fn(").unwrap();
-                    writeln!(f, "        \"{}\",", func_name).unwrap();
-                    writeln!(
-                        f,
-                        "        &[std::any::TypeId::of::<Dynamic>(); {}],",
-                        arity
-                    )
-                    .unwrap();
-                    writeln!(
-                        f,
-                        "        |_ctx, args: &mut [&mut Dynamic]| {{"
-                    )
-                    .unwrap();
-                    for (i, name) in explicit_names.iter().enumerate() {
-                        writeln!(f, "            let {} = args[{}].take();", name, i).unwrap();
-                    }
-                    writeln!(
-                        f,
-                        "            Ok({}({}).unwrap())",
-                        func_name,
-                        call_args.join(", ")
-                    )
-                    .unwrap();
-                    writeln!(f, "        }},").unwrap();
-                    writeln!(f, "    );").unwrap();
-                } else if !closure_params.is_empty() {
+                if !closure_params.is_empty() {
                     writeln!(f, "    engine.register_fn(").unwrap();
                     writeln!(f, "        \"{}\",", func_name).unwrap();
                     writeln!(f, "        |{}| {{", closure_params.join(", ")).unwrap();
@@ -427,6 +404,46 @@ fn main() {
                     )
                     .unwrap();
                 }
+            }
+
+            if inputs.len() > 20 {
+                let arity = inputs.len();
+                writeln!(f, "    engine.register_raw_fn(").unwrap();
+                writeln!(f, "        \"{}\",", func_name).unwrap();
+                writeln!(
+                    f,
+                    "        &[std::any::TypeId::of::<rhai::Array>()],"
+                )
+                .unwrap();
+                writeln!(
+                    f,
+                    "        |_ctx, args: &mut [&mut Dynamic]| {{"
+                )
+                .unwrap();
+                writeln!(
+                    f,
+                    "            let array: rhai::Array = std::mem::take(args[0]).cast();"
+                )
+                .unwrap();
+                writeln!(f, "            if array.len() != {} {{", arity).unwrap();
+                writeln!(
+                    f,
+                    "                return Err(format!(\"{} expects array of length {}, got {{}}\", array.len()).into());",
+                    func_name, arity
+                )
+                .unwrap();
+                writeln!(f, "            }}").unwrap();
+                let call_args: Vec<String> =
+                    (0..arity).map(|i| format!("&array[{}]", i)).collect();
+                writeln!(
+                    f,
+                    "            Ok({}({}).unwrap())",
+                    func_name,
+                    call_args.join(", ")
+                )
+                .unwrap();
+                writeln!(f, "        }},").unwrap();
+                writeln!(f, "    );").unwrap();
             }
         }
     }

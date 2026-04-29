@@ -1,8 +1,9 @@
 //! Verifies the build.rs branch that emits `register_raw_fn` for UGens with
 //! more than 20 inputs (rhai's `def_register!(A:20, …)` cap). Drives the
 //! synthetic `BigArity24` fixture (`ugen_manifests/_test_arity_stub.json`)
-//! through Rhai with all 24 args and checks the resulting graph node has all
-//! 24 inputs wired. See `kb/synthdef-arity-limits-plan.md` §3.1, §4.1 Phase 4.
+//! through Rhai with all 24 args wrapped in a single `rhai::Array` and checks
+//! the resulting graph node has all 24 inputs wired. See
+//! `kb/synthdef-arity-limits-plan.md` §3.1, §4.1 Phase 4.
 
 use rhai::{Dynamic, Engine};
 use vibelang_dsp::{
@@ -19,7 +20,7 @@ fn big_arity24_register_raw_fn_full_arity_round_trip() {
     // 24 distinct float literals — exercises the register_raw_fn arity.
     // Each arg is unique so we can verify it lands in the right slot.
     let args: Vec<String> = (0..24).map(|i| format!("{}.0", i + 1)).collect();
-    let script = format!("big_arity24_ar({});", args.join(", "));
+    let script = format!("big_arity24_ar([{}]);", args.join(", "));
 
     let result: Result<Dynamic, _> = engine.eval(&script);
     let builder = clear_active_builder().expect("active builder vanished");
@@ -59,45 +60,34 @@ fn big_arity24_register_raw_fn_full_arity_round_trip() {
     }
 }
 
-/// Mid-arity (21) call also goes through register_raw_fn — explicit args 0..20
-/// supplied, last 3 default-filled by the codegen template.
+/// An undersized array must surface a clean rhai runtime error rather than
+/// panicking or building a half-wired node. Rhai-side defaults no longer apply
+/// for the `>20` Array dispatch path — the closure validates exact length.
 #[test]
-fn big_arity24_register_raw_fn_partial_arity_with_defaults() {
+fn big_arity24_register_raw_fn_undersized_array_errors_cleanly() {
     let mut engine = Engine::new();
     register_dsp_api(&mut engine);
 
     set_active_builder(GraphBuilderInner::new());
 
+    // 21 elements — past the def_register! cap so the Array path is what's
+    // dispatched, but short of the required 24.
     let args: Vec<String> = (0..21).map(|i| format!("{}.0", i + 1)).collect();
-    let script = format!("big_arity24_ar({});", args.join(", "));
+    let script = format!("big_arity24_ar([{}]);", args.join(", "));
 
     let result: Result<Dynamic, _> = engine.eval(&script);
     let builder = clear_active_builder().expect("active builder vanished");
 
-    if let Err(e) = result {
-        panic!("rhai eval of `{}` failed: {}", script, e);
-    }
+    let err = result.expect_err("undersized array should error, not succeed");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("big_arity24_ar") && msg.contains("24") && msg.contains("21"),
+        "expected length-mismatch error mentioning func name, expected and actual lengths; got: {}",
+        msg
+    );
 
-    let big = builder
-        .nodes
-        .iter()
-        .find(|n| n.name == "BigArity24")
-        .expect("BigArity24 node not found in builder after eval");
-
-    assert_eq!(big.inputs.len(), 24, "node should still have 24 input slots");
-
-    // First 21 are explicit; last 3 default to 0.0 from the manifest.
-    for (i, input) in big.inputs.iter().enumerate() {
-        let expected = if i < 21 { (i + 1) as f32 } else { 0.0 };
-        match input {
-            vibelang_dsp::Input::Constant(v) => assert!(
-                (v - expected).abs() < 1e-6,
-                "input {} expected constant {}, got {}",
-                i,
-                expected,
-                v
-            ),
-            other => panic!("input {} expected Constant, got {:?}", i, other),
-        }
-    }
+    assert!(
+        !builder.nodes.iter().any(|n| n.name == "BigArity24"),
+        "no BigArity24 node should have been built when arity validation fails"
+    );
 }
