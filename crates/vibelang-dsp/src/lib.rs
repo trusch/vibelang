@@ -42,7 +42,7 @@ pub use api::{
     synthdef_exists, synthdef_or_effect_exists, FxBuilderHandle, ModulatorBuilderHandle,
     SynthDefBuilderHandle,
 };
-pub use builder::SynthDef;
+pub use builder::{OutputPort, SynthDef};
 pub use encoder::encode_synthdef;
 pub use errors::{Result, SynthDefError};
 pub use graph::{

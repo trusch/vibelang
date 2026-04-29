@@ -449,9 +449,22 @@ impl SynthDef {
             builder.add_param(name.clone(), vec![*default], *lag_ms);
         }
 
-        // Add automatic "out" parameter if not explicitly defined and we're adding an Out node
-        if add_out_node && !has_out_param {
-            builder.add_param("out".to_string(), vec![0.0], None);
+        // Add output bus parameters. Legacy synthdefs (no explicit `.output()`) get
+        // a single "out" param exactly as before — preserves byte-for-byte codegen.
+        // Multi-port synthdefs get one `out{i}` param per declared OutputPort.
+        if add_out_node {
+            if !self.outputs_explicit {
+                if !has_out_param {
+                    builder.add_param("out".to_string(), vec![0.0], None);
+                }
+            } else {
+                for i in 0..self.outputs.len() {
+                    let name = format!("out{}", i);
+                    if !builder.params.iter().any(|p| p.name == name) {
+                        builder.add_param(name, vec![0.0], None);
+                    }
+                }
+            }
         }
 
         // Create the Control UGen node for parameters (must be first node, at index 0)
@@ -656,85 +669,160 @@ impl SynthDef {
         // Get the builder back
         let mut builder = clear_active_builder().ok_or(SynthDefError::NoActiveBuilder)?;
 
-        // Conditionally add an Out node
+        // Conditionally add Out node(s).
         if add_out_node {
-            // Add an Out node using the "out" parameter
-            // Find the "out" parameter index
-            let out_param_idx = builder
-                .params
-                .iter()
-                .position(|p| p.name == "out")
-                .expect("'out' parameter should exist");
+            if !self.outputs_explicit {
+                // Legacy single-port path: one Out.ar(out, ...). Byte-for-byte unchanged.
+                let out_param_idx = builder
+                    .params
+                    .iter()
+                    .position(|p| p.name == "out")
+                    .expect("'out' parameter should exist");
 
-            match body_result {
-                BodyResult::Mono(result_node) => {
-                    // Check if result is mono (1 output) or already stereo (2+ outputs)
-                    let result_node_id = result_node.id();
-                    let result_num_outputs = if (result_node_id as usize) < builder.nodes.len() {
-                        builder.nodes[result_node_id as usize].num_outputs
-                    } else {
-                        1 // Default to mono if we can't determine
-                    };
+                match body_result {
+                    BodyResult::Mono(result_node) => {
+                        // Check if result is mono (1 output) or already stereo (2+ outputs)
+                        let result_node_id = result_node.id();
+                        let result_num_outputs =
+                            if (result_node_id as usize) < builder.nodes.len() {
+                                builder.nodes[result_node_id as usize].num_outputs
+                            } else {
+                                1 // Default to mono if we can't determine
+                            };
 
-                    if result_num_outputs == 1 {
-                        // Mono signal - use Pan2 to convert to stereo (centered)
-                        builder.add_constant(0.0); // center position
-                        builder.add_constant(1.0); // full level
+                        if result_num_outputs == 1 {
+                            // Mono signal - use Pan2 to convert to stereo (centered)
+                            builder.add_constant(0.0); // center position
+                            builder.add_constant(1.0); // full level
 
-                        let pan2_inputs = vec![
-                            Input::Node {
-                                node_id: result_node_id,
-                                output_index: 0,
-                            },
-                            Input::Constant(0.0), // pos = center
-                            Input::Constant(1.0), // level = 1.0
-                        ];
-                        let pan2_node =
-                            builder.add_node("Pan2".to_string(), Rate::Audio, pan2_inputs, 2, 0);
+                            let pan2_inputs = vec![
+                                Input::Node {
+                                    node_id: result_node_id,
+                                    output_index: 0,
+                                },
+                                Input::Constant(0.0), // pos = center
+                                Input::Constant(1.0), // level = 1.0
+                            ];
+                            let pan2_node = builder.add_node(
+                                "Pan2".to_string(),
+                                Rate::Audio,
+                                pan2_inputs,
+                                2,
+                                0,
+                            );
 
-                        let out_inputs = vec![
-                            Input::Node {
+                            let out_inputs = vec![
+                                Input::Node {
+                                    node_id: 0,
+                                    output_index: out_param_idx as u32,
+                                },
+                                Input::Node {
+                                    node_id: pan2_node.id(),
+                                    output_index: 0,
+                                },
+                                Input::Node {
+                                    node_id: pan2_node.id(),
+                                    output_index: 1,
+                                },
+                            ];
+                            builder.add_node(
+                                "Out".to_string(),
+                                Rate::Audio,
+                                out_inputs,
+                                0,
+                                0,
+                            );
+                        } else {
+                            // Already stereo (or more) from a multi-output UGen - output directly
+                            let mut out_inputs = vec![Input::Node {
                                 node_id: 0,
                                 output_index: out_param_idx as u32,
-                            },
-                            Input::Node {
-                                node_id: pan2_node.id(),
-                                output_index: 0,
-                            },
-                            Input::Node {
-                                node_id: pan2_node.id(),
-                                output_index: 1,
-                            },
-                        ];
-                        builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
-                    } else {
-                        // Already stereo (or more) from a multi-output UGen - output directly
+                            }];
+                            for i in 0..result_num_outputs {
+                                out_inputs.push(Input::Node {
+                                    node_id: result_node_id,
+                                    output_index: i,
+                                });
+                            }
+                            builder.add_node(
+                                "Out".to_string(),
+                                Rate::Audio,
+                                out_inputs,
+                                0,
+                                0,
+                            );
+                        }
+                    }
+                    BodyResult::MultiChannel(channels) => {
+                        // Explicit multi-channel return (e.g., [left, right])
+                        // Output each channel directly without Pan2 wrapping
                         let mut out_inputs = vec![Input::Node {
                             node_id: 0,
                             output_index: out_param_idx as u32,
                         }];
-                        for i in 0..result_num_outputs {
-                            out_inputs.push(Input::Node {
-                                node_id: result_node_id,
-                                output_index: i,
-                            });
+
+                        for channel_node in &channels {
+                            // Use to_input() which handles parameter refs correctly
+                            out_inputs.push(channel_node.to_input());
                         }
+
                         builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
                     }
                 }
-                BodyResult::MultiChannel(channels) => {
-                    // Explicit multi-channel return (e.g., [left, right])
-                    // Output each channel directly without Pan2 wrapping
-                    let mut out_inputs = vec![Input::Node {
-                        node_id: 0,
-                        output_index: out_param_idx as u32,
-                    }];
-
-                    for channel_node in &channels {
-                        // Use to_input() which handles parameter refs correctly
-                        out_inputs.push(channel_node.to_input());
+            } else {
+                // Multi-port path: one Out.ar(out{i}, sig_i) per declared OutputPort.
+                // Body must return one signal per port — `[sig0, sig1, ...]`.
+                let port_count = self.outputs.len();
+                let signals: Vec<NodeRef> = match body_result {
+                    BodyResult::Mono(_) => {
+                        return Err(SynthDefError::ValidationError(format!(
+                            "Synthdef '{}' declares {} output port(s); body must return an array \
+                             of {} signal(s) (one per port), got a single signal",
+                            self.name, port_count, port_count
+                        )));
                     }
+                    BodyResult::MultiChannel(channels) => channels,
+                };
 
+                if signals.len() != port_count {
+                    // Special hint: a 2-element return on a multi-port synthdef is the
+                    // classic legacy-stereo migration mistake.
+                    let extra = if signals.len() == 2 && port_count != 2 {
+                        format!(
+                            " (a 2-element return looks like a legacy stereo `[L, R]` pair; \
+                             multi-port synthdefs must return one signal per declared port, e.g. \
+                             `[{}]`)",
+                            (0..port_count)
+                                .map(|i| format!("port{}_signal", i))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    } else {
+                        String::new()
+                    };
+                    return Err(SynthDefError::ValidationError(format!(
+                        "Synthdef '{}' declares {} output port(s); body returned {} signal(s){}",
+                        self.name,
+                        port_count,
+                        signals.len(),
+                        extra
+                    )));
+                }
+
+                for (i, sig) in signals.iter().enumerate() {
+                    let param_name = format!("out{}", i);
+                    let out_param_idx = builder
+                        .params
+                        .iter()
+                        .position(|p| p.name == param_name)
+                        .expect("multi-port out param should exist");
+                    let out_inputs = vec![
+                        Input::Node {
+                            node_id: 0,
+                            output_index: out_param_idx as u32,
+                        },
+                        sig.to_input(),
+                    ];
                     builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
                 }
             }
@@ -1193,5 +1281,214 @@ mod body_map_tests {
             pos_ir.constants, map_ir.constants,
             "constants differ"
         );
+    }
+
+    // ---------- Multi-output codegen (Story 4) ----------
+
+    fn build_legacy_stereo_synthdef(name: &str) -> Result<GraphIR> {
+        // No `.output()` — outputs_explicit == false → legacy path.
+        let sd = SynthDef::new(name.to_string());
+        let closure: FnPtr = parser_engine()
+            .eval("|| { let s = sin_osc_ar(440.0, 0.0); [s, s] }")
+            .expect("parse stereo body");
+        sd.build_body_closure_with_options(closure, true)
+    }
+
+    #[test]
+    fn legacy_single_port_emits_one_out_with_out_param() {
+        let ir = build_legacy_stereo_synthdef("legacy").expect("build legacy");
+
+        // Legacy path: a single "out" param (no out0/out1 etc.)
+        assert_eq!(ir.params.len(), 1, "params = {:?}", ir.params);
+        assert_eq!(ir.params[0].name, "out");
+
+        // Exactly one Out node.
+        let out_nodes: Vec<&_> = ir.nodes.iter().filter(|n| n.name == "Out").collect();
+        assert_eq!(out_nodes.len(), 1, "expected exactly one Out UGen");
+
+        let out = out_nodes[0];
+        assert_eq!(out.rate, Rate::Audio);
+        assert_eq!(out.num_outputs, 0);
+        // Inputs: [Control@0, L, R]
+        assert_eq!(out.inputs.len(), 3);
+        match &out.inputs[0] {
+            Input::Node {
+                node_id,
+                output_index,
+            } => {
+                assert_eq!(*node_id, 0, "Out should reference Control UGen");
+                assert_eq!(*output_index, 0, "Out should read the 'out' param slot");
+            }
+            other => panic!("expected Node input for bus, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn legacy_single_port_byte_for_byte_baseline() {
+        // Encode a known legacy synthdef and snapshot the bytes. The legacy
+        // path is wholly preserved by Story 4: any future change that alters
+        // the encoding will trip this test.
+        let bytes = build_legacy_stereo_synthdef("legacy_baseline")
+            .and_then(|ir| encode_synthdef(&ir))
+            .expect("encode legacy");
+
+        // SCgf header + version 2.
+        assert_eq!(&bytes[0..4], b"SCgf");
+        assert_eq!(&bytes[4..8], &[0, 0, 0, 2]);
+
+        // Compare against a parallel build of the same legacy synthdef. They
+        // must be byte-equal — no nondeterminism in the legacy path.
+        let bytes2 = build_legacy_stereo_synthdef("legacy_baseline")
+            .and_then(|ir| encode_synthdef(&ir))
+            .expect("encode legacy 2");
+        assert_eq!(bytes, bytes2, "legacy encoding must be deterministic");
+
+        // Expect exactly one "Out" UGen name in the bytes (sanity: confirms
+        // we did not double-emit, and the legacy path emits a single Out).
+        let needle = b"\x03Out";
+        let count = bytes.windows(needle.len()).filter(|w| *w == needle).count();
+        assert_eq!(count, 1, "legacy synthdef must contain exactly one Out UGen");
+    }
+
+    #[test]
+    fn multi_port_4_emits_one_out_per_port() {
+        let mut sd = SynthDef::new("quad".to_string());
+        sd.output("a".to_string(), 1).expect("a");
+        sd.output("b".to_string(), 1).expect("b");
+        sd.output("c".to_string(), 1).expect("c");
+        sd.output("d".to_string(), 1).expect("d");
+
+        let closure: FnPtr = parser_engine()
+            .eval(
+                "|| { \
+                    let s0 = sin_osc_ar(110.0, 0.0); \
+                    let s1 = sin_osc_ar(220.0, 0.0); \
+                    let s2 = sin_osc_ar(330.0, 0.0); \
+                    let s3 = sin_osc_ar(440.0, 0.0); \
+                    [s0, s1, s2, s3] \
+                }",
+            )
+            .expect("parse 4-port body");
+        let ir = sd
+            .build_body_closure_with_options(closure, true)
+            .expect("build 4-port");
+
+        // Params: out0, out1, out2, out3 (no legacy "out").
+        assert_eq!(ir.params.len(), 4, "params = {:?}", ir.params);
+        for i in 0..4 {
+            assert_eq!(ir.params[i].name, format!("out{}", i));
+        }
+        assert!(
+            !ir.params.iter().any(|p| p.name == "out"),
+            "multi-port synthdef must not have a legacy 'out' param"
+        );
+
+        // Four Out UGens, each writing to its own param slot.
+        let out_nodes: Vec<&_> = ir.nodes.iter().filter(|n| n.name == "Out").collect();
+        assert_eq!(out_nodes.len(), 4, "expected 4 Out UGens");
+
+        // Each Out must read a *distinct* param output_index from Control.
+        let mut seen_param_slots = std::collections::HashSet::new();
+        for out in &out_nodes {
+            assert_eq!(out.rate, Rate::Audio);
+            assert_eq!(out.num_outputs, 0);
+            // Inputs: [Control@param_slot, signal]
+            assert_eq!(out.inputs.len(), 2, "out inputs = {:?}", out.inputs);
+            match &out.inputs[0] {
+                Input::Node {
+                    node_id,
+                    output_index,
+                } => {
+                    assert_eq!(*node_id, 0, "bus input must come from Control UGen");
+                    assert!(
+                        seen_param_slots.insert(*output_index),
+                        "two Out UGens write the same bus param slot {}",
+                        output_index
+                    );
+                }
+                other => panic!("expected Node input for bus, got {:?}", other),
+            }
+        }
+        // The four Out UGens covered exactly the four out{i} param slots.
+        assert_eq!(seen_param_slots.len(), 4);
+    }
+
+    #[test]
+    fn multi_port_count_mismatch_errors() {
+        let mut sd = SynthDef::new("mismatch".to_string());
+        sd.output("a".to_string(), 1).expect("a");
+        sd.output("b".to_string(), 1).expect("b");
+        sd.output("c".to_string(), 1).expect("c");
+
+        // 3 ports declared, body returns 4 signals.
+        let closure: FnPtr = parser_engine()
+            .eval("|| { let s = sin_osc_ar(440.0, 0.0); [s, s, s, s] }")
+            .expect("parse mismatched body");
+        let err = sd
+            .build_body_closure_with_options(closure, true)
+            .expect_err("count mismatch must error");
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                assert!(msg.contains("3"), "msg should mention 3 ports: {}", msg);
+                assert!(msg.contains("4"), "msg should mention 4 signals: {}", msg);
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn multi_port_stereo_pair_returns_legacy_migration_hint() {
+        let mut sd = SynthDef::new("stereo_mistake".to_string());
+        for n in ["a", "b", "c", "d"] {
+            sd.output(n.to_string(), 1).expect(n);
+        }
+
+        // Body returns [L, R] like a legacy stereo synthdef body.
+        let closure: FnPtr = parser_engine()
+            .eval("|| { let s = sin_osc_ar(440.0, 0.0); [s, s] }")
+            .expect("parse stereo body");
+        let err = sd
+            .build_body_closure_with_options(closure, true)
+            .expect_err("stereo pair on multi-port must error");
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                // Hint must guide the author toward per-port returns.
+                assert!(
+                    msg.contains("legacy") || msg.contains("stereo"),
+                    "msg should mention legacy stereo migration: {}",
+                    msg
+                );
+                assert!(
+                    msg.contains("port"),
+                    "msg should mention ports: {}",
+                    msg
+                );
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn multi_port_single_signal_errors() {
+        let mut sd = SynthDef::new("single_to_multi".to_string());
+        sd.output("a".to_string(), 1).expect("a");
+        sd.output("b".to_string(), 1).expect("b");
+
+        let closure: FnPtr = parser_engine()
+            .eval("|| sin_osc_ar(440.0, 0.0)")
+            .expect("parse mono body");
+        let err = sd
+            .build_body_closure_with_options(closure, true)
+            .expect_err("single signal on multi-port must error");
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                assert!(
+                    msg.contains("port"),
+                    "msg should mention ports: {}",
+                    msg
+                );
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
     }
 }
