@@ -1,0 +1,68 @@
+// Spectraphon multi-output routing demo (Multi-output Story 12).
+//
+// Demonstrates the four named output ports on `spectraphon_side` and the
+// `voice.output(name).to(group)` / `.to_main()` Rhai routing surface
+// (Story 8 of the multi-output / CV-routing epic).
+//
+// Topology:
+//
+//   sine ─────────────────────────────────► main bus  (raw fundamental)
+//   sub  ─────────────────────────────────► main bus  (DC-coupled CV path)
+//   odd  ──► leads (mix bus)               ─► main bus
+//   even ──► fx_evens (reverb_jpverb)      ─► main bus
+//
+// Why this layout: with the Spectraphon hardware-style decomposition, the
+// even-bank harmonics are the "shimmery" partials that benefit from heavy
+// reverb, while the odd bank stays present and articulated. Sending only
+// `even` through the reverb bus keeps the fundamental tight and lets the
+// reverb wash decorate the upper-spectrum content.
+//
+// The `sine` and `sub` ports route straight to the main hardware output
+// (bypassing any group-level FX) so the clean fundamental and CV-style
+// sub stay un-coloured.
+
+import "stdlib/instruments/spectral/spectraphon_side.vibe";
+import "stdlib/effects/reverbs/reverb_jpverb.vibe";
+
+set_tempo(72);
+
+// Mix-only group for the odd-bank summed signal. No group-level FX —
+// the odd partials stay dry and articulated.
+define_group("leads", || { });
+
+// FX group for the even-bank: a long, lush jpverb wash.
+define_group("fx_evens", || {
+    fx("evens_verb")
+        .synth("reverb_jpverb")
+        .param("time", 4.0)
+        .param("size", 0.85)
+        .param("mix", 0.55)
+        .apply();
+});
+
+// One spectraphon_side voice driving all four ports. `.group("leads")` sets
+// the *default* group for any port that isn't explicitly routed; we then
+// override per-port below.
+let v = voice("spec")
+    .synth("spectraphon_side")
+    .group("leads")
+    .set_param("partials", 0.85)
+    .set_param("slide", 0.55)
+    .set_param("focus", 0.45)
+    .set_param("sam_capture", 0.0)        // SAO mode for a stable bank
+    .set_param("amp", 0.25)
+    .gain(db(-9));
+
+// Per-port routing. `odd` reuses the voice's current group ("leads") via
+// `to_current_group()` — saves a redundant `group(...)` handle lookup when
+// the destination is the same group already set on the voice.
+v.output("sine").to_main();
+v.output("sub").to_main();
+v.output("odd").to_current_group();
+v.output("even").to(group("fx_evens"));
+
+// Hold a 3-note arpeggio through the multi-bus topology.
+melody("spec_arp")
+    .on(v)
+    .notes("A3 C4 E4")
+    .start();
