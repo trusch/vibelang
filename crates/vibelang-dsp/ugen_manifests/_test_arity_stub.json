@@ -1,0 +1,35 @@
+[
+  {
+    "name": "BigArity24",
+    "description": "Test fixture for the high-arity (>20 inputs) codegen path. Forces build.rs to emit register_raw_fn for arities 21..=24 since rhai's def_register! only covers 0..=20. Not a real SC UGen — only the registration path is exercised; round-trip tests skip the scsynth load step.",
+    "rates": ["ar"],
+    "inputs": [
+      {"name": "in00", "type": "signal", "default": 0.0, "description": "input slot 00"},
+      {"name": "in01", "type": "signal", "default": 0.0, "description": "input slot 01"},
+      {"name": "in02", "type": "signal", "default": 0.0, "description": "input slot 02"},
+      {"name": "in03", "type": "signal", "default": 0.0, "description": "input slot 03"},
+      {"name": "in04", "type": "signal", "default": 0.0, "description": "input slot 04"},
+      {"name": "in05", "type": "signal", "default": 0.0, "description": "input slot 05"},
+      {"name": "in06", "type": "signal", "default": 0.0, "description": "input slot 06"},
+      {"name": "in07", "type": "signal", "default": 0.0, "description": "input slot 07"},
+      {"name": "in08", "type": "signal", "default": 0.0, "description": "input slot 08"},
+      {"name": "in09", "type": "signal", "default": 0.0, "description": "input slot 09"},
+      {"name": "in10", "type": "signal", "default": 0.0, "description": "input slot 10"},
+      {"name": "in11", "type": "signal", "default": 0.0, "description": "input slot 11"},
+      {"name": "in12", "type": "signal", "default": 0.0, "description": "input slot 12"},
+      {"name": "in13", "type": "signal", "default": 0.0, "description": "input slot 13"},
+      {"name": "in14", "type": "signal", "default": 0.0, "description": "input slot 14"},
+      {"name": "in15", "type": "signal", "default": 0.0, "description": "input slot 15"},
+      {"name": "in16", "type": "signal", "default": 0.0, "description": "input slot 16"},
+      {"name": "in17", "type": "signal", "default": 0.0, "description": "input slot 17"},
+      {"name": "in18", "type": "signal", "default": 0.0, "description": "input slot 18"},
+      {"name": "in19", "type": "signal", "default": 0.0, "description": "input slot 19"},
+      {"name": "in20", "type": "signal", "default": 0.0, "description": "input slot 20"},
+      {"name": "in21", "type": "signal", "default": 0.0, "description": "input slot 21"},
+      {"name": "in22", "type": "signal", "default": 0.0, "description": "input slot 22"},
+      {"name": "in23", "type": "signal", "default": 0.0, "description": "input slot 23"}
+    ],
+    "outputs": 1,
+    "category": "test"
+  }
+]
