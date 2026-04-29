@@ -3,6 +3,7 @@
 //! This module defines the state extracted from a `.vibe` script,
 //! without runtime-specific IDs (node IDs, buffer IDs, etc.).
 
+use crate::handlers::RouteMap;
 #[cfg(feature = "midi")]
 use crate::traits::FadeTarget;
 #[cfg(not(target_arch = "wasm32"))]
@@ -462,6 +463,14 @@ pub struct ScriptState {
     /// Modulators defined in the script.
     pub modulators: HashMap<ModulatorId, ModulatorConfig>,
 
+    /// Per-voice output port routing.
+    ///
+    /// Keyed by `(voice_id, port_name)` → `RouteDest`. Populated by Story 8's
+    /// Rhai surface; for Story 6a this is data-only (the runtime carries the
+    /// map but does not yet emit mixer synths — see [`RoutesHandler::finalize`]
+    /// stub in `handlers/routes.rs`).
+    pub routes: RouteMap,
+
     /// Recordings to start (native only).
     #[cfg(not(target_arch = "wasm32"))]
     pub recordings: HashMap<RecordingId, RecordingConfig>,
@@ -683,6 +692,24 @@ impl ScriptState {
     /// Add a modulator.
     pub fn add_modulator(&mut self, id: ModulatorId, config: ModulatorConfig) {
         self.modulators.insert(id, config);
+    }
+
+    /// Set the route destination for a voice's named output port.
+    ///
+    /// Story 6a script-side mutation API. Overwrites any prior route for the
+    /// same `(voice_id, port_name)` key.
+    pub fn set_route(
+        &mut self,
+        voice_id: VoiceId,
+        port_name: impl Into<String>,
+        dest: crate::handlers::RouteDest,
+    ) {
+        self.routes.insert((voice_id, port_name.into()), dest);
+    }
+
+    /// Remove the route for a voice's named output port, if any.
+    pub fn clear_route(&mut self, voice_id: VoiceId, port_name: &str) {
+        self.routes.remove(&(voice_id, port_name.to_string()));
     }
 }
 
