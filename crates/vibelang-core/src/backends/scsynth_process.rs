@@ -56,6 +56,13 @@ pub struct ScsynthConfig {
     /// Maximum number of synthdefs.
     pub max_synthdefs: u32,
 
+    /// Number of sample buffers (-b flag).
+    ///
+    /// SC's default is 1024. We bump to 4096 so script-allocated buffers
+    /// (`allocate_buffer(...)` in Rhai, IDs in 2048..4096) have headroom
+    /// without colliding with the sample/recording allocator (low IDs).
+    pub num_buffers: u32,
+
     /// Real-time memory size in bytes.
     pub realtime_memory: u32,
 
@@ -96,6 +103,7 @@ impl Default for ScsynthConfig {
             random_seeds: 64,
             max_nodes: 1024,
             max_synthdefs: 1024,
+            num_buffers: 4096,
             realtime_memory: 8192,
             verbose: false,
             device: None,
@@ -210,6 +218,8 @@ impl ScsynthConfig {
             self.max_nodes.to_string(),
             "-d".to_string(),
             self.max_synthdefs.to_string(),
+            "-b".to_string(),
+            self.num_buffers.to_string(),
             "-m".to_string(),
             self.realtime_memory.to_string(),
         ];

@@ -44,15 +44,16 @@
 //     the current (slide, focus). 4 buf_rd_kr per partial × 64 partials =
 //     256 lookups per side at kr rate.
 //
-//   DEVIATION (documented for Story C follow-up): vibelang has no script-
-//   level top-level buffer API yet (see kb/spectraphon-synthdef-plan.md
-//   §6.C3). This story uses local_buf_ir, which is per-synth and does NOT
-//   survive synthdef recompile — captured Arrays reset on hot-reload. A
-//   future ticket should add `allocate_buffer(frames, channels)` to
-//   vibelang-rhai and switch this synthdef to accept a `array_buf` bufnum
-//   parameter pointing at a script-allocated buffer. Default-preset baking
-//   (Array 0 = saw, 1 = square, 2 = noise) is also deferred to that ticket
-//   since `set_buf_ir` cannot fan out to 65536 cells in one call.
+//   The Array buffer is a script-allocated, hot-reload-safe buffer wired
+//   in via the `bufnum` synthdef param. The script side calls
+//   `let arr = allocate_buffer("spec_arrays", 65536, 1);
+//    voice.set_param("bufnum", arr.bufnum);` — see
+//   `examples/spectraphon_multiout.vibe`. The reload diff treats an
+//   unchanged `allocate_buffer` call as a no-op, so the SC buffer is not
+//   re-allocated and any captured magnitudes survive synthdef recompiles.
+//   Default-preset baking (Array 0 = saw, 1 = square, 2 = noise) is
+//   deferred to a follow-up ticket since `set_buf_ir` cannot fan out to
+//   65,536 cells in one call.
 //
 // Story E — Spectranoise modes (Chaos + Noise) per kb plan §6.E and §4:
 //
@@ -118,6 +119,11 @@ define_synthdef("spectraphon_side", |builder| {
         .param("gate", 1.0)
         .param("sam_capture", 1.0)  // mode: 0=SAO | 1=SAM | 2=Chaos | 3=Noise | 4=SAM+cap
         .param("array_idx", 0.0)    // 0..15 — which of the 16 stored Arrays to address
+        .param("bufnum", 0.0)       // SC bufnum of the script-allocated Array buffer
+                                    // (65,536 frames × 1 channel — see
+                                    // `examples/spectraphon_multiout.vibe`).
+                                    // Default 0 is invalid; the script MUST wire
+                                    // `allocate_buffer("spec_arrays", 65536, 1).bufnum`.
         .body_map(|p| {
 
             // Unpack params from the body_map into local bindings so the
@@ -130,6 +136,7 @@ define_synthdef("spectraphon_side", |builder| {
             let gate = p.gate;
             let sam_capture = p.sam_capture;
             let array_idx = p.array_idx;
+            let array_buf = p.bufnum;
 
             let env = envelope()
                 .asr(0.01, 1.0, 0.3)
@@ -193,7 +200,11 @@ define_synthdef("spectraphon_side", |builder| {
             //       + (k - 1)
             // Strides for N_GRID=8, N_PARTIALS=64:
             //   array_stride = 4096, row_stride = 512, cell_stride = 64.
-            let array_buf = local_buf_ir(1, 65536.0);
+            //
+            // The buffer is script-allocated via `allocate_buffer(...)` and
+            // wired in via the `bufnum` synthdef param (unpacked above as
+            // `array_buf`). This keeps the 16-Array memory alive across
+            // synthdef recompiles — captured magnitudes survive hot-reload.
 
             // Quantise slide/focus to grid cells. floor(x) = x - wrap(x,0,1)
             // since vibelang has no Floor UGen.

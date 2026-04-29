@@ -1,8 +1,11 @@
-// Spectraphon multi-output routing demo (Multi-output Story 12).
+// Spectraphon multi-output routing demo (Multi-output Story 12)
+// + script-allocated Array buffer (hot-reload-safe Story C memory).
 //
 // Demonstrates the four named output ports on `spectraphon_side` and the
 // `voice.output(name).to(group)` / `.to_main()` Rhai routing surface
-// (Story 8 of the multi-output / CV-routing epic).
+// (Story 8 of the multi-output / CV-routing epic), plus the
+// `allocate_buffer(name, frames, channels)` API that gives the synthdef
+// 65,536 floats of Array memory whose contents survive hot-reload.
 //
 // Topology:
 //
@@ -20,6 +23,13 @@
 // The `sine` and `sub` ports route straight to the main hardware output
 // (bypassing any group-level FX) so the clean fundamental and CV-style
 // sub stay un-coloured.
+//
+// Array memory: `allocate_buffer("spec_arrays", 65536, 1)` registers a
+// top-level mono buffer with the runtime. The same call in a future
+// reload returns the same `bufnum` (deterministic name → ID mapping in
+// the Rhai layer), so SC does NOT free the buffer between reloads —
+// any captured magnitudes (SAM mode, sam_capture=4) stay readable in
+// SAO mode after editing the synthdef body.
 
 import "stdlib/instruments/spectral/spectraphon_side.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
@@ -40,6 +50,11 @@ define_group("fx_evens", || {
         .apply();
 });
 
+// Allocate the shared Array memory. 16 arrays × 8×8 grid × 64 partials
+// = 65,536 floats. The buffer survives hot-reload as long as this call
+// stays in the script — captured Arrays persist across synthdef edits.
+let arr = allocate_buffer("spec_arrays", 65536, 1);
+
 // One spectraphon_side voice driving all four ports. `.group("leads")` sets
 // the *default* group for any port that isn't explicitly routed; we then
 // override per-port below.
@@ -51,6 +66,7 @@ let v = voice("spec")
     .set_param("focus", 0.45)
     .set_param("sam_capture", 0.0)        // SAO mode for a stable bank
     .set_param("amp", 0.25)
+    .set_param("bufnum", arr.bufnum)      // wire script-allocated Array buffer
     .gain(db(-9));
 
 // Per-port routing. `odd` reuses the voice's current group ("leads") via

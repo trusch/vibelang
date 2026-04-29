@@ -3,6 +3,7 @@
 //! Each module provides builders and functions for a specific feature area.
 
 pub mod assert;
+pub mod buffer;
 pub mod global;
 pub mod group;
 pub mod helpers;
@@ -65,6 +66,9 @@ pub fn register_api(engine: &mut Engine) {
 
     // Register sample API
     sample::register(engine);
+
+    // Register script-allocated buffer API
+    buffer::register(engine);
 
     // Register modulator API
     modulator::register(engine);

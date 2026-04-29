@@ -9,16 +9,16 @@ use crate::traits::FadeTarget;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingConfig;
 use crate::traits::{
-    FadeConfig, MelodyConfig, ModulatorConfig, PatternConfig, SampleConfig, SequenceConfig,
-    SfzConfig, VoiceConfig,
+    BufferConfig, FadeConfig, MelodyConfig, ModulatorConfig, PatternConfig, SampleConfig,
+    SequenceConfig, SfzConfig, VoiceConfig,
 };
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::types::RecordingId;
 use crate::types::{
-    EffectId, FadeId, GroupId, MelodyId, ModulatorId, ParamMap, PatternId, SampleId, SequenceId,
-    SfzId, TimeSignature, VoiceId,
+    BufferId, EffectId, FadeId, GroupId, MelodyId, ModulatorId, ParamMap, PatternId, SampleId,
+    SequenceId, SfzId, TimeSignature, VoiceId,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -457,6 +457,14 @@ pub struct ScriptState {
     /// Samples to load.
     pub samples: HashMap<SampleId, SampleConfig>,
 
+    /// Script-allocated audio-rate buffers (empty memory, name-keyed via BufferId).
+    ///
+    /// Populated by the Rhai `allocate_buffer(name, frames, channels)` API.
+    /// The reload diff treats unchanged entries as no-ops, so the backing
+    /// SC buffer survives synthdef recompiles — captured Array data
+    /// (e.g. spectraphon SAM-mode magnitudes) persists across hot-reload.
+    pub buffers: HashMap<BufferId, BufferConfig>,
+
     /// SFZ instruments to load.
     pub sfz_instruments: HashMap<SfzId, SfzConfig>,
 
@@ -682,6 +690,11 @@ impl ScriptState {
     /// Add a sample.
     pub fn add_sample(&mut self, id: SampleId, config: SampleConfig) {
         self.samples.insert(id, config);
+    }
+
+    /// Add a script-allocated buffer.
+    pub fn add_buffer(&mut self, id: BufferId, config: BufferConfig) {
+        self.buffers.insert(id, config);
     }
 
     /// Add an SFZ instrument.

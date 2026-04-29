@@ -12,8 +12,8 @@ use crate::reload::ChangeQuant;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingInfo;
 use crate::traits::{
-    FadeConfig, MelodyConfig, MelodyContent, ModulatorConfig, PatternConfig, PatternContent,
-    SampleInfo, SequenceConfig, VoiceConfig,
+    BufferConfig, FadeConfig, MelodyConfig, MelodyContent, ModulatorConfig, PatternConfig,
+    PatternContent, SampleInfo, SequenceConfig, VoiceConfig,
 };
 use crate::types::FadeId;
 #[cfg(not(target_arch = "wasm32"))]
@@ -784,6 +784,15 @@ pub struct State {
     /// Loaded samples.
     pub samples: HashMap<SampleId, SampleInfo>,
 
+    /// Script-allocated audio-rate buffers (alive across hot-reload).
+    ///
+    /// Mirrors [`crate::reload::ScriptState::buffers`] — each entry
+    /// corresponds to a `b_alloc`-ed SC buffer with `BufferId == BufferId.0`
+    /// used directly as the SC bufnum. Created on reload when the script
+    /// adds an `allocate_buffer(name, ...)` call; freed on reload when the
+    /// call is removed.
+    pub buffers: HashMap<BufferId, BufferConfig>,
+
     /// Loaded SFZ instruments.
     pub sfz_instruments: HashMap<SfzId, SfzInstrumentState>,
 
@@ -896,6 +905,7 @@ impl Default for State {
             synthdefs: HashSet::new(),
             synthdef_outputs: HashMap::new(),
             samples: HashMap::new(),
+            buffers: HashMap::new(),
             sfz_instruments: HashMap::new(),
             groups: HashMap::new(),
             voices: HashMap::new(),

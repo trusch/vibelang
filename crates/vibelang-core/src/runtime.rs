@@ -915,6 +915,24 @@ impl<B: Backend> Runtime<B> {
             let _ = self.samples.unload(*id).await;
         }
 
+        // Free script-allocated buffers that disappeared from the script.
+        // Updated buffers (frames/channels resize) are torn down here so
+        // Phase 3 below can re-alloc them at the new size.
+        for id in &diff.buffers.deleted {
+            tracing::debug!("Reload: freeing script buffer {:?}", id);
+            if let Err(e) = self.backend.free_buffer(*id).await {
+                tracing::warn!("Reload: free_buffer({:?}) failed: {}", id, e);
+            }
+            self.state.write().await.buffers.remove(id);
+        }
+        for (id, _) in &diff.buffers.updated {
+            tracing::debug!("Reload: freeing script buffer {:?} for resize", id);
+            if let Err(e) = self.backend.free_buffer(*id).await {
+                tracing::warn!("Reload: free_buffer({:?}) failed: {}", id, e);
+            }
+            self.state.write().await.buffers.remove(id);
+        }
+
         // Delete SFZ instruments
         for id in &diff.sfz.deleted {
             tracing::debug!("Reload: deleting SFZ instrument {:?}", id);
@@ -1120,6 +1138,47 @@ impl<B: Backend> Runtime<B> {
         for (id, config) in &diff.samples.created {
             tracing::debug!("Reload: loading sample {:?}", id);
             let _ = self.samples.load(*id, config.clone()).await;
+        }
+
+        // Allocate new script buffers (and re-allocate updated ones at new
+        // size — the prior generation was freed in Phase 2 above). Voices
+        // wired with `set_param("bufnum", ...)` will reference these IDs.
+        let buffers_to_alloc: Vec<_> = diff
+            .buffers
+            .created
+            .iter()
+            .chain(diff.buffers.updated.iter())
+            .collect();
+        for (id, config) in buffers_to_alloc {
+            tracing::debug!(
+                "Reload: allocating script buffer {:?} '{}' ({} frames × {} ch)",
+                id,
+                config.name,
+                config.frames,
+                config.channels
+            );
+            match self
+                .backend
+                .alloc_buffer(*id, config.frames, config.channels)
+                .await
+            {
+                Ok(_info) => {
+                    self.state
+                        .write()
+                        .await
+                        .buffers
+                        .insert(*id, config.clone());
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Reload: alloc_buffer({:?}, {}, {}) failed: {}",
+                        id,
+                        config.frames,
+                        config.channels,
+                        e
+                    );
+                }
+            }
         }
 
         // Load new SFZ instruments (and re-load updated ones)

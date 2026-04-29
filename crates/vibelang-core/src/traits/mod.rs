@@ -32,6 +32,7 @@
 //! Many traits include associated configuration types (e.g., [`VoiceConfig`],
 //! [`PatternConfig`]) that define the initial state of entities.
 
+mod buffers;
 mod effects;
 mod fades;
 mod groups;
@@ -52,6 +53,7 @@ mod recordings;
 mod midi;
 
 // Re-export traits
+pub use buffers::BufferConfig;
 pub use effects::Effects;
 pub use fades::{FadeConfig, FadeCurve, FadeTarget, Fades};
 pub use groups::Groups;

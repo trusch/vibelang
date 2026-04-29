@@ -82,8 +82,8 @@ use std::collections::HashSet;
 use crate::state::State;
 use crate::traits::SampleConfig;
 use crate::types::{
-    Beat, EffectId, FadeId, MelodyId, ModulatorId, PatternId, SampleId, SequenceId, SfzId,
-    TimeSignature, VoiceId,
+    Beat, BufferId, EffectId, FadeId, MelodyId, ModulatorId, PatternId, SampleId, SequenceId,
+    SfzId, TimeSignature, VoiceId,
 };
 
 /// Quantization mode for applying hot reload changes.
@@ -240,6 +240,12 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
             .samples
             .get(id)
             .map(|s| SampleConfig::new(s.path.clone()))
+    });
+
+    // Script-allocated buffers
+    let current_buffer_ids: HashSet<BufferId> = current.buffers.keys().copied().collect();
+    diff.buffers = diff_entities(&current_buffer_ids, &new.buffers, |id| {
+        current.buffers.get(id).cloned()
     });
 
     // SFZ instruments
