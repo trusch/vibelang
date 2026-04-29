@@ -32,9 +32,9 @@ use crate::compat::{timeout, Duration};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::handlers::RecordingsHandler;
 use crate::handlers::{
-    EffectsHandler, FadesHandler, GroupsHandler, MelodiesHandler, ModulatorsHandler,
-    PatternsHandler, RouteMap, RoutesHandler, SamplesHandler, SequencesHandler, SfzHandler,
-    SynthDefsHandler, TransportHandler, VoicesHandler,
+    merge_default_routes, EffectsHandler, FadesHandler, GroupsHandler, MelodiesHandler,
+    ModulatorsHandler, PatternsHandler, RouteMap, RoutesHandler, SamplesHandler, SequencesHandler,
+    SfzHandler, SynthDefsHandler, TransportHandler, VoicesHandler,
 };
 #[cfg(feature = "midi")]
 use crate::message::MidiMessage;
@@ -1202,17 +1202,9 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
-        // Create new effects
-        for (id, config) in &diff.effects.created {
-            tracing::debug!("Reload: creating effect {:?}", id);
-            if let Err(e) = self
-                .effects
-                .add(*id, config.group, &config.synthdef, &config.params)
-                .await
-            {
-                tracing::error!("Reload: failed to create effect {:?}: {}", id, e);
-            }
-        }
+        // NOTE: Effect creation is deferred to Phase 4.8 (after routes finalize)
+        // so that effect synths sit in SC tree order *after* the route mixers
+        // that sum voice ports onto the group's audio bus. See Phase 4.8 below.
 
         // =========================================================================
         // Phase 4: Update existing entities
@@ -1402,6 +1394,103 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
+        // NOTE: Effect updates are deferred to Phase 4.8 (after routes finalize),
+        // alongside effect creation, so freshly-(re)spawned effect synths sit
+        // *after* the route mixers in SC tree order. See Phase 4.8 below.
+
+        // Update modulators - only recreate if synthdef or modulations changed;
+        // for param-only changes use set_param to avoid resetting the LFO phase.
+        for (id, new_config) in &diff.modulators.updated {
+            let needs_recreate = {
+                let state = self.state.read().await;
+                if let Some(current) = state.modulators.get(id) {
+                    current.config.synthdef != new_config.synthdef
+                        || current.config.modulations != new_config.modulations
+                } else {
+                    true
+                }
+            };
+
+            if needs_recreate {
+                tracing::debug!(
+                    "Reload: recreating modulator {:?} (synthdef or modulations changed, synthdef='{}')",
+                    id,
+                    new_config.synthdef
+                );
+                let _ = self.modulators.delete(*id).await;
+                if let Err(e) = self.modulators.create(*id, new_config.clone()).await {
+                    tracing::error!("Reload: failed to recreate modulator {:?}: {}", id, e);
+                }
+            } else {
+                // Only params changed - update in place to preserve LFO phase
+                tracing::debug!(
+                    "Reload: updating modulator {:?} params only (synthdef='{}')",
+                    id,
+                    new_config.synthdef
+                );
+                for (param, value) in &new_config.params {
+                    let _ = self.modulators.set_param(*id, param, *value).await;
+                }
+            }
+        }
+
+        // =========================================================================
+        // Phase 4.7: Finalize routes (per-voice port → group mixer synths)
+        // =========================================================================
+        // Spawned between the voice creation/update phase and the group
+        // link-synth phase so the SC tree order is voices → routes → effects →
+        // link synth → main bus. The diff is computed against the
+        // last-applied [`Self::current_routes`] snapshot.
+        //
+        // Story 5: the effective desired map is the union of count-based
+        // defaults (installed in `state.default_routes` by VoicesHandler::create)
+        // and the script-supplied user routes from `new_state.routes`, with
+        // user entries winning on conflicts. We diff against — and persist —
+        // this merged map so a later reload sees defaults as already-applied
+        // and a removal of a user route correctly falls back to the default.
+        let merged_routes = {
+            let state = self.state.read().await;
+            merge_default_routes(&new_state.routes, &state.default_routes)
+        };
+        let route_diff = RoutesHandler::<B>::diff(&self.current_routes, &merged_routes);
+        if !route_diff.is_empty() {
+            tracing::debug!(
+                "Reload: finalizing routes (additions={}, removals={}, changes={})",
+                route_diff.additions.len(),
+                route_diff.removals.len(),
+                route_diff.changes.len()
+            );
+            if let Err(e) = self.routes.finalize(&route_diff).await {
+                tracing::error!("Reload: routes.finalize failed: {}", e);
+            }
+        }
+        self.current_routes = merged_routes;
+
+        // =========================================================================
+        // Phase 4.8: Create / update effects (after route mixers)
+        // =========================================================================
+        // Effects must be inserted into the SC tree *after* the route mixers
+        // emitted by Phase 4.7 so that an effect's `In.ar(group_audio_bus)`
+        // sees the post-sum signal that routes have just deposited there.
+        // On initial load (no link synth yet) we use `AddAction::Tail`, so
+        // doing this strictly after Phase 4.7 (which also Tail-adds mixers
+        // to the same group node) places effects after routes in tree order.
+        // On later reloads where the link synth exists, `EffectsHandler::add`
+        // already inserts `AddAction::Before` link, which is also after the
+        // routes. Either way: voices → routes → effects → link → main.
+
+        // Create new effects
+        for (id, config) in &diff.effects.created {
+            tracing::debug!("Reload: creating effect {:?}", id);
+            if let Err(e) = self
+                .effects
+                .add(*id, config.group, &config.synthdef, &config.params)
+                .await
+            {
+                tracing::error!("Reload: failed to create effect {:?}: {}", id, e);
+            }
+        }
+
         // Update effects - only recreate if synthdef or group changed
         // For param-only changes, use set_param to avoid audio gaps
         for (id, new_config) in &diff.effects.updated {
@@ -1451,63 +1540,6 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
-
-        // Update modulators - only recreate if synthdef or modulations changed;
-        // for param-only changes use set_param to avoid resetting the LFO phase.
-        for (id, new_config) in &diff.modulators.updated {
-            let needs_recreate = {
-                let state = self.state.read().await;
-                if let Some(current) = state.modulators.get(id) {
-                    current.config.synthdef != new_config.synthdef
-                        || current.config.modulations != new_config.modulations
-                } else {
-                    true
-                }
-            };
-
-            if needs_recreate {
-                tracing::debug!(
-                    "Reload: recreating modulator {:?} (synthdef or modulations changed, synthdef='{}')",
-                    id,
-                    new_config.synthdef
-                );
-                let _ = self.modulators.delete(*id).await;
-                if let Err(e) = self.modulators.create(*id, new_config.clone()).await {
-                    tracing::error!("Reload: failed to recreate modulator {:?}: {}", id, e);
-                }
-            } else {
-                // Only params changed - update in place to preserve LFO phase
-                tracing::debug!(
-                    "Reload: updating modulator {:?} params only (synthdef='{}')",
-                    id,
-                    new_config.synthdef
-                );
-                for (param, value) in &new_config.params {
-                    let _ = self.modulators.set_param(*id, param, *value).await;
-                }
-            }
-        }
-
-        // =========================================================================
-        // Phase 4.7: Finalize routes (per-voice port → group mixer synths)
-        // =========================================================================
-        // Spawned between the voice creation/update phase and the group
-        // link-synth phase so the SC tree order is voices → routes → effects →
-        // link synth → main bus. The diff is computed against the
-        // last-applied [`Self::current_routes`] snapshot.
-        let route_diff = RoutesHandler::<B>::diff(&self.current_routes, &new_state.routes);
-        if !route_diff.is_empty() {
-            tracing::debug!(
-                "Reload: finalizing routes (additions={}, removals={}, changes={})",
-                route_diff.additions.len(),
-                route_diff.removals.len(),
-                route_diff.changes.len()
-            );
-            if let Err(e) = self.routes.finalize(&route_diff).await {
-                tracing::error!("Reload: routes.finalize failed: {}", e);
-            }
-        }
-        self.current_routes = new_state.routes.clone();
 
         // =========================================================================
         // Phase 5: Finalize groups (create link synths)
@@ -2033,6 +2065,7 @@ mod tests {
     use super::*;
     use crate::backend::{AddAction, BufferInfo};
     use crate::types::{BufferId, NodeId, ParamMap};
+    use std::collections::HashMap;
     use std::path::Path;
 
     /// A mock backend error.
@@ -2835,5 +2868,523 @@ mod tests {
         // Verify tempo is still 120 (default)
         let tempo = runtime.transport.tempo().await;
         assert!((tempo - 120.0).abs() < 0.001);
+    }
+
+    // =========================================================================
+    // Multi-output Story 7: post-mix invariant tests
+    //
+    // These tests pin the SC tree spawn order during apply_reload:
+    //   voices' synth nodes (Head)
+    //     → routes' mixer synths (RoutesHandler::finalize, Phase 4.7)
+    //     → group's effect chain (EffectsHandler::add, Phase 4.8)
+    //     → group bus (link synth created in Phase 5)
+    //     → main bus
+    //
+    // The runtime must invoke `effects.add` strictly *after* `routes.finalize`
+    // so that an effect's `In.ar(group_audio_bus)` reads the post-sum signal
+    // that the route mixers have just deposited on the bus.
+    // =========================================================================
+
+    /// Recording backend used by the Story 7 finalize-ordering tests.
+    ///
+    /// Captures every `create_synth` call in invocation order along with the
+    /// synthdef name, target node, add action, and `in_bus`/`out_bus`/
+    /// `__fx_bus_in` params (the routing-relevant ones). Tests assert against
+    /// this transcript to prove the post-mix invariant.
+    struct RecordingBackend {
+        create_synth_log: std::sync::Mutex<Vec<RecordedSynth>>,
+    }
+
+    #[derive(Clone, Debug)]
+    #[allow(dead_code)]
+    struct RecordedSynth {
+        def: String,
+        node: NodeId,
+        target: NodeId,
+        action: AddAction,
+        in_bus: Option<f32>,
+        out_bus: Option<f32>,
+        fx_bus_in: Option<f32>,
+        fx_bus_out: Option<f32>,
+    }
+
+    impl RecordingBackend {
+        fn new() -> Self {
+            Self {
+                create_synth_log: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn synths(&self) -> Vec<RecordedSynth> {
+            self.create_synth_log.lock().unwrap().clone()
+        }
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+    impl Backend for RecordingBackend {
+        type Error = MockError;
+
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_synth(
+            &self,
+            def: &str,
+            node: NodeId,
+            target: NodeId,
+            action: AddAction,
+            params: &ParamMap,
+        ) -> std::result::Result<(), Self::Error> {
+            self.create_synth_log.lock().unwrap().push(RecordedSynth {
+                def: def.to_string(),
+                node,
+                target,
+                action,
+                in_bus: params.get("in_bus").copied(),
+                out_bus: params.get("out_bus").copied(),
+                fx_bus_in: params.get("__fx_bus_in").copied(),
+                fx_bus_out: params.get("__fx_bus_out").copied(),
+            });
+            Ok(())
+        }
+
+        async fn create_group(
+            &self,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames: 44100,
+                channels: 2,
+                sample_rate: 44100.0,
+            })
+        }
+
+        async fn alloc_buffer(
+            &self,
+            _id: BufferId,
+            frames: u32,
+            channels: u16,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames,
+                channels,
+                sample_rate: 44100.0,
+            })
+        }
+
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn current_time(&self) -> Instant {
+            Instant::now()
+        }
+    }
+
+    /// Pre-register a synthdef name with explicit OutputPort descriptors so
+    /// that the voice handler allocates one audio bus per port.
+    async fn register_voice_synthdef(
+        runtime: &Runtime<RecordingBackend>,
+        name: &str,
+        ports: Vec<vibelang_dsp::OutputPort>,
+    ) {
+        let mut state = runtime.state.write().await;
+        state.synthdefs.insert(name.to_string());
+        state.synthdef_outputs.insert(name.to_string(), ports);
+    }
+
+    /// Pre-register an effect synthdef name (no port descriptors needed).
+    async fn register_effect_synthdef(runtime: &Runtime<RecordingBackend>, name: &str) {
+        runtime.state.write().await.synthdefs.insert(name.to_string());
+    }
+
+    #[tokio::test]
+    async fn finalize_ordering_two_default_routed_ports_hit_group_reverb_post_sum() {
+        // A voice declares two stereo ports `a` and `b`. Both ports are
+        // explicitly routed to the same group `main`, which has a reverb
+        // effect. The post-mix invariant says that *both* port signals must
+        // pass through the reverb — i.e. the reverb's `__fx_bus_in` equals
+        // the group's audio bus, and the route mixers for both ports write
+        // to that same bus, *before* the reverb runs.
+        use crate::handlers::RouteDest;
+        use crate::message::ReloadMessage;
+        use crate::reload::{EffectConfig, GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{EffectId, GroupId, ParamMap, VoiceId};
+
+        let backend = RecordingBackend::new();
+        let mut runtime = Runtime::new(backend);
+
+        let synthdef_name = "two_port_synth";
+        register_voice_synthdef(
+            &runtime,
+            synthdef_name,
+            vec![
+                vibelang_dsp::OutputPort {
+                    name: "a".to_string(),
+                    channels: 2,
+                },
+                vibelang_dsp::OutputPort {
+                    name: "b".to_string(),
+                    channels: 2,
+                },
+            ],
+        )
+        .await;
+        register_effect_synthdef(&runtime, "reverb").await;
+
+        // Build the script state: one group with reverb, one voice with both
+        // ports default-routed (we set the routes explicitly to simulate the
+        // default-route insertion that Story 6c performs at voice create).
+        let group_id = GroupId::new(1);
+        let voice_id = VoiceId::new(1);
+        let effect_id = EffectId::new(1);
+
+        let mut new_state = ScriptState::new();
+        new_state.add_group(group_id, GroupConfig::default());
+        new_state.add_voice(
+            voice_id,
+            VoiceConfig::new("v", synthdef_name, group_id),
+        );
+        new_state.add_effect(
+            effect_id,
+            EffectConfig {
+                group: group_id,
+                synthdef: "reverb".to_string(),
+                params: ParamMap::new(),
+            },
+        );
+        new_state.set_route(voice_id, "a", RouteDest::Group(group_id));
+        new_state.set_route(voice_id, "b", RouteDest::Group(group_id));
+
+        runtime
+            .send(ReloadMessage::Apply { state: new_state }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        // Resolve the group's audio bus to compare against in/out_bus params.
+        let group_audio_bus = runtime
+            .state
+            .read()
+            .await
+            .groups
+            .get(&group_id)
+            .expect("group exists after reload")
+            .audio_bus
+            .0 as f32;
+
+        // Resolve each port's bus on the voice — both must be distinct from
+        // the group bus, and both mixer synths must write to the group bus.
+        let port_buses: HashMap<String, f32> = runtime
+            .state
+            .read()
+            .await
+            .voices
+            .get(&voice_id)
+            .expect("voice exists after reload")
+            .output_buses
+            .iter()
+            .map(|(name, bus)| (name.clone(), bus.0 as f32))
+            .collect();
+        assert_eq!(port_buses.len(), 2, "voice has two declared ports");
+
+        let log = runtime.backend.synths();
+
+        // Find indices of the route mixers and the reverb effect synth.
+        let mixer_indices: Vec<usize> = log
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.def == "port_to_group_link_2")
+            .map(|(i, _)| i)
+            .collect();
+        let reverb_idx = log
+            .iter()
+            .position(|r| r.def == "reverb")
+            .expect("reverb effect was created");
+
+        assert_eq!(
+            mixer_indices.len(),
+            2,
+            "two route mixers spawned (one per port), got log: {:?}",
+            log.iter().map(|r| r.def.clone()).collect::<Vec<_>>()
+        );
+
+        // Post-mix invariant — both mixers run before the reverb, so the
+        // reverb sees the post-sum signal. This is what the runtime's
+        // Phase 4.7 → Phase 4.8 ordering guarantees.
+        for &mi in &mixer_indices {
+            assert!(
+                mi < reverb_idx,
+                "route mixer at log[{}] must precede reverb at log[{}] — got: {:?}",
+                mi,
+                reverb_idx,
+                log.iter().map(|r| r.def.clone()).collect::<Vec<_>>()
+            );
+        }
+
+        // Both mixers write to the group's audio bus (the reverb's input).
+        for &mi in &mixer_indices {
+            let m = &log[mi];
+            assert_eq!(
+                m.out_bus.unwrap(),
+                group_audio_bus,
+                "mixer at log[{}] must write to group audio bus",
+                mi
+            );
+            // And reads from one of the voice's port buses.
+            let in_bus = m.in_bus.expect("mixer has in_bus param");
+            assert!(
+                port_buses.values().any(|&b| (b - in_bus).abs() < f32::EPSILON),
+                "mixer in_bus {} did not match any voice port bus {:?}",
+                in_bus,
+                port_buses,
+            );
+        }
+
+        // Reverb reads from and writes to the same group audio bus — i.e. it
+        // processes the summed signal that the mixers just produced.
+        let reverb = &log[reverb_idx];
+        assert_eq!(
+            reverb.fx_bus_in.unwrap(),
+            group_audio_bus,
+            "reverb's __fx_bus_in must equal group's audio bus"
+        );
+        assert_eq!(
+            reverb.fx_bus_out.unwrap(),
+            group_audio_bus,
+            "reverb's __fx_bus_out must equal group's audio bus"
+        );
+
+        // The link synth runs last (Phase 5) and reads from the group bus.
+        let link_idx = log
+            .iter()
+            .position(|r| r.def == "system_link_audio")
+            .expect("link synth was created in Phase 5");
+        assert!(
+            reverb_idx < link_idx,
+            "reverb must precede link synth — got: {:?}",
+            log.iter().map(|r| r.def.clone()).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn finalize_ordering_explicit_even_route_through_fx_group_only() {
+        // Voice has four mono ports: sine, sub, even, odd.
+        //   - sine, sub default-routed to "main"          (bypass reverb)
+        //   - even explicitly routed to "fx_evens"        (through reverb)
+        //   - odd is muted (no mixer)
+        // Group "fx_evens" has reverb, "main" has none. The reverb must read
+        // from fx_evens.audio_bus, *not* main.audio_bus, so sine/sub bypass
+        // the reverb at the bus level.
+        use crate::handlers::RouteDest;
+        use crate::message::ReloadMessage;
+        use crate::reload::{EffectConfig, GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{EffectId, GroupId, ParamMap, VoiceId};
+
+        let backend = RecordingBackend::new();
+        let mut runtime = Runtime::new(backend);
+
+        let synthdef_name = "spectraphon_lite";
+        register_voice_synthdef(
+            &runtime,
+            synthdef_name,
+            vec![
+                vibelang_dsp::OutputPort {
+                    name: "sine".to_string(),
+                    channels: 1,
+                },
+                vibelang_dsp::OutputPort {
+                    name: "sub".to_string(),
+                    channels: 1,
+                },
+                vibelang_dsp::OutputPort {
+                    name: "even".to_string(),
+                    channels: 1,
+                },
+                vibelang_dsp::OutputPort {
+                    name: "odd".to_string(),
+                    channels: 1,
+                },
+            ],
+        )
+        .await;
+        register_effect_synthdef(&runtime, "reverb").await;
+
+        let main_id = GroupId::new(1);
+        let fx_evens_id = GroupId::new(2);
+        let voice_id = VoiceId::new(1);
+        let effect_id = EffectId::new(1);
+
+        let mut new_state = ScriptState::new();
+        new_state.add_group(main_id, GroupConfig::default());
+        new_state.add_group(fx_evens_id, GroupConfig::default());
+        new_state.add_voice(
+            voice_id,
+            VoiceConfig::new("v", synthdef_name, main_id),
+        );
+        new_state.add_effect(
+            effect_id,
+            EffectConfig {
+                group: fx_evens_id,
+                synthdef: "reverb".to_string(),
+                params: ParamMap::new(),
+            },
+        );
+        // sine + sub default-route to main; even routes to fx_evens; odd muted.
+        new_state.set_route(voice_id, "sine", RouteDest::Group(main_id));
+        new_state.set_route(voice_id, "sub", RouteDest::Group(main_id));
+        new_state.set_route(voice_id, "even", RouteDest::Group(fx_evens_id));
+        new_state.set_route(voice_id, "odd", RouteDest::Muted);
+
+        runtime
+            .send(ReloadMessage::Apply { state: new_state }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let (main_bus, fx_bus) = {
+            let s = runtime.state.read().await;
+            (
+                s.groups.get(&main_id).unwrap().audio_bus.0 as f32,
+                s.groups.get(&fx_evens_id).unwrap().audio_bus.0 as f32,
+            )
+        };
+        assert_ne!(main_bus, fx_bus, "groups must have distinct audio buses");
+
+        let port_buses: HashMap<String, f32> = runtime
+            .state
+            .read()
+            .await
+            .voices
+            .get(&voice_id)
+            .unwrap()
+            .output_buses
+            .iter()
+            .map(|(n, b)| (n.clone(), b.0 as f32))
+            .collect();
+
+        let log = runtime.backend.synths();
+
+        // Three mono mixers — one per non-muted route. The muted "odd" port
+        // produces no mixer.
+        let mixers: Vec<&RecordedSynth> = log
+            .iter()
+            .filter(|r| r.def == "port_to_group_link_1")
+            .collect();
+        assert_eq!(
+            mixers.len(),
+            3,
+            "three mono mixers expected (sine, sub, even); odd is muted. log: {:?}",
+            log.iter().map(|r| r.def.clone()).collect::<Vec<_>>()
+        );
+
+        // Look up which port each mixer corresponds to via the in_bus param.
+        let bus_to_port: HashMap<u32, String> = port_buses
+            .iter()
+            .map(|(n, b)| (*b as u32, n.clone()))
+            .collect();
+        let mut mixer_dest_for_port: HashMap<String, f32> = HashMap::new();
+        for m in &mixers {
+            let in_bus = m.in_bus.unwrap() as u32;
+            let port = bus_to_port
+                .get(&in_bus)
+                .unwrap_or_else(|| panic!("mixer in_bus {} does not match any port", in_bus));
+            mixer_dest_for_port.insert(port.clone(), m.out_bus.unwrap());
+        }
+
+        // sine + sub mix into main; even mixes into fx_evens; odd has no mixer.
+        assert_eq!(mixer_dest_for_port.get("sine").copied(), Some(main_bus));
+        assert_eq!(mixer_dest_for_port.get("sub").copied(), Some(main_bus));
+        assert_eq!(mixer_dest_for_port.get("even").copied(), Some(fx_bus));
+        assert!(
+            !mixer_dest_for_port.contains_key("odd"),
+            "muted port must not get a mixer"
+        );
+
+        // The reverb reads from fx_evens.audio_bus — i.e. only the even
+        // signal flows through it. sine/sub bypass at the bus level since
+        // they were summed onto a different group bus.
+        let reverb = log
+            .iter()
+            .find(|r| r.def == "reverb")
+            .expect("reverb effect was created");
+        assert_eq!(
+            reverb.fx_bus_in.unwrap(),
+            fx_bus,
+            "reverb processes fx_evens bus, not main bus — sine/sub bypass"
+        );
+        assert_eq!(reverb.fx_bus_out.unwrap(), fx_bus);
+
+        // Ordering invariant — the reverb spawns after every mixer that feeds
+        // a bus the reverb might read; specifically, the even-port mixer must
+        // precede the reverb so the post-sum signal is on fx_bus when the
+        // reverb runs.
+        let reverb_idx = log.iter().position(|r| r.def == "reverb").unwrap();
+        for (i, m) in log.iter().enumerate() {
+            if m.def == "port_to_group_link_1" {
+                assert!(
+                    i < reverb_idx,
+                    "mixer at log[{}] must precede reverb at log[{}]",
+                    i,
+                    reverb_idx
+                );
+            }
+        }
     }
 }
