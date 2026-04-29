@@ -275,6 +275,181 @@ fn no_current_group_error(port: &str) -> Box<EvalAltResult> {
     ))
 }
 
+/// Target-first dual of [`RouteHandle::to_param`].
+///
+/// Constructed by [`Voice::param_handle`](super::voice::Voice). Carries the
+/// resolved target `(voice_id, voice_name, synthdef_name, param_name)` —
+/// every modulator wired into this param from a kr source port reads better
+/// `target.param("freq").modulate_by(source, "out")` than
+/// `source.output("out").to_param(target, "freq")` when ONE target receives
+/// MANY modulators (target-first scan).
+///
+/// `.modulate_by(...)` installs the same [`ScriptState::add_param_route`]
+/// entry that `.to_param(...)` does — the registry is direction-agnostic, so
+/// a route built either way looks identical post-install (additive across
+/// distinct source ports; duplicate `(source, port)` pairs deduplicated).
+#[derive(Debug, Clone, CustomType)]
+pub struct ParamHandle {
+    target_voice_id: VoiceId,
+    target_voice_name: String,
+    target_synth: String,
+    param_name: String,
+}
+
+impl ParamHandle {
+    pub(crate) fn new(
+        target_voice_id: VoiceId,
+        target_voice_name: String,
+        target_synth: String,
+        param_name: String,
+    ) -> Self {
+        Self {
+            target_voice_id,
+            target_voice_name,
+            target_synth,
+            param_name,
+        }
+    }
+
+    /// Install a CV-to-param route from `source`'s kr output `port` to this
+    /// handle's target `(voice, param)`.
+    ///
+    /// Validation:
+    /// - Source port must be declared on the source voice's synthdef and be
+    ///   control-rate (`output_kr`); audio-rate or unknown ports error with
+    ///   the synthdef's declared output set.
+    /// - Target param must exist on the target voice's synthdef; unknown
+    ///   params error citing the synthdef's declared param set.
+    ///
+    /// Returns `self` so callers chain multiple modulators into the same
+    /// param: `t.param("freq").modulate_by(s1, "out").modulate_by(s2, "out2")`.
+    /// Each call appends a separate `(source_voice, source_port)` entry in
+    /// [`ScriptState::param_routes`] — additive fan-in is recorded; runtime
+    /// last-write-wins resolution is the v2 contract.
+    pub fn modulate_by(
+        self,
+        source: Voice,
+        port: String,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        let mut source = source;
+        source.resolve_name();
+        let source_id = context::get_or_create_voice_id(&source.name);
+
+        let src_synth = source_synthdef_name(source_id);
+        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
+        match src_outputs.iter().find(|p| p.name == port) {
+            Some(p) if p.rate == PortRate::Kr => {}
+            Some(p) => {
+                return Err(modulate_by_ar_rate_error(
+                    &port, &src_synth, p.rate,
+                ));
+            }
+            None => {
+                return Err(modulate_by_missing_source_port_error(
+                    &port,
+                    &src_synth,
+                    &src_outputs,
+                ));
+            }
+        }
+
+        let target_params = get_synthdef_param_defaults(&self.target_synth);
+        if !target_params.contains_key(&self.param_name) {
+            return Err(modulate_by_unknown_target_param_error(
+                &self.target_voice_name,
+                &self.target_synth,
+                &self.param_name,
+                &target_params,
+            ));
+        }
+
+        context::with_state(|state| {
+            state.add_param_route(
+                source_id,
+                port.clone(),
+                self.target_voice_id,
+                self.param_name.clone(),
+            );
+        });
+        Ok(self)
+    }
+}
+
+fn modulate_by_ar_rate_error(
+    port: &str,
+    synth: &str,
+    rate: PortRate,
+) -> Box<EvalAltResult> {
+    let rate_str = match rate {
+        PortRate::Ar => "ar",
+        PortRate::Kr => "kr",
+    };
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "modulate_by() on source port '{}' (synthdef '{}'): port is {}-rate, \
+             but .modulate_by() requires a kr-rate (control) port — declare the \
+             port with .output_kr(...) on the synthdef, or route audio with \
+             .to(group(...)) / .to_main()",
+            port, synth, rate_str
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
+fn modulate_by_missing_source_port_error(
+    port: &str,
+    synth: &str,
+    outputs: &[OutputPort],
+) -> Box<EvalAltResult> {
+    let available = if outputs.is_empty() {
+        "<none>".to_string()
+    } else {
+        outputs
+            .iter()
+            .map(|p| format!("'{}'", p.name))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "modulate_by(): source port '{}' not found on synthdef '{}' \
+             (available: {})",
+            port, synth, available
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
+fn modulate_by_unknown_target_param_error(
+    target_voice: &str,
+    target_synth: &str,
+    param: &str,
+    available: &std::collections::HashMap<String, f32>,
+) -> Box<EvalAltResult> {
+    let avail_list = if available.is_empty() {
+        "<none>".to_string()
+    } else {
+        let mut names: Vec<&str> = available.keys().map(String::as_str).collect();
+        names.sort();
+        names
+            .iter()
+            .map(|n| format!("'{}'", n))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "modulate_by(): target voice '{}' synthdef '{}' has no param '{}' \
+             (available: {})",
+            target_voice, target_synth, param, avail_list
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
 /// Plural sugar for [`RouteHandle`] — fan-out a terminal verb across a list
 /// of `(voice_id, port_name)` pairs produced by
 /// [`Voice::outputs`](super::voice::Voice).
@@ -361,6 +536,9 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("mute", MultiRouteHandle::mute);
     engine.register_fn("to_current_group", MultiRouteHandle::to_current_group);
     engine.register_fn("to_param", MultiRouteHandle::to_param);
+
+    engine.build_type::<ParamHandle>();
+    engine.register_fn("modulate_by", ParamHandle::modulate_by);
 }
 
 #[cfg(test)]
@@ -704,6 +882,201 @@ mod tests {
                     .param_routes
                     .get(&(src_id, "env".to_string()))
                     .is_none());
+            });
+        });
+    }
+
+    // ==================== ParamHandle / .modulate_by tests ====================
+
+    #[test]
+    fn modulate_by_installs_param_route() {
+        with_test_context(|| {
+            let src_synth = "story2_modulate_by_round_trip_src";
+            let tgt_synth = "story2_modulate_by_round_trip_tgt";
+            declare_kr_synthdef(src_synth, &["out"]);
+            declare_synthdef_with_params(tgt_synth, &["freq", "amp"]);
+
+            let src = make_voice("vox_src_modby_rt").synth(src_synth.to_string());
+            let mut tgt = make_voice("vox_tgt_modby_rt").synth(tgt_synth.to_string());
+
+            tgt.param_handle("freq")
+                .modulate_by(src, "out".to_string())
+                .expect("kr source + valid target param");
+
+            let src_id = context::get_or_create_voice_id("vox_src_modby_rt");
+            let tgt_id = context::get_or_create_voice_id("vox_tgt_modby_rt");
+            context::with_state(|state| {
+                let entries = state
+                    .param_routes
+                    .get(&(src_id, "out".to_string()))
+                    .expect("param route installed");
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0], (tgt_id, "freq".to_string()));
+
+                // Audio routes map untouched.
+                assert!(state
+                    .routes
+                    .get(&(src_id, "out".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn modulate_by_ar_rate_source_port_returns_clean_error_citing_rate() {
+        with_test_context(|| {
+            let src_synth = "story2_modulate_by_ar_rate_src";
+            let tgt_synth = "story2_modulate_by_ar_rate_tgt";
+            declare_ar_synthdef(src_synth, &["sine"]);
+            declare_synthdef_with_params(tgt_synth, &["freq"]);
+
+            let src = make_voice("vox_src_modby_ar").synth(src_synth.to_string());
+            let mut tgt = make_voice("vox_tgt_modby_ar").synth(tgt_synth.to_string());
+
+            let err = tgt
+                .param_handle("freq")
+                .modulate_by(src, "sine".to_string())
+                .expect_err("ar-rate source port must error");
+            let msg = err.to_string();
+            assert!(msg.contains("ar-rate"), "msg = {}", msg);
+            assert!(msg.contains("'sine'"), "msg = {}", msg);
+            assert!(msg.contains("output_kr"), "msg = {}", msg);
+
+            let src_id = context::get_or_create_voice_id("vox_src_modby_ar");
+            context::with_state(|state| {
+                assert!(state
+                    .param_routes
+                    .get(&(src_id, "sine".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn modulate_by_unknown_target_param_errors_with_available_params() {
+        with_test_context(|| {
+            let src_synth = "story2_modulate_by_unk_param_src";
+            let tgt_synth = "story2_modulate_by_unk_param_tgt";
+            declare_kr_synthdef(src_synth, &["out"]);
+            declare_synthdef_with_params(tgt_synth, &["cutoff", "resonance", "amp"]);
+
+            let src = make_voice("vox_src_modby_unk").synth(src_synth.to_string());
+            let mut tgt = make_voice("vox_tgt_modby_unk").synth(tgt_synth.to_string());
+
+            let err = tgt
+                .param_handle("freq")
+                .modulate_by(src, "out".to_string())
+                .expect_err("unknown target param must error");
+            let msg = err.to_string();
+            assert!(msg.contains("'freq'"), "msg = {}", msg);
+            assert!(msg.contains("'cutoff'"), "msg = {}", msg);
+            assert!(msg.contains("'resonance'"), "msg = {}", msg);
+            assert!(msg.contains("'amp'"), "msg = {}", msg);
+
+            let src_id = context::get_or_create_voice_id("vox_src_modby_unk");
+            context::with_state(|state| {
+                assert!(state
+                    .param_routes
+                    .get(&(src_id, "out".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn modulate_by_chained_two_sources_both_install() {
+        with_test_context(|| {
+            // target.param("a").modulate_by(s, "out").modulate_by(s2, "other")
+            // — both source→target wires must persist in param_routes.
+            // Last-write-wins runtime resolution is a v2 contract, but the
+            // registry records both edges.
+            let src_synth_a = "story2_modulate_by_chain_src_a";
+            let src_synth_b = "story2_modulate_by_chain_src_b";
+            let tgt_synth = "story2_modulate_by_chain_tgt";
+            declare_kr_synthdef(src_synth_a, &["out"]);
+            declare_kr_synthdef(src_synth_b, &["other"]);
+            declare_synthdef_with_params(tgt_synth, &["a", "amp"]);
+
+            let s = make_voice("vox_src_modby_chain_a").synth(src_synth_a.to_string());
+            let s2 = make_voice("vox_src_modby_chain_b").synth(src_synth_b.to_string());
+            let mut tgt = make_voice("vox_tgt_modby_chain").synth(tgt_synth.to_string());
+
+            tgt.param_handle("a")
+                .modulate_by(s, "out".to_string())
+                .expect("first wire")
+                .modulate_by(s2, "other".to_string())
+                .expect("second wire");
+
+            let s_id = context::get_or_create_voice_id("vox_src_modby_chain_a");
+            let s2_id = context::get_or_create_voice_id("vox_src_modby_chain_b");
+            let tgt_id = context::get_or_create_voice_id("vox_tgt_modby_chain");
+            context::with_state(|state| {
+                let from_s = state
+                    .param_routes
+                    .get(&(s_id, "out".to_string()))
+                    .expect("first source wire installed");
+                assert_eq!(from_s, &vec![(tgt_id, "a".to_string())]);
+
+                let from_s2 = state
+                    .param_routes
+                    .get(&(s2_id, "other".to_string()))
+                    .expect("second source wire installed");
+                assert_eq!(from_s2, &vec![(tgt_id, "a".to_string())]);
+            });
+        });
+    }
+
+    #[test]
+    fn cross_direction_to_param_and_modulate_by_install_identical_registry_entries() {
+        // The two surface forms must produce a byte-identical
+        // `param_routes` entry for the same `(source, port) → (target, param)`
+        // tuple — proves the registry is direction-agnostic and either
+        // reading is just a different syntactic scan over the same wire.
+        with_test_context(|| {
+            let src_synth = "story2_cross_dir_src";
+            let tgt_synth = "story2_cross_dir_tgt";
+            declare_kr_synthdef(src_synth, &["out"]);
+            declare_synthdef_with_params(tgt_synth, &["freq"]);
+
+            // Path A: source-first .to_param(target, "freq")
+            let mut src_a = make_voice("vox_src_xdir_a").synth(src_synth.to_string());
+            let tgt_a = make_voice("vox_tgt_xdir_a").synth(tgt_synth.to_string());
+            src_a
+                .output_by_name("out")
+                .expect("port resolves")
+                .to_param(tgt_a, "freq".to_string())
+                .expect("install A");
+            let src_a_id = context::get_or_create_voice_id("vox_src_xdir_a");
+            let tgt_a_id = context::get_or_create_voice_id("vox_tgt_xdir_a");
+
+            // Path B: target-first .param("freq").modulate_by(source, "out")
+            let src_b = make_voice("vox_src_xdir_b").synth(src_synth.to_string());
+            let mut tgt_b = make_voice("vox_tgt_xdir_b").synth(tgt_synth.to_string());
+            tgt_b
+                .param_handle("freq")
+                .modulate_by(src_b, "out".to_string())
+                .expect("install B");
+            let src_b_id = context::get_or_create_voice_id("vox_src_xdir_b");
+            let tgt_b_id = context::get_or_create_voice_id("vox_tgt_xdir_b");
+
+            context::with_state(|state| {
+                let entries_a = state
+                    .param_routes
+                    .get(&(src_a_id, "out".to_string()))
+                    .expect("A installed");
+                let entries_b = state
+                    .param_routes
+                    .get(&(src_b_id, "out".to_string()))
+                    .expect("B installed");
+
+                // Same shape: one (target_id, "freq") tuple in each.
+                assert_eq!(entries_a.len(), 1);
+                assert_eq!(entries_b.len(), 1);
+                assert_eq!(entries_a[0], (tgt_a_id, "freq".to_string()));
+                assert_eq!(entries_b[0], (tgt_b_id, "freq".to_string()));
+
+                // Substitute target ids and the entries are byte-identical.
+                assert_eq!(entries_a[0].1, entries_b[0].1);
             });
         });
     }

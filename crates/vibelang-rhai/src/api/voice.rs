@@ -15,7 +15,7 @@ use vibelang_core::types::{ModulatorId, SampleId};
 #[cfg(feature = "midi")]
 use super::midi::MidiDevice;
 use super::modulator::Modulator;
-use super::route::{MultiRouteHandle, RouteHandle};
+use super::route::{MultiRouteHandle, ParamHandle, RouteHandle};
 use super::sample::SampleHandle;
 #[cfg(not(target_arch = "wasm32"))]
 use super::sfz::SfzHandle;
@@ -425,6 +425,25 @@ impl Voice {
         self
     }
 
+    /// Begin a target-first CV-to-param wiring on this voice's named param.
+    ///
+    /// Dual to [`RouteHandle::to_param`](super::route::RouteHandle::to_param):
+    /// `target.param("freq").modulate_by(source, "out")` records the same
+    /// `(source_voice, source_port) → (target_voice, target_param)` entry
+    /// in [`ScriptState::param_routes`] that the source-first form does, so
+    /// either reading installs an identical registry row.
+    ///
+    /// Infallible — the param-name and source-port-rate validation runs in
+    /// [`ParamHandle::modulate_by`] where both sides are known. Bare
+    /// construction here just resolves the target voice's id and snapshots
+    /// the synthdef name for the rate-validation step later.
+    pub fn param_handle(&mut self, name: &str) -> ParamHandle {
+        self.resolve_name();
+        let voice_id = context::get_or_create_voice_id(&self.name);
+        let synth = self.synth_name.clone().unwrap_or_default();
+        ParamHandle::new(voice_id, self.name.clone(), synth, name.to_string())
+    }
+
     /// Begin a route from this voice's named output port.
     ///
     /// Resolves `name` against the voice's synthdef's declared
@@ -752,6 +771,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("gain", Voice::gain);
     engine.register_fn("set_param", Voice::set_param);
     engine.register_fn("param", Voice::param);
+    engine.register_fn("param", Voice::param_handle);
     engine.register_fn("round_robin", Voice::round_robin);
     engine.register_fn("choke", Voice::choke);
     engine.register_fn("modulate", Voice::modulate);
