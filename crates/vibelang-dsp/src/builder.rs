@@ -23,15 +23,48 @@ enum BodyDispatch {
     Map,
 }
 
+/// Output-port signal rate.
+///
+/// Audio (`Ar`) ports emit `Out.ar` and feed audio buses; control (`Kr`)
+/// ports emit `Out.kr` and feed control buses (used by v2 CV-to-param
+/// routing via `MapN`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PortRate {
+    #[default]
+    Ar,
+    Kr,
+}
+
 /// A named output port on a synthdef.
 ///
 /// Channel count is usually 1 for CV/mono ports and 2 for the legacy stereo
-/// `out` port. Routing/codegen for multiple ports is handled by later stories;
-/// this descriptor just records the port shape.
+/// `out` port. `rate` selects audio vs control codegen — defaults to `Ar`
+/// for backwards compatibility with v1 multi-output synthdefs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OutputPort {
     pub name: String,
     pub channels: u8,
+    pub rate: PortRate,
+}
+
+impl OutputPort {
+    /// Construct an audio-rate port.
+    pub fn ar(name: impl Into<String>, channels: u8) -> Self {
+        Self {
+            name: name.into(),
+            channels,
+            rate: PortRate::Ar,
+        }
+    }
+
+    /// Construct a control-rate port.
+    pub fn kr(name: impl Into<String>, channels: u8) -> Self {
+        Self {
+            name: name.into(),
+            channels,
+            rate: PortRate::Kr,
+        }
+    }
 }
 
 /// SynthDef builder.
@@ -56,16 +89,35 @@ impl SynthDef {
             outputs: vec![OutputPort {
                 name: "out".to_string(),
                 channels: 2,
+                rate: PortRate::Ar,
             }],
             outputs_explicit: false,
         }
     }
 
-    /// Declare a named output port. Channels typically 1 (CV/mono) or 2 (stereo).
+    /// Declare a named audio-rate output port. Channels typically 1
+    /// (CV/mono) or 2 (stereo).
     ///
     /// The first call replaces the implicit legacy `out` port; subsequent calls
     /// append. Empty names and duplicate names are rejected.
     pub fn output(&mut self, name: String, channels: u8) -> Result<&mut Self> {
+        self.output_with_rate(name, channels, PortRate::Ar)
+    }
+
+    /// Declare a named control-rate output port. Channels typically 1.
+    ///
+    /// Codegen emits `Out.kr` for kr ports; downstream voice routing maps
+    /// the port's control bus to a target parameter via scsynth's `MapN`.
+    pub fn output_kr(&mut self, name: String, channels: u8) -> Result<&mut Self> {
+        self.output_with_rate(name, channels, PortRate::Kr)
+    }
+
+    fn output_with_rate(
+        &mut self,
+        name: String,
+        channels: u8,
+        rate: PortRate,
+    ) -> Result<&mut Self> {
         if name.is_empty() {
             return Err(SynthDefError::ValidationError(
                 "Output port name cannot be empty".to_string(),
@@ -81,7 +133,11 @@ impl SynthDef {
                 name
             )));
         }
-        self.outputs.push(OutputPort { name, channels });
+        self.outputs.push(OutputPort {
+            name,
+            channels,
+            rate,
+        });
         Ok(self)
     }
 
@@ -823,7 +879,11 @@ impl SynthDef {
                         },
                         sig.to_input(),
                     ];
-                    builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
+                    let out_rate = match self.outputs[i].rate {
+                        PortRate::Ar => Rate::Audio,
+                        PortRate::Kr => Rate::Control,
+                    };
+                    builder.add_node("Out".to_string(), out_rate, out_inputs, 0, 0);
                 }
             }
         }
@@ -1181,6 +1241,7 @@ mod body_map_tests {
             vec![OutputPort {
                 name: "out".to_string(),
                 channels: 2,
+                rate: PortRate::Ar,
             }]
         );
     }
@@ -1194,6 +1255,7 @@ mod body_map_tests {
             vec![OutputPort {
                 name: "sine".to_string(),
                 channels: 1,
+                rate: PortRate::Ar,
             }]
         );
     }
@@ -1209,10 +1271,12 @@ mod body_map_tests {
                 OutputPort {
                     name: "a".to_string(),
                     channels: 1,
+                    rate: PortRate::Ar,
                 },
                 OutputPort {
                     name: "b".to_string(),
                     channels: 2,
+                    rate: PortRate::Ar,
                 },
             ]
         );
@@ -1487,6 +1551,132 @@ mod body_map_tests {
                     "msg should mention ports: {}",
                     msg
                 );
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
+    }
+
+    // ---------- Multi-output v2 Story 1: per-port rate ----------
+
+    #[test]
+    fn output_legacy_default_is_ar() {
+        // Implicit legacy port (no .output()/output_kr() call) is Ar.
+        let sd = SynthDef::new("legacy".to_string());
+        assert_eq!(sd.outputs[0].rate, PortRate::Ar);
+    }
+
+    #[test]
+    fn output_explicit_ar_is_ar() {
+        // .output(...) keeps the v1 default rate of Ar.
+        let mut sd = SynthDef::new("ar_only".to_string());
+        sd.output("env".to_string(), 1).expect("output");
+        assert_eq!(sd.outputs.len(), 1);
+        assert_eq!(sd.outputs[0].rate, PortRate::Ar);
+    }
+
+    #[test]
+    fn output_kr_is_kr() {
+        // .output_kr(...) marks the port as Kr; channels default to caller
+        // (here passed explicitly).
+        let mut sd = SynthDef::new("kr_only".to_string());
+        sd.output_kr("eor".to_string(), 1).expect("output_kr");
+        assert_eq!(sd.outputs.len(), 1);
+        assert_eq!(sd.outputs[0].name, "eor");
+        assert_eq!(sd.outputs[0].rate, PortRate::Kr);
+    }
+
+    #[test]
+    fn mixed_rate_descriptor_round_trips() {
+        // .output() then .output_kr() — mixed-rate descriptor preserves order
+        // and the per-port rate, no cross-contamination.
+        let mut sd = SynthDef::new("mixed".to_string());
+        sd.output("audio".to_string(), 2).expect("audio");
+        sd.output_kr("env".to_string(), 1).expect("env");
+        assert_eq!(
+            sd.outputs,
+            vec![
+                OutputPort {
+                    name: "audio".to_string(),
+                    channels: 2,
+                    rate: PortRate::Ar,
+                },
+                OutputPort {
+                    name: "env".to_string(),
+                    channels: 1,
+                    rate: PortRate::Kr,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn multi_port_4_with_rates_ar_ar_kr_kr_emits_correct_out_rates() {
+        // Mixed [Ar, Ar, Kr, Kr] — codegen must emit two Out.ar and two Out.kr,
+        // one per declared port, preserving order.
+        let mut sd = SynthDef::new("mixed4".to_string());
+        sd.output("L".to_string(), 1).expect("L");
+        sd.output("R".to_string(), 1).expect("R");
+        sd.output_kr("env".to_string(), 1).expect("env");
+        sd.output_kr("eor".to_string(), 1).expect("eor");
+
+        let closure: FnPtr = parser_engine()
+            .eval(
+                "|| { \
+                    let s0 = sin_osc_ar(110.0, 0.0); \
+                    let s1 = sin_osc_ar(220.0, 0.0); \
+                    let s2 = sin_osc_kr(1.0, 0.0); \
+                    let s3 = sin_osc_kr(2.0, 0.0); \
+                    [s0, s1, s2, s3] \
+                }",
+            )
+            .expect("parse 4-port mixed-rate body");
+        let ir = sd
+            .build_body_closure_with_options(closure, true)
+            .expect("build mixed-rate 4-port");
+
+        // 4 Out UGens, in declaration order.
+        let out_nodes: Vec<&_> = ir.nodes.iter().filter(|n| n.name == "Out").collect();
+        assert_eq!(out_nodes.len(), 4, "expected 4 Out UGens");
+
+        let rates: Vec<Rate> = out_nodes.iter().map(|n| n.rate).collect();
+        assert_eq!(
+            rates,
+            vec![Rate::Audio, Rate::Audio, Rate::Control, Rate::Control],
+            "Out UGen rates must follow declared port rates [Ar, Ar, Kr, Kr]"
+        );
+    }
+
+    #[test]
+    fn single_kr_port_emits_out_kr_only() {
+        // Sanity: a 1-port kr synthdef emits exactly one Out.kr (no Out.ar).
+        let mut sd = SynthDef::new("kr_single".to_string());
+        sd.output_kr("cv".to_string(), 1).expect("cv");
+
+        let closure: FnPtr = parser_engine()
+            .eval("|| { let s = sin_osc_kr(1.0, 0.0); [s] }")
+            .expect("parse kr body");
+        let ir = sd
+            .build_body_closure_with_options(closure, true)
+            .expect("build kr-single");
+
+        let out_nodes: Vec<&_> = ir.nodes.iter().filter(|n| n.name == "Out").collect();
+        assert_eq!(out_nodes.len(), 1);
+        assert_eq!(out_nodes[0].rate, Rate::Control);
+    }
+
+    #[test]
+    fn output_kr_duplicate_name_errors() {
+        // Cross-rate duplicate names (one .output, one .output_kr with the same
+        // name) collide just like same-rate duplicates.
+        let mut sd = SynthDef::new("dup_cross".to_string());
+        sd.output("env".to_string(), 1).expect("first ar");
+        let err = sd
+            .output_kr("env".to_string(), 1)
+            .expect_err("cross-rate dup must error");
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                assert!(msg.contains("Duplicate"), "msg = {}", msg);
+                assert!(msg.contains("env"), "msg = {}", msg);
             }
             other => panic!("expected ValidationError, got {:?}", other),
         }

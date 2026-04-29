@@ -36,6 +36,7 @@ fn declare_synth_with_ports(synth: &str, port_names: &[&str]) {
         .map(|n| OutputPort {
             name: (*n).to_string(),
             channels: 1,
+            rate: vibelang_dsp::PortRate::Ar,
         })
         .collect();
     register_synthdef_outputs(synth.to_string(), ports);

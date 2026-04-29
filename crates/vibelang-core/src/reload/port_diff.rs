@@ -211,6 +211,7 @@ mod tests {
         OutputPort {
             name: name.to_string(),
             channels,
+            rate: vibelang_dsp::PortRate::Ar,
         }
     }
 

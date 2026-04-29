@@ -398,6 +398,7 @@ mod tests {
         OutputPort {
             name: name.to_string(),
             channels,
+            rate: vibelang_dsp::PortRate::Ar,
         }
     }
 
@@ -831,6 +832,7 @@ mod tests {
                 vec![vibelang_dsp::OutputPort {
                     name: port_name.clone(),
                     channels: port_channels,
+                    rate: vibelang_dsp::PortRate::Ar,
                 }],
             );
 
@@ -1146,10 +1148,12 @@ mod tests {
                     vibelang_dsp::OutputPort {
                         name: "out".to_string(),
                         channels: 2,
+                        rate: vibelang_dsp::PortRate::Ar,
                     },
                     vibelang_dsp::OutputPort {
                         name: "aux".to_string(),
                         channels: 2,
+                        rate: vibelang_dsp::PortRate::Ar,
                     },
                 ],
             );

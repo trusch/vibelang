@@ -1654,6 +1654,7 @@ mod tests {
             vec![vibelang_dsp::OutputPort {
                 name: "out".to_string(),
                 channels: 1,
+                rate: vibelang_dsp::PortRate::Ar,
             }],
         )
         .await;
@@ -1684,6 +1685,7 @@ mod tests {
             vec![vibelang_dsp::OutputPort {
                 name: "out".to_string(),
                 channels: 2,
+                rate: vibelang_dsp::PortRate::Ar,
             }],
         )
         .await;
@@ -1716,10 +1718,12 @@ mod tests {
                 vibelang_dsp::OutputPort {
                     name: "L".to_string(),
                     channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
                 vibelang_dsp::OutputPort {
                     name: "R".to_string(),
                     channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
             ],
         )
@@ -1757,18 +1761,22 @@ mod tests {
                 vibelang_dsp::OutputPort {
                     name: "sine".to_string(),
                     channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
                 vibelang_dsp::OutputPort {
                     name: "sub".to_string(),
                     channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
                 vibelang_dsp::OutputPort {
                     name: "odd".to_string(),
                     channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
                 vibelang_dsp::OutputPort {
                     name: "even".to_string(),
                     channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
             ],
         )
@@ -1814,6 +1822,7 @@ mod tests {
             vec![vibelang_dsp::OutputPort {
                 name: "out".to_string(),
                 channels: 2,
+                rate: vibelang_dsp::PortRate::Ar,
             }],
         )
         .await;
@@ -1850,6 +1859,7 @@ mod tests {
             vec![vibelang_dsp::OutputPort {
                 name: "out".to_string(),
                 channels: 1,
+                rate: vibelang_dsp::PortRate::Ar,
             }],
         )
         .await;
@@ -2562,10 +2572,10 @@ mod tests {
             &state,
             "quad_synth",
             vec![
-                OutputPort { name: "a".into(), channels: 1 },
-                OutputPort { name: "b".into(), channels: 1 },
-                OutputPort { name: "c".into(), channels: 2 },
-                OutputPort { name: "d".into(), channels: 1 },
+                OutputPort { name: "a".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort { name: "b".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort { name: "c".into(), channels: 2, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort { name: "d".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
             ],
         )
         .await;
@@ -2615,10 +2625,10 @@ mod tests {
             &state,
             "quad_synth",
             vec![
-                OutputPort { name: "a".into(), channels: 1 },
-                OutputPort { name: "b".into(), channels: 1 },
-                OutputPort { name: "c".into(), channels: 2 },
-                OutputPort { name: "d".into(), channels: 1 },
+                OutputPort { name: "a".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort { name: "b".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort { name: "c".into(), channels: 2, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort { name: "d".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
             ],
         )
         .await;

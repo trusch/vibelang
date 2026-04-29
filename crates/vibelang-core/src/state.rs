@@ -1048,6 +1048,7 @@ pub fn legacy_output_ports() -> Vec<OutputPort> {
     vec![OutputPort {
         name: "out".to_string(),
         channels: 2,
+        rate: vibelang_dsp::PortRate::Ar,
     }]
 }
 

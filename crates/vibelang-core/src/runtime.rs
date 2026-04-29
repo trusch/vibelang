@@ -3150,10 +3150,12 @@ mod tests {
                 vibelang_dsp::OutputPort {
                     name: "a".to_string(),
                     channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
                 vibelang_dsp::OutputPort {
                     name: "b".to_string(),
                     channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
             ],
         )
@@ -3321,18 +3323,22 @@ mod tests {
                 vibelang_dsp::OutputPort {
                     name: "sine".to_string(),
                     channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
                 vibelang_dsp::OutputPort {
                     name: "sub".to_string(),
                     channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
                 vibelang_dsp::OutputPort {
                     name: "even".to_string(),
                     channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
                 vibelang_dsp::OutputPort {
                     name: "odd".to_string(),
                     channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
                 },
             ],
         )

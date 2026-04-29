@@ -735,6 +735,7 @@ fn legacy_output_ports() -> Vec<OutputPort> {
     vec![OutputPort {
         name: "out".to_string(),
         channels: 2,
+        rate: vibelang_dsp::PortRate::Ar,
     }]
 }
 
@@ -1139,6 +1140,7 @@ mod tests {
             .map(|n| OutputPort {
                 name: (*n).to_string(),
                 channels: 1,
+                rate: vibelang_dsp::PortRate::Ar,
             })
             .collect();
         register_synthdef_outputs(synth.to_string(), ports);

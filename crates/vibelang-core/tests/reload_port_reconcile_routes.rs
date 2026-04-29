@@ -205,6 +205,7 @@ fn port(name: &str, channels: u8) -> OutputPort {
     OutputPort {
         name: name.to_string(),
         channels,
+        rate: vibelang_dsp::PortRate::Ar,
     }
 }
 
