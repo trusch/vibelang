@@ -539,10 +539,14 @@ fn reel_fill_preset(reel, preset) {
 // `examples/morphagene_loop.vibe` —
 //
 //     let reel = sample("reel", "samples/loop.wav").loop_mode(true);
-//     let v = voice("morph").on(reel).synth("morphagene")...
+//     let v = voice("morph")
+//         .synth("morphagene")
+//         .set_param("bufnum", reel.bufnum)...
 //
-// `voice.on(sample_handle)` wires the SC bufnum from the loaded .wav.
-// Hot-reload re-loads the .wav, so any SOS-overdubbed content during
-// the previous session is overwritten by the on-disk source on every
-// edit. Use `reel(...)` + `allocate_buffer` (above) when SOS recordings
-// must survive hot-reload.
+// Pass `sample.bufnum` directly into the morphagene voice — the
+// `.on(sample)` builder is shaped for `sample_voice`/`warp_voice` and
+// would silently inject envelope/rate/loop params morphagene doesn't
+// accept. Hot-reload re-loads the .wav, so any SOS-overdubbed content
+// during the previous session is overwritten by the on-disk source on
+// every edit. Use `reel(...)` + `allocate_buffer` (above) when SOS
+// recordings must survive hot-reload.

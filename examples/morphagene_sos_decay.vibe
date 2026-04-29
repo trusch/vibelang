@@ -36,8 +36,8 @@ let sos = define_group("SOS", || {
     // Unity playback (cube root of 0.5 ≈ 0.7937), short splice so each
     // cycle hits the delay line at a predictable interval.
     let v = voice("sos_src")
-        .on(reel)
         .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("splice_start_frame",     0.0)
         .set_param("splice_end_frame",   96000.0)   // 2.0 s @ 48 kHz
         .set_param("vari_speed", 0.7937)

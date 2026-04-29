@@ -56,8 +56,8 @@ let morph_lfo = voice("morph_lfo")
 
 let granular = define_group("Granular", || {
     let v = voice("morph_grain")
-        .on(reel)
         .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("num_splices", 1.0)        // single splice = whole reel
         .set_param("vari_speed", 0.7937)      // ≈ unity rate (cube root of 0.5)
         .set_param("slide", 0.0)

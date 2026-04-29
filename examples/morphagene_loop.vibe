@@ -23,11 +23,9 @@ let vs_lfo = voice("vs_lfo")
     .set_param("hi", 0.5);
 
 let morph = define_group("Morphagene", || {
-    // .on(reel) sets bufnum from the loaded sample; .synth() then overrides
-    // the auto-selected sample_voice with our morphagene synthdef.
     let v = voice("morph")
-        .on(reel)
         .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("slide", 0.5)        // start halfway into the splice
         .set_param("amp", 0.6)
         .gain(db(-9));

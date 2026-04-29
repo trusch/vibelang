@@ -28,8 +28,8 @@ let reel = sample("reel", "samples/loop.wav").loop_mode(true);
 // clipped by the synthdef's splice-end sentinel.
 let splices = define_group("Splices", || {
     let a = voice("splice_a")
-        .on(reel)
         .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("splice_start_frame",      0.0)
         .set_param("splice_end_frame",    24000.0)
         .set_param("vari_speed", 0.7937)         // ≈ unity rate (cube root of 0.5)
@@ -38,8 +38,8 @@ let splices = define_group("Splices", || {
         .gain(db(-6));
 
     let b = voice("splice_b")
-        .on(reel)
         .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("splice_start_frame",  48000.0)
         .set_param("splice_end_frame",    96000.0)
         .set_param("vari_speed", 0.63)           // ≈ -12 ST (rate ≈ 0.5)
@@ -48,8 +48,8 @@ let splices = define_group("Splices", || {
         .gain(db(-6));
 
     let c = voice("splice_c")
-        .on(reel)
         .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("splice_start_frame", 144000.0)
         .set_param("splice_end_frame",   168000.0)
         .set_param("vari_speed", -0.5)            // gentle reverse
@@ -58,8 +58,8 @@ let splices = define_group("Splices", || {
         .gain(db(-6));
 
     let d = voice("splice_d")
-        .on(reel)
         .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("splice_start_frame", 192000.0)
         .set_param("splice_end_frame",   240000.0)
         .set_param("vari_speed", 1.0)             // top forward (+12 ST)

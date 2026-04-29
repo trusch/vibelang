@@ -86,9 +86,15 @@ import "stdlib/instruments/sampler/morphagene.vibe";
 let reel = sample("reel", "samples/loop.wav").loop_mode(true);
 
 let v = voice("morph")
-    .on(reel)               // wires bufnum from the loaded sample
-    .synth("morphagene");   // overrides the auto-selected sample voice
+    .synth("morphagene")
+    .set_param("bufnum", reel.bufnum);   // wire Reel buffer explicitly
 ```
+
+Pass `sample.bufnum` (or `allocate_buffer(...).bufnum` for a
+script-allocated Reel — see `kb/morphagene-reel-howto.md`) directly
+into the `bufnum` param. Don't use `voice.on(reel)` here: that path is
+shaped for `sample_voice`/`warp_voice` and silently injects
+envelope/rate/loop params that morphagene doesn't accept.
 
 Stereo `.wav` files at 48 kHz are the native Morphagene format. Other
 sample rates are fine — the synthdef applies `BufRateScale` so playback
@@ -152,8 +158,8 @@ For a tape-cut you can pin specific frames:
 
 ```vibe
 voice("v")
-    .on(reel)
     .synth("morphagene")
+    .set_param("bufnum", reel.bufnum)
     .set_param("splice_start_frame", 48000.0)        // 1.0 s in @ 48 kHz
     .set_param("splice_end_frame", 96000.0)          // 2.0 s in
     .set_param("slide", 0.0);                         // start at splice top
@@ -189,11 +195,13 @@ let reel = sample("reel", "samples/loop.wav").loop_mode(true);
 // 2. Multiple voices reading the same Reel at different splices.
 let r = sample("r", "samples/loop.wav").loop_mode(true);
 
-voice("a").on(r).synth("morphagene")
+voice("a").synth("morphagene")
+    .set_param("bufnum", r.bufnum)
     .set_param("splice_start_frame", 0.0)
     .set_param("splice_end_frame", 24000.0);
 
-voice("b").on(r).synth("morphagene")
+voice("b").synth("morphagene")
+    .set_param("bufnum", r.bufnum)
     .set_param("splice_start_frame", 48000.0)
     .set_param("splice_end_frame", 96000.0);
 ```
@@ -235,8 +243,8 @@ let vs = voice("vs")
     .set_param("hi", 0.15);
 
 let v = voice("warble")
-    .on(reel)
     .synth("morphagene")
+    .set_param("bufnum", reel.bufnum)
     .set_param("slide", 0.5)
     .gain(db(-9));
 v.param("vari_speed").modulate_by(vs, "out");
@@ -250,8 +258,8 @@ the cubic curve is densest, giving subtle pitch wow.
 
 ```vibe
 voice("rev")
-    .on(reel)
     .synth("morphagene")
+    .set_param("bufnum", reel.bufnum)
     .set_param("vari_speed", -0.55)    // ~1× reverse-ish
     .set_param("slide", 0.0);
 ```

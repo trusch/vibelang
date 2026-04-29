@@ -104,11 +104,13 @@ SOS-overdub persistence, the existing `sample()` API still works:
 
 ```rhai
 let reel_buf = sample("reel", "samples/loop.wav").loop_mode(true);
-let v = voice("morph").on(reel_buf).synth("morphagene") /* ... */;
+let v = voice("morph")
+    .synth("morphagene")
+    .set_param("bufnum", reel_buf.bufnum) /* ... */;
 ```
 
-`voice.on(sample_handle)` wires the SC bufnum from the loaded `.wav`.
-The cost is that hot-reload re-loads the `.wav`, so any SOS-overdubbed
-content during the previous session is overwritten by the on-disk
-source on every edit. Use the `reel(...)` + `allocate_buffer` path
-when SOS overdubs must survive hot-reload.
+Pass `sample.bufnum` directly into the morphagene voice. The cost of
+the `.wav`-backed path is that hot-reload re-loads the `.wav`, so any
+SOS-overdubbed content during the previous session is overwritten by
+the on-disk source on every edit. Use the `reel(...)` +
+`allocate_buffer` path when SOS overdubs must survive hot-reload.

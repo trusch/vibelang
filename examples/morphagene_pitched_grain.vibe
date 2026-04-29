@@ -51,7 +51,8 @@ let v_octave    = 1.0;      // +12 ST (rate 2.000)
 
 let chord = define_group("PitchedChord", || {
     let v1 = voice("root")
-        .on(reel).synth("morphagene")
+        .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("splice_start_frame", splice_start)
         .set_param("splice_end_frame",   splice_end)
         .set_param("vari_speed", v_unison)
@@ -59,7 +60,8 @@ let chord = define_group("PitchedChord", || {
         .gain(db(-9));
 
     let v2 = voice("third")
-        .on(reel).synth("morphagene")
+        .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("splice_start_frame", splice_start)
         .set_param("splice_end_frame",   splice_end)
         .set_param("vari_speed", v_major3)
@@ -67,7 +69,8 @@ let chord = define_group("PitchedChord", || {
         .gain(db(-12));
 
     let v3 = voice("fifth")
-        .on(reel).synth("morphagene")
+        .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("splice_start_frame", splice_start)
         .set_param("splice_end_frame",   splice_end)
         .set_param("vari_speed", v_perfect5)
@@ -75,7 +78,8 @@ let chord = define_group("PitchedChord", || {
         .gain(db(-12));
 
     let v4 = voice("oct")
-        .on(reel).synth("morphagene")
+        .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("splice_start_frame", splice_start)
         .set_param("splice_end_frame",   splice_end)
         .set_param("vari_speed", v_octave)

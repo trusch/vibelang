@@ -64,6 +64,11 @@ impl SampleHandle {
         self.path.to_string_lossy().to_string()
     }
 
+    /// Get the underlying SC buffer ID.
+    pub fn get_bufnum(&mut self) -> i64 {
+        self.buffer_id as i64
+    }
+
     // === Envelope methods ===
 
     /// Set envelope attack time in seconds.
@@ -346,6 +351,10 @@ pub fn register(engine: &mut Engine) {
     engine.register_get("id", SampleHandle::get_id);
     engine.register_fn("path", SampleHandle::get_path);
     engine.register_get("path", SampleHandle::get_path);
+    engine.register_fn("bufnum", SampleHandle::get_bufnum);
+    engine.register_get("bufnum", SampleHandle::get_bufnum);
+    engine.register_fn("buffer_id", SampleHandle::get_bufnum);
+    engine.register_get("buffer_id", SampleHandle::get_bufnum);
 
     // Envelope methods
     engine.register_fn("attack", SampleHandle::attack);

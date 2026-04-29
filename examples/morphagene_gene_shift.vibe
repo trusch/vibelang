@@ -44,8 +44,8 @@ let shift_clock = voice("shift_clock")
 
 let shift = define_group("GeneShift", || {
     let v = voice("morph_shift")
-        .on(reel)
         .synth("morphagene")
+        .set_param("bufnum", reel.bufnum)
         .set_param("num_splices", 1.0)        // single splice = whole reel
         .set_param("slide", 0.0)
         .set_param("vari_speed", 0.7937)      // ≈ unity rate (cube root of 0.5)
