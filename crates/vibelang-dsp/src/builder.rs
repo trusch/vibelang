@@ -405,9 +405,13 @@ impl SynthDef {
             ),
             _ => {
                 clear_active_builder();
-                return Err(SynthDefError::RhaiError(
-                    "Too many FX parameters (max 10 user params); use .body_map for higher arities".to_string(),
-                ));
+                return Err(SynthDefError::RhaiError(format!(
+                    "FX synthdef `{}` declares {} user parameter(s); positional `.body(|input, a, b, ...|)` is capped at 10 user params (Rhai's tuple-arg limit). \
+                     Switch to `.body_map(|p| ...)` and read inputs as `p.input` / params as `p.<name>` (e.g. `p.cutoff`). \
+                     See kb/synthdef-authoring-conventions.md.",
+                    self.name,
+                    params.len(),
+                )));
             }
             },
         };
@@ -672,9 +676,13 @@ impl SynthDef {
             ),
             _ => {
                 clear_active_builder();
-                return Err(SynthDefError::RhaiError(
-                    "Too many parameters (max 10); use .body_map for higher arities".to_string(),
-                ));
+                return Err(SynthDefError::RhaiError(format!(
+                    "Synthdef `{}` declares {} parameters; positional `.body(|a, b, ...|)` is capped at 10 (Rhai's tuple-arg limit). \
+                     Switch to `.body_map(|p| ...)` and read params as `p.<name>` (e.g. `p.freq`, `p.cutoff`). \
+                     See kb/synthdef-authoring-conventions.md.",
+                    self.name,
+                    param_nodes.len(),
+                )));
             }
             },
         }
@@ -1094,9 +1102,13 @@ impl SynthDef {
             ),
             _ => {
                 clear_active_builder();
-                return Err(SynthDefError::RhaiError(
-                    "Too many parameters (max 10); use .body_map for higher arities".to_string(),
-                ));
+                return Err(SynthDefError::RhaiError(format!(
+                    "Modulator `{}` declares {} parameters; positional `.body(|a, b, ...|)` is capped at 10 (Rhai's tuple-arg limit). \
+                     Switch to `.body_map(|p| ...)` and read params as `p.<name>` (e.g. `p.rate`, `p.depth`). \
+                     See kb/synthdef-authoring-conventions.md.",
+                    self.name,
+                    param_nodes.len(),
+                )));
             }
             },
         }
