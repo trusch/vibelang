@@ -12,9 +12,9 @@
 use crate::backend::{AddAction, Backend};
 use crate::compat::RwLock;
 use crate::state::State;
-use crate::types::{BusId, GroupId, NodeId, ParamMap, VoiceId};
+use crate::types::{BusId, ControlBusId, GroupId, NodeId, ParamMap, VoiceId};
 use crate::{Error, Result};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use vibelang_dsp::OutputPort;
 
@@ -180,6 +180,37 @@ impl ParamRouteDiff {
 pub struct RoutesHandler<B: Backend> {
     backend: Arc<B>,
     state: Arc<RwLock<State>>,
+}
+
+/// A single planned action against one `(target_voice, target_param)` pair,
+/// produced by [`RoutesHandler::plan_param_actions`] and consumed by
+/// [`RoutesHandler::apply_param_action`].
+struct PlannedParamAction {
+    /// Kept for diagnostic logging — `target_nodes` carries the actual
+    /// per-node dispatch list, so this isn't read on the hot path.
+    #[allow(dead_code)]
+    target_voice: VoiceId,
+    target_param: String,
+    /// Active synth nodes of the target voice that need their param remapped.
+    target_nodes: Vec<NodeId>,
+    plan: ParamPlan,
+}
+
+/// The action to take for a single target after fan-in reconciliation.
+enum ParamPlan {
+    /// No source remains — `/n_map node param -1` to revert the param.
+    Unmap,
+    /// Exactly one source — direct `/n_map` to the source's control bus.
+    Direct(BusId),
+    /// Two or more sources — spawn a `param_kr_sum_<n>` summer that writes
+    /// to `intermediate_bus`, then `/n_map` the target to that bus.
+    Summer {
+        synthdef: String,
+        summer_node: NodeId,
+        target_group: NodeId,
+        params: ParamMap,
+        intermediate_bus: BusId,
+    },
 }
 
 impl<B: Backend> RoutesHandler<B> {
@@ -349,128 +380,296 @@ impl<B: Backend> RoutesHandler<B> {
         diff
     }
 
-    /// Apply a Param-route diff: unmap removed mappings, /n_map added ones.
+    /// Apply a Param-route diff: tear down stale mappings, `/n_map` new ones,
+    /// and reconcile multi-source kr fan-in via `param_kr_sum_<n>` summer
+    /// synths where N>1 sources point at the same target param.
     ///
-    /// Order, mirroring [`Self::finalize`]:
-    /// 1. Removals first — issue `/n_map node param -1` (the scsynth unmap
-    ///    sentinel) on every currently active synth node of the target voice
-    ///    so the param reverts to its synthdef-declared default value. Drop
-    ///    the entry from [`State::param_routes`].
-    /// 2. Additions — look up the source port's control bus on the source
-    ///    voice's `output_buses`, then `/n_map` the target param to that bus
-    ///    on every currently active synth node of the target voice. Record
-    ///    the mapping in [`State::param_routes`] so voice-delete teardown
-    ///    can find it.
+    /// Order:
+    /// 1. Apply removals + additions to [`State::param_routes`] under one
+    ///    lock so the desired source set per `(target_voice, target_param)`
+    ///    is fully resolved before any backend call.
+    /// 2. For each *affected* target (any target that appears in either side
+    ///    of the diff), tear down its existing summer (if any), look up the
+    ///    new source-bus set, and decide an action:
+    ///      - **0 sources** → emit `/n_map node param -1` (scsynth unmap
+    ///        sentinel) on every active node of the target voice, reverting
+    ///        the param to its synthdef-declared default.
+    ///      - **1 source** → direct `/n_map` from the surviving source's
+    ///        control bus (legacy single-source path).
+    ///      - **N ≥ 2 sources** → allocate an intermediate control bus +
+    ///        `param_kr_sum_<N>` summer synth (placed at tail of the
+    ///        modulator group so it runs after kr sources but before voice
+    ///        groups), then `/n_map` to the intermediate bus.
+    ///    Sources beyond [`PARAM_KR_SUM_MAX`](vibelang_dsp::system_synthdefs::PARAM_KR_SUM_MAX)
+    ///    are truncated with a warning.
+    /// 3. Affected targets are processed in diff order — removals first, then
+    ///    additions, deduplicated — which preserves the legacy
+    ///    "unmap-old-then-map-new" ordering for "change" diffs (a
+    ///    `(source → target_a)` removal paired with a `(source → target_b)`
+    ///    addition emits the unmap before the new map).
     ///
-    /// Drops the state lock before each backend call to preserve lock
-    /// discipline.
+    /// All backend calls are issued outside the state lock to preserve the
+    /// project's lock discipline.
     pub async fn finalize_params(&self, diff: &ParamRouteDiff) -> Result<()> {
         if diff.is_empty() {
             return Ok(());
         }
 
-        // Step 1: removals — collect target nodes under lock, then unmap.
-        let removal_ops: Vec<(Vec<NodeId>, String)> = {
-            let mut state = self.state.write().await;
-            let mut ops = Vec::with_capacity(diff.removals.len());
-            for r in &diff.removals {
-                let src_key = (r.source_voice, r.source_port.clone());
-                let mut empty_now = false;
-                if let Some(targets) = state.param_routes.get_mut(&src_key) {
-                    targets.retain(|(tv, tp)| {
-                        !(*tv == r.target_voice && *tp == r.target_param)
-                    });
-                    empty_now = targets.is_empty();
-                }
-                if empty_now {
-                    state.param_routes.remove(&src_key);
-                }
-                let nodes: Vec<NodeId> = state
-                    .voices
-                    .get(&r.target_voice)
-                    .map(|v| {
-                        v.active_nodes
-                            .iter()
-                            .copied()
-                            .chain(v.note_nodes.values().copied())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                ops.push((nodes, r.target_param.clone()));
+        // Plan everything under one lock: applies the diff to param_routes,
+        // tears down old summer bookkeeping, computes per-target actions.
+        let (planned, summers_to_free) = self.plan_param_actions(diff).await;
+
+        // Free old summer synths on the backend first so any reused node IDs
+        // don't collide with newly spawned summers below.
+        for &(node, _) in &summers_to_free {
+            if let Err(e) = self.backend.free_node(node).await {
+                tracing::warn!(
+                    "RoutesHandler::finalize_params: failed to free old summer node {:?}: {}",
+                    node,
+                    e,
+                );
             }
-            ops
-        };
-        for (nodes, param) in removal_ops {
-            for node in nodes {
-                // u32::MAX casts to -1i32 in the OSC `/n_map` payload — the
-                // scsynth unmap sentinel that reverts the param to its
-                // synthdef-declared default value.
-                if let Err(e) = self
-                    .backend
-                    .map_param_to_bus(node, &param, u32::MAX)
-                    .await
-                {
-                    tracing::warn!(
-                        "RoutesHandler::finalize_params: unmap failed node={:?} param={:?}: {}",
-                        node,
-                        param,
-                        e
-                    );
-                }
+        }
+        if !summers_to_free.is_empty() {
+            let mut state = self.state.write().await;
+            for (node, bus) in summers_to_free {
+                state.free_node_id(node);
+                state.free_control_bus(bus);
             }
         }
 
-        // Step 2: additions — look up source bus, register, map on target nodes.
-        let addition_ops: Vec<(Vec<NodeId>, String, u32)> = {
-            let mut state = self.state.write().await;
-            let mut ops = Vec::with_capacity(diff.additions.len());
-            for r in &diff.additions {
-                let bus = match state.voices.get(&r.source_voice).and_then(|v| {
-                    v.output_buses
-                        .iter()
-                        .find(|(n, _)| *n == r.source_port)
-                        .map(|(_, b)| *b)
-                }) {
-                    Some(b) => b,
-                    None => {
-                        tracing::warn!(
-                            "RoutesHandler::finalize_params: source port {:?} not found on voice {:?}, skipping addition",
-                            r.source_port,
-                            r.source_voice
-                        );
-                        continue;
-                    }
-                };
-                let src_key = (r.source_voice, r.source_port.clone());
-                let entry = state.param_routes.entry(src_key).or_default();
-                let target_pair = (r.target_voice, r.target_param.clone());
-                if !entry.iter().any(|t| *t == target_pair) {
-                    entry.push(target_pair);
-                }
-                let nodes: Vec<NodeId> = state
-                    .voices
-                    .get(&r.target_voice)
-                    .map(|v| {
-                        v.active_nodes
-                            .iter()
-                            .copied()
-                            .chain(v.note_nodes.values().copied())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                ops.push((nodes, r.target_param.clone(), bus.raw()));
+        for action in planned {
+            self.apply_param_action(action).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Stage `state.param_routes` and `state.param_summers` against `diff`,
+    /// returning the per-target actions to drive plus any summer nodes/buses
+    /// to free on the backend afterwards.
+    ///
+    /// Pulled out of [`Self::finalize_params`] so the lock-held planning step
+    /// is distinct from the lock-free backend dispatch step.
+    async fn plan_param_actions(
+        &self,
+        diff: &ParamRouteDiff,
+    ) -> (Vec<PlannedParamAction>, Vec<(NodeId, ControlBusId)>) {
+        let mut state = self.state.write().await;
+
+        // Apply removals to state.param_routes — drop the matching
+        // `(target_voice, target_param)` from each source's target list,
+        // and prune source keys whose target list goes empty.
+        for r in &diff.removals {
+            let src_key = (r.source_voice, r.source_port.clone());
+            let mut empty_now = false;
+            if let Some(targets) = state.param_routes.get_mut(&src_key) {
+                targets.retain(|(tv, tp)| !(*tv == r.target_voice && *tp == r.target_param));
+                empty_now = targets.is_empty();
             }
-            ops
-        };
-        for (nodes, param, bus) in addition_ops {
-            for node in nodes {
+            if empty_now {
+                state.param_routes.remove(&src_key);
+            }
+        }
+        // Apply additions — push new target pairs onto the source's list,
+        // skipping sources whose port doesn't exist on the source voice.
+        for r in &diff.additions {
+            let source_exists = state
+                .voices
+                .get(&r.source_voice)
+                .map(|v| v.output_buses.iter().any(|(n, _)| *n == r.source_port))
+                .unwrap_or(false);
+            if !source_exists {
+                tracing::warn!(
+                    "RoutesHandler::finalize_params: source port {:?} not found on voice {:?}, skipping addition",
+                    r.source_port,
+                    r.source_voice,
+                );
+                continue;
+            }
+            let src_key = (r.source_voice, r.source_port.clone());
+            let entry = state.param_routes.entry(src_key).or_default();
+            let target_pair = (r.target_voice, r.target_param.clone());
+            if !entry.iter().any(|t| *t == target_pair) {
+                entry.push(target_pair);
+            }
+        }
+
+        // Build a deterministic order of affected target keys: removals first
+        // (so any change-diff emits the unmap before the remap), then
+        // additions; deduplicate while preserving first-seen order.
+        let mut seen: HashSet<(VoiceId, String)> = HashSet::new();
+        let mut affected: Vec<(VoiceId, String)> = Vec::new();
+        for r in diff.removals.iter().chain(diff.additions.iter()) {
+            let key = (r.target_voice, r.target_param.clone());
+            if seen.insert(key.clone()) {
+                affected.push(key);
+            }
+        }
+
+        let mut planned = Vec::with_capacity(affected.len());
+        let mut summers_to_free: Vec<(NodeId, ControlBusId)> = Vec::new();
+
+        for tgt in affected {
+            // Tear down any existing summer for this target — even if the
+            // new arity matches, we respawn so the parameter list reflects
+            // the new source bus IDs.
+            if let Some((node, bus)) = state.param_summers.remove(&tgt) {
+                summers_to_free.push((node, ControlBusId::new(bus.raw())));
+            }
+
+            // Walk param_routes for every source whose target list contains
+            // this target. Sort by source bus ID so the assigned `in_a`,
+            // `in_b`, … positions are deterministic across runs.
+            let mut source_buses: Vec<BusId> = Vec::new();
+            for ((sv, sp), targets) in state.param_routes.iter() {
+                if targets.iter().any(|t| t == &tgt) {
+                    if let Some(bus) = state.voices.get(sv).and_then(|v| {
+                        v.output_buses
+                            .iter()
+                            .find(|(n, _)| n == sp)
+                            .map(|(_, b)| *b)
+                    }) {
+                        source_buses.push(bus);
+                    }
+                }
+            }
+            source_buses.sort_by_key(|b| b.raw());
+
+            let target_nodes: Vec<NodeId> = state
+                .voices
+                .get(&tgt.0)
+                .map(|v| {
+                    v.active_nodes
+                        .iter()
+                        .copied()
+                        .chain(v.note_nodes.values().copied())
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let plan = match source_buses.len() {
+                0 => ParamPlan::Unmap,
+                1 => ParamPlan::Direct(source_buses[0]),
+                n => {
+                    let max_n = vibelang_dsp::system_synthdefs::PARAM_KR_SUM_MAX;
+                    let used: Vec<BusId> = if n > max_n {
+                        tracing::warn!(
+                            "RoutesHandler::finalize_params: {} kr sources point at target {:?} param {:?}, exceeds max {}; truncating",
+                            n,
+                            tgt.0,
+                            tgt.1,
+                            max_n,
+                        );
+                        source_buses.into_iter().take(max_n).collect()
+                    } else {
+                        source_buses
+                    };
+                    let arity = used.len();
+                    let intermediate = state.alloc_control_bus();
+                    let intermediate_bus = BusId::new(intermediate.raw());
+                    let summer_node = state.alloc_node_id();
+                    state
+                        .param_summers
+                        .insert(tgt.clone(), (summer_node, intermediate_bus));
+
+                    // Place the summer in the modulator group when one
+                    // exists (matches the runtime's "modulators run before
+                    // voices" tick ordering); otherwise fall back to root —
+                    // tests and minimal patches without explicit modulator
+                    // groups still work, with the caveat that ordering
+                    // against voice synths is implementation-defined.
+                    let target_group = state
+                        .modulator_group
+                        .unwrap_or_else(|| NodeId::new(0));
+
+                    let mut params = ParamMap::new();
+                    let port_letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+                    for (i, src_bus) in used.iter().enumerate() {
+                        params.insert(
+                            format!("in_{}", port_letters[i]),
+                            src_bus.raw() as f32,
+                        );
+                    }
+                    params.insert("out_bus".to_string(), intermediate_bus.raw() as f32);
+
+                    ParamPlan::Summer {
+                        synthdef: format!("param_kr_sum_{}", arity),
+                        summer_node,
+                        target_group,
+                        params,
+                        intermediate_bus,
+                    }
+                }
+            };
+
+            planned.push(PlannedParamAction {
+                target_voice: tgt.0,
+                target_param: tgt.1,
+                target_nodes,
+                plan,
+            });
+        }
+
+        (planned, summers_to_free)
+    }
+
+    /// Drive a single [`PlannedParamAction`] to the backend. Issues the
+    /// matching `/s_new` (for summers) and `/n_map` calls.
+    async fn apply_param_action(&self, action: PlannedParamAction) -> Result<()> {
+        match action.plan {
+            ParamPlan::Unmap => {
+                for node in action.target_nodes {
+                    // u32::MAX casts to -1i32 in the OSC `/n_map` payload —
+                    // the scsynth unmap sentinel that reverts the param to
+                    // its synthdef-declared default value.
+                    if let Err(e) = self
+                        .backend
+                        .map_param_to_bus(node, &action.target_param, u32::MAX)
+                        .await
+                    {
+                        tracing::warn!(
+                            "RoutesHandler::finalize_params: unmap failed node={:?} param={:?}: {}",
+                            node,
+                            action.target_param,
+                            e,
+                        );
+                    }
+                }
+            }
+            ParamPlan::Direct(bus) => {
+                for node in action.target_nodes {
+                    self.backend
+                        .map_param_to_bus(node, &action.target_param, bus.raw())
+                        .await
+                        .map_err(Error::backend)?;
+                }
+            }
+            ParamPlan::Summer {
+                synthdef,
+                summer_node,
+                target_group,
+                params,
+                intermediate_bus,
+            } => {
                 self.backend
-                    .map_param_to_bus(node, &param, bus)
+                    .create_synth(
+                        &synthdef,
+                        summer_node,
+                        target_group,
+                        AddAction::Tail,
+                        &params,
+                    )
                     .await
                     .map_err(Error::backend)?;
+                for node in action.target_nodes {
+                    self.backend
+                        .map_param_to_bus(node, &action.target_param, intermediate_bus.raw())
+                        .await
+                        .map_err(Error::backend)?;
+                }
             }
         }
-
         Ok(())
     }
 

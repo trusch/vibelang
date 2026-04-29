@@ -905,6 +905,22 @@ pub struct State {
     /// pruned. [`Self::take_voice_param_routes`] drains both source-side and
     /// target-side appearances on voice delete.
     pub param_routes: HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
+
+    /// Active kr fan-in summer synths, keyed by the target side
+    /// `(target_voice_id, target_param_name)`.
+    ///
+    /// Multi-output v2 fan-in: when a single `(target_voice, target_param)`
+    /// has more than one kr source pointing at it, finalize_params spawns a
+    /// `param_kr_sum_<n>` synth that reads each source's control bus and
+    /// writes the sum to an intermediate control bus. The target's `/n_map`
+    /// then binds to the intermediate bus. The stored tuple is
+    /// `(summer_node, intermediate_bus)`. Maintained exclusively by
+    /// [`crate::handlers::RoutesHandler::finalize_params`] — entries appear
+    /// when N≥2 sources arrive at a target, are replaced when N changes (the
+    /// old summer + bus are freed and a fresh one of the new arity is
+    /// spawned), and disappear when N drops back to ≤1 (the fan-in collapses
+    /// to a direct `/n_map`).
+    pub param_summers: HashMap<(VoiceId, String), (NodeId, BusId)>,
 }
 
 impl Default for State {
@@ -939,6 +955,7 @@ impl Default for State {
             route_synths: HashMap::new(),
             default_routes: HashMap::new(),
             param_routes: HashMap::new(),
+            param_summers: HashMap::new(),
         }
     }
 }
