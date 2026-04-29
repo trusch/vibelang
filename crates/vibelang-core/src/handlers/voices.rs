@@ -2,6 +2,7 @@
 
 use crate::backend::{AddAction, Backend};
 use crate::compat::{Instant, RwLock};
+use crate::handlers::default_routes_for_voice;
 use crate::state::{State, VoiceState};
 use crate::traits::{VoiceConfig, Voices};
 use crate::types::{NodeId, ParamMap, VoiceId};
@@ -608,6 +609,14 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             output_buses.push((port.name.clone(), bus));
         }
 
+        // Story 5: Install count-based default routes for this voice's ports.
+        // Existing entries are NOT overwritten — that path covers the rare case
+        // of a recreate that reuses the same voice id without first calling
+        // delete (e.g. test setup); explicit user routes flow via ScriptState
+        // and override defaults at the merge step in apply_reload.
+        let voice_group = config.group;
+        let defaults = default_routes_for_voice(voice_group, &ports);
+
         // Store state
         state.voices.insert(
             id,
@@ -622,6 +631,13 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             },
         );
 
+        for (port_name, dest) in defaults {
+            state
+                .default_routes
+                .entry((id, port_name))
+                .or_insert(dest);
+        }
+
         Ok(())
     }
 
@@ -631,6 +647,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
             free_voice_output_buses(&mut state, &voice);
             let route_nodes = state.take_voice_route_nodes(id);
+            // Story 5: drop the voice's default routes so the next reload's
+            // merge step doesn't carry them forward against a deleted voice.
+            state.take_voice_default_routes(id);
             (voice.active_nodes, route_nodes)
         };
 
@@ -654,6 +673,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
             free_voice_output_buses(&mut state, &voice);
             let route_nodes = state.take_voice_route_nodes(id);
+            state.take_voice_default_routes(id);
             (voice.active_nodes, route_nodes)
         };
 
@@ -1603,6 +1623,252 @@ mod tests {
 
         let result = handler.create(voice_id, config).await;
         assert!(result.is_err(), "Should fail with non-existent synthdef");
+    }
+
+    // =========================================================================
+    // Story 5: Default-routes installation at voice create
+    // =========================================================================
+
+    /// Register a synthdef plus its declared OutputPort set so voice creation
+    /// resolves the per-port count correctly (instead of falling back to the
+    /// implicit legacy stereo `out`).
+    async fn register_synthdef_with_ports(
+        state: &Arc<RwLock<State>>,
+        name: &str,
+        ports: Vec<vibelang_dsp::OutputPort>,
+    ) {
+        let mut s = state.write().await;
+        s.synthdefs.insert(name.to_string());
+        s.synthdef_outputs.insert(name.to_string(), ports);
+    }
+
+    #[tokio::test]
+    async fn create_voice_one_mono_port_installs_pan_default_into_group() {
+        // 1 mono port → default-routed into the voice's group. The
+        // `port_to_group_link_1` mixer (mono dup) realises the pan-mono.
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_synthdef_with_ports(
+            &state,
+            "mono_synth",
+            vec![vibelang_dsp::OutputPort {
+                name: "out".to_string(),
+                channels: 1,
+            }],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(1);
+        let group = GroupId::new(1);
+        handler
+            .create(voice_id, VoiceConfig::new("v", "mono_synth", group))
+            .await
+            .unwrap();
+
+        let s = state.read().await;
+        assert_eq!(s.default_routes.len(), 1);
+        assert_eq!(
+            s.default_routes[&(voice_id, "out".to_string())],
+            crate::handlers::RouteDest::Group(group),
+        );
+    }
+
+    #[tokio::test]
+    async fn create_voice_one_stereo_port_installs_straight_default_into_group() {
+        // 1 stereo port → straight L/R into group (today's behaviour).
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_synthdef_with_ports(
+            &state,
+            "stereo_synth",
+            vec![vibelang_dsp::OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+            }],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(2);
+        let group = GroupId::new(1);
+        handler
+            .create(voice_id, VoiceConfig::new("v", "stereo_synth", group))
+            .await
+            .unwrap();
+
+        let s = state.read().await;
+        assert_eq!(s.default_routes.len(), 1);
+        assert_eq!(
+            s.default_routes[&(voice_id, "out".to_string())],
+            crate::handlers::RouteDest::Group(group),
+        );
+    }
+
+    #[tokio::test]
+    async fn create_voice_two_mono_ports_installs_default_for_both() {
+        // 2 mono ports → port[0]=L, port[1]=R (dual-mono summed) — both routes
+        // installed into the group.
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_synthdef_with_ports(
+            &state,
+            "two_mono",
+            vec![
+                vibelang_dsp::OutputPort {
+                    name: "L".to_string(),
+                    channels: 1,
+                },
+                vibelang_dsp::OutputPort {
+                    name: "R".to_string(),
+                    channels: 1,
+                },
+            ],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(3);
+        let group = GroupId::new(1);
+        handler
+            .create(voice_id, VoiceConfig::new("v", "two_mono", group))
+            .await
+            .unwrap();
+
+        let s = state.read().await;
+        assert_eq!(s.default_routes.len(), 2);
+        assert_eq!(
+            s.default_routes[&(voice_id, "L".to_string())],
+            crate::handlers::RouteDest::Group(group),
+        );
+        assert_eq!(
+            s.default_routes[&(voice_id, "R".to_string())],
+            crate::handlers::RouteDest::Group(group),
+        );
+    }
+
+    #[tokio::test]
+    async fn create_voice_four_ports_only_first_two_default_routed() {
+        // N>2 ports (e.g. spectraphon side) → only the first two get defaults;
+        // the remaining ports stay un-routed (no entry = silent).
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_synthdef_with_ports(
+            &state,
+            "spectra_side",
+            vec![
+                vibelang_dsp::OutputPort {
+                    name: "sine".to_string(),
+                    channels: 1,
+                },
+                vibelang_dsp::OutputPort {
+                    name: "sub".to_string(),
+                    channels: 1,
+                },
+                vibelang_dsp::OutputPort {
+                    name: "odd".to_string(),
+                    channels: 2,
+                },
+                vibelang_dsp::OutputPort {
+                    name: "even".to_string(),
+                    channels: 2,
+                },
+            ],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(4);
+        let group = GroupId::new(1);
+        handler
+            .create(voice_id, VoiceConfig::new("v", "spectra_side", group))
+            .await
+            .unwrap();
+
+        let s = state.read().await;
+        assert_eq!(s.default_routes.len(), 2, "only first two ports defaulted");
+        assert!(s
+            .default_routes
+            .contains_key(&(voice_id, "sine".to_string())));
+        assert!(s
+            .default_routes
+            .contains_key(&(voice_id, "sub".to_string())));
+        assert!(
+            !s.default_routes
+                .contains_key(&(voice_id, "odd".to_string())),
+            "ports beyond the first two stay un-routed (silent)"
+        );
+        assert!(!s
+            .default_routes
+            .contains_key(&(voice_id, "even".to_string())));
+    }
+
+    #[tokio::test]
+    async fn create_voice_does_not_overwrite_existing_default_routes() {
+        // If a default entry already exists for `(voice_id, port_name)` (e.g.
+        // a script-driven re-create path that didn't go through delete first),
+        // the helper must NOT replace it — `entry().or_insert()` semantics.
+        // Combined with the merge step in apply_reload, this guarantees
+        // "explicit user route on port[0] not overridden by default."
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_synthdef_with_ports(
+            &state,
+            "stereo_synth",
+            vec![vibelang_dsp::OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+            }],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(7);
+        let voice_group = GroupId::new(1);
+        let preset_dest = crate::handlers::RouteDest::Main;
+        {
+            let mut s = state.write().await;
+            s.default_routes
+                .insert((voice_id, "out".to_string()), preset_dest.clone());
+        }
+
+        handler
+            .create(voice_id, VoiceConfig::new("v", "stereo_synth", voice_group))
+            .await
+            .unwrap();
+
+        let s = state.read().await;
+        assert_eq!(
+            s.default_routes[&(voice_id, "out".to_string())],
+            preset_dest,
+            "create must not overwrite an existing default-routes entry"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_voice_drains_default_routes() {
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_synthdef_with_ports(
+            &state,
+            "mono_synth",
+            vec![vibelang_dsp::OutputPort {
+                name: "out".to_string(),
+                channels: 1,
+            }],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(8);
+        handler
+            .create(
+                voice_id,
+                VoiceConfig::new("v", "mono_synth", GroupId::new(1)),
+            )
+            .await
+            .unwrap();
+        assert_eq!(state.read().await.default_routes.len(), 1);
+
+        handler.delete(voice_id).await.unwrap();
+        assert!(
+            state.read().await.default_routes.is_empty(),
+            "voice delete must drain its default routes from State"
+        );
     }
 
     // =========================================================================

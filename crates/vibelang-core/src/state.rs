@@ -874,6 +874,16 @@ pub struct State {
     /// is deleted. The synth reads the voice's port audio bus and writes to
     /// the destination group's audio bus (or bus 0 for `RouteDest::Main`).
     pub route_synths: HashMap<(VoiceId, String), NodeId>,
+
+    /// Default per-voice port routes installed at voice-create time.
+    ///
+    /// Story 5: when a voice is created, the runtime walks the synthdef's
+    /// declared output ports and writes a count-based default destination for
+    /// each one (see [`crate::handlers::default_routes_for_voice`]). These
+    /// entries are merged with the script-supplied `ScriptState::routes` at
+    /// reload time, with explicit user routes taking precedence over defaults.
+    /// Drained on voice delete so a re-created voice gets fresh defaults.
+    pub default_routes: HashMap<(VoiceId, String), crate::handlers::RouteDest>,
 }
 
 impl Default for State {
@@ -905,6 +915,7 @@ impl Default for State {
             buffer_ids: FreeListAllocator::new(0, u32::MAX),
             audio_buses: AudioBusAllocator::default(),
             route_synths: HashMap::new(),
+            default_routes: HashMap::new(),
         }
     }
 }
@@ -984,6 +995,17 @@ impl State {
             }
         }
         nodes
+    }
+
+    /// Drain every default-route entry owned by `voice_id` from
+    /// [`State::default_routes`].
+    ///
+    /// Used by voice deletion so that the next reload's route diff sees the
+    /// voice's defaults as removed rather than carrying them forward against
+    /// a non-existent voice.
+    pub fn take_voice_default_routes(&mut self, voice_id: VoiceId) {
+        self.default_routes
+            .retain(|(vid, _), _| *vid != voice_id);
     }
 
     /// Resolve the output-port set for a synthdef name.

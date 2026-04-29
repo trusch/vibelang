@@ -17,6 +17,7 @@ use crate::types::{BusId, GroupId, NodeId, ParamMap, VoiceId};
 use crate::{Error, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
+use vibelang_dsp::OutputPort;
 
 /// Where a voice's output port should send its audio.
 ///
@@ -45,6 +46,59 @@ pub struct Route {
 /// Stored on [`ScriptState`](crate::reload::ScriptState) so script-side mutations
 /// (Rhai surface lands in Story 8) can carry the desired route map across reloads.
 pub type RouteMap = HashMap<(VoiceId, String), RouteDest>;
+
+/// Compute the count-based default route entries for a freshly created voice.
+///
+/// Story 5: walks the synthdef's declared output ports and produces a default
+/// destination for each, applying these rules by *port count*:
+///
+/// - **0 ports** (degenerate): no defaults.
+/// - **1 port** (mono or stereo): the port routes into the voice's own group.
+///   The mixer-synth selection (`port_to_group_link_1` for mono / `_2` for
+///   stereo) is decided later by [`RoutesHandler::spawn_route`] based on the
+///   port's channel count, so the helper just emits a `Group(voice_group)`
+///   destination — mono will dup-pan to L/R, stereo passes straight through.
+/// - **2 ports** (typically mono+mono): both ports route into the voice's
+///   group; their dup-panned signals sum at the group bus, giving a
+///   "dual-mono summed" image that's effectively mono-centered.
+/// - **N > 2 ports**: only the first two ports get defaults; the remaining
+///   ports stay un-routed (no entry returned), which the runtime treats as
+///   silent until the user installs an explicit route.
+///
+/// The helper ignores any user-supplied routes — it just returns the *suggested*
+/// defaults. Callers are responsible for storing them somewhere that the route
+/// merge step can consult (see [`State::default_routes`](crate::state::State)),
+/// and for letting explicit user routes override the defaults at merge time.
+pub fn default_routes_for_voice(
+    voice_group: GroupId,
+    ports: &[OutputPort],
+) -> Vec<(String, RouteDest)> {
+    let count = match ports.len() {
+        0 => 0,
+        1 | 2 => ports.len(),
+        _ => 2,
+    };
+    ports
+        .iter()
+        .take(count)
+        .map(|p| (p.name.clone(), RouteDest::Group(voice_group)))
+        .collect()
+}
+
+/// Merge default routes with explicit (script-supplied) user routes.
+///
+/// Story 5 reconciliation rule: an explicit `(voice_id, port_name)` entry in
+/// `user` always wins over the matching default in `defaults`. Defaults are
+/// only used for keys that have no explicit entry. The returned map is what
+/// the runtime should diff against `current_routes` to decide which mixer
+/// synths to spawn or free.
+pub fn merge_default_routes(user: &RouteMap, defaults: &RouteMap) -> RouteMap {
+    let mut merged = defaults.clone();
+    for (key, dest) in user {
+        merged.insert(key.clone(), dest.clone());
+    }
+    merged
+}
 
 /// Description of how an existing route's destination changed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -335,6 +389,140 @@ mod tests {
     use std::path::Path;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Mutex;
+
+    // =========================================================================
+    // Default-routes helper tests (Story 5)
+    // =========================================================================
+
+    fn port(name: &str, channels: u8) -> OutputPort {
+        OutputPort {
+            name: name.to_string(),
+            channels,
+        }
+    }
+
+    #[test]
+    fn default_routes_one_mono_port_routes_into_voice_group() {
+        // 1 mono port → pan-mono into group L/R. The pan-mono behaviour is
+        // realised by `port_to_group_link_1` (mono→stereo dup); the helper
+        // just emits the destination.
+        let group = GroupId::new(7);
+        let routes = default_routes_for_voice(group, &[port("out", 1)]);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].0, "out");
+        assert_eq!(routes[0].1, RouteDest::Group(group));
+    }
+
+    #[test]
+    fn default_routes_one_stereo_port_routes_straight_into_group() {
+        // 1 stereo port → straight L/R into group (today's legacy behaviour).
+        let group = GroupId::new(11);
+        let routes = default_routes_for_voice(group, &[port("out", 2)]);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].0, "out");
+        assert_eq!(routes[0].1, RouteDest::Group(group));
+    }
+
+    #[test]
+    fn default_routes_two_mono_ports_both_route_into_group() {
+        // 2 mono ports → port[0]=L, port[1]=R into the group bus, summed at
+        // the destination (dual-mono summed). Helper emits one route per port.
+        let group = GroupId::new(3);
+        let routes = default_routes_for_voice(group, &[port("L", 1), port("R", 1)]);
+        assert_eq!(routes.len(), 2);
+        assert_eq!(routes[0].0, "L");
+        assert_eq!(routes[0].1, RouteDest::Group(group));
+        assert_eq!(routes[1].0, "R");
+        assert_eq!(routes[1].1, RouteDest::Group(group));
+    }
+
+    #[test]
+    fn default_routes_four_ports_only_first_two_default_routed() {
+        // N>2 ports (e.g. spectraphon side: sine, sub, odd, even): only the
+        // first two get defaults; the rest stay un-routed (silent).
+        let group = GroupId::new(2);
+        let ports = [
+            port("sine", 1),
+            port("sub", 1),
+            port("odd", 2),
+            port("even", 2),
+        ];
+        let routes = default_routes_for_voice(group, &ports);
+        assert_eq!(routes.len(), 2);
+        assert_eq!(routes[0].0, "sine");
+        assert_eq!(routes[1].0, "sub");
+        // No entries for "odd" or "even".
+        assert!(routes.iter().all(|(n, _)| n != "odd" && n != "even"));
+    }
+
+    #[test]
+    fn default_routes_zero_ports_returns_empty() {
+        let group = GroupId::new(1);
+        let routes = default_routes_for_voice(group, &[]);
+        assert!(routes.is_empty());
+    }
+
+    #[test]
+    fn merge_default_routes_user_overrides_default() {
+        // Explicit user route on a port wins over the default — the merge
+        // step is what enforces "explicit user route on port[0] not
+        // overridden by default."
+        let voice_id = VoiceId::new(42);
+        let group_default = GroupId::new(1);
+        let group_user = GroupId::new(99);
+
+        let mut defaults = RouteMap::new();
+        defaults.insert(
+            (voice_id, "out".to_string()),
+            RouteDest::Group(group_default),
+        );
+
+        let mut user = RouteMap::new();
+        user.insert((voice_id, "out".to_string()), RouteDest::Group(group_user));
+
+        let merged = merge_default_routes(&user, &defaults);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(
+            merged[&(voice_id, "out".to_string())],
+            RouteDest::Group(group_user),
+            "user route must win over default"
+        );
+    }
+
+    #[test]
+    fn merge_default_routes_default_fills_unrouted_port() {
+        let voice_id = VoiceId::new(5);
+        let group = GroupId::new(8);
+
+        let mut defaults = RouteMap::new();
+        defaults.insert((voice_id, "L".to_string()), RouteDest::Group(group));
+        defaults.insert((voice_id, "R".to_string()), RouteDest::Group(group));
+
+        let mut user = RouteMap::new();
+        user.insert((voice_id, "L".to_string()), RouteDest::Main);
+
+        let merged = merge_default_routes(&user, &defaults);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[&(voice_id, "L".to_string())], RouteDest::Main);
+        assert_eq!(
+            merged[&(voice_id, "R".to_string())],
+            RouteDest::Group(group),
+            "port without explicit route falls back to default"
+        );
+    }
+
+    #[test]
+    fn merge_default_routes_empty_user_returns_defaults() {
+        let voice_id = VoiceId::new(1);
+        let group = GroupId::new(1);
+        let mut defaults = RouteMap::new();
+        defaults.insert((voice_id, "out".to_string()), RouteDest::Group(group));
+
+        let merged = merge_default_routes(&RouteMap::new(), &defaults);
+        assert_eq!(merged, defaults);
+    }
 
     // =========================================================================
     // Diff tests (Story 6a — preserved)

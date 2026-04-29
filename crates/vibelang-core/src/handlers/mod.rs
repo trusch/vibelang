@@ -91,7 +91,10 @@ pub use groups::GroupsHandler;
 pub use melodies::MelodiesHandler;
 pub use modulators::{get_modulator_control_bus, ModulatorsHandler};
 pub use patterns::PatternsHandler;
-pub use routes::{Route, RouteChange, RouteDest, RouteDiff, RouteMap, RoutesHandler};
+pub use routes::{
+    default_routes_for_voice, merge_default_routes, Route, RouteChange, RouteDest, RouteDiff,
+    RouteMap, RoutesHandler,
+};
 pub use samples::SamplesHandler;
 pub use sequences::SequencesHandler;
 pub use sfz::SfzHandler;
