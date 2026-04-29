@@ -107,6 +107,60 @@ fn no_current_group_error(port: &str) -> Box<EvalAltResult> {
     ))
 }
 
+/// Plural sugar for [`RouteHandle`] — fan-out a terminal verb across a list
+/// of `(voice_id, port_name)` pairs produced by
+/// [`Voice::outputs`](super::voice::Voice).
+///
+/// Each terminal verb iterates the inner port list and installs the same
+/// destination per port. Replace semantics are inherited from the singular
+/// form (last call to `set_route` for a given `(voice, port)` wins).
+#[derive(Debug, Clone, CustomType)]
+pub struct MultiRouteHandle {
+    routes: Vec<RouteHandle>,
+}
+
+impl MultiRouteHandle {
+    pub(crate) fn new(routes: Vec<RouteHandle>) -> Self {
+        Self { routes }
+    }
+
+    /// Install a route to the given group's mix bus for every listed port.
+    pub fn to(self, group: GroupHandle) -> Self {
+        for handle in self.routes.iter() {
+            handle.clone().to(group.clone());
+        }
+        self
+    }
+
+    /// Route every listed port straight to the main hardware output.
+    pub fn to_main(self) -> Self {
+        for handle in self.routes.iter() {
+            handle.clone().to_main();
+        }
+        self
+    }
+
+    /// Mute every listed port.
+    pub fn mute(self) -> Self {
+        for handle in self.routes.iter() {
+            handle.clone().mute();
+        }
+        self
+    }
+
+    /// Route every listed port to the voice's currently configured group.
+    ///
+    /// Errors via the same path as the singular form when the voice has no
+    /// explicit group; the first failing port short-circuits the iteration
+    /// (so a partial fan-out won't be silently committed before the error).
+    pub fn to_current_group(self) -> Result<Self, Box<EvalAltResult>> {
+        for handle in self.routes.iter() {
+            handle.clone().to_current_group()?;
+        }
+        Ok(self)
+    }
+}
+
 /// Register the `RouteHandle` type and its terminal verbs with a Rhai engine.
 pub fn register(engine: &mut Engine) {
     engine.build_type::<RouteHandle>();
@@ -114,4 +168,10 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("to_main", RouteHandle::to_main);
     engine.register_fn("mute", RouteHandle::mute);
     engine.register_fn("to_current_group", RouteHandle::to_current_group);
+
+    engine.build_type::<MultiRouteHandle>();
+    engine.register_fn("to", MultiRouteHandle::to);
+    engine.register_fn("to_main", MultiRouteHandle::to_main);
+    engine.register_fn("mute", MultiRouteHandle::mute);
+    engine.register_fn("to_current_group", MultiRouteHandle::to_current_group);
 }

@@ -96,6 +96,177 @@ fn rhai_output_unknown_name_errors_cites_declared_port_set() {
 }
 
 #[test]
+fn rhai_outputs_name_list_to_group_fans_out() {
+    // v.outputs(["sine", "odd"]).to(group("g")) → both "sine" and "odd"
+    // route to g; the unlisted "even" port has no route entry.
+    let synth = "ergo_rhai_outputs_names_to_group";
+    declare_synth_with_ports(synth, &["sine", "even", "odd"]);
+
+    let script = format!(
+        r#"
+        let v = voice("vox_outs_names_rhai").synth("{synth}");
+        v.outputs(["sine", "odd"]).to(group("leads_outs_names"));
+        "#,
+        synth = synth,
+    );
+
+    let mut engine = ScriptEngine::new();
+    let state = engine.execute(&script).expect("script must succeed");
+
+    let voice_id = VoiceId::new(fnv1a_id("vox_outs_names_rhai"));
+    let g_id = GroupId::new(fnv1a_id("main/leads_outs_names"));
+
+    assert_eq!(
+        state.routes.get(&(voice_id, "sine".to_string())),
+        Some(&RouteDest::Group(g_id))
+    );
+    assert_eq!(
+        state.routes.get(&(voice_id, "odd".to_string())),
+        Some(&RouteDest::Group(g_id))
+    );
+    assert!(state.routes.get(&(voice_id, "even".to_string())).is_none());
+}
+
+#[test]
+fn rhai_outputs_idx_list_to_main_fans_out() {
+    let synth = "ergo_rhai_outputs_idx_to_main";
+    declare_synth_with_ports(synth, &["sine", "even", "odd"]);
+
+    let script = format!(
+        r#"
+        let v = voice("vox_outs_idx_rhai").synth("{synth}");
+        v.outputs([1, 2]).to_main();
+        "#,
+        synth = synth,
+    );
+
+    let mut engine = ScriptEngine::new();
+    let state = engine.execute(&script).expect("script must succeed");
+
+    let voice_id = VoiceId::new(fnv1a_id("vox_outs_idx_rhai"));
+    assert_eq!(
+        state.routes.get(&(voice_id, "even".to_string())),
+        Some(&RouteDest::Main)
+    );
+    assert_eq!(
+        state.routes.get(&(voice_id, "odd".to_string())),
+        Some(&RouteDest::Main)
+    );
+    assert!(state.routes.get(&(voice_id, "sine".to_string())).is_none());
+}
+
+#[test]
+fn rhai_outputs_mixed_types_mute_fans_out() {
+    let synth = "ergo_rhai_outputs_mixed_mute";
+    declare_synth_with_ports(synth, &["sine", "even", "odd"]);
+
+    let script = format!(
+        r#"
+        let v = voice("vox_outs_mixed_rhai").synth("{synth}");
+        v.outputs(["sine", 2]).mute();
+        "#,
+        synth = synth,
+    );
+
+    let mut engine = ScriptEngine::new();
+    let state = engine.execute(&script).expect("script must succeed");
+
+    let voice_id = VoiceId::new(fnv1a_id("vox_outs_mixed_rhai"));
+    assert_eq!(
+        state.routes.get(&(voice_id, "sine".to_string())),
+        Some(&RouteDest::Muted)
+    );
+    assert_eq!(
+        state.routes.get(&(voice_id, "odd".to_string())),
+        Some(&RouteDest::Muted)
+    );
+}
+
+#[test]
+fn rhai_outputs_unknown_name_errors_cites_offender_and_ports() {
+    let synth = "ergo_rhai_outputs_unknown_name";
+    declare_synth_with_ports(synth, &["sine", "even", "odd"]);
+
+    let script = format!(
+        r#"
+        let v = voice("vox_outs_unk_rhai").synth("{synth}");
+        v.outputs(["sine", "triangle"]).to(group("any"));
+        "#,
+        synth = synth,
+    );
+
+    let mut engine = ScriptEngine::new();
+    let err = engine
+        .execute(&script)
+        .expect_err("unknown name in list must abort with a Rhai error");
+    let msg = err.to_string();
+    assert!(msg.contains("triangle"), "msg = {}", msg);
+    assert!(msg.contains("'sine'"), "msg = {}", msg);
+    assert!(msg.contains("'even'"), "msg = {}", msg);
+    assert!(msg.contains("'odd'"), "msg = {}", msg);
+}
+
+#[test]
+fn rhai_outputs_empty_list_clean_error() {
+    let synth = "ergo_rhai_outputs_empty";
+    declare_synth_with_ports(synth, &["sine", "even"]);
+
+    let script = format!(
+        r#"
+        let v = voice("vox_outs_empty_rhai").synth("{synth}");
+        v.outputs([]).to(group("any"));
+        "#,
+        synth = synth,
+    );
+
+    let mut engine = ScriptEngine::new();
+    let err = engine
+        .execute(&script)
+        .expect_err("empty list must abort with a Rhai error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("outputs() requires at least one port name or index"),
+        "msg = {}",
+        msg
+    );
+}
+
+#[test]
+fn rhai_outputs_replace_semantics_under_fanout() {
+    // Two consecutive outputs(["a"]).to(...) calls — the second wins; only
+    // one (voice, port) entry survives.
+    let synth = "ergo_rhai_outputs_replace";
+    declare_synth_with_ports(synth, &["a", "b"]);
+
+    let script = format!(
+        r#"
+        let v = voice("vox_outs_replace_rhai").synth("{synth}");
+        v.outputs(["a"]).to(group("outs_replace_g1"));
+        v.outputs(["a"]).to(group("outs_replace_g2"));
+        "#,
+        synth = synth,
+    );
+
+    let mut engine = ScriptEngine::new();
+    let state = engine.execute(&script).expect("script must succeed");
+
+    let voice_id = VoiceId::new(fnv1a_id("vox_outs_replace_rhai"));
+    let g2_id = GroupId::new(fnv1a_id("main/outs_replace_g2"));
+
+    let count = state
+        .routes
+        .keys()
+        .filter(|(vid, port)| *vid == voice_id && port == "a")
+        .count();
+    assert_eq!(count, 1, "expected exactly one route entry, got {}", count);
+
+    assert_eq!(
+        state.routes.get(&(voice_id, "a".to_string())),
+        Some(&RouteDest::Group(g2_id))
+    );
+}
+
+#[test]
 fn rhai_output_re_route_replaces_prior_dest() {
     // Single declared port — re-routing the same `(voice, port)` must
     // overwrite the previous destination, not accumulate (additive

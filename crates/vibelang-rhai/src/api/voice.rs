@@ -15,7 +15,7 @@ use vibelang_core::types::{ModulatorId, SampleId};
 #[cfg(feature = "midi")]
 use super::midi::MidiDevice;
 use super::modulator::Modulator;
-use super::route::RouteHandle;
+use super::route::{MultiRouteHandle, RouteHandle};
 use super::sample::SampleHandle;
 #[cfg(not(target_arch = "wasm32"))]
 use super::sfz::SfzHandle;
@@ -451,6 +451,52 @@ impl Voice {
         Ok(RouteHandle::new(voice_id, port_name))
     }
 
+    /// Begin a fan-out route from the listed output ports.
+    ///
+    /// Each entry resolves via the same name+idx rules as
+    /// [`output_by_name`](Self::output_by_name) /
+    /// [`output_by_idx`](Self::output_by_idx) — strings hit the named-port
+    /// path, integers hit the 0-based index path, mixed entries are fine
+    /// (Rhai arrays are heterogeneous). The returned [`MultiRouteHandle`]
+    /// applies its terminal verb to every listed port in turn.
+    ///
+    /// Errors:
+    /// - empty list → "outputs() requires at least one port name or index"
+    /// - unknown name / OOR idx → cites the offending entry + declared port set
+    ///   (re-uses the same error helpers as the singular form)
+    /// - entry of any other Rhai type → clean type-mismatch error
+    pub fn outputs(
+        &mut self,
+        entries: rhai::Array,
+    ) -> Result<MultiRouteHandle, Box<EvalAltResult>> {
+        if entries.is_empty() {
+            return Err(empty_outputs_error());
+        }
+        self.resolve_name();
+        let ports = self.declared_output_ports();
+        let voice_id = context::get_or_create_voice_id(&self.name);
+        let mut handles: Vec<RouteHandle> = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let port_name = if entry.is_string() {
+                let name = entry.into_string().unwrap_or_default();
+                if !ports.iter().any(|p| p.name == name) {
+                    return Err(unknown_port_error(self, &ports, &name));
+                }
+                name
+            } else if let Ok(idx) = entry.as_int() {
+                let len = ports.len() as i64;
+                if idx < 0 || idx >= len {
+                    return Err(idx_out_of_range_error(self, &ports, idx));
+                }
+                ports[idx as usize].name.clone()
+            } else {
+                return Err(invalid_outputs_entry_error(self, &entry));
+            };
+            handles.push(RouteHandle::new(voice_id, port_name));
+        }
+        Ok(MultiRouteHandle::new(handles))
+    }
+
     /// Resolve the declared `OutputPort` set for this voice's synthdef.
     ///
     /// Falls back to the implicit legacy `[("out", 2)]` set when the synthdef
@@ -677,6 +723,9 @@ pub fn register(engine: &mut Engine) {
     // Multi-output routing entry point — name and 0-based index overloads.
     engine.register_fn("output", Voice::output_by_name);
     engine.register_fn("output", Voice::output_by_idx);
+
+    // Plural sugar — fan-out to a list of named/indexed ports.
+    engine.register_fn("outputs", Voice::outputs);
 }
 
 /// Implicit legacy output port set for synthdefs that did not call `.output(...)`.
@@ -713,6 +762,28 @@ fn idx_out_of_range_error(voice: &Voice, ports: &[OutputPort], idx: i64) -> Box<
             idx,
             ports.len(),
             available
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
+fn empty_outputs_error() -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        "outputs() requires at least one port name or index".into(),
+        Position::NONE,
+    ))
+}
+
+fn invalid_outputs_entry_error(voice: &Voice, entry: &Dynamic) -> Box<EvalAltResult> {
+    let synth = voice.synth_name.as_deref().unwrap_or("<unset>");
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "Voice '{}' synthdef '{}' outputs() entry must be a port name (string) \
+             or 0-based index (integer); got value of type '{}'",
+            voice.name,
+            synth,
+            entry.type_name()
         )
         .into(),
         Position::NONE,
@@ -1346,6 +1417,248 @@ mod tests {
                     .routes
                     .keys()
                     .filter(|(vid, port)| *vid == voice_id && port == "even")
+                    .count();
+                assert_eq!(count, 1);
+            });
+        });
+    }
+
+    // ==================== Plural Outputs (Fan-out) Tests ====================
+
+    fn dyn_str(s: &str) -> rhai::Dynamic {
+        rhai::Dynamic::from(s.to_string())
+    }
+    fn dyn_int(i: i64) -> rhai::Dynamic {
+        rhai::Dynamic::from(i)
+    }
+
+    #[test]
+    fn test_voice_outputs_name_list_to_group() {
+        // v.outputs(["sine", "odd"]).to(g) → both ports get RouteDest::Group(g)
+        with_test_context(|| {
+            let synth = "ergo_outputs_names_to_group";
+            declare_synth_with_ports(synth, &["sine", "even", "odd"]);
+
+            let group_path = "main/leads_outs_names".to_string();
+            let g_id = context::get_or_create_group_id(&group_path);
+
+            let mut v = test_voice("vox_outs_names").synth(synth.to_string());
+            let arr: rhai::Array = vec![dyn_str("sine"), dyn_str("odd")];
+            v.outputs(arr)
+                .expect("name list resolves")
+                .to(super::super::group::GroupHandle::new(group_path));
+
+            let voice_id = context::get_or_create_voice_id("vox_outs_names");
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "sine".to_string())),
+                    Some(&RouteDest::Group(g_id))
+                );
+                assert_eq!(
+                    state.routes.get(&(voice_id, "odd".to_string())),
+                    Some(&RouteDest::Group(g_id))
+                );
+                // No route for the unlisted port.
+                assert!(state
+                    .routes
+                    .get(&(voice_id, "even".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn test_voice_outputs_idx_list_to_main() {
+        // v.outputs([1, 2]).to_main() → both ports get RouteDest::Main
+        with_test_context(|| {
+            let synth = "ergo_outputs_idx_to_main";
+            declare_synth_with_ports(synth, &["sine", "even", "odd"]);
+
+            let mut v = test_voice("vox_outs_idx").synth(synth.to_string());
+            let arr: rhai::Array = vec![dyn_int(1), dyn_int(2)];
+            v.outputs(arr).expect("idx list resolves").to_main();
+
+            let voice_id = context::get_or_create_voice_id("vox_outs_idx");
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "even".to_string())),
+                    Some(&RouteDest::Main)
+                );
+                assert_eq!(
+                    state.routes.get(&(voice_id, "odd".to_string())),
+                    Some(&RouteDest::Main)
+                );
+                assert!(state
+                    .routes
+                    .get(&(voice_id, "sine".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn test_voice_outputs_mixed_types_mute() {
+        // v.outputs(["sine", 2]).mute() → both get Muted
+        with_test_context(|| {
+            let synth = "ergo_outputs_mixed_mute";
+            declare_synth_with_ports(synth, &["sine", "even", "odd"]);
+
+            let mut v = test_voice("vox_outs_mixed").synth(synth.to_string());
+            let arr: rhai::Array = vec![dyn_str("sine"), dyn_int(2)];
+            v.outputs(arr).expect("mixed list resolves").mute();
+
+            let voice_id = context::get_or_create_voice_id("vox_outs_mixed");
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "sine".to_string())),
+                    Some(&RouteDest::Muted)
+                );
+                assert_eq!(
+                    state.routes.get(&(voice_id, "odd".to_string())),
+                    Some(&RouteDest::Muted)
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn test_voice_outputs_to_current_group() {
+        // .group("leads") then v.outputs([...]).to_current_group()
+        with_test_context(|| {
+            let synth = "ergo_outputs_tcg";
+            declare_synth_with_ports(synth, &["a", "b", "c"]);
+
+            let leads_path = "main/leads_outs_tcg".to_string();
+            let leads_id = context::get_or_create_group_id(&leads_path);
+
+            let mut v = test_voice("vox_outs_tcg")
+                .synth(synth.to_string())
+                .group("leads_outs_tcg".to_string());
+
+            let arr: rhai::Array = vec![dyn_str("a"), dyn_str("c")];
+            v.outputs(arr)
+                .expect("ports resolve")
+                .to_current_group()
+                .expect("voice has explicit group");
+
+            let voice_id = context::get_or_create_voice_id("vox_outs_tcg");
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "a".to_string())),
+                    Some(&RouteDest::Group(leads_id))
+                );
+                assert_eq!(
+                    state.routes.get(&(voice_id, "c".to_string())),
+                    Some(&RouteDest::Group(leads_id))
+                );
+                assert!(state.routes.get(&(voice_id, "b".to_string())).is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn test_voice_outputs_unknown_name_errors_cites_offender_and_ports() {
+        with_test_context(|| {
+            let synth = "ergo_outputs_unknown_name";
+            declare_synth_with_ports(synth, &["sine", "even", "odd"]);
+
+            let mut v = test_voice("vox_outs_unk").synth(synth.to_string());
+            let arr: rhai::Array = vec![dyn_str("sine"), dyn_str("triangle")];
+            let err = v.outputs(arr).expect_err("unknown name must error");
+            let msg = err.to_string();
+
+            // Cites offending entry...
+            assert!(msg.contains("triangle"), "msg = {}", msg);
+            // ...and the declared port set.
+            assert!(msg.contains("'sine'"), "msg = {}", msg);
+            assert!(msg.contains("'even'"), "msg = {}", msg);
+            assert!(msg.contains("'odd'"), "msg = {}", msg);
+
+            // No partial routes were committed — the handle wasn't built.
+            let voice_id = context::get_or_create_voice_id("vox_outs_unk");
+            context::with_state(|state| {
+                assert!(state
+                    .routes
+                    .get(&(voice_id, "sine".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn test_voice_outputs_idx_out_of_range_errors_cites_offender_and_ports() {
+        with_test_context(|| {
+            let synth = "ergo_outputs_oor_idx";
+            declare_synth_with_ports(synth, &["sine", "even"]);
+
+            let mut v = test_voice("vox_outs_oor").synth(synth.to_string());
+            let arr: rhai::Array = vec![dyn_int(0), dyn_int(7)];
+            let err = v.outputs(arr).expect_err("OOR idx must error");
+            let msg = err.to_string();
+            assert!(msg.contains("7"), "msg = {}", msg);
+            assert!(msg.contains("'sine'"), "msg = {}", msg);
+            assert!(msg.contains("'even'"), "msg = {}", msg);
+        });
+    }
+
+    #[test]
+    fn test_voice_outputs_empty_list_clean_error() {
+        with_test_context(|| {
+            let synth = "ergo_outputs_empty";
+            declare_synth_with_ports(synth, &["sine", "even"]);
+
+            let mut v = test_voice("vox_outs_empty").synth(synth.to_string());
+            let arr: rhai::Array = vec![];
+            let err = v.outputs(arr).expect_err("empty list must error");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("outputs() requires at least one port name or index"),
+                "msg = {}",
+                msg
+            );
+        });
+    }
+
+    #[test]
+    fn test_voice_outputs_replace_semantics_under_fanout() {
+        // outputs(["a"]).to(g1); outputs(["a"]).to(g2) → "a" routes to g2 only.
+        with_test_context(|| {
+            let synth = "ergo_outputs_replace";
+            declare_synth_with_ports(synth, &["a", "b"]);
+
+            let g1_path = "main/outs_replace_g1".to_string();
+            let g2_path = "main/outs_replace_g2".to_string();
+            let g1_id = context::get_or_create_group_id(&g1_path);
+            let g2_id = context::get_or_create_group_id(&g2_path);
+
+            let mut v = test_voice("vox_outs_replace").synth(synth.to_string());
+            let arr1: rhai::Array = vec![dyn_str("a")];
+            v.outputs(arr1)
+                .expect("first")
+                .to(super::super::group::GroupHandle::new(g1_path));
+            let voice_id = context::get_or_create_voice_id("vox_outs_replace");
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "a".to_string())),
+                    Some(&RouteDest::Group(g1_id))
+                );
+            });
+
+            let arr2: rhai::Array = vec![dyn_str("a")];
+            v.outputs(arr2)
+                .expect("second")
+                .to(super::super::group::GroupHandle::new(g2_path));
+
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "a".to_string())),
+                    Some(&RouteDest::Group(g2_id))
+                );
+                // Exactly one entry (replace, not accumulate).
+                let count = state
+                    .routes
+                    .keys()
+                    .filter(|(vid, port)| *vid == voice_id && port == "a")
                     .count();
                 assert_eq!(count, 1);
             });
