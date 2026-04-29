@@ -1,0 +1,186 @@
+// Make Noise Maths — multi-output recreation.
+//
+// Hardware Maths is the canonical eurorack "function generator with multiple
+// outputs": two independent envelope channels (1 and 4), a sum jack, an
+// inverter, and per-channel end-of-rise (EOR) / end-of-cycle (EOC) gate
+// jacks. That shape maps cleanly onto the multi-output v1 routing surface
+// (see `kb/voice-multioutput-howto.md`) — one synthdef declaring six ports
+// and letting the script wire each one to its own destination, instead of
+// the four-separate-synthdefs workaround that pre-multi-output stdlib used.
+//
+// Output ports (one signal per port, audio-rate):
+//
+//   ch1   — channel 1 envelope. Triggered AD shape with independent
+//            `rise1` / `fall1` time-constants. Free-run cycling LFO mode
+//            via `cycle1` = 1.
+//   ch4   — channel 4 envelope. Same construction with independent
+//            `rise4` / `fall4`. No cycle mode (matches hardware Maths —
+//            channels 2/3/4 cycle only via patch-cabled feedback).
+//   sum   — `ch1 + ch4` summed (Maths's "Σ" jack). Useful as a CV
+//            modulator for VCAs / filter cutoffs.
+//   inv   — `0 - ch1` inverted (Maths's INV jack). Mirrors ch1 around 0V
+//            so a triggered positive envelope on ch1 becomes a negative
+//            duck on inv (sidechain-style amplitude pumping).
+//   eor1  — end-of-rise gate on channel 1. Fires a +5V/5ms pulse `rise1`
+//            seconds after each `trig1` edge. Voltage convention follows
+//            the rest of vibelang's CV stdlib (`0.5` audio = +5V; see
+//            `kb/stdlib-cv-spec.md` §1).
+//   eoc1  — end-of-cycle gate on channel 1. Fires a +5V/5ms pulse
+//            `rise1 + fall1` seconds after each `trig1` edge. With
+//            `cycle1 = 1` the pulse train is periodic at the cycle rate.
+//
+// Params (9 of the 10-arg `body_map` ceiling):
+//
+//   rise1, fall1   : channel 1 attack and decay times in seconds.
+//   shape1         : 0..1 curve-morph slot for channel 1. v1 wires this
+//                    parameter into the synthdef but leaves the curve
+//                    fixed at `decay2_kr`'s canonical exponential AD
+//                    (matches Maths's default "L" curve). Runtime curve
+//                    sweeping requires per-segment curve modulation,
+//                    which `Env::new` bakes at synthdef-define time
+//                    (see `crates/vibelang-dsp/src/helpers.rs::Env`).
+//                    The param is preserved so scripts written against
+//                    a future v2 that exposes Env-curve-as-NodeRef will
+//                    not need a renaming reload. The Maths transfer-
+//                    function range — `curve_val = shape*9 - 4.5` — is
+//                    documented here for that v2 implementation.
+//   rise4, fall4   : channel 4 attack and decay times.
+//   shape4         : channel 4 curve-morph slot. Same v1 caveat as
+//                    shape1.
+//   cycle1         : 0/1 — when 1, channel 1 free-runs as an LFO at
+//                    `1 / (rise1 + fall1)` Hz (see DSP outline below).
+//                    Channel 4 has no cycle param to keep the surface
+//                    within 10 args; patch `eor1` back through an
+//                    external trigger source for ch4 cycling.
+//   trig1, trig4   : drive these from the script via
+//                    `voice.set_param("trig1", 1.0)` for a one-shot
+//                    fire. `decay2_kr` only edges on a non-positive →
+//                    positive transition, so the param holds the value
+//                    until the next set.
+//
+// DSP outline (matches the ticket's "DSP notes" section):
+//
+//   1. Cycle source = `impulse_ar(cycle1 / (rise1+fall1))`. With cycle1=0
+//      the impulse rate is 0 (silent — `impulse_ar` does not fire at rate
+//      zero). With cycle1=1 the rate is the inverse of the channel-1
+//      total cycle period, so each impulse perfectly replaces a manual
+//      `trig1` and the EOR/EOC pulses land at the same offsets within
+//      every period.
+//   2. Channel envelopes use `decay2_ar(trig + cycle, rise, fall)`.
+//      Decay2 yields the exponential AD shape — peak ≈ 1.0 on a unit
+//      trigger, independent attack/decay time-constants, fully runtime-
+//      modulatable. This matches `cv_maths.vibe`'s single-channel
+//      envelope and Maths's "L" curve.
+//   3. EOR / EOC use `t_delay_kr(trig_src, dur)` to delay the trigger by
+//      `rise1` and `rise1+fall1` seconds respectively, then widen with
+//      `trig1_kr(., 0.005)` so the pulse is a 5 ms gate rather than a
+//      single-sample impulse — required for downstream voltage-sense
+//      receivers (drum trigger inputs, schmidt detectors). The ticket's
+//      "DSP notes" specifically calls out `t_delay(env, dur)`; we route
+//      it off the trigger source rather than the env so the delay is
+//      not affected by env-shape ringing artefacts.
+//   4. `inv = 0.0 - ch1` and `sum = ch1 + ch4` are pure linear
+//      derivations — no extra DSP cost beyond a BinaryOp UGen each.
+//   5. EOR / EOC pulse amplitude is `0.5` (= +5V on the documented
+//      audio→voltage convention). Channel envelopes are full-scale
+//      (peak ≈ 1.0 = +10V), matching cv_maths's `peak_v=8.0` default
+//      bias toward the upper Maths swing range.
+//
+// v1 limitations (carried forward from `kb/voice-multioutput-howto.md`):
+//   - No CV-to-param routing: the demo script (`examples/maths_demo.vibe`)
+//     describes the conceptual "sum drives an oscillator's amp" patch
+//     but cannot wire it directly across voices. Each port routes to a
+//     destination group / main / mute, not to another voice's param
+//     input. Phase 2/3 of `kb/voice-multi-output-cv-routing-plan.md`
+//     resolves this.
+//   - No per-port FX (group-level FX still apply uniformly).
+//   - shape1 / shape4 are accepted but not yet curve-modulating (see
+//     param docs above).
+//
+// The single-channel `cv_maths.vibe` synthdef in `stdlib/cv/eurorack/`
+// stays unchanged — it is the simpler one-port form for users wiring
+// individual Maths channels through the legacy single-output routing.
+
+define_synthdef("maths", |builder| {
+    builder
+        .output("ch1")        // 1ch — channel 1 envelope
+        .output("ch4")        // 1ch — channel 4 envelope
+        .output("sum")        // 1ch — ch1 + ch4
+        .output("inv")        // 1ch — -ch1
+        .output("eor1")       // 1ch — end-of-rise gate, ch1
+        .output("eoc1")       // 1ch — end-of-cycle gate, ch1
+        .param("rise1", 0.05)
+        .param("fall1", 0.5)
+        .param("shape1", 0.5)
+        .param("rise4", 0.05)
+        .param("fall4", 0.5)
+        .param("shape4", 0.5)
+        .param("cycle1", 0.0)
+        .param("trig1", 0.0)
+        .param("trig4", 0.0)
+        .body_map(|p| {
+
+            let rise1 = p.rise1;
+            let fall1 = p.fall1;
+            let rise4 = p.rise4;
+            let fall4 = p.fall4;
+            let cycle1 = p.cycle1;
+            let trig1 = p.trig1;
+            let trig4 = p.trig4;
+
+            // === Cycle mode source =======================================
+            // `cycle_rate` is the channel-1 LFO frequency in Hz when cycle1
+            // is active. Multiplying by cycle1 (0/1) gates the impulse
+            // generator: `impulse_ar(0)` is silent, so cycle1=0 leaves
+            // trig1 as the only edge source on ch1. The +0.001 epsilon
+            // avoids a divide-by-zero when rise1 and fall1 are both 0.
+            let cycle_period = rise1 + fall1 + 0.001;
+            let cycle_rate = cycle1 / cycle_period;
+            let cycle_imp = impulse_ar(cycle_rate, 0.0);
+
+            // Channel-1 trigger source: cycle impulses + manual trig1.
+            // k2a_ar promotes the kr param to ar so the sum stays at audio
+            // rate (decay2_ar wants ar input). decay2_ar edges on each
+            // non-positive→positive transition of the sum, the standard
+            // SuperCollider trigger rule.
+            let trig_src1 = cycle_imp + k2a_ar(trig1);
+            let trig_src4 = k2a_ar(trig4);
+
+            // === Channel envelopes ======================================
+            // decay2 = exponential AD shape (Maths's canonical "L" curve)
+            // with independent attack/decay time-constants. Peak ≈ 1.0 on
+            // a unit trigger.
+            let ch1_env = decay2_ar(trig_src1, rise1, fall1);
+            let ch4_env = decay2_ar(trig_src4, rise4, fall4);
+
+            // === Sum and inverter =======================================
+            // sum is the canonical Maths Σ jack; inv mirrors ch1 around 0V
+            // (Maths's INV jack). vibelang has no unary minus on NodeRef,
+            // so we subtract from 0.0 explicitly.
+            let sum_signal = ch1_env + ch4_env;
+            let inv_signal = 0.0 - ch1_env;
+
+            // === EOR / EOC trigger detectors ============================
+            // t_delay_kr emits a 1-sample impulse `dur` seconds after each
+            // input edge. trig1_kr widens that impulse to a 5 ms gate so
+            // downstream voltage-sense triggers register reliably (matches
+            // the cv_clock / Marbles 5 ms gate convention).
+            //
+            // Driving the delay off `trig_src1` (rather than off the env
+            // peak) decouples EOR timing from envelope curve / amplitude
+            // — Maths emits EOR at exactly rise1 seconds post-trigger
+            // regardless of how the curve sweeps in between.
+            let total1 = rise1 + fall1;
+            let eor_imp = t_delay_kr(trig_src1, rise1);
+            let eoc_imp = t_delay_kr(trig_src1, total1);
+            let eor1_gate = trig1_kr(eor_imp, 0.005) * 0.5;
+            let eoc1_gate = trig1_kr(eoc_imp, 0.005) * 0.5;
+
+            // Promote kr gates to ar for the audio output ports and clip
+            // to the ±1.0 audio = ±10V CV contract envelope.
+            let eor1_out = clip_ar(k2a_ar(eor1_gate), -1.0, 1.0);
+            let eoc1_out = clip_ar(k2a_ar(eoc1_gate), -1.0, 1.0);
+
+            [ch1_env, ch4_env, sum_signal, inv_signal, eor1_out, eoc1_out]
+        })
+});
