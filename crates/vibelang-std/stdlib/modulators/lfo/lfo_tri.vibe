@@ -2,6 +2,7 @@
 // Outputs: Linear rise and fall, symmetric movement
 // Use for: Smooth parameter sweeps, panning
 define_modulator("lfo_tri")
+    .output_kr("out")     // 1ch — kr CV (triangle LFO)
     .param("rate", 1.0)   // LFO rate in Hz
     .param("lo", 0.0)     // Minimum output value
     .param("hi", 1.0)     // Maximum output value

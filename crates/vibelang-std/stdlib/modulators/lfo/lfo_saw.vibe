@@ -2,6 +2,7 @@
 // Outputs: Rising ramp from lo to hi, then jumps back to lo
 // Use for: Filter sweeps, arpeggiator-like effects
 define_modulator("lfo_saw")
+    .output_kr("out")     // 1ch — kr CV (rising sawtooth LFO)
     .param("rate", 1.0)   // LFO rate in Hz
     .param("lo", 0.0)     // Minimum output value
     .param("hi", 1.0)     // Maximum output value
@@ -16,6 +17,7 @@ define_modulator("lfo_saw")
 
 // Inverted sawtooth LFO (falling ramp)
 define_modulator("lfo_saw_down")
+    .output_kr("out")     // 1ch — kr CV (falling sawtooth LFO)
     .param("rate", 1.0)
     .param("lo", 0.0)
     .param("hi", 1.0)

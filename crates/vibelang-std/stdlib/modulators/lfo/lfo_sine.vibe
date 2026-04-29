@@ -2,6 +2,7 @@
 // Outputs: Smooth, continuous sinusoidal modulation
 // Use for: Vibrato, subtle filter modulation, tremolo
 define_modulator("lfo_sine")
+    .output_kr("out")     // 1ch — kr CV (sine LFO)
     .param("rate", 1.0)   // LFO rate in Hz
     .param("lo", 0.0)     // Minimum output value
     .param("hi", 1.0)     // Maximum output value

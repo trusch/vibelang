@@ -5,6 +5,7 @@
 // Basic envelope follower
 // Tracks the amplitude of an audio input with configurable attack/release
 define_modulator("envelope_follower")
+    .output_kr("out")        // 1ch — kr CV (envelope follower)
     .param("attack", 0.01)   // Attack time in seconds
     .param("release", 0.1)   // Release time in seconds
     .param("lo", 0.0)        // Output minimum
@@ -22,6 +23,7 @@ define_modulator("envelope_follower")
 // Peak follower - fast attack, slow decay
 // Good for transient detection
 define_modulator("peak_follower")
+    .output_kr("out")        // 1ch — kr CV (peak follower)
     .param("decay", 0.999)   // Decay coefficient (0-1, higher = slower decay)
     .param("lo", 0.0)
     .param("hi", 1.0)

@@ -2,6 +2,7 @@
 // Outputs: Random values that change at the specified rate
 // Use for: Generative patches, random filter/pitch modulation
 define_modulator("lfo_random")
+    .output_kr("out")     // 1ch — kr CV (random step LFO)
     .param("rate", 1.0)   // Rate of random value changes in Hz
     .param("lo", 0.0)     // Minimum output value
     .param("hi", 1.0)     // Maximum output value
@@ -15,6 +16,7 @@ define_modulator("lfo_random")
 
 // Smoothed random LFO (interpolated between random values)
 define_modulator("lfo_random_smooth")
+    .output_kr("out")     // 1ch — kr CV (smoothed random LFO)
     .param("rate", 1.0)
     .param("lo", 0.0)
     .param("hi", 1.0)
@@ -28,6 +30,7 @@ define_modulator("lfo_random_smooth")
 
 // Exponentially smoothed random LFO
 define_modulator("lfo_random_exp")
+    .output_kr("out")     // 1ch — kr CV (exp-smoothed random LFO)
     .param("rate", 1.0)
     .param("lo", 0.0)
     .param("hi", 1.0)

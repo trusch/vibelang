@@ -2,6 +2,7 @@
 // Outputs: Instant switch between lo and hi values
 // Use for: Gating, hard tremolo, rhythmic effects
 define_modulator("lfo_square")
+    .output_kr("out")     // 1ch — kr CV (square / pulse LFO)
     .param("rate", 1.0)   // LFO rate in Hz
     .param("lo", 0.0)     // Low value (when pulse is 0)
     .param("hi", 1.0)     // High value (when pulse is 1)
