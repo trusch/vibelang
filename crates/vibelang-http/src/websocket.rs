@@ -776,6 +776,7 @@ mod tests {
                 note_nodes: HashMap::new(),
                 round_robin_position: 0,
                 pending_params: HashMap::new(),
+                output_buses: Vec::new(),
             },
         );
 

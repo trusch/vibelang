@@ -25,6 +25,7 @@ use crate::types::{
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
+use vibelang_dsp::OutputPort;
 
 /// Internal state for a group.
 #[derive(Clone, Debug)]
@@ -94,6 +95,14 @@ pub struct VoiceState {
     ///
     /// These are applied when the next note triggers.
     pub pending_params: HashMap<String, f64>,
+
+    /// Audio buses owned by this voice, one per declared output port.
+    ///
+    /// Populated at voice creation from the synthdef's `OutputPort` set.
+    /// Each entry maps a port name to the starting `BusId` of a chunk
+    /// `channels` wide (allocated via [`State::alloc_audio_bus`]).
+    /// Freed at voice drop with the matching channel count.
+    pub output_buses: Vec<(String, BusId)>,
 }
 
 /// Internal state for a pattern.
@@ -765,6 +774,13 @@ pub struct State {
     /// Loaded synthdef names.
     pub synthdefs: HashSet<String>,
 
+    /// Per-synthdef output port descriptors (port name + channel count).
+    ///
+    /// Populated at synthdef registration when explicit ports are declared.
+    /// Synthdefs not in this map are treated as legacy and resolve to the
+    /// implicit `[("out", 2)]` set by [`State::synthdef_outputs`].
+    pub synthdef_outputs: HashMap<String, Vec<OutputPort>>,
+
     /// Loaded samples.
     pub samples: HashMap<SampleId, SampleInfo>,
 
@@ -857,6 +873,7 @@ impl Default for State {
             current_beat: Beat::ZERO,
             playing: false,
             synthdefs: HashSet::new(),
+            synthdef_outputs: HashMap::new(),
             samples: HashMap::new(),
             sfz_instruments: HashMap::new(),
             groups: HashMap::new(),
@@ -933,6 +950,18 @@ impl State {
         self.alloc_audio_bus(2)
     }
 
+    /// Resolve the output-port set for a synthdef name.
+    ///
+    /// Returns the explicitly declared ports if registered, otherwise the
+    /// implicit legacy single stereo `out` port. Voice creation uses this to
+    /// decide how many audio buses to allocate per voice.
+    pub fn synthdef_outputs(&self, name: &str) -> Vec<OutputPort> {
+        self.synthdef_outputs
+            .get(name)
+            .cloned()
+            .unwrap_or_else(legacy_output_ports)
+    }
+
     /// Convert beats to seconds at current tempo.
     pub fn beats_to_secs(&self, beats: f64) -> f64 {
         beats * 60.0 / self.tempo
@@ -942,6 +971,16 @@ impl State {
     pub fn secs_to_beats(&self, secs: f64) -> f64 {
         secs * self.tempo / 60.0
     }
+}
+
+/// The implicit port set used for synthdefs that did not call `.output(...)`.
+///
+/// One stereo `out` port — exactly what voices got before multi-output landed.
+pub fn legacy_output_ports() -> Vec<OutputPort> {
+    vec![OutputPort {
+        name: "out".to_string(),
+        channels: 2,
+    }]
 }
 
 #[cfg(test)]

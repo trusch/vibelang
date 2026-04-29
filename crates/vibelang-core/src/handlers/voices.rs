@@ -598,6 +598,16 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             return Err(Error::SynthDefNotFound(config.synthdef.clone()));
         }
 
+        // Allocate one audio bus per declared output port. Synthdefs without
+        // an explicit port set resolve to the legacy `[("out", 2)]` default,
+        // so a single stereo pair is reserved — same shape as before.
+        let ports = state.synthdef_outputs(&config.synthdef);
+        let mut output_buses = Vec::with_capacity(ports.len());
+        for port in &ports {
+            let bus = state.alloc_audio_bus(port.channels);
+            output_buses.push((port.name.clone(), bus));
+        }
+
         // Store state
         state.voices.insert(
             id,
@@ -608,6 +618,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 note_nodes: HashMap::new(),
                 round_robin_position: 0,
                 pending_params: HashMap::new(),
+                output_buses,
             },
         );
 
@@ -618,6 +629,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         let nodes_to_free = {
             let mut state = self.state.write().await;
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
+            free_voice_output_buses(&mut state, &voice);
             voice.active_nodes
         };
 
@@ -633,6 +645,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         let nodes_to_release = {
             let mut state = self.state.write().await;
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
+            free_voice_output_buses(&mut state, &voice);
             voice.active_nodes
         };
 
@@ -1288,6 +1301,29 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 /// Convert MIDI note number to frequency in Hz.
 fn midi_to_freq(note: u8) -> f32 {
     440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0)
+}
+
+/// Return every audio bus chunk owned by `voice` to the allocator.
+///
+/// The chunk widths must match the values that were passed to
+/// `alloc_audio_bus` at voice creation, so we re-resolve the synthdef's
+/// port set rather than tracking widths on the voice. Synthdefs that have
+/// since been redeclared with a different port shape would mismatch here,
+/// but reload tears voices down before changing synthdef metadata, so the
+/// shape is stable for the lifetime of any individual voice.
+fn free_voice_output_buses(state: &mut State, voice: &VoiceState) {
+    if voice.output_buses.is_empty() {
+        return;
+    }
+    let ports = state.synthdef_outputs(&voice.config.synthdef);
+    for (port_name, bus_id) in &voice.output_buses {
+        let channels = ports
+            .iter()
+            .find(|p| p.name == *port_name)
+            .map(|p| p.channels)
+            .unwrap_or(2);
+        state.free_audio_bus(*bus_id, channels);
+    }
 }
 
 #[cfg(test)]
@@ -2191,5 +2227,195 @@ mod tests {
             0,
             "Different notes should not free each other"
         );
+    }
+
+    // =========================================================================
+    // Multi-output bus allocation tests (Story 2)
+    // =========================================================================
+
+    use vibelang_dsp::OutputPort;
+
+    /// Helper: register a synthdef with an explicit port set on the state.
+    async fn register_multiport_synthdef(
+        state: &Arc<RwLock<State>>,
+        name: &str,
+        ports: Vec<OutputPort>,
+    ) {
+        let mut state_write = state.write().await;
+        state_write.synthdefs.insert(name.to_string());
+        state_write
+            .synthdef_outputs
+            .insert(name.to_string(), ports);
+    }
+
+    #[tokio::test]
+    async fn test_legacy_voice_owns_one_stereo_bus_pair() {
+        // Synthdef with no explicit port set falls back to the legacy
+        // [("out", 2)] default — voice should own exactly one stereo pair.
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("legacy_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        let state_read = state.read().await;
+        let voice = state_read.voices.get(&voice_id).unwrap();
+        assert_eq!(
+            voice.output_buses.len(),
+            1,
+            "legacy voice owns exactly one bus chunk"
+        );
+        assert_eq!(voice.output_buses[0].0, "out");
+
+        // Allocator should have advanced by 2 (one stereo pair).
+        assert_eq!(state_read.audio_buses.allocated_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_multiport_voice_owns_distinct_bus_ranges() {
+        // 4-port synthdef: mono, mono, stereo, mono — total 5 bus IDs.
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_multiport_synthdef(
+            &state,
+            "quad_synth",
+            vec![
+                OutputPort { name: "a".into(), channels: 1 },
+                OutputPort { name: "b".into(), channels: 1 },
+                OutputPort { name: "c".into(), channels: 2 },
+                OutputPort { name: "d".into(), channels: 1 },
+            ],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("voice", "quad_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        let state_read = state.read().await;
+        let voice = state_read.voices.get(&voice_id).unwrap();
+
+        // 4 ports → 4 entries, in declared order.
+        assert_eq!(voice.output_buses.len(), 4);
+        let names: Vec<&str> = voice
+            .output_buses
+            .iter()
+            .map(|(n, _)| n.as_str())
+            .collect();
+        assert_eq!(names, vec!["a", "b", "c", "d"]);
+
+        // Each port owns a distinct starting bus id.
+        let bus_ids: Vec<u32> = voice.output_buses.iter().map(|(_, b)| b.raw()).collect();
+        let mut sorted = bus_ids.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), 4, "all four port buses must be distinct");
+
+        // Widths match: total advance is 1+1+2+1 = 5 IDs from the bus floor.
+        assert_eq!(state_read.audio_buses.allocated_count(), 5);
+
+        // The stereo port's chunk must not collide with the next mono chunk.
+        // Buses are carved sequentially in declaration order, so:
+        //   a = 16, b = 17, c = 18 (occupies 18,19), d = 20.
+        let a = bus_ids[0];
+        assert_eq!(bus_ids[1], a + 1, "b follows a");
+        assert_eq!(bus_ids[2], a + 2, "c follows b");
+        assert_eq!(bus_ids[3], a + 4, "d follows c+1 (stereo skip)");
+    }
+
+    #[tokio::test]
+    async fn test_delete_voice_frees_all_owned_buses() {
+        // After a delete, every owned chunk is back in the free list with the
+        // matching width, so a re-create of the same synthdef reuses them.
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_multiport_synthdef(
+            &state,
+            "quad_synth",
+            vec![
+                OutputPort { name: "a".into(), channels: 1 },
+                OutputPort { name: "b".into(), channels: 1 },
+                OutputPort { name: "c".into(), channels: 2 },
+                OutputPort { name: "d".into(), channels: 1 },
+            ],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("voice", "quad_synth", GroupId::new(1));
+        handler.create(voice_id, config.clone()).await.unwrap();
+
+        let buses_before: Vec<u32> = {
+            let state_read = state.read().await;
+            state_read
+                .voices
+                .get(&voice_id)
+                .unwrap()
+                .output_buses
+                .iter()
+                .map(|(_, b)| b.raw())
+                .collect()
+        };
+        assert_eq!(buses_before.len(), 4);
+
+        handler.delete(voice_id).await.unwrap();
+
+        // Allocator counter does NOT advance on free — the four chunks are
+        // back in the free list. A re-creation hands them out in FIFO order
+        // for matching widths.
+        let allocated_after_delete = {
+            let state_read = state.read().await;
+            state_read.audio_buses.allocated_count()
+        };
+        assert_eq!(
+            allocated_after_delete, 5,
+            "free does not advance the monotonic counter"
+        );
+
+        let voice2 = VoiceId::new(2);
+        handler.create(voice2, config).await.unwrap();
+
+        let state_read = state.read().await;
+        let buses_after: Vec<u32> = state_read
+            .voices
+            .get(&voice2)
+            .unwrap()
+            .output_buses
+            .iter()
+            .map(|(_, b)| b.raw())
+            .collect();
+
+        // Counter still at 5 — every port reused a freed chunk of matching width.
+        assert_eq!(state_read.audio_buses.allocated_count(), 5);
+        // The reused bus set must equal the original (any order — different
+        // widths come from independent FIFO sub-pools).
+        let mut a = buses_before;
+        a.sort();
+        let mut b = buses_after;
+        b.sort();
+        assert_eq!(a, b);
+    }
+
+    #[tokio::test]
+    async fn test_graceful_delete_voice_frees_buses() {
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("legacy", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        handler.graceful_delete(voice_id).await.unwrap();
+
+        {
+            let state_read = state.read().await;
+            assert!(!state_read.voices.contains_key(&voice_id));
+        }
+
+        // Stereo pair returned to the pool — a new stereo alloc reuses bus 16.
+        let mut state_write = state.write().await;
+        let bus = state_write.alloc_audio_bus(2);
+        assert_eq!(bus.raw(), 16, "freed stereo pair must be reused");
     }
 }
