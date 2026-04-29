@@ -14,7 +14,6 @@ use vibelang_core::types::{ModulatorId, SampleId};
 
 #[cfg(feature = "midi")]
 use super::midi::MidiDevice;
-use super::modulator::Modulator;
 use super::route::{MultiRouteHandle, ParamHandle, RouteHandle};
 use super::sample::SampleHandle;
 #[cfg(not(target_arch = "wasm32"))]
@@ -380,51 +379,6 @@ impl Voice {
         self
     }
 
-    /// Connect a modulator to a voice parameter.
-    ///
-    /// Multi-output v2 Story 5: this is sugar for
-    /// `modulator.output("out").to_param(self, param)` — the modulator's voice
-    /// (installed by `Modulator::apply()`) writes to a kr `out` port whose
-    /// control bus is mapped onto the named parameter via the
-    /// [`ScriptState::add_param_route`](vibelang_core::reload::ScriptState::add_param_route)
-    /// pipeline. The legacy `modulations` map on `VoiceConfig` is still
-    /// populated so direct field-level tests keep passing, but the runtime
-    /// drive comes from the param-route.
-    ///
-    /// # Example
-    ///
-    /// ```rhai
-    /// let cutoff_lfo = modulator("lfo_sine")
-    ///     .set_param("rate", 4.0)
-    ///     .set_param("lo", 200)
-    ///     .set_param("hi", 2000)
-    ///     .apply();
-    ///
-    /// let bass = voice("bass")
-    ///     .synth("moog_bass")
-    ///     .modulate("cutoff", cutoff_lfo)
-    ///     .apply();
-    /// ```
-    pub fn modulate(mut self, param: String, modulator: Modulator) -> Self {
-        let modulator_id = context::get_or_create_modulator_id(&modulator.name);
-        self.modulations.insert(param.clone(), modulator_id);
-
-        // Install the param-route from the source modulator's kr `out` port
-        // to this voice's parameter. The source voice is registered by
-        // `Modulator::apply()` under the modulator's name; this mirrors the
-        // explicit `m.output("out").to_param(self, param)` sugar.
-        self.resolve_name();
-        if !self.name.is_empty() && !modulator.name.is_empty() {
-            let target_voice_id = context::get_or_create_voice_id(&self.name);
-            let source_voice_id = context::get_or_create_voice_id(&modulator.name);
-            context::with_state(|state| {
-                state.add_param_route(source_voice_id, "out", target_voice_id, param);
-            });
-        }
-        self.sync_to_state();
-        self
-    }
-
     /// Begin a target-first CV-to-param wiring on this voice's named param.
     ///
     /// Dual to [`RouteHandle::to_param`](super::route::RouteHandle::to_param):
@@ -774,7 +728,6 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("param", Voice::param_handle);
     engine.register_fn("round_robin", Voice::round_robin);
     engine.register_fn("choke", Voice::choke);
-    engine.register_fn("modulate", Voice::modulate);
 
     // Mute/solo
     engine.register_fn("mute", Voice::mute);

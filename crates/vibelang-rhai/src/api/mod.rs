@@ -8,7 +8,6 @@ pub mod global;
 pub mod group;
 pub mod helpers;
 pub mod melody;
-pub mod modulator;
 pub mod pattern;
 pub mod route;
 pub mod sample;
@@ -69,9 +68,6 @@ pub fn register_api(engine: &mut Engine) {
 
     // Register script-allocated buffer API
     buffer::register(engine);
-
-    // Register modulator API
-    modulator::register(engine);
 
     // Register SFZ API (native only - requires file I/O)
     #[cfg(not(target_arch = "wasm32"))]
