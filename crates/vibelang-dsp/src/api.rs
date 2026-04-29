@@ -202,6 +202,15 @@ impl SynthDefBuilderHandle {
         let ir = self.build(closure).map_err(synthdef_error_to_eval)?;
         deploy_synthdef_ir(&name, ir).map_err(synthdef_error_to_eval)
     }
+
+    pub fn body_map(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
+        let name = self.synthdef.name.clone();
+        let ir = self
+            .synthdef
+            .build_body_map_closure_with_options(closure, true)
+            .map_err(synthdef_error_to_eval)?;
+        deploy_synthdef_ir(&name, ir).map_err(synthdef_error_to_eval)
+    }
 }
 
 /// Builder handle for FX creation via method chaining.
@@ -249,6 +258,20 @@ impl FxBuilderHandle {
             .map_err(synthdef_error_to_eval)?;
         deploy_fx_ir(&name, ir).map_err(synthdef_error_to_eval)
     }
+
+    pub fn body_map(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
+        if self.num_channels == 0 {
+            return Err(synthdef_error_to_eval(SynthDefError::ValidationError(
+                "FX must use at least one channel".to_string(),
+            )));
+        }
+        let name = self.synthdef.name.clone();
+        let ir = self
+            .synthdef
+            .build_effect_map_closure(closure, self.num_channels)
+            .map_err(synthdef_error_to_eval)?;
+        deploy_fx_ir(&name, ir).map_err(synthdef_error_to_eval)
+    }
 }
 
 /// Builder handle for Modulator creation via method chaining.
@@ -282,6 +305,15 @@ impl ModulatorBuilderHandle {
         let ir = self
             .synthdef
             .build_modulator_closure(closure)
+            .map_err(synthdef_error_to_eval)?;
+        deploy_modulator_ir(&name, ir).map_err(synthdef_error_to_eval)
+    }
+
+    pub fn body_map(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
+        let name = self.synthdef.name.clone();
+        let ir = self
+            .synthdef
+            .build_modulator_map_closure(closure)
             .map_err(synthdef_error_to_eval)?;
         deploy_modulator_ir(&name, ir).map_err(synthdef_error_to_eval)
     }
@@ -435,20 +467,23 @@ pub fn register_synthdef_api(engine: &mut Engine) {
         .register_fn("param", SynthDefBuilderHandle::param)
         .register_fn("glide_ms", SynthDefBuilderHandle::glide_ms)
         .register_fn("out_bus", SynthDefBuilderHandle::out_bus)
-        .register_fn("body", SynthDefBuilderHandle::body);
+        .register_fn("body", SynthDefBuilderHandle::body)
+        .register_fn("body_map", SynthDefBuilderHandle::body_map);
 
     engine
         .register_type::<FxBuilderHandle>()
         .register_fn("param", FxBuilderHandle::param)
         .register_fn("glide_ms", FxBuilderHandle::glide_ms)
         .register_fn("channels", FxBuilderHandle::channels)
-        .register_fn("body", FxBuilderHandle::body);
+        .register_fn("body", FxBuilderHandle::body)
+        .register_fn("body_map", FxBuilderHandle::body_map);
 
     engine
         .register_type::<ModulatorBuilderHandle>()
         .register_fn("param", ModulatorBuilderHandle::param)
         .register_fn("glide_ms", ModulatorBuilderHandle::glide_ms)
-        .register_fn("body", ModulatorBuilderHandle::body);
+        .register_fn("body", ModulatorBuilderHandle::body)
+        .register_fn("body_map", ModulatorBuilderHandle::body_map);
 
     // Register entry point functions
     engine.register_fn("define_synthdef", |name: String| -> SynthDefBuilderHandle {

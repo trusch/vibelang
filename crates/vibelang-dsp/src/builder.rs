@@ -12,6 +12,17 @@ use crate::helpers;
 use crate::rhainodes::{self, NodeRef};
 use crate::ugens::register_generated_ugens;
 
+/// Selects how a body closure receives its parameters.
+///
+/// `Positional` passes one argument per declared param (capped at 10/11 by
+/// Rhai's `IntoFuncArgs` tuple impls). `Map` passes a single
+/// `rhai::Map<Identifier, Dynamic>` keyed by param name, sidestepping the cap.
+#[derive(Clone, Copy, Debug)]
+enum BodyDispatch {
+    Positional,
+    Map,
+}
+
 /// SynthDef builder.
 #[derive(Clone, Debug)]
 pub struct SynthDef {
@@ -71,6 +82,28 @@ impl SynthDef {
         self,
         closure: rhai::FnPtr,
         num_channels: usize,
+    ) -> Result<GraphIR> {
+        self.build_effect_closure_inner(closure, num_channels, BodyDispatch::Positional)
+    }
+
+    /// Execute an FX body closure that takes a single `Map` of params.
+    ///
+    /// The map contains the user-declared params plus an `input` key holding
+    /// the channel array. Sidesteps Rhai's tuple-arity cap so FX bodies can
+    /// declare more than 10 user parameters.
+    pub fn build_effect_map_closure(
+        self,
+        closure: rhai::FnPtr,
+        num_channels: usize,
+    ) -> Result<GraphIR> {
+        self.build_effect_closure_inner(closure, num_channels, BodyDispatch::Map)
+    }
+
+    fn build_effect_closure_inner(
+        self,
+        closure: rhai::FnPtr,
+        num_channels: usize,
+        dispatch: BodyDispatch,
     ) -> Result<GraphIR> {
         if num_channels == 0 {
             return Err(SynthDefError::ValidationError(
@@ -145,7 +178,16 @@ impl SynthDef {
         args.extend(param_nodes.iter().cloned());
 
         let empty_ast = rhai::AST::empty();
-        let call_result = match args.len() {
+        let call_result = match dispatch {
+            BodyDispatch::Map => {
+                let mut map = rhai::Map::new();
+                map.insert("input".into(), rhai::Dynamic::from(input_array.clone()));
+                for ((name, _, _), node) in params.iter().zip(param_nodes.iter()) {
+                    map.insert(name.as_str().into(), node.clone());
+                }
+                closure.call(&engine, &empty_ast, (rhai::Dynamic::from(map),))
+            }
+            BodyDispatch::Positional => match args.len() {
             1 => closure.call(&engine, &empty_ast, (args[0].clone(),)),
             2 => closure.call(&engine, &empty_ast, (args[0].clone(), args[1].clone())),
             3 => closure.call(
@@ -264,9 +306,10 @@ impl SynthDef {
             _ => {
                 clear_active_builder();
                 return Err(SynthDefError::RhaiError(
-                    "Too many FX parameters (max 10 user params)".to_string(),
+                    "Too many FX parameters (max 10 user params); use .body_map for higher arities".to_string(),
                 ));
             }
+            },
         };
 
         let result: rhai::Dynamic = match call_result {
@@ -326,6 +369,28 @@ impl SynthDef {
         closure: rhai::FnPtr,
         add_out_node: bool,
     ) -> Result<GraphIR> {
+        self.build_body_closure_with_options_inner(closure, add_out_node, BodyDispatch::Positional)
+    }
+
+    /// Execute the body using a Rhai closure that takes a single `Map` of params.
+    ///
+    /// Sidesteps Rhai's tuple-arity cap so synthdef bodies can declare more
+    /// than 10 parameters. The closure receives a single `Map<String, Dynamic>`
+    /// keyed by the user-declared param names.
+    pub fn build_body_map_closure_with_options(
+        self,
+        closure: rhai::FnPtr,
+        add_out_node: bool,
+    ) -> Result<GraphIR> {
+        self.build_body_closure_with_options_inner(closure, add_out_node, BodyDispatch::Map)
+    }
+
+    fn build_body_closure_with_options_inner(
+        self,
+        closure: rhai::FnPtr,
+        add_out_node: bool,
+        dispatch: BodyDispatch,
+    ) -> Result<GraphIR> {
         // Create a new graph builder
         let mut builder = GraphBuilderInner::new();
 
@@ -376,7 +441,15 @@ impl SynthDef {
         let empty_ast = rhai::AST::empty();
 
         // Call closure - UGen functions are already registered on the engine with defaults
-        let result: rhai::Dynamic = match param_nodes.len() {
+        let result: rhai::Dynamic = match dispatch {
+            BodyDispatch::Map => {
+                let mut map = rhai::Map::new();
+                for ((name, _, _), node) in params.iter().zip(param_nodes.iter()) {
+                    map.insert(name.as_str().into(), node.clone());
+                }
+                closure.call(&engine, &empty_ast, (rhai::Dynamic::from(map),))
+            }
+            BodyDispatch::Positional => match param_nodes.len() {
             0 => closure.call(&engine, &empty_ast, ()),
             1 => closure.call(&engine, &empty_ast, (param_nodes[0].clone(),)),
             2 => closure.call(
@@ -487,9 +560,10 @@ impl SynthDef {
             _ => {
                 clear_active_builder();
                 return Err(SynthDefError::RhaiError(
-                    "Too many parameters (max 10)".to_string(),
+                    "Too many parameters (max 10); use .body_map for higher arities".to_string(),
                 ));
             }
+            },
         }
         .map_err(|e| {
             clear_active_builder();
@@ -650,6 +724,23 @@ impl SynthDef {
     /// The closure should return a single NodeRef representing the control signal.
     /// An "out" parameter is automatically added for the control bus number.
     pub fn build_modulator_closure(self, closure: rhai::FnPtr) -> Result<GraphIR> {
+        self.build_modulator_closure_inner(closure, BodyDispatch::Positional)
+    }
+
+    /// Execute a modulator body closure that takes a single `Map` of params.
+    ///
+    /// Sidesteps Rhai's tuple-arity cap so modulators can declare more than
+    /// 10 parameters. The closure receives a single `Map<String, Dynamic>`
+    /// keyed by the user-declared param names.
+    pub fn build_modulator_map_closure(self, closure: rhai::FnPtr) -> Result<GraphIR> {
+        self.build_modulator_closure_inner(closure, BodyDispatch::Map)
+    }
+
+    fn build_modulator_closure_inner(
+        self,
+        closure: rhai::FnPtr,
+        dispatch: BodyDispatch,
+    ) -> Result<GraphIR> {
         // Create a new graph builder
         let mut builder = GraphBuilderInner::new();
 
@@ -693,7 +784,15 @@ impl SynthDef {
         let empty_ast = rhai::AST::empty();
 
         // Call closure with parameters
-        let result: rhai::Dynamic = match param_nodes.len() {
+        let result: rhai::Dynamic = match dispatch {
+            BodyDispatch::Map => {
+                let mut map = rhai::Map::new();
+                for ((name, _, _), node) in params.iter().zip(param_nodes.iter()) {
+                    map.insert(name.as_str().into(), node.clone());
+                }
+                closure.call(&engine, &empty_ast, (rhai::Dynamic::from(map),))
+            }
+            BodyDispatch::Positional => match param_nodes.len() {
             0 => closure.call(&engine, &empty_ast, ()),
             1 => closure.call(&engine, &empty_ast, (param_nodes[0].clone(),)),
             2 => closure.call(
@@ -804,9 +903,10 @@ impl SynthDef {
             _ => {
                 clear_active_builder();
                 return Err(SynthDefError::RhaiError(
-                    "Too many parameters (max 10)".to_string(),
+                    "Too many parameters (max 10); use .body_map for higher arities".to_string(),
                 ));
             }
+            },
         }
         .map_err(|e| {
             clear_active_builder();
@@ -866,4 +966,113 @@ pub fn get_param_defaults(ir: &GraphIR) -> std::collections::HashMap<String, f32
         }
     }
     defaults
+}
+
+#[cfg(test)]
+mod body_map_tests {
+    use super::*;
+    use rhai::{Engine, FnPtr};
+
+    fn parser_engine() -> Engine {
+        // Default expr depth (32 in debug) is too low for arity-50 sums.
+        let mut engine = Engine::new();
+        engine.set_max_expr_depths(256, 256);
+        engine
+    }
+
+    fn body_map_closure(arity: usize) -> FnPtr {
+        let body = if arity == 0 {
+            "sin_osc_ar(440.0, 0.0)".to_string()
+        } else {
+            let sum = (0..arity)
+                .map(|i| format!("p.p{}", i))
+                .collect::<Vec<_>>()
+                .join(" + ");
+            format!("sin_osc_ar({}, 0.0)", sum)
+        };
+        let script = format!("|p| {}", body);
+        parser_engine()
+            .eval::<FnPtr>(&script)
+            .expect("parse body_map closure")
+    }
+
+    fn build_map_synthdef(name: &str, arity: usize) -> Result<GraphIR> {
+        let mut sd = SynthDef::new(name.to_string());
+        for i in 0..arity {
+            sd.arg_f(format!("p{}", i), (i + 1) as f64);
+        }
+        sd.build_body_map_closure_with_options(body_map_closure(arity), true)
+    }
+
+    #[test]
+    fn body_map_arity_1() {
+        let ir = build_map_synthdef("body_map_arity_1", 1).expect("build arity 1");
+        // 1 user param + auto-added "out" param
+        assert_eq!(ir.params.len(), 2);
+        assert_eq!(ir.params[0].name, "p0");
+        assert_eq!(ir.params[1].name, "out");
+    }
+
+    #[test]
+    fn body_map_arity_5() {
+        let ir = build_map_synthdef("body_map_arity_5", 5).expect("build arity 5");
+        assert_eq!(ir.params.len(), 6);
+        for i in 0..5 {
+            assert_eq!(ir.params[i].name, format!("p{}", i));
+        }
+    }
+
+    #[test]
+    fn body_map_arity_11() {
+        // The whole point of body_map: this would fail under positional `body`.
+        let ir = build_map_synthdef("body_map_arity_11", 11).expect("build arity 11");
+        assert_eq!(ir.params.len(), 12);
+    }
+
+    #[test]
+    fn body_map_arity_20() {
+        let ir = build_map_synthdef("body_map_arity_20", 20).expect("build arity 20");
+        assert_eq!(ir.params.len(), 21);
+    }
+
+    #[test]
+    fn body_map_arity_50() {
+        let ir = build_map_synthdef("body_map_arity_50", 50).expect("build arity 50");
+        assert_eq!(ir.params.len(), 51);
+    }
+
+    #[test]
+    fn body_map_matches_positional_at_arity_5() {
+        // Equivalent positional and map synthdefs should yield the same param
+        // list, node count, and constants.
+        let mut sd_pos = SynthDef::new("eq_positional".to_string());
+        for i in 0..5 {
+            sd_pos.arg_f(format!("p{}", i), (i + 1) as f64);
+        }
+        let pos_closure: FnPtr = parser_engine()
+            .eval(
+                "|p0, p1, p2, p3, p4| sin_osc_ar(p0 + p1 + p2 + p3 + p4, 0.0)",
+            )
+            .expect("parse positional closure");
+        let pos_ir = sd_pos
+            .build_body_closure_with_options(pos_closure, true)
+            .expect("build positional");
+
+        let map_ir = build_map_synthdef("eq_map", 5).expect("build map");
+
+        assert_eq!(pos_ir.params.len(), map_ir.params.len());
+        for (a, b) in pos_ir.params.iter().zip(map_ir.params.iter()) {
+            assert_eq!(a.name, b.name, "param name mismatch");
+            assert_eq!(a.default, b.default, "param default mismatch");
+        }
+        assert_eq!(
+            pos_ir.nodes.len(),
+            map_ir.nodes.len(),
+            "node count differs"
+        );
+        assert_eq!(
+            pos_ir.constants, map_ir.constants,
+            "constants differ"
+        );
+    }
 }
