@@ -1,12 +1,14 @@
 # Voice Multi-Output Routing — How-To
 
 > User manual for declaring named output ports on a synthdef and routing
-> them per-port from `.vibe` scripts. Pairs with the deeper proposal in
-> `kb/voice-multi-output-cv-routing-plan.md`.
+> them per-port from `.vibe` scripts. Pairs with the deeper proposals in
+> `kb/voice-multi-output-cv-routing-plan.md` (v1) and
+> `kb/voice-multi-output-v2-plan.md` (v2).
 >
-> **Status snapshot:** v1 (audio-only) shipped — multi-output Stories 1–12
-> are merged. CV-to-param routing (v2) and modulator-API obsolescence (v3)
-> are documented as future work in §8.
+> **Status snapshot:** v1 (audio-only) + v2 (kr-rate ports, CV-to-param
+> routing, per-port FX chains, modulator-as-sugar) shipped. The remaining
+> v3 work — ar→param coercion, fan-out to multiple groups,
+> multi-source fan-in to a single param — is documented in §9.
 
 A vibelang voice can expose **N named output ports**. Each port is an
 independent signal that the script routes wherever it likes — to a group
@@ -29,14 +31,15 @@ Ports are declared on the `define_synthdef` builder before `body` /
 ```rhai
 define_synthdef("my_synth", |builder| {
     builder
-        .output("left")              // 1-channel port (default)
+        .output("left")              // 1-channel ar port (default)
         .output("right")
-        .output("verb_send", 2)      // 2-channel (stereo) port
+        .output("verb_send", 2)      // 2-channel (stereo) ar port
+        .output_kr("env_cv")         // 1-channel kr port (CV tap)
         .param("freq", 220.0)
         .body_map(|p| {
             // ... DSP graph ...
             // Body returns one signal per declared port, in order:
-            [left_sig, right_sig, verb_send_stereo_sig]
+            [left_sig, right_sig, verb_send_stereo_sig, env_kr_sig]
         })
 });
 ```
@@ -45,21 +48,30 @@ Rules:
 
 * **One signal per port**, in declared order. Mono ports take a
   scalar signal, stereo ports take a `[L, R]` array.
-* **`.output(name)`** — single-channel port. The vast majority of
-  ports — CV, mono mix sends, individual oscillator taps — are
-  one-channel.
+* **`.output(name)`** — single-channel **audio-rate (ar)** port. The vast
+  majority of audio ports — mono mix sends, individual oscillator taps —
+  are one-channel.
 * **`.output(name, channels)`** — explicit channel count, `1..=255`.
   Use `2` for proper stereo ports (e.g. a reverb send that is intrinsically
   stereo). Channels above 2 are valid but no terminal verb yet does
-  anything meaningful with them — see §8.
-* **Names are unique within a synthdef.** Empty names and duplicates are
-  rejected at synthdef-load time.
+  anything meaningful with them — see §9.
+* **`.output_kr(name)` / `.output_kr(name, channels)`** — single- or
+  multi-channel **control-rate (kr)** port. The body's signal for a kr
+  port is rendered via `Out.kr` and lives on a control bus. Use kr ports
+  for CV-style outputs that drive params on other voices (envelopes,
+  LFOs, S&H pulses) — the port's bus rate matches scsynth's `/n_map`
+  semantics for parameter mapping (see §3c). Mixed-rate synthdefs are
+  allowed — declare ar ports for audio and kr ports for CV in the same
+  builder. Spectraphon-style synths with audio outs *and* a kr CV tap
+  work out of the box.
+* **Names are unique within a synthdef** across rates. Empty names and
+  duplicates are rejected at synthdef-load time.
 * **Legacy synthdefs** that don't call `.output(...)` keep the implicit
-  single port `("out", 2 channels)` — i.e. existing stereo `Out.ar(out,
-  [L,R])` synthdefs work unchanged.
+  single port `("out", 2 channels, ar)` — i.e. existing stereo
+  `Out.ar(out, [L,R])` synthdefs work unchanged.
 
-> Source: `crates/vibelang-dsp/src/builder.rs::SynthDefBuilder::output` /
-> `crates/vibelang-dsp/src/api.rs::SynthDefBuilderHandle::output{,_with_channels}`.
+> Source: `crates/vibelang-dsp/src/builder.rs::SynthDefBuilder::output{,_kr}` /
+> `crates/vibelang-dsp/src/api.rs::SynthDefBuilderHandle::output{,_with_channels,_kr,_kr_with_channels}`.
 
 ---
 
@@ -94,12 +106,17 @@ call — explicit routes always win over the default in the merge step
 `voice.output(name)` returns a chainable `RouteHandle`. Pick exactly one
 terminal verb to commit the route:
 
-| Verb | Effect |
-|---|---|
-| `.to(group)` | Sum this port into the named group's mix bus. |
-| `.to_main()` | Send straight to main hardware output (bus 0), bypassing groups. |
-| `.to_current_group()` | Sum into whichever group the voice was last `.group("name")`-ed into. Errors when the voice has no explicit group set. |
-| `.mute()` | Discard the port's signal. |
+| Verb | Effect | Port rate |
+|---|---|---|
+| `.to(group)` | Sum this port into the named group's mix bus. | ar only |
+| `.to_main()` | Send straight to main hardware output (bus 0), bypassing groups. | ar only |
+| `.to_current_group()` | Sum into whichever group the voice was last `.group("name")`-ed into. Errors when the voice has no explicit group set. | ar only |
+| `.mute()` | Discard the port's signal. | ar or kr |
+| `.to_param(target, "param")` | Map this port's control bus into `target.param` via scsynth `/n_map` (see §3c). | kr only |
+
+In addition, `RouteHandle.fx([names])` is a **chainable modifier** (not
+a terminal verb): it inserts an FX chain *before* the route hits its
+destination. See §3b.
 
 ```rhai
 let v = voice("spec")
@@ -135,6 +152,117 @@ The implicit-`main` distinction matters: `to_current_group()` is
 specifically a "use whatever I already configured" shortcut, not a
 synonym for `to_main()`. If main is what you want, say `to_main()`
 explicitly.
+
+### 3b. Per-port FX chain — `.fx([…])`
+
+`RouteHandle.fx([names])` records an FX chain on the pending route;
+the terminal verb (`.to`, `.to_main`, `.to_current_group`) commits
+the chain alongside the destination. Each name must be a registered
+FX synthdef (i.e. declared via `define_fx(...)` and reachable through
+the dsp effect registry). The chain is applied in declaration order.
+
+```rhai
+v.output("even")
+    .fx(["reverb_jpverb", "delay_short"])
+    .to(group("leads"));
+
+v.output("dry")
+    .fx(["saturator"])
+    .to_main();
+
+// Plural fan-out: same chain applied to each listed port.
+v.outputs(["odd", "even"])
+    .fx(["chorus"])
+    .to(group("leads"));
+```
+
+Bus topology — each FX in the chain owns an intermediate audio bus,
+chained head-to-tail before the route reaches its destination:
+
+```
+port_bus → fx[0] → fx[1] → … → port_to_group_link → dest
+```
+
+The port's source bus is reused as `fx[0]`'s input — one bus saved
+per chain. Each subsequent FX gets a fresh intermediate bus.
+
+Validation rejects unknown FX names with a clean Rhai error citing
+the offending name, the closest known FX (Levenshtein, edit distance
+≤ 3), and the full set of registered FX. `.mute()` drops any FX
+chain — muted routes have no audio path for FX to run on. `.fx([])`
+is a no-op; the route still installs its terminal dest with no FX.
+
+`.fx([...])` and `.to_param(...)` are mutually exclusive in spirit —
+the FX chain only acts on ar audio routes. A route that combines
+both records the chain in `route_fx_chains`, but `to_param` bypasses
+the audio bus entirely; the FX chain has no effect on the param-route
+side. Pick one verb per route based on the rate.
+
+> Source: `crates/vibelang-rhai/src/api/route.rs::RouteHandle::fx`,
+> `crates/vibelang-core/src/handlers/routes.rs` (per-port chain
+> finalize), `crates/vibelang-core/src/reload/script_state.rs::ScriptState::route_fx_chains`.
+
+### 3c. CV-to-param routing — `.to_param(target, "param")`
+
+`RouteHandle.to_param(voice, "param")` maps a kr port's control bus
+into another voice's named param via scsynth's `/n_map`. The source
+port must have been declared with `.output_kr(...)`; the target voice
+must expose a param of the given name. No audio bus is involved — the
+mapping is a kr-bus → param-input wire that the audio engine evaluates
+once per control-rate block.
+
+```rhai
+let env = voice("env")
+    .synth("maths")               // declares kr ports ch1..ch4
+    .group("ctrl")                // logical container; nothing audible
+    .set_param("rise1", 0.05)
+    .set_param("fall1", 0.45)
+    .set_param("cycle1", 1.0);
+
+let bass = voice("bass")
+    .synth("tb303_bass")
+    .group("bass")
+    .set_param("cutoff", 800.0);
+
+env.output("ch1").to_param(bass, "cutoff");   // ch1 kr → bass.cutoff
+```
+
+See `examples/maths_to_param.vibe` for the full v2 smoke test
+(committed at `c56241c`).
+
+Rules:
+
+* **Kr only.** Calling `.to_param` on an ar-rate port is rejected with
+  an error citing the rate, port name, and the `output_kr` remediation:
+  `"port 'sine' is ar-rate; declare it via .output_kr(...) to drive
+  a param"`. Auto-coercion via `A2K.kr` is deferred to v3.
+* **Param must exist on the target synthdef.** Unknown params produce
+  a clean error citing the target voice, its synthdef, and the full
+  set of available params.
+* **Fan-out across multiple targets is allowed.** One source kr port
+  can drive params on many voices: just call `.to_param` again with a
+  different `(target, param)` pair. Duplicates `(same target, same
+  param)` are deduplicated.
+* **Fan-in into a single param is *not* allowed.** Multiple
+  `.to_param` calls into the same `(target, param)` replace earlier
+  ones; sum/average modulator merging is v3.
+* **Group/Main/Muted destinations stay single** — re-routing replaces
+  the prior dest. Only `.to_param` is additive across distinct
+  targets.
+
+`MultiRouteHandle.to_param` mirrors the singular form for plural-port
+fan-out:
+
+```rhai
+v.outputs(["env_a", "env_c"]).to_param(target, "cutoff");
+```
+
+Validation short-circuits on the first ar-rate or unknown-param port
+— partial fan-out isn't silently committed before the error.
+
+> Source: `crates/vibelang-rhai/src/api/route.rs::RouteHandle::to_param`,
+> `crates/vibelang-core/src/handlers/routes.rs::finalize_params`,
+> `RouteDest::Param { voice_id, param_name }`.
 
 ---
 
@@ -207,9 +335,10 @@ Three categories of change to plan for:
 | Change | Effect on existing routes |
 |---|---|
 | Body changed, port set unchanged | All routes survive. Buses are kept; only the synth nodes re-instantiate. |
-| Port added | New bus allocated. Default route for the new port is `mute()` unless the script already declared a route for it (the script's intent always wins). |
-| Port removed | Bus freed. Routes targeting the removed port are dropped, with a `tracing::warn!` log naming each dropped route. |
+| Port added | New bus allocated (audio or control depending on the port's rate). Default route for the new port is `mute()` unless the script already declared a route for it (the script's intent always wins). |
+| Port removed | Bus freed (returned to the matching audio or control free-list). Routes targeting the removed port are dropped, with a `tracing::warn!` log naming each dropped route. |
 | Port renamed | Surfaces as **remove + add** — the old name's bus is freed, routes referring to the old name are dropped (with the same warning), and the new name gets a fresh bus + default `mute()`. Renames break routes; the rationale is that guessing intent on rename is worse than a clear warning. |
+| Port rate changed (ar↔kr) | Surfaces as a **rate-flip remove+add** — the old-rate bus is freed back to its allocator, a new bus is allocated from the *other* rate's free-list, and any routes that were rate-incompatible with the new rate are dropped with a warning (`.to(group)` requires ar; `.to_param(...)` requires kr). Mute routes survive a rate flip since `.mute()` is rate-agnostic. |
 
 > Source: `crates/vibelang-core/src/reload/port_diff.rs::reconcile_voice_port_set`.
 
@@ -274,53 +403,140 @@ This pattern generalises: any synthdef that exposes multiple ports can
 mix per-port FX, dry/wet splits, and bus-bypassing destinations from a
 single voice instance.
 
+### 7a. v2 worked example — `examples/maths_to_param.vibe`
+
+The v2 CV-to-param smoke test wires the Maths channel-1 kr envelope
+into a tb303 voice's filter cutoff via `/n_map` — no audio bus crosses
+voice boundaries:
+
+```rhai
+import "stdlib/instruments/eurorack/maths.vibe";
+import "stdlib/synths/tb303.vibe";
+
+define_group("ctrl", || { });
+define_group("bass", || { });
+
+let m = voice("env")
+    .synth("maths")
+    .group("ctrl")
+    .set_param("rise1", 0.05)
+    .set_param("fall1", 0.45)
+    .set_param("cycle1", 1.0);
+
+let bass = voice("bass")
+    .synth("tb303_bass")
+    .group("bass")
+    .set_param("cutoff", 800.0)
+    .set_param("env_mod", 0.0);     // disable internal env→cutoff
+
+m.output("ch1").to_param(bass, "cutoff");
+```
+
+Topology:
+
+```
+env (maths)  ch1 (kr)  ──/n_map──►  bass.cutoff
+bass (tb303_bass)  ─group("bass")─► main
+```
+
+The `ctrl` group is a logical container — Maths' kr ports drive params
+via `/n_map`, so nothing audible flows through it. See the example file
+for the long-form explanation, including the kr-unit-to-Hz scaling
+caveat (no per-route multiplier in v2; rescale on the synthdef side or
+wait for v3).
+
 ---
 
-## 8. Limitations (v1)
+## 8. Modulators are now sugar (v2 Story 5)
 
-The v1 surface is intentionally narrow. The following are documented
-non-features today:
+The `modulator()` builder is preserved for backwards compatibility,
+but internally it is now a thin wrapper over a single-kr-port voice
+plus a `to_param` route:
 
-* **No per-port FX chains.** You cannot insert an FX directly on a
-  `RouteHandle` (`.fx("reverb_jpverb")`). The current workaround — and
-  the pattern the `spectraphon_multiout` example uses — is to send the
-  port to a dedicated group whose body installs the FX. Per-port FX is
-  on the v2 wishlist (kb plan §5.2 `fx()` row).
-* **No CV-to-param routing.** `voice.output("cv").cv_to(target,
-  "param")` is in the architecture plan (Phase 2) but not implemented.
-  Routes today are audio-domain only — they sum into a destination's
-  mix bus. For control-rate signal routing, keep using the
-  `Modulator` API.
-* **No additive fan-out per port.** Calling `.to(...)` twice on the same
-  `(voice, port)` overwrites the prior destination rather than adding
-  a second one. Use a second voice on the same synthdef as a workaround.
-* **`Modulator` API still active.** The plan envisions `Modulator`
-  becoming sugar over a single-`kr` port voice once Phase 2 lands, but
-  in v1 the two systems are independent: `Modulator` for parameter
-  modulation, `voice.output(...)` for audio routing. Existing
-  `voice.modulate(param, modulator)` patches are unaffected.
-  **v3 obsoletes `Modulator`** by folding its capabilities into the CV
-  port path; until then, treat them as parallel mechanisms.
+* `modulator("env").synth("lfo_sine").apply()` registers the
+  modulator's synthdef as a kr-output voice synthdef (single port
+  `"out"` at control rate) and inserts a `VoiceConfig` for the
+  modulator under its name.
+* `voice.modulate("amp", m)` is sugar for
+  `m.output("out").to_param(voice, "amp")` — the same param-route
+  install path used by direct `.to_param(...)` calls.
+* Nested `.modulate()` on a modulator (`m1.modulate("rate", m2)`)
+  installs an analogous param-route from `m2.out` into `m1.rate`.
+
+User-facing API is unchanged: `modulator()`, `.synth()`, `.param()`,
+`.modulate()`, `.apply()` keep their handle types and chaining
+semantics. Direct field access (`m.modulations`, `m.params`, etc.)
+still returns the legacy `ModulatorId` typing for back-compat with
+existing tests.
+
+> **modulator() is now sugar over `voice.output_kr()` + `.to_param()`
+> — direct usage is preferred for new code.** The builder will be
+> removed in v3 after a "stale modulator" lint cycle. Treat any new
+> modulator-builder usage as a deprecation candidate.
+
+> Source: `crates/vibelang-rhai/src/api/modulator.rs` (sugar shim),
+> `crates/vibelang-rhai/src/api/voice.rs::Voice::modulate`.
+
+---
+
+## 9. Limitations (v2)
+
+The v2 surface is shipped end-to-end. The following are documented
+non-features in v2; deferred to v3:
+
+* **No ar→param coercion.** `.to_param` requires a kr-rate port —
+  declare CV outputs with `.output_kr(...)`. Auto-coercion via an
+  internal `A2K.kr` is doable but hides rate-mismatch bugs and is
+  intentionally deferred. Calling `.to_param` on an ar port produces
+  a clean Rhai error pointing at `.output_kr`.
+* **No fan-out to multiple groups.** Calling `.to(...)` twice on the
+  same `(voice, port)` overwrites the prior destination rather than
+  splitting the signal. Use a second voice on the same synthdef as a
+  workaround. (`.to_param` *is* additive across different targets —
+  see §3c.)
+* **No multi-source fan-in to a single param.** One param can be
+  driven by at most one source kr port at a time; later `.to_param`
+  calls into the same `(target, param)` replace earlier ones.
+  Sum/average modulator merging is v3.
+* **`modulator()` is deprecated.** It still works as sugar over
+  single-kr-port voices (§8). New code should prefer
+  `voice.output_kr(...)` + `.to_param(...)` directly. Removal is v3.
 * **No `solo()`, `tap()`, `scope()`** — the wider verb table from the
-  plan §5.2 is deferred. Today it's `to`, `to_main`, `to_current_group`,
-  `mute`.
+  plan §5.2 is still deferred. Today the verb set is `to`, `to_main`,
+  `to_current_group`, `mute`, `to_param`, plus the chainable
+  `.fx([…])` modifier.
+* **No sample-accurate trigger ports** — `Out.tr` semantics are not
+  exposed yet.
 
 ---
 
-## 9. References
+## 10. References
 
-* `kb/voice-multi-output-cv-routing-plan.md` — full architecture proposal
-  (Options A–E, phased rollout, hot-reload safety analysis, story
-  breakdown).
-* `examples/spectraphon_multiout.vibe` — Story 12 proof-of-life.
+* `kb/voice-multi-output-cv-routing-plan.md` — v1 architecture proposal
+  (Options A–E, phased rollout, hot-reload safety analysis).
+* `kb/voice-multi-output-v2-plan.md` — v2 design doc (kr ports,
+  `to_param`, per-port FX, modulator-as-sugar).
+* `examples/spectraphon_multiout.vibe` — v1 multi-output proof-of-life
+  (audio routing, dry/wet split via groups).
+* `examples/maths_to_param.vibe` — v2 CV-to-param smoke test
+  (Maths kr envelope → tb303 cutoff via `/n_map`).
 * `crates/vibelang-std/stdlib/instruments/spectral/spectraphon_side.vibe`
-  — real-world `.output(name)` builder usage on a 4-port spectral synthdef.
+  — multi-port spectral synthdef (ar).
+* `crates/vibelang-std/stdlib/instruments/eurorack/maths.vibe`
+  — multi-port CV synthdef with kr ports `ch1..ch4`.
 * `crates/vibelang-rhai/src/api/route.rs` — `RouteHandle` /
-  `MultiRouteHandle` Rhai surface.
-* `crates/vibelang-rhai/src/api/voice.rs::Voice::{output_by_name,output_by_idx,outputs}`
-  — voice-side handle constructors and validation.
-* `crates/vibelang-core/src/handlers/routes.rs` — default routing rule
-  and merge semantics.
-* `crates/vibelang-core/src/reload/port_diff.rs` — reload reconciler.
+  `MultiRouteHandle` Rhai surface (`.to`, `.to_main`,
+  `.to_current_group`, `.mute`, `.to_param`, `.fx`).
+* `crates/vibelang-rhai/src/api/voice.rs::Voice` — `output_by_name`,
+  `output_by_idx`, `outputs`, `modulate`.
+* `crates/vibelang-rhai/src/api/modulator.rs` — modulator-as-sugar
+  shim.
+* `crates/vibelang-core/src/handlers/routes.rs` —
+  `RouteDest::{Group, Main, Muted, Param}`, default routing rule,
+  finalize (audio + param paths).
+* `crates/vibelang-core/src/reload/port_diff.rs` /
+  `crates/vibelang-core/src/reload/script_state.rs` — reload
+  reconciler (incl. port-rate change diff) and `param_routes` /
+  `route_fx_chains` storage.
 * `kb/spectraphon-howto.md` — Spectraphon user manual; the multi-output
   example links back into routing here.
