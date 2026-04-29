@@ -23,12 +23,27 @@ enum BodyDispatch {
     Map,
 }
 
+/// A named output port on a synthdef.
+///
+/// Channel count is usually 1 for CV/mono ports and 2 for the legacy stereo
+/// `out` port. Routing/codegen for multiple ports is handled by later stories;
+/// this descriptor just records the port shape.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutputPort {
+    pub name: String,
+    pub channels: u8,
+}
+
 /// SynthDef builder.
 #[derive(Clone, Debug)]
 pub struct SynthDef {
     pub name: String,
     pub params: Vec<(String, f32, Option<f32>)>, // (name, default, lag_ms)
     pub out_bus_tag: Option<String>,
+    pub outputs: Vec<OutputPort>,
+    // True once the user has called `.output(...)` at least once. Tracks whether
+    // `outputs` is the implicit legacy default or an explicit declaration.
+    outputs_explicit: bool,
 }
 
 impl SynthDef {
@@ -38,7 +53,36 @@ impl SynthDef {
             name,
             params: Vec::new(),
             out_bus_tag: None,
+            outputs: vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+            }],
+            outputs_explicit: false,
         }
+    }
+
+    /// Declare a named output port. Channels typically 1 (CV/mono) or 2 (stereo).
+    ///
+    /// The first call replaces the implicit legacy `out` port; subsequent calls
+    /// append. Empty names and duplicate names are rejected.
+    pub fn output(&mut self, name: String, channels: u8) -> Result<&mut Self> {
+        if name.is_empty() {
+            return Err(SynthDefError::ValidationError(
+                "Output port name cannot be empty".to_string(),
+            ));
+        }
+        if !self.outputs_explicit {
+            self.outputs.clear();
+            self.outputs_explicit = true;
+        }
+        if self.outputs.iter().any(|p| p.name == name) {
+            return Err(SynthDefError::ValidationError(format!(
+                "Duplicate output port name: {}",
+                name
+            )));
+        }
+        self.outputs.push(OutputPort { name, channels });
+        Ok(self)
     }
 
     /// Add a float parameter.
@@ -1039,6 +1083,81 @@ mod body_map_tests {
     fn body_map_arity_50() {
         let ir = build_map_synthdef("body_map_arity_50", 50).expect("build arity 50");
         assert_eq!(ir.params.len(), 51);
+    }
+
+    #[test]
+    fn output_default_port_when_no_explicit_call() {
+        let sd = SynthDef::new("default_only".to_string());
+        assert_eq!(
+            sd.outputs,
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+            }]
+        );
+    }
+
+    #[test]
+    fn output_single_explicit_replaces_default() {
+        let mut sd = SynthDef::new("single".to_string());
+        sd.output("sine".to_string(), 1).expect("first output");
+        assert_eq!(
+            sd.outputs,
+            vec![OutputPort {
+                name: "sine".to_string(),
+                channels: 1,
+            }]
+        );
+    }
+
+    #[test]
+    fn output_multi_round_trip() {
+        let mut sd = SynthDef::new("multi".to_string());
+        sd.output("a".to_string(), 1).expect("a");
+        sd.output("b".to_string(), 2).expect("b");
+        assert_eq!(
+            sd.outputs,
+            vec![
+                OutputPort {
+                    name: "a".to_string(),
+                    channels: 1,
+                },
+                OutputPort {
+                    name: "b".to_string(),
+                    channels: 2,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn output_duplicate_name_errors() {
+        let mut sd = SynthDef::new("dup".to_string());
+        sd.output("a".to_string(), 1).expect("first");
+        let err = sd
+            .output("a".to_string(), 2)
+            .expect_err("duplicate must error");
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                assert!(msg.contains("Duplicate"), "msg = {}", msg);
+                assert!(msg.contains("a"), "msg = {}", msg);
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn output_empty_name_errors() {
+        let mut sd = SynthDef::new("empty".to_string());
+        let err = sd
+            .output(String::new(), 1)
+            .expect_err("empty name must error");
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                assert!(msg.contains("empty"), "msg = {}", msg);
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
     }
 
     #[test]

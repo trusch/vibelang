@@ -193,6 +193,31 @@ impl SynthDefBuilderHandle {
         self
     }
 
+    /// Declare a named output port (1 channel by default).
+    pub fn output(mut self, name: ImmutableString) -> Result<Self, Box<EvalAltResult>> {
+        self.synthdef
+            .output(name.into_owned(), 1)
+            .map_err(synthdef_error_to_eval)?;
+        Ok(self)
+    }
+
+    /// Declare a named output port with explicit channel count.
+    pub fn output_with_channels(
+        mut self,
+        name: ImmutableString,
+        channels: i64,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        if !(1..=255).contains(&channels) {
+            return Err(synthdef_error_to_eval(SynthDefError::ValidationError(
+                format!("Output port channels must be in 1..=255, got {}", channels),
+            )));
+        }
+        self.synthdef
+            .output(name.into_owned(), channels as u8)
+            .map_err(synthdef_error_to_eval)?;
+        Ok(self)
+    }
+
     fn build(self, closure: rhai::FnPtr) -> crate::errors::Result<GraphIR> {
         self.synthdef.build_body_closure_with_options(closure, true)
     }
@@ -467,6 +492,8 @@ pub fn register_synthdef_api(engine: &mut Engine) {
         .register_fn("param", SynthDefBuilderHandle::param)
         .register_fn("glide_ms", SynthDefBuilderHandle::glide_ms)
         .register_fn("out_bus", SynthDefBuilderHandle::out_bus)
+        .register_fn("output", SynthDefBuilderHandle::output)
+        .register_fn("output", SynthDefBuilderHandle::output_with_channels)
         .register_fn("body", SynthDefBuilderHandle::body)
         .register_fn("body_map", SynthDefBuilderHandle::body_map);
 
