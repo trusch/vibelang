@@ -3,12 +3,20 @@
 // Hardware Maths is the canonical eurorack "function generator with multiple
 // outputs": two independent envelope channels (1 and 4), a sum jack, an
 // inverter, and per-channel end-of-rise (EOR) / end-of-cycle (EOC) gate
-// jacks. That shape maps cleanly onto the multi-output v1 routing surface
-// (see `kb/voice-multioutput-howto.md`) — one synthdef declaring six ports
-// and letting the script wire each one to its own destination, instead of
-// the four-separate-synthdefs workaround that pre-multi-output stdlib used.
+// jacks. That shape maps cleanly onto the multi-output v2 routing surface
+// (see `kb/voice-multioutput-howto.md` and `kb/voice-multi-output-v2-plan.md`)
+// — one synthdef declaring six control-rate ports and letting the script
+// wire each one to its own destination, instead of the four-separate-
+// synthdefs workaround that pre-multi-output stdlib used.
 //
-// Output ports (one signal per port, audio-rate):
+// All six ports are control-rate (`output_kr`): hardware Maths is a CV /
+// modulation source, never an audio signal source. Declaring kr ports lets
+// downstream voices map them at param inputs via `.to_param(target, name)`
+// (Story 4 of the v2 plan) without an ar→kr coercion penalty, and routes
+// the per-port bus through scsynth's control-bus pool rather than the
+// audio-bus pool. See `kb/voice-multi-output-v2-plan.md` §3.1–3.3.
+//
+// Output ports (one signal per port, control-rate):
 //
 //   ch1   — channel 1 envelope. Triggered AD shape with independent
 //            `rise1` / `fall1` time-constants. Free-run cycling LFO mode
@@ -86,14 +94,16 @@
 //      (peak ≈ 1.0 = +10V), matching cv_maths's `peak_v=8.0` default
 //      bias toward the upper Maths swing range.
 //
-// v1 limitations (carried forward from `kb/voice-multioutput-howto.md`):
-//   - No CV-to-param routing: the demo script (`examples/maths_demo.vibe`)
-//     describes the conceptual "sum drives an oscillator's amp" patch
-//     but cannot wire it directly across voices. Each port routes to a
-//     destination group / main / mute, not to another voice's param
-//     input. Phase 2/3 of `kb/voice-multi-output-cv-routing-plan.md`
-//     resolves this.
-//   - No per-port FX (group-level FX still apply uniformly).
+// v2 limitations / status:
+//   - CV-to-param routing is the v2 epic's Phase B
+//     (`kb/voice-multi-output-v2-plan.md` Stories 3, 4). Story 3
+//     (`RouteDest::Param` + `MapN` finalize) has landed; Story 4 wires
+//     the Rhai `.to_param(voice, param)` surface and lets scripts target
+//     other voices' params directly from a kr port on this synthdef.
+//     Until Story 4 lands, drive params via the existing modulator path
+//     or post-Story-4-syntax (see `examples/maths_to_param.vibe`).
+//   - No per-port FX yet (Story 6a/6b — bus alloc landed, Rhai surface
+//     pending). Group-level FX still apply uniformly.
 //   - shape1 / shape4 are accepted but not yet curve-modulating (see
 //     param docs above).
 //
@@ -103,12 +113,12 @@
 
 define_synthdef("maths", |builder| {
     builder
-        .output("ch1")        // 1ch — channel 1 envelope
-        .output("ch4")        // 1ch — channel 4 envelope
-        .output("sum")        // 1ch — ch1 + ch4
-        .output("inv")        // 1ch — -ch1
-        .output("eor1")       // 1ch — end-of-rise gate, ch1
-        .output("eoc1")       // 1ch — end-of-cycle gate, ch1
+        .output_kr("ch1")        // 1ch — channel 1 envelope (kr)
+        .output_kr("ch4")        // 1ch — channel 4 envelope (kr)
+        .output_kr("sum")        // 1ch — ch1 + ch4 (kr)
+        .output_kr("inv")        // 1ch — -ch1 (kr)
+        .output_kr("eor1")       // 1ch — end-of-rise gate, ch1 (kr)
+        .output_kr("eoc1")       // 1ch — end-of-cycle gate, ch1 (kr)
         .param("rise1", 0.05)
         .param("fall1", 0.5)
         .param("shape1", 0.5)
@@ -131,32 +141,35 @@ define_synthdef("maths", |builder| {
             // === Cycle mode source =======================================
             // `cycle_rate` is the channel-1 LFO frequency in Hz when cycle1
             // is active. Multiplying by cycle1 (0/1) gates the impulse
-            // generator: `impulse_ar(0)` is silent, so cycle1=0 leaves
+            // generator: `impulse_kr(0)` is silent, so cycle1=0 leaves
             // trig1 as the only edge source on ch1. The +0.001 epsilon
             // avoids a divide-by-zero when rise1 and fall1 are both 0.
+            // kr impulse rate is fine here — Maths cycles at sub-audio
+            // LFO rates and downstream consumers read kr buses.
             let cycle_period = rise1 + fall1 + 0.001;
             let cycle_rate = cycle1 / cycle_period;
-            let cycle_imp = impulse_ar(cycle_rate, 0.0);
+            let cycle_imp = impulse_kr(cycle_rate, 0.0);
 
             // Channel-1 trigger source: cycle impulses + manual trig1.
-            // k2a_ar promotes the kr param to ar so the sum stays at audio
-            // rate (decay2_ar wants ar input). decay2_ar edges on each
-            // non-positive→positive transition of the sum, the standard
-            // SuperCollider trigger rule.
-            let trig_src1 = cycle_imp + k2a_ar(trig1);
-            let trig_src4 = k2a_ar(trig4);
+            // Both operands are kr (params arrive as kr by default,
+            // impulse_kr is kr), so no rate-promotion is needed —
+            // decay2_kr edges on each non-positive→positive transition of
+            // the sum, the standard SuperCollider trigger rule.
+            let trig_src1 = cycle_imp + trig1;
+            let trig_src4 = trig4;
 
             // === Channel envelopes ======================================
             // decay2 = exponential AD shape (Maths's canonical "L" curve)
             // with independent attack/decay time-constants. Peak ≈ 1.0 on
-            // a unit trigger.
-            let ch1_env = decay2_ar(trig_src1, rise1, fall1);
-            let ch4_env = decay2_ar(trig_src4, rise4, fall4);
+            // a unit trigger. kr is the natural rate — these envelopes
+            // drive params and CV outs, never sample-rate audio.
+            let ch1_env = decay2_kr(trig_src1, rise1, fall1);
+            let ch4_env = decay2_kr(trig_src4, rise4, fall4);
 
             // === Sum and inverter =======================================
             // sum is the canonical Maths Σ jack; inv mirrors ch1 around 0V
             // (Maths's INV jack). vibelang has no unary minus on NodeRef,
-            // so we subtract from 0.0 explicitly.
+            // so we subtract from 0.0 explicitly. kr arithmetic stays kr.
             let sum_signal = ch1_env + ch4_env;
             let inv_signal = 0.0 - ch1_env;
 
@@ -176,10 +189,12 @@ define_synthdef("maths", |builder| {
             let eor1_gate = trig1_kr(eor_imp, 0.005) * 0.5;
             let eoc1_gate = trig1_kr(eoc_imp, 0.005) * 0.5;
 
-            // Promote kr gates to ar for the audio output ports and clip
-            // to the ±1.0 audio = ±10V CV contract envelope.
-            let eor1_out = clip_ar(k2a_ar(eor1_gate), -1.0, 1.0);
-            let eoc1_out = clip_ar(k2a_ar(eoc1_gate), -1.0, 1.0);
+            // Clip kr gates to the ±1.0 = ±10V CV contract envelope. No
+            // ar promotion: with kr ports, the bus carries kr samples
+            // directly, and downstream `MapN` reads them at kr — exactly
+            // the rate scsynth expects for param targets.
+            let eor1_out = clip_kr(eor1_gate, -1.0, 1.0);
+            let eoc1_out = clip_kr(eoc1_gate, -1.0, 1.0);
 
             [ch1_env, ch4_env, sum_signal, inv_signal, eor1_out, eoc1_out]
         })

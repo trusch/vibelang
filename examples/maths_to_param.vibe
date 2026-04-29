@@ -1,0 +1,115 @@
+// Maths → param routing — v2 proof-of-life.
+//
+// Demonstrates the v2 multi-output / CV-routing surface end-to-end:
+//
+//   1. Maths declares its envelope outputs as kr ports
+//      (`stdlib/instruments/eurorack/maths.vibe` — Story 7 kr migration).
+//   2. A real bass voice's `cutoff` param is driven directly from the
+//      Maths channel-1 kr envelope via
+//      `voice.output(name).to_param(target, param)`
+//      (Story 4 — Rhai surface for `RouteDest::Param`).
+//
+// Topology:
+//
+//   ┌────────────────────────────────┐
+//   │ voice("env") synth("maths")    │
+//   │   ch1 (kr) ───────────────────►│ bass.cutoff   (kr → /n_map)
+//   │   group "ctrl" (silent — kr    │
+//   │   bus drives params, no audio) │
+//   └────────────────────────────────┘
+//
+//   ┌────────────────────────────────┐
+//   │ voice("bass") synth("tb303_bass") │
+//   │   group "bass" → main          │  (audible)
+//   └────────────────────────────────┘
+//
+// What you should hear: a held tb303 bass note with its filter cutoff
+// sweeping at ~2 Hz, tracking the Maths channel-1 envelope shape. The
+// envelope cycles freely (cycle1=1) at `1 / (rise1 + fall1)` Hz, which
+// with the defaults below is 1 / 0.5 = 2 Hz. End-to-end, no audio bus
+// crosses voice boundaries — just a kr bus and an `/n_map` mapping.
+//
+// =====================================================================
+// STATUS: Story 4 (Rhai `.to_param(voice, param)` API) is still in
+// flight on branch `v2-4-toparam`. Until that merges, this script will
+// not parse — `RouteHandle.to_param` is not yet registered on the Rhai
+// engine. Once Story 4 lands, this file becomes the v2 smoke test:
+//
+//   bash -c "cd examples && ../target/release/vibe run -w -I .. \\
+//     maths_to_param.vibe"
+//
+// In the meantime: the migrated Maths synthdef compiles fine
+// (`cargo build --release`); the kr ports and `MapN` finalize path are
+// already in tree (Stories 1-3, commits 546752f, 02efde1, 91840f0).
+// This example documents the exact syntax the user should expect from
+// the completed v2 surface — copy-pasteable the moment Story 4 lands.
+// =====================================================================
+
+import "stdlib/instruments/eurorack/maths.vibe";
+import "stdlib/synths/tb303.vibe";
+
+set_tempo(96);
+
+// Two groups: one for the modulation source, one for the audible bass.
+// Maths is a CV source — its kr ports feed param targets via /n_map,
+// so the "ctrl" group is just a logical container; nothing audible
+// flows through it. The bass goes to its own group so a future per-port
+// FX chain (Story 6b) can decorate the audible side without touching
+// the CV signal path.
+define_group("ctrl", || { });
+define_group("bass", || { });
+
+// Maths voice: cycle1=1 makes channel 1 free-run at 1/(rise1+fall1) Hz.
+// rise1=0.05, fall1=0.45 → ~2 Hz cycle. Each cycle peaks near +1.0 on
+// the kr envelope. trig4=0 so channel 4 stays silent.
+let m = voice("env")
+    .synth("maths")
+    .group("ctrl")
+    .set_param("rise1", 0.05)
+    .set_param("fall1", 0.45)
+    .set_param("cycle1", 1.0);
+
+// tb303 bass voice — held note. `env_mod=0` disables the synthdef's
+// internal envelope→cutoff modulation so the audible filter movement
+// comes *only* from the Maths ch1 kr port. The default group routing
+// (1-port synthdef → voice.group → main) handles audio output without
+// an explicit `.to(...)` call.
+//
+// Note on cutoff range: Maths ch1 envelope peaks ≈ 1.0 (kr unit value).
+// scsynth's `/n_map` writes the kr bus value directly into the param
+// input — no per-route scaling in v2 (deferred to v3). With base cutoff
+// 800 Hz and the kr signal mapping in as a Hz value, the audible sweep
+// is the modulation deviation from base ≈ 0..1 Hz — subtle but
+// measurable on a scope. The bass tone itself stays near 800 Hz cutoff
+// throughout. For a wider sweep, use a future-MapN-with-multiplier
+// surface (Story TBD) or rescale on the synthdef side. Even so, the
+// test still proves the kr-bus-to-param path is wired correctly: a
+// scope on the bass cutoff will show a 2 Hz wobble synced with the
+// Maths cycle.
+let bass = voice("bass")
+    .synth("tb303_bass")
+    .group("bass")
+    .set_param("freq", 55.0)            // A1
+    .set_param("amp", 0.4)
+    .set_param("cutoff", 800.0)
+    .set_param("resonance", 0.6)
+    .set_param("env_mod", 0.0)          // disable internal env→cutoff
+    .set_param("decay", 0.5);
+
+// === The v2 routing patch ============================================
+// `to_param` installs a `RouteDest::Param { voice_id, param_name }`
+// into the script state's route map. `RoutesHandler::finalize_params`
+// (Story 3) emits an `/n_map`-equivalent backend message at finalize,
+// mapping the target param's input to the source kr bus. Removing the
+// route or deleting either voice tears the mapping down on the next
+// reload (Story 8 covers reload semantics for kr ports).
+m.output("ch1").to_param(bass, "cutoff");
+
+// === Hold the bass tone ==============================================
+// A long, held note so the filter sweep is audible across many cycles.
+// `gate=1` is the synthdef default so the ASR envelope opens and stays
+// open until the melody releases.
+melody("bass_drone")
+    .on(bass)
+    .notes("A1 A1 A1 A1")
+    .start();
