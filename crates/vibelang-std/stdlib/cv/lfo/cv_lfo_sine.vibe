@@ -1,0 +1,32 @@
+// kind=cv | category=lfo | flavor=sine | range=-10..+10 V | params=rate,depth_v,bipolar
+//
+// Sine LFO — smooth continuous modulation source. Output:
+//   bipolar = 1.0 → swings ±depth_v volts around 0 V (true AC modulation)
+//   bipolar = 0.0 → swings 0 V .. +depth_v volts (unipolar, raised to positive only)
+//
+// `rate` (Hz) is the LFO frequency. `depth_v` is the peak amplitude in volts
+// (0..10 V); under the standard 1.0 = +10 V convention this scales the audio
+// sample by `depth_v / 10`. `bipolar` is a 0.0 / 1.0 switch — values in between
+// give a continuous mix of the two polarities.
+//
+// The implementation runs at control rate (`sin_osc_kr`) — sub-audio
+// modulation does not need audio-rate fidelity, and kr keeps the synthdef
+// cheap when many LFOs run in parallel.
+//
+// CV contract (kb/stdlib-cv-spec.md): mono, hard-clipped to ±1.0, no
+// leak_dc, no soft-sat, no envelope on the carrier.
+
+define_synthdef("cv_lfo_sine")
+    .param("rate", 1.0)       // Hz
+    .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
+    .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
+    .body(|rate, depth_v, bipolar| {
+        let osc = sin_osc_kr(rate, 0.0);
+        // Mix bipolar [-1,+1] vs unipolar [0,+1]:
+        //   bipolar=1 → osc                          (peak ±1)
+        //   bipolar=0 → osc * 0.5 + 0.5              (peak  0..+1)
+        let shaped = osc * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+        let cv = shaped * (depth_v / 10.0);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });

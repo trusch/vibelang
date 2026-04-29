@@ -1,0 +1,29 @@
+// kind=cv | category=lfo | flavor=random | range=-10..+10 V | params=rate,depth_v,bipolar
+//
+// Sample-and-hold random LFO — picks a new random value every `1/rate`
+// seconds and holds it. Stepped, not interpolated; the output looks like a
+// staircase. Classic "random voltage" character — perfect for arpeggio-style
+// filter modulation, generative VCA gating, or anywhere a `RandomSource`
+// label would appear on a Eurorack module.
+//
+// Output:
+//   bipolar = 1.0 → ±depth_v volts
+//   bipolar = 0.0 → 0 V .. +depth_v volts
+//
+// `rate` (Hz) is the step frequency — how often a new random value is
+// chosen. `depth_v` is the peak amplitude in volts (0..10 V). Runs at
+// control rate (`lf_noise0_kr`).
+//
+// CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
+
+define_synthdef("cv_lfo_random")
+    .param("rate", 1.0)       // Hz — step rate
+    .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
+    .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
+    .body(|rate, depth_v, bipolar| {
+        let noise = lf_noise0_kr(rate);
+        let shaped = noise * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+        let cv = shaped * (depth_v / 10.0);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });

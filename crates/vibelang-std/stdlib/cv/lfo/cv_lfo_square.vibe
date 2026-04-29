@@ -1,0 +1,35 @@
+// kind=cv | category=lfo | flavor=square | range=-10..+10 V | params=rate,depth_v,pulse_width,bipolar
+//
+// Square / pulse LFO — instantaneous switch between two levels. Useful as a
+// rhythmic gate-like modulation source (binary tremolo, hard filter clicks)
+// or as a slow PWM source when `pulse_width` is modulated.
+//
+// `pulse_width` (0..1) is the duty cycle: 0.5 = symmetric square, smaller
+// values produce a narrow positive pulse, larger values a narrow negative
+// pulse.
+//
+// Output:
+//   bipolar = 1.0 → switches between -depth_v and +depth_v volts
+//   bipolar = 0.0 → switches between  0 V and +depth_v volts
+//
+// `rate` (Hz) is the LFO frequency. Runs at control rate (`lf_pulse_kr`).
+// `lf_pulse_kr` outputs unipolar 0..1; the bipolar mix re-centres it.
+//
+// CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
+
+define_synthdef("cv_lfo_square")
+    .param("rate", 1.0)         // Hz
+    .param("depth_v", 5.0)      // peak amplitude in volts (0..10)
+    .param("pulse_width", 0.5)  // 0..1 duty cycle
+    .param("bipolar", 1.0)      // 1.0 = ±depth, 0.0 = 0..+depth
+    .body(|rate, depth_v, pulse_width, bipolar| {
+        // LFPulse output is unipolar 0..1.
+        let pulse = lf_pulse_kr(rate, 0.0, pulse_width);
+        // Mix unipolar [0,+1] vs bipolar [-1,+1]:
+        //   bipolar=1 → pulse * 2 - 1                (range -1..+1)
+        //   bipolar=0 → pulse                        (range  0..+1)
+        let shaped = pulse * (1.0 + bipolar) - bipolar;
+        let cv = shaped * (depth_v / 10.0);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });

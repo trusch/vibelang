@@ -1,0 +1,43 @@
+// kind=cv | category=lfo | flavor=chaos | range=-10..+10 V | params=rate,depth_v,bipolar
+//
+// Chaos LFO — Lorenz strange attractor as a slowly evolving, never-repeating
+// modulation source. Unlike `cv_lfo_smooth_random` which is uncorrelated
+// noise, the Lorenz output has structure — it traces orbits around two
+// "wings" with the occasional jump between them. The result feels like a
+// living analog modulation source: drifty when it sits on a wing, eventful
+// when it crosses over.
+//
+// `rate` here is the iteration frequency of the Lorenz solver in Hz.
+// Sub-audio values (1–20 Hz) keep the attractor in slow-motion mode and
+// make the output suitable as a CV modulation source. The default is 4 Hz.
+//
+// Implementation notes:
+//   - Only `lorenz_l_ar` exists (no kr sibling); we run it at audio rate
+//     but with a low iteration `freq` so each sample is interpolated from
+//     the same orbit segment — sub-audio modulation in practice.
+//   - Lorenz x runs at roughly ±20–30 in raw form (s=10, r=28, b=2.667
+//     defaults). A `1/25` pre-scale brings it into the [-1, +1] space the
+//     CV pipeline expects; the final `clip_ar` rail catches the rare
+//     excursions beyond.
+//
+// Output:
+//   bipolar = 1.0 → ±depth_v volts (centred chaotic wander)
+//   bipolar = 0.0 → 0 V .. +depth_v volts
+//
+// CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
+
+define_synthdef("cv_lfo_chaos")
+    .param("rate", 4.0)       // Hz — Lorenz iteration speed
+    .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
+    .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
+    .body(|rate, depth_v, bipolar| {
+        // Slow Lorenz orbit. Defaults s=10, r=28, b=2.667, h=0.05 give the
+        // classic two-wing butterfly.
+        let chaos = lorenz_l_ar(rate);
+        // Lorenz x peaks around ±25; pre-scale into the ±1 CV space.
+        let normalized = chaos * (1.0 / 25.0);
+        let shaped = normalized * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+        let cv = shaped * (depth_v / 10.0);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });

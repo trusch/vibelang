@@ -1,0 +1,32 @@
+// kind=cv | category=lfo | flavor=smooth_random | range=-10..+10 V | params=rate,depth_v,bipolar
+//
+// Smooth random LFO — chooses a new target value every `1/rate` seconds and
+// quadratically interpolates toward it. The result is a continuously
+// wandering, never-repeating curve with no audible stepping. Drop-in
+// replacement for sample-and-hold random (`cv_lfo_random`) where you want
+// the modulation to feel more "analogue-organic" — vibrato wobble, slow
+// filter drift, voltage-sag emulation.
+//
+// Output:
+//   bipolar = 1.0 → ±depth_v volts
+//   bipolar = 0.0 → 0 V .. +depth_v volts
+//
+// `rate` (Hz) controls how fast the underlying random walk picks new
+// targets. The actual signal is much smoother than `rate` suggests because
+// of the quadratic interpolation between targets.
+//
+// Runs at control rate (`lf_noise2_kr`).
+//
+// CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
+
+define_synthdef("cv_lfo_smooth_random")
+    .param("rate", 1.0)       // Hz — target-pick rate
+    .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
+    .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
+    .body(|rate, depth_v, bipolar| {
+        let noise = lf_noise2_kr(rate);
+        let shaped = noise * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+        let cv = shaped * (depth_v / 10.0);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });
