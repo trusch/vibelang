@@ -8,6 +8,15 @@
 > the matching examples) wraps the v1 surface. Sync mode (Story D), a true
 > dual-side SAM analyzer, and a script-allocated persistent Array buffer
 > are documented as future work below.
+>
+> **Multi-output revision:** `spectraphon_side` now exposes four named
+> output ports — `sine`, `sub`, `odd`, `even` — wired per-port via the
+> `voice.output("name").to(group)` API. The §2 parameter table below
+> still references the legacy `merge_even` / `right_mode` knobs from the
+> stereo-output revision; consult the synthdef source for the current
+> shape and see `examples/spectraphon_multiout.vibe` for a worked routing
+> patch. Full routing surface is documented in
+> `kb/voice-multioutput-howto.md`.
 
 The `spectraphon_*` synthdefs recreate the playback engine of the Make
 Noise / Soundhack Spectraphon as a vibelang additive instrument. Two
@@ -319,6 +328,15 @@ that varies with the unison interval.
 See `examples/spectraphon_array_capture.vibe`. Workflow: SAM → capture
 sweeps → switch to SAO and play the captured spectrum back.
 
+### 8e. Per-port multi-output routing
+
+See `examples/spectraphon_multiout.vibe` for the full multi-output
+surface in action: `sine` and `sub` go straight to main, `odd` runs dry
+through the `leads` group, `even` is sent to a dedicated reverb bus.
+This is the canonical reference for `.output("name").to(...)` on a
+`spectraphon_side` voice — see `kb/voice-multioutput-howto.md` for the
+full routing API.
+
 ---
 
 ## 9. Caveats and deviations
@@ -386,6 +404,11 @@ section collects them so users know what to expect.
   with the FM bus and Follow-mode pitch tracking.
 * `examples/spectraphon_array_capture.vibe` — Story F2: capture an
   Array from the hardware audio input, then play it back as SAO.
+* `examples/spectraphon_multiout.vibe` — multi-output Story 12 demo:
+  per-port routing of `sine`/`sub`/`odd`/`even` into different groups
+  and main bus.
+* `kb/voice-multioutput-howto.md` — full multi-output routing API
+  (named ports, default routes, terminal verbs, reload semantics).
 * Make Noise Spectraphon manual —
   https://www.makenoisemusic.com/wp-content/uploads/2024/03/spectraphon-manual.pdf
 * Spectraphon Cheat Sheet —
