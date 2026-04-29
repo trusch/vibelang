@@ -1,0 +1,73 @@
+// kind=cv | category=sequencer | flavor=arpeggio | range=±10V | params=clock_in,pattern,note0..note3
+//
+// 4-note chord → V/oct arpeggio. On each rising edge of `clock_in` the
+// synthdef advances through the four chord tones in a chosen order and
+// emits the selected note as V/oct.
+//
+// `clock_in`     : rising edge advances the arpeggio one step.
+// `pattern`      : 0 = up         (n0 → n1 → n2 → n3 → n0 …),
+//                  1 = down       (n3 → n2 → n1 → n0 → n3 …),
+//                  2 = updown     (period 6: n0 → n1 → n2 → n3 → n2 → n1 …),
+//                  3 = random     (independent draw on each clock).
+// `note0..note3` : MIDI notes of the four chord tones (default C major
+//                  triad with octave: 60, 64, 67, 72).
+//
+// Implementation:
+//   • A single `stepper_kr` runs over [0, 5] so the same counter feeds all
+//     four patterns (period 4 patterns wrap with `.modulo(4)`; updown uses
+//     the full 0..5 span; random ignores the counter).
+//   • Pattern selection uses `pattern`-masks (`(1 - |pattern - k|).max(0)`)
+//     identical to the trick in `cv_voct_seq.vibe` — exactly one mask is
+//     1.0 for integer pattern values, and the per-pattern indices sum
+//     cleanly into a single integer note index.
+//   • Note selection from the four chord tones uses the same triangular
+//     mask trick, so swapping pattern at runtime never produces an
+//     out-of-range index that would zero the output.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+define_synthdef("cv_arpeggio")
+    .param("clock_in", 0.0)
+    .param("pattern", 0.0)
+    .param("note0", 60.0)
+    .param("note1", 64.0)
+    .param("note2", 67.0)
+    .param("note3", 72.0)
+    .body(|clock_in, pattern, note0, note1, note2, note3| {
+        // Shared step counter, period 6 (covers the longest pattern, updown).
+        let step6 = stepper_kr(clock_in, 0.0, 0.0, 5.0, 1.0, 0.0);
+
+        // Per-pattern indices into [0, 3].
+        // up   : step % 4
+        let up_idx = step6.modulo(4.0);
+        // down : 3 - up_idx
+        let down_idx = 3.0 - up_idx;
+        // updown : on step6 ∈ [0,3] use step6 directly (n0→n1→n2→n3),
+        //          on step6 ∈ [4,5] use 6 - step6 (gives 2, 1, then wraps).
+        //          The full sequence is n0,n1,n2,n3,n2,n1,n0,n1,...
+        let lower_half = in_range_kr(step6, 0.0, 3.0);
+        let upper_half = 1.0 - lower_half;
+        let ud_idx = lower_half * step6 + upper_half * (6.0 - step6);
+        // random : uniform in [0, 4) latched on clock, clamped into [0, 3].
+        let r01 = (latch_kr(white_noise_kr(), clock_in) + 1.0) * 0.5;
+        let rand_idx = clip(floor(r01 * 4.0), 0.0, 3.0);
+
+        // Pattern-selection masks. With integer pattern, exactly one is 1.
+        let mp0 = (1.0 - abs(pattern - 0.0)).max(0.0);
+        let mp1 = (1.0 - abs(pattern - 1.0)).max(0.0);
+        let mp2 = (1.0 - abs(pattern - 2.0)).max(0.0);
+        let mp3 = (1.0 - abs(pattern - 3.0)).max(0.0);
+
+        let idx = mp0 * up_idx + mp1 * down_idx + mp2 * ud_idx + mp3 * rand_idx;
+
+        // Note-selection masks over the 4 chord tones.
+        let m0 = (1.0 - abs(idx - 0.0)).max(0.0);
+        let m1 = (1.0 - abs(idx - 1.0)).max(0.0);
+        let m2 = (1.0 - abs(idx - 2.0)).max(0.0);
+        let m3 = (1.0 - abs(idx - 3.0)).max(0.0);
+
+        let midi = m0 * note0 + m1 * note1 + m2 * note2 + m3 * note3;
+        let voct_kr = (midi - 60.0) / 12.0;
+        let voct = k2_a_ar(voct_kr);
+        let clipped = clip_ar(voct, -1.0, 1.0);
+        [clipped]
+    });

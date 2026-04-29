@@ -1,0 +1,69 @@
+// kind=cv | category=sequencer | flavor=markov | range=±10V | params=clock_in,bias,density,range_semis
+//
+// Mutable Marbles-inspired Markov-chain pitch source. On each rising edge of
+// `clock_in` the synthdef decides — with probability `density` — to advance
+// to a new state, drawn from a `bias`-shaped distribution. With probability
+// `1 - density` the previous state is held.
+//
+// `clock_in`    : rising edge attempts a state advance.
+// `bias`        : 0.0 = uniform (white) sampling, 1.0 = gaussian-ish
+//                 (sum-of-three uniforms ≈ triangular distribution, peaked
+//                 at the middle of the range). Linear blend in between.
+// `density`     : 0..1 probability of advancing on each clock tick. 1.0 =
+//                 every clock generates a new state (pure white sequence);
+//                 0.0 = the state never changes.
+// `range_semis` : peak deviation of the un-quantized output in semitones
+//                 around 0V (default 12 = ±1 octave). The output is V/oct,
+//                 not snapped to a scale — feed into `cv_quantizer` if you
+//                 want it locked to a key.
+//
+// Implementation notes:
+//   • The pitch source mixes `white_noise_kr()` (uniform) with the mean of
+//     three independent `white_noise_kr` calls (≈ triangular distribution
+//     by central-limit, narrower than uniform → sounds "centered"). The
+//     mix weight is `bias`; this approximates Marbles' "wandering →
+//     centered" knob.
+//   • The change decision samples a fresh `white_noise_kr` and latches it
+//     on the clock edge, mapping ±1 to [0,1] and comparing against
+//     `density` via `in_range_kr`. This produces a Bernoulli(`density`)
+//     decision per clock tick.
+//   • The new pitch is captured with `latch_kr` on the gated clock, so the
+//     output stays flat between accepted state transitions — exactly the
+//     "first-order Markov" behaviour Marbles implements (the next state
+//     depends only on the current state through the hold).
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+define_synthdef("cv_seq_markov")
+    .param("clock_in", 0.0)
+    .param("bias", 0.0)
+    .param("density", 1.0)
+    .param("range_semis", 12.0)
+    .body(|clock_in, bias, density, range_semis| {
+        // Two pitch sources, ±1 each.
+        let uniform = white_noise_kr();
+        let g1 = white_noise_kr();
+        let g2 = white_noise_kr();
+        let g3 = white_noise_kr();
+        // Mean of three independent uniforms — triangular-ish, peaked at 0.
+        let gauss = (g1 + g2 + g3) / 3.0;
+
+        // Bias = 0 → pure uniform, bias = 1 → pure gauss.
+        let pitch_src = uniform * (1.0 - bias) + gauss * bias;
+
+        // Bernoulli(density) decision per clock tick.
+        // White noise in [-1, +1] → r in [0, 1]; r ∈ [0, density] selects "advance".
+        let r_raw = latch_kr(white_noise_kr(), clock_in);
+        let r = (r_raw + 1.0) * 0.5;
+        let do_change = in_range_kr(r, 0.0, density);
+        let change_trig = clock_in * do_change;
+
+        // Sample-and-hold pitch on the gated clock.
+        let pitch = latch_kr(pitch_src, change_trig);
+
+        // Scale ±1 sample to ±range_semis semitones, then to V/oct
+        // (1 octave = 1.0 audio, matching the existing pitch-CV convention).
+        let voct_kr = pitch * (range_semis / 12.0);
+        let voct = k2_a_ar(voct_kr);
+        let clipped = clip_ar(voct, -1.0, 1.0);
+        [clipped]
+    });

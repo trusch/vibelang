@@ -1,0 +1,89 @@
+// kind=cv | category=sequencer | flavor=random_walk | range=±10V | params=clock_in,scale,step_range,root
+//
+// Random-walk pitch sequencer in scale. On each rising edge of `clock_in`
+// the output samples a Brownian (1/f²) random walk and snaps the result to
+// the nearest in-scale tone. Between clock edges the output is held flat —
+// so the synthdef behaves like a stepped sequencer driven by a slowly
+// drifting random source.
+//
+// `clock_in`   : rising edge picks the next step.
+// `scale`      : 0=chromatic, 1=major, 2=minor, 3=pent_major, 4=pent_minor,
+//                5=whole_tone (matches `cv_quantizer`).
+// `step_range` : peak walk excursion in semitones around 0V (default 12 = ±1
+//                octave). The unsnapped walk is uniformly bounded in
+//                [-step_range, +step_range] semitones.
+// `root`       : scale root offset in semitones from C, 0..11.
+//
+// Implementation:
+//   1. `brown_noise_kr` produces a smooth ±1 random walk; `latch_kr` holds it
+//      on each clock edge.
+//   2. The held sample is scaled by `step_range` to give a continuous
+//      semitone offset.
+//   3. The continuous offset is rounded to the nearest chromatic semitone,
+//      then snapped to the chosen scale via the same per-class delta table
+//      used in `cv_quantizer.vibe` (see that file's header for details).
+//   4. The snapped semitone count is converted to V/oct
+//      (`semi / 12 = audio`, with 1 octave = 1.0 audio per the existing
+//      pitch-CV convention) and hard-clipped to ±1.0.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+define_synthdef("cv_seq_random")
+    .param("clock_in", 0.0)
+    .param("scale", 0.0)
+    .param("step_range", 12.0)
+    .param("root", 0.0)
+    .body(|clock_in, scale, step_range, root| {
+        // Brownian random walk (kr), held on the clock edge.
+        let walk = brown_noise_kr();
+        let held = latch_kr(walk, clock_in);
+
+        // Continuous semitone offset relative to the scale root.
+        let semi_continuous = held * step_range - root;
+        let semi_int = round(semi_continuous);
+
+        // floor-mod into class k ∈ [0, 12) so negative semitones still map
+        // into the per-class delta table cleanly.
+        let octave = floor(semi_int / 12.0);
+        let k = semi_int - octave * 12.0;
+
+        // Class masks — at integer k exactly one is 1.0.
+        let mk1  = (1.0 - abs(k - 1.0)).max(0.0);
+        let mk2  = (1.0 - abs(k - 2.0)).max(0.0);
+        let mk3  = (1.0 - abs(k - 3.0)).max(0.0);
+        let mk4  = (1.0 - abs(k - 4.0)).max(0.0);
+        let mk5  = (1.0 - abs(k - 5.0)).max(0.0);
+        let mk6  = (1.0 - abs(k - 6.0)).max(0.0);
+        let mk7  = (1.0 - abs(k - 7.0)).max(0.0);
+        let mk8  = (1.0 - abs(k - 8.0)).max(0.0);
+        let mk9  = (1.0 - abs(k - 9.0)).max(0.0);
+        let mk10 = (1.0 - abs(k - 10.0)).max(0.0);
+        let mk11 = (1.0 - abs(k - 11.0)).max(0.0);
+
+        // Per-scale snap deltas (signed semitones to nearest in-scale tone).
+        // Same tables as cv_quantizer.vibe.
+        let d_major = mk1 + mk3 + mk6 + mk8 + mk10;
+        let d_minor = mk1 + mk4 + mk6 + mk9 + mk11;
+        let d_pent_major = mk1 + mk3 + mk6 + mk8 + mk11 - mk5 - mk10;
+        let d_pent_minor = mk2 + mk4 + mk6 + mk9 + mk11 - mk1 - mk8;
+        let d_whole = mk1 + mk3 + mk5 + mk7 + mk9 + mk11;
+
+        // Scale-selection masks. With integer scale, exactly one is 1.
+        // scale==0 (chromatic) and scale>=6 give zero delta — pass-through.
+        let s1 = (1.0 - abs(scale - 1.0)).max(0.0);
+        let s2 = (1.0 - abs(scale - 2.0)).max(0.0);
+        let s3 = (1.0 - abs(scale - 3.0)).max(0.0);
+        let s4 = (1.0 - abs(scale - 4.0)).max(0.0);
+        let s5 = (1.0 - abs(scale - 5.0)).max(0.0);
+
+        let delta = s1 * d_major
+                  + s2 * d_minor
+                  + s3 * d_pent_major
+                  + s4 * d_pent_minor
+                  + s5 * d_whole;
+
+        let snapped_semi = semi_int + delta + root;
+        let voct_kr = snapped_semi / 12.0;
+        let voct = k2_a_ar(voct_kr);
+        let clipped = clip_ar(voct, -1.0, 1.0);
+        [clipped]
+    });
