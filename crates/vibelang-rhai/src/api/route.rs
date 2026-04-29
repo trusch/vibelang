@@ -526,22 +526,6 @@ impl MultiRouteHandle {
         Ok(self)
     }
 
-    /// Install a CV-to-param route from every listed kr-rate port to the same
-    /// `(target, param)` pair.
-    ///
-    /// Per-port validation mirrors [`RouteHandle::to_param`]: the first ar-rate
-    /// port or unknown target param short-circuits the fan-out so a partial
-    /// install isn't silently committed before the error.
-    pub fn to_param(
-        self,
-        target: Voice,
-        param_name: String,
-    ) -> Result<Self, Box<EvalAltResult>> {
-        for handle in self.routes.iter() {
-            handle.clone().to_param(target.clone(), param_name.clone())?;
-        }
-        Ok(self)
-    }
 }
 
 /// Register the `RouteHandle` type and its terminal verbs with a Rhai engine.
@@ -558,7 +542,6 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("to_main", MultiRouteHandle::to_main);
     engine.register_fn("mute", MultiRouteHandle::mute);
     engine.register_fn("to_current_group", MultiRouteHandle::to_current_group);
-    engine.register_fn("to_param", MultiRouteHandle::to_param);
 
     engine.build_type::<ParamHandle>();
     engine.register_fn("modulate_by", ParamHandle::modulate_by);
@@ -811,103 +794,11 @@ mod tests {
         });
     }
 
-    #[test]
-    fn multi_route_handle_to_param_fans_out_across_listed_ports() {
-        with_test_context(|| {
-            let src_synth = "story4_multi_to_param_src";
-            let tgt_synth = "story4_multi_to_param_tgt";
-            declare_kr_synthdef(src_synth, &["env_a", "env_b", "env_c"]);
-            declare_synthdef_with_params(tgt_synth, &["cutoff"]);
-
-            let mut src = make_voice("vox_src_multi").synth(src_synth.to_string());
-            let tgt = make_voice("vox_tgt_multi").synth(tgt_synth.to_string());
-
-            let arr: rhai::Array = vec![
-                rhai::Dynamic::from("env_a".to_string()),
-                rhai::Dynamic::from("env_c".to_string()),
-            ];
-            src.outputs(arr)
-                .expect("port list resolves")
-                .to_param(tgt, "cutoff".to_string())
-                .expect("kr ports + valid target param");
-
-            let src_id = context::get_or_create_voice_id("vox_src_multi");
-            let tgt_id = context::get_or_create_voice_id("vox_tgt_multi");
-            context::with_state(|state| {
-                let a = state
-                    .param_routes_set
-                    .get(&(src_id, "env_a".to_string()))
-                    .expect("env_a installed");
-                let c = state
-                    .param_routes_set
-                    .get(&(src_id, "env_c".to_string()))
-                    .expect("env_c installed");
-                assert_eq!(a, &vec![(tgt_id, "cutoff".to_string())]);
-                assert_eq!(c, &vec![(tgt_id, "cutoff".to_string())]);
-                // Unlisted port not installed.
-                assert!(state
-                    .param_routes_set
-                    .get(&(src_id, "env_b".to_string()))
-                    .is_none());
-            });
-        });
-    }
-
-    #[test]
-    fn multi_route_handle_to_param_short_circuits_on_first_ar_port() {
-        with_test_context(|| {
-            // Mixed-rate synthdef: env is kr, sine is ar. Fanning to_param
-            // across [env, sine] must error on `sine` and leave neither
-            // entry installed (the first failure short-circuits before the
-            // ar-rate port can leak a partial install).
-            let src_synth = "story4_multi_to_param_mixed_rate";
-            let tgt_synth = "story4_multi_to_param_mixed_tgt";
-            register_synthdef_outputs(
-                src_synth.to_string(),
-                vec![
-                    OutputPort {
-                        name: "sine".to_string(),
-                        channels: 1,
-                        rate: PortRate::Ar,
-                    },
-                    OutputPort {
-                        name: "env".to_string(),
-                        channels: 1,
-                        rate: PortRate::Kr,
-                    },
-                ],
-            );
-            declare_synthdef_with_params(tgt_synth, &["cutoff"]);
-
-            let mut src = make_voice("vox_src_mixed").synth(src_synth.to_string());
-            let tgt = make_voice("vox_tgt_mixed").synth(tgt_synth.to_string());
-
-            // List "sine" first so the ar-rate validation fires before "env"
-            // installs anything.
-            let arr: rhai::Array = vec![
-                rhai::Dynamic::from("sine".to_string()),
-                rhai::Dynamic::from("env".to_string()),
-            ];
-            let err = src
-                .outputs(arr)
-                .expect("port list resolves")
-                .to_param(tgt, "cutoff".to_string())
-                .expect_err("ar-rate port must short-circuit fan-out");
-            assert!(err.to_string().contains("ar-rate"));
-
-            let src_id = context::get_or_create_voice_id("vox_src_mixed");
-            context::with_state(|state| {
-                assert!(state
-                    .param_routes_set
-                    .get(&(src_id, "sine".to_string()))
-                    .is_none());
-                assert!(state
-                    .param_routes_set
-                    .get(&(src_id, "env".to_string()))
-                    .is_none());
-            });
-        });
-    }
+    // (Two MultiRouteHandle.to_param tests removed: post-SET/BEND-split, plural
+    //  fan-out via .to_param violates SET semantics — `/n_map` binds one bus,
+    //  so multi-source SET is a conflict. MultiRouteHandle.to_param was removed.
+    //  Plural sugar still applies to .to / .to_main / .to_current_group / .mute /
+    //  .modulate_by, where multi-source semantics are well-defined.)
 
     // ==================== ParamHandle / .modulate_by tests ====================
 
