@@ -1,0 +1,62 @@
+// kind=cv | category=envelope | flavor=maths | range=-10..+10V | params=rate,trig_in,rise_ms,fall_ms,peak_v,bipolar
+//
+// Make Noise Maths-style function generator — a single Maths channel. Behaves
+// either as a free-running cycling envelope (`rate > 0`) or as a one-shot
+// triggered AD envelope (drive `trig_in`, leave `rate = 0`). Both inputs sum
+// internally, so a triggered shape will arrive even while the LFO is cycling.
+//
+// Params:
+//   rate     : free-run cycle rate in Hz. 0 disables the internal cycle (use
+//              `trig_in` for one-shot mode).
+//   trig_in  : external rising-edge trigger; each edge fires a single AD shape.
+//   rise_ms  : attack time in milliseconds.
+//   fall_ms  : decay time in milliseconds.
+//   peak_v   : envelope peak in volts (default +8 V — standard Eurorack swing).
+//   bipolar  : 0 = unipolar 0..+peak_v (default), 1 = bipolar centred on 0
+//              with peak excursion ±peak_v/2 (Maths' OR/INV-style negative-
+//              going option).
+//
+// Implementation: the cycling and triggering inputs are summed and fed into
+// `decay2_kr`, which renders an exponential AD shape with independent attack
+// and decay time-constants — both fully runtime-modulatable. Free-run mode
+// uses `impulse_ar` at `rate` Hz to drive the gate; setting `rate = 0`
+// produces no impulses, leaving `trig_in` as the only edge source.
+//
+// Maths' canonical curve is exponential, which `decay2_kr` provides. For
+// linear or logarithmic slopes, post-process this output through `cv_slew`
+// (which uses `lag_ud_kr` for a different curve) or scale via `cv_scale_offset`.
+//
+// PoliMATHS / multi-channel use: instantiate one voice per channel, sharing a
+// clock for synchronised cycling. The single-channel CV contract
+// (kb/stdlib-cv-spec.md §2.2) requires one synthdef per output jack.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_maths")
+    .param("rate", 0.0)
+    .param("trig_in", 0.0)
+    .param("rise_ms", 50.0)
+    .param("fall_ms", 250.0)
+    .param("peak_v", 8.0)
+    .param("bipolar", 0.0)
+    .body(|rate, trig_in, rise_ms, fall_ms, peak_v, bipolar| {
+        let rise_s = rise_ms * 0.001;
+        let fall_s = fall_ms * 0.001;
+
+        // Internal cycle: impulse train at `rate` Hz. At rate=0 the impulse
+        // generator is silent, so only `trig_in` drives the envelope.
+        let cycle = impulse_ar(rate, 0.0);
+        let combined = cycle + trig_in;
+
+        // Exponential AD shape, peak ~1.0 on a unit trigger.
+        let env = decay2_kr(combined, rise_s, fall_s);
+
+        // Voltage scaling. Bipolar shifts the envelope so it swings from
+        // -peak_v/2 to +peak_v/2 around 0V (Maths' bipolar / OR-INV mode).
+        let unipolar_audio = env * (peak_v * 0.1);
+        let bipolar_audio = env * (peak_v * 0.1) - (peak_v * 0.05);
+        let cv = unipolar_audio * (1.0 - bipolar) + bipolar_audio * bipolar;
+
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });

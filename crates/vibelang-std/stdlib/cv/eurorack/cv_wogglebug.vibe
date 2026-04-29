@@ -1,0 +1,80 @@
+// kind=cv | category=random | flavor=wogglebug | range=-10..+10V | params=rate,mode,depth_v,bipolar
+//
+// Make Noise Wogglebug-style chaos source. The hardware module fans out three
+// CV streams simultaneously — Stepped, Smooth, and Woggle (the signature
+// "decaying sinusoid on every step"). The single-channel CV contract requires
+// one synthdef per jack, so this file exposes a `mode` selector to pick which
+// of the three streams to emit. Spawn three voices on the same `rate` to get
+// the full Wogglebug fan-out.
+//
+// Modes:
+//   0 = stepped : `lf_noise0_kr(rate)` — sample-and-hold staircase.
+//   1 = smooth  : `lorenz_l_ar(rate)` — chaotic continuous wander (Buchla 265
+//                 inheritance — non-repeating but structured around two orbits).
+//   2 = woggle  : stepped voltages with a decaying-sinusoid edge — every new
+//                 step rings into its target rather than snapping. Implemented
+//                 as `target + decay2_kr(edge, 0.001, 1/rate) * sin_osc_kr(rate*8)`,
+//                 producing the classic Buchla 265 ringing transition.
+//
+// Params:
+//   rate     : step / iteration rate in Hz. Sub-audio (1..20 Hz) keeps the
+//              chaos in slow-motion CV territory.
+//   mode     : 0 = stepped, 1 = smooth, 2 = woggle.
+//   depth_v  : peak amplitude in volts (0..10).
+//   bipolar  : 1.0 = ±depth, 0.0 = 0..+depth.
+//
+// Implementation:
+//   - Mode selection uses overlapping triangular masks
+//     `(1 - |mode - k|).max(0)` so integer-mode dispatches one sub-output at
+//     unit weight while non-integer values crossfade between modes (the same
+//     anti-zipper trick used in `cv_seq_step`).
+//   - The Lorenz output is pre-scaled by 1/25 to fit its native ±25 swing
+//     into the ±1 CV space, matching `cv_lfo_chaos`.
+//   - The woggle ring is built by summing the held step value (`lf_noise0_kr`)
+//     with an `lf_noise0_kr`-triggered decaying sinusoid; the trigger is
+//     extracted via difference of consecutive steps and fed into `decay2_kr`
+//     to envelope a `sin_osc_kr` running at `rate * 8` (a fixed ringing tone
+//     8× the step rate, which is the Wogglebug's characteristic edge).
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_wogglebug")
+    .param("rate", 4.0)
+    .param("mode", 1.0)
+    .param("depth_v", 5.0)
+    .param("bipolar", 1.0)
+    .body(|rate, mode, depth_v, bipolar| {
+        // Stepped staircase.
+        let stepped = lf_noise0_kr(rate);
+
+        // Smooth chaos. Lorenz native peak ≈ ±25; pre-scale into ±1 space.
+        let smooth_raw = lorenz_l_ar(rate);
+        let smooth = smooth_raw * (1.0 / 25.0);
+
+        // Woggle: step + decaying ring on every transition.
+        let step_for_woggle = lf_noise0_kr(rate);
+        // Edge detection via single-sample delay: a change in the held value
+        // produces a non-zero impulse for one block.
+        let prev = lag_ud_kr(step_for_woggle, 0.001, 0.001);
+        let edge_raw = abs(step_for_woggle - prev);
+        // Threshold the edge so small numerical jitter doesn't ring.
+        let edge_trig = in_range_kr(edge_raw, 0.001, 10.0);
+        // Ring envelope: instant attack, decay roughly 1 / rate seconds.
+        let ring_env = decay2_kr(edge_trig, 0.001, 1.0 / (rate + 0.001));
+        // Ringing tone at 8× step rate — the Wogglebug edge timbre.
+        let ring = sin_osc_kr(rate * 8.0, 0.0) * ring_env * 0.5;
+        let woggle = step_for_woggle + ring;
+
+        // Mode masks. Integer mode → exactly one mask is 1.0.
+        let m0 = (1.0 - abs(mode - 0.0)).max(0.0);
+        let m1 = (1.0 - abs(mode - 1.0)).max(0.0);
+        let m2 = (1.0 - abs(mode - 2.0)).max(0.0);
+
+        let selected = m0 * stepped + m1 * smooth + m2 * woggle;
+
+        // Bipolar / unipolar mix and depth scaling.
+        let shaped = selected * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+        let cv = shaped * (depth_v / 10.0);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });

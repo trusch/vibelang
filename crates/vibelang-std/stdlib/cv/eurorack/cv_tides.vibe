@@ -1,0 +1,82 @@
+// kind=cv | category=lfo | flavor=tides | range=-10..+10V | params=rate,shape,slope,depth_v,bipolar
+//
+// Mutable Tides-style morphable function generator. The output morphs across
+// three waveform archetypes — slope (triangle), sine, pulse — under a single
+// `shape` knob. `slope` skews the timing asymmetry of the slope/pulse legs
+// (Tides' SLOPE control), so a triangle becomes a ramp-up/ramp-down pair with
+// adjustable rise:fall ratio, and a pulse becomes a variable-width gate.
+//
+// Params:
+//   rate     : Hz — function-generator cycle frequency.
+//   shape    : 0.0 = slope (triangle), 0.5 = sine, 1.0 = pulse. Continuous
+//              crossfade in between via two-segment linear blend.
+//   slope    : 0.0 = falling-heavy (10/90 rise/fall), 0.5 = symmetric,
+//              1.0 = rising-heavy (90/10). Affects the triangle's vertex
+//              position and the pulse's duty cycle simultaneously.
+//   depth_v  : peak amplitude in volts (0..10).
+//   bipolar  : 1.0 = ±depth, 0.0 = 0..+depth.
+//
+// Implementation:
+//   - Triangle leg: `lf_tri_kr` is a fixed-symmetry triangle. To honour
+//     `slope`, build the slope leg from `lf_pulse_kr` (which has a width
+//     parameter) integrated/smoothed via `lag_ud_kr` with rise/fall times
+//     that mirror the slope — fast rise + slow fall when slope is high, etc.
+//     The smoother's rise+fall times are tied to `1/rate` so the leg always
+//     completes one full cycle per period regardless of `slope`.
+//   - Sine leg: `sin_osc_kr` at `rate`.
+//   - Pulse leg: `lf_pulse_kr` with width = `slope`, re-centred to ±1.
+//   - Cross-fade between the three legs is a two-segment linear blend on
+//     `shape` so the transition is monotonic and free of discontinuities.
+//
+// MiTides mode parity: the hardware module also has Hi/Mid/Lo timing ranges
+// and AD/AR/EOC modes — those map to choosing `rate` (Hi = audio range,
+// Lo = sub-Hz), and to gating with `cv_env_ad` / `cv_env_complex` for AD/AR
+// envelopes. Use this synthdef as the cycling-LFO archetype; reach for
+// `cv_env_*` when you want a one-shot.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_tides")
+    .param("rate", 1.0)
+    .param("shape", 0.5)
+    .param("slope", 0.5)
+    .param("depth_v", 5.0)
+    .param("bipolar", 1.0)
+    .body(|rate, shape, slope, depth_v, bipolar| {
+        let period = 1.0 / (rate + 0.001);
+
+        // --- Slope leg (skewed triangle) ---
+        // Drive a square at `rate` with width = slope, smooth it with an
+        // asymmetric lag whose rise + fall times sum to one period — the
+        // smoother's rising slope traces the rising edge of the triangle.
+        let drive = lf_pulse_kr(rate, 0.0, slope);
+        let rise_s = period * slope;
+        let fall_s = period * (1.0 - slope);
+        let slope_leg_unipolar = lag_ud_kr(drive, rise_s, fall_s);
+        // lag_ud output is 0..+1; remap to ±1.
+        let slope_leg = slope_leg_unipolar * 2.0 - 1.0;
+
+        // --- Sine leg ---
+        let sine_leg = sin_osc_kr(rate, 0.0);
+
+        // --- Pulse leg ---
+        let pulse_unipolar = lf_pulse_kr(rate, 0.0, slope);
+        let pulse_leg = pulse_unipolar * 2.0 - 1.0;
+
+        // Two-segment cross-fade on `shape`:
+        //   shape ∈ [0, 0.5] : slope → sine (mix = shape * 2)
+        //   shape ∈ [0.5, 1] : sine → pulse (mix = (shape - 0.5) * 2)
+        let lower = in_range_kr(shape, 0.0, 0.5);
+        let upper = 1.0 - lower;
+        let mix_lower = shape * 2.0;
+        let mix_upper = (shape - 0.5) * 2.0;
+        let lower_blend = slope_leg * (1.0 - mix_lower) + sine_leg * mix_lower;
+        let upper_blend = sine_leg * (1.0 - mix_upper) + pulse_leg * mix_upper;
+        let morphed = lower * lower_blend + upper * upper_blend;
+
+        // Bipolar / unipolar mix and depth scaling.
+        let shaped = morphed * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+        let cv = shaped * (depth_v / 10.0);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });

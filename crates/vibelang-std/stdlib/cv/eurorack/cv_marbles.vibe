@@ -1,0 +1,87 @@
+// kind=cv | category=random | flavor=marbles | range=±10V | params=clock_in,bias,spread,density,length
+//
+// Mutable Marbles-inspired random/Markov V/oct generator. On each rising edge
+// of `clock_in` the synthdef samples a bias-shifted, spread-scaled distribution
+// and decides — with probability `density` — whether to advance to the new
+// state or hold the previous one. `length` controls a periodic memory cycle:
+// at length=0 the output is fresh-random on every accepted clock; as length
+// grows, an underlying low-rate `lf_noise1_kr` shape blends in so the output
+// tends to repeat over a longer window (Marbles' "Deja Vu" loop, approximated
+// without a hardware shift-register).
+//
+// Marbles fans out three trigger streams in hardware (t1/t2/t3) and three CV
+// streams (X1/X2/X3). The CV stdlib contract is one channel per synthdef
+// (kb/stdlib-cv-spec.md §2.2), so this file provides the V/oct CV. To get
+// independent rhythmic streams, drive several voices from the same clock with
+// different `density` and `length` settings — or pair this with `cv_clock` /
+// `cv_euclidean` for the trigger side.
+//
+// Params:
+//   clock_in   : rising edge attempts a state advance.
+//   bias       : DC offset of the distribution centre, in audio units (±1).
+//                0.0 = centred on C4; +0.083 ≈ +1 semitone shift.
+//   spread     : 0..1 width of the distribution. 0 = no variation (output is
+//                pinned to `bias`); 1.0 = full ±1 octave swing around bias.
+//   density    : 0..1 Bernoulli probability of accepting a new state per
+//                clock tick. 1.0 = every clock picks a new note; 0.0 = the
+//                output never changes.
+//   length     : 0..16 memory loop length, in clock-equivalent steps. 0 means
+//                pure random. Higher values bias the source toward a slowly-
+//                evolving `lf_noise1_kr` shape so the same sequence tends to
+//                recur every `length` clocks.
+//
+// Implementation:
+//   - The fresh-random source is a triangular distribution (mean of three
+//     independent `white_noise_kr` calls) — peaked at 0, narrower than a
+//     uniform draw, matching Marbles' "centered" bias position.
+//   - The memory source is `lf_noise1_kr` at `1 / max(length, 0.001)` Hz so
+//     its waveform period is `length` seconds; with a 1 Hz clock that maps
+//     to one cycle every `length` clock pulses. The blend weight grows with
+//     `length` (saturating around length=8).
+//   - The Bernoulli decision draws fresh white noise and latches it on the
+//     clock edge, mapping ±1 → [0,1] and comparing against `density` via
+//     `in_range_kr`. The accepted edge re-samples the source via `latch_kr`,
+//     so the output stays flat between accepted advances — first-order
+//     Markov behaviour.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_marbles")
+    .param("clock_in", 0.0)
+    .param("bias", 0.0)
+    .param("spread", 0.5)
+    .param("density", 1.0)
+    .param("length", 0.0)
+    .body(|clock_in, bias, spread, density, length| {
+        // Triangular-distribution random source, centred on 0, in [-1, +1].
+        let g1 = white_noise_kr();
+        let g2 = white_noise_kr();
+        let g3 = white_noise_kr();
+        let gauss = (g1 + g2 + g3) / 3.0;
+        let fresh = bias + gauss * spread;
+
+        // Memory source — periodic interpolated noise. `lf_noise1_kr` cycles
+        // its waveform once per second at rate=1.0, so with a 1 Hz user clock
+        // the period is `length` clocks. At length=0 the rate is huge and the
+        // memory mix weight is 0 (pure fresh).
+        let mem_rate = 1.0 / (length + 0.001);
+        let memory = bias + lf_noise1_kr(mem_rate) * spread;
+
+        // Memory mix: 0 at length=0, ~0.5 at length=1, saturating to ~0.89 at length=8.
+        let mem_mix = length / (length + 1.0);
+        let pitch_src = fresh * (1.0 - mem_mix) + memory * mem_mix;
+
+        // Bernoulli(density) decision, sampled per clock edge.
+        let r_raw = latch_kr(white_noise_kr(), clock_in);
+        let r = (r_raw + 1.0) * 0.5;
+        let do_change = in_range_kr(r, 0.0, density);
+        let change_trig = clock_in * do_change;
+
+        // Sample-and-hold pitch on accepted clock.
+        let held = latch_kr(pitch_src, change_trig);
+
+        // ±1 audio = ±1 octave V/oct.
+        let voct = k2_a_ar(held);
+        let clipped = clip_ar(voct, -1.0, 1.0);
+        [clipped]
+    });

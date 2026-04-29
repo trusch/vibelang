@@ -1,0 +1,73 @@
+// kind=cv | category=sequencer | flavor=stages | range=-10..+10V | params=clock_in,length,level_scale,level0..level5
+//
+// Mutable Stages-inspired 6-segment CV sequencer. The hardware module's
+// signature feature is auto-grouping: jack detection on each segment decides
+// whether the segment is a step, ramp, or hold. We can't sense jacks from a
+// .vibe file, so this synthdef ships the most commonly-used grouping —
+// six step-and-hold segments forming a contiguous staircase — with per-step
+// `level0..level5` parameters.
+//
+// To get ramped (slewed) transitions instead of hard steps, post-process this
+// output through `cv_slew` (lag_ud_kr smoother) — the equivalent of grouping
+// adjacent Stages segments into a slope-detected ramp.
+//
+// Params:
+//   clock_in    : rising edge advances the step counter by one segment.
+//                 Drive from `cv_clock` for tempo-synchronised stepping.
+//   length      : number of active steps before wrapping (1..6). Lets the
+//                 user shorten the cycle without rewiring level params.
+//   level_scale : multiplies every level. 1.0 = nominal full-scale.
+//   level0..5   : per-step levels in audio units (1.0 = +10 V at the jack).
+//                 Default forms an ascending-and-back staircase
+//                 0V → +5V → +2V → +6V → +3V → +7V — a useful melodic shape
+//                 that exercises both rising and falling transitions.
+//
+// Implementation:
+//   - `stepper_kr` advances on every clock edge and wraps at `length-1`,
+//     so changing `length` at runtime always yields a valid integer index in
+//     [0, length).
+//   - Step selection uses overlapping triangular masks
+//     `(1 - |idx - k|).max(0)` so the output is sample-accurate at the
+//     trigger boundary (the same anti-zipper trick used in `cv_seq_step`).
+//   - Per-step levels are summed via the masks; with integer idx exactly one
+//     mask is 1.0 and the rest are 0, so the output is a clean staircase.
+//
+// Stages-style chaining (multiple sets of segments, jack-driven grouping)
+// would require runtime topology that the synthdef DSL doesn't express; for
+// independent segment groups, spawn multiple voices with their own clocks.
+//
+// CV contract: hard-clipped to ±1.0; mono; no leak_dc, no soft-sat.
+
+define_synthdef("cv_stages")
+    .param("clock_in", 0.0)
+    .param("length", 6.0)
+    .param("level_scale", 1.0)
+    .param("level0", 0.0)
+    .param("level1", 0.5)
+    .param("level2", 0.2)
+    .param("level3", 0.6)
+    .param("level4", 0.3)
+    .param("level5", 0.7)
+    .body(|clock_in, length, level_scale,
+           level0, level1, level2, level3, level4, level5| {
+        // Stepper wraps at max_idx = length-1, so changing length at runtime
+        // still yields a valid integer index within [0, length).
+        let max_idx = (length - 1.0).max(0.0);
+        let idx = stepper_kr(clock_in, 0.0, 0.0, max_idx, 1.0, 0.0);
+
+        // Triangular masks. Integer idx → exactly one mask is 1.0.
+        let m0 = (1.0 - abs(idx - 0.0)).max(0.0);
+        let m1 = (1.0 - abs(idx - 1.0)).max(0.0);
+        let m2 = (1.0 - abs(idx - 2.0)).max(0.0);
+        let m3 = (1.0 - abs(idx - 3.0)).max(0.0);
+        let m4 = (1.0 - abs(idx - 4.0)).max(0.0);
+        let m5 = (1.0 - abs(idx - 5.0)).max(0.0);
+
+        let level = m0 * level0 + m1 * level1 + m2 * level2
+                  + m3 * level3 + m4 * level4 + m5 * level5;
+
+        let cv_kr = level * level_scale;
+        let cv = k2_a_ar(cv_kr);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });
