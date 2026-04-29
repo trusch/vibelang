@@ -435,6 +435,102 @@ impl ControlBusAllocator {
     }
 }
 
+/// Allocator for audio buses.
+///
+/// Audio buses route audio-rate signals between groups, voices and effects.
+/// Unlike control buses, an allocation may span multiple consecutive bus IDs
+/// — `In.ar(bus, 2)` reads `bus` and `bus+1`, so a stereo allocation reserves
+/// a pair `(id, id+1)`.
+///
+/// Freed chunks go to a FIFO and are reused by a later allocation requesting
+/// the same channel count. The starting ID of a stereo pair is preserved on
+/// reuse, so the consecutive pair stays intact.
+///
+/// Reuse safety: callers must only invoke [`free`](Self::free) once the
+/// `Out`/`In` synth nodes that were mapped to the bus have been removed by
+/// the backend. The reload diff in `handlers/groups.rs::finalize` already
+/// tears down link synths before recreating groups, so reusing an audio bus
+/// after that fence cannot leak audio from the prior tenant.
+#[derive(Clone, Debug)]
+pub struct AudioBusAllocator {
+    next: u32,
+    free_list: VecDeque<(u32, u8)>,
+    min: u32,
+    max: u32,
+}
+
+impl Default for AudioBusAllocator {
+    fn default() -> Self {
+        Self::new(16) // Reserve buses 0-15 for hardware I/O (bus 0 = main stereo out)
+    }
+}
+
+impl AudioBusAllocator {
+    /// Create a new audio bus allocator starting at the given bus ID.
+    pub fn new(start: u32) -> Self {
+        Self {
+            next: start,
+            free_list: VecDeque::new(),
+            min: start,
+            max: u32::MAX,
+        }
+    }
+
+    /// Allocate a contiguous audio bus chunk of `channels` consecutive IDs.
+    ///
+    /// Reuses a freed chunk with a matching channel count if one exists,
+    /// otherwise carves a fresh chunk from the monotonic counter.
+    pub fn alloc(&mut self, channels: u8) -> BusId {
+        debug_assert!(channels >= 1, "channels must be >= 1");
+        if let Some(idx) = self.free_list.iter().position(|&(_, c)| c == channels) {
+            let (id, _) = self
+                .free_list
+                .remove(idx)
+                .expect("position returned a valid index");
+            return BusId::new(id);
+        }
+        let id = self.next;
+        let span = channels as u32;
+        let new_next = self
+            .next
+            .checked_add(span)
+            .expect("audio bus IDs exhausted");
+        assert!(new_next <= self.max, "audio bus IDs exhausted");
+        self.next = new_next;
+        BusId::new(id)
+    }
+
+    /// Return a previously allocated chunk to the pool for reuse.
+    ///
+    /// `channels` must match the value passed to [`alloc`](Self::alloc) for
+    /// this `id` — the chunk is only handed out again to a request of the
+    /// same width.
+    pub fn free(&mut self, id: BusId, channels: u8) {
+        debug_assert!(channels >= 1, "channels must be >= 1");
+        debug_assert!(
+            id.raw() >= self.min,
+            "freed audio bus ID below allocator min"
+        );
+        self.free_list.push_back((id.raw(), channels));
+    }
+
+    /// Reset the allocator to its initial state.
+    pub fn reset(&mut self) {
+        self.next = self.min;
+        self.free_list.clear();
+    }
+
+    /// Total bus IDs ever drawn from the monotonic counter (excluding reuse).
+    pub fn allocated_count(&self) -> u32 {
+        self.next - self.min
+    }
+
+    /// Number of chunks currently in the free-list pool.
+    pub fn free_pool_size(&self) -> usize {
+        self.free_list.len()
+    }
+}
+
 /// Internal state for a loaded SFZ instrument.
 #[derive(Clone, Debug)]
 pub struct SfzInstrumentState {
@@ -745,11 +841,12 @@ pub struct State {
     /// Buffer ID allocator — reclaims IDs when buffers are freed.
     pub buffer_ids: FreeListAllocator,
 
-    /// Next audio bus ID to allocate.
+    /// Audio bus allocator.
     ///
-    /// Starts at 16 because buses 0-15 are typically reserved for hardware I/O.
-    /// Bus 0 is the main stereo output.
-    pub next_bus_id: u32,
+    /// Starts at 16 because buses 0-15 are reserved for hardware I/O
+    /// (bus 0 is the main stereo output). Frees go to a free-list and are
+    /// reused, keeping bus IDs bounded across long live-reload sessions.
+    pub audio_buses: AudioBusAllocator,
 }
 
 impl Default for State {
@@ -778,7 +875,7 @@ impl Default for State {
             meter_levels: HashMap::new(),
             node_ids: FreeListAllocator::new(1000, u32::MAX), // Reserve low IDs for system nodes
             buffer_ids: FreeListAllocator::new(0, u32::MAX),
-            next_bus_id: 16, // Reserve buses 0-15 for hardware I/O
+            audio_buses: AudioBusAllocator::default(),
         }
     }
 }
@@ -809,15 +906,31 @@ impl State {
         self.buffer_ids.free(id.raw());
     }
 
-    /// Allocate a new stereo audio bus ID.
+    /// Allocate an audio bus chunk of `channels` consecutive bus IDs.
     ///
-    /// Each group gets its own stereo bus pair for audio routing.
-    /// SuperCollider's `In.ar(bus, 2)` reads from `bus` and `bus+1`,
-    /// so we must allocate 2 consecutive buses per group.
+    /// SuperCollider's `In.ar(bus, n)` reads `n` consecutive buses starting
+    /// at `bus`, so a stereo allocation reserves the pair `(id, id+1)`.
+    /// Reuses freed chunks with the same channel count when available.
+    pub fn alloc_audio_bus(&mut self, channels: u8) -> BusId {
+        self.audio_buses.alloc(channels)
+    }
+
+    /// Return a previously allocated audio bus chunk to the pool.
+    ///
+    /// `channels` must match the value passed to [`alloc_audio_bus`].
+    /// Callers must ensure the corresponding `Out`/`In` synth nodes have
+    /// been freed by the backend before calling this — see
+    /// [`AudioBusAllocator`] for the reuse-safety contract.
+    pub fn free_audio_bus(&mut self, id: BusId, channels: u8) {
+        self.audio_buses.free(id, channels);
+    }
+
+    /// Allocate a stereo audio bus pair.
+    ///
+    /// Convenience wrapper for [`alloc_audio_bus(2)`](Self::alloc_audio_bus)
+    /// — each group gets its own stereo pair for audio routing.
     pub fn alloc_bus_id(&mut self) -> BusId {
-        let id = BusId::new(self.next_bus_id);
-        self.next_bus_id += 2; // Allocate stereo pair (2 consecutive buses)
-        id
+        self.alloc_audio_bus(2)
     }
 
     /// Convert beats to seconds at current tempo.
@@ -960,5 +1073,114 @@ mod tests {
         alloc.allocate();
         alloc.reset();
         assert_eq!(alloc.allocate().raw(), 1000);
+    }
+
+    // =========================================================================
+    // AudioBusAllocator tests
+    // =========================================================================
+
+    #[test]
+    fn test_audio_bus_alloc_free_alloc_reuses() {
+        let mut alloc = AudioBusAllocator::new(16);
+        let a = alloc.alloc(2);
+        let b = alloc.alloc(2);
+        assert_eq!(a.raw(), 16);
+        assert_eq!(b.raw(), 18);
+        alloc.free(a, 2);
+        // Second alloc of matching width reuses the freed pair.
+        let c = alloc.alloc(2);
+        assert_eq!(c.raw(), 16);
+        // Counter did not advance for the reused chunk.
+        assert_eq!(alloc.allocated_count(), 4);
+    }
+
+    #[test]
+    fn test_audio_bus_stereo_pair_consecutive_on_reuse() {
+        let mut alloc = AudioBusAllocator::new(16);
+        let pair = alloc.alloc(2);
+        // The pair occupies (pair, pair+1) — confirm the next alloc is offset by 2.
+        let next = alloc.alloc(2);
+        assert_eq!(next.raw(), pair.raw() + 2);
+
+        alloc.free(pair, 2);
+        let reused = alloc.alloc(2);
+        assert_eq!(reused.raw(), pair.raw());
+        // After reuse, a fresh stereo alloc continues from the monotonic frontier
+        // without colliding with the reused pair.
+        let fresh = alloc.alloc(2);
+        assert_eq!(fresh.raw(), next.raw() + 2);
+        assert_ne!(fresh.raw(), reused.raw());
+        assert_ne!(fresh.raw(), reused.raw() + 1);
+    }
+
+    #[test]
+    fn test_audio_bus_hammer_bounded_growth() {
+        let mut alloc = AudioBusAllocator::new(16);
+        // Prime a steady-state working set of 4 stereo buses.
+        let initial: Vec<BusId> = (0..4).map(|_| alloc.alloc(2)).collect();
+        let baseline_count = alloc.allocated_count();
+        let mut held = initial.clone();
+        for _ in 0..1000 {
+            // Release the oldest, allocate a replacement — working set stays at 4.
+            let evicted = held.remove(0);
+            alloc.free(evicted, 2);
+            held.push(alloc.alloc(2));
+        }
+        // The monotonic counter never advanced past the priming round.
+        assert_eq!(alloc.allocated_count(), baseline_count);
+        // Free pool size stays bounded — drains to zero between cycles.
+        assert!(
+            alloc.free_pool_size() <= 1,
+            "free pool grew unboundedly: {}",
+            alloc.free_pool_size()
+        );
+    }
+
+    #[test]
+    fn test_audio_bus_channels_segregated() {
+        // A freed mono chunk is not handed out to a stereo request,
+        // and vice versa — preventing accidental width mismatches.
+        let mut alloc = AudioBusAllocator::new(16);
+        let mono = alloc.alloc(1);
+        assert_eq!(mono.raw(), 16);
+        alloc.free(mono, 1);
+        // Stereo alloc should NOT reuse the mono slot (different width).
+        let stereo = alloc.alloc(2);
+        assert_ne!(stereo.raw(), mono.raw());
+        assert_eq!(stereo.raw(), 17);
+        // The mono chunk is still in the pool for a matching mono request.
+        let mono2 = alloc.alloc(1);
+        assert_eq!(mono2.raw(), mono.raw());
+    }
+
+    #[test]
+    fn test_audio_bus_reset() {
+        let mut alloc = AudioBusAllocator::new(16);
+        alloc.alloc(2);
+        alloc.alloc(2);
+        alloc.reset();
+        assert_eq!(alloc.alloc(2).raw(), 16);
+        assert_eq!(alloc.allocated_count(), 2);
+    }
+
+    #[test]
+    fn test_state_alloc_audio_bus_reuses() {
+        let mut state = State::new();
+        let a = state.alloc_audio_bus(2);
+        let b = state.alloc_audio_bus(2);
+        assert_eq!(a.raw(), 16);
+        assert_eq!(b.raw(), 18);
+        state.free_audio_bus(a, 2);
+        let c = state.alloc_audio_bus(2);
+        assert_eq!(c.raw(), a.raw());
+    }
+
+    #[test]
+    fn test_state_alloc_bus_id_back_compat() {
+        // The legacy stereo helper still produces consecutive pairs.
+        let mut state = State::new();
+        let a = state.alloc_bus_id();
+        let b = state.alloc_bus_id();
+        assert_eq!(b.raw(), a.raw() + 2);
     }
 }
