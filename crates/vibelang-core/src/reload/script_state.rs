@@ -3,7 +3,7 @@
 //! This module defines the state extracted from a `.vibe` script,
 //! without runtime-specific IDs (node IDs, buffer IDs, etc.).
 
-use crate::handlers::RouteMap;
+use crate::handlers::{ParamRouteMap, RouteMap};
 #[cfg(feature = "midi")]
 use crate::traits::FadeTarget;
 #[cfg(not(target_arch = "wasm32"))]
@@ -479,6 +479,17 @@ pub struct ScriptState {
     /// stub in `handlers/routes.rs`).
     pub routes: RouteMap,
 
+    /// CV-to-param routes from kr output ports to target-voice parameters.
+    ///
+    /// Keyed by source `(voice_id, port_name)` → list of
+    /// `(target_voice_id, target_param_name)` pairs. One source kr port can
+    /// drive params on multiple target voices, so the value is a list (unlike
+    /// [`routes`](Self::routes), which holds a single dest per port).
+    /// Populated by the Rhai `RouteHandle.to_param(target, param)` surface
+    /// (multi-output v2 Story 4) and consumed by
+    /// [`RoutesHandler::finalize_params`](crate::handlers::RoutesHandler::finalize_params).
+    pub param_routes: ParamRouteMap,
+
     /// Per-route FX chain (Story 6b): list of FX synthdef names per `(voice, port)`.
     ///
     /// Parallel to `routes` and keyed identically. Empty/missing entries mean
@@ -752,6 +763,30 @@ impl ScriptState {
         let key = (voice_id, port_name.to_string());
         self.routes.remove(&key);
         self.route_fx_chains.remove(&key);
+    }
+
+    /// Install a CV-to-param route from `(source_voice, source_port)` to
+    /// `(target_voice, target_param)`.
+    ///
+    /// Additive across calls with different `(target_voice, target_param)`
+    /// pairs — one source kr port can fan out to multiple targets. A repeat
+    /// call with the same target pair is a no-op (deduplicated), so re-runs
+    /// of a script that re-declare the same route don't accumulate dupes.
+    pub fn add_param_route(
+        &mut self,
+        source_voice: VoiceId,
+        source_port: impl Into<String>,
+        target_voice: VoiceId,
+        target_param: impl Into<String>,
+    ) {
+        let entry = self
+            .param_routes
+            .entry((source_voice, source_port.into()))
+            .or_default();
+        let pair = (target_voice, target_param.into());
+        if !entry.iter().any(|t| t == &pair) {
+            entry.push(pair);
+        }
     }
 }
 

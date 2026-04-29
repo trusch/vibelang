@@ -630,6 +630,39 @@ impl Voice {
         self
     }
 
+    /// Construct a `Voice` for unit tests without a `NativeCallContext`.
+    ///
+    /// Mirrors `Voice::new` defaults but skips the auto-sync — callers are
+    /// expected to drive `.synth(...)` / `.apply()` themselves to register
+    /// the voice with the script state. Visible to sibling test modules so
+    /// `route.rs` (and any future test in `api::`) can construct voices for
+    /// testing route handles without going through Rhai's calling convention.
+    #[cfg(test)]
+    pub(crate) fn for_test(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            synth_name: None,
+            group_path: "main".to_string(),
+            polyphony: 4,
+            gain: 1.0,
+            params: HashMap::new(),
+            muted: false,
+            soloed: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            sfz_instrument: None,
+            sample_id: None,
+            trigger_mode: "gate".to_string(),
+            round_robin_count: 0,
+            choke_group: None,
+            modulations: HashMap::new(),
+            param_cc_map: HashMap::new(),
+            #[cfg(feature = "midi")]
+            midi_output_device: None,
+            #[cfg(feature = "midi")]
+            midi_channel: 0,
+        }
+    }
+
     /// Run the voice continuously (for line-in, drones, etc.).
     ///
     /// This syncs the voice config and marks it for auto-triggering.
