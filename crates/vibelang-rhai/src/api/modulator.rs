@@ -1,14 +1,34 @@
 //! Modulator API for Rhai scripts.
 //!
-//! Modulators are control-rate synthdefs that output to control buses.
-//! They can be connected to voice parameters for dynamic modulation.
+//! Multi-output v2 Story 5: modulators are now sugar over a single-kr-port
+//! voice. `modulator("env").synth("lfo_sine").apply()` registers the
+//! modulator's synthdef as a kr-output voice synthdef, inserts a
+//! [`VoiceConfig`] for the modulator into the script state, and marks the
+//! voice for auto-triggering (`running_voices`). `voice.modulate("amp", m)`
+//! becomes sugar for `m.output("out").to_param(voice, "amp")` — installed
+//! via [`ScriptState::add_param_route`].
+//!
+//! The user-facing API is unchanged: `modulator()`, `.synth()`, `.param()`,
+//! `.modulate()`, `.apply()` all return the same handle types and behave
+//! identically from the script's point of view. Internally the runtime sees
+//! a kr-port voice and a CV-to-param route instead of the legacy
+//! `state.modulators` + per-trigger `/n_map` pipeline.
 
 use rhai::{CustomType, Engine, NativeCallContext, TypeBuilder};
 use std::collections::HashMap;
-use vibelang_core::traits::ModulatorConfig;
-use vibelang_core::types::ModulatorId;
+use vibelang_core::traits::VoiceConfig;
+use vibelang_core::types::{ModulatorId, ParamMap};
+use vibelang_dsp::{register_synthdef_outputs, OutputPort, PortRate};
 
 use crate::context;
+
+/// Output port name written by the kr-port voice that backs every modulator.
+///
+/// The voice handler allocates a control bus for this port via the
+/// [`vibelang_core::state::State::alloc_control_bus`] free list; CV-to-param
+/// routes from this port (installed by `voice.modulate(...)` sugar) feed the
+/// `/n_map` pipeline that drives target-voice parameters.
+const MODULATOR_OUTPUT_PORT: &str = "out";
 
 /// A Modulator builder for creating and configuring modulators.
 ///
@@ -27,7 +47,19 @@ pub struct Modulator {
     /// Parameter values for the modulator synth.
     pub(crate) params: HashMap<String, f32>,
     /// Modulation mappings (param_name -> source modulator_id).
+    ///
+    /// Carries the legacy `ModulatorId` typing so direct field-level tests
+    /// (e.g. `m.modulations.get("rate") == Some(&ModulatorId::new(...))`)
+    /// keep passing. The Story 5 sync path consults
+    /// [`Self::modulation_source_names`] for the param-route install since
+    /// it needs the source's name, not the id.
     pub(crate) modulations: HashMap<String, ModulatorId>,
+    /// Source modulator name per modulated param — populated by
+    /// [`Modulator::modulate`] alongside [`Self::modulations`].
+    ///
+    /// Stored separately so [`Self::sync_to_state`] can install param-routes
+    /// without a reverse lookup against the context's modulator-id map.
+    pub(crate) modulation_source_names: HashMap<String, String>,
 }
 
 impl Modulator {
@@ -46,6 +78,7 @@ impl Modulator {
             synthdef: String::new(),
             params: HashMap::new(),
             modulations: HashMap::new(),
+            modulation_source_names: HashMap::new(),
         }
     }
 
@@ -105,7 +138,8 @@ impl Modulator {
     /// Connect another modulator to a parameter of this modulator (nested modulation).
     ///
     /// This enables complex modulation routing, e.g., an LFO's rate controlled
-    /// by another LFO.
+    /// by another LFO. Story 5 installs the route via [`ScriptState::add_param_route`]
+    /// from the source's `out` port to this modulator's voice param at sync time.
     ///
     /// # Example
     ///
@@ -128,23 +162,102 @@ impl Modulator {
     /// ```
     pub fn modulate(mut self, param: String, source: Modulator) -> Self {
         let source_id = context::get_or_create_modulator_id(&source.name);
-        self.modulations.insert(param, source_id);
+        self.modulations.insert(param.clone(), source_id);
+        self.modulation_source_names.insert(param, source.name);
         self
     }
 
-    /// Register this modulator with the script state (chainable).
+    /// Register this modulator with the script state.
+    ///
+    /// Story 5 implementation: the modulator becomes a `VoiceConfig` whose
+    /// synthdef is registered with a single kr `out` output port. Param-routes
+    /// from any source modulators feed this voice's params. The voice is
+    /// marked for auto-triggering so the modulator runs continuously, matching
+    /// the legacy behaviour of `ModulatorsHandler::create`.
+    ///
+    /// Returns the modulator id (name-keyed; same value as a voice id derived
+    /// from the same name) so callers that capture it for [`ModulatorHandle`]
+    /// keep working unchanged.
     fn sync_to_state(&self) -> ModulatorId {
         let modulator_id = context::get_or_create_modulator_id(&self.name);
 
-        let config = ModulatorConfig {
+        // Without a synthdef the builder is incomplete — preserve the
+        // chained-builder semantics by allocating the id but not committing
+        // any voice / route state. A later `.synth(...).apply()` will run
+        // sync_to_state again with the synthdef populated.
+        if self.synthdef.is_empty() {
+            return modulator_id;
+        }
+
+        // Declare the kr `out` port for this modulator's synthdef. Idempotent
+        // overwrites are fine — the same shape every time.
+        register_synthdef_outputs(
+            self.synthdef.clone(),
+            vec![OutputPort {
+                name: MODULATOR_OUTPUT_PORT.to_string(),
+                channels: 1,
+                rate: PortRate::Kr,
+            }],
+        );
+
+        let voice_id = context::get_or_create_voice_id(&self.name);
+        let group_id = context::get_or_create_group_id("main");
+
+        // Snapshot the source-name → param map under the same key shape as
+        // self.modulations so `add_param_route` calls below stay aligned.
+        let modulation_sources = self.modulation_source_names.clone();
+
+        let mut params: ParamMap = self.params.clone();
+        // The `amp` param has special meaning on regular voices (gain).
+        // Modulators don't use it — leave it absent so the voice config
+        // doesn't accidentally clamp or scale the kr output.
+        params.remove("amp");
+
+        let config = VoiceConfig {
             name: self.name.clone(),
             synthdef: self.synthdef.clone(),
-            params: self.params.clone(),
-            modulations: self.modulations.clone(),
+            group: group_id,
+            polyphony: 1,
+            params,
+            muted: false,
+            soloed: false,
+            sfz_instrument: None,
+            sample_id: None,
+            round_robin_count: 0,
+            trigger_mode: "gate".to_string(),
+            choke_group: None,
+            modulations: HashMap::new(),
+            #[cfg(feature = "midi")]
+            midi_output: None,
+            #[cfg(feature = "midi")]
+            midi_channel: 0,
+            #[cfg(feature = "midi")]
+            param_cc_map: HashMap::new(),
         };
 
+        // Resolve source-voice ids outside `with_state` — `with_state` already
+        // holds the context's `RefCell` borrow, and `get_or_create_voice_id`
+        // re-borrows it, so doing this inline panics with "already borrowed".
+        let resolved_routes: Vec<(_, String, String)> = modulation_sources
+            .into_iter()
+            .map(|(param, source_name)| {
+                let source_voice_id = context::get_or_create_voice_id(&source_name);
+                (source_voice_id, param, source_name)
+            })
+            .collect();
+
         context::with_state(|state| {
-            state.modulators.insert(modulator_id, config);
+            state.voices.insert(voice_id, config);
+            state.running_voices.insert(voice_id);
+
+            for (source_voice_id, param, _) in &resolved_routes {
+                state.add_param_route(
+                    *source_voice_id,
+                    MODULATOR_OUTPUT_PORT,
+                    voice_id,
+                    param.clone(),
+                );
+            }
         });
 
         modulator_id
@@ -152,8 +265,8 @@ impl Modulator {
 
     /// Apply the modulator configuration and return self for chaining.
     ///
-    /// This registers the modulator with the runtime and allocates
-    /// a control bus for its output.
+    /// This registers the modulator with the script state as a kr-port voice
+    /// and installs any pending nested-modulation param-routes.
     pub fn apply(self) -> Self {
         self.sync_to_state();
         self
@@ -243,6 +356,7 @@ mod tests {
             synthdef: synthdef.to_string(),
             params: HashMap::new(),
             modulations: HashMap::new(),
+            modulation_source_names: HashMap::new(),
         }
     }
 
@@ -253,6 +367,7 @@ mod tests {
             synthdef: synthdef.to_string(),
             params: HashMap::new(),
             modulations: HashMap::new(),
+            modulation_source_names: HashMap::new(),
         }
     }
 
@@ -265,6 +380,7 @@ mod tests {
             synthdef: String::new(),
             params: HashMap::new(),
             modulations: HashMap::new(),
+            modulation_source_names: HashMap::new(),
         }
         .synth("lfo_sine".to_string())
         .param("lo".to_string(), 100.0)
@@ -284,6 +400,7 @@ mod tests {
             synthdef: String::new(),
             params: HashMap::new(),
             modulations: HashMap::new(),
+            modulation_source_names: HashMap::new(),
         }
         .synth("lfo_saw".to_string());
 
@@ -298,6 +415,7 @@ mod tests {
             synthdef: String::new(),
             params: HashMap::new(),
             modulations: HashMap::new(),
+            modulation_source_names: HashMap::new(),
         }
         .on("lfo_tri".to_string());
 
@@ -447,5 +565,111 @@ mod tests {
         assert_eq!(m.name, "renamed");
         assert_eq!(m.params.get("rate"), Some(&2.0_f32));
         assert_eq!(m.params.get("lo"), Some(&0.0_f32));
+    }
+
+    // === Story 5 sync-to-state tests ===
+
+    /// Initialize a script context for testing, run the closure, then clean up.
+    fn with_test_context<F: FnOnce()>(f: F) {
+        context::init_context();
+        f();
+        context::clear_context();
+    }
+
+    #[test]
+    fn test_apply_installs_running_voice_with_kr_port() {
+        with_test_context(|| {
+            let m = test_modulator("env", "story5_lfo_sine_voice").apply();
+            assert_eq!(m.name, "env");
+
+            let voice_id = context::get_or_create_voice_id("env");
+            context::with_state(|state| {
+                let voice = state
+                    .voices
+                    .get(&voice_id)
+                    .expect("modulator installs a voice config");
+                assert_eq!(voice.synthdef, "story5_lfo_sine_voice");
+                assert_eq!(voice.polyphony, 1);
+                assert!(state.running_voices.contains(&voice_id));
+            });
+
+            // The kr `out` port is registered against the synthdef so
+            // downstream `voice.output("out").to_param(...)` resolves.
+            let ports = vibelang_dsp::get_synthdef_outputs("story5_lfo_sine_voice")
+                .expect("kr port descriptor registered");
+            assert_eq!(ports.len(), 1);
+            assert_eq!(ports[0].name, MODULATOR_OUTPUT_PORT);
+            assert_eq!(ports[0].rate, PortRate::Kr);
+        });
+    }
+
+    #[test]
+    fn test_apply_with_params_copies_to_voice_config() {
+        with_test_context(|| {
+            test_modulator("rate_lfo", "story5_lfo_sine_params")
+                .param("rate".to_string(), 4.0)
+                .param("lo".to_string(), 200.0)
+                .param("hi".to_string(), 2000.0)
+                .apply();
+
+            let voice_id = context::get_or_create_voice_id("rate_lfo");
+            context::with_state(|state| {
+                let voice = state.voices.get(&voice_id).expect("voice installed");
+                assert_eq!(voice.params.get("rate"), Some(&4.0_f32));
+                assert_eq!(voice.params.get("lo"), Some(&200.0_f32));
+                assert_eq!(voice.params.get("hi"), Some(&2000.0_f32));
+            });
+        });
+    }
+
+    #[test]
+    fn test_apply_without_synthdef_skips_voice_install() {
+        with_test_context(|| {
+            // Modulator with no `.synth(...)` call: builder is incomplete
+            // and must not commit any voice / route state.
+            let m = Modulator {
+                name: "incomplete".to_string(),
+                synthdef: String::new(),
+                params: HashMap::new(),
+                modulations: HashMap::new(),
+                modulation_source_names: HashMap::new(),
+            }
+            .apply();
+            assert_eq!(m.name, "incomplete");
+
+            let voice_id = context::get_or_create_voice_id("incomplete");
+            context::with_state(|state| {
+                assert!(state.voices.get(&voice_id).is_none());
+                assert!(!state.running_voices.contains(&voice_id));
+            });
+        });
+    }
+
+    #[test]
+    fn test_nested_modulate_installs_param_route() {
+        with_test_context(|| {
+            // Source modulator first.
+            let rate_mod = test_modulator("rate_mod", "story5_lfo_sine_nested")
+                .param("rate".to_string(), 0.1)
+                .apply();
+
+            // Main modulator that depends on rate_mod for its `rate` param.
+            test_modulator("filter_lfo", "story5_lfo_sine_nested")
+                .param("lo".to_string(), 200.0)
+                .param("hi".to_string(), 2000.0)
+                .modulate("rate".to_string(), rate_mod)
+                .apply();
+
+            let source_voice_id = context::get_or_create_voice_id("rate_mod");
+            let target_voice_id = context::get_or_create_voice_id("filter_lfo");
+            context::with_state(|state| {
+                let entries = state
+                    .param_routes
+                    .get(&(source_voice_id, MODULATOR_OUTPUT_PORT.to_string()))
+                    .expect("nested modulation installs param route");
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0], (target_voice_id, "rate".to_string()));
+            });
+        });
     }
 }

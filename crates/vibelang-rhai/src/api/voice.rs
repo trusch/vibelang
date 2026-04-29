@@ -382,9 +382,14 @@ impl Voice {
 
     /// Connect a modulator to a voice parameter.
     ///
-    /// The modulator's control bus output will be used as the value for
-    /// the specified parameter. This enables dynamic modulation via LFOs,
-    /// envelopes, envelope followers, etc.
+    /// Multi-output v2 Story 5: this is sugar for
+    /// `modulator.output("out").to_param(self, param)` — the modulator's voice
+    /// (installed by `Modulator::apply()`) writes to a kr `out` port whose
+    /// control bus is mapped onto the named parameter via the
+    /// [`ScriptState::add_param_route`](vibelang_core::reload::ScriptState::add_param_route)
+    /// pipeline. The legacy `modulations` map on `VoiceConfig` is still
+    /// populated so direct field-level tests keep passing, but the runtime
+    /// drive comes from the param-route.
     ///
     /// # Example
     ///
@@ -401,9 +406,21 @@ impl Voice {
     ///     .apply();
     /// ```
     pub fn modulate(mut self, param: String, modulator: Modulator) -> Self {
-        // Get or create the modulator ID from the modulator's name
         let modulator_id = context::get_or_create_modulator_id(&modulator.name);
-        self.modulations.insert(param, modulator_id);
+        self.modulations.insert(param.clone(), modulator_id);
+
+        // Install the param-route from the source modulator's kr `out` port
+        // to this voice's parameter. The source voice is registered by
+        // `Modulator::apply()` under the modulator's name; this mirrors the
+        // explicit `m.output("out").to_param(self, param)` sugar.
+        self.resolve_name();
+        if !self.name.is_empty() && !modulator.name.is_empty() {
+            let target_voice_id = context::get_or_create_voice_id(&self.name);
+            let source_voice_id = context::get_or_create_voice_id(&modulator.name);
+            context::with_state(|state| {
+                state.add_param_route(source_voice_id, "out", target_voice_id, param);
+            });
+        }
         self.sync_to_state();
         self
     }
