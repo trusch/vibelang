@@ -5,10 +5,9 @@
 //! A `RouteDest` says where a single port's signal should go: into a group's
 //! mix bus, straight to main, or discarded.
 //!
-//! Story 6a wired up the type registry and the diff machinery only. Story 6b
-//! (this file) realizes the diff: [`RoutesHandler::finalize`] instantiates a
-//! `port_to_group_link_<channels>` mixer synth for each added route, frees
-//! the mixer for each removed route, and swaps the mixer for changed routes.
+//! [`RoutesHandler::finalize`] instantiates a `port_to_group_link_<channels>`
+//! mixer synth for each added route, frees the mixer for each removed route,
+//! and swaps the mixer for changed routes.
 
 use crate::backend::{AddAction, Backend};
 use crate::compat::RwLock;
@@ -42,21 +41,11 @@ pub enum RouteDest {
 }
 
 /// A single concrete route: one voice's named port → one destination.
-///
-/// Story 6a: `fx_chain` lists per-port FX synthdef names in chain order.
-/// Empty list = direct port → mixer link (legacy behaviour). When non-empty,
-/// [`RoutesHandler::finalize`] allocates one intermediate audio bus per FX,
-/// spawns each FX synth with `__fx_bus_in`/`__fx_bus_out` chained
-/// `port_bus → fx[0] → bus[0] → fx[1] → bus[1] → ... → bus[N-1] → link → dest`,
-/// and frees both buses and synths on removal. The Rhai `RouteHandle.fx(...)`
-/// surface that populates this field is Story 6b — production diffs from
-/// reload still emit empty `fx_chain` for now.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Route {
     pub voice_id: VoiceId,
     pub port_name: String,
     pub dest: RouteDest,
-    pub fx_chain: Vec<String>,
 }
 
 /// Per-voice route registry, keyed by `(voice_id, port_name)`.
@@ -209,7 +198,6 @@ impl<B: Backend> RoutesHandler<B> {
                     voice_id: *voice_id,
                     port_name: port_name.clone(),
                     dest: new_dest.clone(),
-                    fx_chain: Vec::new(),
                 }),
                 Some(old_dest) if old_dest != new_dest => diff.changes.push(RouteChange {
                     voice_id: *voice_id,
@@ -227,7 +215,6 @@ impl<B: Backend> RoutesHandler<B> {
                     voice_id: *voice_id,
                     port_name: port_name.clone(),
                     dest: old_dest.clone(),
-                    fx_chain: Vec::new(),
                 });
             }
         }
@@ -238,10 +225,9 @@ impl<B: Backend> RoutesHandler<B> {
     /// Apply a route diff: free old mixer synths, instantiate new ones.
     ///
     /// Order:
-    /// 1. Free mixer synths and any per-port FX synths/buses for *removals*
-    ///    and the old destination of *changes*.
-    /// 2. Instantiate mixer synths (and per-port FX chain) for *additions*
-    ///    and the new destination of *changes*.
+    /// 1. Free mixer synths for *removals* and the old destination of *changes*.
+    /// 2. Instantiate mixer synths for *additions* and the new destination of
+    ///    *changes*.
     ///
     /// Step 1 runs before step 2 so a moved route can reuse the same node-id
     /// pool slot; both steps drop the state lock before each backend call to
@@ -251,17 +237,6 @@ impl<B: Backend> RoutesHandler<B> {
             return Ok(());
         }
 
-        // ============================================================
-        // Step 1: free old mixers + FX (removals + old side of changes)
-        //
-        // For each torn-down route we drop, in order:
-        //   - the `port_to_group_link_<n>` mixer recorded in `route_synths`
-        //   - every per-port FX synth recorded in `route_fx_synths`
-        //   - every intermediate audio bus recorded in `route_fx_buses`
-        //     (returned to the audio-bus free pool)
-        // The corresponding node IDs are recycled into the node-id pool here;
-        // backend.free_node is dispatched after the lock drops.
-        // ============================================================
         let nodes_to_free: Vec<NodeId> = {
             let mut state = self.state.write().await;
             let mut nodes = Vec::new();
@@ -286,17 +261,6 @@ impl<B: Backend> RoutesHandler<B> {
                         key.1
                     );
                 }
-                if let Some(fx_nodes) = state.route_fx_synths.remove(&key) {
-                    for fx_node in fx_nodes {
-                        state.free_node_id(fx_node);
-                        nodes.push(fx_node);
-                    }
-                }
-                if let Some(fx_buses) = state.route_fx_buses.remove(&key) {
-                    for (bus, channels) in fx_buses {
-                        state.free_audio_bus(bus, channels);
-                    }
-                }
             }
             nodes
         };
@@ -308,12 +272,9 @@ impl<B: Backend> RoutesHandler<B> {
             let _ = self.backend.free_node(node_id).await;
         }
 
-        // ============================================================
-        // Step 2: spawn new mixers (additions + new side of changes)
-        // ============================================================
         for r in &diff.additions {
             if let Err(e) = self
-                .spawn_route(r.voice_id, &r.port_name, &r.dest, &r.fx_chain)
+                .spawn_route(r.voice_id, &r.port_name, &r.dest)
                 .await
             {
                 tracing::warn!(
@@ -325,11 +286,8 @@ impl<B: Backend> RoutesHandler<B> {
             }
         }
         for c in &diff.changes {
-            // RouteChange does not yet carry fx_chain — production diffs only
-            // reflect dest changes (no Rhai .fx() API until Story 6b). When
-            // 6b lands and changes can preserve a chain, extend RouteChange.
             if let Err(e) = self
-                .spawn_route(c.voice_id, &c.port_name, &c.new_dest, &[])
+                .spawn_route(c.voice_id, &c.port_name, &c.new_dest)
                 .await
             {
                 tracing::warn!(
@@ -516,40 +474,24 @@ impl<B: Backend> RoutesHandler<B> {
         Ok(())
     }
 
-    /// Instantiate one mixer synth (and its FX chain, if any) for `(voice, port) → dest`.
+    /// Instantiate one mixer synth for `(voice, port) → dest`.
     ///
-    /// `Muted` destinations short-circuit (no mixer or FX is created). `Main` routes
-    /// target bus 0 (hardware stereo out); `Group(id)` routes target the group's
-    /// audio bus. The mixer synthdef variant (`port_to_group_link_1` vs `_2`) is
-    /// chosen from the port's declared channel count.
-    ///
-    /// Per-port FX chain (Story 6a): when `fx_chain` is non-empty, one
-    /// intermediate audio bus is allocated per FX (matching the port's channel
-    /// count) and each FX synth is spawned on the voice's group node with
-    /// `__fx_bus_in`/`__fx_bus_out` chained:
-    ///
-    /// ```text
-    /// port_bus → fx[0] → bus[0] → fx[1] → bus[1] → ... → bus[N-1] → link → dest
-    /// ```
-    ///
-    /// FX synths and the link mixer are added with `AddAction::Tail` in the
-    /// emit order above so SC tree order matches the data flow. State tracking
-    /// for the chain is recorded under `(voice_id, port_name)` in
-    /// `route_fx_synths` (node IDs) and `route_fx_buses` (bus IDs + channel
-    /// widths) so [`finalize`] can free everything on removal/change.
+    /// `Muted` and `Param` destinations short-circuit (no mixer is created;
+    /// `Param` is handled by [`Self::finalize_params`]). `Main` routes target
+    /// bus 0 (hardware stereo out); `Group(id)` routes target the group's
+    /// audio bus. The mixer synthdef variant (`port_to_group_link_1` vs `_2`)
+    /// is chosen from the port's declared channel count.
     async fn spawn_route(
         &self,
         voice_id: VoiceId,
         port_name: &str,
         dest: &RouteDest,
-        fx_chain: &[String],
     ) -> Result<()> {
         if matches!(dest, RouteDest::Muted) {
             tracing::debug!(
-                "RoutesHandler: muted route voice={:?} port={:?} — skipping mixer (fx_chain ignored, len={})",
+                "RoutesHandler: muted route voice={:?} port={:?} — skipping mixer",
                 voice_id,
                 port_name,
-                fx_chain.len()
             );
             return Ok(());
         }
@@ -561,26 +503,8 @@ impl<B: Backend> RoutesHandler<B> {
             );
             return Ok(());
         }
-        // RouteDest::Param routes a kr port through MapN, not through the
-        // audio mixer pipeline — so the fx_chain mechanism (which inserts
-        // audio-rate FX between port_bus and a group bus) is meaningless
-        // here. Story 3 owns the Param finalize path; we skip silently for
-        // both diff/API symmetry (Param can appear in additions/removals
-        // for kr ports) and exhaustiveness.
-        if matches!(dest, RouteDest::Param { .. }) {
-            tracing::debug!(
-                "RoutesHandler: Param route voice={:?} port={:?} — skipping audio mixer (Story 3 owns MapN)",
-                voice_id,
-                port_name
-            );
-            return Ok(());
-        }
 
-        // ============================================================
-        // Phase A: under lock — gather context, validate, alloc IDs and
-        // intermediate buses, record state for later teardown.
-        // ============================================================
-        let (link_node, group_node, link_in_bus, channels, link_out_bus, fx_plans) = {
+        let (link_node, group_node, link_in_bus, channels, link_out_bus) = {
             let mut state = self.state.write().await;
 
             let voice = state
@@ -631,83 +555,13 @@ impl<B: Backend> RoutesHandler<B> {
                 }
             };
 
-            // Validate every FX synthdef before allocating buses or node IDs;
-            // a typo on any link must not leak earlier intermediates.
-            for fx_name in fx_chain {
-                if !state.synthdefs.contains(fx_name) {
-                    return Err(Error::SynthDefNotFound(fx_name.clone()));
-                }
-            }
-
-            // Allocate one intermediate audio bus per FX (matching the port's
-            // channel count). fx[0] reads from port_bus and writes to the
-            // first intermediate; fx[k] for k>0 reads from intermediate[k-1].
-            // The link mixer reads from the last intermediate (or the port
-            // directly when fx_chain is empty).
-            let mut fx_plans: Vec<FxSpawnPlan> = Vec::with_capacity(fx_chain.len());
-            let mut fx_buses: Vec<(BusId, u8)> = Vec::with_capacity(fx_chain.len());
-            let mut prev_out_bus = port_bus;
-            for fx_name in fx_chain {
-                let inter_bus = state.alloc_audio_bus(channels);
-                let node = state.alloc_node_id();
-                fx_plans.push(FxSpawnPlan {
-                    node,
-                    synthdef: fx_name.clone(),
-                    in_bus: prev_out_bus,
-                    out_bus: inter_bus,
-                });
-                fx_buses.push((inter_bus, channels));
-                prev_out_bus = inter_bus;
-            }
-            let link_in_bus = prev_out_bus;
-
             let link_node = state.alloc_node_id();
             state
                 .route_synths
                 .insert((voice_id, port_name.to_string()), link_node);
-            if !fx_plans.is_empty() {
-                state.route_fx_synths.insert(
-                    (voice_id, port_name.to_string()),
-                    fx_plans.iter().map(|p| p.node).collect(),
-                );
-                state
-                    .route_fx_buses
-                    .insert((voice_id, port_name.to_string()), fx_buses);
-            }
 
-            (link_node, group_node, link_in_bus, channels, out_bus, fx_plans)
+            (link_node, group_node, port_bus, channels, out_bus)
         };
-
-        // ============================================================
-        // Phase B: lock released — backend.create_synth in chain order.
-        // FX first (in declared order), then the port_to_group_link mixer,
-        // all AddAction::Tail on the voice's group node so SC tree order
-        // matches: voices (Head) → fx[0] → ... → fx[N-1] → link.
-        // ============================================================
-        for plan in &fx_plans {
-            let mut params = ParamMap::new();
-            params.insert("__fx_bus_in".to_string(), plan.in_bus.0 as f32);
-            params.insert("__fx_bus_out".to_string(), plan.out_bus.0 as f32);
-            tracing::debug!(
-                "RoutesHandler: spawning FX {} (node={:?}) voice={:?} port={:?} in_bus={} out_bus={}",
-                plan.synthdef,
-                plan.node,
-                voice_id,
-                port_name,
-                plan.in_bus.0,
-                plan.out_bus.0
-            );
-            self.backend
-                .create_synth(
-                    &plan.synthdef,
-                    plan.node,
-                    group_node,
-                    AddAction::Tail,
-                    &params,
-                )
-                .await
-                .map_err(Error::backend)?;
-        }
 
         let synthdef_name = match channels {
             1 => "port_to_group_link_1",
@@ -748,14 +602,6 @@ impl<B: Backend> RoutesHandler<B> {
 
         Ok(())
     }
-}
-
-/// Internal plan record for spawning one FX synth in a route's per-port chain.
-struct FxSpawnPlan {
-    node: NodeId,
-    synthdef: String,
-    in_bus: BusId,
-    out_bus: BusId,
 }
 
 #[cfg(test)]
@@ -907,7 +753,7 @@ mod tests {
     }
 
     // =========================================================================
-    // Diff tests (Story 6a — preserved)
+    // Diff tests
     // =========================================================================
 
     fn make_map(entries: &[((u32, &str), RouteDest)]) -> RouteMap {
@@ -1309,7 +1155,6 @@ mod tests {
             voice_id,
             port_name: port_name.clone(),
             dest: RouteDest::Group(dest_group_id),
-            fx_chain: Vec::new(),
         });
 
         handler.finalize(&diff).await.unwrap();
@@ -1359,7 +1204,6 @@ mod tests {
             voice_id,
             port_name,
             dest: RouteDest::Group(dest_group_id),
-            fx_chain: Vec::new(),
         });
 
         handler.finalize(&diff).await.unwrap();
@@ -1378,7 +1222,6 @@ mod tests {
             voice_id,
             port_name,
             dest: RouteDest::Main,
-            fx_chain: Vec::new(),
         });
 
         handler.finalize(&diff).await.unwrap();
@@ -1398,7 +1241,6 @@ mod tests {
             voice_id,
             port_name: port_name.clone(),
             dest: RouteDest::Muted,
-            fx_chain: Vec::new(),
         });
 
         handler.finalize(&diff).await.unwrap();
@@ -1447,7 +1289,6 @@ mod tests {
             voice_id,
             port_name: port_name.clone(),
             dest: RouteDest::Group(dest_a),
-            fx_chain: Vec::new(),
         });
         handler.finalize(&add_diff).await.unwrap();
         let node_a = state
@@ -1509,7 +1350,6 @@ mod tests {
             voice_id,
             port_name: port_name.clone(),
             dest: RouteDest::Group(dest),
-            fx_chain: Vec::new(),
         });
         handler.finalize(&add_diff).await.unwrap();
 
@@ -1518,7 +1358,6 @@ mod tests {
             voice_id,
             port_name: port_name.clone(),
             dest: RouteDest::Group(dest),
-            fx_chain: Vec::new(),
         });
         handler.finalize(&rm_diff).await.unwrap();
 
@@ -1570,13 +1409,11 @@ mod tests {
             voice_id,
             port_name: "out".to_string(),
             dest: RouteDest::Group(dest),
-            fx_chain: Vec::new(),
         });
         add_diff.additions.push(Route {
             voice_id,
             port_name: "aux".to_string(),
             dest: RouteDest::Group(dest),
-            fx_chain: Vec::new(),
         });
         handler.finalize(&add_diff).await.unwrap();
 
@@ -1609,303 +1446,6 @@ mod tests {
         assert_eq!(backend.nodes_freed(), 0);
     }
 
-    // =========================================================================
-    // Story 6a — per-port FX chain tests
-    // =========================================================================
-
-    /// Register `count` distinct FX synthdef names in the state's synthdef set
-    /// so [`spawn_route`]'s `fx_chain` validation accepts them.
-    async fn register_fx_synthdefs(state: &Arc<RwLock<State>>, names: &[&str]) {
-        let mut s = state.write().await;
-        for n in names {
-            s.synthdefs.insert((*n).to_string());
-        }
-    }
-
-    /// Snapshot the voice's port_bus before finalize so tests can assert FX
-    /// chain wiring in absolute bus IDs.
-    async fn voice_port_bus(state: &Arc<RwLock<State>>, voice_id: VoiceId) -> BusId {
-        state.read().await.voices.get(&voice_id).unwrap().output_buses[0].1
-    }
-
-    #[tokio::test]
-    async fn finalize_addition_one_fx_chain_allocates_one_intermediate_bus_and_spawns_fx_then_link() {
-        // 1-FX chain: 1 intermediate bus, 1 FX synth, 1 link mixer.
-        // Chain wiring: port_bus → fx[0] → bus[0] → link → group_bus.
-        let (handler, backend, state, voice_id, port_name, dest_group_id) =
-            setup_voice_in_group(2).await;
-        register_fx_synthdefs(&state, &["my_reverb"]).await;
-        let port_bus = voice_port_bus(&state, voice_id).await;
-        let buses_before = state.read().await.audio_buses.allocated_count();
-
-        let mut diff = RouteDiff::default();
-        diff.additions.push(Route {
-            voice_id,
-            port_name: port_name.clone(),
-            dest: RouteDest::Group(dest_group_id),
-            fx_chain: vec!["my_reverb".to_string()],
-        });
-
-        handler.finalize(&diff).await.unwrap();
-
-        // Two synths spawned: the FX synth, then the port_to_group_link.
-        assert_eq!(backend.synths_created(), 2, "fx synth + link mixer spawned");
-        let creates = backend.creates();
-        assert_eq!(creates[0].def, "my_reverb", "fx synth spawned first");
-        assert_eq!(creates[1].def, "port_to_group_link_2", "link mixer spawned last");
-
-        // Exactly one fresh intermediate audio bus was allocated.
-        let buses_after = state.read().await.audio_buses.allocated_count();
-        assert_eq!(
-            buses_after - buses_before,
-            2,
-            "exactly one stereo intermediate bus allocated (channels=2 spans 2 IDs)"
-        );
-
-        // FX wiring: fx[0].__fx_bus_in == port_bus, fx[0].__fx_bus_out == intermediate.
-        let fx_in = *creates[0].params.get("__fx_bus_in").unwrap();
-        let fx_out = *creates[0].params.get("__fx_bus_out").unwrap();
-        assert_eq!(
-            fx_in, port_bus.0 as f32,
-            "fx[0] reads from the port's source bus"
-        );
-        let intermediate = BusId::new(fx_out as u32);
-
-        // Link wiring: in_bus = intermediate, out_bus = group's audio bus.
-        let dest_bus = state
-            .read()
-            .await
-            .groups
-            .get(&dest_group_id)
-            .unwrap()
-            .audio_bus;
-        assert_eq!(
-            creates[1].in_bus, intermediate.0 as f32,
-            "link reads from the last intermediate (= the only one)"
-        );
-        assert_eq!(
-            creates[1].out_bus, dest_bus.0 as f32,
-            "link writes to the destination group's audio bus"
-        );
-
-        // State tracking: route_fx_synths and route_fx_buses populated; the
-        // single recorded fx node matches the synth that was spawned.
-        let s = state.read().await;
-        let key = (voice_id, port_name.clone());
-        assert_eq!(s.route_fx_synths[&key].len(), 1, "one fx node tracked");
-        assert_eq!(s.route_fx_synths[&key][0], creates[0].node);
-        assert_eq!(s.route_fx_buses[&key].len(), 1, "one intermediate tracked");
-        assert_eq!(s.route_fx_buses[&key][0], (intermediate, 2));
-        assert!(s.route_synths.contains_key(&key), "link mixer tracked");
-    }
-
-    #[tokio::test]
-    async fn finalize_addition_three_fx_chain_allocates_three_intermediates_in_declared_order() {
-        // 3-FX chain: 3 intermediate buses; chain order matches fx_chain.
-        // port_bus → fx[0] → b0 → fx[1] → b1 → fx[2] → b2 → link → group_bus.
-        let (handler, backend, state, voice_id, port_name, dest_group_id) =
-            setup_voice_in_group(2).await;
-        register_fx_synthdefs(&state, &["a", "b", "c"]).await;
-        let port_bus = voice_port_bus(&state, voice_id).await;
-        let buses_before = state.read().await.audio_buses.allocated_count();
-
-        let mut diff = RouteDiff::default();
-        diff.additions.push(Route {
-            voice_id,
-            port_name: port_name.clone(),
-            dest: RouteDest::Group(dest_group_id),
-            fx_chain: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-        });
-
-        handler.finalize(&diff).await.unwrap();
-
-        // Four creates: 3 FX in declared order, then the link.
-        assert_eq!(backend.synths_created(), 4);
-        let creates = backend.creates();
-        assert_eq!(creates[0].def, "a", "fx[0] is the first declared synthdef");
-        assert_eq!(creates[1].def, "b", "fx[1] is the second declared synthdef");
-        assert_eq!(creates[2].def, "c", "fx[2] is the third declared synthdef");
-        assert_eq!(creates[3].def, "port_to_group_link_2", "link last");
-
-        // Three fresh stereo intermediates: 3 * 2 = 6 bus IDs drawn.
-        let buses_after = state.read().await.audio_buses.allocated_count();
-        assert_eq!(
-            buses_after - buses_before,
-            6,
-            "three stereo intermediates allocated"
-        );
-
-        // Chain wiring:
-        //   fx[0]: in = port_bus,  out = b0
-        //   fx[1]: in = b0,        out = b1
-        //   fx[2]: in = b1,        out = b2
-        //   link : in = b2,        out = dest_group_bus
-        let fx0_in = *creates[0].params.get("__fx_bus_in").unwrap();
-        let fx0_out = *creates[0].params.get("__fx_bus_out").unwrap();
-        let fx1_in = *creates[1].params.get("__fx_bus_in").unwrap();
-        let fx1_out = *creates[1].params.get("__fx_bus_out").unwrap();
-        let fx2_in = *creates[2].params.get("__fx_bus_in").unwrap();
-        let fx2_out = *creates[2].params.get("__fx_bus_out").unwrap();
-
-        assert_eq!(fx0_in, port_bus.0 as f32, "fx[0] reads from port bus");
-        assert_eq!(fx0_out, fx1_in, "fx[0].out == fx[1].in (b0)");
-        assert_eq!(fx1_out, fx2_in, "fx[1].out == fx[2].in (b1)");
-
-        assert_eq!(
-            creates[3].in_bus, fx2_out,
-            "link reads from fx[2].out (b2 = last intermediate)"
-        );
-        let dest_bus = state
-            .read()
-            .await
-            .groups
-            .get(&dest_group_id)
-            .unwrap()
-            .audio_bus;
-        assert_eq!(creates[3].out_bus, dest_bus.0 as f32);
-
-        // All three buses are distinct (no aliasing).
-        let b0 = fx0_out as u32;
-        let b1 = fx1_out as u32;
-        let b2 = fx2_out as u32;
-        assert_ne!(b0, b1);
-        assert_ne!(b1, b2);
-        assert_ne!(b0, b2);
-
-        // State tracking lists the three fx nodes in chain order and the
-        // three intermediate buses with their channel widths.
-        let s = state.read().await;
-        let key = (voice_id, port_name.clone());
-        assert_eq!(s.route_fx_synths[&key].len(), 3);
-        assert_eq!(s.route_fx_synths[&key][0], creates[0].node);
-        assert_eq!(s.route_fx_synths[&key][1], creates[1].node);
-        assert_eq!(s.route_fx_synths[&key][2], creates[2].node);
-        assert_eq!(s.route_fx_buses[&key].len(), 3);
-        assert_eq!(s.route_fx_buses[&key][0], (BusId::new(b0), 2));
-        assert_eq!(s.route_fx_buses[&key][1], (BusId::new(b1), 2));
-        assert_eq!(s.route_fx_buses[&key][2], (BusId::new(b2), 2));
-    }
-
-    #[tokio::test]
-    async fn finalize_removal_of_fx_chain_route_frees_link_fx_synths_and_intermediate_buses() {
-        // Add a 3-FX route then remove it — every FX synth, the link mixer,
-        // and every intermediate bus must be released back to their pools.
-        let (handler, backend, state, voice_id, port_name, dest_group_id) =
-            setup_voice_in_group(2).await;
-        register_fx_synthdefs(&state, &["a", "b", "c"]).await;
-
-        let mut add_diff = RouteDiff::default();
-        add_diff.additions.push(Route {
-            voice_id,
-            port_name: port_name.clone(),
-            dest: RouteDest::Group(dest_group_id),
-            fx_chain: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-        });
-        handler.finalize(&add_diff).await.unwrap();
-        assert_eq!(backend.synths_created(), 4, "3 fx + link spawned");
-
-        // Snapshot fx + link nodes and intermediate buses for post-removal asserts.
-        let (link_node, fx_nodes, intermediates) = {
-            let s = state.read().await;
-            let key = (voice_id, port_name.clone());
-            (
-                *s.route_synths.get(&key).unwrap(),
-                s.route_fx_synths.get(&key).cloned().unwrap(),
-                s.route_fx_buses.get(&key).cloned().unwrap(),
-            )
-        };
-        assert_eq!(fx_nodes.len(), 3);
-        assert_eq!(intermediates.len(), 3);
-
-        // The pre-removal allocator counter — used to confirm freed buses
-        // populate the free pool (counter does not advance on reuse).
-        let allocated_before = state.read().await.audio_buses.allocated_count();
-
-        // Remove the route.
-        let mut rm_diff = RouteDiff::default();
-        rm_diff.removals.push(Route {
-            voice_id,
-            port_name: port_name.clone(),
-            dest: RouteDest::Group(dest_group_id),
-            fx_chain: Vec::new(), // removals: finalize consults state, not Route.fx_chain
-        });
-        handler.finalize(&rm_diff).await.unwrap();
-
-        // Backend.free_node was called once per fx + once for the link (4 frees).
-        assert_eq!(backend.nodes_freed(), 4, "3 fx synths + 1 link mixer freed");
-        let freed = backend.frees();
-        assert!(freed.contains(&link_node), "link mixer freed");
-        for n in &fx_nodes {
-            assert!(freed.contains(n), "fx synth {:?} freed", n);
-        }
-
-        // State tracking cleared.
-        let s = state.read().await;
-        let key = (voice_id, port_name.clone());
-        assert!(!s.route_synths.contains_key(&key), "link mixer untracked");
-        assert!(!s.route_fx_synths.contains_key(&key), "fx synths untracked");
-        assert!(!s.route_fx_buses.contains_key(&key), "fx buses untracked");
-        drop(s);
-
-        // Each intermediate must be in the audio-bus free pool: re-allocating
-        // 3 stereo chunks should reuse the freed pair IDs (the monotonic
-        // counter does not advance) — proves they were genuinely freed, not
-        // leaked.
-        let mut s = state.write().await;
-        let r0 = s.alloc_audio_bus(2);
-        let r1 = s.alloc_audio_bus(2);
-        let r2 = s.alloc_audio_bus(2);
-        assert_eq!(
-            s.audio_buses.allocated_count(),
-            allocated_before,
-            "no fresh bus IDs drawn — freed intermediates were reused"
-        );
-        // The reused buses are the originally-allocated intermediates (FIFO).
-        let original: Vec<BusId> = intermediates.iter().map(|(b, _)| *b).collect();
-        let reused = vec![r0, r1, r2];
-        for b in &reused {
-            assert!(
-                original.contains(b),
-                "reused bus {:?} must come from the freed intermediates {:?}",
-                b,
-                original
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn finalize_voice_delete_path_drains_fx_synths_and_buses_too() {
-        // The voice-delete path (State::take_voice_route_nodes) must clean up
-        // both link mixers and any per-port FX synth/bus state — otherwise a
-        // later voice creation that recycles the VoiceId would inherit stale
-        // FX entries.
-        let (handler, backend, state, voice_id, port_name, dest_group_id) =
-            setup_voice_in_group(2).await;
-        register_fx_synthdefs(&state, &["a", "b"]).await;
-
-        let mut add_diff = RouteDiff::default();
-        add_diff.additions.push(Route {
-            voice_id,
-            port_name: port_name.clone(),
-            dest: RouteDest::Group(dest_group_id),
-            fx_chain: vec!["a".to_string(), "b".to_string()],
-        });
-        handler.finalize(&add_diff).await.unwrap();
-        assert_eq!(backend.synths_created(), 3, "2 fx + link");
-
-        // Drain via the voice-delete helper — should surface the link node
-        // *and* both fx nodes and free intermediate buses internally.
-        let drained = {
-            let mut s = state.write().await;
-            s.take_voice_route_nodes(voice_id)
-        };
-        assert_eq!(drained.len(), 3, "1 link + 2 fx node IDs surfaced");
-
-        let s = state.read().await;
-        assert!(s.route_synths.is_empty(), "link mixer registry cleared");
-        assert!(s.route_fx_synths.is_empty(), "fx synth registry cleared");
-        assert!(s.route_fx_buses.is_empty(), "fx bus registry cleared");
-    }
 
     // =========================================================================
     // Param-route diff + finalize_params (Multi-output v2 Story 3)

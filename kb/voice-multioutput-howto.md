@@ -6,9 +6,11 @@
 > `kb/voice-multi-output-v2-plan.md` (v2).
 >
 > **Status snapshot:** v1 (audio-only) + v2 (kr-rate ports, CV-to-param
-> routing, per-port FX chains, modulator-as-sugar) shipped. The remaining
-> v3 work — ar→param coercion, fan-out to multiple groups,
-> multi-source fan-in to a single param — is documented in §9.
+> routing, modulator-as-sugar) shipped. The per-port FX feature was
+> implemented and then reverted: sub-group routing covers every use case
+> with shared FX state and fewer buses (see §3b). The remaining v3 work
+> — ar→param coercion, fan-out to multiple groups, multi-source fan-in
+> to a single param — is documented in §9.
 
 A vibelang voice can expose **N named output ports**. Each port is an
 independent signal that the script routes wherever it likes — to a group
@@ -114,9 +116,10 @@ terminal verb to commit the route:
 | `.mute()` | Discard the port's signal. | ar or kr |
 | `.to_param(target, "param")` | Map this port's control bus into `target.param` via scsynth `/n_map` (see §3c). | kr only |
 
-In addition, `RouteHandle.fx([names])` is a **chainable modifier** (not
-a terminal verb): it inserts an FX chain *before* the route hits its
-destination. See §3b.
+To send a port through an FX chain, route it into a sub-group that owns
+the effects. The sub-group's mix bus auto-mixes back into its parent
+group, so a per-port FX wet-send is just two routes (one for the dry
+port, one for the FX-bound port → sub-group). See §3b.
 
 ```rhai
 let v = voice("spec")
@@ -153,54 +156,49 @@ specifically a "use whatever I already configured" shortcut, not a
 synonym for `to_main()`. If main is what you want, say `to_main()`
 explicitly.
 
-### 3b. Per-port FX chain — `.fx([…])`
+### 3b. Routing a port through FX — sub-group pattern
 
-`RouteHandle.fx([names])` records an FX chain on the pending route;
-the terminal verb (`.to`, `.to_main`, `.to_current_group`) commits
-the chain alongside the destination. Each name must be a registered
-FX synthdef (i.e. declared via `define_fx(...)` and reachable through
-the dsp effect registry). The chain is applied in declaration order.
+To send a port through an FX chain, define a group that owns the
+effects, then route the port to that group. The sub-group's mix bus
+auto-mixes up into its parent group, so the FX'd signal sums back into
+the main path without any extra wiring.
 
 ```rhai
-v.output("even")
-    .fx(["reverb_jpverb", "delay_short"])
-    .to(group("leads"));
+// Wet group: owns the FX chain. Every voice routed here gets the
+// reverb + delay applied, then the result mixes up into `leads`.
+let evens_fx = group("evens_fx")
+    .effect("reverb_jpverb")
+    .effect("delay_short");
+let leads = group("leads");
 
-v.output("dry")
-    .fx(["saturator"])
-    .to_main();
+let v = voice("spec")
+    .synth("spectraphon_side")
+    .group(leads);
 
-// Plural fan-out: same chain applied to each listed port.
-v.outputs(["odd", "even"])
-    .fx(["chorus"])
-    .to(group("leads"));
+v.output("even").to(evens_fx);    // wet: through reverb + delay → leads
+v.output("odd").to(leads);        // dry: straight into leads
 ```
 
-Bus topology — each FX in the chain owns an intermediate audio bus,
-chained head-to-tail before the route reaches its destination:
+Why this is the canonical idiom for per-port FX:
 
-```
-port_bus → fx[0] → fx[1] → … → port_to_group_link → dest
-```
+* **Shared FX state across voices.** All voices that route into
+  `evens_fx` share the same reverb/delay instance, so the verb tail
+  rings out continuously instead of restarting per voice. A per-port
+  FX modifier would have spawned a fresh FX synth per `(voice, port)`,
+  which is rarely what you want.
+* **Fewer buses.** The sub-group needs one mix bus, not one per FX
+  per port. A 3-FX chain on 4 voices via the sub-group pattern uses
+  one bus chain; per-port FX would have used 12.
+* **Smaller API surface.** No new verb, no FX chain validation, no
+  per-port FX state to track across reloads — just the existing
+  group/effect machinery.
 
-The port's source bus is reused as `fx[0]`'s input — one bus saved
-per chain. Each subsequent FX gets a fresh intermediate bus.
+If you genuinely need per-voice independent FX state (e.g. a voice
+with its own reverb tail that must not bleed into a sibling), put
+that voice in its own group with the FX attached.
 
-Validation rejects unknown FX names with a clean Rhai error citing
-the offending name, the closest known FX (Levenshtein, edit distance
-≤ 3), and the full set of registered FX. `.mute()` drops any FX
-chain — muted routes have no audio path for FX to run on. `.fx([])`
-is a no-op; the route still installs its terminal dest with no FX.
-
-`.fx([...])` and `.to_param(...)` are mutually exclusive in spirit —
-the FX chain only acts on ar audio routes. A route that combines
-both records the chain in `route_fx_chains`, but `to_param` bypasses
-the audio bus entirely; the FX chain has no effect on the param-route
-side. Pick one verb per route based on the rate.
-
-> Source: `crates/vibelang-rhai/src/api/route.rs::RouteHandle::fx`,
-> `crates/vibelang-core/src/handlers/routes.rs` (per-port chain
-> finalize), `crates/vibelang-core/src/reload/script_state.rs::ScriptState::route_fx_chains`.
+> Source: `crates/vibelang-core/src/handlers/groups.rs` (group bus
+> auto-mix into parent), `crates/vibelang-rhai/src/api/group.rs`.
 
 ### 3c. CV-to-param routing — `.to_param(target, "param")`
 
@@ -503,8 +501,9 @@ non-features in v2; deferred to v3:
   `voice.output_kr(...)` + `.to_param(...)` directly. Removal is v3.
 * **No `solo()`, `tap()`, `scope()`** — the wider verb table from the
   plan §5.2 is still deferred. Today the verb set is `to`, `to_main`,
-  `to_current_group`, `mute`, `to_param`, plus the chainable
-  `.fx([…])` modifier.
+  `to_current_group`, `mute`, `to_param`. Per-port FX is covered by the
+  sub-group pattern (§3b); a per-port FX modifier was reverted because
+  sub-groups gave better economics (shared FX state, fewer buses).
 * **No sample-accurate trigger ports** — `Out.tr` semantics are not
   exposed yet.
 
@@ -526,7 +525,7 @@ non-features in v2; deferred to v3:
   — multi-port CV synthdef with kr ports `ch1..ch4`.
 * `crates/vibelang-rhai/src/api/route.rs` — `RouteHandle` /
   `MultiRouteHandle` Rhai surface (`.to`, `.to_main`,
-  `.to_current_group`, `.mute`, `.to_param`, `.fx`).
+  `.to_current_group`, `.mute`, `.to_param`).
 * `crates/vibelang-rhai/src/api/voice.rs::Voice` — `output_by_name`,
   `output_by_idx`, `outputs`, `modulate`.
 * `crates/vibelang-rhai/src/api/modulator.rs` — modulator-as-sugar
@@ -536,7 +535,7 @@ non-features in v2; deferred to v3:
   finalize (audio + param paths).
 * `crates/vibelang-core/src/reload/port_diff.rs` /
   `crates/vibelang-core/src/reload/script_state.rs` — reload
-  reconciler (incl. port-rate change diff) and `param_routes` /
-  `route_fx_chains` storage.
+  reconciler (incl. port-rate change diff) and `param_routes`
+  storage.
 * `kb/spectraphon-howto.md` — Spectraphon user manual; the multi-output
   example links back into routing here.

@@ -6,7 +6,7 @@
 //! Note: This module uses a callback function to deploy synthdefs to scsynth.
 //! The callback must be set by the host application (CLI) before using these functions.
 
-use crate::builder::{OutputPort, SynthDef};
+use crate::builder::{OutputPort, PortRate, SynthDef};
 use crate::encoder::encode_synthdef;
 use crate::errors::SynthDefError;
 use crate::graph::GraphIR;
@@ -374,12 +374,14 @@ impl FxBuilderHandle {
 #[derive(Clone, Debug)]
 pub struct ModulatorBuilderHandle {
     synthdef: SynthDef,
+    output_ports: Vec<OutputPort>,
 }
 
 impl ModulatorBuilderHandle {
     pub fn new(name: String) -> Self {
         Self {
             synthdef: SynthDef::new(name),
+            output_ports: Vec::new(),
         }
     }
 
@@ -393,21 +395,64 @@ impl ModulatorBuilderHandle {
         self
     }
 
+    /// Declare a named control-rate output port (1 channel by default).
+    ///
+    /// Modulator synthdefs always emit a single kr signal; declaring it
+    /// explicitly lets `register_synthdef_outputs` record the port shape at
+    /// synthdef-definition time rather than relying on the script-side
+    /// `modulator(...).apply()` sugar to populate the outputs registry.
+    /// When the modulator builder is removed, the explicit declaration is
+    /// what keeps the kr port discoverable for `.to_param(...)` routing.
+    pub fn output_kr(mut self, name: ImmutableString) -> Self {
+        self.output_ports.push(OutputPort {
+            name: name.into_owned(),
+            channels: 1,
+            rate: PortRate::Kr,
+        });
+        self
+    }
+
+    pub fn output_kr_with_channels(mut self, name: ImmutableString, channels: i64) -> Self {
+        let chans = channels.clamp(1, 255) as u8;
+        self.output_ports.push(OutputPort {
+            name: name.into_owned(),
+            channels: chans,
+            rate: PortRate::Kr,
+        });
+        self
+    }
+
+    fn declared_or_default_outputs(&self) -> Vec<OutputPort> {
+        if self.output_ports.is_empty() {
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 1,
+                rate: PortRate::Kr,
+            }]
+        } else {
+            self.output_ports.clone()
+        }
+    }
+
     pub fn body(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
         let name = self.synthdef.name.clone();
+        let outputs = self.declared_or_default_outputs();
         let ir = self
             .synthdef
             .build_modulator_closure(closure)
             .map_err(synthdef_error_to_eval)?;
+        register_synthdef_outputs(name.clone(), outputs);
         deploy_modulator_ir(&name, ir).map_err(synthdef_error_to_eval)
     }
 
     pub fn body_map(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
         let name = self.synthdef.name.clone();
+        let outputs = self.declared_or_default_outputs();
         let ir = self
             .synthdef
             .build_modulator_map_closure(closure)
             .map_err(synthdef_error_to_eval)?;
+        register_synthdef_outputs(name.clone(), outputs);
         deploy_modulator_ir(&name, ir).map_err(synthdef_error_to_eval)
     }
 }
@@ -425,8 +470,8 @@ pub fn effect_exists(name: &str) -> bool {
 /// Get the names of all registered FX synthdefs.
 ///
 /// Snapshot of the EFFECT_REGISTRY name set at call time. Used by Rhai-side
-/// validators (e.g. `RouteHandle.fx([...])`) to render "did-you-mean" hints
-/// when the script names an FX that isn't registered.
+/// validators to render "did-you-mean" hints when the script names an FX that
+/// isn't registered.
 pub fn get_all_effect_names() -> Vec<String> {
     get_effect_registry()
         .lock()
@@ -603,6 +648,11 @@ pub fn register_synthdef_api(engine: &mut Engine) {
         .register_type::<ModulatorBuilderHandle>()
         .register_fn("param", ModulatorBuilderHandle::param)
         .register_fn("glide_ms", ModulatorBuilderHandle::glide_ms)
+        .register_fn("output_kr", ModulatorBuilderHandle::output_kr)
+        .register_fn(
+            "output_kr",
+            ModulatorBuilderHandle::output_kr_with_channels,
+        )
         .register_fn("body", ModulatorBuilderHandle::body)
         .register_fn("body_map", ModulatorBuilderHandle::body_map);
 

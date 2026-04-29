@@ -10,7 +10,7 @@
 
 1. **kr-rate output ports** — synthdefs declare control-rate outputs.
 2. **CV-to-param routing** — `voice.output("env").to_param(other, "cutoff")` maps a kr port at another voice's parameter via scsynth's `MapN`.
-3. **Per-port FX chain** — `voice.output("even").fx(["reverb","delay"]).to(group)` inserts FX *before* the port joins the group bus.
+3. **Per-port FX chain** — a chainable modifier on the route handle that inserts FX synths *before* the port joins the group bus. (Implemented under Stories 6a/6b, then reverted post-implementation — see §9.)
 4. **Modulator obsolescence** — existing `modulator()` becomes sugar over a single-kr-port voice with a `to_param` route. Old API keeps working; deletion is v3.
 
 ## 2. v1 recap (already in tree)
@@ -38,7 +38,7 @@ Add the variant. Group/Main/Muted unchanged. `RoutesHandler::finalize` on Added 
 
 ### 3.4 Per-port FX chain
 
-`RouteHandle::fx(names: Vec<String>)` returns the same handle (chainable). Internally each FX in chain owns an intermediate audio bus:
+`RouteHandle.fx(names: Vec<String>)` returns the same handle (chainable). Internally each FX in chain owns an intermediate audio bus:
 
 ```
 port_bus → fx[0]_bus → fx[1]_bus → ... → port_to_group_link → group_bus
@@ -78,7 +78,7 @@ Story 4, 6b ─► Story 9 (tests) ────► Story 10 (docs)
 | 4 | Rhai `.to_param(voice, name)` | 2 | 3 |
 | 5 | Modulator-as-sugar refactor | 2 | 4 |
 | 6a | per-port FX intermediate bus alloc + finalize | 2 | 1 |
-| 6b | Rhai `RouteHandle.fx([...])` API | 1 | 6a |
+| 6b | Rhai `RouteHandle` per-port FX API | 1 | 6a |
 | 7 | Eurorack proof: port cv_maths to kr + example | 2 | 4 |
 | 8 | reload reconciler — port-rate change diff | 2 | 3 |
 | 9 | tests | 2 | 4, 6b |
@@ -131,3 +131,26 @@ Phasing:
 - Multi-source fan-in to a single param (averaging/summing modulators) — defer.
 - ar→kr auto-coercion — defer.
 - Full Modulator removal — v3.
+
+## 9. Post-implementation revert: Stories 6a / 6b (per-port FX)
+
+Stories 6a (per-port FX intermediate-bus alloc + finalize) and 6b
+(`RouteHandle` per-port FX Rhai surface) shipped, then were reverted
+post-implementation. Sub-group routing (a group that owns the FX
+chain + voices that route a port to that group) covers every musical
+use case for "send a port through FX" with strictly better economics:
+
+- **Shared FX state** across every voice routed into the sub-group, so
+  reverb tails ring continuously instead of restarting per voice.
+- **Fewer buses**: one bus chain on the sub-group, vs. one chain per
+  `(voice, port)` pair under the per-port FX modifier.
+- **No new API surface**: the canonical idiom is `voice.output("p")
+  .to(group("fx_send"))`, which uses only the existing group + effect
+  + route machinery.
+
+Indefinitely deferred — won't reintroduce in v3 unless a concrete
+use case emerges that sub-groups can't address (e.g. genuinely
+per-voice independent FX state where a sub-group-per-voice is too
+heavyweight).
+
+See `kb/voice-multioutput-howto.md` §3b for the user-facing pattern.
