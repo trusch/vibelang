@@ -138,11 +138,13 @@ impl RouteDiff {
 /// list of `(target_voice_id, target_param_name)` pairs.
 ///
 /// One source kr port can drive params on multiple target voices, so unlike
-/// [`RouteMap`] the value is a list. Diffed by [`RoutesHandler::diff_params`]
-/// and applied by [`RoutesHandler::finalize_params`], which issues `/n_map`
-/// for each `(source_bus, target_param)` pair on the target voice's currently
-/// active synth nodes. Mirrors [`crate::state::State::param_routes`] which
-/// holds the *applied* baseline.
+/// [`RouteMap`] the value is a list. The map is shared between the SET
+/// pipeline (`.to_param`) and the BEND pipeline (`.modulate_by`) — each
+/// pipeline owns its own [`ParamRouteMap`] in
+/// [`crate::state::State::param_routes_set`] and
+/// [`crate::state::State::param_routes_bend`]. Diffed by
+/// [`RoutesHandler::diff_params`] and applied by
+/// [`RoutesHandler::finalize_params`].
 pub type ParamRouteMap = HashMap<(VoiceId, String), Vec<(VoiceId, String)>>;
 
 /// A single Param route — one source kr port → one target param.
@@ -196,21 +198,131 @@ struct PlannedParamAction {
     plan: ParamPlan,
 }
 
-/// The action to take for a single target after fan-in reconciliation.
+/// The action to take for a single target after route reconciliation.
 enum ParamPlan {
-    /// No source remains — `/n_map node param -1` to revert the param.
-    Unmap,
-    /// Exactly one source — direct `/n_map` to the source's control bus.
-    Direct(BusId),
-    /// Two or more sources — spawn a `param_kr_sum_<n>` summer that writes
-    /// to `intermediate_bus`, then `/n_map` the target to that bus.
-    Summer {
+    /// No source remains — `/n_map node param -1` (the scsynth unmap
+    /// sentinel) on every active synth node, *and* `/n_set node param value`
+    /// where `value` is the target voice's current `set_param` baseline so
+    /// the param falls back to the user's value (not the synthdef default).
+    Unmap { restore_value: Option<f32> },
+    /// SET path — direct `/n_map` to the source's control bus. The user's
+    /// `set_param` is silently masked while the mapping is active (that's
+    /// the SET semantic).
+    DirectSet(BusId),
+    /// BEND path — spawn a `param_kr_modulate_<n>` summer that reads
+    /// `baseline + Σ source kr buses` and writes to `intermediate_bus`,
+    /// then `/n_map` the target to that bus. The arity is encoded in the
+    /// synthdef name and tracked in `state.param_summers`.
+    BendSummer {
         synthdef: String,
         summer_node: NodeId,
         target_group: NodeId,
         params: ParamMap,
         intermediate_bus: BusId,
     },
+}
+
+/// Which of the two paramroute maps a diff applies to.
+#[derive(Copy, Clone, Debug)]
+enum ParamMapKind {
+    Set,
+    Bend,
+}
+
+/// Stage a [`ParamRouteDiff`] against the matching map on the locked state.
+///
+/// Drops removed `(target_voice, target_param)` from each source's target
+/// list (pruning empty source keys), then appends additions, skipping any
+/// addition whose source port is no longer registered on the source voice.
+fn apply_param_diff_to_map(
+    state: &mut State,
+    diff: &ParamRouteDiff,
+    kind: ParamMapKind,
+) {
+    let map: &mut HashMap<(VoiceId, String), Vec<(VoiceId, String)>> = match kind {
+        ParamMapKind::Set => &mut state.param_routes_set,
+        ParamMapKind::Bend => &mut state.param_routes_bend,
+    };
+
+    for r in &diff.removals {
+        let src_key = (r.source_voice, r.source_port.clone());
+        let mut empty_now = false;
+        if let Some(targets) = map.get_mut(&src_key) {
+            targets.retain(|(tv, tp)| !(*tv == r.target_voice && *tp == r.target_param));
+            empty_now = targets.is_empty();
+        }
+        if empty_now {
+            map.remove(&src_key);
+        }
+    }
+
+    // Source-port existence check needs the voices map, which lives on the
+    // same `state` borrow — extract source info first to avoid double-borrow.
+    let mut to_add: Vec<((VoiceId, String), (VoiceId, String))> = Vec::new();
+    for r in &diff.additions {
+        let source_exists = state
+            .voices
+            .get(&r.source_voice)
+            .map(|v| v.output_buses.iter().any(|(n, _)| *n == r.source_port))
+            .unwrap_or(false);
+        if !source_exists {
+            tracing::warn!(
+                "RoutesHandler::finalize_params: source port {:?} not found on voice {:?}, skipping addition",
+                r.source_port,
+                r.source_voice,
+            );
+            continue;
+        }
+        to_add.push((
+            (r.source_voice, r.source_port.clone()),
+            (r.target_voice, r.target_param.clone()),
+        ));
+    }
+    let map: &mut HashMap<(VoiceId, String), Vec<(VoiceId, String)>> = match kind {
+        ParamMapKind::Set => &mut state.param_routes_set,
+        ParamMapKind::Bend => &mut state.param_routes_bend,
+    };
+    for (src_key, target_pair) in to_add {
+        let entry = map.entry(src_key).or_default();
+        if !entry.iter().any(|t| *t == target_pair) {
+            entry.push(target_pair);
+        }
+    }
+}
+
+/// Collect the control buses of every source whose target list contains
+/// `tgt`, sorted by raw bus id for deterministic input ordering.
+fn collect_source_buses(
+    state: &State,
+    map: &HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
+    tgt: &(VoiceId, String),
+) -> Vec<BusId> {
+    let mut source_buses: Vec<BusId> = Vec::new();
+    for ((sv, sp), targets) in map.iter() {
+        if targets.iter().any(|t| t == tgt) {
+            if let Some(bus) = state.voices.get(sv).and_then(|v| {
+                v.output_buses
+                    .iter()
+                    .find(|(n, _)| n == sp)
+                    .map(|(_, b)| *b)
+            }) {
+                source_buses.push(bus);
+            }
+        }
+    }
+    source_buses.sort_by_key(|b| b.raw());
+    source_buses
+}
+
+/// Look up the user-set baseline for `(target_voice, target_param)` — the
+/// last value passed to `voice.set_param(param, value)`. `None` if the
+/// target voice isn't registered or the param has never been set; the
+/// caller decides whether to fall back to the synthdef default.
+fn baseline_for_target(state: &State, tgt: &(VoiceId, String)) -> Option<f32> {
+    state
+        .voices
+        .get(&tgt.0)
+        .and_then(|v| v.config.params.get(&tgt.1).copied())
 }
 
 impl<B: Backend> RoutesHandler<B> {
@@ -380,47 +492,41 @@ impl<B: Backend> RoutesHandler<B> {
         diff
     }
 
-    /// Apply a Param-route diff: tear down stale mappings, `/n_map` new ones,
-    /// and reconcile multi-source kr fan-in via `param_kr_sum_<n>` summer
-    /// synths where N>1 sources point at the same target param.
+    /// Apply SET + BEND Param-route diffs in one pass.
+    ///
+    /// Multi-output v2 split:
+    ///   - **SET path** (`.to_param`): direct `/n_map` from source bus to
+    ///     target param. Multi-source on the same target is rejected (script
+    ///     time should already have caught this; runtime drops the late
+    ///     entries with a warning to avoid undefined behaviour).
+    ///   - **BEND path** (`.modulate_by`): always spawns a
+    ///     `param_kr_modulate_<n>` summer (even at N=1) so the user's
+    ///     `set_param` value rides the `baseline` while modulators add on
+    ///     top. Respawns when the source set's arity changes.
     ///
     /// Order:
-    /// 1. Apply removals + additions to [`State::param_routes`] under one
-    ///    lock so the desired source set per `(target_voice, target_param)`
-    ///    is fully resolved before any backend call.
-    /// 2. For each *affected* target (any target that appears in either side
-    ///    of the diff), tear down its existing summer (if any), look up the
-    ///    new source-bus set, and decide an action:
-    ///      - **0 sources** → emit `/n_map node param -1` (scsynth unmap
-    ///        sentinel) on every active node of the target voice, reverting
-    ///        the param to its synthdef-declared default.
-    ///      - **1 source** → direct `/n_map` from the surviving source's
-    ///        control bus (legacy single-source path).
-    ///      - **N ≥ 2 sources** → allocate an intermediate control bus +
-    ///        `param_kr_sum_<N>` summer synth (placed at tail of the
-    ///        modulator group so it runs after kr sources but before voice
-    ///        groups), then `/n_map` to the intermediate bus.
-    ///    Sources beyond [`PARAM_KR_SUM_MAX`](vibelang_dsp::system_synthdefs::PARAM_KR_SUM_MAX)
-    ///    are truncated with a warning.
-    /// 3. Affected targets are processed in diff order — removals first, then
-    ///    additions, deduplicated — which preserves the legacy
-    ///    "unmap-old-then-map-new" ordering for "change" diffs (a
-    ///    `(source → target_a)` removal paired with a `(source → target_b)`
-    ///    addition emits the unmap before the new map).
+    /// 1. Stage both diffs against [`State::param_routes_set`] /
+    ///    [`State::param_routes_bend`] under one lock; collect per-target
+    ///    actions and the list of summer nodes/buses to free.
+    /// 2. Free torn-down summers on the backend first so reused node IDs
+    ///    don't collide with newly spawned ones.
+    /// 3. Drive each planned action. Targets are deduplicated across SET +
+    ///    BEND; an addition that *moves* a target between maps emits an
+    ///    unmap of the old kind followed by the new kind.
     ///
-    /// All backend calls are issued outside the state lock to preserve the
-    /// project's lock discipline.
-    pub async fn finalize_params(&self, diff: &ParamRouteDiff) -> Result<()> {
-        if diff.is_empty() {
+    /// All backend calls are issued outside the state lock.
+    pub async fn finalize_params(
+        &self,
+        set_diff: &ParamRouteDiff,
+        bend_diff: &ParamRouteDiff,
+    ) -> Result<()> {
+        if set_diff.is_empty() && bend_diff.is_empty() {
             return Ok(());
         }
 
-        // Plan everything under one lock: applies the diff to param_routes,
-        // tears down old summer bookkeeping, computes per-target actions.
-        let (planned, summers_to_free) = self.plan_param_actions(diff).await;
+        let (planned, summers_to_free) =
+            self.plan_param_actions(set_diff, bend_diff).await;
 
-        // Free old summer synths on the backend first so any reused node IDs
-        // don't collide with newly spawned summers below.
         for &(node, _) in &summers_to_free {
             if let Err(e) = self.backend.free_node(node).await {
                 tracing::warn!(
@@ -445,62 +551,31 @@ impl<B: Backend> RoutesHandler<B> {
         Ok(())
     }
 
-    /// Stage `state.param_routes` and `state.param_summers` against `diff`,
-    /// returning the per-target actions to drive plus any summer nodes/buses
-    /// to free on the backend afterwards.
-    ///
-    /// Pulled out of [`Self::finalize_params`] so the lock-held planning step
-    /// is distinct from the lock-free backend dispatch step.
+    /// Stage `state.param_routes_set` / `state.param_routes_bend` and
+    /// `state.param_summers` against the diffs, returning per-target actions
+    /// plus any summer nodes/buses to free on the backend afterwards.
     async fn plan_param_actions(
         &self,
-        diff: &ParamRouteDiff,
+        set_diff: &ParamRouteDiff,
+        bend_diff: &ParamRouteDiff,
     ) -> (Vec<PlannedParamAction>, Vec<(NodeId, ControlBusId)>) {
         let mut state = self.state.write().await;
 
-        // Apply removals to state.param_routes — drop the matching
-        // `(target_voice, target_param)` from each source's target list,
-        // and prune source keys whose target list goes empty.
-        for r in &diff.removals {
-            let src_key = (r.source_voice, r.source_port.clone());
-            let mut empty_now = false;
-            if let Some(targets) = state.param_routes.get_mut(&src_key) {
-                targets.retain(|(tv, tp)| !(*tv == r.target_voice && *tp == r.target_param));
-                empty_now = targets.is_empty();
-            }
-            if empty_now {
-                state.param_routes.remove(&src_key);
-            }
-        }
-        // Apply additions — push new target pairs onto the source's list,
-        // skipping sources whose port doesn't exist on the source voice.
-        for r in &diff.additions {
-            let source_exists = state
-                .voices
-                .get(&r.source_voice)
-                .map(|v| v.output_buses.iter().any(|(n, _)| *n == r.source_port))
-                .unwrap_or(false);
-            if !source_exists {
-                tracing::warn!(
-                    "RoutesHandler::finalize_params: source port {:?} not found on voice {:?}, skipping addition",
-                    r.source_port,
-                    r.source_voice,
-                );
-                continue;
-            }
-            let src_key = (r.source_voice, r.source_port.clone());
-            let entry = state.param_routes.entry(src_key).or_default();
-            let target_pair = (r.target_voice, r.target_param.clone());
-            if !entry.iter().any(|t| *t == target_pair) {
-                entry.push(target_pair);
-            }
-        }
+        apply_param_diff_to_map(&mut state, set_diff, ParamMapKind::Set);
+        apply_param_diff_to_map(&mut state, bend_diff, ParamMapKind::Bend);
 
-        // Build a deterministic order of affected target keys: removals first
-        // (so any change-diff emits the unmap before the remap), then
-        // additions; deduplicate while preserving first-seen order.
+        // Build a deterministic order of affected target keys: removals
+        // first, then additions; deduplicated while preserving first-seen
+        // order. Both diffs contribute.
         let mut seen: HashSet<(VoiceId, String)> = HashSet::new();
         let mut affected: Vec<(VoiceId, String)> = Vec::new();
-        for r in diff.removals.iter().chain(diff.additions.iter()) {
+        for r in set_diff
+            .removals
+            .iter()
+            .chain(bend_diff.removals.iter())
+            .chain(set_diff.additions.iter())
+            .chain(bend_diff.additions.iter())
+        {
             let key = (r.target_voice, r.target_param.clone());
             if seen.insert(key.clone()) {
                 affected.push(key);
@@ -511,30 +586,12 @@ impl<B: Backend> RoutesHandler<B> {
         let mut summers_to_free: Vec<(NodeId, ControlBusId)> = Vec::new();
 
         for tgt in affected {
-            // Tear down any existing summer for this target — even if the
-            // new arity matches, we respawn so the parameter list reflects
-            // the new source bus IDs.
-            if let Some((node, bus)) = state.param_summers.remove(&tgt) {
+            // Tear down any existing summer for this target up-front.
+            // We respawn whenever the bend source set is non-empty so the
+            // summer's parameter list reflects the new source bus IDs.
+            if let Some((node, bus, _arity)) = state.param_summers.remove(&tgt) {
                 summers_to_free.push((node, ControlBusId::new(bus.raw())));
             }
-
-            // Walk param_routes for every source whose target list contains
-            // this target. Sort by source bus ID so the assigned `in_a`,
-            // `in_b`, … positions are deterministic across runs.
-            let mut source_buses: Vec<BusId> = Vec::new();
-            for ((sv, sp), targets) in state.param_routes.iter() {
-                if targets.iter().any(|t| t == &tgt) {
-                    if let Some(bus) = state.voices.get(sv).and_then(|v| {
-                        v.output_buses
-                            .iter()
-                            .find(|(n, _)| n == sp)
-                            .map(|(_, b)| *b)
-                    }) {
-                        source_buses.push(bus);
-                    }
-                }
-            }
-            source_buses.sort_by_key(|b| b.raw());
 
             let target_nodes: Vec<NodeId> = state
                 .voices
@@ -548,59 +605,84 @@ impl<B: Backend> RoutesHandler<B> {
                 })
                 .unwrap_or_default();
 
-            let plan = match source_buses.len() {
-                0 => ParamPlan::Unmap,
-                1 => ParamPlan::Direct(source_buses[0]),
-                n => {
-                    let max_n = vibelang_dsp::system_synthdefs::PARAM_KR_SUM_MAX;
-                    let used: Vec<BusId> = if n > max_n {
-                        tracing::warn!(
-                            "RoutesHandler::finalize_params: {} kr sources point at target {:?} param {:?}, exceeds max {}; truncating",
-                            n,
-                            tgt.0,
-                            tgt.1,
-                            max_n,
-                        );
-                        source_buses.into_iter().take(max_n).collect()
-                    } else {
-                        source_buses
-                    };
-                    let arity = used.len();
-                    let intermediate = state.alloc_control_bus();
-                    let intermediate_bus = BusId::new(intermediate.raw());
-                    let summer_node = state.alloc_node_id();
-                    state
-                        .param_summers
-                        .insert(tgt.clone(), (summer_node, intermediate_bus));
+            // Gather SET sources targeting this `(target, param)`.
+            let set_buses = collect_source_buses(&state, &state.param_routes_set, &tgt);
+            // Gather BEND sources targeting this `(target, param)`.
+            let bend_buses = collect_source_buses(&state, &state.param_routes_bend, &tgt);
 
-                    // Place the summer in the modulator group when one
-                    // exists (matches the runtime's "modulators run before
-                    // voices" tick ordering); otherwise fall back to root —
-                    // tests and minimal patches without explicit modulator
-                    // groups still work, with the caveat that ordering
-                    // against voice synths is implementation-defined.
-                    let target_group = state
-                        .modulator_group
-                        .unwrap_or_else(|| NodeId::new(0));
-
-                    let mut params = ParamMap::new();
-                    let port_letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-                    for (i, src_bus) in used.iter().enumerate() {
-                        params.insert(
-                            format!("in_{}", port_letters[i]),
-                            src_bus.raw() as f32,
-                        );
-                    }
-                    params.insert("out_bus".to_string(), intermediate_bus.raw() as f32);
-
-                    ParamPlan::Summer {
-                        synthdef: format!("param_kr_sum_{}", arity),
-                        summer_node,
-                        target_group,
-                        params,
-                        intermediate_bus,
-                    }
+            let plan = if !set_buses.is_empty() && !bend_buses.is_empty() {
+                tracing::warn!(
+                    "RoutesHandler::finalize_params: target {:?} param {:?} has both \
+                     SET and BEND sources — treating as empty (cross-verb conflict \
+                     should have been caught at script time)",
+                    tgt.0,
+                    tgt.1,
+                );
+                let restore_value = baseline_for_target(&state, &tgt);
+                ParamPlan::Unmap { restore_value }
+            } else if !set_buses.is_empty() {
+                if set_buses.len() > 1 {
+                    tracing::warn!(
+                        "RoutesHandler::finalize_params: target {:?} param {:?} has \
+                         {} SET sources — multi-source SET is disallowed; using only \
+                         the first (script-time validation should have rejected this)",
+                        tgt.0,
+                        tgt.1,
+                        set_buses.len(),
+                    );
                 }
+                ParamPlan::DirectSet(set_buses[0])
+            } else if !bend_buses.is_empty() {
+                let max_n = vibelang_dsp::system_synthdefs::PARAM_KR_MODULATE_MAX;
+                let used: Vec<BusId> = if bend_buses.len() > max_n {
+                    tracing::warn!(
+                        "RoutesHandler::finalize_params: {} bend sources point at \
+                         target {:?} param {:?}, exceeds max {}; truncating",
+                        bend_buses.len(),
+                        tgt.0,
+                        tgt.1,
+                        max_n,
+                    );
+                    bend_buses.into_iter().take(max_n).collect()
+                } else {
+                    bend_buses
+                };
+                let arity = used.len();
+                let baseline = baseline_for_target(&state, &tgt).unwrap_or(0.0);
+
+                let intermediate = state.alloc_control_bus();
+                let intermediate_bus = BusId::new(intermediate.raw());
+                let summer_node = state.alloc_node_id();
+                state.param_summers.insert(
+                    tgt.clone(),
+                    (summer_node, intermediate_bus, arity as u8),
+                );
+
+                let target_group = state
+                    .modulator_group
+                    .unwrap_or_else(|| NodeId::new(0));
+
+                let mut params = ParamMap::new();
+                params.insert("baseline".to_string(), baseline);
+                let port_letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+                for (i, src_bus) in used.iter().enumerate() {
+                    params.insert(
+                        format!("in_{}", port_letters[i]),
+                        src_bus.raw() as f32,
+                    );
+                }
+                params.insert("out_bus".to_string(), intermediate_bus.raw() as f32);
+
+                ParamPlan::BendSummer {
+                    synthdef: format!("param_kr_modulate_{}", arity),
+                    summer_node,
+                    target_group,
+                    params,
+                    intermediate_bus,
+                }
+            } else {
+                let restore_value = baseline_for_target(&state, &tgt);
+                ParamPlan::Unmap { restore_value }
             };
 
             planned.push(PlannedParamAction {
@@ -614,18 +696,14 @@ impl<B: Backend> RoutesHandler<B> {
         (planned, summers_to_free)
     }
 
-    /// Drive a single [`PlannedParamAction`] to the backend. Issues the
-    /// matching `/s_new` (for summers) and `/n_map` calls.
+    /// Drive a single [`PlannedParamAction`] to the backend.
     async fn apply_param_action(&self, action: PlannedParamAction) -> Result<()> {
         match action.plan {
-            ParamPlan::Unmap => {
-                for node in action.target_nodes {
-                    // u32::MAX casts to -1i32 in the OSC `/n_map` payload —
-                    // the scsynth unmap sentinel that reverts the param to
-                    // its synthdef-declared default value.
+            ParamPlan::Unmap { restore_value } => {
+                for node in &action.target_nodes {
                     if let Err(e) = self
                         .backend
-                        .map_param_to_bus(node, &action.target_param, u32::MAX)
+                        .map_param_to_bus(*node, &action.target_param, u32::MAX)
                         .await
                     {
                         tracing::warn!(
@@ -636,8 +714,25 @@ impl<B: Backend> RoutesHandler<B> {
                         );
                     }
                 }
+                if let Some(value) = restore_value {
+                    for node in action.target_nodes {
+                        if let Err(e) = self
+                            .backend
+                            .set_param(node, &action.target_param, value)
+                            .await
+                        {
+                            tracing::warn!(
+                                "RoutesHandler::finalize_params: restore set_param failed node={:?} param={:?} value={}: {}",
+                                node,
+                                action.target_param,
+                                value,
+                                e,
+                            );
+                        }
+                    }
+                }
             }
-            ParamPlan::Direct(bus) => {
+            ParamPlan::DirectSet(bus) => {
                 for node in action.target_nodes {
                     self.backend
                         .map_param_to_bus(node, &action.target_param, bus.raw())
@@ -645,7 +740,7 @@ impl<B: Backend> RoutesHandler<B> {
                         .map_err(Error::backend)?;
                 }
             }
-            ParamPlan::Summer {
+            ParamPlan::BendSummer {
                 synthdef,
                 summer_node,
                 target_group,
@@ -1645,50 +1740,43 @@ mod tests {
         assert_eq!(backend.nodes_freed(), 0);
     }
 
-
     // =========================================================================
-    // Param-route diff + finalize_params (Multi-output v2 Story 3)
+    // Param-route diff + finalize_params — SET vs BEND (Multi-output v2 split)
     // =========================================================================
 
-    /// Build a state with two voices: a `source` voice owning a single kr
-    /// output port (control bus) and a `target` voice with `active_synth_count`
-    /// pre-populated `active_nodes`. Returns
-    /// `(handler, backend, state, source_voice, source_port, target_voice,
-    ///   target_param, source_control_bus, target_active_nodes)`.
-    async fn setup_param_route_pair(
-        active_synth_count: usize,
+    /// Build the shared SET/BEND fixture: one source-voice per kr port plus
+    /// one target voice with `active_target_nodes` synth nodes pre-spawned
+    /// (the targets that finalize_params will issue `/n_map` against).
+    async fn setup_split_fixture(
+        n_sources: usize,
+        active_target_nodes: usize,
     ) -> (
         RoutesHandler<MockBackend>,
         Arc<MockBackend>,
         Arc<RwLock<State>>,
+        Vec<VoiceId>,
+        Vec<BusId>,
         VoiceId,
         String,
-        VoiceId,
-        String,
-        BusId,
         Vec<NodeId>,
     ) {
         let backend = Arc::new(MockBackend::new());
         let state = Arc::new(RwLock::new(State::default()));
         let handler = RoutesHandler::new(backend.clone(), state.clone());
 
-        let source_voice = VoiceId::new(10);
-        let target_voice = VoiceId::new(20);
         let voice_group_id = GroupId::new(1);
-        let source_port = "env".to_string();
+        let target_voice = VoiceId::new(100);
         let target_param = "cutoff".to_string();
-
-        let mut active_target_nodes = Vec::with_capacity(active_synth_count);
-        let source_control_bus;
-
+        let mut source_voices = Vec::with_capacity(n_sources);
+        let mut source_buses = Vec::with_capacity(n_sources);
+        let mut target_nodes = Vec::with_capacity(active_target_nodes);
         {
             let mut s = state.write().await;
-
             s.synthdefs.insert("kr_synth".to_string());
             s.synthdef_outputs.insert(
                 "kr_synth".to_string(),
                 vec![vibelang_dsp::OutputPort {
-                    name: source_port.clone(),
+                    name: "out".to_string(),
                     channels: 1,
                     rate: vibelang_dsp::PortRate::Kr,
                 }],
@@ -1721,26 +1809,32 @@ mod tests {
                 },
             );
 
-            // Source voice: kr port → one control bus.
-            let kr_bus = s.alloc_control_bus();
-            source_control_bus = BusId::new(kr_bus.raw());
-            s.voices.insert(
-                source_voice,
-                VoiceState {
-                    id: source_voice,
-                    config: VoiceConfig::new("source", "kr_synth", voice_group_id),
-                    active_nodes: Vec::new(),
-                    note_nodes: HashMap::new(),
-                    round_robin_position: 0,
-                    pending_params: HashMap::new(),
-                    output_buses: vec![(source_port.clone(), source_control_bus)],
-                },
-            );
+            for i in 0..n_sources {
+                let vid = VoiceId::new(10 + i as u32);
+                let kr_bus = s.alloc_control_bus();
+                let bus = BusId::new(kr_bus.raw());
+                s.voices.insert(
+                    vid,
+                    VoiceState {
+                        id: vid,
+                        config: VoiceConfig::new(
+                            &format!("src{}", i),
+                            "kr_synth",
+                            voice_group_id,
+                        ),
+                        active_nodes: Vec::new(),
+                        note_nodes: HashMap::new(),
+                        round_robin_position: 0,
+                        pending_params: HashMap::new(),
+                        output_buses: vec![("out".to_string(), bus)],
+                    },
+                );
+                source_voices.push(vid);
+                source_buses.push(bus);
+            }
 
-            // Target voice: pre-populate `active_synth_count` active synth
-            // node IDs so finalize_params has something to /n_map onto.
-            for _ in 0..active_synth_count {
-                active_target_nodes.push(s.alloc_node_id());
+            for _ in 0..active_target_nodes {
+                target_nodes.push(s.alloc_node_id());
             }
             let target_audio_bus = s.alloc_audio_bus(2);
             s.voices.insert(
@@ -1748,7 +1842,7 @@ mod tests {
                 VoiceState {
                     id: target_voice,
                     config: VoiceConfig::new("target", "ar_synth", voice_group_id),
-                    active_nodes: active_target_nodes.clone(),
+                    active_nodes: target_nodes.clone(),
                     note_nodes: HashMap::new(),
                     round_robin_position: 0,
                     pending_params: HashMap::new(),
@@ -1761,14 +1855,32 @@ mod tests {
             handler,
             backend,
             state,
-            source_voice,
-            source_port,
+            source_voices,
+            source_buses,
             target_voice,
             target_param,
-            source_control_bus,
-            active_target_nodes,
+            target_nodes,
         )
     }
+
+    fn route_for_sources(
+        sources: &[VoiceId],
+        target_voice: VoiceId,
+        target_param: &str,
+    ) -> ParamRouteDiff {
+        let mut diff = ParamRouteDiff::default();
+        for sv in sources {
+            diff.additions.push(ParamRoute {
+                source_voice: *sv,
+                source_port: "out".to_string(),
+                target_voice,
+                target_param: target_param.to_string(),
+            });
+        }
+        diff
+    }
+
+    // ---------- diff_params is shared between SET and BEND ----------
 
     fn make_param_map(
         entries: &[((u32, &str), &[(u32, &str)])],
@@ -1794,10 +1906,6 @@ mod tests {
         let diff = RoutesHandler::<MockBackend>::diff_params(&old, &new);
         assert_eq!(diff.additions.len(), 1);
         assert_eq!(diff.removals.len(), 0);
-        assert_eq!(diff.additions[0].source_voice, VoiceId::new(10));
-        assert_eq!(diff.additions[0].source_port, "env");
-        assert_eq!(diff.additions[0].target_voice, VoiceId::new(20));
-        assert_eq!(diff.additions[0].target_param, "cutoff");
     }
 
     #[test]
@@ -1807,301 +1915,349 @@ mod tests {
         assert!(diff.is_empty());
     }
 
-    #[test]
-    fn diff_params_target_added_to_existing_source_is_an_addition() {
-        // Same source key, target list grew by one — that one entry shows up
-        // as an addition; the existing target stays untouched.
-        let old = make_param_map(&[((10, "env"), &[(20, "cutoff")])]);
-        let new = make_param_map(&[((10, "env"), &[(20, "cutoff"), (21, "amp")])]);
-        let diff = RoutesHandler::<MockBackend>::diff_params(&old, &new);
-        assert_eq!(diff.additions.len(), 1);
-        assert_eq!(diff.removals.len(), 0);
-        assert_eq!(diff.additions[0].target_voice, VoiceId::new(21));
-        assert_eq!(diff.additions[0].target_param, "amp");
-    }
-
-    #[test]
-    fn diff_params_target_removed_from_existing_source_is_a_removal() {
-        let old = make_param_map(&[((10, "env"), &[(20, "cutoff"), (21, "amp")])]);
-        let new = make_param_map(&[((10, "env"), &[(20, "cutoff")])]);
-        let diff = RoutesHandler::<MockBackend>::diff_params(&old, &new);
-        assert_eq!(diff.removals.len(), 1);
-        assert_eq!(diff.additions.len(), 0);
-        assert_eq!(diff.removals[0].target_voice, VoiceId::new(21));
-        assert_eq!(diff.removals[0].target_param, "amp");
-    }
+    // ---------- SET path ----------
 
     #[tokio::test]
-    async fn finalize_params_addition_maps_target_param_to_source_bus_on_active_node() {
-        // Single Param route: mapping persists, target reads source bus.
-        let (
-            handler,
-            backend,
-            state,
-            source_voice,
-            source_port,
-            target_voice,
-            target_param,
-            source_bus,
-            target_nodes,
-        ) = setup_param_route_pair(1).await;
+    async fn set_finalize_single_source_emits_direct_n_map() {
+        // .to_param single-source: direct /n_map to the source's control bus.
+        let (handler, backend, state, sources, source_buses, target_voice, target_param, target_nodes) =
+            setup_split_fixture(1, 1).await;
 
-        let mut diff = ParamRouteDiff::default();
-        diff.additions.push(ParamRoute {
-            source_voice,
-            source_port: source_port.clone(),
-            target_voice,
-            target_param: target_param.clone(),
-        });
-        handler.finalize_params(&diff).await.unwrap();
+        let set_diff = route_for_sources(&sources, target_voice, &target_param);
+
+        handler
+            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .await
+            .unwrap();
+
+        // No summer was spawned for SET.
+        let creates = backend.creates();
+        assert!(
+            creates.iter().all(|c| !c.def.starts_with("param_kr_")),
+            "SET path must not spawn any summer synth, got creates: {:?}",
+            creates,
+        );
 
         let maps = backend.maps();
-        assert_eq!(maps.len(), 1, "one /n_map issued for one active node");
+        assert_eq!(maps.len(), 1);
         assert_eq!(maps[0].node, target_nodes[0]);
         assert_eq!(maps[0].param, target_param);
-        assert_eq!(maps[0].bus, source_bus.raw());
+        assert_eq!(maps[0].bus, source_buses[0].raw());
 
         let s = state.read().await;
-        let key = (source_voice, source_port);
-        let recorded = s.param_routes.get(&key).expect("source key tracked");
-        assert_eq!(recorded.len(), 1);
-        assert_eq!(recorded[0], (target_voice, target_param));
+        assert!(s
+            .param_routes_set
+            .contains_key(&(sources[0], "out".to_string())));
+        assert!(s.param_routes_bend.is_empty());
+        assert!(s.param_summers.is_empty());
     }
 
     #[tokio::test]
-    async fn finalize_params_multiple_targets_from_same_source() {
-        // Multiple Param routes from same source: all targets see the source signal.
-        let (handler, backend, state, source_voice, source_port, _, _, source_bus, _) =
-            setup_param_route_pair(0).await;
+    async fn set_finalize_drops_extra_sources_with_warning_no_summer_spawned() {
+        // Defence-in-depth: the script-time check rejects multi-source SET,
+        // but if a misbehaving caller stuffs two SET sources at the same
+        // target, finalize_params must drop the extras (warning) rather than
+        // produce undefined behaviour. No summer is spawned — SET path is
+        // direct only.
+        let (handler, backend, state, sources, source_buses, target_voice, target_param, target_nodes) =
+            setup_split_fixture(2, 1).await;
 
-        // Build two extra target voices, each with one active synth node.
-        let target_a = VoiceId::new(100);
-        let target_b = VoiceId::new(101);
-        let (node_a, node_b);
+        let set_diff = route_for_sources(&sources, target_voice, &target_param);
+        handler
+            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .await
+            .unwrap();
+
+        let creates = backend.creates();
+        assert!(creates.iter().all(|c| !c.def.starts_with("param_kr_")));
+
+        // Map binds to the lower-id source bus (sort order is deterministic).
+        let mut sorted: Vec<u32> = source_buses.iter().map(|b| b.raw()).collect();
+        sorted.sort();
+        let maps = backend.maps();
+        assert_eq!(maps.len(), 1);
+        assert_eq!(maps[0].node, target_nodes[0]);
+        assert_eq!(maps[0].bus, sorted[0]);
+
+        // Both source-side keys are still recorded in param_routes_set.
+        let s = state.read().await;
+        assert_eq!(s.param_routes_set.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn set_removal_unmaps_target() {
+        // Removed SET route: target unmapped via `/n_map -1`.
+        let (handler, backend, state, sources, _source_buses, target_voice, target_param, target_nodes) =
+            setup_split_fixture(1, 1).await;
+
+        // Stamp a baseline value the runtime should fall back to.
         {
             let mut s = state.write().await;
-            node_a = s.alloc_node_id();
-            node_b = s.alloc_node_id();
-            let bus_a = s.alloc_audio_bus(2);
-            let bus_b = s.alloc_audio_bus(2);
-            let group = s.voices.values().next().unwrap().config.group;
-            s.voices.insert(
-                target_a,
-                VoiceState {
-                    id: target_a,
-                    config: VoiceConfig::new("ta", "ar_synth", group),
-                    active_nodes: vec![node_a],
-                    note_nodes: HashMap::new(),
-                    round_robin_position: 0,
-                    pending_params: HashMap::new(),
-                    output_buses: vec![("out".to_string(), bus_a)],
-                },
-            );
-            s.voices.insert(
-                target_b,
-                VoiceState {
-                    id: target_b,
-                    config: VoiceConfig::new("tb", "ar_synth", group),
-                    active_nodes: vec![node_b],
-                    note_nodes: HashMap::new(),
-                    round_robin_position: 0,
-                    pending_params: HashMap::new(),
-                    output_buses: vec![("out".to_string(), bus_b)],
-                },
-            );
+            s.voices
+                .get_mut(&target_voice)
+                .unwrap()
+                .config
+                .params
+                .insert(target_param.clone(), 1234.0);
         }
 
-        let mut diff = ParamRouteDiff::default();
-        diff.additions.push(ParamRoute {
-            source_voice,
-            source_port: source_port.clone(),
-            target_voice: target_a,
-            target_param: "cutoff".to_string(),
-        });
-        diff.additions.push(ParamRoute {
-            source_voice,
-            source_port: source_port.clone(),
-            target_voice: target_b,
-            target_param: "amp".to_string(),
-        });
-        handler.finalize_params(&diff).await.unwrap();
-
-        let maps = backend.maps();
-        assert_eq!(maps.len(), 2, "one /n_map per (target voice, param) pair");
-        assert!(maps
-            .iter()
-            .any(|m| m.node == node_a && m.param == "cutoff" && m.bus == source_bus.raw()));
-        assert!(maps
-            .iter()
-            .any(|m| m.node == node_b && m.param == "amp" && m.bus == source_bus.raw()));
-
-        let s = state.read().await;
-        let recorded = s
-            .param_routes
-            .get(&(source_voice, source_port))
-            .expect("source key tracked");
-        assert_eq!(recorded.len(), 2, "both targets registered under the source");
-    }
-
-    #[tokio::test]
-    async fn finalize_params_removal_unmaps_target_to_default() {
-        // Removed route: target param returns to default (we issue the
-        // scsynth unmap sentinel `/n_map node param -1`).
-        let (
-            handler,
-            backend,
-            state,
-            source_voice,
-            source_port,
-            target_voice,
-            target_param,
-            _source_bus,
-            target_nodes,
-        ) = setup_param_route_pair(1).await;
-
-        let route = ParamRoute {
-            source_voice,
-            source_port: source_port.clone(),
-            target_voice,
-            target_param: target_param.clone(),
-        };
-        let mut add = ParamRouteDiff::default();
-        add.additions.push(route.clone());
-        handler.finalize_params(&add).await.unwrap();
-        assert_eq!(backend.maps().len(), 1);
+        let set_diff = route_for_sources(&sources, target_voice, &target_param);
+        handler
+            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .await
+            .unwrap();
 
         let mut rm = ParamRouteDiff::default();
-        rm.removals.push(route);
-        handler.finalize_params(&rm).await.unwrap();
+        rm.removals.push(ParamRoute {
+            source_voice: sources[0],
+            source_port: "out".to_string(),
+            target_voice,
+            target_param: target_param.clone(),
+        });
+        handler
+            .finalize_params(&rm, &ParamRouteDiff::default())
+            .await
+            .unwrap();
 
         let maps = backend.maps();
-        assert_eq!(maps.len(), 2, "addition + unmap");
-        let unmap = &maps[1];
+        let unmap = maps.last().unwrap();
         assert_eq!(unmap.node, target_nodes[0]);
-        assert_eq!(unmap.param, target_param);
-        assert_eq!(
-            unmap.bus,
-            u32::MAX,
-            "removed Param emits the scsynth unmap sentinel (-1 as u32::MAX)",
-        );
+        assert_eq!(unmap.bus, u32::MAX, "scsynth -1 unmap sentinel");
 
         let s = state.read().await;
-        assert!(
-            !s.param_routes.contains_key(&(source_voice, source_port)),
-            "source key pruned when its target list goes empty",
-        );
+        assert!(!s
+            .param_routes_set
+            .contains_key(&(sources[0], "out".to_string())));
     }
 
-    #[tokio::test]
-    async fn finalize_params_changed_target_unmaps_old_and_maps_new() {
-        // Story 3 spec: "Changed Param: unmap old + map new". A change at the
-        // diff layer is a removal + addition pair; verify both are issued.
-        let (
-            handler,
-            backend,
-            state,
-            source_voice,
-            source_port,
-            _,
-            _,
-            source_bus,
-            _,
-        ) = setup_param_route_pair(0).await;
+    // ---------- BEND path ----------
 
-        let target_a = VoiceId::new(100);
-        let target_b = VoiceId::new(101);
-        let (node_a, node_b);
+    #[tokio::test]
+    async fn bend_finalize_single_source_spawns_modulate_1_summer_with_baseline() {
+        // .modulate_by N=1: still spawns a summer (param_kr_modulate_1) so
+        // the user's set_param value rides as `baseline` underneath the
+        // single source. /n_map binds to the summer's intermediate bus.
+        let (handler, backend, state, sources, source_buses, target_voice, target_param, target_nodes) =
+            setup_split_fixture(1, 1).await;
+
+        // Stamp a baseline value before installing the bend route.
         {
             let mut s = state.write().await;
-            node_a = s.alloc_node_id();
-            node_b = s.alloc_node_id();
-            let bus_a = s.alloc_audio_bus(2);
-            let bus_b = s.alloc_audio_bus(2);
-            let group = s.voices.values().next().unwrap().config.group;
-            s.voices.insert(
-                target_a,
-                VoiceState {
-                    id: target_a,
-                    config: VoiceConfig::new("ta", "ar_synth", group),
-                    active_nodes: vec![node_a],
-                    note_nodes: HashMap::new(),
-                    round_robin_position: 0,
-                    pending_params: HashMap::new(),
-                    output_buses: vec![("out".to_string(), bus_a)],
-                },
-            );
-            s.voices.insert(
-                target_b,
-                VoiceState {
-                    id: target_b,
-                    config: VoiceConfig::new("tb", "ar_synth", group),
-                    active_nodes: vec![node_b],
-                    note_nodes: HashMap::new(),
-                    round_robin_position: 0,
-                    pending_params: HashMap::new(),
-                    output_buses: vec![("out".to_string(), bus_b)],
-                },
-            );
+            s.voices
+                .get_mut(&target_voice)
+                .unwrap()
+                .config
+                .params
+                .insert(target_param.clone(), 1500.0);
         }
 
-        // First map source → A; then change to source → B.
-        let mut add = ParamRouteDiff::default();
-        add.additions.push(ParamRoute {
-            source_voice,
-            source_port: source_port.clone(),
-            target_voice: target_a,
-            target_param: "cutoff".to_string(),
-        });
-        handler.finalize_params(&add).await.unwrap();
+        let bend_diff = route_for_sources(&sources, target_voice, &target_param);
+        handler
+            .finalize_params(&ParamRouteDiff::default(), &bend_diff)
+            .await
+            .unwrap();
 
-        let mut chg = ParamRouteDiff::default();
-        chg.removals.push(ParamRoute {
-            source_voice,
-            source_port: source_port.clone(),
-            target_voice: target_a,
-            target_param: "cutoff".to_string(),
-        });
-        chg.additions.push(ParamRoute {
-            source_voice,
-            source_port: source_port.clone(),
-            target_voice: target_b,
-            target_param: "cutoff".to_string(),
-        });
-        handler.finalize_params(&chg).await.unwrap();
+        let creates = backend.creates();
+        let summers: Vec<&CreateSynthCall> = creates
+            .iter()
+            .filter(|c| c.def == "param_kr_modulate_1")
+            .collect();
+        assert_eq!(summers.len(), 1, "BEND N=1 must spawn modulate_1 summer");
+        let summer = summers[0];
+        assert_eq!(*summer.params.get("baseline").unwrap(), 1500.0);
+        assert_eq!(*summer.params.get("in_a").unwrap() as u32, source_buses[0].raw());
+        let intermediate = *summer.params.get("out_bus").unwrap() as u32;
+        assert!(intermediate >= 1000, "intermediate bus from control pool");
 
         let maps = backend.maps();
-        assert_eq!(maps.len(), 3, "addition, then unmap of A, then map of B");
-        // First call: initial addition on A.
-        assert_eq!(maps[0].node, node_a);
-        assert_eq!(maps[0].bus, source_bus.raw());
-        // Second call: unmap of A.
-        assert_eq!(maps[1].node, node_a);
-        assert_eq!(maps[1].bus, u32::MAX);
-        // Third call: new mapping on B.
-        assert_eq!(maps[2].node, node_b);
-        assert_eq!(maps[2].bus, source_bus.raw());
+        assert_eq!(maps.len(), 1);
+        assert_eq!(maps[0].node, target_nodes[0]);
+        assert_eq!(maps[0].bus, intermediate);
 
         let s = state.read().await;
         let recorded = s
-            .param_routes
-            .get(&(source_voice, source_port))
-            .expect("source key still present");
-        assert_eq!(recorded.len(), 1);
-        assert_eq!(recorded[0], (target_b, "cutoff".to_string()));
+            .param_summers
+            .get(&(target_voice, target_param.clone()))
+            .expect("summer tracked");
+        assert_eq!(recorded.0, summer.node);
+        assert_eq!(recorded.1.raw(), intermediate);
+        assert_eq!(recorded.2, 1, "arity recorded as 1");
     }
 
     #[tokio::test]
-    async fn finalize_params_voice_delete_drains_source_and_target_sides() {
-        // Voice delete cleans both source-side AND target-side routes.
-        // Build: source S has kr port. Three targets T0 / T1 / T2. S→T0
-        // and S→T1 are param routes. Also another source S2 routes to T0.
-        // Deleting T0 should:
-        //   - remove the S→T0 entry from S's source list (target-side cleanup)
-        //   - remove the S2→T0 entry similarly
-        //   - leave S→T1 intact
-        // Deleting S should:
-        //   - drain S's entire entry (source-side cleanup) and surface the
-        //     remaining (T1, *) tuples to the caller for unmap dispatch.
+    async fn bend_finalize_multi_source_spawns_modulate_n_summer() {
+        // .modulate_by N=3: param_kr_modulate_3 with baseline + in_a + in_b + in_c.
+        let (handler, backend, _state, sources, source_buses, target_voice, target_param, _) =
+            setup_split_fixture(3, 1).await;
+
+        let bend_diff = route_for_sources(&sources, target_voice, &target_param);
+        handler
+            .finalize_params(&ParamRouteDiff::default(), &bend_diff)
+            .await
+            .unwrap();
+
+        let creates = backend.creates();
+        let summers: Vec<&CreateSynthCall> = creates
+            .iter()
+            .filter(|c| c.def == "param_kr_modulate_3")
+            .collect();
+        assert_eq!(summers.len(), 1);
+        let summer = summers[0];
+        let mut sorted: Vec<u32> = source_buses.iter().map(|b| b.raw()).collect();
+        sorted.sort();
+        assert_eq!(*summer.params.get("in_a").unwrap() as u32, sorted[0]);
+        assert_eq!(*summer.params.get("in_b").unwrap() as u32, sorted[1]);
+        assert_eq!(*summer.params.get("in_c").unwrap() as u32, sorted[2]);
+        // baseline defaults to 0 when no prior set_param was issued.
+        assert_eq!(*summer.params.get("baseline").unwrap(), 0.0);
+    }
+
+    #[tokio::test]
+    async fn bend_arity_change_respawns_summer_freeing_old_node_and_bus() {
+        // 3-source bend → 2-source bend: old summer freed, new modulate_2
+        // spawned, target rebound to the new intermediate bus, old
+        // intermediate bus returned to the control-bus pool.
+        let (handler, backend, state, sources, _source_buses, target_voice, target_param, target_node) =
+            setup_split_fixture(3, 1).await;
+
+        let bend_diff = route_for_sources(&sources, target_voice, &target_param);
+        handler
+            .finalize_params(&ParamRouteDiff::default(), &bend_diff)
+            .await
+            .unwrap();
+
+        let (old_summer_node, old_intermediate, old_arity) = {
+            let s = state.read().await;
+            *s.param_summers
+                .get(&(target_voice, target_param.clone()))
+                .unwrap()
+        };
+        assert_eq!(old_arity, 3);
+
+        // Drop one source.
+        let mut rm = ParamRouteDiff::default();
+        rm.removals.push(ParamRoute {
+            source_voice: sources[0],
+            source_port: "out".to_string(),
+            target_voice,
+            target_param: target_param.clone(),
+        });
+        handler
+            .finalize_params(&ParamRouteDiff::default(), &rm)
+            .await
+            .unwrap();
+
+        assert!(backend.frees().contains(&old_summer_node));
+        let creates = backend.creates();
+        let summers: Vec<&CreateSynthCall> = creates
+            .iter()
+            .filter(|c| c.def.starts_with("param_kr_modulate_"))
+            .collect();
+        assert_eq!(summers.len(), 2);
+        assert_eq!(summers[0].def, "param_kr_modulate_3");
+        assert_eq!(summers[1].def, "param_kr_modulate_2");
+
+        let new_intermediate = *summers[1].params.get("out_bus").unwrap() as u32;
+        let last_map = backend.maps().last().unwrap().clone();
+        assert_eq!(last_map.node, target_node[0]);
+        assert_eq!(last_map.bus, new_intermediate);
+
+        // Old intermediate bus is back in the pool — next alloc reuses it.
+        let mut s = state.write().await;
+        let reused = s.alloc_control_bus().raw();
+        assert_eq!(reused, old_intermediate.raw(), "intermediate bus recycled");
+    }
+
+    #[tokio::test]
+    async fn bend_remove_all_sources_frees_summer_and_unmaps() {
+        let (handler, backend, state, sources, _source_buses, target_voice, target_param, target_nodes) =
+            setup_split_fixture(2, 1).await;
+
+        // Stamp a baseline so the unmap restores it.
+        {
+            let mut s = state.write().await;
+            s.voices
+                .get_mut(&target_voice)
+                .unwrap()
+                .config
+                .params
+                .insert(target_param.clone(), 222.0);
+        }
+
+        let bend_diff = route_for_sources(&sources, target_voice, &target_param);
+        handler
+            .finalize_params(&ParamRouteDiff::default(), &bend_diff)
+            .await
+            .unwrap();
+
+        let summer_node = {
+            let s = state.read().await;
+            s.param_summers
+                .get(&(target_voice, target_param.clone()))
+                .unwrap()
+                .0
+        };
+
+        let mut rm = ParamRouteDiff::default();
+        for sv in &sources {
+            rm.removals.push(ParamRoute {
+                source_voice: *sv,
+                source_port: "out".to_string(),
+                target_voice,
+                target_param: target_param.clone(),
+            });
+        }
+        handler
+            .finalize_params(&ParamRouteDiff::default(), &rm)
+            .await
+            .unwrap();
+
+        assert!(backend.frees().contains(&summer_node));
+        let last_map = backend.maps().last().unwrap().clone();
+        assert_eq!(last_map.node, target_nodes[0]);
+        assert_eq!(last_map.bus, u32::MAX);
+
+        let s = state.read().await;
+        assert!(s.param_routes_bend.is_empty());
+        assert!(s.param_summers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn bend_no_op_diff_preserves_existing_summer() {
+        // Hot-reload signal: same source set, same target — diff is empty,
+        // finalize short-circuits, the summer node + intermediate bus
+        // outlive the call.
+        let (handler, backend, state, sources, _source_buses, target_voice, target_param, _) =
+            setup_split_fixture(2, 1).await;
+
+        let bend_diff = route_for_sources(&sources, target_voice, &target_param);
+        handler
+            .finalize_params(&ParamRouteDiff::default(), &bend_diff)
+            .await
+            .unwrap();
+
+        let snapshot = {
+            let s = state.read().await;
+            s.param_summers.clone()
+        };
+        let creates_before = backend.creates().len();
+        let frees_before = backend.frees().len();
+
+        handler
+            .finalize_params(&ParamRouteDiff::default(), &ParamRouteDiff::default())
+            .await
+            .unwrap();
+
+        let s = state.read().await;
+        assert_eq!(s.param_summers, snapshot, "summer untouched on no-op diff");
+        assert_eq!(backend.creates().len(), creates_before);
+        assert_eq!(backend.frees().len(), frees_before);
+    }
+
+    #[tokio::test]
+    async fn voice_delete_path_drains_both_set_and_bend_maps() {
+        // Voice delete cleans both source-side AND target-side routes from
+        // both maps.
         let backend = Arc::new(MockBackend::new());
         let state = Arc::new(RwLock::new(State::default()));
         let _handler: RoutesHandler<MockBackend> =
@@ -2113,510 +2269,83 @@ mod tests {
         let t1 = VoiceId::new(11);
         {
             let mut st = state.write().await;
-            st.param_routes.insert(
+            st.param_routes_set.insert(
                 (s_voice, "env".to_string()),
-                vec![
-                    (t0, "cutoff".to_string()),
-                    (t1, "amp".to_string()),
-                ],
+                vec![(t0, "cutoff".to_string())],
             );
-            st.param_routes.insert(
+            st.param_routes_bend.insert(
+                (s_voice, "lfo".to_string()),
+                vec![(t1, "amp".to_string())],
+            );
+            st.param_routes_bend.insert(
                 (s2_voice, "lfo".to_string()),
                 vec![(t0, "freq".to_string())],
             );
         }
 
-        // Delete T0 — target-side scrubbing only; no source key matches T0.
         let drained_t0 = {
             let mut st = state.write().await;
             st.take_voice_param_routes(t0)
         };
-        assert!(
-            drained_t0.is_empty(),
-            "no source-side entries belong to target voice T0",
-        );
-        let s = state.read().await;
-        assert_eq!(
-            s.param_routes
-                .get(&(s_voice, "env".to_string()))
-                .map(|v| v.len()),
-            Some(1),
-            "S still routes to T1 only; T0 entry removed",
-        );
-        assert_eq!(
-            s.param_routes.get(&(s_voice, "env".to_string())).unwrap()[0],
-            (t1, "amp".to_string()),
-        );
-        assert!(
-            !s.param_routes.contains_key(&(s2_voice, "lfo".to_string())),
-            "S2's only target was T0; entry pruned to empty and removed",
-        );
-        drop(s);
-
-        // Delete S — drains the source key, returns the remaining
-        // `(target, param)` pairs to the caller.
-        let drained_s = {
-            let mut st = state.write().await;
-            st.take_voice_param_routes(s_voice)
-        };
-        assert_eq!(drained_s.len(), 1, "one source key drained from S");
-        assert_eq!(drained_s[0].0, (s_voice, "env".to_string()));
-        assert_eq!(drained_s[0].1, vec![(t1, "amp".to_string())]);
+        assert!(drained_t0.is_empty(), "no source-side entries belong to t0");
         let s = state.read().await;
         assert!(
-            s.param_routes.is_empty(),
-            "all param-route bookkeeping is now drained",
+            !s.param_routes_set
+                .contains_key(&(s_voice, "env".to_string())),
+            "SET entry s→t0 cleaned up",
+        );
+        assert!(
+            s.param_routes_bend
+                .get(&(s_voice, "lfo".to_string()))
+                .is_some(),
+            "BEND s→t1 survives — different target",
+        );
+        assert!(
+            !s.param_routes_bend
+                .contains_key(&(s2_voice, "lfo".to_string())),
+            "BEND s2→t0 entry pruned",
         );
     }
 
-    // =========================================================================
-    // Multi-source kr fan-in (param_kr_sum_<n>) — multi-output v2
-    // =========================================================================
+    #[tokio::test]
+    async fn cross_verb_runtime_conflict_logs_and_unmaps() {
+        // Defence-in-depth: a script-time bug shouldn't blow up the runtime.
+        // If both SET and BEND maps end up with the same target, finalize
+        // logs a warning and unmaps the target rather than producing
+        // undefined behaviour.
+        let (handler, backend, state, sources, _source_buses, target_voice, target_param, target_nodes) =
+            setup_split_fixture(2, 1).await;
 
-    /// Build a fan-in fixture: `n` kr-source voices each owning one kr port,
-    /// plus one target voice with one active synth node and one ar output.
-    /// Returns the handler/backend/state and `(source_voices, source_buses,
-    /// target_voice, target_param, target_node)`.
-    async fn setup_fan_in_fixture(
-        n: usize,
-    ) -> (
-        RoutesHandler<MockBackend>,
-        Arc<MockBackend>,
-        Arc<RwLock<State>>,
-        Vec<VoiceId>,
-        Vec<BusId>,
-        VoiceId,
-        String,
-        NodeId,
-    ) {
-        let backend = Arc::new(MockBackend::new());
-        let state = Arc::new(RwLock::new(State::default()));
-        let handler = RoutesHandler::new(backend.clone(), state.clone());
-
-        let voice_group_id = GroupId::new(1);
-        let target_voice = VoiceId::new(100);
-        let target_param = "cutoff".to_string();
-        let mut source_voices = Vec::with_capacity(n);
-        let mut source_buses = Vec::with_capacity(n);
-        let target_node;
+        // Manually install entries in both maps (simulating a script-time
+        // validation slip).
         {
             let mut s = state.write().await;
-
-            s.synthdefs.insert("kr_synth".to_string());
-            s.synthdef_outputs.insert(
-                "kr_synth".to_string(),
-                vec![vibelang_dsp::OutputPort {
-                    name: "out".to_string(),
-                    channels: 1,
-                    rate: vibelang_dsp::PortRate::Kr,
-                }],
+            s.param_routes_set.insert(
+                (sources[0], "out".to_string()),
+                vec![(target_voice, target_param.clone())],
             );
-            s.synthdefs.insert("ar_synth".to_string());
-            s.synthdef_outputs.insert(
-                "ar_synth".to_string(),
-                vec![vibelang_dsp::OutputPort {
-                    name: "out".to_string(),
-                    channels: 2,
-                    rate: vibelang_dsp::PortRate::Ar,
-                }],
-            );
-
-            let voice_group_node = s.alloc_node_id();
-            let voice_group_bus = s.alloc_audio_bus(2);
-            s.groups.insert(
-                voice_group_id,
-                GroupState {
-                    id: voice_group_id,
-                    name: "g".to_string(),
-                    parent: None,
-                    node_id: voice_group_node,
-                    audio_bus: voice_group_bus,
-                    link_synth_node_id: None,
-                    muted: false,
-                    soloed: false,
-                    params: ParamMap::new(),
-                    output_bus: None,
-                },
-            );
-
-            for i in 0..n {
-                let vid = VoiceId::new(10 + i as u32);
-                let kr_bus = s.alloc_control_bus();
-                let bus = BusId::new(kr_bus.raw());
-                s.voices.insert(
-                    vid,
-                    VoiceState {
-                        id: vid,
-                        config: VoiceConfig::new(
-                            &format!("src{}", i),
-                            "kr_synth",
-                            voice_group_id,
-                        ),
-                        active_nodes: Vec::new(),
-                        note_nodes: HashMap::new(),
-                        round_robin_position: 0,
-                        pending_params: HashMap::new(),
-                        output_buses: vec![("out".to_string(), bus)],
-                    },
-                );
-                source_voices.push(vid);
-                source_buses.push(bus);
-            }
-
-            target_node = s.alloc_node_id();
-            let target_audio_bus = s.alloc_audio_bus(2);
-            s.voices.insert(
-                target_voice,
-                VoiceState {
-                    id: target_voice,
-                    config: VoiceConfig::new("target", "ar_synth", voice_group_id),
-                    active_nodes: vec![target_node],
-                    note_nodes: HashMap::new(),
-                    round_robin_position: 0,
-                    pending_params: HashMap::new(),
-                    output_buses: vec![("out".to_string(), target_audio_bus)],
-                },
+            s.param_routes_bend.insert(
+                (sources[1], "out".to_string()),
+                vec![(target_voice, target_param.clone())],
             );
         }
 
-        (
-            handler,
-            backend,
-            state,
-            source_voices,
-            source_buses,
-            target_voice,
-            target_param,
-            target_node,
-        )
-    }
-
-    /// Push a `(source → target)` addition onto a diff for every source.
-    fn add_routes_for(
-        diff: &mut ParamRouteDiff,
-        sources: &[VoiceId],
-        target_voice: VoiceId,
-        target_param: &str,
-    ) {
-        for sv in sources {
-            diff.additions.push(ParamRoute {
-                source_voice: *sv,
-                source_port: "out".to_string(),
-                target_voice,
-                target_param: target_param.to_string(),
-            });
-        }
-    }
-
-    #[tokio::test]
-    async fn finalize_params_two_sources_spawn_summer_2_and_map_to_intermediate() {
-        // Two kr sources to one target param: a single param_kr_sum_2 synth
-        // is spawned, the intermediate control bus is allocated from the
-        // free list, and the target's /n_map binds to that intermediate bus
-        // (not to either source bus directly).
-        let (handler, backend, state, sources, source_buses, target_voice, target_param, target_node) =
-            setup_fan_in_fixture(2).await;
-
+        // Pass an addition for one of the edges as a SET so the planner walks
+        // the affected target and sees both maps populated.
         let mut diff = ParamRouteDiff::default();
-        add_routes_for(&mut diff, &sources, target_voice, &target_param);
-
-        handler.finalize_params(&diff).await.unwrap();
-
-        let creates = backend.creates();
-        let summers: Vec<&CreateSynthCall> = creates
-            .iter()
-            .filter(|c| c.def == "param_kr_sum_2")
-            .collect();
-        assert_eq!(summers.len(), 1, "exactly one summer synth created");
-        let summer = summers[0];
-        // in_a + in_b are the two source buses (sorted by bus id internally).
-        let mut sorted_sources: Vec<u32> = source_buses.iter().map(|b| b.raw()).collect();
-        sorted_sources.sort();
-        assert_eq!(*summer.params.get("in_a").unwrap() as u32, sorted_sources[0]);
-        assert_eq!(*summer.params.get("in_b").unwrap() as u32, sorted_sources[1]);
-        let intermediate = *summer.params.get("out_bus").unwrap() as u32;
-        // Intermediate must come from the control-bus allocator (>= 1000).
-        assert!(intermediate >= 1000);
-
-        let maps = backend.maps();
-        assert_eq!(maps.len(), 1, "one /n_map for the lone target node");
-        assert_eq!(maps[0].node, target_node);
-        assert_eq!(maps[0].param, target_param);
-        assert_eq!(maps[0].bus, intermediate);
-
-        let s = state.read().await;
-        let recorded = s
-            .param_summers
-            .get(&(target_voice, target_param.clone()))
-            .expect("summer tracked in param_summers");
-        assert_eq!(recorded.0, summer.node);
-        assert_eq!(recorded.1.raw(), intermediate);
-        // Both source-side entries are recorded.
-        let total_targets: usize = s
-            .param_routes
-            .values()
-            .map(|t| t.len())
-            .sum();
-        assert_eq!(total_targets, 2);
-    }
-
-    #[tokio::test]
-    async fn finalize_params_three_sources_spawn_summer_3() {
-        // Three kr sources → param_kr_sum_3 with in_a/in_b/in_c populated.
-        let (handler, backend, _state, sources, source_buses, target_voice, target_param, _) =
-            setup_fan_in_fixture(3).await;
-
-        let mut diff = ParamRouteDiff::default();
-        add_routes_for(&mut diff, &sources, target_voice, &target_param);
-
-        handler.finalize_params(&diff).await.unwrap();
-
-        let creates = backend.creates();
-        let summers: Vec<&CreateSynthCall> = creates
-            .iter()
-            .filter(|c| c.def == "param_kr_sum_3")
-            .collect();
-        assert_eq!(summers.len(), 1);
-        let summer = summers[0];
-        let mut sorted_sources: Vec<u32> = source_buses.iter().map(|b| b.raw()).collect();
-        sorted_sources.sort();
-        assert_eq!(*summer.params.get("in_a").unwrap() as u32, sorted_sources[0]);
-        assert_eq!(*summer.params.get("in_b").unwrap() as u32, sorted_sources[1]);
-        assert_eq!(*summer.params.get("in_c").unwrap() as u32, sorted_sources[2]);
-    }
-
-    #[tokio::test]
-    async fn finalize_params_remove_one_of_three_respawns_summer_2() {
-        // 3 sources → 2 sources: old _3 freed (node + intermediate bus
-        // returned to the pool), new _2 spawned with the surviving sources,
-        // target's /n_map points at the new intermediate bus.
-        let (handler, backend, state, sources, _source_buses, target_voice, target_param, target_node) =
-            setup_fan_in_fixture(3).await;
-
-        let mut add = ParamRouteDiff::default();
-        add_routes_for(&mut add, &sources, target_voice, &target_param);
-        handler.finalize_params(&add).await.unwrap();
-
-        let (old_summer_node, old_intermediate) = {
-            let s = state.read().await;
-            *s.param_summers
-                .get(&(target_voice, target_param.clone()))
-                .unwrap()
-        };
-
-        // Drop the first source. Affected target = (target_voice, target_param).
-        let mut rm = ParamRouteDiff::default();
-        rm.removals.push(ParamRoute {
+        diff.additions.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
             target_voice,
             target_param: target_param.clone(),
         });
-        handler.finalize_params(&rm).await.unwrap();
+        handler
+            .finalize_params(&diff, &ParamRouteDiff::default())
+            .await
+            .unwrap();
 
-        // Old summer node must have been freed.
-        let frees = backend.frees();
-        assert!(
-            frees.contains(&old_summer_node),
-            "old summer node freed on respawn",
-        );
-
-        // New summer is param_kr_sum_2.
-        let creates = backend.creates();
-        let summers: Vec<&CreateSynthCall> =
-            creates.iter().filter(|c| c.def.starts_with("param_kr_sum_")).collect();
-        assert_eq!(summers.len(), 2, "one summer per finalize call");
-        assert_eq!(summers[0].def, "param_kr_sum_3");
-        assert_eq!(summers[1].def, "param_kr_sum_2");
-
-        // Target now bound to the *new* intermediate bus.
-        let new_intermediate =
-            *summers[1].params.get("out_bus").unwrap() as u32;
-        let maps = backend.maps();
-        let last_map = maps.last().unwrap();
-        assert_eq!(last_map.node, target_node);
-        assert_eq!(last_map.bus, new_intermediate);
-
-        // The old intermediate bus should have returned to the free list, so
-        // a fresh alloc reuses it before reaching for a brand-new ID.
-        let mut s = state.write().await;
-        let reused = s.alloc_control_bus().raw();
-        assert_eq!(reused, old_intermediate.raw(), "intermediate bus recycled");
-    }
-
-    #[tokio::test]
-    async fn finalize_params_remove_to_one_source_falls_back_to_direct_map() {
-        // 2 sources → 1 source: summer + intermediate freed, /n_map binds
-        // directly to the surviving source's control bus.
-        let (handler, backend, state, sources, source_buses, target_voice, target_param, target_node) =
-            setup_fan_in_fixture(2).await;
-
-        let mut add = ParamRouteDiff::default();
-        add_routes_for(&mut add, &sources, target_voice, &target_param);
-        handler.finalize_params(&add).await.unwrap();
-        let (summer_node, _) = {
-            let s = state.read().await;
-            *s.param_summers
-                .get(&(target_voice, target_param.clone()))
-                .unwrap()
-        };
-
-        // Pick the source with the larger bus id so it's the deterministic
-        // survivor regardless of allocator order (we always remove sources[0]).
-        let surviving_source = sources[1];
-        let surviving_bus = source_buses[1];
-        let mut rm = ParamRouteDiff::default();
-        rm.removals.push(ParamRoute {
-            source_voice: sources[0],
-            source_port: "out".to_string(),
-            target_voice,
-            target_param: target_param.clone(),
-        });
-        handler.finalize_params(&rm).await.unwrap();
-
-        // Old summer freed.
-        assert!(backend.frees().contains(&summer_node));
-
-        // No new summer spawned in this finalize.
-        let creates = backend.creates();
-        let new_summers: Vec<&CreateSynthCall> = creates
-            .iter()
-            .skip_while(|c| c.def != "param_kr_sum_2")
-            .skip(1)
-            .filter(|c| c.def.starts_with("param_kr_sum_"))
-            .collect();
-        assert!(
-            new_summers.is_empty(),
-            "no fresh summer when collapsing to a single source",
-        );
-
-        // Target /n_map redirected to the surviving source's bus.
-        let last_map = backend.maps().last().cloned().unwrap();
-        assert_eq!(last_map.node, target_node);
-        assert_eq!(last_map.bus, surviving_bus.raw());
-
-        // param_summers entry pruned.
-        let s = state.read().await;
-        assert!(!s
-            .param_summers
-            .contains_key(&(target_voice, target_param.clone())));
-        // Source-side bookkeeping: only the surviving source's key remains.
-        assert_eq!(s.param_routes.len(), 1);
-        assert!(s
-            .param_routes
-            .contains_key(&(surviving_source, "out".to_string())));
-    }
-
-    #[tokio::test]
-    async fn finalize_params_remove_all_sources_unmaps() {
-        // 2 sources → 0 sources: summer freed and target unmapped.
-        let (handler, backend, state, sources, _source_buses, target_voice, target_param, target_node) =
-            setup_fan_in_fixture(2).await;
-
-        let mut add = ParamRouteDiff::default();
-        add_routes_for(&mut add, &sources, target_voice, &target_param);
-        handler.finalize_params(&add).await.unwrap();
-
-        let mut rm = ParamRouteDiff::default();
-        for sv in &sources {
-            rm.removals.push(ParamRoute {
-                source_voice: *sv,
-                source_port: "out".to_string(),
-                target_voice,
-                target_param: target_param.clone(),
-            });
-        }
-        handler.finalize_params(&rm).await.unwrap();
-
-        let last_map = backend.maps().last().cloned().unwrap();
-        assert_eq!(last_map.node, target_node);
-        assert_eq!(
-            last_map.bus,
-            u32::MAX,
-            "target unmapped via the scsynth -1 sentinel",
-        );
-
-        let s = state.read().await;
-        assert!(s.param_routes.is_empty());
-        assert!(s.param_summers.is_empty());
-    }
-
-    #[tokio::test]
-    async fn finalize_params_add_second_source_upgrades_to_summer() {
-        // Existing single-source target: adding a second source spawns a
-        // summer and remaps the target onto the intermediate bus. Even
-        // though the second-source addition is the only route in the diff,
-        // the planner must enumerate the *full* source set after applying
-        // the diff (i.e. the pre-existing source must contribute to the
-        // summer's input list).
-        let (handler, backend, state, sources, source_buses, target_voice, target_param, target_node) =
-            setup_fan_in_fixture(2).await;
-
-        // First, install the single-source baseline.
-        let mut step1 = ParamRouteDiff::default();
-        step1.additions.push(ParamRoute {
-            source_voice: sources[0],
-            source_port: "out".to_string(),
-            target_voice,
-            target_param: target_param.clone(),
-        });
-        handler.finalize_params(&step1).await.unwrap();
-
-        // No summer yet; direct /n_map to source[0]'s bus.
-        {
-            let s = state.read().await;
-            assert!(s.param_summers.is_empty());
-        }
-        let direct_map = backend.maps().last().cloned().unwrap();
-        assert_eq!(direct_map.bus, source_buses[0].raw());
-
-        // Now add the second source.
-        let mut step2 = ParamRouteDiff::default();
-        step2.additions.push(ParamRoute {
-            source_voice: sources[1],
-            source_port: "out".to_string(),
-            target_voice,
-            target_param: target_param.clone(),
-        });
-        handler.finalize_params(&step2).await.unwrap();
-
-        let creates = backend.creates();
-        let summers: Vec<&CreateSynthCall> =
-            creates.iter().filter(|c| c.def == "param_kr_sum_2").collect();
-        assert_eq!(summers.len(), 1);
-        let intermediate = *summers[0].params.get("out_bus").unwrap() as u32;
-        let last_map = backend.maps().last().cloned().unwrap();
-        assert_eq!(last_map.node, target_node);
-        assert_eq!(last_map.bus, intermediate);
-    }
-
-    #[tokio::test]
-    async fn finalize_params_no_op_diff_preserves_existing_summer() {
-        // Hot-reload signal: same source set, same target — diff is empty,
-        // finalize short-circuits, the summer node + intermediate bus
-        // outlive the call. (Equality at the bus-ID level guarantees the
-        // backend keeps reading from the same intermediate.)
-        let (handler, backend, state, sources, _source_buses, target_voice, target_param, _) =
-            setup_fan_in_fixture(2).await;
-
-        let mut diff = ParamRouteDiff::default();
-        add_routes_for(&mut diff, &sources, target_voice, &target_param);
-        handler.finalize_params(&diff).await.unwrap();
-
-        let snapshot = {
-            let s = state.read().await;
-            s.param_summers.clone()
-        };
-        let creates_before = backend.creates().len();
-        let frees_before = backend.frees().len();
-
-        // Simulate hot-reload with identical routes — diff comes back empty.
-        let empty_diff = ParamRouteDiff::default();
-        handler.finalize_params(&empty_diff).await.unwrap();
-
-        let s = state.read().await;
-        assert_eq!(s.param_summers, snapshot, "summer untouched on no-op diff");
-        assert_eq!(backend.creates().len(), creates_before);
-        assert_eq!(backend.frees().len(), frees_before);
+        let last_map = backend.maps().last().unwrap().clone();
+        assert_eq!(last_map.node, target_nodes[0]);
+        assert_eq!(last_map.bus, u32::MAX, "cross-verb conflict unmaps");
     }
 }

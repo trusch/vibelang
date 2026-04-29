@@ -75,12 +75,14 @@ pub fn generate_builtins() -> Vec<(String, Vec<u8>)> {
         tracing::warn!("Failed to create port_to_group_link_2 from vibelang-dsp");
     }
 
-    // Add per-target kr fan-in summer synthdefs (RoutesHandler::finalize_params
-    // taps these when more than one kr source maps to the same voice param).
-    for n in 2..=system_synthdefs::PARAM_KR_SUM_MAX {
-        match system_synthdefs::create_param_kr_sum_n_bytes(n) {
-            Ok(bytes) => all_defs.push((format!("param_kr_sum_{}", n), bytes)),
-            Err(e) => tracing::warn!("Failed to create param_kr_sum_{}: {}", n, e),
+    // Add per-target kr modulate-summer synthdefs (RoutesHandler::finalize_params
+    // taps these for the BEND path: every `modulate_by` target gets a summer
+    // that adds `baseline + Σ source kr buses`, even at N=1, so the user's
+    // `set_param` keeps acting as the static center while modulators wiggle).
+    for n in 1..=system_synthdefs::PARAM_KR_MODULATE_MAX {
+        match system_synthdefs::create_param_kr_modulate_n_bytes(n) {
+            Ok(bytes) => all_defs.push((format!("param_kr_modulate_{}", n), bytes)),
+            Err(e) => tracing::warn!("Failed to create param_kr_modulate_{}: {}", n, e),
         }
     }
 

@@ -380,7 +380,10 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
         target_param: "cutoff".to_string(),
     });
 
-    handler.finalize_params(&diff).await.unwrap();
+    handler
+        .finalize_params(&diff, &ParamRouteDiff::default())
+        .await
+        .unwrap();
 
     let maps = backend.map_log();
     assert_eq!(maps.len(), 2, "one /n_map per active target node");
@@ -405,8 +408,9 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
         maps
     );
 
-    // Applied baseline recorded so voice teardown can find the mapping.
-    let baseline = state.read().await.param_routes.clone();
+    // Applied baseline recorded in the SET map so voice teardown can find
+    // the mapping. (We're testing .to_param semantics here.)
+    let baseline = state.read().await.param_routes_set.clone();
     let entries = baseline
         .get(&(src, "env".to_string()))
         .expect("source key recorded");
@@ -479,7 +483,10 @@ async fn multiple_to_param_routes_from_one_source() {
         target_param: "pitch".to_string(),
     });
 
-    handler.finalize_params(&diff).await.unwrap();
+    handler
+        .finalize_params(&diff, &ParamRouteDiff::default())
+        .await
+        .unwrap();
 
     let maps = backend.map_log();
     assert_eq!(maps.len(), 2, "one /n_map per fan-out target");
@@ -494,11 +501,11 @@ async fn multiple_to_param_routes_from_one_source() {
         bus: env_bus,
     }));
 
-    // Both fan-out pairs recorded under the same source key.
+    // Both fan-out pairs recorded under the same source key in the SET map.
     let entries = state
         .read()
         .await
-        .param_routes
+        .param_routes_set
         .get(&(src, "env".to_string()))
         .cloned()
         .expect("source key recorded");
@@ -547,10 +554,10 @@ async fn reload_preserves_kr_param_routes_when_port_rates_unchanged() {
     )
     .await;
 
-    // Pretend the runtime already finalized a Param route on a prior reload.
+    // Pretend the runtime already finalized a SET Param route on a prior reload.
     {
         let mut s = state.write().await;
-        s.param_routes.insert(
+        s.param_routes_set.insert(
             (src, "env".to_string()),
             vec![(tgt, "cutoff".to_string())],
         );
@@ -580,11 +587,11 @@ async fn reload_preserves_kr_param_routes_when_port_rates_unchanged() {
     );
     assert!(outcome.rate_changes.is_empty());
 
-    // The kr-side route is still in state.param_routes.
+    // The kr-side route is still in state.param_routes_set.
     let entries = state
         .read()
         .await
-        .param_routes
+        .param_routes_set
         .get(&(src, "env".to_string()))
         .cloned()
         .expect("param route preserved across body-only reload");

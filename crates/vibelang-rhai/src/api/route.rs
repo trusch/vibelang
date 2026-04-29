@@ -13,6 +13,7 @@
 
 use rhai::{CustomType, Engine, EvalAltResult, Position, TypeBuilder};
 use vibelang_core::handlers::RouteDest;
+use vibelang_core::reload::ParamRouteConflict;
 use vibelang_core::types::VoiceId;
 use vibelang_dsp::{
     get_synthdef_outputs, get_synthdef_param_defaults, OutputPort, PortRate,
@@ -150,14 +151,19 @@ impl RouteHandle {
         }
 
         let target_id = context::get_or_create_voice_id(&target_name);
-        context::with_state(|state| {
-            state.add_param_route(
-                self.voice_id,
-                self.port_name.clone(),
-                target_id,
-                param_name.clone(),
-            );
+        let conflict = context::with_state(|state| {
+            state
+                .add_param_route_set(
+                    self.voice_id,
+                    self.port_name.clone(),
+                    target_id,
+                    param_name.clone(),
+                )
+                .err()
         });
+        if let Some(c) = conflict {
+            return Err(param_route_conflict_error("to_param", &c));
+        }
         Ok(self)
     }
 
@@ -167,6 +173,18 @@ impl RouteHandle {
             state.set_route(self.voice_id, self.port_name.clone(), dest);
         });
     }
+}
+
+/// Render a `ParamRouteConflict` as a Rhai EvalAltResult error, scoped by the
+/// surface verb so the message lands cleanly in the user's stack trace.
+fn param_route_conflict_error(
+    verb: &str,
+    conflict: &ParamRouteConflict,
+) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!("{}(): {}", verb, conflict).into(),
+        Position::NONE,
+    ))
 }
 
 /// Look up the source voice's synthdef name from the script state.
@@ -363,14 +381,19 @@ impl ParamHandle {
             ));
         }
 
-        context::with_state(|state| {
-            state.add_param_route(
-                source_id,
-                port.clone(),
-                self.target_voice_id,
-                self.param_name.clone(),
-            );
+        let conflict = context::with_state(|state| {
+            state
+                .add_param_route_bend(
+                    source_id,
+                    port.clone(),
+                    self.target_voice_id,
+                    self.param_name.clone(),
+                )
+                .err()
         });
+        if let Some(c) = conflict {
+            return Err(param_route_conflict_error("modulate_by", &c));
+        }
         Ok(self)
     }
 }
@@ -638,7 +661,7 @@ mod tests {
             let tgt_id = context::get_or_create_voice_id("vox_tgt_round_trip");
             context::with_state(|state| {
                 let entries = state
-                    .param_routes
+                    .param_routes_set
                     .get(&(src_id, "env".to_string()))
                     .expect("param route installed");
                 assert_eq!(entries.len(), 1);
@@ -678,7 +701,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_ar_rate");
             context::with_state(|state| {
                 assert!(state
-                    .param_routes
+                    .param_routes_set
                     .get(&(src_id, "sine".to_string()))
                     .is_none());
             });
@@ -712,7 +735,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_unk_param");
             context::with_state(|state| {
                 assert!(state
-                    .param_routes
+                    .param_routes_set
                     .get(&(src_id, "env".to_string()))
                     .is_none());
             });
@@ -747,7 +770,7 @@ mod tests {
             let tgt_b_id = context::get_or_create_voice_id("vox_tgt_additive_b");
             context::with_state(|state| {
                 let entries = state
-                    .param_routes
+                    .param_routes_set
                     .get(&(src_id, "env".to_string()))
                     .expect("param routes installed");
                 assert_eq!(entries.len(), 2, "both targets must be present");
@@ -780,7 +803,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_dedup");
             context::with_state(|state| {
                 let entries = state
-                    .param_routes
+                    .param_routes_set
                     .get(&(src_id, "env".to_string()))
                     .expect("installed");
                 assert_eq!(entries.len(), 1, "duplicate (target, param) deduped");
@@ -812,18 +835,18 @@ mod tests {
             let tgt_id = context::get_or_create_voice_id("vox_tgt_multi");
             context::with_state(|state| {
                 let a = state
-                    .param_routes
+                    .param_routes_set
                     .get(&(src_id, "env_a".to_string()))
                     .expect("env_a installed");
                 let c = state
-                    .param_routes
+                    .param_routes_set
                     .get(&(src_id, "env_c".to_string()))
                     .expect("env_c installed");
                 assert_eq!(a, &vec![(tgt_id, "cutoff".to_string())]);
                 assert_eq!(c, &vec![(tgt_id, "cutoff".to_string())]);
                 // Unlisted port not installed.
                 assert!(state
-                    .param_routes
+                    .param_routes_set
                     .get(&(src_id, "env_b".to_string()))
                     .is_none());
             });
@@ -875,11 +898,11 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_mixed");
             context::with_state(|state| {
                 assert!(state
-                    .param_routes
+                    .param_routes_set
                     .get(&(src_id, "sine".to_string()))
                     .is_none());
                 assert!(state
-                    .param_routes
+                    .param_routes_set
                     .get(&(src_id, "env".to_string()))
                     .is_none());
             });
@@ -906,14 +929,19 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_modby_rt");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_modby_rt");
             context::with_state(|state| {
+                // .modulate_by lands in the BEND map.
                 let entries = state
-                    .param_routes
+                    .param_routes_bend
                     .get(&(src_id, "out".to_string()))
-                    .expect("param route installed");
+                    .expect("bend route installed");
                 assert_eq!(entries.len(), 1);
                 assert_eq!(entries[0], (tgt_id, "freq".to_string()));
 
-                // Audio routes map untouched.
+                // SET map and audio routes untouched.
+                assert!(state
+                    .param_routes_set
+                    .get(&(src_id, "out".to_string()))
+                    .is_none());
                 assert!(state
                     .routes
                     .get(&(src_id, "out".to_string()))
@@ -945,7 +973,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_modby_ar");
             context::with_state(|state| {
                 assert!(state
-                    .param_routes
+                    .param_routes_bend
                     .get(&(src_id, "sine".to_string()))
                     .is_none());
             });
@@ -976,7 +1004,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_modby_unk");
             context::with_state(|state| {
                 assert!(state
-                    .param_routes
+                    .param_routes_bend
                     .get(&(src_id, "out".to_string()))
                     .is_none());
             });
@@ -1012,13 +1040,13 @@ mod tests {
             let tgt_id = context::get_or_create_voice_id("vox_tgt_modby_chain");
             context::with_state(|state| {
                 let from_s = state
-                    .param_routes
+                    .param_routes_bend
                     .get(&(s_id, "out".to_string()))
                     .expect("first source wire installed");
                 assert_eq!(from_s, &vec![(tgt_id, "a".to_string())]);
 
                 let from_s2 = state
-                    .param_routes
+                    .param_routes_bend
                     .get(&(s2_id, "other".to_string()))
                     .expect("second source wire installed");
                 assert_eq!(from_s2, &vec![(tgt_id, "a".to_string())]);
@@ -1027,18 +1055,17 @@ mod tests {
     }
 
     #[test]
-    fn cross_direction_to_param_and_modulate_by_install_identical_registry_entries() {
-        // The two surface forms must produce a byte-identical
-        // `param_routes` entry for the same `(source, port) → (target, param)`
-        // tuple — proves the registry is direction-agnostic and either
-        // reading is just a different syntactic scan over the same wire.
+    fn cross_direction_to_param_lands_in_set_modulate_by_lands_in_bend() {
+        // Multi-output v2 split: `.to_param` is SET (param_routes_set) and
+        // `.modulate_by` is BEND (param_routes_bend). The two surfaces are
+        // *not* interchangeable any more — they carry distinct semantics.
         with_test_context(|| {
-            let src_synth = "story2_cross_dir_src";
-            let tgt_synth = "story2_cross_dir_tgt";
+            let src_synth = "story_split_xdir_src";
+            let tgt_synth = "story_split_xdir_tgt";
             declare_kr_synthdef(src_synth, &["out"]);
             declare_synthdef_with_params(tgt_synth, &["freq"]);
 
-            // Path A: source-first .to_param(target, "freq")
+            // Path A: source-first .to_param(target, "freq") → SET.
             let mut src_a = make_voice("vox_src_xdir_a").synth(src_synth.to_string());
             let tgt_a = make_voice("vox_tgt_xdir_a").synth(tgt_synth.to_string());
             src_a
@@ -1049,7 +1076,7 @@ mod tests {
             let src_a_id = context::get_or_create_voice_id("vox_src_xdir_a");
             let tgt_a_id = context::get_or_create_voice_id("vox_tgt_xdir_a");
 
-            // Path B: target-first .param("freq").modulate_by(source, "out")
+            // Path B: target-first .param("freq").modulate_by(source, "out") → BEND.
             let src_b = make_voice("vox_src_xdir_b").synth(src_synth.to_string());
             let mut tgt_b = make_voice("vox_tgt_xdir_b").synth(tgt_synth.to_string());
             tgt_b
@@ -1060,24 +1087,154 @@ mod tests {
             let tgt_b_id = context::get_or_create_voice_id("vox_tgt_xdir_b");
 
             context::with_state(|state| {
-                let entries_a = state
-                    .param_routes
+                let set_entries = state
+                    .param_routes_set
                     .get(&(src_a_id, "out".to_string()))
-                    .expect("A installed");
-                let entries_b = state
-                    .param_routes
+                    .expect("A installed in SET map");
+                assert_eq!(set_entries.len(), 1);
+                assert_eq!(set_entries[0], (tgt_a_id, "freq".to_string()));
+
+                let bend_entries = state
+                    .param_routes_bend
                     .get(&(src_b_id, "out".to_string()))
-                    .expect("B installed");
+                    .expect("B installed in BEND map");
+                assert_eq!(bend_entries.len(), 1);
+                assert_eq!(bend_entries[0], (tgt_b_id, "freq".to_string()));
 
-                // Same shape: one (target_id, "freq") tuple in each.
-                assert_eq!(entries_a.len(), 1);
-                assert_eq!(entries_b.len(), 1);
-                assert_eq!(entries_a[0], (tgt_a_id, "freq".to_string()));
-                assert_eq!(entries_b[0], (tgt_b_id, "freq".to_string()));
-
-                // Substitute target ids and the entries are byte-identical.
-                assert_eq!(entries_a[0].1, entries_b[0].1);
+                // Cross-pollination: A's source key is *not* in BEND, B's source
+                // key is *not* in SET. The maps are disjoint.
+                assert!(state
+                    .param_routes_bend
+                    .get(&(src_a_id, "out".to_string()))
+                    .is_none());
+                assert!(state
+                    .param_routes_set
+                    .get(&(src_b_id, "out".to_string()))
+                    .is_none());
             });
+        });
+    }
+
+    #[test]
+    fn to_param_then_modulate_by_on_same_target_errors() {
+        // Cross-verb conflict: `.to_param` followed by `.modulate_by` on the
+        // same `(target_voice, target_param)` must error at script time.
+        with_test_context(|| {
+            let src_synth = "story_split_xverb_src";
+            let tgt_synth = "story_split_xverb_tgt";
+            declare_kr_synthdef(src_synth, &["out", "lfo"]);
+            declare_synthdef_with_params(tgt_synth, &["freq"]);
+
+            let src = make_voice("vox_src_xverb").synth(src_synth.to_string());
+            let mut tgt = make_voice("vox_tgt_xverb").synth(tgt_synth.to_string());
+
+            // First wire: SET.
+            src.clone()
+                .output_by_name("out")
+                .expect("port resolves")
+                .to_param(tgt.clone(), "freq".to_string())
+                .expect("install set");
+
+            // Now try BEND on the same `(target, param)` from a different source
+            // port — must error.
+            let err = tgt
+                .param_handle("freq")
+                .modulate_by(src.clone(), "lfo".to_string())
+                .expect_err("cross-verb conflict must error");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("modulate_by"),
+                "msg should be scoped to modulate_by, got: {}",
+                msg,
+            );
+            assert!(
+                msg.contains("to_param") && msg.contains("modulate_by"),
+                "msg should mention both verbs, got: {}",
+                msg,
+            );
+
+            // BEND map must not have a leak.
+            let src_id = context::get_or_create_voice_id("vox_src_xverb");
+            context::with_state(|state| {
+                assert!(state
+                    .param_routes_bend
+                    .get(&(src_id, "lfo".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn modulate_by_then_to_param_on_same_target_errors() {
+        // Symmetric: BEND first, SET second — also errors.
+        with_test_context(|| {
+            let src_synth = "story_split_xverb_rev_src";
+            let tgt_synth = "story_split_xverb_rev_tgt";
+            declare_kr_synthdef(src_synth, &["out", "lfo"]);
+            declare_synthdef_with_params(tgt_synth, &["freq"]);
+
+            let mut src = make_voice("vox_src_xverb_rev").synth(src_synth.to_string());
+            let mut tgt = make_voice("vox_tgt_xverb_rev").synth(tgt_synth.to_string());
+
+            tgt.param_handle("freq")
+                .modulate_by(src.clone(), "lfo".to_string())
+                .expect("install bend");
+
+            let err = src
+                .output_by_name("out")
+                .expect("port resolves")
+                .to_param(tgt, "freq".to_string())
+                .expect_err("cross-verb conflict must error");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("to_param"),
+                "msg should be scoped to to_param, got: {}",
+                msg,
+            );
+
+            // SET map must not have a leak.
+            let src_id = context::get_or_create_voice_id("vox_src_xverb_rev");
+            context::with_state(|state| {
+                assert!(state
+                    .param_routes_set
+                    .get(&(src_id, "out".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn to_param_multi_source_on_same_target_errors() {
+        // Multi-source on `.to_param` must error: two different source ports
+        // pointing at the same `(target, param)` is meaningless under SET
+        // (scsynth's /n_map only honours one source) and the script-time
+        // check rejects it cleanly.
+        with_test_context(|| {
+            let src_synth = "story_split_mset_src";
+            let tgt_synth = "story_split_mset_tgt";
+            declare_kr_synthdef(src_synth, &["out", "alt"]);
+            declare_synthdef_with_params(tgt_synth, &["freq"]);
+
+            let mut src = make_voice("vox_src_mset").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_mset").synth(tgt_synth.to_string());
+
+            src.clone()
+                .output_by_name("out")
+                .expect("port resolves")
+                .to_param(tgt.clone(), "freq".to_string())
+                .expect("first set");
+
+            let err = src
+                .output_by_name("alt")
+                .expect("port resolves")
+                .to_param(tgt, "freq".to_string())
+                .expect_err("multi-source SET must error");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("to_param") && msg.contains("modulate_by"),
+                "msg should suggest using modulate_by, got: {}",
+                msg,
+            );
         });
     }
 }

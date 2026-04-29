@@ -1282,36 +1282,59 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     }
 
     async fn set_param(&self, id: VoiceId, param: &str, value: f32) -> Result<()> {
-        // Get all active nodes, voice config, and update the default param value
+        // Get all active nodes, voice config, and update the default param value.
+        // Multi-output v2 split: if the param is BEND-routed, also forward the
+        // value to the summer's `baseline` so the user's set_param behaves as
+        // a static center under whatever modulators are riding on top. If
+        // it's SET-routed, the /n_map mapping is silently masking this set
+        // until the user removes the route — log a debug note in case the
+        // user hits a "why doesn't my knob do anything?" moment.
         #[cfg(feature = "midi")]
-        let (nodes, voice_config): (Vec<NodeId>, VoiceConfig) = {
+        let (nodes, voice_config, summer_node, set_routed): (
+            Vec<NodeId>,
+            VoiceConfig,
+            Option<NodeId>,
+            bool,
+        ) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
 
-            // Update the default param value for future triggers
             voice.config.params.insert(param.to_string(), value);
 
-            // Collect all active nodes (both trigger nodes and note nodes)
             let mut nodes: Vec<NodeId> = voice.active_nodes.clone();
             nodes.extend(voice.note_nodes.values().copied());
+            let voice_config = voice.config.clone();
 
-            (nodes, voice.config.clone())
+            let key = (id, param.to_string());
+            let summer_node = state.param_summers.get(&key).map(|(n, _, _)| *n);
+            let set_routed = state
+                .param_routes_set
+                .values()
+                .any(|targets| targets.iter().any(|(tv, tp)| *tv == id && tp == param));
+
+            (nodes, voice_config, summer_node, set_routed)
         };
 
         #[cfg(not(feature = "midi"))]
-        let nodes: Vec<NodeId> = {
+        let (nodes, summer_node, set_routed): (Vec<NodeId>, Option<NodeId>, bool) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
 
-            // Update the default param value for future triggers
             voice.config.params.insert(param.to_string(), value);
 
-            // Collect all active nodes (both trigger nodes and note nodes)
             let mut nodes: Vec<NodeId> = voice.active_nodes.clone();
             nodes.extend(voice.note_nodes.values().copied());
-            nodes
+
+            let key = (id, param.to_string());
+            let summer_node = state.param_summers.get(&key).map(|(n, _, _)| *n);
+            let set_routed = state
+                .param_routes_set
+                .values()
+                .any(|targets| targets.iter().any(|(tv, tp)| *tv == id && tp == param));
+
+            (nodes, summer_node, set_routed)
         };
 
         // Send MIDI CC if this is a MIDI voice with CC mapping for this param
@@ -1330,10 +1353,28 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             }
         }
 
-        // Set param on all active synths (lock released)
-        // For MIDI voices, this also updates the scsynth nodes (if any)
+        if set_routed {
+            tracing::debug!(
+                "set_param on voice {:?} param '{}': param is routed via .to_param \
+                 (SET) — the source's /n_map is overriding this value until the \
+                 route is removed",
+                id,
+                param,
+            );
+        }
+
+        // Set param on all active synths (lock released).
+        // For MIDI voices, this also updates the scsynth nodes (if any).
         for node_id in nodes {
             let _ = self.backend.set_param(node_id, param, value).await;
+        }
+
+        // BEND-path forwarding: if the target is `.modulate_by`-routed, push
+        // the new value into the summer's `baseline` control so the user's
+        // set_param shifts the static center. The summer's intermediate bus
+        // already feeds the target via /n_map, so this is sufficient.
+        if let Some(summer) = summer_node {
+            let _ = self.backend.set_param(summer, "baseline", value).await;
         }
 
         Ok(())

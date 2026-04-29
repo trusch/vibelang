@@ -547,36 +547,42 @@ pub fn create_port_to_group_link_2_bytes() -> Result<Vec<u8>, std::io::Error> {
     Ok(buf)
 }
 
-/// Maximum number of source kr signals supported by `param_kr_sum_<n>`.
+/// Maximum number of source kr signals supported by `param_kr_modulate_<n>`.
 ///
-/// Sets the upper bound that [`create_param_kr_sum_n_bytes`] will accept and
-/// caps how wide the runtime fan-in summer can be without falling back to
-/// truncation. Eight is a comfortable headroom for typical modular patches
-/// (env + lfo + macro + offset + …) without bloating the synthdef set.
-pub const PARAM_KR_SUM_MAX: usize = 8;
+/// Sets the upper bound that [`create_param_kr_modulate_n_bytes`] will accept
+/// and caps how many `modulate_by` sources can target one `(voice, param)`
+/// pair without truncation. Eight is a comfortable headroom for typical
+/// modular patches (env + lfo + macro + offset + …) without bloating the
+/// synthdef set.
+pub const PARAM_KR_MODULATE_MAX: usize = 8;
 
-/// Create the `param_kr_sum_<n>` synthdef bytes for the given source count.
+/// Create the `param_kr_modulate_<n>` synthdef bytes for the given source count.
 ///
-/// The synthdef sums `n` control-rate input buses into a single intermediate
-/// control bus — used by [`crate`]-side fan-in routing when more than one
-/// kr source targets the same `(voice, param)` pair. Equivalent to:
+/// The synthdef adds a `baseline` control to `n` summed control-rate input
+/// buses and writes the result onto a single intermediate control bus. Used
+/// by `RoutesHandler::finalize_params` for the BEND path of multi-output v2
+/// (the user's `set_param` value lives in `baseline`; modulators bend around
+/// it). Equivalent to:
 ///
 /// ```supercollider
-/// SynthDef("param_kr_sum_<n>", { |in_a=0, in_b=0, ..., out_bus=0|
-///     Out.kr(out_bus, In.kr(in_a, 1) + In.kr(in_b, 1) + ...)
+/// SynthDef("param_kr_modulate_<n>", { |baseline=0, in_a=0, in_b=0, ..., out_bus=0|
+///     Out.kr(out_bus, baseline + In.kr(in_a, 1) + In.kr(in_b, 1) + ...)
 /// })
 /// ```
 ///
-/// `n` must be in `2..=PARAM_KR_SUM_MAX`. The `n` source bus parameters are
-/// named `in_a`, `in_b`, … in declaration order (so the first source goes to
-/// `in_a`, etc.); the destination bus parameter is `out_bus`. Allocation and
-/// teardown of the intermediate bus + summer node is owned by
+/// `n` must be in `1..=PARAM_KR_MODULATE_MAX`. At `n=1` the synthdef is still
+/// a summer (`baseline + In.kr(in_a, 1)`) — that's the whole point of BEND
+/// vs SET: the summer is *always* present so the user's `set_param` value
+/// can ride underneath the modulator. The `n` source bus parameters are
+/// named `in_a`, `in_b`, … in declaration order; the destination bus
+/// parameter is `out_bus`. Allocation and teardown of the intermediate bus
+/// + summer node is owned by
 /// [`crates/vibelang-core::handlers::routes::RoutesHandler::finalize_params`].
-pub fn create_param_kr_sum_n_bytes(n: usize) -> Result<Vec<u8>, std::io::Error> {
+pub fn create_param_kr_modulate_n_bytes(n: usize) -> Result<Vec<u8>, std::io::Error> {
     assert!(
-        (2..=PARAM_KR_SUM_MAX).contains(&n),
-        "param_kr_sum_<n> only supports n in 2..={} (got {})",
-        PARAM_KR_SUM_MAX,
+        (1..=PARAM_KR_MODULATE_MAX).contains(&n),
+        "param_kr_modulate_<n> only supports n in 1..={} (got {})",
+        PARAM_KR_MODULATE_MAX,
         n
     );
 
@@ -587,8 +593,8 @@ pub fn create_param_kr_sum_n_bytes(n: usize) -> Result<Vec<u8>, std::io::Error> 
     buf.write_all(&2i32.to_be_bytes())?; // version 2
     buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
 
-    // Name: "param_kr_sum_<n>"
-    let name_string = format!("param_kr_sum_{}", n);
+    // Name: "param_kr_modulate_<n>"
+    let name_string = format!("param_kr_modulate_{}", n);
     let name_bytes = name_string.as_bytes();
     buf.push(name_bytes.len() as u8);
     buf.write_all(name_bytes)?;
@@ -596,48 +602,54 @@ pub fn create_param_kr_sum_n_bytes(n: usize) -> Result<Vec<u8>, std::io::Error> 
     // No constants
     buf.write_all(&0i32.to_be_bytes())?;
 
-    // Parameters: in_a, in_b, ..., out_bus (all defaulting to 0)
-    let num_params = (n + 1) as i32;
+    // Parameters: baseline, in_a, in_b, ..., out_bus (all defaulting to 0).
+    // Total: 1 (baseline) + n (sources) + 1 (out_bus) = n + 2.
+    let num_params = (n + 2) as i32;
     buf.write_all(&num_params.to_be_bytes())?;
     for _ in 0..num_params {
         buf.write_all(&0.0f32.to_be_bytes())?;
     }
 
-    // Param names. `in_a` .. up to `in_h`, then `out_bus`.
+    // Param names: baseline (idx 0), in_a..in_<n-th> (idx 1..=n), out_bus (idx n+1).
     let port_letters = [b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h'];
     buf.write_all(&num_params.to_be_bytes())?;
+    let baseline_name = b"baseline";
+    buf.push(baseline_name.len() as u8);
+    buf.write_all(baseline_name)?;
+    buf.write_all(&0i32.to_be_bytes())?;
     for i in 0..n {
         let pname = [b'i', b'n', b'_', port_letters[i]];
         buf.push(pname.len() as u8);
         buf.write_all(&pname)?;
-        buf.write_all(&(i as i32).to_be_bytes())?;
+        buf.write_all(&((i + 1) as i32).to_be_bytes())?;
     }
     let out_bus_name = b"out_bus";
     buf.push(out_bus_name.len() as u8);
     buf.write_all(out_bus_name)?;
-    buf.write_all(&(n as i32).to_be_bytes())?;
+    buf.write_all(&((n + 1) as i32).to_be_bytes())?;
 
     // UGen layout (all kr-rate):
-    //   0           : Control with (n + 1) outputs
+    //   0           : Control with (n + 2) outputs (baseline, in_a..n, out_bus)
     //   1 ..= n     : In.kr(in_<letter>, 1) — one per source
-    //   n+1 ..= 2n-1: BinaryOpUGen add — n-1 cumulative sums
-    //   2n          : Out.kr(out_bus, final_sum)
-    let num_ugens = (2 * n + 1) as i32;
+    //   n+1 ..= 2n  : BinaryOpUGen add — n cumulative sums
+    //                    (baseline + in_a, then + in_b, …)
+    //   2n+1        : Out.kr(out_bus, final_sum)
+    let num_ugens = (2 * n + 2) as i32;
     buf.write_all(&num_ugens.to_be_bytes())?;
 
-    // UGen 0: Control (kr) with (n + 1) outputs
+    // UGen 0: Control (kr) with (n + 2) outputs
     let control_name = b"Control";
     buf.push(control_name.len() as u8);
     buf.write_all(control_name)?;
     buf.push(1); // control rate
     buf.write_all(&0i32.to_be_bytes())?; // 0 inputs
-    buf.write_all(&((n + 1) as i32).to_be_bytes())?; // n+1 outputs
+    buf.write_all(&((n + 2) as i32).to_be_bytes())?; // n+2 outputs
     buf.write_all(&0i16.to_be_bytes())?; // special index
-    for _ in 0..(n + 1) {
+    for _ in 0..(n + 2) {
         buf.push(1); // each output kr-rate
     }
 
-    // UGens 1..=n: In.kr(bus, 1) — one per source
+    // UGens 1..=n: In.kr(in_<letter>, 1) — one per source
     let in_name = b"In";
     for i in 0..n {
         buf.push(in_name.len() as u8);
@@ -646,14 +658,16 @@ pub fn create_param_kr_sum_n_bytes(n: usize) -> Result<Vec<u8>, std::io::Error> 
         buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
         buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono kr)
         buf.write_all(&0i16.to_be_bytes())?;
-        write_ugen_input(&mut buf, 0, i as i32)?; // Control[i] = in_<letter>
+        // Control[1+i] = in_<letter>; Control[0] is baseline.
+        write_ugen_input(&mut buf, 0, (i + 1) as i32)?;
         buf.push(1); // output rate
     }
 
-    // UGens n+1..=2n-1: cumulative BinaryOpUGen add (special index 0).
-    // sum_0 = In_0 + In_1; sum_k = sum_{k-1} + In_{k+1} for k = 1..n-1.
+    // UGens n+1..=2n: cumulative BinaryOpUGen add (special index 0).
+    //   sum_0 = baseline + In_0  (i.e. Control[0] + UGen[1])
+    //   sum_k = sum_{k-1} + In_k (k = 1..n-1)
     let binop_name = b"BinaryOpUGen";
-    for k in 0..(n - 1) {
+    for k in 0..n {
         buf.push(binop_name.len() as u8);
         buf.write_all(binop_name)?;
         buf.push(1); // control rate
@@ -661,20 +675,20 @@ pub fn create_param_kr_sum_n_bytes(n: usize) -> Result<Vec<u8>, std::io::Error> 
         buf.write_all(&1i32.to_be_bytes())?; // 1 output
         buf.write_all(&0i16.to_be_bytes())?; // special index 0 = add
         if k == 0 {
-            // First sum: In_0 + In_1 → UGen indices 1 and 2
-            write_ugen_input(&mut buf, 1, 0)?;
-            write_ugen_input(&mut buf, 2, 0)?;
+            // First sum: baseline + In_0
+            write_ugen_input(&mut buf, 0, 0)?; // Control[0] = baseline
+            write_ugen_input(&mut buf, 1, 0)?; // UGen 1 = In.kr(in_a)
         } else {
             // Subsequent sum: previous BinaryOp + next In
             // previous BinaryOp lives at UGen index n + k
-            // next In lives at UGen index k + 2
+            // next In lives at UGen index k + 1 (In_k)
             write_ugen_input(&mut buf, (n as i32) + (k as i32), 0)?;
-            write_ugen_input(&mut buf, (k as i32) + 2, 0)?;
+            write_ugen_input(&mut buf, (k as i32) + 1, 0)?;
         }
         buf.push(1); // output rate
     }
 
-    // UGen 2n: Out.kr(out_bus, final_sum)
+    // UGen 2n+1: Out.kr(out_bus, final_sum)
     let out_name = b"Out";
     buf.push(out_name.len() as u8);
     buf.write_all(out_name)?;
@@ -682,8 +696,8 @@ pub fn create_param_kr_sum_n_bytes(n: usize) -> Result<Vec<u8>, std::io::Error> 
     buf.write_all(&2i32.to_be_bytes())?; // 2 inputs (bus index + signal)
     buf.write_all(&0i32.to_be_bytes())?; // 0 outputs
     buf.write_all(&0i16.to_be_bytes())?;
-    write_ugen_input(&mut buf, 0, n as i32)?; // Control[n] = out_bus
-    write_ugen_input(&mut buf, (2 * n - 1) as i32, 0)?; // last BinaryOp output
+    write_ugen_input(&mut buf, 0, (n + 1) as i32)?; // Control[n+1] = out_bus
+    write_ugen_input(&mut buf, (2 * n) as i32, 0)?; // last BinaryOp output
 
     // No variants
     buf.write_all(&0i16.to_be_bytes())?;
@@ -734,11 +748,11 @@ mod tests {
     }
 
     #[test]
-    fn test_create_param_kr_sum_n_bytes_each_arity() {
-        for n in 2..=PARAM_KR_SUM_MAX {
-            let bytes = create_param_kr_sum_n_bytes(n).unwrap();
+    fn test_create_param_kr_modulate_n_bytes_each_arity() {
+        for n in 1..=PARAM_KR_MODULATE_MAX {
+            let bytes = create_param_kr_modulate_n_bytes(n).unwrap();
             assert_eq!(&bytes[0..4], b"SCgf");
-            let want_name = format!("param_kr_sum_{}", n);
+            let want_name = format!("param_kr_modulate_{}", n);
             assert!(
                 bytes
                     .windows(want_name.len())
@@ -746,7 +760,8 @@ mod tests {
                 "name {} not found in encoded bytes",
                 want_name,
             );
-            // Each arity must declare `in_a`..`in_<n-th letter>` and `out_bus`.
+            // Each arity must declare baseline, `in_a`..`in_<n-th letter>`, out_bus.
+            assert!(bytes.windows(8).any(|w| w == b"baseline"));
             let letters = [b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h'];
             for i in 0..n {
                 let pname = [b'i', b'n', b'_', letters[i]];
@@ -763,15 +778,13 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn test_create_param_kr_sum_n_bytes_rejects_below_min() {
-        // n=1 should hit the assertion — the runtime maps directly at N=1
-        // and never asks for a `_1` synthdef.
-        let _ = create_param_kr_sum_n_bytes(1);
+    fn test_create_param_kr_modulate_n_bytes_rejects_zero() {
+        let _ = create_param_kr_modulate_n_bytes(0);
     }
 
     #[test]
     #[should_panic]
-    fn test_create_param_kr_sum_n_bytes_rejects_above_max() {
-        let _ = create_param_kr_sum_n_bytes(PARAM_KR_SUM_MAX + 1);
+    fn test_create_param_kr_modulate_n_bytes_rejects_above_max() {
+        let _ = create_param_kr_modulate_n_bytes(PARAM_KR_MODULATE_MAX + 1);
     }
 }

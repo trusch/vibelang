@@ -894,33 +894,39 @@ pub struct State {
     /// Drained on voice delete so a re-created voice gets fresh defaults.
     pub default_routes: HashMap<(VoiceId, String), crate::handlers::RouteDest>,
 
-    /// Active Param-route mappings: source `(voice_id, port_name)` → list of
-    /// `(target_voice_id, target_param_name)` currently `/n_map`-bound to the
-    /// source's control bus.
+    /// Active SET Param-route mappings (`.to_param` verb): source
+    /// `(voice_id, port_name)` → list of `(target_voice_id, target_param_name)`
+    /// currently `/n_map`-bound directly to the source's control bus.
     ///
-    /// Multi-output v2 Story 3: tracks the *applied* baseline (what the
-    /// backend currently has), not a desired state. Maintained by
-    /// [`crate::handlers::RoutesHandler::finalize_params`] — additions push
-    /// onto the source's Vec, removals retain it; entries with empty Vecs are
-    /// pruned. [`Self::take_voice_param_routes`] drains both source-side and
-    /// target-side appearances on voice delete.
-    pub param_routes: HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
+    /// Multi-output v2 split SET vs BEND: SET overrides the user's `set_param`
+    /// while the mapping is active, so multi-source on the same target is
+    /// rejected at script time. [`Self::take_voice_param_routes`] drains both
+    /// source-side and target-side appearances on voice delete.
+    pub param_routes_set: HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
 
-    /// Active kr fan-in summer synths, keyed by the target side
+    /// Active BEND Param-route mappings (`.modulate_by` verb): source
+    /// `(voice_id, port_name)` → list of `(target_voice_id, target_param_name)`
+    /// whose target param is `/n_map`-bound to a `param_kr_modulate_<n>`
+    /// summer's intermediate control bus.
+    ///
+    /// Multi-output v2 split SET vs BEND: BEND adds source signal(s) on top
+    /// of the user's `set_param` baseline, so the runtime always spawns a
+    /// summer (even at N=1). Multi-source fan-in is supported up to
+    /// [`vibelang_dsp::system_synthdefs::PARAM_KR_MODULATE_MAX`].
+    pub param_routes_bend: HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
+
+    /// Active BEND-path summer synths, keyed by the target side
     /// `(target_voice_id, target_param_name)`.
     ///
-    /// Multi-output v2 fan-in: when a single `(target_voice, target_param)`
-    /// has more than one kr source pointing at it, finalize_params spawns a
-    /// `param_kr_sum_<n>` synth that reads each source's control bus and
-    /// writes the sum to an intermediate control bus. The target's `/n_map`
-    /// then binds to the intermediate bus. The stored tuple is
-    /// `(summer_node, intermediate_bus)`. Maintained exclusively by
-    /// [`crate::handlers::RoutesHandler::finalize_params`] — entries appear
-    /// when N≥2 sources arrive at a target, are replaced when N changes (the
-    /// old summer + bus are freed and a fresh one of the new arity is
-    /// spawned), and disappear when N drops back to ≤1 (the fan-in collapses
-    /// to a direct `/n_map`).
-    pub param_summers: HashMap<(VoiceId, String), (NodeId, BusId)>,
+    /// Multi-output v2 BEND: every `modulate_by` target gets a
+    /// `param_kr_modulate_<n>` synth that reads the user's set_param value
+    /// from `baseline` plus each source's control bus, and writes the sum to
+    /// an intermediate control bus. The target's `/n_map` binds to the
+    /// intermediate bus. The stored tuple is `(summer_node, intermediate_bus,
+    /// arity_n)`; `arity_n` lets the runtime tell whether an arity change
+    /// requires a fresh summer or just a `/n_set baseline` poke. Maintained
+    /// exclusively by [`crate::handlers::RoutesHandler::finalize_params`].
+    pub param_summers: HashMap<(VoiceId, String), (NodeId, BusId, u8)>,
 }
 
 impl Default for State {
@@ -954,7 +960,8 @@ impl Default for State {
             audio_buses: AudioBusAllocator::default(),
             route_synths: HashMap::new(),
             default_routes: HashMap::new(),
-            param_routes: HashMap::new(),
+            param_routes_set: HashMap::new(),
+            param_routes_bend: HashMap::new(),
             param_summers: HashMap::new(),
         }
     }
@@ -1061,8 +1068,9 @@ impl State {
             .retain(|(vid, _), _| *vid != voice_id);
     }
 
-    /// Drain every Param-route entry that mentions `voice_id` from
-    /// [`State::param_routes`], on either the source side or the target side.
+    /// Drain every Param-route entry that mentions `voice_id` from BOTH
+    /// [`State::param_routes_set`] and [`State::param_routes_bend`], on
+    /// either the source side or the target side.
     ///
     /// Returns the source-side drains as
     /// `((source_voice, source_port), [(target_voice, target_param), ...])`
@@ -1072,27 +1080,28 @@ impl State {
     /// is removed; entries whose Vec drops to empty after scrubbing are
     /// pruned. The deleted target voice's synth nodes are about to be freed
     /// anyway, so unmapping them is moot — only the source-side state needs
-    /// caller follow-up.
+    /// caller follow-up. Set + bend drains are concatenated in the result.
     pub fn take_voice_param_routes(
         &mut self,
         voice_id: VoiceId,
     ) -> Vec<((VoiceId, String), Vec<(VoiceId, String)>)> {
-        let source_keys: Vec<(VoiceId, String)> = self
-            .param_routes
-            .keys()
-            .filter(|(vid, _)| *vid == voice_id)
-            .cloned()
-            .collect();
-        let mut drained = Vec::with_capacity(source_keys.len());
-        for key in source_keys {
-            if let Some(targets) = self.param_routes.remove(&key) {
-                drained.push((key, targets));
+        let mut drained = Vec::new();
+        for map in [&mut self.param_routes_set, &mut self.param_routes_bend] {
+            let source_keys: Vec<(VoiceId, String)> = map
+                .keys()
+                .filter(|(vid, _)| *vid == voice_id)
+                .cloned()
+                .collect();
+            for key in source_keys {
+                if let Some(targets) = map.remove(&key) {
+                    drained.push((key, targets));
+                }
             }
+            map.retain(|_, targets| {
+                targets.retain(|(t_vid, _)| *t_vid != voice_id);
+                !targets.is_empty()
+            });
         }
-        self.param_routes.retain(|_, targets| {
-            targets.retain(|(t_vid, _)| *t_vid != voice_id);
-            !targets.is_empty()
-        });
         drained
     }
 

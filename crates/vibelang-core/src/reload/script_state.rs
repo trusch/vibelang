@@ -479,16 +479,27 @@ pub struct ScriptState {
     /// stub in `handlers/routes.rs`).
     pub routes: RouteMap,
 
-    /// CV-to-param routes from kr output ports to target-voice parameters.
+    /// SET-semantic CV-to-param routes (`.to_param` verb) from kr output
+    /// ports to target-voice parameters.
     ///
     /// Keyed by source `(voice_id, port_name)` → list of
-    /// `(target_voice_id, target_param_name)` pairs. One source kr port can
-    /// drive params on multiple target voices, so the value is a list (unlike
-    /// [`routes`](Self::routes), which holds a single dest per port).
-    /// Populated by the Rhai `RouteHandle.to_param(target, param)` surface
-    /// (multi-output v2 Story 4) and consumed by
-    /// [`RoutesHandler::finalize_params`](crate::handlers::RoutesHandler::finalize_params).
-    pub param_routes: ParamRouteMap,
+    /// `(target_voice_id, target_param_name)` pairs. SET semantics: the
+    /// source's control bus is `/n_map`-bound directly to the target param
+    /// and overrides any `set_param` value while the mapping is active.
+    /// Multi-source on the same target is rejected at script time.
+    pub param_routes_set: ParamRouteMap,
+
+    /// BEND-semantic CV-to-param routes (`.modulate_by` verb) from kr output
+    /// ports to target-voice parameters.
+    ///
+    /// Keyed by source `(voice_id, port_name)` → list of
+    /// `(target_voice_id, target_param_name)` pairs. BEND semantics: the
+    /// runtime spawns a `param_kr_modulate_<n>` summer that reads
+    /// `baseline + Σ source kr buses` (where `baseline` is the user's
+    /// `set_param` value), and the target param is `/n_map`-bound to the
+    /// summer's intermediate bus. Multi-source fan-in is supported up to
+    /// [`vibelang_dsp::system_synthdefs::PARAM_KR_MODULATE_MAX`].
+    pub param_routes_bend: ParamRouteMap,
 
     /// Recordings to start (native only).
     #[cfg(not(target_arch = "wasm32"))]
@@ -737,30 +748,158 @@ impl ScriptState {
         self.routes.remove(&key);
     }
 
-    /// Install a CV-to-param route from `(source_voice, source_port)` to
-    /// `(target_voice, target_param)`.
+    /// Install a SET-semantic CV-to-param route (`.to_param` verb) from
+    /// `(source_voice, source_port)` to `(target_voice, target_param)`.
     ///
-    /// Additive across calls with different `(target_voice, target_param)`
-    /// pairs — one source kr port can fan out to multiple targets. A repeat
-    /// call with the same target pair is a no-op (deduplicated), so re-runs
-    /// of a script that re-declare the same route don't accumulate dupes.
-    pub fn add_param_route(
+    /// Returns an error if `(target_voice, target_param)` is already routed
+    /// via the BEND map (`.modulate_by`) — the two verbs are mutually
+    /// exclusive on the same target — or if a *different* SET source already
+    /// targets the same `(target_voice, target_param)` (multi-source SET is
+    /// disallowed; use `.modulate_by` for additive multi-source fan-in).
+    /// A repeat call with the same `(source, target)` quad is a deduplicated
+    /// no-op, so re-runs of a script don't accumulate dupes.
+    pub fn add_param_route_set(
         &mut self,
         source_voice: VoiceId,
         source_port: impl Into<String>,
         target_voice: VoiceId,
         target_param: impl Into<String>,
-    ) {
+    ) -> Result<(), ParamRouteConflict> {
+        let source_port = source_port.into();
+        let target_param = target_param.into();
+        let target_pair = (target_voice, target_param.clone());
+
+        if route_map_contains_target(&self.param_routes_bend, &target_pair) {
+            return Err(ParamRouteConflict::CrossVerb {
+                target_voice,
+                target_param,
+            });
+        }
+        // Reject a *different* SET source pointing at the same target — only
+        // the existing identical entry is allowed (idempotent re-run).
+        for ((sv, sp), targets) in self.param_routes_set.iter() {
+            if (*sv != source_voice || *sp != source_port)
+                && targets.iter().any(|t| t == &target_pair)
+            {
+                return Err(ParamRouteConflict::MultiSourceSet {
+                    target_voice,
+                    target_param,
+                });
+            }
+        }
+
         let entry = self
-            .param_routes
-            .entry((source_voice, source_port.into()))
+            .param_routes_set
+            .entry((source_voice, source_port))
             .or_default();
-        let pair = (target_voice, target_param.into());
-        if !entry.iter().any(|t| t == &pair) {
-            entry.push(pair);
+        if !entry.iter().any(|t| t == &target_pair) {
+            entry.push(target_pair);
+        }
+        Ok(())
+    }
+
+    /// Install a BEND-semantic CV-to-param route (`.modulate_by` verb) from
+    /// `(source_voice, source_port)` to `(target_voice, target_param)`.
+    ///
+    /// Returns an error if `(target_voice, target_param)` is already routed
+    /// via the SET map (`.to_param`). Additive across multiple sources on
+    /// the same target — that's the whole point of BEND. A repeat call with
+    /// the same `(source, target)` quad is deduplicated.
+    pub fn add_param_route_bend(
+        &mut self,
+        source_voice: VoiceId,
+        source_port: impl Into<String>,
+        target_voice: VoiceId,
+        target_param: impl Into<String>,
+    ) -> Result<(), ParamRouteConflict> {
+        let source_port = source_port.into();
+        let target_param = target_param.into();
+        let target_pair = (target_voice, target_param.clone());
+
+        if route_map_contains_target(&self.param_routes_set, &target_pair) {
+            return Err(ParamRouteConflict::CrossVerb {
+                target_voice,
+                target_param,
+            });
+        }
+
+        let entry = self
+            .param_routes_bend
+            .entry((source_voice, source_port))
+            .or_default();
+        if !entry.iter().any(|t| t == &target_pair) {
+            entry.push(target_pair);
+        }
+        Ok(())
+    }
+}
+
+fn route_map_contains_target(map: &ParamRouteMap, pair: &(VoiceId, String)) -> bool {
+    map.values().any(|targets| targets.iter().any(|t| t == pair))
+}
+
+/// Reasons a `add_param_route_set` / `add_param_route_bend` call may fail.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ParamRouteConflict {
+    /// The same `(target_voice, target_param)` is already wired via the
+    /// other verb (SET ↔ BEND). The two verbs are mutually exclusive.
+    CrossVerb {
+        target_voice: VoiceId,
+        target_param: String,
+    },
+    /// A different SET source already targets the same
+    /// `(target_voice, target_param)`. Multi-source on a `.to_param` is
+    /// disallowed; use `.modulate_by` for additive fan-in.
+    MultiSourceSet {
+        target_voice: VoiceId,
+        target_param: String,
+    },
+}
+
+impl ParamRouteConflict {
+    pub fn target_voice(&self) -> VoiceId {
+        match self {
+            Self::CrossVerb { target_voice, .. } | Self::MultiSourceSet { target_voice, .. } => {
+                *target_voice
+            }
+        }
+    }
+    pub fn target_param(&self) -> &str {
+        match self {
+            Self::CrossVerb { target_param, .. } | Self::MultiSourceSet { target_param, .. } => {
+                target_param
+            }
         }
     }
 }
+
+impl std::fmt::Display for ParamRouteConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CrossVerb {
+                target_voice,
+                target_param,
+            } => write!(
+                f,
+                "cannot combine .to_param and .modulate_by on the same \
+                 (voice {:?}, param {:?}) — pick exactly one verb",
+                target_voice, target_param
+            ),
+            Self::MultiSourceSet {
+                target_voice,
+                target_param,
+            } => write!(
+                f,
+                ".to_param on (voice {:?}, param {:?}) is already routed from \
+                 another source — multi-source SET is disallowed; use \
+                 .modulate_by for additive fan-in",
+                target_voice, target_param
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ParamRouteConflict {}
 
 #[cfg(test)]
 mod tests {
