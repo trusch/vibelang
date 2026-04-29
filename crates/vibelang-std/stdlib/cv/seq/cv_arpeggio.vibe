@@ -67,7 +67,7 @@ define_synthdef("cv_arpeggio")
 
         let midi = m0 * note0 + m1 * note1 + m2 * note2 + m3 * note3;
         let voct_kr = (midi - 60.0) / 12.0;
-        let voct = k2_a_ar(voct_kr);
+        let voct = k2a_ar(voct_kr);
         let clipped = clip_ar(voct, -1.0, 1.0);
         [clipped]
     });

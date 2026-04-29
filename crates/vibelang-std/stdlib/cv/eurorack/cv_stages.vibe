@@ -67,7 +67,7 @@ define_synthdef("cv_stages")
                   + m3 * level3 + m4 * level4 + m5 * level5;
 
         let cv_kr = level * level_scale;
-        let cv = k2_a_ar(cv_kr);
+        let cv = k2a_ar(cv_kr);
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });

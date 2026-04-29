@@ -56,7 +56,7 @@ define_synthdef("cv_seq_step")
         // V/oct branch: (midi - 60) / 12 — same scaling as cv_voct_seq, so
         // 1 octave = 1.0 audio. Clipped to ±12 octaves around C4.
         let voct_kr = (midi - 60.0) / 12.0;
-        let voct = k2_a_ar(voct_kr);
+        let voct = k2a_ar(voct_kr);
 
         // Gate branch: stretch each clock edge to a 5 ms +5V pulse.
         // 0.5 audio = +5V at the jack.

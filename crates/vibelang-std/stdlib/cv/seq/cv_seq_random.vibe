@@ -83,7 +83,7 @@ define_synthdef("cv_seq_random")
 
         let snapped_semi = semi_int + delta + root;
         let voct_kr = snapped_semi / 12.0;
-        let voct = k2_a_ar(voct_kr);
+        let voct = k2a_ar(voct_kr);
         let clipped = clip_ar(voct, -1.0, 1.0);
         [clipped]
     });

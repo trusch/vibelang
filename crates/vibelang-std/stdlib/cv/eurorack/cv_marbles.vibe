@@ -81,7 +81,7 @@ define_synthdef("cv_marbles")
         let held = latch_kr(pitch_src, change_trig);
 
         // ±1 audio = ±1 octave V/oct.
-        let voct = k2_a_ar(held);
+        let voct = k2a_ar(held);
         let clipped = clip_ar(voct, -1.0, 1.0);
         [clipped]
     });

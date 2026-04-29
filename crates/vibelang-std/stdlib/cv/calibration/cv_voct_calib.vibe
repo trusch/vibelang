@@ -27,7 +27,7 @@ define_synthdef("cv_voct_calib")
     .body(|step_secs, gate| {
         let trig = impulse_kr(1.0 / step_secs);
         let step = stepper_kr(trig, 0.0, 0.0, 3.0, 1.0, 0.0);
-        let cv = k2_a_ar(step * 0.1) * gate;
+        let cv = k2a_ar(step * 0.1) * gate;
         let clipped = clip_ar(cv, -1.0, 1.0);
         [clipped]
     });
