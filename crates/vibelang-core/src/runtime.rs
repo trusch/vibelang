@@ -33,8 +33,8 @@ use crate::compat::{timeout, Duration};
 use crate::handlers::RecordingsHandler;
 use crate::handlers::{
     merge_default_routes, EffectsHandler, FadesHandler, GroupsHandler, MelodiesHandler,
-    ModulatorsHandler, PatternsHandler, RouteMap, RoutesHandler, SamplesHandler, SequencesHandler,
-    SfzHandler, SynthDefsHandler, TransportHandler, VoicesHandler,
+    PatternsHandler, RouteMap, RoutesHandler, SamplesHandler, SequencesHandler, SfzHandler,
+    SynthDefsHandler, TransportHandler, VoicesHandler,
 };
 #[cfg(feature = "midi")]
 use crate::message::MidiMessage;
@@ -42,9 +42,9 @@ use crate::message::MidiMessage;
 use crate::message::RecordingMessage;
 use crate::message::ReloadMessage;
 use crate::message::{
-    EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, ModulatorMessage,
-    PatternMessage, SampleMessage, SequenceMessage, SfzMessage, SyncMessage, SynthDefMessage,
-    TransportMessage, VoiceMessage,
+    EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, PatternMessage,
+    SampleMessage, SequenceMessage, SfzMessage, SyncMessage, SynthDefMessage, TransportMessage,
+    VoiceMessage,
 };
 #[cfg(feature = "midi")]
 use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
@@ -57,8 +57,8 @@ use crate::traits::Midi;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::Recordings;
 use crate::traits::{
-    Effects, Fades, Groups, Melodies, Modulators, Patterns, Samples, Sequences, Sfz, SynthDefs,
-    Transport, Voices,
+    Effects, Fades, Groups, Melodies, Patterns, Samples, Sequences, Sfz, SynthDefs, Transport,
+    Voices,
 };
 use crate::transport_snapshot::TransportSnapshot;
 use crate::{Error, Result};
@@ -135,7 +135,6 @@ pub struct Runtime<B: Backend> {
     sequences: SequencesHandler<B>,
     fades: FadesHandler<B>,
     effects: EffectsHandler<B>,
-    modulators: ModulatorsHandler<B>,
     samples: SamplesHandler<B>,
     sfz: SfzHandler<B>,
     /// Per-voice output routing — turns voice port audio buses into mixer
@@ -189,7 +188,6 @@ impl<B: Backend> Runtime<B> {
             sequences: SequencesHandler::new(backend.clone(), state.clone()),
             fades: FadesHandler::new(backend.clone(), state.clone()),
             effects: EffectsHandler::new(backend.clone(), state.clone()),
-            modulators: ModulatorsHandler::new(backend.clone(), state.clone()),
             samples: SamplesHandler::new(backend.clone(), state.clone()),
             sfz: SfzHandler::new(backend.clone(), state.clone()),
             routes: RoutesHandler::new(backend.clone(), state.clone()),
@@ -353,14 +351,9 @@ impl<B: Backend> Runtime<B> {
         // started in run(). The clock thread reads transport state from
         // transport_snapshot which is updated above.
 
-        // Tick MIDI voice modulator outputs (poll modulator values and send CC)
-        // Run at reduced frequency (every 10 ticks = 50Hz) since CC doesn't need 500Hz
         #[cfg(feature = "midi")]
         {
             self.tick_count = self.tick_count.wrapping_add(1);
-            if self.tick_count.is_multiple_of(10) {
-                self.voices.tick_modulators().await;
-            }
         }
     }
 
@@ -469,15 +462,6 @@ impl<B: Backend> Runtime<B> {
                 EffectMessage::Remove { id } => self.effects.remove(id).await,
                 EffectMessage::SetParam { id, param, value } => {
                     self.effects.set_param(id, &param, value).await
-                }
-            },
-
-            // Modulators
-            Message::Modulator(modulator_msg) => match modulator_msg {
-                ModulatorMessage::Create { id, config } => self.modulators.create(id, config).await,
-                ModulatorMessage::Delete { id } => self.modulators.delete(id).await,
-                ModulatorMessage::SetParam { id, param, value } => {
-                    self.modulators.set_param(id, &param, value).await
                 }
             },
 
@@ -854,12 +838,6 @@ impl<B: Backend> Runtime<B> {
         // Phase 2: Delete entities (children before parents for groups)
         // =========================================================================
 
-        // Delete modulators first (voices may depend on them)
-        for id in &diff.modulators.deleted {
-            tracing::debug!("Reload: deleting modulator {:?}", id);
-            let _ = self.modulators.delete(*id).await;
-        }
-
         // Delete effects (they depend on groups)
         for id in &diff.effects.deleted {
             tracing::debug!("Reload: deleting effect {:?}", id);
@@ -1231,18 +1209,6 @@ impl<B: Backend> Runtime<B> {
             self.sync_with_retry("after group creation").await;
         }
 
-        // Create new modulators (before voices so modulations can reference them)
-        for (id, config) in &diff.modulators.created {
-            tracing::debug!(
-                "Reload: creating modulator {:?} with synthdef '{}'",
-                id,
-                config.synthdef
-            );
-            if let Err(e) = self.modulators.create(*id, config.clone()).await {
-                tracing::error!("Reload: failed to create modulator {:?}: {}", id, e);
-            }
-        }
-
         // Create new voices
         for (id, config) in &diff.voices.created {
             tracing::debug!("Reload: creating voice {:?}", id);
@@ -1380,7 +1346,6 @@ impl<B: Backend> Runtime<B> {
                     voice.config.polyphony = new_config.polyphony;
                     voice.config.round_robin_count = new_config.round_robin_count;
                     voice.config.choke_group = new_config.choke_group.clone();
-                    voice.config.modulations = new_config.modulations.clone();
                     #[cfg(feature = "midi")]
                     {
                         voice.config.midi_output = new_config.midi_output;
@@ -1470,42 +1435,6 @@ impl<B: Backend> Runtime<B> {
         // NOTE: Effect updates are deferred to Phase 4.8 (after routes finalize),
         // alongside effect creation, so freshly-(re)spawned effect synths sit
         // *after* the route mixers in SC tree order. See Phase 4.8 below.
-
-        // Update modulators - only recreate if synthdef or modulations changed;
-        // for param-only changes use set_param to avoid resetting the LFO phase.
-        for (id, new_config) in &diff.modulators.updated {
-            let needs_recreate = {
-                let state = self.state.read().await;
-                if let Some(current) = state.modulators.get(id) {
-                    current.config.synthdef != new_config.synthdef
-                        || current.config.modulations != new_config.modulations
-                } else {
-                    true
-                }
-            };
-
-            if needs_recreate {
-                tracing::debug!(
-                    "Reload: recreating modulator {:?} (synthdef or modulations changed, synthdef='{}')",
-                    id,
-                    new_config.synthdef
-                );
-                let _ = self.modulators.delete(*id).await;
-                if let Err(e) = self.modulators.create(*id, new_config.clone()).await {
-                    tracing::error!("Reload: failed to recreate modulator {:?}: {}", id, e);
-                }
-            } else {
-                // Only params changed - update in place to preserve LFO phase
-                tracing::debug!(
-                    "Reload: updating modulator {:?} params only (synthdef='{}')",
-                    id,
-                    new_config.synthdef
-                );
-                for (param, value) in &new_config.params {
-                    let _ = self.modulators.set_param(*id, param, *value).await;
-                }
-            }
-        }
 
         // =========================================================================
         // Phase 4.7: Finalize routes (per-voice port → group mixer synths)

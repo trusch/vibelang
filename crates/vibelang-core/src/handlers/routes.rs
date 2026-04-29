@@ -331,6 +331,32 @@ impl<B: Backend> RoutesHandler<B> {
         Self { backend, state }
     }
 
+    /// Lazily create the param-summer group at the head of the root group.
+    ///
+    /// Summers (`param_kr_modulate_<n>` for BEND, future SET-side summers) live
+    /// here so they tick before voice synths read their `/n_map`-bound params.
+    /// Created on first call; subsequent calls return the cached node ID.
+    async fn ensure_param_summer_group(&self) -> Result<NodeId> {
+        let group_node = {
+            let mut state = self.state.write().await;
+            if let Some(node) = state.param_summer_group {
+                return Ok(node);
+            }
+            let node_id = state.alloc_node_id();
+            state.param_summer_group = Some(node_id);
+            node_id
+        };
+        self.backend
+            .create_group(group_node, NodeId::new(0), AddAction::Head)
+            .await
+            .map_err(Error::backend)?;
+        tracing::debug!(
+            "Created param-summer group {:?} at head of root",
+            group_node
+        );
+        Ok(group_node)
+    }
+
     /// Compute the additions, removals, and destination changes between two route maps.
     pub fn diff(old: &RouteMap, new: &RouteMap) -> RouteDiff {
         let mut diff = RouteDiff::default();
@@ -524,6 +550,12 @@ impl<B: Backend> RoutesHandler<B> {
             return Ok(());
         }
 
+        // BEND summers need a dedicated group at the head of the root group
+        // so they tick before voice synths read their `/n_map`-bound params.
+        if !bend_diff.additions.is_empty() {
+            self.ensure_param_summer_group().await?;
+        }
+
         let (planned, summers_to_free) =
             self.plan_param_actions(set_diff, bend_diff).await;
 
@@ -659,7 +691,7 @@ impl<B: Backend> RoutesHandler<B> {
                 );
 
                 let target_group = state
-                    .modulator_group
+                    .param_summer_group
                     .unwrap_or_else(|| NodeId::new(0));
 
                 let mut params = ParamMap::new();

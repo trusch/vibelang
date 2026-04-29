@@ -2,7 +2,6 @@
 
 pub mod effects;
 pub mod eval;
-pub mod modulators;
 pub mod fades;
 pub mod groups;
 pub mod live;

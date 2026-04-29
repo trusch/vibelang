@@ -169,9 +169,6 @@ pub struct ReloadDiff {
     /// Effect changes.
     pub effects: EntityDiff<crate::types::EffectId, super::script_state::EffectConfig>,
 
-    /// Modulator changes.
-    pub modulators: EntityDiff<crate::types::ModulatorId, crate::traits::ModulatorConfig>,
-
     /// Sample changes.
     pub samples: EntityDiff<crate::types::SampleId, crate::traits::SampleConfig>,
 
@@ -226,12 +223,6 @@ impl Default for ReloadDiff {
                 updated: HashMap::new(),
                 unchanged: HashSet::new(),
             },
-            modulators: EntityDiff {
-                created: HashMap::new(),
-                deleted: Vec::new(),
-                updated: HashMap::new(),
-                unchanged: HashSet::new(),
-            },
             samples: EntityDiff {
                 created: HashMap::new(),
                 deleted: Vec::new(),
@@ -271,7 +262,6 @@ impl ReloadDiff {
             || self.melodies.has_changes()
             || self.sequences.has_changes()
             || self.effects.has_changes()
-            || self.modulators.has_changes()
             || self.samples.has_changes()
             || self.buffers.has_changes()
             || self.sfz.has_changes()
@@ -334,14 +324,6 @@ impl ReloadDiff {
                 self.effects.created.len(),
                 self.effects.deleted.len(),
                 self.effects.updated.len()
-            ));
-        }
-        if self.modulators.has_changes() {
-            parts.push(format!(
-                "modulators(+{} -{} ~{})",
-                self.modulators.created.len(),
-                self.modulators.deleted.len(),
-                self.modulators.updated.len()
             ));
         }
         if self.samples.has_changes() {

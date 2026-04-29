@@ -3,8 +3,7 @@
 //! This module defines the unified error type used throughout the crate.
 
 use crate::types::{
-    EffectId, GroupId, MelodyId, ModulatorId, PatternId, RecordingId, SampleId, SequenceId, SfzId,
-    VoiceId,
+    EffectId, GroupId, MelodyId, PatternId, RecordingId, SampleId, SequenceId, SfzId, VoiceId,
 };
 use std::path::PathBuf;
 use thiserror::Error;
@@ -81,10 +80,6 @@ pub enum Error {
     #[error("effect not found: {0}")]
     EffectNotFound(EffectId),
 
-    /// Modulator not found.
-    #[error("modulator not found: {0}")]
-    ModulatorNotFound(ModulatorId),
-
     // =========================================================================
     // Entity Already Exists Errors
     // =========================================================================
@@ -112,10 +107,6 @@ pub enum Error {
     #[error("effect already exists: {0}")]
     EffectExists(EffectId),
 
-    /// Modulator already exists.
-    #[error("modulator already exists: {0}")]
-    ModulatorExists(ModulatorId),
-
     // =========================================================================
     // Validation Errors
     // =========================================================================
@@ -126,10 +117,6 @@ pub enum Error {
     /// Invalid configuration.
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
-
-    /// Circular modulation dependency detected.
-    #[error("circular modulation dependency: {0}")]
-    CircularModulationDependency(String),
 
     // =========================================================================
     // Channel Errors

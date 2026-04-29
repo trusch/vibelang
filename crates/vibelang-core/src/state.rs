@@ -12,15 +12,15 @@ use crate::reload::ChangeQuant;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingInfo;
 use crate::traits::{
-    BufferConfig, FadeConfig, MelodyConfig, MelodyContent, ModulatorConfig, PatternConfig,
-    PatternContent, SampleInfo, SequenceConfig, VoiceConfig,
+    BufferConfig, FadeConfig, MelodyConfig, MelodyContent, PatternConfig, PatternContent,
+    SampleInfo, SequenceConfig, VoiceConfig,
 };
 use crate::types::FadeId;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::types::RecordingId;
 use crate::types::{
-    Beat, BufferId, BusId, ControlBusId, EffectId, GroupId, MelodyId, ModulatorId, NodeId,
-    ParamMap, PatternId, SampleId, SequenceId, SfzId, TimeSignature, VoiceId,
+    Beat, BufferId, BusId, ControlBusId, EffectId, GroupId, MelodyId, NodeId, ParamMap, PatternId,
+    SampleId, SequenceId, SfzId, TimeSignature, VoiceId,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -323,25 +323,6 @@ pub struct EffectState {
 
     /// Current parameter values.
     pub params: ParamMap,
-}
-
-/// Internal state for a modulator.
-///
-/// Modulators are control-rate synths that output to control buses,
-/// which can then be routed to voice parameters for modulation.
-#[derive(Clone, Debug)]
-pub struct ModulatorState {
-    /// Modulator ID.
-    pub id: ModulatorId,
-
-    /// Configuration.
-    pub config: ModulatorConfig,
-
-    /// Control bus ID this modulator writes to.
-    pub control_bus: ControlBusId,
-
-    /// SuperCollider node ID for the modulator synth.
-    pub synth_node: NodeId,
 }
 
 /// A free-list allocator that reclaims IDs when entities are deleted.
@@ -817,20 +798,19 @@ pub struct State {
     /// Effects.
     pub effects: HashMap<EffectId, EffectState>,
 
-    /// Modulators.
-    pub modulators: HashMap<ModulatorId, ModulatorState>,
-
     // =========================================================================
     // Control Buses
     // =========================================================================
     /// Control bus allocator for modulation signals.
     pub control_buses: ControlBusAllocator,
 
-    /// Node ID of the modulator group (runs before voice groups).
+    /// Node ID of the param-summer group (runs at the head of root so
+    /// `param_kr_modulate_<n>` and `param_kr_sum_<n>` summers tick before
+    /// voice groups read their `/n_map`-bound params).
     ///
-    /// All modulator synths are placed in this group to ensure they
-    /// are processed before voices read from their control buses.
-    pub modulator_group: Option<NodeId>,
+    /// Lazily created by [`crate::handlers::RoutesHandler::finalize_params`]
+    /// the first time it needs to spawn a summer.
+    pub param_summer_group: Option<NodeId>,
 
     // =========================================================================
     // Active Playback
@@ -947,9 +927,8 @@ impl Default for State {
             melodies: HashMap::new(),
             sequences: HashMap::new(),
             effects: HashMap::new(),
-            modulators: HashMap::new(),
             control_buses: ControlBusAllocator::default(),
-            modulator_group: None,
+            param_summer_group: None,
             active_fades: Vec::new(),
             fade_configs: HashMap::new(),
             #[cfg(not(target_arch = "wasm32"))]

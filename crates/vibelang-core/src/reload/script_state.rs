@@ -9,16 +9,16 @@ use crate::traits::FadeTarget;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingConfig;
 use crate::traits::{
-    BufferConfig, FadeConfig, MelodyConfig, ModulatorConfig, PatternConfig, SampleConfig,
-    SequenceConfig, SfzConfig, VoiceConfig,
+    BufferConfig, FadeConfig, MelodyConfig, PatternConfig, SampleConfig, SequenceConfig, SfzConfig,
+    VoiceConfig,
 };
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::types::RecordingId;
 use crate::types::{
-    BufferId, EffectId, FadeId, GroupId, MelodyId, ModulatorId, ParamMap, PatternId, SampleId,
-    SequenceId, SfzId, TimeSignature, VoiceId,
+    BufferId, EffectId, FadeId, GroupId, MelodyId, ParamMap, PatternId, SampleId, SequenceId,
+    SfzId, TimeSignature, VoiceId,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -468,9 +468,6 @@ pub struct ScriptState {
     /// SFZ instruments to load.
     pub sfz_instruments: HashMap<SfzId, SfzConfig>,
 
-    /// Modulators defined in the script.
-    pub modulators: HashMap<ModulatorId, ModulatorConfig>,
-
     /// Per-voice output port routing.
     ///
     /// Keyed by `(voice_id, port_name)` → `RouteDest`. Populated by Story 8's
@@ -724,11 +721,6 @@ impl ScriptState {
         self.sfz_instruments.insert(id, config);
     }
 
-    /// Add a modulator.
-    pub fn add_modulator(&mut self, id: ModulatorId, config: ModulatorConfig) {
-        self.modulators.insert(id, config);
-    }
-
     /// Set the route destination for a voice's named output port.
     ///
     /// Story 6a script-side mutation API. Overwrites any prior route for the
@@ -960,7 +952,6 @@ mod tests {
                 trigger_mode: "gate".to_string(),
                 choke_group: None,
                 round_robin_count: 0,
-                modulations: std::collections::HashMap::new(),
                 #[cfg(feature = "midi")]
                 midi_output: None,
                 #[cfg(feature = "midi")]

@@ -14,8 +14,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "midi")]
 use crate::midi::{
-    has_modulator_cc_mappings, pack_note_off, pack_note_on, send_cc_for_param, send_modulator_ccs,
-    QueuedMidiEvent, ScheduledMidiEvent,
+    pack_note_off, pack_note_on, send_cc_for_param, QueuedMidiEvent, ScheduledMidiEvent,
 };
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
@@ -292,7 +291,7 @@ impl<B: Backend> VoicesHandler<B> {
         }
 
         // Gather info and allocate node while holding lock
-        let (node_id, group_node_id, synthdef, params, old_node, modulations_to_apply) = {
+        let (node_id, group_node_id, synthdef, params, old_node) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -361,29 +360,13 @@ impl<B: Backend> VoicesHandler<B> {
                 }
             }
 
-            // Collect modulations to apply after synth creation
-            let mut modulations_to_apply: Vec<(String, u32)> = Vec::new();
-            for (param_name, modulator_id) in &voice.config.modulations {
-                if let Some(modulator_state) = state.modulators.get(modulator_id) {
-                    let control_bus = modulator_state.control_bus.raw();
-                    modulations_to_apply.push((param_name.clone(), control_bus));
-                }
-            }
-
             let node_id = state.alloc_node_id();
 
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
             let old_node = voice.note_nodes.remove(&note);
             voice.note_nodes.insert(note, node_id);
 
-            (
-                node_id,
-                group_node_id,
-                synthdef,
-                params,
-                old_node,
-                modulations_to_apply,
-            )
+            (node_id, group_node_id, synthdef, params, old_node)
         };
 
         // Free old node if any (lock released)
@@ -396,22 +379,6 @@ impl<B: Backend> VoicesHandler<B> {
             .create_synth(&synthdef, node_id, group_node_id, AddAction::Head, &params)
             .await
             .map_err(Error::backend)?;
-
-        // Apply modulations
-        for (param_name, control_bus) in modulations_to_apply {
-            if let Err(e) = self
-                .backend
-                .map_param_to_bus(node_id, &param_name, control_bus)
-                .await
-            {
-                tracing::error!(
-                    "Failed to map param '{}' to control bus {}: {}",
-                    param_name,
-                    control_bus,
-                    e
-                );
-            }
-        }
 
         Ok(())
     }
@@ -462,114 +429,6 @@ impl<B: Backend> VoicesHandler<B> {
 
         // For non-MIDI voices or fallback, use immediate note_off
         self.note_off(id, note).await
-    }
-
-    /// Tick modulator outputs for MIDI voices.
-    ///
-    /// This method polls modulator values and sends MIDI CC messages for
-    /// MIDI voices that have modulator-to-CC mappings configured.
-    ///
-    /// Called by the runtime's tick loop.
-    ///
-    /// ## Performance
-    ///
-    /// Uses batch control bus reading to minimize OSC roundtrips.
-    /// All control buses are requested in parallel, then responses are
-    /// collected with a single timeout window. This allows ~500+ CC/sec
-    /// throughput even with many modulators.
-    #[cfg(feature = "midi")]
-    pub async fn tick_modulators(&self) {
-        // Collect MIDI voices with modulator CC mappings, and all unique control buses
-        #[allow(clippy::type_complexity)]
-        let (midi_voices_info, all_buses): (
-            Vec<(VoiceConfig, Vec<(String, u32)>)>,
-            Vec<u32>,
-        ) = {
-            let state = self.state.read().await;
-            let mut all_buses_set = std::collections::HashSet::new();
-
-            let voices: Vec<_> = state
-                .voices
-                .values()
-                .filter(|v| has_modulator_cc_mappings(&v.config))
-                .filter_map(|v| {
-                    // Ensure the voice has MIDI output configured
-                    let _device_id = v.config.midi_output?;
-
-                    // Collect modulator control buses for this voice
-                    let modulator_buses: Vec<(String, u32)> = v
-                        .config
-                        .modulations
-                        .iter()
-                        .filter_map(|(param, mod_id)| {
-                            // Only include if there's a CC mapping for this param
-                            if !v.config.param_cc_map.contains_key(param) {
-                                return None;
-                            }
-                            // Get the modulator's control bus
-                            state.modulators.get(mod_id).map(|m| {
-                                let bus = m.control_bus.raw();
-                                all_buses_set.insert(bus);
-                                (mod_id.0.to_string(), bus)
-                            })
-                        })
-                        .collect();
-
-                    if modulator_buses.is_empty() {
-                        return None;
-                    }
-
-                    Some((v.config.clone(), modulator_buses))
-                })
-                .collect();
-
-            let buses: Vec<u32> = all_buses_set.into_iter().collect();
-            (voices, buses)
-        };
-
-        if midi_voices_info.is_empty() || all_buses.is_empty() {
-            return;
-        }
-
-        // Batch read ALL control buses in one call
-        let bus_values = match self.backend.get_control_buses(&all_buses).await {
-            Ok(values) => values,
-            Err(e) => {
-                tracing::warn!("Failed to batch read control buses: {:?}", e);
-                return;
-            }
-        };
-
-        // Distribute values to each voice and send CC
-        for (config, modulator_buses) in midi_voices_info {
-            let device_id = match config.midi_output {
-                Some(id) => id,
-                None => continue,
-            };
-
-            let sender = match self.get_midi_sender(device_id) {
-                Some(s) => s,
-                None => continue,
-            };
-
-            // Build modulator values map from batch results
-            let mut modulator_values = HashMap::new();
-            for (mod_id_str, control_bus) in modulator_buses {
-                if let Some(&value) = bus_values.get(&control_bus) {
-                    modulator_values.insert(mod_id_str, value);
-                }
-            }
-
-            // Send CC messages for modulated parameters
-            let sent = send_modulator_ccs(&config, &modulator_values, &sender);
-            if sent > 0 {
-                tracing::trace!(
-                    "MIDI voice '{}': sent {} modulator CC messages",
-                    config.name,
-                    sent
-                );
-            }
-        }
     }
 }
 
@@ -708,16 +567,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
     async fn trigger(&self, id: VoiceId, params: &ParamMap) -> Result<()> {
         // Gather info and allocate node while holding lock
-        // modulations_to_apply: Vec<(param_name, control_bus)>
-        let (
-            node_id,
-            group_node_id,
-            synthdef,
-            merged_params,
-            old_nodes,
-            choke_nodes,
-            modulations_to_apply,
-        ) = {
+        let (node_id, group_node_id, synthdef, merged_params, old_nodes, choke_nodes) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -798,39 +648,6 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let round_robin_count = voice.config.round_robin_count;
             let choke_group = voice.config.choke_group.clone();
 
-            // Collect modulations to apply after synth creation
-            // (param_name, control_bus)
-            let mut modulations_to_apply: Vec<(String, u32)> = Vec::new();
-            tracing::debug!(
-                "Voice {:?}: has {} modulations configured",
-                id,
-                voice.config.modulations.len()
-            );
-            for (param_name, modulator_id) in &voice.config.modulations {
-                tracing::debug!(
-                    "Voice {:?}: checking modulation for param '{}' with modulator {:?}",
-                    id,
-                    param_name,
-                    modulator_id
-                );
-                if let Some(modulator_state) = state.modulators.get(modulator_id) {
-                    let control_bus = modulator_state.control_bus.raw();
-                    modulations_to_apply.push((param_name.clone(), control_bus));
-                    tracing::debug!(
-                        "Voice {:?}: will map param '{}' to control bus {} (modulator {:?})",
-                        id,
-                        param_name,
-                        control_bus,
-                        modulator_id
-                    );
-                } else {
-                    tracing::warn!(
-                        "Voice {:?}: modulator {:?} not found for param '{}', skipping modulation. Available modulators: {:?}",
-                        id, modulator_id, param_name, state.modulators.keys().collect::<Vec<_>>()
-                    );
-                }
-            }
-
             let node_id = state.alloc_node_id();
 
             // Handle choke groups: collect nodes to choke from other voices in same group
@@ -876,7 +693,6 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 merged_params,
                 old_nodes,
                 choke_nodes,
-                modulations_to_apply,
             )
         };
 
@@ -897,22 +713,6 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             )
             .await
             .map_err(Error::backend)?;
-
-        // Apply modulations: map parameters to control buses
-        for (param_name, control_bus) in modulations_to_apply {
-            if let Err(e) = self
-                .backend
-                .map_param_to_bus(node_id, &param_name, control_bus)
-                .await
-            {
-                tracing::error!(
-                    "Failed to map param '{}' to control bus {}: {}",
-                    param_name,
-                    control_bus,
-                    e
-                );
-            }
-        }
 
         // Free old nodes (polyphony limit)
         for old_node in old_nodes {
@@ -1024,7 +824,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         }
 
         // Gather info and allocate node while holding lock
-        let (node_id, group_node_id, synthdef, params, old_node, modulations_to_apply) = {
+        let (node_id, group_node_id, synthdef, params, old_node) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -1099,35 +899,6 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 }
             }
 
-            // Collect modulations to apply after synth creation
-            let mut modulations_to_apply: Vec<(String, u32)> = Vec::new();
-            tracing::debug!(
-                "Voice {:?} note_on: has {} modulations configured",
-                id,
-                voice.config.modulations.len()
-            );
-            for (param_name, modulator_id) in &voice.config.modulations {
-                tracing::debug!(
-                    "Voice {:?} note_on: checking modulation for param '{}' with modulator {:?}",
-                    id,
-                    param_name,
-                    modulator_id
-                );
-                if let Some(modulator_state) = state.modulators.get(modulator_id) {
-                    let control_bus = modulator_state.control_bus.raw();
-                    modulations_to_apply.push((param_name.clone(), control_bus));
-                    tracing::debug!(
-                        "Voice {:?} note_on: will map param '{}' to control bus {} (modulator {:?})",
-                        id, param_name, control_bus, modulator_id
-                    );
-                } else {
-                    tracing::warn!(
-                        "Voice {:?} note_on: modulator {:?} not found for param '{}'. Available modulators: {:?}",
-                        id, modulator_id, param_name, state.modulators.keys().collect::<Vec<_>>()
-                    );
-                }
-            }
-
             let node_id = state.alloc_node_id();
 
             // Update voice state
@@ -1139,14 +910,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Track note -> node mapping
             voice.note_nodes.insert(note, node_id);
 
-            (
-                node_id,
-                group_node_id,
-                synthdef,
-                params,
-                old_node,
-                modulations_to_apply,
-            )
+            (node_id, group_node_id, synthdef, params, old_node)
         };
 
         // Free old node if any (lock released)
@@ -1160,22 +924,6 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             .create_synth(&synthdef, node_id, group_node_id, AddAction::Head, &params)
             .await
             .map_err(Error::backend)?;
-
-        // Apply modulations: map parameters to control buses
-        for (param_name, control_bus) in modulations_to_apply {
-            if let Err(e) = self
-                .backend
-                .map_param_to_bus(node_id, &param_name, control_bus)
-                .await
-            {
-                tracing::error!(
-                    "Failed to map param '{}' to control bus {}: {}",
-                    param_name,
-                    control_bus,
-                    e
-                );
-            }
-        }
 
         Ok(())
     }

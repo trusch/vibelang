@@ -209,14 +209,6 @@ pub async fn start_server(
             "/effects/{id}/params/{param}",
             put(routes::effects::set_effect_param),
         )
-        // Modulators
-        .route("/modulators", get(routes::modulators::list_modulators))
-        .route("/modulators/{id}", get(routes::modulators::get_modulator))
-        .route("/modulators/{id}", patch(routes::modulators::update_modulator))
-        .route(
-            "/modulators/{id}/params/{param}",
-            put(routes::modulators::set_modulator_param),
-        )
         // Samples
         .route("/samples", get(routes::samples::list_samples))
         .route("/samples", post(routes::samples::load_sample))

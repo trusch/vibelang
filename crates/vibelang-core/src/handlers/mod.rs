@@ -69,7 +69,6 @@ mod effects;
 mod fades;
 mod groups;
 mod melodies;
-mod modulators;
 mod patterns;
 mod routes;
 mod samples;
@@ -89,7 +88,6 @@ pub use effects::EffectsHandler;
 pub use fades::FadesHandler;
 pub use groups::GroupsHandler;
 pub use melodies::MelodiesHandler;
-pub use modulators::{get_modulator_control_bus, ModulatorsHandler};
 pub use patterns::PatternsHandler;
 pub use routes::{
     default_routes_for_voice, merge_default_routes, ParamRoute, ParamRouteDiff, ParamRouteMap,

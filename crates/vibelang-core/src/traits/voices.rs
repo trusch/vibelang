@@ -5,9 +5,10 @@
 
 #[cfg(feature = "midi")]
 use crate::types::MidiDeviceId;
-use crate::types::{GroupId, ModulatorId, ParamMap, SampleId, SfzId, VoiceId};
+use crate::types::{GroupId, ParamMap, SampleId, SfzId, VoiceId};
 use crate::Result;
 use async_trait::async_trait;
+#[cfg(feature = "midi")]
 use std::collections::HashMap;
 
 /// Tolerance for floating-point comparisons in voice data.
@@ -81,12 +82,6 @@ pub struct VoiceConfig {
     /// where an open hi-hat should be stopped when a closed hi-hat is triggered.
     pub choke_group: Option<String>,
 
-    /// Modulation mappings (param_name -> modulator_id).
-    ///
-    /// When set, the specified parameters will be modulated by control buses
-    /// written to by the corresponding modulators (LFOs, envelopes, etc.).
-    pub modulations: HashMap<String, ModulatorId>,
-
     /// MIDI output device (if routing to external MIDI).
     #[cfg(feature = "midi")]
     pub midi_output: Option<MidiDeviceId>,
@@ -118,7 +113,6 @@ impl PartialEq for VoiceConfig {
             && self.round_robin_count == other.round_robin_count
             && self.trigger_mode == other.trigger_mode
             && self.choke_group == other.choke_group
-            && self.modulations == other.modulations
             && {
                 #[cfg(feature = "midi")]
                 {
@@ -150,7 +144,6 @@ impl VoiceConfig {
             round_robin_count: 0,
             trigger_mode: "gate".to_string(),
             choke_group: None,
-            modulations: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_output: None,
             #[cfg(feature = "midi")]
@@ -218,15 +211,6 @@ impl VoiceConfig {
     /// Add a default parameter.
     pub fn with_param(mut self, name: impl Into<String>, value: f32) -> Self {
         self.params.insert(name.into(), value);
-        self
-    }
-
-    /// Add a modulation mapping from a parameter to a modulator.
-    ///
-    /// The specified parameter will read its value from the modulator's
-    /// control bus output instead of a static value.
-    pub fn with_modulation(mut self, param: impl Into<String>, modulator: ModulatorId) -> Self {
-        self.modulations.insert(param.into(), modulator);
         self
     }
 

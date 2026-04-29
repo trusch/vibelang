@@ -27,7 +27,6 @@ use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
 use crate::traits::VoiceConfig;
 use crate::types::MidiDeviceId;
 use crossbeam_channel::Sender;
-use std::collections::HashMap;
 
 /// Convert a normalized value (0.0-1.0) to MIDI CC value (0-127).
 #[inline]
@@ -111,117 +110,16 @@ where
     }
 }
 
-/// Information about a voice's modulator that needs MIDI CC output.
-#[derive(Debug, Clone)]
-pub struct ModulatorCcMapping {
-    /// Parameter name.
-    pub param: String,
-    /// MIDI CC number.
-    pub cc: u8,
-    /// Modulator ID (as string for HashMap key).
-    pub modulator_id: String,
-}
-
-/// Get all modulator-to-CC mappings for a MIDI voice.
-///
-/// Returns a list of mappings for modulators that have corresponding CC mappings.
-/// Used by the runtime tick loop to know which modulator values to poll.
-pub fn get_modulator_cc_mappings(config: &VoiceConfig) -> Vec<ModulatorCcMapping> {
-    // Only for MIDI voices
-    if config.midi_output.is_none() {
-        return Vec::new();
-    }
-
-    config
-        .modulations
-        .iter()
-        .filter_map(|(param, modulator_id)| {
-            // Only include if there's a CC mapping for this param
-            config
-                .param_cc_map
-                .get(param)
-                .map(|&cc| ModulatorCcMapping {
-                    param: param.clone(),
-                    cc,
-                    modulator_id: modulator_id.0.to_string(),
-                })
-        })
-        .collect()
-}
-
-/// Send MIDI CC for modulator values.
-///
-/// This function takes pre-computed modulator values and sends CC messages
-/// for all mapped parameters.
-///
-/// # Arguments
-///
-/// * `config` - Voice configuration containing MIDI settings and CC mappings
-/// * `modulator_values` - Map from modulator ID string to current value
-/// * `sender` - MIDI event sender for this voice's output device
-///
-/// # Returns
-///
-/// Number of CC messages sent.
-pub fn send_modulator_ccs(
-    config: &VoiceConfig,
-    modulator_values: &HashMap<String, f32>,
-    sender: &Sender<ScheduledMidiEvent>,
-) -> usize {
-    let mut sent = 0;
-
-    for mapping in get_modulator_cc_mappings(config) {
-        // Get the modulator's current value
-        let value = match modulator_values.get(&mapping.modulator_id) {
-            Some(&v) => v,
-            None => continue,
-        };
-
-        let cc_value = value_to_cc(value);
-        let event = QueuedMidiEvent::ControlChange {
-            channel: config.midi_channel,
-            cc: mapping.cc,
-            value: cc_value,
-        };
-
-        // Send immediately (modulator CC doesn't need lookahead)
-        if sender.send(event.immediate()).is_ok() {
-            tracing::trace!(
-                "MIDI mod CC: voice='{}' param='{}' cc={} value={}",
-                config.name,
-                mapping.param,
-                mapping.cc,
-                cc_value
-            );
-            sent += 1;
-        }
-    }
-
-    sent
-}
-
 /// Check if a voice is a MIDI voice (has midi_output configured).
 #[inline]
 pub fn is_midi_voice(config: &VoiceConfig) -> bool {
     config.midi_output.is_some()
 }
 
-/// Check if a voice has any modulator-to-CC mappings.
-#[inline]
-pub fn has_modulator_cc_mappings(config: &VoiceConfig) -> bool {
-    if config.midi_output.is_none() {
-        return false;
-    }
-    config
-        .modulations
-        .keys()
-        .any(|param| config.param_cc_map.contains_key(param))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{GroupId, ModulatorId};
+    use crate::types::GroupId;
 
     fn make_midi_voice_config() -> VoiceConfig {
         let mut config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
@@ -279,38 +177,5 @@ mod tests {
 
         let midi_config = make_midi_voice_config();
         assert!(is_midi_voice(&midi_config));
-    }
-
-    #[test]
-    fn test_get_modulator_cc_mappings() {
-        let mut config = make_midi_voice_config();
-        config
-            .modulations
-            .insert("cutoff".to_string(), ModulatorId::new(1));
-        config
-            .modulations
-            .insert("resonance".to_string(), ModulatorId::new(2));
-        config
-            .modulations
-            .insert("freq".to_string(), ModulatorId::new(3)); // No CC mapping
-
-        let mappings = get_modulator_cc_mappings(&config);
-        assert_eq!(mappings.len(), 2); // cutoff and resonance, but not freq
-    }
-
-    #[test]
-    fn test_has_modulator_cc_mappings() {
-        let mut config = make_midi_voice_config();
-        assert!(!has_modulator_cc_mappings(&config)); // No modulations yet
-
-        config
-            .modulations
-            .insert("freq".to_string(), ModulatorId::new(1)); // No CC mapping
-        assert!(!has_modulator_cc_mappings(&config));
-
-        config
-            .modulations
-            .insert("cutoff".to_string(), ModulatorId::new(2)); // Has CC mapping
-        assert!(has_modulator_cc_mappings(&config));
     }
 }

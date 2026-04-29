@@ -177,10 +177,7 @@ pub use hotplug::{AutoReconnect, AutoReconnectConfig, HotPlugEvent, HotPlugWatch
 pub use recording::{MidiRecording, MidiRecordingInfo, RecordedMidiCc, RecordedMidiNote};
 
 // MIDI Voice Output (for MIDI voices with CC mappings)
-pub use voice_output::{
-    get_modulator_cc_mappings, has_modulator_cc_mappings, is_midi_voice, send_cc_for_param,
-    send_modulator_ccs, value_to_cc, ModulatorCcMapping,
-};
+pub use voice_output::{is_midi_voice, send_cc_for_param, value_to_cc};
 
 // Per-note state tracking for MIDI 2.0 and MPE
 pub use per_note_state::{PerNoteState, PerNoteStateManager};

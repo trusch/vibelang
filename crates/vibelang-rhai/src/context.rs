@@ -21,8 +21,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use vibelang_core::reload::ScriptState;
 use vibelang_core::types::{
-    EffectId, FadeId, GroupId, MelodyId, ModulatorId, PatternId, RecordingId, SampleId, SequenceId,
-    SfzId, VoiceId,
+    EffectId, FadeId, GroupId, MelodyId, PatternId, RecordingId, SampleId, SequenceId, SfzId,
+    VoiceId,
 };
 
 /// Generate a stable u32 ID from a name using FNV-1a hash.
@@ -145,7 +145,6 @@ struct ScriptContext {
     next_sample_id: u32,
     next_sfz_id: u32,
     next_recording_id: u32,
-    next_modulator_id: u32,
     next_fade_id: u32,
     /// Counter for MIDI callback IDs.
     #[cfg(feature = "midi")]
@@ -161,7 +160,6 @@ struct ScriptContext {
     sample_ids: HashMap<String, SampleId>,
     sfz_ids: HashMap<String, SfzId>,
     recording_ids: HashMap<String, RecordingId>,
-    modulator_ids: HashMap<String, ModulatorId>,
     fade_ids: HashMap<String, FadeId>,
 
     /// MIDI callback FnPtr storage (callback_id -> FnPtr).
@@ -186,7 +184,6 @@ impl Default for ScriptContext {
             next_sample_id: 1,
             next_sfz_id: 1,
             next_recording_id: 1,
-            next_modulator_id: 1,
             next_fade_id: 1,
             #[cfg(feature = "midi")]
             next_callback_id: 1,
@@ -199,7 +196,6 @@ impl Default for ScriptContext {
             sample_ids: HashMap::new(),
             sfz_ids: HashMap::new(),
             recording_ids: HashMap::new(),
-            modulator_ids: HashMap::new(),
             fade_ids: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_callbacks: HashMap::new(),
@@ -509,16 +505,6 @@ define_id_accessors!(
     recording_ids,
     "Get or create a recording ID by name.",
     "Get a recording ID by name (if it exists)."
-);
-
-define_id_accessors!(
-    get_or_create_modulator_id,
-    get_modulator_id,
-    ModulatorId,
-    next_modulator_id,
-    modulator_ids,
-    "Get or create a modulator ID by name.",
-    "Get a modulator ID by name (if it exists)."
 );
 
 define_id_accessors!(

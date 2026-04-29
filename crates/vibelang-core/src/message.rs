@@ -11,14 +11,13 @@
 #[cfg(not(target_arch = "wasm32"))]
 use crate::traits::RecordingConfig;
 use crate::traits::{
-    FadeConfig, FadeTarget, MelodyConfig, ModulatorConfig, PatternConfig, SampleConfig,
-    SequenceConfig, VoiceConfig,
+    FadeConfig, FadeTarget, MelodyConfig, PatternConfig, SampleConfig, SequenceConfig, VoiceConfig,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use crate::types::RecordingId;
 use crate::types::{
-    Beat, EffectId, GroupId, MelodyId, ModulatorId, ParamMap, PatternId, SampleId, SequenceId,
-    SfzId, TimeSignature, VoiceId,
+    Beat, EffectId, GroupId, MelodyId, ParamMap, PatternId, SampleId, SequenceId, SfzId,
+    TimeSignature, VoiceId,
 };
 use std::path::PathBuf;
 
@@ -309,33 +308,6 @@ pub enum EffectMessage {
 }
 
 // =============================================================================
-// Modulator Messages
-// =============================================================================
-
-/// Modulator messages for control-rate signal generators.
-///
-/// Modulators output control-rate signals to control buses, which can be
-/// routed to voice parameters for dynamic modulation (LFOs, envelopes, etc.).
-#[derive(Clone, Debug)]
-pub enum ModulatorMessage {
-    /// Create a new modulator.
-    Create {
-        id: ModulatorId,
-        config: ModulatorConfig,
-    },
-
-    /// Delete a modulator.
-    Delete { id: ModulatorId },
-
-    /// Set a modulator parameter.
-    SetParam {
-        id: ModulatorId,
-        param: String,
-        value: f32,
-    },
-}
-
-// =============================================================================
 // Fade Messages
 // =============================================================================
 
@@ -599,9 +571,6 @@ pub enum Message {
     /// Effect control messages.
     Effect(EffectMessage),
 
-    /// Modulator control messages.
-    Modulator(ModulatorMessage),
-
     /// Fade control messages.
     Fade(FadeMessage),
 
@@ -692,11 +661,6 @@ impl Message {
                 EffectMessage::Add { .. } => "Effect::Add",
                 EffectMessage::Remove { .. } => "Effect::Remove",
                 EffectMessage::SetParam { .. } => "Effect::SetParam",
-            },
-            Message::Modulator(msg) => match msg {
-                ModulatorMessage::Create { .. } => "Modulator::Create",
-                ModulatorMessage::Delete { .. } => "Modulator::Delete",
-                ModulatorMessage::SetParam { .. } => "Modulator::SetParam",
             },
             Message::Fade(msg) => match msg {
                 FadeMessage::Start { .. } => "Fade::Start",
@@ -803,12 +767,6 @@ impl From<SequenceMessage> for Message {
 impl From<EffectMessage> for Message {
     fn from(msg: EffectMessage) -> Self {
         Message::Effect(msg)
-    }
-}
-
-impl From<ModulatorMessage> for Message {
-    fn from(msg: ModulatorMessage) -> Self {
-        Message::Modulator(msg)
     }
 }
 
