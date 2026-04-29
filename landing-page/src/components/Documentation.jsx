@@ -525,80 +525,68 @@ sequence("song").clip(bars(2)..bars(6), my_fade).start();`
   ],
   'Modulator': [
     {
-      name: 'modulator',
-      signature: 'modulator(name) -> Modulator',
-      description: 'Create a modulator instance for real-time parameter modulation. Modulators run on control buses and can modulate any synth parameter continuously.',
-      params: [{ name: 'name', type: 'String', description: 'Unique identifier for this modulator' }],
-      example: `// Create a filter sweep LFO
-let filter_lfo = modulator("filter_lfo")
-    .synth("lfo_tri")       // Triangle wave LFO
-    .param("rate", 0.25)    // 4-second cycle
-    .param("lo", 100.0)     // Min cutoff
-    .param("hi", 4000.0)    // Max cutoff
-    .apply();`
-    },
-    {
-      name: '.synth',
-      signature: '.synth(name) -> Modulator',
-      description: 'Set the modulator synthdef. Use stdlib modulators (lfo_sine, lfo_tri, lfo_saw, lfo_square, lfo_random, envelope_follower) or define custom ones.',
-      params: [{ name: 'name', type: 'String', description: 'Modulator synthdef name' }],
-      example: `modulator("wobble").synth("lfo_sine");
-modulator("tremolo").synth("lfo_square");
-modulator("sweep").synth("lfo_saw");`
+      name: 'voice (kr source)',
+      signature: 'voice(name).synth(kr_synthdef) -> Voice',
+      description: 'A "modulator" is just a regular voice whose synthdef declares a control-rate output port via .output_kr("out"). Create the voice the same way as any other voice; the kr port is what makes it usable as a modulation source.',
+      params: [
+        { name: 'name', type: 'String', description: 'Unique identifier for this voice' },
+        { name: 'kr_synthdef', type: 'String', description: 'Synthdef name with a kr output port (e.g. lfo_sine, lfo_tri, lfo_saw, lfo_square, lfo_random, envelope_follower)' }
+      ],
+      example: `// Create a filter sweep LFO as a voice on a kr-output synthdef.
+let filter_lfo = voice("filter_lfo")
+    .synth("lfo_tri")            // kr port "out"
+    .set_param("rate", 0.25)     // 4-second cycle
+    .set_param("lo", 100.0)      // Min cutoff
+    .set_param("hi", 4000.0);    // Max cutoff`
     },
     {
       name: '.param',
-      signature: '.param(name, value) -> Modulator',
-      description: 'Set a modulator parameter. Common params: rate (Hz), lo (min output), hi (max output), phase (starting phase 0-1).',
+      signature: '.param(name) -> ParamHandle',
+      description: 'Open a target-first parameter handle on a voice. Chain .modulate_by(source, port) to wire a kr source voice into this param. Multiple modulate_by calls on the same param sum the sources via an internal kr summer.',
       params: [
-        { name: 'name', type: 'String', description: 'Parameter name' },
-        { name: 'value', type: 'f64', description: 'Parameter value' }
+        { name: 'name', type: 'String', description: 'Parameter name on the target voice' }
       ],
-      example: `modulator("vibrato")
-    .synth("lfo_sine")
-    .param("rate", 5.0)     // 5 Hz vibrato
-    .param("lo", -0.02)     // -2 cents
-    .param("hi", 0.02);     // +2 cents`
+      example: `let bass = voice("bass").synth("moog_bass").gain(db(-6));
+bass.param("cutoff").modulate_by(filter_lfo, "out");`
     },
     {
-      name: '.apply',
-      signature: '.apply() -> Modulator',
-      description: 'Apply the modulator configuration and create it on a control bus. Returns the handle for use with .modulate().',
-      params: [],
-      example: `let lfo = modulator("lfo")
-    .synth("lfo_tri")
-    .param("rate", 0.5)
-    .apply();`
-    },
-    {
-      name: '.modulate',
-      signature: '.modulate(param, modulator) -> Voice',
-      description: 'Connect a modulator to a voice parameter. The parameter will be continuously controlled by the modulator output.',
+      name: '.modulate_by',
+      signature: '.modulate_by(source, port) -> ParamHandle',
+      description: 'Target-first BEND: route a kr port from a source voice into the target voice param. Chain multiple .modulate_by calls on the same param to sum sources (env + lfo → cutoff).',
       params: [
-        { name: 'param', type: 'String', description: 'Parameter name to modulate' },
-        { name: 'modulator', type: 'Modulator', description: 'The modulator to connect' }
+        { name: 'source', type: 'Voice', description: 'Source voice running a kr-output synthdef' },
+        { name: 'port', type: 'String', description: 'Name of the kr output port on the source synthdef' }
       ],
-      example: `// Create modulator
-let filter_lfo = modulator("filter_lfo")
-    .synth("lfo_tri")
-    .param("rate", 0.25)
-    .param("lo", 100.0)
-    .param("hi", 4000.0)
-    .apply();
+      example: `// LFO and envelope summed into a single cutoff param.
+let env = voice("env").synth("lfo_sine").set_param("rate", 0.3);
+let lfo = voice("vib").synth("lfo_sine").set_param("rate", 5.0);
 
-// Connect to voice
-voice("bass")
-    .synth("moog_bass")
-    .modulate("cutoff", filter_lfo)
-    .apply();`
+bass.param("cutoff")
+    .modulate_by(env, "out")
+    .modulate_by(lfo, "out");`
     },
     {
-      name: 'define_modulator',
-      signature: 'define_modulator(name) -> ModulatorDef',
-      description: 'Define a custom control-rate modulator synthdef. The body should return a control-rate signal that outputs to a control bus.',
-      params: [{ name: 'name', type: 'String', description: 'Unique modulator synthdef name' }],
-      example: `// Custom triangle LFO
-define_modulator("my_lfo")
+      name: '.output(...).to_param',
+      signature: '.output(port).to_param(target, param) -> RouteHandle',
+      description: 'Source-first SET: wire a source voice\'s kr output port into a target voice\'s param via scsynth /n_map. Equivalent to target.param(param).modulate_by(source, port) but written from the source side. Single-source per param; for multi-source fan-in use .modulate_by.',
+      params: [
+        { name: 'port', type: 'String', description: 'kr output port name on the source synthdef' },
+        { name: 'target', type: 'Voice', description: 'Target voice to drive' },
+        { name: 'param', type: 'String', description: 'Parameter on the target voice' }
+      ],
+      example: `let env = voice("env").synth("maths").group("ctrl");
+let bass = voice("bass").synth("tb303_bass").group("bass");
+
+env.output("ch1").to_param(bass, "cutoff");`
+    },
+    {
+      name: 'define_synthdef + .output_kr',
+      signature: 'define_synthdef(name).output_kr(port).body(...) ',
+      description: 'Define a custom kr-rate ("modulator") synthdef. Declare a control-rate output port via .output_kr; the body returns a kr signal. The synthdef is then usable as a source voice for .modulate_by / .to_param.',
+      params: [{ name: 'name', type: 'String', description: 'Unique synthdef name' }],
+      example: `// Custom triangle LFO synthdef with a kr output port.
+define_synthdef("my_lfo")
+    .output_kr("out")
     .param("rate", 1.0)
     .param("lo", 0.0)
     .param("hi", 1.0)
@@ -1163,7 +1151,7 @@ const categoryDescriptions = {
 
   'Fade': `Fades provide smooth parameter automation over time. Use them to create filter sweeps, volume swells, effect wet/dry transitions, or any gradual change. Fades can target voices, groups, or effects, and can be started immediately or placed in sequences for precise timing. The builder API lets you specify start value, end value, and duration in beats or bars.`,
 
-  'Modulator': `Modulators provide real-time continuous parameter control using LFOs, envelope followers, and other control-rate signals. Unlike fades which are one-shot automations, modulators run continuously and can create evolving, organic textures. Connect modulators to voice parameters like filter cutoff, oscillator pitch, or amplitude to add movement and life to static sounds. The standard library includes sine, triangle, saw, square, and random LFOs, plus an envelope follower for dynamics-based modulation.`,
+  'Modulator': `Modulators provide real-time continuous parameter control using LFOs, envelope followers, and other control-rate signals. A modulator is just a regular voice whose synthdef declares a kr output port (.output_kr("out")); wire it into a target voice's parameter using .param(name).modulate_by(source, port) (target-first) or source.output(port).to_param(target, name) (source-first). Multiple sources can be summed into a single param via chained .modulate_by calls. The standard library includes sine, triangle, saw, square, and random LFOs, plus an envelope follower for dynamics-based modulation.`,
 
   'SynthDef': `SynthDefs let you create custom synthesizers and effects at the DSP level. Using VibeLang's UGen library (oscillators, filters, envelopes, and more), you can build anything from simple sine waves to complex FM synthesizers. Effects process input signals and can be added to groups. The standard library includes many ready-to-use synthdefs, but defining your own unlocks unlimited sonic possibilities.`,
 

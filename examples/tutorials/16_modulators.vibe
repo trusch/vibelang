@@ -33,9 +33,11 @@ set_tempo(120);
 // ============================================================
 // Classic sweeping filter cutoff for that synth movement
 
-// First, define a triangle LFO modulator synthdef
+// First, define a triangle LFO synthdef with a kr output port.
+// (A "modulator" is just a regular synthdef whose declared port is
+// control-rate via .output_kr — there's no separate builder anymore.)
 // Note: We use basic math instead of lin_lin_kr for portability
-define_modulator("lfo_tri")
+define_synthdef("lfo_tri")
     .output_kr("out")     // 1ch — kr CV (triangle LFO)
     .param("rate", 1.0)
     .param("lo", 0.0)
@@ -89,8 +91,8 @@ melody("bass_line")
 // ============================================================
 // AVAILABLE MODULATOR TYPES:
 //
-// You can define your own modulators using define_modulator()
-// with control-rate UGens like:
+// You can define your own modulator synthdefs with define_synthdef
+// + .output_kr("out") and a body using control-rate UGens like:
 //   sin_osc_kr   - Sine wave
 //   lf_tri_kr    - Triangle wave
 //   lf_saw_kr    - Sawtooth wave

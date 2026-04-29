@@ -123,13 +123,17 @@ Two takeaways:
 Modulator examples:
 
 ```vibe
-// Slow wobble across zero (forward + a touch of reverse)
-modulator("vs_wobble")
-    .synth("lfo_sine")
-    .param("rate", 0.12)
-    .param("lo", -0.3)
-    .param("hi", 0.5)
-    .apply();
+// Slow wobble across zero (forward + a touch of reverse). The LFO is a
+// plain voice on a kr-output synthdef; wire it into the morphagene
+// voice's vari_speed param via .modulate_by (target-first BEND).
+let vs_wobble = voice("vs_wobble")
+    .synth("lfo_sine")              // kr port "out"
+    .set_param("rate", 0.12)
+    .set_param("lo", -0.3)
+    .set_param("hi", 0.5);
+
+// then on the morphagene voice:
+//   morph.param("vari_speed").modulate_by(vs_wobble, "out");
 ```
 
 ---
@@ -224,16 +228,18 @@ import "stdlib/modulators/lfo/lfo_sine.vibe";
 
 let reel = sample("reel", "samples/loop.wav").loop_mode(true);
 
-let vs = modulator("vs").synth("lfo_sine")
-    .param("rate", 0.12).param("lo", -0.05).param("hi", 0.15)
-    .apply();
+let vs = voice("vs")
+    .synth("lfo_sine")                  // kr port "out"
+    .set_param("rate", 0.12)
+    .set_param("lo", -0.05)
+    .set_param("hi", 0.15);
 
 let v = voice("warble")
     .on(reel)
     .synth("morphagene")
     .set_param("slide", 0.5)
-    .modulate("vari_speed", vs)
     .gain(db(-9));
+v.param("vari_speed").modulate_by(vs, "out");
 melody("hold").on(v).notes("C3").apply();
 ```
 

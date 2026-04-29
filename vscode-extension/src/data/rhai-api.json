@@ -1520,75 +1520,63 @@
     "example": "record(\"mono_take\").from_group(\"main/Kick\").bars(2).channels(1).apply();"
   },
   {
-    "name": "define_modulator",
-    "description": "Define a control-rate modulator synthdef (LFO, envelope follower, etc.). Modulators output to control buses and can modulate synth parameters. The body should return a control-rate signal.",
-    "signature": "define_modulator(name: string) -> ModulatorDef",
-    "example": "// Custom triangle LFO modulator\ndefine_modulator(\"lfo_tri\")\n    .param(\"rate\", 1.0)   // LFO rate in Hz\n    .param(\"lo\", 0.0)     // Minimum output value\n    .param(\"hi\", 1.0)     // Maximum output value\n    .body(|rate, lo, hi| {\n        let osc = lf_tri_kr(rate);  // Triangle wave -1 to 1\n        let normalized = osc * 0.5 + 0.5;  // Map to 0-1\n        normalized * (hi - lo) + lo  // Scale to lo-hi range\n    });"
+    "name": "output_kr",
+    "description": "[SynthDefBuilder] Declare a control-rate (kr) output port on the synthdef. The body returns a kr signal for this port. Voices instantiating the synthdef can wire the port into target params via .to_param (source-first SET) or target.param(name).modulate_by(source, port) (target-first BEND).",
+    "signature": ".output_kr(name: string) -> SynthDefBuilder | .output_kr(name: string, channels: int) -> SynthDefBuilder",
+    "example": "// Custom triangle LFO synthdef with a kr output port.\ndefine_synthdef(\"my_lfo\")\n    .output_kr(\"out\")\n    .param(\"rate\", 1.0)\n    .param(\"lo\", 0.0)\n    .param(\"hi\", 1.0)\n    .body(|rate, lo, hi| {\n        let osc = lf_tri_kr(rate);\n        let normalized = osc * 0.5 + 0.5;\n        normalized * (hi - lo) + lo\n    });"
   },
   {
-    "name": "modulator",
-    "description": "Create a modulator instance from a defined modulator synthdef. Modulators run on control buses and modulate synth parameters in real-time. Use with .synth(), .param(), and .apply().",
-    "signature": "modulator(name: string) -> Modulator",
-    "example": "// Create an LFO modulator\nlet filter_lfo = modulator(\"filter_lfo\")\n    .synth(\"lfo_tri\")      // Use triangle LFO\n    .param(\"rate\", 0.25)   // 4-second cycle\n    .param(\"lo\", 200.0)    // Min cutoff 200Hz\n    .param(\"hi\", 4000.0)   // Max cutoff 4kHz\n    .apply();\n\n// Connect to a voice\nvoice(\"synth\").on(\"pad\").modulate(\"cutoff\", filter_lfo).apply();"
-  },
-  {
-    "name": "synth",
-    "description": "[Modulator] Set the modulator synthdef to use. Must be a synthdef defined with define_modulator(). The stdlib provides lfo_sine, lfo_tri, lfo_saw, lfo_square, lfo_random, and envelope_follower.",
-    "signature": ".synth(name: string) -> Modulator",
-    "example": "modulator(\"wobble\").synth(\"lfo_sine\").param(\"rate\", 2.0).apply();"
+    "name": "to_param",
+    "description": "[RouteHandle] Source-first SET: route a kr output port from this voice into a target voice's param via scsynth /n_map. Single-source per param; for multi-source fan-in use ParamHandle.modulate_by instead.",
+    "signature": ".to_param(target: Voice, param: string) -> RouteHandle",
+    "example": "let env = voice(\"env\").synth(\"maths\").group(\"ctrl\");\nlet bass = voice(\"bass\").synth(\"tb303_bass\").group(\"bass\");\n\nenv.output(\"ch1\").to_param(bass, \"cutoff\");"
   },
   {
     "name": "param",
-    "description": "[Modulator] Set a parameter value on the modulator. Common parameters: rate (Hz), lo (min value), hi (max value), phase (0-1).",
-    "signature": ".param(name: string, value: float) -> Modulator",
-    "example": "modulator(\"vibrato\")\n    .synth(\"lfo_sine\")\n    .param(\"rate\", 5.0)    // 5Hz vibrato\n    .param(\"lo\", -50.0)   // -50 cents\n    .param(\"hi\", 50.0)    // +50 cents\n    .apply();"
+    "description": "[Voice] Open a target-first ParamHandle on this voice's named param. Chain .modulate_by(source, port) to wire a kr source voice into this param. Multiple .modulate_by calls on the same param sum the sources via an internal kr summer (up to 8).",
+    "signature": ".param(name: string) -> ParamHandle",
+    "example": "let lfo = voice(\"lfo\").synth(\"lfo_tri\").set_param(\"rate\", 0.25);\nlet bass = voice(\"bass\").synth(\"moog_bass\");\nbass.param(\"cutoff\").modulate_by(lfo, \"out\");"
   },
   {
-    "name": "apply",
-    "description": "[Modulator] Apply the modulator configuration and create the modulator synth on its control bus. Returns the Modulator handle for use with .modulate().",
-    "signature": ".apply() -> Modulator",
-    "example": "let lfo = modulator(\"lfo\").synth(\"lfo_tri\").param(\"rate\", 0.5).apply();"
-  },
-  {
-    "name": "modulate",
-    "description": "[Voice] Connect a modulator to a voice parameter. The parameter will be dynamically controlled by the modulator's output. Works with any synth parameter that accepts control-rate modulation.",
-    "signature": ".modulate(param: string, modulator: Modulator) -> Voice",
-    "example": "// Create a filter sweep LFO\nlet filter_lfo = modulator(\"filter_lfo\")\n    .synth(\"lfo_tri\")\n    .param(\"rate\", 0.25)\n    .param(\"lo\", 100.0)\n    .param(\"hi\", 4000.0)\n    .apply();\n\n// Apply to voice's cutoff parameter\nvoice(\"bass\")\n    .on(\"moog_bass\")\n    .modulate(\"cutoff\", filter_lfo)\n    .apply();"
+    "name": "modulate_by",
+    "description": "[ParamHandle] Target-first BEND: wire a kr port from a source voice into this voice's param. Chainable for multi-source fan-in (env + lfo summed into one cutoff). Equivalent to source.output(port).to_param(target, param) but written from the target side.",
+    "signature": ".modulate_by(source: Voice, port: string) -> ParamHandle",
+    "example": "// Sum env and LFO into a single cutoff param.\nlet env = voice(\"env\").synth(\"lfo_sine\").set_param(\"rate\", 0.3);\nlet lfo = voice(\"vib\").synth(\"lfo_sine\").set_param(\"rate\", 5.0);\nbass.param(\"cutoff\")\n    .modulate_by(env, \"out\")\n    .modulate_by(lfo, \"out\");"
   },
   {
     "name": "lfo_sine",
-    "description": "[Stdlib Modulator] Sine wave LFO. Smooth oscillation between lo and hi values. Parameters: rate (Hz), lo (min), hi (max), phase (0-1 starting phase).",
+    "description": "[Stdlib kr synthdef] Sine wave LFO. Smooth oscillation between lo and hi values. Use as a voice synthdef and wire its \"out\" kr port into a target param. Parameters: rate (Hz), lo (min), hi (max), phase (0-1 starting phase).",
     "signature": "lfo_sine",
-    "example": "modulator(\"vibrato\").synth(\"lfo_sine\").param(\"rate\", 5.0).param(\"lo\", -0.02).param(\"hi\", 0.02).apply();"
+    "example": "let vib = voice(\"vib\").synth(\"lfo_sine\").set_param(\"rate\", 5.0).set_param(\"lo\", -0.02).set_param(\"hi\", 0.02);\nv.param(\"freq_mul\").modulate_by(vib, \"out\");"
   },
   {
     "name": "lfo_tri",
-    "description": "[Stdlib Modulator] Triangle wave LFO. Linear ramp up and down between lo and hi. Good for smooth filter sweeps. Parameters: rate (Hz), lo (min), hi (max).",
+    "description": "[Stdlib kr synthdef] Triangle wave LFO. Linear ramp up and down between lo and hi. Good for smooth filter sweeps. Parameters: rate (Hz), lo (min), hi (max).",
     "signature": "lfo_tri",
-    "example": "modulator(\"filter\").synth(\"lfo_tri\").param(\"rate\", 0.25).param(\"lo\", 200.0).param(\"hi\", 4000.0).apply();"
+    "example": "let filt = voice(\"filt\").synth(\"lfo_tri\").set_param(\"rate\", 0.25).set_param(\"lo\", 200.0).set_param(\"hi\", 4000.0);\nbass.param(\"cutoff\").modulate_by(filt, \"out\");"
   },
   {
     "name": "lfo_saw",
-    "description": "[Stdlib Modulator] Sawtooth wave LFO. Ramps from lo to hi then jumps back. Good for rising effects. Parameters: rate (Hz), lo (min), hi (max).",
+    "description": "[Stdlib kr synthdef] Sawtooth wave LFO. Ramps from lo to hi then jumps back. Good for rising effects. Parameters: rate (Hz), lo (min), hi (max).",
     "signature": "lfo_saw",
-    "example": "modulator(\"riser\").synth(\"lfo_saw\").param(\"rate\", 0.5).param(\"lo\", 100.0).param(\"hi\", 2000.0).apply();"
+    "example": "let riser = voice(\"riser\").synth(\"lfo_saw\").set_param(\"rate\", 0.5).set_param(\"lo\", 100.0).set_param(\"hi\", 2000.0);\nlead.param(\"cutoff\").modulate_by(riser, \"out\");"
   },
   {
     "name": "lfo_square",
-    "description": "[Stdlib Modulator] Square/pulse wave LFO. Alternates between lo and hi values. Good for tremolo and gating effects. Parameters: rate (Hz), lo (min), hi (max), width (pulse width 0-1).",
+    "description": "[Stdlib kr synthdef] Square/pulse wave LFO. Alternates between lo and hi values. Good for tremolo and gating effects. Parameters: rate (Hz), lo (min), hi (max), width (pulse width 0-1).",
     "signature": "lfo_square",
-    "example": "modulator(\"tremolo\").synth(\"lfo_square\").param(\"rate\", 8.0).param(\"lo\", 0.0).param(\"hi\", 1.0).apply();"
+    "example": "let trem = voice(\"trem\").synth(\"lfo_square\").set_param(\"rate\", 8.0).set_param(\"lo\", 0.0).set_param(\"hi\", 1.0);\nv.param(\"amp\").modulate_by(trem, \"out\");"
   },
   {
     "name": "lfo_random",
-    "description": "[Stdlib Modulator] Random/noise LFO. Generates smoothed random values between lo and hi. Good for organic, unpredictable modulation. Parameters: rate (Hz), lo (min), hi (max).",
+    "description": "[Stdlib kr synthdef] Random/noise LFO. Generates smoothed random values between lo and hi. Good for organic, unpredictable modulation. Parameters: rate (Hz), lo (min), hi (max).",
     "signature": "lfo_random",
-    "example": "modulator(\"wobble\").synth(\"lfo_random\").param(\"rate\", 2.0).param(\"lo\", 0.8).param(\"hi\", 1.2).apply();"
+    "example": "let wob = voice(\"wob\").synth(\"lfo_random\").set_param(\"rate\", 2.0).set_param(\"lo\", 0.8).set_param(\"hi\", 1.2);\nv.param(\"freq_mul\").modulate_by(wob, \"out\");"
   },
   {
     "name": "envelope_follower",
-    "description": "[Stdlib Modulator] Envelope follower that tracks amplitude of an audio input. Outputs a control signal proportional to input loudness. Good for ducking, auto-wah, and dynamic effects. Parameters: attack (seconds), release (seconds), input_bus.",
+    "description": "[Stdlib kr synthdef] Envelope follower that tracks amplitude of an audio input. Outputs a kr signal proportional to input loudness. Good for ducking, auto-wah, and dynamic effects. Parameters: attack (seconds), release (seconds), input_bus.",
     "signature": "envelope_follower",
-    "example": "modulator(\"duck\").synth(\"envelope_follower\").param(\"attack\", 0.01).param(\"release\", 0.1).apply();"
+    "example": "let duck = voice(\"duck\").synth(\"envelope_follower\").set_param(\"attack\", 0.01).set_param(\"release\", 0.1);\nbass.param(\"amp\").modulate_by(duck, \"out\");"
   }
 ]

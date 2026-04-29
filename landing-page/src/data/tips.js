@@ -132,7 +132,7 @@ export const tips = [
   },
   {
     type: 'tip',
-    text: 'LFOs make static sounds alive! Use modulator("lfo").synth("lfo_tri").modulate("cutoff", lfo)',
+    text: 'LFOs make static sounds alive! let lfo = voice("lfo").synth("lfo_tri"); v.param("cutoff").modulate_by(lfo, "out")',
     icon: 'bulb'
   },
   {

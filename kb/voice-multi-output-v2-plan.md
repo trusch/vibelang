@@ -1,8 +1,17 @@
 # Voice Multi-Output v2 — Plan (CV-to-param routing + per-port FX)
 
-**Status:** planning
+**Status:** historical / superseded — kept for context.
 **Epic:** `epic-voice-multi-output-v2-cv-to-param-routing-per-port-fx`
 **Builds on:** `epic-voice-multi-output-routing-per-port-group-routing-v1` (closed 2026-04-29)
+
+> **Postscript (2026-04-29):** Story 5 modulator-as-sugar shipped, then
+> the entire modulator surface was removed in epic
+> `epic-remove-modulator-builder-voice-modulate-replace-with-voice-param-name-modulate-by-source-port`.
+> Canonical kr routing today: source-first SET via
+> `source.output("port").to_param(target, "param")` and target-first
+> BEND via `target.param("param").modulate_by(source, "port")`. The
+> sections below describe the v2 plan as it was originally drafted —
+> read with that header in mind.
 
 ---
 
@@ -11,7 +20,7 @@
 1. **kr-rate output ports** — synthdefs declare control-rate outputs.
 2. **CV-to-param routing** — `voice.output("env").to_param(other, "cutoff")` maps a kr port at another voice's parameter via scsynth's `MapN`.
 3. **Per-port FX chain** — a chainable modifier on the route handle that inserts FX synths *before* the port joins the group bus. (Implemented under Stories 6a/6b, then reverted post-implementation — see §9.)
-4. **Modulator obsolescence** — existing `modulator()` becomes sugar over a single-kr-port voice with a `to_param` route. Old API keeps working; deletion is v3.
+4. **Modulator obsolescence** — the existing `modulator` builder becomes sugar over a single-kr-port voice with a `to_param` route. Old API keeps working; deletion is v3. (See postscript: removed entirely.)
 
 ## 2. v1 recap (already in tree)
 
@@ -48,7 +57,7 @@ Bus alloc: reuse the port's source bus as `fx[0]`'s input; allocate one fresh in
 
 ### 3.5 Modulator-as-sugar
 
-Existing `modulator("env").adsr(...)` keeps working. Internally: builder generates a synthdef with a single kr port `"out"` and the equivalent UGen graph; voice creation goes through the standard voice path. `voice.modulate("amp", m)` becomes sugar for `m.output("out").to_param(voice, "amp")`. No user-visible API change; one fewer core type internally.
+Existing `modulator` builder usage keeps working. Internally: builder generates a synthdef with a single kr port `"out"` and the equivalent UGen graph; voice creation goes through the standard voice path. The `voice.modulate` call becomes sugar for `m.output("out").to_param(voice, name)`. No user-visible API change; one fewer core type internally.
 
 ## 4. Story breakdown
 
@@ -124,8 +133,8 @@ Phasing:
 
 ## 7. Modulator obsolescence path
 
-1. **v2 Story 5**: rewrite `modulator()` builder to emit a single-kr-port synthdef internally; old user-facing API unchanged.
-2. **v2 Story 10 docs**: announce "modulator() is now sugar over voice.output_kr() + .to_param()".
+1. **v2 Story 5**: rewrite the `modulator` builder to emit a single-kr-port synthdef internally; old user-facing API unchanged.
+2. **v2 Story 10 docs**: announce "modulator builder is now sugar over voice.output_kr + .to_param".
 3. **v3 (out of this epic)**: deprecation warning + removal.
 
 ## 8. NOT in v2

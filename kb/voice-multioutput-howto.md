@@ -6,11 +6,13 @@
 > `kb/voice-multi-output-v2-plan.md` (v2).
 >
 > **Status snapshot:** v1 (audio-only) + v2 (kr-rate ports, CV-to-param
-> routing, modulator-as-sugar) shipped. The per-port FX feature was
-> implemented and then reverted: sub-group routing covers every use case
-> with shared FX state and fewer buses (see §3b). The remaining v3 work
-> — ar→param coercion, fan-out to multiple groups, multi-source fan-in
-> to a single param — is documented in §9.
+> routing) shipped. The legacy `modulator` builder + `voice.modulate`
+> surface has been removed — the canonical kr-routing surfaces are
+> `.to_param` (source-first SET) and `.param(...).modulate_by(...)`
+> (target-first BEND), see §3c. The per-port FX feature was implemented
+> and then reverted: sub-group routing covers every use case with shared
+> FX state and fewer buses (see §3b). The remaining v3 work
+> — ar→param coercion, fan-out to multiple groups — is documented in §8.
 
 A vibelang voice can expose **N named output ports**. Each port is an
 independent signal that the script routes wherever it likes — to a group
@@ -114,7 +116,14 @@ terminal verb to commit the route:
 | `.to_main()` | Send straight to main hardware output (bus 0), bypassing groups. | ar only |
 | `.to_current_group()` | Sum into whichever group the voice was last `.group("name")`-ed into. Errors when the voice has no explicit group set. | ar only |
 | `.mute()` | Discard the port's signal. | ar or kr |
-| `.to_param(target, "param")` | Map this port's control bus into `target.param` via scsynth `/n_map` (see §3c). | kr only |
+| `.to_param(target, "param")` | **Source-first (SET).** Map this port's control bus into `target.param` via scsynth `/n_map` (see §3c). | kr only |
+
+The dual surface lives on the **target** voice via
+`voice.param("name")`, which returns a `ParamHandle`:
+
+| Verb | Effect | Port rate |
+|---|---|---|
+| `.modulate_by(source, "port")` | **Target-first (BEND).** Same registry entry as `.to_param`, written from the receiving side. Multi-source fan-in to one param is supported here (see §3c). | kr only |
 
 To send a port through an FX chain, route it into a sub-group that owns
 the effects. The sub-group's mix bus auto-mixes back into its parent
@@ -200,14 +209,44 @@ that voice in its own group with the FX attached.
 > Source: `crates/vibelang-core/src/handlers/groups.rs` (group bus
 > auto-mix into parent), `crates/vibelang-rhai/src/api/group.rs`.
 
-### 3c. CV-to-param routing — `.to_param(target, "param")`
+### 3c. CV-to-param routing — SET (`.to_param`) and BEND (`.param().modulate_by`)
 
-`RouteHandle.to_param(voice, "param")` maps a kr port's control bus
-into another voice's named param via scsynth's `/n_map`. The source
-port must have been declared with `.output_kr(...)`; the target voice
-must expose a param of the given name. No audio bus is involved — the
-mapping is a kr-bus → param-input wire that the audio engine evaluates
-once per control-rate block.
+CV-to-param routing has two equivalent surfaces, distinguished by
+direction and intent:
+
+* **`source.output("port").to_param(target, "param")` — source-first
+  SET.** Read as "this port drives that param." Single source per
+  param; later `.to_param` calls into the same `(target, param)`
+  replace earlier ones (`/n_map` binds one bus). Use this when the
+  source is the natural subject — e.g. a Maths channel "sets" a bass
+  cutoff.
+* **`target.param("param").modulate_by(source, "port")` — target-first
+  BEND.** Read as "this param is bent by these sources." Multi-source
+  fan-in is supported here: chain `.modulate_by` calls and the runtime
+  spawns a `param_kr_sum_<N>` summer that mixes each source bus before
+  `/n_map`-ing the target. Use this when the target is the natural
+  subject — e.g. a voice's freq is bent by env + LFO together.
+
+Both surfaces feed the same `ScriptState::add_param_route` registry —
+direction is purely an authoring choice. The two registries (SET vs.
+BEND) are separate however, so calling both `.to_param` and
+`.modulate_by` on the same `(target, param)` is rejected with a clean
+cross-verb conflict error pointing at the verb you should pick.
+
+Common rules:
+
+* **Kr only.** Source ports must have been declared with
+  `.output_kr(...)`. Calling either verb on an ar-rate port is rejected
+  with an error citing the rate, port name, and the `output_kr`
+  remediation. Auto-coercion via `A2K.kr` is deferred to v3.
+* **Param must exist on the target synthdef.** Unknown params produce
+  a clean error citing the target voice, its synthdef, and the full
+  set of available params.
+* **Group/Main/Muted destinations stay single** — re-routing replaces
+  the prior dest. Both kr-routing surfaces are additive across
+  distinct `(target, param)` pairs.
+
+#### SET — source-first
 
 ```rhai
 let env = voice("env")
@@ -228,37 +267,40 @@ env.output("ch1").to_param(bass, "cutoff");   // ch1 kr → bass.cutoff
 See `examples/maths_to_param.vibe` for the full v2 smoke test
 (committed at `c56241c`).
 
-Rules:
-
-* **Kr only.** Calling `.to_param` on an ar-rate port is rejected with
-  an error citing the rate, port name, and the `output_kr` remediation:
-  `"port 'sine' is ar-rate; declare it via .output_kr(...) to drive
-  a param"`. Auto-coercion via `A2K.kr` is deferred to v3.
-* **Param must exist on the target synthdef.** Unknown params produce
-  a clean error citing the target voice, its synthdef, and the full
-  set of available params.
 * **Fan-out across multiple targets is allowed.** One source kr port
   can drive params on many voices: just call `.to_param` again with a
   different `(target, param)` pair. Duplicates `(same target, same
   param)` are deduplicated.
-* **Fan-in into a single param is *not* allowed.** Multiple
-  `.to_param` calls into the same `(target, param)` replace earlier
-  ones; sum/average modulator merging is v3.
-* **Group/Main/Muted destinations stay single** — re-routing replaces
-  the prior dest. Only `.to_param` is additive across distinct
-  targets.
+* **Multi-source SET on the same `(target, param)` is rejected** —
+  `/n_map` binds one bus, so two distinct source ports `to_param`-ing
+  the same param is a conflict. The error suggests using
+  `.modulate_by` instead.
 
-`MultiRouteHandle.to_param` mirrors the singular form for plural-port
-fan-out:
+#### BEND — target-first (multi-source fan-in)
 
 ```rhai
-v.outputs(["env_a", "env_c"]).to_param(target, "cutoff");
+let env = voice("env").synth("lfo_sine").set_param("rate", 0.3);
+let lfo = voice("vib").synth("lfo_sine").set_param("rate", 5.0);
+
+let bass = voice("bass")
+    .synth("tb303_bass")
+    .group("bass");
+
+bass.param("freq")
+    .modulate_by(env, "out")
+    .modulate_by(lfo, "out");      // env + lfo → bass.freq (summer spawned)
 ```
 
-Validation short-circuits on the first ar-rate or unknown-param port
-— partial fan-out isn't silently committed before the error.
+When ≥2 kr sources point at the same `(target_voice, target_param)`
+via `.modulate_by`, the runtime allocates an intermediate control bus
+and spawns a `param_kr_sum_<N>` summer (N in 2..=8) that sums each
+source bus, then `/n_map`s the target to the intermediate bus.
+Teardown respawns a smaller summer when N shrinks, collapses to direct
+`/n_map` at N=1, and unmaps at N=0. Per-target summer state lives in
+`State::param_summers: HashMap<(VoiceId, String), (NodeId, BusId)>`.
 
-> Source: `crates/vibelang-rhai/src/api/route.rs::RouteHandle::to_param`,
+> Source: `crates/vibelang-rhai/src/api/route.rs::RouteHandle::to_param`
+> and `ParamHandle::modulate_by`,
 > `crates/vibelang-core/src/handlers/routes.rs::finalize_params`,
 > `RouteDest::Param { voice_id, param_name }`.
 
@@ -284,10 +326,15 @@ index fails fast with the same error helpers.
 Empty lists error: `"outputs() requires at least one port name or index"`.
 
 `MultiRouteHandle` has the same four terminal verbs as `RouteHandle`
-(`to`, `to_main`, `mute`, `to_current_group`). For
-`to_current_group()` on a multi, the **first failing port short-circuits**
-the iteration so you don't end up with a partially-applied fan-out
-silently committed before the error.
+(`to`, `to_main`, `mute`, `to_current_group`). Plural fan-out via
+`.to_param` was removed when SET/BEND split — `/n_map` binds one bus,
+so multi-source SET into one param is a conflict. For multi-source
+fan-in to one param, use the target-first BEND surface
+(`target.param("p").modulate_by(s1, "out").modulate_by(s2, "out")`)
+documented in §3c. For `to_current_group()` on a multi, the
+**first failing port short-circuits** the iteration so you don't end
+up with a partially-applied fan-out silently committed before the
+error.
 
 > Source: `crates/vibelang-rhai/src/api/voice.rs::Voice::outputs` /
 > `crates/vibelang-rhai/src/api/route.rs::MultiRouteHandle`.
@@ -445,71 +492,37 @@ wait for v3).
 
 ---
 
-## 8. Modulators are now sugar (v2 Story 5)
+## 8. Limitations (v2)
 
-The `modulator()` builder is preserved for backwards compatibility,
-but internally it is now a thin wrapper over a single-kr-port voice
-plus a `to_param` route:
+The v2 surface is shipped end-to-end. The legacy `modulator` builder
+and `voice.modulate` surface have been removed — wire kr sources
+into params directly via the SET / BEND verbs in §3c. The following
+are documented non-features in v2; deferred to v3:
 
-* `modulator("env").synth("lfo_sine").apply()` registers the
-  modulator's synthdef as a kr-output voice synthdef (single port
-  `"out"` at control rate) and inserts a `VoiceConfig` for the
-  modulator under its name.
-* `voice.modulate("amp", m)` is sugar for
-  `m.output("out").to_param(voice, "amp")` — the same param-route
-  install path used by direct `.to_param(...)` calls.
-* Nested `.modulate()` on a modulator (`m1.modulate("rate", m2)`)
-  installs an analogous param-route from `m2.out` into `m1.rate`.
-
-User-facing API is unchanged: `modulator()`, `.synth()`, `.param()`,
-`.modulate()`, `.apply()` keep their handle types and chaining
-semantics. Direct field access (`m.modulations`, `m.params`, etc.)
-still returns the legacy `ModulatorId` typing for back-compat with
-existing tests.
-
-> **modulator() is now sugar over `voice.output_kr()` + `.to_param()`
-> — direct usage is preferred for new code.** The builder will be
-> removed in v3 after a "stale modulator" lint cycle. Treat any new
-> modulator-builder usage as a deprecation candidate.
-
-> Source: `crates/vibelang-rhai/src/api/modulator.rs` (sugar shim),
-> `crates/vibelang-rhai/src/api/voice.rs::Voice::modulate`.
-
----
-
-## 9. Limitations (v2)
-
-The v2 surface is shipped end-to-end. The following are documented
-non-features in v2; deferred to v3:
-
-* **No ar→param coercion.** `.to_param` requires a kr-rate port —
-  declare CV outputs with `.output_kr(...)`. Auto-coercion via an
-  internal `A2K.kr` is doable but hides rate-mismatch bugs and is
-  intentionally deferred. Calling `.to_param` on an ar port produces
-  a clean Rhai error pointing at `.output_kr`.
+* **No ar→param coercion.** `.to_param` / `.modulate_by` require a
+  kr-rate port — declare CV outputs with `.output_kr(...)`.
+  Auto-coercion via an internal `A2K.kr` is doable but hides
+  rate-mismatch bugs and is intentionally deferred. Calling either
+  verb on an ar port produces a clean Rhai error pointing at
+  `.output_kr`.
 * **No fan-out to multiple groups.** Calling `.to(...)` twice on the
   same `(voice, port)` overwrites the prior destination rather than
   splitting the signal. Use a second voice on the same synthdef as a
-  workaround. (`.to_param` *is* additive across different targets —
-  see §3c.)
-* **No multi-source fan-in to a single param.** One param can be
-  driven by at most one source kr port at a time; later `.to_param`
-  calls into the same `(target, param)` replace earlier ones.
-  Sum/average modulator merging is v3.
-* **`modulator()` is deprecated.** It still works as sugar over
-  single-kr-port voices (§8). New code should prefer
-  `voice.output_kr(...)` + `.to_param(...)` directly. Removal is v3.
+  workaround. (`.to_param` *is* additive across different
+  `(target, param)` pairs — see §3c.)
 * **No `solo()`, `tap()`, `scope()`** — the wider verb table from the
   plan §5.2 is still deferred. Today the verb set is `to`, `to_main`,
-  `to_current_group`, `mute`, `to_param`. Per-port FX is covered by the
-  sub-group pattern (§3b); a per-port FX modifier was reverted because
-  sub-groups gave better economics (shared FX state, fewer buses).
+  `to_current_group`, `mute`, `to_param` (source-first SET) and
+  `param().modulate_by` (target-first BEND). Per-port FX is covered by
+  the sub-group pattern (§3b); a per-port FX modifier was reverted
+  because sub-groups gave better economics (shared FX state, fewer
+  buses).
 * **No sample-accurate trigger ports** — `Out.tr` semantics are not
   exposed yet.
 
 ---
 
-## 10. References
+## 9. References
 
 * `kb/voice-multi-output-cv-routing-plan.md` — v1 architecture proposal
   (Options A–E, phased rollout, hot-reload safety analysis).
@@ -525,11 +538,9 @@ non-features in v2; deferred to v3:
   — multi-port CV synthdef with kr ports `ch1..ch4`.
 * `crates/vibelang-rhai/src/api/route.rs` — `RouteHandle` /
   `MultiRouteHandle` Rhai surface (`.to`, `.to_main`,
-  `.to_current_group`, `.mute`, `.to_param`).
+  `.to_current_group`, `.mute`, `.to_param`); `ParamHandle.modulate_by`.
 * `crates/vibelang-rhai/src/api/voice.rs::Voice` — `output_by_name`,
-  `output_by_idx`, `outputs`, `modulate`.
-* `crates/vibelang-rhai/src/api/modulator.rs` — modulator-as-sugar
-  shim.
+  `output_by_idx`, `outputs`, `param`.
 * `crates/vibelang-core/src/handlers/routes.rs` —
   `RouteDest::{Group, Main, Muted, Param}`, default routing rule,
   finalize (audio + param paths).

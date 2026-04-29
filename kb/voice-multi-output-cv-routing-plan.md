@@ -135,7 +135,7 @@ modulator/control-bus path — basically promotes the modulator to a first-class
 can be sequenced with notes / patterns.
 
 - **Pros:** Solves (b) without touching audio path. Tiny diff. Composes with the existing
-  `voice.modulate(param, modulator)` API.
+  `voice.modulate` (param, modulator) API. *(Historical: this surface has since been removed; modern equivalent is `target.param(name).modulate_by(source, port)`.)*
 - **Cons:** Solves only **half** the ticket. Still no multi-channel audio. Forces the
   Spectraphon model to split into "audio synthdef + sibling CV synthdef," which fights the
   hardware module's natural shape.
