@@ -1,0 +1,40 @@
+// kind=cv | category=envelope | flavor=ad | range=0..+10V | params=trig_in,attack_ms,decay_ms,peak_v
+//
+// Attack-decay envelope, single-shot. On a rising edge of `trig_in` the output
+// rises exponentially from 0 V to `peak_v` over `attack_ms`, then decays
+// exponentially back to 0 V over `decay_ms`. While `trig_in` stays high after
+// the rise, the output continues to decay — there is no sustain phase.
+//
+// Implementation uses `decay2_kr`, which runs an exponential AD shape with
+// independent attack and decay time constants. Because the times are control-
+// rate inputs, both `attack_ms` and `decay_ms` are fully runtime-modulatable.
+// The 60 dB time constant of `decay2` matches the perceptual attack/decay
+// length, so the param values map directly to "how long the rise / fall
+// sounds".
+//
+// Voltage scaling: the unit-amplitude AD shape from `decay2_kr` is multiplied
+// by `peak_v / 10` so that an audio peak of `peak_v / 10` lands at `peak_v` V
+// at the jack. Default `peak_v = 8.0` (= +8 V, i.e. 0.8 audio) — the standard
+// Eurorack envelope swing.
+//
+// CV contract: 0..+10 V output (no negative excursion), mono, hard ±1.0 clip,
+// no leak_dc / soft-sat. See kb/stdlib-cv-spec.md.
+
+define_synthdef("cv_env_ad")
+    .param("trig_in", 0.0)
+    .param("attack_ms", 5.0)
+    .param("decay_ms", 200.0)
+    .param("peak_v", 8.0)
+    .body(|trig_in, attack_ms, decay_ms, peak_v| {
+        let attack_s = attack_ms * 0.001;
+        let decay_s = decay_ms * 0.001;
+
+        // Exponential AD shape, peak amplitude ~1.0 on a unit trigger.
+        let env = decay2_kr(trig_in, attack_s, decay_s);
+
+        // Scale unit envelope to peak_v volts (audio = volts / 10).
+        let cv = env * (peak_v * 0.1);
+
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });

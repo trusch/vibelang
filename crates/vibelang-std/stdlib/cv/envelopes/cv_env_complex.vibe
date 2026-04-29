@@ -1,0 +1,56 @@
+// kind=cv | category=envelope | flavor=complex_breakpoint | range=0..+10V | params=gate_in,time_scale,level_scale
+//
+// Multi-segment breakpoint envelope. Four exponential stages cycling through
+// the level breakpoints `[0 V → +8 V → +4 V → +6 V → 0 V]` with stage times
+// `[50 ms, 200 ms, 1000 ms, 300 ms]`. The default shape rises hard, decays to
+// a low plateau, swells back up, then falls — a useful "complex modulator"
+// curve when sequencing CV destinations like filter cutoff or wavetable
+// position.
+//
+// The stage levels and times are baked into the synthdef at build because
+// SuperCollider's `EnvGen` accepts only constants for its breakpoint array.
+// Live modulation is exposed through `EnvGen`'s built-in scaling inputs:
+//   • `time_scale` — multiplies every stage duration (0.5 = 2× faster, 2.0 = half speed)
+//   • `level_scale` — multiplies every level (1.0 = nominal full-scale)
+// `gate_in` retriggers the envelope on each rising edge.
+//
+// To loop the envelope, retrigger `gate_in` at the desired rate (drive it from
+// `cv_clock` for a tempo-locked loop). The story-3 ticket lists a `loop` flag,
+// but `EnvGen` here doesn't expose `loop_node`, so looping happens externally
+// via retrigger — that also keeps the looping cadence under the user's clock
+// rather than a hidden internal oscillator.
+//
+// Voltage scaling: levels are written in audio units already scaled to the
+// 0..+10 V convention (0.8 audio = +8 V, etc.). The hard ±1.0 clip on the way
+// out protects the DAC against an over-driven `level_scale`.
+//
+// CV contract: 0..+10 V output, mono, hard ±1.0 clip, no leak_dc / soft-sat.
+// See kb/stdlib-cv-spec.md.
+
+define_synthdef("cv_env_complex", |builder| {
+    builder
+        .param("gate_in", 0.0)
+        .param("time_scale", 1.0)
+        .param("level_scale", 1.0)
+        .body(|gate_in, time_scale, level_scale| {
+            // Four-stage breakpoint envelope (5 levels, 4 times). Levels are
+            // already in audio space (1.0 = +10 V). Curve = 1.0 → linear
+            // segments; EnvGen's `shape` mapping translates that to a gentle
+            // exponential under the hood.
+            let env = Env(
+                [0.0, 0.8, 0.4, 0.6, 0.0],
+                [0.05, 0.2, 1.0, 0.3],
+                1.0
+            );
+
+            // All-NodeRef env_gen variant — params can stay live. level_bias
+            // and done_action stay at their neutral values (0) but must be
+            // wrapped as kr DC nodes to satisfy the NodeRef signature.
+            let level_bias = dc_kr(0.0);
+            let done_action = dc_kr(0.0);
+            let env_out = env_gen(env, gate_in, level_scale, level_bias, time_scale, done_action);
+
+            let clipped = clip_ar(env_out, -1.0, 1.0);
+            [clipped]
+        })
+});

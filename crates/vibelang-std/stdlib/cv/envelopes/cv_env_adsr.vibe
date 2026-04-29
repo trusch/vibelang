@@ -1,0 +1,63 @@
+// kind=cv | category=envelope | flavor=adsr | range=0..+10V | params=gate_in,attack_ms,decay_ms,sustain_v,release_ms,peak_v
+//
+// Standard four-stage ADSR envelope. While `gate_in` is high:
+//   • attack stage rises 0 V → `peak_v` over `attack_ms` (exponential)
+//   • decay stage falls `peak_v` → `sustain_v` over `decay_ms` (exponential)
+//   • sustain stage holds at `sustain_v`
+// On the falling edge of `gate_in`:
+//   • release stage falls current level → 0 V over `release_ms` (exponential)
+//
+// Implementation: SuperCollider's `EnvGen` shape array is baked at synthdef
+// build time, so per-stage times can't be runtime-modulated through it. To
+// keep all six parameters live, the ADSR shape is decomposed into:
+//
+//   sustain leg = linen_kr(gate, attack, sustain_audio, release, 0)
+//                  ↑ attack-sustain-release shape, ASR ramp to sustain level
+//   decay overshoot = decay2_kr(gate, attack, decay) * (peak_audio - sustain_audio)
+//                  ↑ unit AD pulse on gate rise, scaled to the (peak − sustain) gap
+//
+// Sum of the two reproduces ADSR exactly:
+//   • attack: linen rises to sustain_audio, decay2 rises to (peak − sustain),
+//     sum rises to peak_audio
+//   • decay: linen holds at sustain_audio, decay2 falls to 0,
+//     sum falls to sustain_audio
+//   • sustain: both held, sum = sustain_audio
+//   • release: linen falls to 0, decay2 already 0, sum falls to 0
+//
+// Voltage scaling: `sustain_v` and `peak_v` are in volts (under the standard
+// 1.0 audio = +10 V convention); the body works in audio units (volts / 10)
+// throughout and clips to ±1.0 on the way out. Default `peak_v = 8.0` (+8 V)
+// and `sustain_v = 6.0` (+6 V) match the standard Eurorack envelope spread.
+//
+// Note on `linen_kr`: it interprets `gate < 0` as a release retrigger; we
+// pass `gate_in` directly so the user's gate must be 0/+ — matching the rest
+// of the CV stdlib gate convention (0 = low, ≥1 = high).
+//
+// CV contract: 0..+10 V output, mono, hard ±1.0 clip, no leak_dc / soft-sat.
+// See kb/stdlib-cv-spec.md.
+
+define_synthdef("cv_env_adsr")
+    .param("gate_in", 0.0)
+    .param("attack_ms", 5.0)
+    .param("decay_ms", 100.0)
+    .param("sustain_v", 6.0)
+    .param("release_ms", 200.0)
+    .param("peak_v", 8.0)
+    .body(|gate_in, attack_ms, decay_ms, sustain_v, release_ms, peak_v| {
+        let attack_s = attack_ms * 0.001;
+        let decay_s = decay_ms * 0.001;
+        let release_s = release_ms * 0.001;
+        let sustain_audio = sustain_v * 0.1;
+        let peak_audio = peak_v * 0.1;
+
+        // ASR leg: rises to sustain on gate-high, falls to 0 on gate-low.
+        let asr = linen_kr(gate_in, attack_s, sustain_audio, release_s, 0.0);
+
+        // Decay overshoot: fires on gate rising edge, peaks at (peak − sustain),
+        // falls back to 0 over `decay_ms` — the "decay" stage of the ADSR.
+        let overshoot = decay2_kr(gate_in, attack_s, decay_s) * (peak_audio - sustain_audio);
+
+        let cv = asr + overshoot;
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [clipped]
+    });

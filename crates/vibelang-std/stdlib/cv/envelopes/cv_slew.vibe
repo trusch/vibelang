@@ -1,0 +1,36 @@
+// kind=cv | category=envelope | flavor=slew | range=-10..+10V | params=cv_in,rise_ms,fall_ms
+//
+// Asymmetric slew limiter. Smooths an arbitrary CV stream so that upward
+// transitions take `rise_ms` to settle and downward transitions take
+// `fall_ms`. With both times equal, the slew acts as a glide / portamento;
+// with one time set short and the other long, the slew acts as a follower
+// (fast attack, slow release) or its inverse (slow attack, fast release).
+//
+// Implementation: `lag_ud_kr` runs an exponential RC-style smoother with
+// independent up- and down-going time constants. The 60 dB time matches the
+// perceptual settling time, so `rise_ms` / `fall_ms` translate directly to
+// "how long the rise / fall takes" at the jack.
+//
+// Pass-through scaling: `cv_in` is consumed at the same audio scale it was
+// produced at — feed in 1V/oct, sequencer steps, gate / trigger pulses,
+// whatever — the slew preserves the input scale and only smooths the
+// transitions. The hard ±1.0 clip protects the DAC against any out-of-range
+// excursion at the input.
+//
+// CV contract: -10..+10 V output (matches input range), mono, hard ±1.0 clip,
+// no leak_dc / soft-sat. See kb/stdlib-cv-spec.md.
+
+define_synthdef("cv_slew")
+    .param("cv_in", 0.0)
+    .param("rise_ms", 50.0)
+    .param("fall_ms", 50.0)
+    .body(|cv_in, rise_ms, fall_ms| {
+        let rise_s = rise_ms * 0.001;
+        let fall_s = fall_ms * 0.001;
+
+        // Asymmetric exponential lag with independent up/down time constants.
+        let slewed = lag_ud_kr(cv_in, rise_s, fall_s);
+
+        let clipped = clip_ar(slewed, -1.0, 1.0);
+        [clipped]
+    });
