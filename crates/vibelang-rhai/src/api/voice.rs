@@ -1245,6 +1245,114 @@ mod tests {
     }
 
     #[test]
+    fn test_route_to_current_group_resolves_voice_group() {
+        // .group("leads") then .output("even").to_current_group() must install
+        // RouteDest::Group(leads_id) — the voice's currently configured group.
+        with_test_context(|| {
+            let synth = "ergo_to_current_group_resolves";
+            declare_synth_with_ports(synth, &["even"]);
+
+            let leads_path = "main/leads".to_string();
+            let leads_id = context::get_or_create_group_id(&leads_path);
+
+            let mut v = test_voice("vox_tcg_resolves")
+                .synth(synth.to_string())
+                .group("leads".to_string());
+            v.output_by_name("even")
+                .expect("port resolves")
+                .to_current_group()
+                .expect("voice has explicit group");
+
+            let voice_id = context::get_or_create_voice_id("vox_tcg_resolves");
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "even".to_string())),
+                    Some(&RouteDest::Group(leads_id))
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn test_route_to_current_group_no_group_errors_with_hint() {
+        // Voice in implicit "main" group (no .group(...) call) → clean error
+        // pointing users at .group("name") or .to(group("name")).
+        with_test_context(|| {
+            let synth = "ergo_to_current_group_no_group";
+            declare_synth_with_ports(synth, &["even"]);
+
+            let mut v = test_voice("vox_tcg_no_group").synth(synth.to_string());
+            let err = v
+                .output_by_name("even")
+                .expect("port resolves")
+                .to_current_group()
+                .expect_err("no explicit group must error");
+            let msg = err.to_string();
+            assert!(msg.contains(".group("), "msg = {}", msg);
+            assert!(msg.contains(".to(group("), "msg = {}", msg);
+            assert!(msg.contains("'even'"), "msg = {}", msg);
+
+            // No route was installed.
+            let voice_id = context::get_or_create_voice_id("vox_tcg_no_group");
+            context::with_state(|state| {
+                assert!(state.routes.get(&(voice_id, "even".to_string())).is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn test_route_to_current_group_then_to_other_replaces() {
+        // After to_current_group() installs RouteDest::Group(leads), a later
+        // .to(other) on the same (voice, port) replaces the prior dest — same
+        // HashMap::insert semantics as the other terminal verbs.
+        with_test_context(|| {
+            let synth = "ergo_to_current_group_replaces";
+            declare_synth_with_ports(synth, &["even"]);
+
+            let leads_path = "main/leads_replace".to_string();
+            let other_path = "main/fx_other".to_string();
+            let leads_id = context::get_or_create_group_id(&leads_path);
+            let other_id = context::get_or_create_group_id(&other_path);
+
+            let mut v = test_voice("vox_tcg_replace")
+                .synth(synth.to_string())
+                .group("leads_replace".to_string());
+
+            v.output_by_name("even")
+                .expect("port resolves")
+                .to_current_group()
+                .expect("voice has group");
+
+            let voice_id = context::get_or_create_voice_id("vox_tcg_replace");
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "even".to_string())),
+                    Some(&RouteDest::Group(leads_id))
+                );
+            });
+
+            // Re-route to a different group via explicit .to(other).
+            let other = super::super::group::GroupHandle::new(other_path.clone());
+            v.output_by_name("even")
+                .expect("port resolves")
+                .to(other);
+
+            context::with_state(|state| {
+                assert_eq!(
+                    state.routes.get(&(voice_id, "even".to_string())),
+                    Some(&RouteDest::Group(other_id))
+                );
+                let count = state
+                    .routes
+                    .keys()
+                    .filter(|(vid, port)| *vid == voice_id && port == "even")
+                    .count();
+                assert_eq!(count, 1);
+            });
+        });
+    }
+
+    #[test]
     fn test_voice_output_name_idx_round_trip_resolve_same_port() {
         // Index N must resolve to the same name as the Nth declared port.
         with_test_context(|| {

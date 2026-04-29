@@ -11,7 +11,7 @@
 //! [`ScriptState::set_route`](vibelang_core::reload::ScriptState::set_route)).
 //! Additive fan-out is deferred to a later story.
 
-use rhai::{CustomType, Engine, TypeBuilder};
+use rhai::{CustomType, Engine, EvalAltResult, Position, TypeBuilder};
 use vibelang_core::handlers::RouteDest;
 use vibelang_core::types::VoiceId;
 
@@ -64,6 +64,47 @@ impl RouteHandle {
         });
         self
     }
+
+    /// Install a route to the voice's currently configured group — the value
+    /// last set via `voice.group(...)` (or inferred from the surrounding
+    /// `define_group` scope at voice-creation time).
+    ///
+    /// Errors when the voice is in the implicit `main` group with no explicit
+    /// group set; the message points users at `.group("name")` on the voice or
+    /// `.to(group("name"))` on the route. Re-routing replaces the prior dest
+    /// (same `HashMap::insert` semantics as the other terminal verbs).
+    pub fn to_current_group(self) -> Result<Self, Box<EvalAltResult>> {
+        let main_id = context::get_or_create_group_id("main");
+        let voice_group = context::with_state(|state| {
+            state.voices.get(&self.voice_id).map(|v| v.group)
+        });
+        match voice_group {
+            Some(gid) if gid != main_id => {
+                context::with_state(|state| {
+                    state.set_route(
+                        self.voice_id,
+                        self.port_name.clone(),
+                        RouteDest::Group(gid),
+                    );
+                });
+                Ok(self)
+            }
+            _ => Err(no_current_group_error(&self.port_name)),
+        }
+    }
+}
+
+fn no_current_group_error(port: &str) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "to_current_group() on port '{}': voice has no explicit group set — \
+             call `.group(\"name\")` on the voice first, or write \
+             `.to(group(\"name\"))` to target a group explicitly",
+            port
+        )
+        .into(),
+        Position::NONE,
+    ))
 }
 
 /// Register the `RouteHandle` type and its terminal verbs with a Rhai engine.
@@ -72,4 +113,5 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("to", RouteHandle::to);
     engine.register_fn("to_main", RouteHandle::to_main);
     engine.register_fn("mute", RouteHandle::mute);
+    engine.register_fn("to_current_group", RouteHandle::to_current_group);
 }
