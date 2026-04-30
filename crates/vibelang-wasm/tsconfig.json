@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "esnext.disposable", "dom"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": false,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "types": []
+  },
+  "include": ["types/index.d.ts", "tests/**/*.ts"]
+}
