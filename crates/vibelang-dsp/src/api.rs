@@ -282,6 +282,35 @@ impl SynthDefBuilderHandle {
         Ok(self)
     }
 
+    /// Declare a named trigger-rate output port (1 channel by default).
+    ///
+    /// Trigger ports share the control-bus / `Out.kr` codegen path with kr
+    /// ports; the `Tr` rate tag drives v3 trigger routing
+    /// (`.to_trigger`, trigger-mixer synthdef) instead of CV-to-param `MapN`.
+    pub fn output_tr(mut self, name: ImmutableString) -> Result<Self, Box<EvalAltResult>> {
+        self.synthdef
+            .output_tr(name.into_owned(), 1)
+            .map_err(synthdef_error_to_eval)?;
+        Ok(self)
+    }
+
+    /// Declare a named trigger-rate output port with explicit channel count.
+    pub fn output_tr_with_channels(
+        mut self,
+        name: ImmutableString,
+        channels: i64,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        if !(1..=255).contains(&channels) {
+            return Err(synthdef_error_to_eval(SynthDefError::ValidationError(
+                format!("Output port channels must be in 1..=255, got {}", channels),
+            )));
+        }
+        self.synthdef
+            .output_tr(name.into_owned(), channels as u8)
+            .map_err(synthdef_error_to_eval)?;
+        Ok(self)
+    }
+
     fn build(self, closure: rhai::FnPtr) -> crate::errors::Result<GraphIR> {
         self.synthdef.build_body_closure_with_options(closure, true)
     }
@@ -633,6 +662,8 @@ pub fn register_synthdef_api(engine: &mut Engine) {
         .register_fn("output", SynthDefBuilderHandle::output_with_channels)
         .register_fn("output_kr", SynthDefBuilderHandle::output_kr)
         .register_fn("output_kr", SynthDefBuilderHandle::output_kr_with_channels)
+        .register_fn("output_tr", SynthDefBuilderHandle::output_tr)
+        .register_fn("output_tr", SynthDefBuilderHandle::output_tr_with_channels)
         .register_fn("body", SynthDefBuilderHandle::body)
         .register_fn("body_map", SynthDefBuilderHandle::body_map);
 

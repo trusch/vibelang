@@ -27,12 +27,15 @@ enum BodyDispatch {
 ///
 /// Audio (`Ar`) ports emit `Out.ar` and feed audio buses; control (`Kr`)
 /// ports emit `Out.kr` and feed control buses (used by v2 CV-to-param
-/// routing via `MapN`).
+/// routing via `MapN`). Trigger (`Tr`) ports also feed control buses but
+/// carry single-sample trigger pulses; v3 trigger routing (B2.b/c) wires
+/// them into the trigger-mixer rather than the kr summer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum PortRate {
     #[default]
     Ar,
     Kr,
+    Tr,
 }
 
 /// A named output port on a synthdef.
@@ -63,6 +66,15 @@ impl OutputPort {
             name: name.into(),
             channels,
             rate: PortRate::Kr,
+        }
+    }
+
+    /// Construct a trigger-rate port.
+    pub fn tr(name: impl Into<String>, channels: u8) -> Self {
+        Self {
+            name: name.into(),
+            channels,
+            rate: PortRate::Tr,
         }
     }
 }
@@ -110,6 +122,17 @@ impl SynthDef {
     /// the port's control bus to a target parameter via scsynth's `MapN`.
     pub fn output_kr(&mut self, name: String, channels: u8) -> Result<&mut Self> {
         self.output_with_rate(name, channels, PortRate::Kr)
+    }
+
+    /// Declare a named trigger-rate output port. Channels typically 1.
+    ///
+    /// Trigger ports share the control-bus / `Out.kr` codegen path with kr
+    /// ports — at the scsynth protocol level a trigger pulse is just a
+    /// 1-sample-wide control-rate signal. The `Tr` tag survives on the port
+    /// descriptor so v3 trigger routing (`.to_trigger`, trigger-mixer
+    /// synthdef) can dispatch separately from CV-to-param `MapN` routing.
+    pub fn output_tr(&mut self, name: String, channels: u8) -> Result<&mut Self> {
+        self.output_with_rate(name, channels, PortRate::Tr)
     }
 
     fn output_with_rate(
@@ -889,7 +912,11 @@ impl SynthDef {
                     ];
                     let out_rate = match self.outputs[i].rate {
                         PortRate::Ar => Rate::Audio,
-                        PortRate::Kr => Rate::Control,
+                        // Tr ports take the same Out.kr codegen path as Kr —
+                        // SC has no separate Out.tr UGen, triggers are
+                        // 1-sample-wide control-rate signals. The Tr tag on
+                        // the descriptor is what drives downstream routing.
+                        PortRate::Kr | PortRate::Tr => Rate::Control,
                     };
                     builder.add_node("Out".to_string(), out_rate, out_inputs, 0, 0);
                 }
@@ -1692,5 +1719,129 @@ mod body_map_tests {
             }
             other => panic!("expected ValidationError, got {:?}", other),
         }
+    }
+
+    // ---------- Multi-output v3 Task B2.a: Tr (trigger) port rate ----------
+
+    #[test]
+    fn output_tr_is_tr() {
+        // .output_tr(...) marks the port as Tr.
+        let mut sd = SynthDef::new("tr_only".to_string());
+        sd.output_tr("kick_trig".to_string(), 1).expect("output_tr");
+        assert_eq!(sd.outputs.len(), 1);
+        assert_eq!(sd.outputs[0].name, "kick_trig");
+        assert_eq!(sd.outputs[0].channels, 1);
+        assert_eq!(sd.outputs[0].rate, PortRate::Tr);
+    }
+
+    #[test]
+    fn mixed_ar_kr_tr_descriptor_round_trips() {
+        // Mixed [Ar, Kr, Tr, Ar] descriptor preserves order and per-port rate.
+        let mut sd = SynthDef::new("mixed_tr".to_string());
+        sd.output("audio".to_string(), 2).expect("audio");
+        sd.output_kr("env".to_string(), 1).expect("env");
+        sd.output_tr("trig".to_string(), 1).expect("trig");
+        sd.output("aux".to_string(), 1).expect("aux");
+        assert_eq!(
+            sd.outputs,
+            vec![
+                OutputPort {
+                    name: "audio".to_string(),
+                    channels: 2,
+                    rate: PortRate::Ar,
+                },
+                OutputPort {
+                    name: "env".to_string(),
+                    channels: 1,
+                    rate: PortRate::Kr,
+                },
+                OutputPort {
+                    name: "trig".to_string(),
+                    channels: 1,
+                    rate: PortRate::Tr,
+                },
+                OutputPort {
+                    name: "aux".to_string(),
+                    channels: 1,
+                    rate: PortRate::Ar,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn single_tr_port_emits_out_at_control_rate() {
+        // A 1-port Tr synthdef body emits exactly one Out UGen at Rate::Control
+        // (SC has no Out.tr UGen — triggers ride the Out.kr path; the Tr
+        // descriptor tag is what distinguishes it for downstream routing).
+        let mut sd = SynthDef::new("tr_single".to_string());
+        sd.output_tr("trig".to_string(), 1).expect("trig");
+        assert_eq!(sd.outputs[0].rate, PortRate::Tr);
+
+        let closure: FnPtr = parser_engine()
+            .eval("|| { let s = impulse_kr(2.0, 0.0); [s] }")
+            .expect("parse tr body");
+        let ir = sd
+            .build_body_closure_with_options(closure, true)
+            .expect("build tr-single");
+
+        let out_nodes: Vec<&_> = ir.nodes.iter().filter(|n| n.name == "Out").collect();
+        assert_eq!(out_nodes.len(), 1, "expected exactly one Out UGen");
+        assert_eq!(
+            out_nodes[0].rate,
+            Rate::Control,
+            "Tr ports take the Out.kr codegen path"
+        );
+    }
+
+    #[test]
+    fn tr_duplicate_name_cross_rate_errors() {
+        // Tr name collides with an existing ar/kr port of the same name.
+        let mut sd = SynthDef::new("dup_tr_kr".to_string());
+        sd.output_kr("evt".to_string(), 1).expect("first kr");
+        let err = sd
+            .output_tr("evt".to_string(), 1)
+            .expect_err("cross-rate dup must error");
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                assert!(msg.contains("Duplicate"), "msg = {}", msg);
+                assert!(msg.contains("evt"), "msg = {}", msg);
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn multi_port_ar_kr_tr_emits_correct_out_rates() {
+        // Mixed [Ar, Kr, Tr] — codegen must emit one Out.ar and two Out at
+        // Rate::Control (one for Kr, one for Tr), in declaration order.
+        let mut sd = SynthDef::new("mixed3".to_string());
+        sd.output("L".to_string(), 1).expect("L");
+        sd.output_kr("env".to_string(), 1).expect("env");
+        sd.output_tr("trig".to_string(), 1).expect("trig");
+
+        let closure: FnPtr = parser_engine()
+            .eval(
+                "|| { \
+                    let s0 = sin_osc_ar(110.0, 0.0); \
+                    let s1 = sin_osc_kr(1.0, 0.0); \
+                    let s2 = impulse_kr(2.0, 0.0); \
+                    [s0, s1, s2] \
+                }",
+            )
+            .expect("parse 3-port mixed-rate body");
+        let ir = sd
+            .build_body_closure_with_options(closure, true)
+            .expect("build mixed-rate 3-port");
+
+        let out_nodes: Vec<&_> = ir.nodes.iter().filter(|n| n.name == "Out").collect();
+        assert_eq!(out_nodes.len(), 3, "expected 3 Out UGens");
+
+        let rates: Vec<Rate> = out_nodes.iter().map(|n| n.rate).collect();
+        assert_eq!(
+            rates,
+            vec![Rate::Audio, Rate::Control, Rate::Control],
+            "Out UGen rates must follow declared port rates [Ar, Kr, Tr]"
+        );
     }
 }
