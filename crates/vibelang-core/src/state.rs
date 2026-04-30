@@ -900,6 +900,18 @@ pub struct State {
     /// [`vibelang_dsp::system_synthdefs::PARAM_KR_MODULATE_MAX`].
     pub param_routes_bend: HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
 
+    /// Active TRIGGER Param-route mappings (`.to_trigger` verb): source
+    /// `(voice_id, port_name)` → list of `(target_voice_id, target_param_name)`
+    /// whose target param is `/n_map`-bound to a `port_tr_to_param_link_1`
+    /// link synth's intermediate control bus.
+    ///
+    /// Multi-output v3 B2.c trigger path: Tr-rate sources forward
+    /// sample-accurate edges to a target param without scale/offset shaping
+    /// (triggers don't bend). Single-source per `(target, param)`; multi-
+    /// source fan-in is rejected at script time. Cross-verb-exclusive with
+    /// [`Self::param_routes_set`] and [`Self::param_routes_bend`].
+    pub param_routes_trigger: HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
+
     /// Active param-summer synths, keyed by the target side
     /// `(target_voice_id, target_param_name)`.
     ///
@@ -930,6 +942,17 @@ pub struct State {
     /// Maintained exclusively by
     /// [`crate::handlers::RoutesHandler::finalize_params`].
     pub ar_to_kr_adapters: HashMap<(VoiceId, String), (NodeId, ControlBusId)>,
+
+    /// Active `port_tr_to_param_link_1` link synths spawned by
+    /// `.to_trigger` routes. Keyed by the target side
+    /// `(target_voice_id, target_param_name)`.
+    ///
+    /// `(NodeId, BusId)` records the link synth node and the intermediate
+    /// control bus it writes to (the target's `/n_map` destination). One
+    /// link synth per `(target, param)` — single-source trigger only, no
+    /// summer or scale/offset shaping. Maintained exclusively by
+    /// [`crate::handlers::RoutesHandler::finalize_params`].
+    pub param_triggers: HashMap<(VoiceId, String), (NodeId, BusId)>,
 }
 
 /// Live state of one `param_kr_modulate_<n>` summer instance.
@@ -998,8 +1021,10 @@ impl Default for State {
             default_routes: HashMap::new(),
             param_routes_set: HashMap::new(),
             param_routes_bend: HashMap::new(),
+            param_routes_trigger: HashMap::new(),
             param_summers: HashMap::new(),
             ar_to_kr_adapters: HashMap::new(),
+            param_triggers: HashMap::new(),
         }
     }
 }
@@ -1105,9 +1130,10 @@ impl State {
             .retain(|(vid, _), _| *vid != voice_id);
     }
 
-    /// Drain every Param-route entry that mentions `voice_id` from BOTH
-    /// [`State::param_routes_set`] and [`State::param_routes_bend`], on
-    /// either the source side or the target side.
+    /// Drain every Param-route entry that mentions `voice_id` from
+    /// [`State::param_routes_set`], [`State::param_routes_bend`], and
+    /// [`State::param_routes_trigger`], on either the source side or the
+    /// target side.
     ///
     /// Returns the source-side drains as
     /// `((source_voice, source_port), [(target_voice, target_param), ...])`
@@ -1117,13 +1143,18 @@ impl State {
     /// is removed; entries whose Vec drops to empty after scrubbing are
     /// pruned. The deleted target voice's synth nodes are about to be freed
     /// anyway, so unmapping them is moot — only the source-side state needs
-    /// caller follow-up. Set + bend drains are concatenated in the result.
+    /// caller follow-up. Set + bend + trigger drains are concatenated in the
+    /// result.
     pub fn take_voice_param_routes(
         &mut self,
         voice_id: VoiceId,
     ) -> Vec<((VoiceId, String), Vec<(VoiceId, String)>)> {
         let mut drained = Vec::new();
-        for map in [&mut self.param_routes_set, &mut self.param_routes_bend] {
+        for map in [
+            &mut self.param_routes_set,
+            &mut self.param_routes_bend,
+            &mut self.param_routes_trigger,
+        ] {
             let source_keys: Vec<(VoiceId, String)> = map
                 .keys()
                 .filter(|(vid, _)| *vid == voice_id)

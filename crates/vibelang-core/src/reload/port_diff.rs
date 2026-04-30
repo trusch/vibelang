@@ -122,15 +122,16 @@ pub fn diff_port_set(old: &[OutputPort], new: &[OutputPort]) -> PortSetDiff {
 /// `dropped_routes` lists `(voice_id, port_name)` keys that were stripped
 /// from the supplied [`RouteMap`] because the underlying port no longer
 /// exists. `dropped_param_routes` lists source-side
-/// `(voice_id, port_name)` keys that were stripped from BOTH
-/// [`State::param_routes_set`] and [`State::param_routes_bend`] for the
-/// same reason — typically a kr or tr port that was either removed outright
-/// or rate-flipped to ar. Tr ports share the kr control-bus path and host
-/// Param routes the same way (B2.b), so kr↔tr and kr/tr↔ar flips both
-/// surface here. The caller is expected to log a warning naming each
-/// dropped route so the user can clean up their script;
-/// [`PortReconcile::rate_changes`] separately surfaces names whose rate
-/// flipped, which the reconcile already logs at warn level.
+/// `(voice_id, port_name)` keys that were stripped from any of
+/// [`State::param_routes_set`], [`State::param_routes_bend`], or
+/// [`State::param_routes_trigger`] for the same reason — typically a kr
+/// or tr port that was either removed outright or rate-flipped to ar. Tr
+/// ports share the kr control-bus path and host Param routes the same way
+/// (B2.b), so kr↔tr and kr/tr↔ar flips both surface here. The caller is
+/// expected to log a warning naming each dropped route so the user can
+/// clean up their script; [`PortReconcile::rate_changes`] separately
+/// surfaces names whose rate flipped, which the reconcile already logs at
+/// warn level.
 #[derive(Clone, Debug, Default)]
 pub struct PortReconcile {
     /// The computed port-set diff (added/removed/kept).
@@ -228,9 +229,10 @@ pub fn reconcile_voice_ports(
     // list with the original channel width, kr/tr ports return a single ID
     // to the control-bus free list (Tr ports share the kr storage path).
     // RouteMap entries belong to ar ports; kr and tr ports' Param routes
-    // live in `state.param_routes_set` / `state.param_routes_bend` keyed at
-    // the source side, so we drain those too — otherwise a kr/tr→ar flip
-    // would leave a dangling source key pointing at a freed control bus.
+    // live in `state.param_routes_set` / `state.param_routes_bend` /
+    // `state.param_routes_trigger` keyed at the source side, so we drain
+    // those too — otherwise a kr/tr→ar flip would leave a dangling source
+    // key pointing at a freed control bus.
     let mut dropped_routes = Vec::new();
     let mut dropped_param_routes = Vec::new();
     for port in &diff.removed {
@@ -264,6 +266,9 @@ pub fn reconcile_voice_ports(
                 hit = true;
             }
             if state.param_routes_bend.remove(&key).is_some() {
+                hit = true;
+            }
+            if state.param_routes_trigger.remove(&key).is_some() {
                 hit = true;
             }
             if hit {

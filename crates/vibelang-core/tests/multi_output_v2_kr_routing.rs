@@ -381,7 +381,7 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
     });
 
     handler
-        .finalize_params(&diff, &ParamRouteDiff::default())
+        .finalize_params(&diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
         .await
         .unwrap();
 
@@ -499,7 +499,7 @@ async fn multiple_to_param_routes_from_one_source() {
     });
 
     handler
-        .finalize_params(&diff, &ParamRouteDiff::default())
+        .finalize_params(&diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
         .await
         .unwrap();
 

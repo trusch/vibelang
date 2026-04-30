@@ -234,13 +234,24 @@ enum ParamPlan {
         params: ParamMap,
         intermediate_bus: BusId,
     },
+    /// Spawn a `port_tr_to_param_link_1` link synth that 1:1 forwards the
+    /// source's Tr-rate bus to an intermediate kr bus, and bind the target's
+    /// `/n_map` to that bus. No scale/offset shaping — triggers don't bend.
+    /// Multi-output v3 B2.c trigger path.
+    TriggerLink {
+        link_node: NodeId,
+        target_group: NodeId,
+        params: ParamMap,
+        intermediate_bus: BusId,
+    },
 }
 
-/// Which of the two paramroute maps a diff applies to.
+/// Which paramroute map a diff applies to.
 #[derive(Copy, Clone, Debug)]
 enum ParamMapKind {
     Set,
     Bend,
+    Trigger,
 }
 
 /// Stage a [`ParamRouteDiff`] against the matching map on the locked state.
@@ -256,6 +267,7 @@ fn apply_param_diff_to_map(
     let map: &mut HashMap<(VoiceId, String), Vec<(VoiceId, String)>> = match kind {
         ParamMapKind::Set => &mut state.param_routes_set,
         ParamMapKind::Bend => &mut state.param_routes_bend,
+        ParamMapKind::Trigger => &mut state.param_routes_trigger,
     };
 
     for r in &diff.removals {
@@ -295,6 +307,7 @@ fn apply_param_diff_to_map(
     let map: &mut HashMap<(VoiceId, String), Vec<(VoiceId, String)>> = match kind {
         ParamMapKind::Set => &mut state.param_routes_set,
         ParamMapKind::Bend => &mut state.param_routes_bend,
+        ParamMapKind::Trigger => &mut state.param_routes_trigger,
     };
     for (src_key, target_pair) in to_add {
         let entry = map.entry(src_key).or_default();
@@ -569,25 +582,45 @@ impl<B: Backend> RoutesHandler<B> {
         &self,
         set_diff: &ParamRouteDiff,
         bend_diff: &ParamRouteDiff,
+        trigger_diff: &ParamRouteDiff,
     ) -> Result<()> {
-        if set_diff.is_empty() && bend_diff.is_empty() {
+        if set_diff.is_empty() && bend_diff.is_empty() && trigger_diff.is_empty() {
             return Ok(());
         }
 
-        // Summers (and ar→kr adapters that feed them) run in a dedicated
+        // Summers, trigger links, and ar→kr adapters all run in a dedicated
         // group at the head of the root group so they tick before voice
         // synths read their `/n_map`-bound params.
-        if !set_diff.additions.is_empty() || !bend_diff.additions.is_empty() {
+        if !set_diff.additions.is_empty()
+            || !bend_diff.additions.is_empty()
+            || !trigger_diff.additions.is_empty()
+        {
             self.ensure_param_summer_group().await?;
         }
 
-        let (planned, summers_to_free, adapters_to_spawn, adapters_to_free) =
-            self.plan_param_actions(set_diff, bend_diff).await;
+        let (
+            planned,
+            summers_to_free,
+            adapters_to_spawn,
+            adapters_to_free,
+            triggers_to_free,
+        ) = self
+            .plan_param_actions(set_diff, bend_diff, trigger_diff)
+            .await;
 
         for &(node, _) in &summers_to_free {
             if let Err(e) = self.backend.free_node(node).await {
                 tracing::warn!(
                     "RoutesHandler::finalize_params: failed to free old summer node {:?}: {}",
+                    node,
+                    e,
+                );
+            }
+        }
+        for &(node, _) in &triggers_to_free {
+            if let Err(e) = self.backend.free_node(node).await {
+                tracing::warn!(
+                    "RoutesHandler::finalize_params: failed to free old trigger link node {:?}: {}",
                     node,
                     e,
                 );
@@ -602,9 +635,16 @@ impl<B: Backend> RoutesHandler<B> {
                 );
             }
         }
-        if !summers_to_free.is_empty() || !adapters_to_free.is_empty() {
+        if !summers_to_free.is_empty()
+            || !triggers_to_free.is_empty()
+            || !adapters_to_free.is_empty()
+        {
             let mut state = self.state.write().await;
             for (node, bus) in summers_to_free {
+                state.free_node_id(node);
+                state.free_control_bus(bus);
+            }
+            for (node, bus) in triggers_to_free {
                 state.free_node_id(node);
                 state.free_control_bus(bus);
             }
@@ -646,35 +686,44 @@ impl<B: Backend> RoutesHandler<B> {
         Ok(())
     }
 
-    /// Stage `state.param_routes_set` / `state.param_routes_bend` and
-    /// `state.param_summers` against the diffs, returning per-target actions
-    /// plus any summer nodes/buses to free on the backend afterwards, plus
-    /// the ar→kr adapters that need to be spawned (for newly-introduced ar
-    /// sources) or freed (for sources whose last param route was removed).
+    /// Stage `state.param_routes_set` / `state.param_routes_bend` /
+    /// `state.param_routes_trigger` and `state.param_summers` /
+    /// `state.param_triggers` against the diffs, returning per-target actions
+    /// plus any summer / trigger nodes/buses to free on the backend
+    /// afterwards, plus the ar→kr adapters that need to be spawned (for
+    /// newly-introduced ar sources) or freed (for sources whose last param
+    /// route was removed).
     async fn plan_param_actions(
         &self,
         set_diff: &ParamRouteDiff,
         bend_diff: &ParamRouteDiff,
+        trigger_diff: &ParamRouteDiff,
     ) -> (
         Vec<PlannedParamAction>,
         Vec<(NodeId, ControlBusId)>,
         Vec<AdapterSpawn>,
+        Vec<(NodeId, ControlBusId)>,
         Vec<(NodeId, ControlBusId)>,
     ) {
         let mut state = self.state.write().await;
 
         apply_param_diff_to_map(&mut state, set_diff, ParamMapKind::Set);
         apply_param_diff_to_map(&mut state, bend_diff, ParamMapKind::Bend);
+        apply_param_diff_to_map(&mut state, trigger_diff, ParamMapKind::Trigger);
 
         // Reconcile ar→kr adapters with the post-diff source set. We do
         // this *before* gathering source buses for summers so
         // `collect_source_buses` sees the freshly-registered adapter buses.
         // Adapter spawn is one-per-(source_voice, source_port), shared by
-        // all routes (SET or BEND) that originate from that pair.
+        // all routes (SET / BEND / TRIGGER) that originate from that pair —
+        // trigger sources are always Tr-rate so the adapter filter rejects
+        // them, but they're included so the cleanup pass tears down a
+        // stale adapter when a port flips from ar to tr.
         let active_sources: HashSet<(VoiceId, String)> = state
             .param_routes_set
             .keys()
             .chain(state.param_routes_bend.keys())
+            .chain(state.param_routes_trigger.keys())
             .cloned()
             .collect();
 
@@ -729,15 +778,17 @@ impl<B: Backend> RoutesHandler<B> {
 
         // Build a deterministic order of affected target keys: removals
         // first, then additions; deduplicated while preserving first-seen
-        // order. Both diffs contribute.
+        // order. All three diffs contribute.
         let mut seen: HashSet<(VoiceId, String)> = HashSet::new();
         let mut affected: Vec<(VoiceId, String)> = Vec::new();
         for r in set_diff
             .removals
             .iter()
             .chain(bend_diff.removals.iter())
+            .chain(trigger_diff.removals.iter())
             .chain(set_diff.additions.iter())
             .chain(bend_diff.additions.iter())
+            .chain(trigger_diff.additions.iter())
         {
             let key = (r.target_voice, r.target_param.clone());
             if seen.insert(key.clone()) {
@@ -747,15 +798,23 @@ impl<B: Backend> RoutesHandler<B> {
 
         let mut planned = Vec::with_capacity(affected.len());
         let mut summers_to_free: Vec<(NodeId, ControlBusId)> = Vec::new();
+        let mut triggers_to_free: Vec<(NodeId, ControlBusId)> = Vec::new();
 
         for tgt in affected {
-            // Tear down any existing summer for this target up-front.
-            // We respawn whenever the (set ∪ bend) source set is non-empty
-            // so the summer's parameter list reflects the new source bus
-            // IDs and per-source scale/offset values.
+            // Tear down any existing summer or trigger link for this
+            // target up-front. Respawning the summer whenever the
+            // (set ∪ bend) source set is non-empty ensures the summer's
+            // parameter list reflects the new source bus IDs and per-source
+            // scale/offset values; respawning the trigger link rebinds the
+            // forwarder when the source bus changes. Both maps are torn
+            // down here so a transition between verb kinds (e.g. SET → TRIGGER)
+            // frees the old kind's resources before the new one spawns.
             if let Some(prev) = state.param_summers.remove(&tgt) {
                 summers_to_free
                     .push((prev.node, ControlBusId::new(prev.bus.raw())));
+            }
+            if let Some((prev_node, prev_bus)) = state.param_triggers.remove(&tgt) {
+                triggers_to_free.push((prev_node, ControlBusId::new(prev_bus.raw())));
             }
 
             let target_nodes: Vec<NodeId> = state
@@ -770,11 +829,41 @@ impl<B: Backend> RoutesHandler<B> {
                 })
                 .unwrap_or_default();
 
-            // Gather SET / BEND sources targeting this `(target, param)`.
+            // Gather SET / BEND / TRIGGER sources targeting this `(target,
+            // param)`.
             let set_buses = collect_source_buses(&state, &state.param_routes_set, &tgt);
             let bend_buses = collect_source_buses(&state, &state.param_routes_bend, &tgt);
+            let trigger_buses =
+                collect_source_buses(&state, &state.param_routes_trigger, &tgt);
 
-            let plan = if !set_buses.is_empty() && !bend_buses.is_empty() {
+            let summer_active = !set_buses.is_empty() || !bend_buses.is_empty();
+            let trigger_active = !trigger_buses.is_empty();
+
+            let plan = if summer_active && trigger_active {
+                tracing::warn!(
+                    "RoutesHandler::finalize_params: target {:?} param {:?} has \
+                     both summer (SET/BEND) and TRIGGER sources — treating as \
+                     empty (cross-verb conflict should have been caught at \
+                     script time)",
+                    tgt.0,
+                    tgt.1,
+                );
+                let restore_value = baseline_for_target(&state, &tgt);
+                ParamPlan::Unmap { restore_value }
+            } else if trigger_active {
+                if trigger_buses.len() > 1 {
+                    tracing::warn!(
+                        "RoutesHandler::finalize_params: target {:?} param {:?} has \
+                         {} TRIGGER sources — multi-source TRIGGER is disallowed; \
+                         using only the first (script-time validation should have \
+                         rejected this)",
+                        tgt.0,
+                        tgt.1,
+                        trigger_buses.len(),
+                    );
+                }
+                self.plan_trigger_link(&mut state, &tgt, trigger_buses[0])
+            } else if !set_buses.is_empty() && !bend_buses.is_empty() {
                 tracing::warn!(
                     "RoutesHandler::finalize_params: target {:?} param {:?} has both \
                      SET and BEND sources — treating as empty (cross-verb conflict \
@@ -832,7 +921,13 @@ impl<B: Backend> RoutesHandler<B> {
             });
         }
 
-        (planned, summers_to_free, adapters_to_spawn, adapters_to_free)
+        (
+            planned,
+            summers_to_free,
+            adapters_to_spawn,
+            adapters_to_free,
+            triggers_to_free,
+        )
     }
 
     /// Allocate intermediate bus + summer node, register
@@ -894,6 +989,40 @@ impl<B: Backend> RoutesHandler<B> {
         }
     }
 
+    /// Allocate intermediate bus + link node for a `port_tr_to_param_link_1`
+    /// trigger forwarder, register the entry in [`State::param_triggers`],
+    /// and produce a [`ParamPlan::TriggerLink`] action.
+    ///
+    /// Single-source: trigger routing is 1:1, no scale/offset shaping.
+    fn plan_trigger_link(
+        &self,
+        state: &mut State,
+        tgt: &(VoiceId, String),
+        in_bus: BusId,
+    ) -> ParamPlan {
+        let intermediate = state.alloc_control_bus();
+        let intermediate_bus = BusId::new(intermediate.raw());
+        let link_node = state.alloc_node_id();
+        state
+            .param_triggers
+            .insert(tgt.clone(), (link_node, intermediate_bus));
+
+        let target_group = state
+            .param_summer_group
+            .unwrap_or_else(|| NodeId::new(0));
+
+        let mut params = ParamMap::new();
+        params.insert("in_bus".to_string(), in_bus.raw() as f32);
+        params.insert("out_bus".to_string(), intermediate_bus.raw() as f32);
+
+        ParamPlan::TriggerLink {
+            link_node,
+            target_group,
+            params,
+            intermediate_bus,
+        }
+    }
+
     /// Drive a single [`PlannedParamAction`] to the backend.
     async fn apply_param_action(&self, action: PlannedParamAction) -> Result<()> {
         match action.plan {
@@ -941,6 +1070,29 @@ impl<B: Backend> RoutesHandler<B> {
                     .create_synth(
                         &synthdef,
                         summer_node,
+                        target_group,
+                        AddAction::Tail,
+                        &params,
+                    )
+                    .await
+                    .map_err(Error::backend)?;
+                for node in action.target_nodes {
+                    self.backend
+                        .map_param_to_bus(node, &action.target_param, intermediate_bus.raw())
+                        .await
+                        .map_err(Error::backend)?;
+                }
+            }
+            ParamPlan::TriggerLink {
+                link_node,
+                target_group,
+                params,
+                intermediate_bus,
+            } => {
+                self.backend
+                    .create_synth(
+                        "port_tr_to_param_link_1",
+                        link_node,
                         target_group,
                         AddAction::Tail,
                         &params,
@@ -2313,7 +2465,7 @@ mod tests {
         let set_diff = route_for_sources(&sources, target_voice, &target_param);
 
         handler
-            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .finalize_params(&set_diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2371,7 +2523,7 @@ mod tests {
 
         let set_diff = route_for_sources(&sources, target_voice, &target_param);
         handler
-            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .finalize_params(&set_diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2419,7 +2571,7 @@ mod tests {
 
         let set_diff = route_for_sources(&sources, target_voice, &target_param);
         handler
-            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .finalize_params(&set_diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2439,7 +2591,7 @@ mod tests {
             target_param: target_param.clone(),
         });
         handler
-            .finalize_params(&rm, &ParamRouteDiff::default())
+            .finalize_params(&rm, &ParamRouteDiff::default(), &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2479,7 +2631,7 @@ mod tests {
 
         let bend_diff = route_for_sources(&sources, target_voice, &target_param);
         handler
-            .finalize_params(&ParamRouteDiff::default(), &bend_diff)
+            .finalize_params(&ParamRouteDiff::default(), &bend_diff, &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2531,7 +2683,7 @@ mod tests {
 
         let bend_diff = route_for_sources(&sources, target_voice, &target_param);
         handler
-            .finalize_params(&ParamRouteDiff::default(), &bend_diff)
+            .finalize_params(&ParamRouteDiff::default(), &bend_diff, &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2572,7 +2724,7 @@ mod tests {
 
         let bend_diff = route_for_sources(&sources, target_voice, &target_param);
         handler
-            .finalize_params(&ParamRouteDiff::default(), &bend_diff)
+            .finalize_params(&ParamRouteDiff::default(), &bend_diff, &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2595,7 +2747,7 @@ mod tests {
             target_param: target_param.clone(),
         });
         handler
-            .finalize_params(&ParamRouteDiff::default(), &rm)
+            .finalize_params(&ParamRouteDiff::default(), &rm, &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2638,7 +2790,7 @@ mod tests {
 
         let bend_diff = route_for_sources(&sources, target_voice, &target_param);
         handler
-            .finalize_params(&ParamRouteDiff::default(), &bend_diff)
+            .finalize_params(&ParamRouteDiff::default(), &bend_diff, &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2660,7 +2812,7 @@ mod tests {
             });
         }
         handler
-            .finalize_params(&ParamRouteDiff::default(), &rm)
+            .finalize_params(&ParamRouteDiff::default(), &rm, &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2684,7 +2836,7 @@ mod tests {
 
         let bend_diff = route_for_sources(&sources, target_voice, &target_param);
         handler
-            .finalize_params(&ParamRouteDiff::default(), &bend_diff)
+            .finalize_params(&ParamRouteDiff::default(), &bend_diff, &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2696,7 +2848,7 @@ mod tests {
         let frees_before = backend.frees().len();
 
         handler
-            .finalize_params(&ParamRouteDiff::default(), &ParamRouteDiff::default())
+            .finalize_params(&ParamRouteDiff::default(), &ParamRouteDiff::default(), &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2901,7 +3053,7 @@ mod tests {
 
         let set_diff = route_for_sources(&sources, target_voice, &target_param);
         handler
-            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .finalize_params(&set_diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -2974,7 +3126,7 @@ mod tests {
 
         let set_diff = route_for_sources(&sources, target_voice, &target_param);
         handler
-            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .finalize_params(&set_diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -3002,7 +3154,7 @@ mod tests {
             target_param: target_param.clone(),
         });
         handler
-            .finalize_params(&rm, &ParamRouteDiff::default())
+            .finalize_params(&rm, &ParamRouteDiff::default(), &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -3086,7 +3238,7 @@ mod tests {
         // so the SET multi-source guard is not tripped — the same source
         // port fans out into two SET targets, which is allowed.
         handler
-            .finalize_params(&diff, &ParamRouteDiff::default())
+            .finalize_params(&diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -3138,7 +3290,7 @@ mod tests {
 
         let set_diff = route_for_sources(&sources, target_voice, &target_param);
         handler
-            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .finalize_params(&set_diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
             .await
             .unwrap();
 
@@ -3156,6 +3308,427 @@ mod tests {
 
         let s = state.read().await;
         assert!(s.ar_to_kr_adapters.is_empty());
+    }
+
+    // ---------- TRIGGER path (B2.c) ----------
+
+    /// Build a fixture with `n_sources` trigger-rate sources plus one target
+    /// voice. Mirrors [`setup_split_fixture`] but registers the source
+    /// synthdef as Tr-rate and uses control buses (Tr ports share kr storage).
+    async fn setup_trigger_fixture(
+        n_sources: usize,
+        active_target_nodes: usize,
+    ) -> (
+        RoutesHandler<MockBackend>,
+        Arc<MockBackend>,
+        Arc<RwLock<State>>,
+        Vec<VoiceId>,
+        Vec<BusId>,
+        VoiceId,
+        String,
+        Vec<NodeId>,
+    ) {
+        let backend = Arc::new(MockBackend::new());
+        let state = Arc::new(RwLock::new(State::default()));
+        let handler = RoutesHandler::new(backend.clone(), state.clone());
+
+        let voice_group_id = GroupId::new(1);
+        let target_voice = VoiceId::new(200);
+        let target_param = "gate".to_string();
+        let mut source_voices = Vec::with_capacity(n_sources);
+        let mut source_buses = Vec::with_capacity(n_sources);
+        let mut target_nodes = Vec::with_capacity(active_target_nodes);
+        {
+            let mut s = state.write().await;
+            s.synthdefs.insert("tr_synth".to_string());
+            s.synthdef_outputs.insert(
+                "tr_synth".to_string(),
+                vec![vibelang_dsp::OutputPort {
+                    name: "out".to_string(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Tr,
+                }],
+            );
+            s.synthdefs.insert("ar_synth".to_string());
+            s.synthdef_outputs.insert(
+                "ar_synth".to_string(),
+                vec![vibelang_dsp::OutputPort {
+                    name: "out".to_string(),
+                    channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
+                }],
+            );
+
+            let voice_group_node = s.alloc_node_id();
+            let voice_group_bus = s.alloc_audio_bus(2);
+            s.groups.insert(
+                voice_group_id,
+                GroupState {
+                    id: voice_group_id,
+                    name: "g".to_string(),
+                    parent: None,
+                    node_id: voice_group_node,
+                    audio_bus: voice_group_bus,
+                    link_synth_node_id: None,
+                    muted: false,
+                    soloed: false,
+                    params: ParamMap::new(),
+                    output_bus: None,
+                },
+            );
+
+            for i in 0..n_sources {
+                let vid = VoiceId::new(20 + i as u32);
+                let kr_bus = s.alloc_control_bus();
+                let bus = BusId::new(kr_bus.raw());
+                s.voices.insert(
+                    vid,
+                    VoiceState {
+                        id: vid,
+                        config: VoiceConfig::new(
+                            &format!("trsrc{}", i),
+                            "tr_synth",
+                            voice_group_id,
+                        ),
+                        active_nodes: Vec::new(),
+                        note_nodes: HashMap::new(),
+                        round_robin_position: 0,
+                        pending_params: HashMap::new(),
+                        output_buses: vec![("out".to_string(), bus)],
+                    },
+                );
+                source_voices.push(vid);
+                source_buses.push(bus);
+            }
+
+            for _ in 0..active_target_nodes {
+                target_nodes.push(s.alloc_node_id());
+            }
+            let target_audio_bus = s.alloc_audio_bus(2);
+            s.voices.insert(
+                target_voice,
+                VoiceState {
+                    id: target_voice,
+                    config: VoiceConfig::new("kick", "ar_synth", voice_group_id),
+                    active_nodes: target_nodes.clone(),
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![("out".to_string(), target_audio_bus)],
+                },
+            );
+        }
+
+        (
+            handler,
+            backend,
+            state,
+            source_voices,
+            source_buses,
+            target_voice,
+            target_param,
+            target_nodes,
+        )
+    }
+
+    #[tokio::test]
+    async fn trigger_finalize_single_source_spawns_link_and_maps_target() {
+        // .to_trigger N=1: spawn `port_tr_to_param_link_1` (NOT a
+        // param_kr_modulate summer), wire in_bus = source's Tr bus, out_bus =
+        // intermediate kr bus, and /n_map every active target node to the
+        // intermediate bus.
+        let (
+            handler,
+            backend,
+            state,
+            sources,
+            source_buses,
+            target_voice,
+            target_param,
+            target_nodes,
+        ) = setup_trigger_fixture(1, 2).await;
+
+        let mut trigger_diff = ParamRouteDiff::default();
+        trigger_diff.additions.push(ParamRoute {
+            source_voice: sources[0],
+            source_port: "out".to_string(),
+            target_voice,
+            target_param: target_param.clone(),
+        });
+
+        handler
+            .finalize_params(
+                &ParamRouteDiff::default(),
+                &ParamRouteDiff::default(),
+                &trigger_diff,
+            )
+            .await
+            .unwrap();
+
+        let creates = backend.creates();
+        let links: Vec<&CreateSynthCall> = creates
+            .iter()
+            .filter(|c| c.def == "port_tr_to_param_link_1")
+            .collect();
+        assert_eq!(
+            links.len(),
+            1,
+            "TRIGGER N=1 must spawn exactly one port_tr_to_param_link_1",
+        );
+        let link = links[0];
+        assert_eq!(
+            *link.params.get("in_bus").unwrap() as u32,
+            source_buses[0].raw(),
+            "in_bus wired to the source's Tr port bus",
+        );
+        let intermediate = *link.params.get("out_bus").unwrap() as u32;
+        assert!(intermediate >= 1000, "intermediate from control-bus pool");
+
+        // No summer should have been spawned for this target.
+        assert!(
+            !creates.iter().any(|c| c.def.starts_with("param_kr_modulate_")),
+            "TRIGGER must not spawn a kr summer",
+        );
+
+        // /n_map issued for every active target node, all pointing at the
+        // link's intermediate bus.
+        let maps = backend.maps();
+        assert_eq!(maps.len(), 2, "one /n_map per active target node");
+        for (i, m) in maps.iter().enumerate() {
+            assert_eq!(m.node, target_nodes[i]);
+            assert_eq!(m.param, target_param);
+            assert_eq!(m.bus, intermediate);
+        }
+
+        // State carries the link entry and source-side route entry.
+        let s = state.read().await;
+        let (link_node, link_bus) = s
+            .param_triggers
+            .get(&(target_voice, target_param.clone()))
+            .expect("trigger link tracked")
+            .clone();
+        assert_eq!(link_node, link.node);
+        assert_eq!(link_bus.raw(), intermediate);
+        assert!(s
+            .param_routes_trigger
+            .contains_key(&(sources[0], "out".to_string())));
+        // No summer state.
+        assert!(s.param_summers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn trigger_removal_unmaps_target_and_frees_link() {
+        // Removing the only TRIGGER source for a target: link node freed,
+        // intermediate bus returned to the pool, target /n_map -1'd, and the
+        // baseline value (if any) restored.
+        let (
+            handler,
+            backend,
+            state,
+            sources,
+            _source_buses,
+            target_voice,
+            target_param,
+            target_nodes,
+        ) = setup_trigger_fixture(1, 1).await;
+
+        // Stamp a baseline value so the unmap restores it.
+        {
+            let mut s = state.write().await;
+            s.voices
+                .get_mut(&target_voice)
+                .unwrap()
+                .config
+                .params
+                .insert(target_param.clone(), 0.5);
+        }
+
+        let mut trigger_diff = ParamRouteDiff::default();
+        trigger_diff.additions.push(ParamRoute {
+            source_voice: sources[0],
+            source_port: "out".to_string(),
+            target_voice,
+            target_param: target_param.clone(),
+        });
+        handler
+            .finalize_params(
+                &ParamRouteDiff::default(),
+                &ParamRouteDiff::default(),
+                &trigger_diff,
+            )
+            .await
+            .unwrap();
+
+        let (link_node, link_bus) = {
+            let s = state.read().await;
+            *s.param_triggers
+                .get(&(target_voice, target_param.clone()))
+                .unwrap()
+        };
+
+        // Remove the trigger route.
+        let mut rm = ParamRouteDiff::default();
+        rm.removals.push(ParamRoute {
+            source_voice: sources[0],
+            source_port: "out".to_string(),
+            target_voice,
+            target_param: target_param.clone(),
+        });
+        handler
+            .finalize_params(
+                &ParamRouteDiff::default(),
+                &ParamRouteDiff::default(),
+                &rm,
+            )
+            .await
+            .unwrap();
+
+        assert!(backend.frees().contains(&link_node));
+        let last_map = backend.maps().last().unwrap().clone();
+        assert_eq!(last_map.node, target_nodes[0]);
+        assert_eq!(last_map.bus, u32::MAX, "scsynth -1 unmap sentinel");
+
+        {
+            let s = state.read().await;
+            assert!(
+                !s.param_routes_trigger
+                    .contains_key(&(sources[0], "out".to_string())),
+                "source-side route entry drained on removal",
+            );
+            assert!(s.param_triggers.is_empty(), "trigger state cleared");
+        }
+
+        // Intermediate bus is back in the pool — next alloc reuses it.
+        let mut s = state.write().await;
+        let reused = s.alloc_control_bus().raw();
+        assert_eq!(reused, link_bus.raw(), "intermediate bus recycled");
+    }
+
+    #[tokio::test]
+    async fn trigger_no_op_diff_preserves_existing_link() {
+        // Hot-reload signal: same source set, same target — diff is empty,
+        // finalize short-circuits, the link node + intermediate bus outlive
+        // the call.
+        let (handler, backend, state, sources, _source_buses, target_voice, target_param, _) =
+            setup_trigger_fixture(1, 1).await;
+
+        let mut trigger_diff = ParamRouteDiff::default();
+        trigger_diff.additions.push(ParamRoute {
+            source_voice: sources[0],
+            source_port: "out".to_string(),
+            target_voice,
+            target_param: target_param.clone(),
+        });
+        handler
+            .finalize_params(
+                &ParamRouteDiff::default(),
+                &ParamRouteDiff::default(),
+                &trigger_diff,
+            )
+            .await
+            .unwrap();
+
+        let snapshot = state.read().await.param_triggers.clone();
+        let creates_before = backend.creates().len();
+        let frees_before = backend.frees().len();
+
+        handler
+            .finalize_params(
+                &ParamRouteDiff::default(),
+                &ParamRouteDiff::default(),
+                &ParamRouteDiff::default(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(backend.creates().len(), creates_before);
+        assert_eq!(backend.frees().len(), frees_before);
+        let after = state.read().await.param_triggers.clone();
+        assert_eq!(after, snapshot);
+    }
+
+    #[tokio::test]
+    async fn cross_verb_runtime_conflict_set_and_trigger_unmaps() {
+        // Defence-in-depth: if a script-time bug puts the same target in both
+        // SET and TRIGGER maps, finalize logs a warning and unmaps rather
+        // than producing undefined behaviour.
+        let (
+            handler,
+            backend,
+            state,
+            sources,
+            _source_buses,
+            target_voice,
+            target_param,
+            target_nodes,
+        ) = setup_trigger_fixture(1, 1).await;
+
+        // Add a kr source that lives in the SET map alongside the TRIGGER
+        // entry.
+        let kr_source_id = VoiceId::new(99);
+        {
+            let mut s = state.write().await;
+            s.synthdefs.insert("conflicting_kr".to_string());
+            s.synthdef_outputs.insert(
+                "conflicting_kr".to_string(),
+                vec![vibelang_dsp::OutputPort {
+                    name: "env".to_string(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Kr,
+                }],
+            );
+            let kr_bus = s.alloc_control_bus();
+            let voice_group_id = GroupId::new(1);
+            s.voices.insert(
+                kr_source_id,
+                VoiceState {
+                    id: kr_source_id,
+                    config: VoiceConfig::new(
+                        "kr_src_conflict",
+                        "conflicting_kr",
+                        voice_group_id,
+                    ),
+                    active_nodes: Vec::new(),
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![("env".to_string(), BusId::new(kr_bus.raw()))],
+                },
+            );
+            s.param_routes_set.insert(
+                (kr_source_id, "env".to_string()),
+                vec![(target_voice, target_param.clone())],
+            );
+            s.param_routes_trigger.insert(
+                (sources[0], "out".to_string()),
+                vec![(target_voice, target_param.clone())],
+            );
+        }
+
+        // Drive the planner with an addition pointed at the conflicting target.
+        let mut trigger_diff = ParamRouteDiff::default();
+        trigger_diff.additions.push(ParamRoute {
+            source_voice: sources[0],
+            source_port: "out".to_string(),
+            target_voice,
+            target_param: target_param.clone(),
+        });
+        handler
+            .finalize_params(
+                &ParamRouteDiff::default(),
+                &ParamRouteDiff::default(),
+                &trigger_diff,
+            )
+            .await
+            .unwrap();
+
+        let last_map = backend.maps().last().unwrap().clone();
+        assert_eq!(last_map.node, target_nodes[0]);
+        assert_eq!(
+            last_map.bus,
+            u32::MAX,
+            "summer/trigger cross-verb conflict unmaps target",
+        );
     }
 
     #[tokio::test]
@@ -3191,7 +3764,7 @@ mod tests {
             target_param: target_param.clone(),
         });
         handler
-            .finalize_params(&diff, &ParamRouteDiff::default())
+            .finalize_params(&diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
             .await
             .unwrap();
 

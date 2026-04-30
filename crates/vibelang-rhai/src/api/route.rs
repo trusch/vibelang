@@ -259,6 +259,80 @@ impl RouteHandle {
         Ok(self)
     }
 
+    /// Install a CV-to-param route from this **trigger-rate** (`Tr`) output
+    /// port to the named parameter on `target`.
+    ///
+    /// Multi-output v3 Story B2.c. The source port must be trigger-rate
+    /// (`output_tr`); audio- and control-rate ports are rejected with a
+    /// clean error citing the actual rate plus a hint pointing at `.to(...)`
+    /// / `.to_param(...)` / `.to_param_audio(...)` as appropriate. The
+    /// target param must exist on the target voice's synthdef.
+    ///
+    /// Wiring: trigger-rate sources land in
+    /// [`ScriptState::param_routes_trigger`](vibelang_core::reload::ScriptState::param_routes_trigger).
+    /// The runtime spawns a `port_tr_to_param_link_1` synth that 1:1
+    /// forwards the source's Tr bus to an intermediate kr bus, and the
+    /// target param is `/n_map`-bound to that bus. Sample-accurate edges
+    /// from `Out.tr` are preserved end-to-end — there is no scale/offset
+    /// shaping (triggers don't bend), and multi-source fan-in is rejected
+    /// (trigger routing is 1:1).
+    pub fn to_trigger(
+        self,
+        target: Voice,
+        param_name: String,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        let mut target = target;
+        target.resolve_name();
+        let target_name = target.name.clone();
+        let target_synth = target.get_synth_name();
+
+        let src_synth = source_synthdef_name(self.voice_id);
+        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
+        match src_outputs.iter().find(|p| p.name == self.port_name) {
+            Some(p) if p.rate == PortRate::Tr => {}
+            Some(p) => {
+                return Err(non_tr_rate_to_trigger_error(
+                    &self.port_name,
+                    &src_synth,
+                    p.rate,
+                ));
+            }
+            None => {
+                return Err(missing_source_port_error(
+                    &self.port_name,
+                    &src_synth,
+                    &src_outputs,
+                ));
+            }
+        }
+
+        let target_params = get_synthdef_param_defaults(&target_synth);
+        if !target_params.contains_key(&param_name) {
+            return Err(unknown_target_param_error(
+                &target_name,
+                &target_synth,
+                &param_name,
+                &target_params,
+            ));
+        }
+
+        let target_id = context::get_or_create_voice_id(&target_name);
+        let conflict = context::with_state(|state| {
+            state
+                .add_param_route_trigger(
+                    self.voice_id,
+                    self.port_name.clone(),
+                    target_id,
+                    param_name.clone(),
+                )
+                .err()
+        });
+        if let Some(c) = conflict {
+            return Err(param_route_conflict_error("to_trigger", &c));
+        }
+        Ok(self)
+    }
+
     /// Set the per-source `scale` factor on the most-recently-installed
     /// `.to_param(...)` route on this handle. Default is `1.0`. Multi-call:
     /// last `.scale()` wins (offset is left untouched).
@@ -361,6 +435,38 @@ fn ar_rate_to_param_error(
              port with .output_kr(...) on the synthdef, or use .to(group(...)) \
              / .to_main() for audio-rate routing",
             port, synth, rate_str
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
+fn non_tr_rate_to_trigger_error(
+    port: &str,
+    synth: &str,
+    rate: PortRate,
+) -> Box<EvalAltResult> {
+    let (rate_str, hint) = match rate {
+        PortRate::Ar => (
+            "ar",
+            "use .to(group(...)) / .to_main() for audio routing, or .to_param_audio() \
+             for ar→param coercion",
+        ),
+        PortRate::Kr => (
+            "kr",
+            "use .to_param() for kr→param routing",
+        ),
+        PortRate::Tr => (
+            "tr",
+            "(unreachable — Tr is the valid rate for .to_trigger)",
+        ),
+    };
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "to_trigger() on port '{}' (synthdef '{}'): port is {}-rate, but \
+             .to_trigger() requires a tr-rate (trigger) port — declare the port \
+             with .output_tr(...) on the synthdef. {}",
+            port, synth, rate_str, hint
         )
         .into(),
         Position::NONE,
@@ -774,6 +880,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("to_current_group", RouteHandle::to_current_group);
     engine.register_fn("to_param", RouteHandle::to_param);
     engine.register_fn("to_param_audio", RouteHandle::to_param_audio);
+    engine.register_fn("to_trigger", RouteHandle::to_trigger);
     engine.register_fn("scale", RouteHandle::scale);
     engine.register_fn("offset", RouteHandle::offset);
 
@@ -1823,6 +1930,220 @@ mod tests {
                 "msg should mention both scale and to_param, got: {}",
                 msg,
             );
+        });
+    }
+
+    // ==================== .to_trigger tests (v3 B2.c) ====================
+
+    fn declare_tr_synthdef(synth: &str, tr_ports: &[&str]) {
+        let outputs: Vec<OutputPort> = tr_ports
+            .iter()
+            .map(|n| OutputPort {
+                name: (*n).to_string(),
+                channels: 1,
+                rate: PortRate::Tr,
+            })
+            .collect();
+        register_synthdef_outputs(synth.to_string(), outputs);
+    }
+
+    #[test]
+    fn to_trigger_round_trips_into_param_routes_trigger() {
+        with_test_context(|| {
+            let src_synth = "v3_b2c_to_trigger_round_trip_src";
+            let tgt_synth = "v3_b2c_to_trigger_round_trip_tgt";
+            declare_tr_synthdef(src_synth, &["kick_trig"]);
+            declare_synthdef_with_params(tgt_synth, &["gate", "amp"]);
+
+            let mut src = make_voice("vox_src_b2c_rt").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_b2c_rt").synth(tgt_synth.to_string());
+
+            src.output_by_name("kick_trig")
+                .expect("port resolves")
+                .to_trigger(tgt, "gate".to_string())
+                .expect("tr port + valid target param");
+
+            let src_id = context::get_or_create_voice_id("vox_src_b2c_rt");
+            let tgt_id = context::get_or_create_voice_id("vox_tgt_b2c_rt");
+            context::with_state(|state| {
+                let entries = state
+                    .param_routes_trigger
+                    .get(&(src_id, "kick_trig".to_string()))
+                    .expect("trigger route installed");
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0], (tgt_id, "gate".to_string()));
+
+                // SET / BEND maps stay empty.
+                assert!(state
+                    .param_routes_set
+                    .get(&(src_id, "kick_trig".to_string()))
+                    .is_none());
+                assert!(state
+                    .param_routes_bend
+                    .get(&(src_id, "kick_trig".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn to_trigger_kr_rate_source_errors_with_clean_message() {
+        with_test_context(|| {
+            let src_synth = "v3_b2c_to_trigger_kr_src";
+            let tgt_synth = "v3_b2c_to_trigger_kr_tgt";
+            declare_kr_synthdef(src_synth, &["env"]);
+            declare_synthdef_with_params(tgt_synth, &["gate"]);
+
+            let mut src = make_voice("vox_src_b2c_kr").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_b2c_kr").synth(tgt_synth.to_string());
+
+            let err = src
+                .output_by_name("env")
+                .expect("port resolves")
+                .to_trigger(tgt, "gate".to_string())
+                .expect_err("kr-rate source on .to_trigger must error");
+            let msg = err.to_string();
+            assert!(msg.contains("kr-rate"), "msg = {}", msg);
+            assert!(msg.contains("'env'"), "msg = {}", msg);
+            assert!(msg.contains("output_tr"), "msg = {}", msg);
+            assert!(msg.contains("to_param()"), "msg should hint at .to_param, got: {}", msg);
+
+            let src_id = context::get_or_create_voice_id("vox_src_b2c_kr");
+            context::with_state(|state| {
+                assert!(state
+                    .param_routes_trigger
+                    .get(&(src_id, "env".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn to_trigger_ar_rate_source_errors_with_clean_message() {
+        with_test_context(|| {
+            let src_synth = "v3_b2c_to_trigger_ar_src";
+            let tgt_synth = "v3_b2c_to_trigger_ar_tgt";
+            declare_ar_synthdef(src_synth, &["sine"]);
+            declare_synthdef_with_params(tgt_synth, &["gate"]);
+
+            let mut src = make_voice("vox_src_b2c_ar").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_b2c_ar").synth(tgt_synth.to_string());
+
+            let err = src
+                .output_by_name("sine")
+                .expect("port resolves")
+                .to_trigger(tgt, "gate".to_string())
+                .expect_err("ar-rate source on .to_trigger must error");
+            let msg = err.to_string();
+            assert!(msg.contains("ar-rate"), "msg = {}", msg);
+            assert!(msg.contains("'sine'"), "msg = {}", msg);
+            assert!(msg.contains("output_tr"), "msg = {}", msg);
+            assert!(
+                msg.contains("to(") || msg.contains("to_main") || msg.contains("to_param_audio"),
+                "msg should hint at audio routing verbs, got: {}",
+                msg,
+            );
+        });
+    }
+
+    #[test]
+    fn to_trigger_cross_verb_conflict_with_set_errors() {
+        with_test_context(|| {
+            let kr_src_synth = "v3_b2c_to_trigger_cross_set_kr";
+            let tr_src_synth = "v3_b2c_to_trigger_cross_set_tr";
+            let tgt_synth = "v3_b2c_to_trigger_cross_set_tgt";
+            declare_kr_synthdef(kr_src_synth, &["env"]);
+            declare_tr_synthdef(tr_src_synth, &["trig"]);
+            declare_synthdef_with_params(tgt_synth, &["gate"]);
+
+            let mut kr_src = make_voice("vox_kr_src_cross_set")
+                .synth(kr_src_synth.to_string());
+            let mut tr_src = make_voice("vox_tr_src_cross_set")
+                .synth(tr_src_synth.to_string());
+            let tgt = make_voice("vox_tgt_cross_set").synth(tgt_synth.to_string());
+
+            // Install SET first.
+            kr_src
+                .output_by_name("env")
+                .expect("port resolves")
+                .to_param(tgt.clone(), "gate".to_string())
+                .expect("install kr→param SET");
+
+            // Now .to_trigger on the same target (gate) — must error.
+            let err = tr_src
+                .output_by_name("trig")
+                .expect("port resolves")
+                .to_trigger(tgt, "gate".to_string())
+                .expect_err("cross-verb conflict (SET ↔ TRIGGER) must error");
+            let msg = err.to_string();
+            assert!(msg.contains("to_trigger"), "msg = {}", msg);
+            assert!(
+                msg.contains("to_param") || msg.contains("modulate_by"),
+                "msg should reference the conflicting verb set, got: {}",
+                msg,
+            );
+        });
+    }
+
+    #[test]
+    fn to_trigger_cross_verb_conflict_with_bend_errors() {
+        with_test_context(|| {
+            let kr_src_synth = "v3_b2c_to_trigger_cross_bend_kr";
+            let tr_src_synth = "v3_b2c_to_trigger_cross_bend_tr";
+            let tgt_synth = "v3_b2c_to_trigger_cross_bend_tgt";
+            declare_kr_synthdef(kr_src_synth, &["lfo"]);
+            declare_tr_synthdef(tr_src_synth, &["trig"]);
+            declare_synthdef_with_params(tgt_synth, &["gate"]);
+
+            let kr_src = make_voice("vox_kr_src_cross_bend").synth(kr_src_synth.to_string());
+            let mut tr_src = make_voice("vox_tr_src_cross_bend").synth(tr_src_synth.to_string());
+            let mut tgt = make_voice("vox_tgt_cross_bend").synth(tgt_synth.to_string());
+
+            // Install BEND first via target-first surface.
+            tgt.param_handle("gate")
+                .modulate_by(kr_src, "lfo".to_string())
+                .expect("install kr→param BEND");
+
+            // Now .to_trigger on the same target — must error.
+            let err = tr_src
+                .output_by_name("trig")
+                .expect("port resolves")
+                .to_trigger(tgt, "gate".to_string())
+                .expect_err("cross-verb conflict (BEND ↔ TRIGGER) must error");
+            let msg = err.to_string();
+            assert!(msg.contains("to_trigger"), "msg = {}", msg);
+        });
+    }
+
+    #[test]
+    fn set_after_trigger_on_same_target_errors_with_cross_verb_conflict() {
+        with_test_context(|| {
+            let tr_src_synth = "v3_b2c_set_after_trigger_tr";
+            let kr_src_synth = "v3_b2c_set_after_trigger_kr";
+            let tgt_synth = "v3_b2c_set_after_trigger_tgt";
+            declare_tr_synthdef(tr_src_synth, &["trig"]);
+            declare_kr_synthdef(kr_src_synth, &["env"]);
+            declare_synthdef_with_params(tgt_synth, &["gate"]);
+
+            let mut tr_src = make_voice("vox_tr_src_sat").synth(tr_src_synth.to_string());
+            let mut kr_src = make_voice("vox_kr_src_sat").synth(kr_src_synth.to_string());
+            let tgt = make_voice("vox_tgt_sat").synth(tgt_synth.to_string());
+
+            // Install TRIGGER first.
+            tr_src
+                .output_by_name("trig")
+                .expect("port resolves")
+                .to_trigger(tgt.clone(), "gate".to_string())
+                .expect("install tr→param TRIGGER");
+
+            // Now .to_param on the same target — must error.
+            let err = kr_src
+                .output_by_name("env")
+                .expect("port resolves")
+                .to_param(tgt, "gate".to_string())
+                .expect_err("cross-verb conflict (TRIGGER ↔ SET) must error");
+            let msg = err.to_string();
+            assert!(msg.contains("to_param"), "msg = {}", msg);
         });
     }
 }
