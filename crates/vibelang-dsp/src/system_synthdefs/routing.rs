@@ -643,6 +643,112 @@ pub fn create_port_tr_to_param_link_1_bytes() -> Result<Vec<u8>, std::io::Error>
     Ok(buf)
 }
 
+/// Create the `a2k_adapter_1` synthdef bytes.
+///
+/// One-channel ar→kr adapter used by [`crate::handlers::routes::RoutesHandler::finalize_params`]
+/// when a `.to_param_audio()` route demands rate coercion: it reads a single
+/// audio-rate bus, samples it once per kr cycle via SuperCollider's `A2K`
+/// UGen, and writes the kr signal to a control bus. The control bus then
+/// feeds the same `param_kr_modulate_<n>` summer infrastructure used by
+/// pure-kr routes, so per-source `.scale()` / `.offset()` shaping survives
+/// the coercion step. Equivalent to:
+///
+/// ```supercollider
+/// SynthDef("a2k_adapter_1", { |in_bus=0, out_bus=0|
+///     Out.kr(out_bus, A2K.kr(In.ar(in_bus, 1)))
+/// })
+/// ```
+///
+/// Mono only — kr ports are mono by convention, and multi-channel adapters
+/// aren't needed for the param-modulation case the verb targets.
+pub fn create_a2k_adapter_1_bytes() -> Result<Vec<u8>, std::io::Error> {
+    let mut buf = Vec::new();
+
+    // File header
+    buf.write_all(b"SCgf")?;
+    buf.write_all(&2i32.to_be_bytes())?; // version 2
+    buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+
+    // Name
+    let name = b"a2k_adapter_1";
+    buf.push(name.len() as u8);
+    buf.write_all(name)?;
+
+    // No constants
+    buf.write_all(&0i32.to_be_bytes())?;
+
+    // Parameters: in_bus=0, out_bus=0
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+
+    buf.write_all(&2i32.to_be_bytes())?;
+    let in_bus_name = b"in_bus";
+    buf.push(in_bus_name.len() as u8);
+    buf.write_all(in_bus_name)?;
+    buf.write_all(&0i32.to_be_bytes())?;
+    let out_bus_name = b"out_bus";
+    buf.push(out_bus_name.len() as u8);
+    buf.write_all(out_bus_name)?;
+    buf.write_all(&1i32.to_be_bytes())?;
+
+    // UGens:
+    //   0: Control (kr) — 2 outputs: in_bus, out_bus
+    //   1: In.ar(in_bus, 1) — 1 mono ar output
+    //   2: A2K.kr(In[0]) — 1 mono kr output (samples ar once per kr cycle)
+    //   3: Out.kr(out_bus, A2K[0])
+    buf.write_all(&4i32.to_be_bytes())?;
+
+    // UGen 0: Control
+    let control_name = b"Control";
+    buf.push(control_name.len() as u8);
+    buf.write_all(control_name)?;
+    buf.push(1); // control rate
+    buf.write_all(&0i32.to_be_bytes())?; // 0 inputs
+    buf.write_all(&2i32.to_be_bytes())?; // 2 outputs
+    buf.write_all(&0i16.to_be_bytes())?; // special index
+    buf.push(1); // output 0 rate (in_bus)
+    buf.push(1); // output 1 rate (out_bus)
+
+    // UGen 1: In.ar(in_bus, 1) → mono ar
+    let in_name = b"In";
+    buf.push(in_name.len() as u8);
+    buf.write_all(in_name)?;
+    buf.push(2); // audio rate
+    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
+    buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono ar)
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
+    buf.push(2); // output rate: audio
+
+    // UGen 2: A2K.kr(In[0]) — downsample ar to kr
+    let a2k_name = b"A2K";
+    buf.push(a2k_name.len() as u8);
+    buf.write_all(a2k_name)?;
+    buf.push(1); // control rate
+    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the ar signal)
+    buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono kr)
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 1, 0)?; // In[0] (mono ar)
+    buf.push(1); // output rate: control
+
+    // UGen 3: Out.kr(out_bus, A2K[0])
+    let out_name = b"Out";
+    buf.push(out_name.len() as u8);
+    buf.write_all(out_name)?;
+    buf.push(1); // control rate
+    buf.write_all(&2i32.to_be_bytes())?; // 2 inputs (bus index + signal)
+    buf.write_all(&0i32.to_be_bytes())?; // 0 outputs
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
+    write_ugen_input(&mut buf, 2, 0)?; // A2K[0]
+
+    // No variants
+    buf.write_all(&0i16.to_be_bytes())?;
+
+    Ok(buf)
+}
+
 /// Maximum number of source kr signals supported by `param_kr_modulate_<n>`.
 ///
 /// Sets the upper bound that [`create_param_kr_modulate_n_bytes`] will accept
@@ -919,6 +1025,23 @@ mod tests {
         );
         assert!(bytes.windows(6).any(|w| w == b"in_bus"));
         assert!(bytes.windows(7).any(|w| w == b"out_bus"));
+    }
+
+    #[test]
+    fn test_create_a2k_adapter_1_bytes() {
+        let bytes = create_a2k_adapter_1_bytes().unwrap();
+        assert_eq!(&bytes[0..4], b"SCgf");
+        assert_eq!(&bytes[4..8], &2i32.to_be_bytes());
+        let needle = b"a2k_adapter_1";
+        assert!(
+            bytes.windows(needle.len()).any(|w| w == needle),
+            "synthdef name not found in encoded bytes"
+        );
+        assert!(bytes.windows(6).any(|w| w == b"in_bus"));
+        assert!(bytes.windows(7).any(|w| w == b"out_bus"));
+        // The A2K UGen name must appear so we know the synthdef invokes the
+        // rate-conversion UGen rather than passing audio straight through.
+        assert!(bytes.windows(3).any(|w| w == b"A2K"));
     }
 
     #[test]

@@ -174,6 +174,81 @@ impl RouteHandle {
         Ok(self)
     }
 
+    /// Install a CV-to-param route from this audio-rate output port to the
+    /// named parameter on `target`, downsampling the source audio to kr
+    /// at runtime via a shared `a2k_adapter_1` synth.
+    ///
+    /// Mirrors [`Self::to_param`] but flips the rate constraint: the source
+    /// port must be audio-rate (`output(...)`); kr-rate ports are rejected
+    /// with a clean error pointing at `.to_param()`. The route still lands
+    /// in the SET map and shares the multi-source SET / cross-verb conflict
+    /// rules with `.to_param`. The summer infrastructure is shared too —
+    /// chained `.scale(...)` / `.offset(...)` still apply because the
+    /// adapter's kr bus feeds the same `param_kr_modulate_<n>` summer that
+    /// pure-kr routes use.
+    ///
+    /// One adapter is spawned per `(source_voice, source_port)` pair the
+    /// runtime sees in either param-route map; multiple `.to_param_audio()`
+    /// routes from the same source share that adapter rather than each
+    /// allocating a new kr bus.
+    pub fn to_param_audio(
+        mut self,
+        target: Voice,
+        param_name: String,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        let mut target = target;
+        target.resolve_name();
+        let target_name = target.name.clone();
+        let target_synth = target.get_synth_name();
+
+        let src_synth = source_synthdef_name(self.voice_id);
+        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
+        match src_outputs.iter().find(|p| p.name == self.port_name) {
+            Some(p) if p.rate == PortRate::Ar => {}
+            Some(p) => {
+                return Err(kr_or_tr_rate_to_param_audio_error(
+                    &self.port_name,
+                    &src_synth,
+                    p.rate,
+                ));
+            }
+            None => {
+                return Err(missing_source_port_error(
+                    &self.port_name,
+                    &src_synth,
+                    &src_outputs,
+                ));
+            }
+        }
+
+        let target_params = get_synthdef_param_defaults(&target_synth);
+        if !target_params.contains_key(&param_name) {
+            return Err(unknown_target_param_error(
+                &target_name,
+                &target_synth,
+                &param_name,
+                &target_params,
+            ));
+        }
+
+        let target_id = context::get_or_create_voice_id(&target_name);
+        let conflict = context::with_state(|state| {
+            state
+                .add_param_route_set(
+                    self.voice_id,
+                    self.port_name.clone(),
+                    target_id,
+                    param_name.clone(),
+                )
+                .err()
+        });
+        if let Some(c) = conflict {
+            return Err(param_route_conflict_error("to_param_audio", &c));
+        }
+        self.last_param_target = Some((target_id, param_name));
+        Ok(self)
+    }
+
     /// Set the per-source `scale` factor on the most-recently-installed
     /// `.to_param(...)` route on this handle. Default is `1.0`. Multi-call:
     /// last `.scale()` wins (offset is left untouched).
@@ -275,6 +350,29 @@ fn ar_rate_to_param_error(
              .to_param() requires a kr-rate (control) port — declare the \
              port with .output_kr(...) on the synthdef, or use .to(group(...)) \
              / .to_main() for audio-rate routing",
+            port, synth, rate_str
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
+fn kr_or_tr_rate_to_param_audio_error(
+    port: &str,
+    synth: &str,
+    rate: PortRate,
+) -> Box<EvalAltResult> {
+    let rate_str = match rate {
+        PortRate::Ar => "ar",
+        PortRate::Kr => "kr",
+        PortRate::Tr => "tr",
+    };
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "to_param_audio() on port '{}' (synthdef '{}'): port is {}-rate, \
+             but .to_param_audio() requires an ar-rate (audio) port — for \
+             kr-rate sources use .to_param() instead, which routes the \
+             control bus directly without rate coercion",
             port, synth, rate_str
         )
         .into(),
@@ -665,6 +763,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("mute", RouteHandle::mute);
     engine.register_fn("to_current_group", RouteHandle::to_current_group);
     engine.register_fn("to_param", RouteHandle::to_param);
+    engine.register_fn("to_param_audio", RouteHandle::to_param_audio);
     engine.register_fn("scale", RouteHandle::scale);
     engine.register_fn("offset", RouteHandle::offset);
 
@@ -1509,6 +1608,190 @@ mod tests {
                     Some((2.0, 0.0)),
                 );
             });
+        });
+    }
+
+    // ==================== .to_param_audio() (ar→param coercion) tests ===================
+
+    #[test]
+    fn to_param_audio_round_trip_lands_in_set_map_from_ar_source() {
+        with_test_context(|| {
+            let src_synth = "v3_a2_to_param_audio_round_trip_src";
+            let tgt_synth = "v3_a2_to_param_audio_round_trip_tgt";
+            declare_ar_synthdef(src_synth, &["sine"]);
+            declare_synthdef_with_params(tgt_synth, &["cutoff", "amp"]);
+
+            let mut src = make_voice("vox_src_tpa_rt").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_tpa_rt").synth(tgt_synth.to_string());
+
+            src.output_by_name("sine")
+                .expect("port resolves")
+                .to_param_audio(tgt, "cutoff".to_string())
+                .expect("ar port + valid target param");
+
+            let src_id = context::get_or_create_voice_id("vox_src_tpa_rt");
+            let tgt_id = context::get_or_create_voice_id("vox_tgt_tpa_rt");
+            context::with_state(|state| {
+                let entries = state
+                    .param_routes_set
+                    .get(&(src_id, "sine".to_string()))
+                    .expect("param route installed in SET map");
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0], (tgt_id, "cutoff".to_string()));
+
+                // Default shaping seeded so chained .scale/.offset work.
+                let key = (src_id, "sine".to_string(), tgt_id, "cutoff".to_string());
+                let shaping =
+                    state.param_route_set_shaping.get(&key).copied();
+                assert_eq!(shaping, Some((1.0, 0.0)));
+
+                // Not in BEND map, no audio mixer route installed.
+                assert!(state
+                    .param_routes_bend
+                    .get(&(src_id, "sine".to_string()))
+                    .is_none());
+                assert!(state
+                    .routes
+                    .get(&(src_id, "sine".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn to_param_audio_kr_source_returns_clean_error_pointing_at_to_param() {
+        with_test_context(|| {
+            let src_synth = "v3_a2_to_param_audio_kr_err_src";
+            let tgt_synth = "v3_a2_to_param_audio_kr_err_tgt";
+            declare_kr_synthdef(src_synth, &["env"]);
+            declare_synthdef_with_params(tgt_synth, &["cutoff"]);
+
+            let mut src = make_voice("vox_src_tpa_kr").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_tpa_kr").synth(tgt_synth.to_string());
+
+            let err = src
+                .output_by_name("env")
+                .expect("port resolves")
+                .to_param_audio(tgt, "cutoff".to_string())
+                .expect_err("kr-rate source must error");
+            let msg = err.to_string();
+            assert!(msg.contains("kr-rate"), "msg = {}", msg);
+            assert!(msg.contains("'env'"), "msg = {}", msg);
+            // The error must point users at the correct verb for kr sources.
+            assert!(
+                msg.contains(".to_param()"),
+                "msg should suggest .to_param(), got: {}",
+                msg,
+            );
+
+            // No partial route installed in either map.
+            let src_id = context::get_or_create_voice_id("vox_src_tpa_kr");
+            context::with_state(|state| {
+                assert!(state
+                    .param_routes_set
+                    .get(&(src_id, "env".to_string()))
+                    .is_none());
+                assert!(state
+                    .param_routes_bend
+                    .get(&(src_id, "env".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn to_param_keeps_ar_rate_mismatch_error() {
+        // Symmetric guard: the existing .to_param() rejection of ar sources
+        // must not regress now that .to_param_audio() exists.
+        with_test_context(|| {
+            let src_synth = "v3_a2_to_param_ar_err_src";
+            let tgt_synth = "v3_a2_to_param_ar_err_tgt";
+            declare_ar_synthdef(src_synth, &["sine"]);
+            declare_synthdef_with_params(tgt_synth, &["cutoff"]);
+
+            let mut src = make_voice("vox_src_tp_ar").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_tp_ar").synth(tgt_synth.to_string());
+
+            let err = src
+                .output_by_name("sine")
+                .expect("port resolves")
+                .to_param(tgt, "cutoff".to_string())
+                .expect_err("ar source on .to_param must error");
+            let msg = err.to_string();
+            assert!(msg.contains("ar-rate"), "msg = {}", msg);
+            assert!(msg.contains("'sine'"), "msg = {}", msg);
+            assert!(msg.contains("output_kr"), "msg = {}", msg);
+        });
+    }
+
+    #[test]
+    fn to_param_audio_with_chained_scale_and_offset_round_trips() {
+        // Per-source shaping must apply to .to_param_audio routes too —
+        // the adapter feeds the same summer, so .scale() / .offset() write
+        // into the same SET shaping map as pure-kr routes.
+        with_test_context(|| {
+            let src_synth = "v3_a2_tpa_shape_src";
+            let tgt_synth = "v3_a2_tpa_shape_tgt";
+            declare_ar_synthdef(src_synth, &["sine"]);
+            declare_synthdef_with_params(tgt_synth, &["cutoff"]);
+
+            let mut src = make_voice("vox_src_tpa_shape").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_tpa_shape").synth(tgt_synth.to_string());
+
+            src.output_by_name("sine")
+                .expect("port resolves")
+                .to_param_audio(tgt, "cutoff".to_string())
+                .expect("install")
+                .scale(0.25)
+                .expect("scale install")
+                .offset(0.5)
+                .expect("offset install");
+
+            let src_id = context::get_or_create_voice_id("vox_src_tpa_shape");
+            let tgt_id = context::get_or_create_voice_id("vox_tgt_tpa_shape");
+            context::with_state(|state| {
+                let key = (src_id, "sine".to_string(), tgt_id, "cutoff".to_string());
+                let (scale, offset) = state
+                    .param_route_set_shaping
+                    .get(&key)
+                    .copied()
+                    .expect("shaping recorded for ar→param route");
+                assert_eq!(scale, 0.25);
+                assert_eq!(offset, 0.5);
+            });
+        });
+    }
+
+    #[test]
+    fn to_param_audio_then_modulate_by_on_same_target_errors() {
+        // .to_param_audio shares the SET map with .to_param, so the same
+        // cross-verb conflict guard must reject .modulate_by on a target
+        // already wired by ar coercion.
+        with_test_context(|| {
+            let src_synth = "v3_a2_tpa_xverb_src";
+            let tgt_synth = "v3_a2_tpa_xverb_tgt";
+            declare_ar_synthdef(src_synth, &["sine"]);
+            declare_kr_synthdef("v3_a2_tpa_xverb_lfo", &["out"]);
+            declare_synthdef_with_params(tgt_synth, &["freq"]);
+
+            let src = make_voice("vox_src_tpa_xverb").synth(src_synth.to_string());
+            let lfo = make_voice("vox_lfo_tpa_xverb")
+                .synth("v3_a2_tpa_xverb_lfo".to_string());
+            let mut tgt = make_voice("vox_tgt_tpa_xverb").synth(tgt_synth.to_string());
+
+            src.clone()
+                .output_by_name("sine")
+                .expect("port resolves")
+                .to_param_audio(tgt.clone(), "freq".to_string())
+                .expect("install set via to_param_audio");
+
+            let err = tgt
+                .param_handle("freq")
+                .modulate_by(lfo, "out".to_string())
+                .expect_err("cross-verb conflict must error");
+            let msg = err.to_string();
+            assert!(msg.contains("modulate_by"), "msg = {}", msg);
+            assert!(msg.contains("to_param"), "msg = {}", msg);
         });
     }
 

@@ -911,6 +911,20 @@ pub struct State {
     /// summer. Maintained exclusively by
     /// [`crate::handlers::RoutesHandler::finalize_params`].
     pub param_summers: HashMap<(VoiceId, String), ParamSummerState>,
+
+    /// Active `a2k_adapter_1` synths spawned to coerce an audio-rate source
+    /// port into a kr-rate signal so it can drive a `param_kr_modulate_<n>`
+    /// summer just like a native kr port. Keyed by source `(voice_id,
+    /// port_name)`; one adapter is shared by all `.to_param_audio()` routes
+    /// that originate from the same `(source, port)` pair, since they all
+    /// downsample the same audio bus.
+    ///
+    /// `(NodeId, ControlBusId)` records the adapter synth and the
+    /// intermediate kr bus it writes to. The bus is what the summer reads
+    /// (via `in_<i>`); the source's own audio bus stays untouched.
+    /// Maintained exclusively by
+    /// [`crate::handlers::RoutesHandler::finalize_params`].
+    pub ar_to_kr_adapters: HashMap<(VoiceId, String), (NodeId, ControlBusId)>,
 }
 
 /// Live state of one `param_kr_modulate_<n>` summer instance.
@@ -980,6 +994,7 @@ impl Default for State {
             param_routes_set: HashMap::new(),
             param_routes_bend: HashMap::new(),
             param_summers: HashMap::new(),
+            ar_to_kr_adapters: HashMap::new(),
         }
     }
 }

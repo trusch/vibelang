@@ -86,6 +86,17 @@ pub fn generate_builtins() -> Vec<(String, Vec<u8>)> {
         tracing::warn!("Failed to create port_tr_to_param_link_1 from vibelang-dsp");
     }
 
+    // ar→kr adapter for `.to_param_audio()` rate coercion. Reads a single
+    // audio bus, samples it once per kr cycle (A2K), and writes the result
+    // to a kr control bus that feeds the same `param_kr_modulate_<n>`
+    // summer infrastructure as pure-kr routes — so per-source scale/offset
+    // shaping survives the coercion.
+    if let Ok(bytes) = system_synthdefs::create_a2k_adapter_1_bytes() {
+        all_defs.push(("a2k_adapter_1".to_string(), bytes));
+    } else {
+        tracing::warn!("Failed to create a2k_adapter_1 from vibelang-dsp");
+    }
+
     // Add per-target kr modulate-summer synthdefs (RoutesHandler::finalize_params
     // taps these for the BEND path: every `modulate_by` target gets a summer
     // that adds `baseline + Σ source kr buses`, even at N=1, so the user's

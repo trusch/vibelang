@@ -16,7 +16,7 @@ use crate::types::{BusId, ControlBusId, GroupId, NodeId, ParamMap, VoiceId};
 use crate::{Error, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use vibelang_dsp::OutputPort;
+use vibelang_dsp::{OutputPort, PortRate};
 
 /// Where a voice's output port should send its audio (or, for kr ports,
 /// its CV signal).
@@ -184,6 +184,17 @@ pub struct RoutesHandler<B: Backend> {
     state: Arc<RwLock<State>>,
 }
 
+/// One `a2k_adapter_1` synth pending creation on the backend.
+///
+/// Produced by [`RoutesHandler::plan_param_actions`] and consumed by
+/// [`RoutesHandler::finalize_params`] before any new summer is spawned, so
+/// summers can read from the adapter's intermediate bus on their first tick.
+struct AdapterSpawn {
+    node: NodeId,
+    in_bus: BusId,
+    out_bus: ControlBusId,
+}
+
 /// A single planned action against one `(target_voice, target_param)` pair,
 /// produced by [`RoutesHandler::plan_param_actions`] and consumed by
 /// [`RoutesHandler::apply_param_action`].
@@ -291,6 +302,12 @@ fn apply_param_diff_to_map(
 
 /// Collect the control buses of every source whose target list contains
 /// `tgt`, sorted by raw bus id for deterministic input ordering.
+///
+/// For ar-rate sources (entered via `.to_param_audio()`) the source's own
+/// audio bus is unreadable by `In.kr`, so the runtime spawns a shared
+/// `a2k_adapter_1` synth that downsamples to a kr bus; this helper swaps
+/// in the adapter's bus when one is registered, keeping the summer
+/// oblivious to the upstream rate.
 fn collect_source_buses(
     state: &State,
     map: &HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
@@ -298,15 +315,21 @@ fn collect_source_buses(
 ) -> Vec<BusId> {
     let mut source_buses: Vec<BusId> = Vec::new();
     for ((sv, sp), targets) in map.iter() {
-        if targets.iter().any(|t| t == tgt) {
-            if let Some(bus) = state.voices.get(sv).and_then(|v| {
-                v.output_buses
-                    .iter()
-                    .find(|(n, _)| n == sp)
-                    .map(|(_, b)| *b)
-            }) {
-                source_buses.push(bus);
-            }
+        if !targets.iter().any(|t| t == tgt) {
+            continue;
+        }
+        let key = (*sv, sp.clone());
+        if let Some((_, bus)) = state.ar_to_kr_adapters.get(&key) {
+            source_buses.push(BusId::new(bus.raw()));
+            continue;
+        }
+        if let Some(bus) = state.voices.get(sv).and_then(|v| {
+            v.output_buses
+                .iter()
+                .find(|(n, _)| n == sp)
+                .map(|(_, b)| *b)
+        }) {
+            source_buses.push(bus);
         }
     }
     source_buses.sort_by_key(|b| b.raw());
@@ -556,13 +579,14 @@ impl<B: Backend> RoutesHandler<B> {
             return Ok(());
         }
 
-        // Summers run in a dedicated group at the head of the root group so
-        // they tick before voice synths read their `/n_map`-bound params.
+        // Summers (and ar→kr adapters that feed them) run in a dedicated
+        // group at the head of the root group so they tick before voice
+        // synths read their `/n_map`-bound params.
         if !set_diff.additions.is_empty() || !bend_diff.additions.is_empty() {
             self.ensure_param_summer_group().await?;
         }
 
-        let (planned, summers_to_free) =
+        let (planned, summers_to_free, adapters_to_spawn, adapters_to_free) =
             self.plan_param_actions(set_diff, bend_diff).await;
 
         for &(node, _) in &summers_to_free {
@@ -574,11 +598,49 @@ impl<B: Backend> RoutesHandler<B> {
                 );
             }
         }
-        if !summers_to_free.is_empty() {
+        for &(node, _) in &adapters_to_free {
+            if let Err(e) = self.backend.free_node(node).await {
+                tracing::warn!(
+                    "RoutesHandler::finalize_params: failed to free old a2k adapter node {:?}: {}",
+                    node,
+                    e,
+                );
+            }
+        }
+        if !summers_to_free.is_empty() || !adapters_to_free.is_empty() {
             let mut state = self.state.write().await;
             for (node, bus) in summers_to_free {
                 state.free_node_id(node);
                 state.free_control_bus(bus);
+            }
+            for (node, bus) in adapters_to_free {
+                state.free_node_id(node);
+                state.free_control_bus(bus);
+            }
+        }
+
+        // Spawn ar→kr adapters before any new summer so the summer's first
+        // tick can read a populated kr bus rather than a freshly-allocated
+        // (and therefore zeroed) one. Adapters live at the Head of the
+        // param-summer group; summers attach at the Tail. Both block on
+        // ensure_param_summer_group so the group node is always live by
+        // the time a synth targets it.
+        if !adapters_to_spawn.is_empty() {
+            let summer_group = self.ensure_param_summer_group().await?;
+            for spawn in adapters_to_spawn {
+                let mut params = ParamMap::new();
+                params.insert("in_bus".to_string(), spawn.in_bus.raw() as f32);
+                params.insert("out_bus".to_string(), spawn.out_bus.raw() as f32);
+                self.backend
+                    .create_synth(
+                        "a2k_adapter_1",
+                        spawn.node,
+                        summer_group,
+                        AddAction::Head,
+                        &params,
+                    )
+                    .await
+                    .map_err(Error::backend)?;
             }
         }
 
@@ -591,16 +653,84 @@ impl<B: Backend> RoutesHandler<B> {
 
     /// Stage `state.param_routes_set` / `state.param_routes_bend` and
     /// `state.param_summers` against the diffs, returning per-target actions
-    /// plus any summer nodes/buses to free on the backend afterwards.
+    /// plus any summer nodes/buses to free on the backend afterwards, plus
+    /// the ar→kr adapters that need to be spawned (for newly-introduced ar
+    /// sources) or freed (for sources whose last param route was removed).
     async fn plan_param_actions(
         &self,
         set_diff: &ParamRouteDiff,
         bend_diff: &ParamRouteDiff,
-    ) -> (Vec<PlannedParamAction>, Vec<(NodeId, ControlBusId)>) {
+    ) -> (
+        Vec<PlannedParamAction>,
+        Vec<(NodeId, ControlBusId)>,
+        Vec<AdapterSpawn>,
+        Vec<(NodeId, ControlBusId)>,
+    ) {
         let mut state = self.state.write().await;
 
         apply_param_diff_to_map(&mut state, set_diff, ParamMapKind::Set);
         apply_param_diff_to_map(&mut state, bend_diff, ParamMapKind::Bend);
+
+        // Reconcile ar→kr adapters with the post-diff source set. We do
+        // this *before* gathering source buses for summers so
+        // `collect_source_buses` sees the freshly-registered adapter buses.
+        // Adapter spawn is one-per-(source_voice, source_port), shared by
+        // all routes (SET or BEND) that originate from that pair.
+        let active_sources: HashSet<(VoiceId, String)> = state
+            .param_routes_set
+            .keys()
+            .chain(state.param_routes_bend.keys())
+            .cloned()
+            .collect();
+
+        let mut adapters_to_spawn: Vec<AdapterSpawn> = Vec::new();
+        let need_adapter: Vec<(VoiceId, String, BusId)> = active_sources
+            .iter()
+            .filter(|key| !state.ar_to_kr_adapters.contains_key(key))
+            .filter_map(|(sv, sp)| {
+                let voice = state.voices.get(sv)?;
+                let synth = voice.config.synthdef.clone();
+                let port_rate = state
+                    .synthdef_outputs(&synth)
+                    .into_iter()
+                    .find(|p| p.name == *sp)
+                    .map(|p| p.rate);
+                if port_rate != Some(PortRate::Ar) {
+                    return None;
+                }
+                let in_bus = voice
+                    .output_buses
+                    .iter()
+                    .find(|(n, _)| n == sp)
+                    .map(|(_, b)| *b)?;
+                Some((*sv, sp.clone(), in_bus))
+            })
+            .collect();
+        for (sv, sp, in_bus) in need_adapter {
+            let out_bus = state.alloc_control_bus();
+            let node = state.alloc_node_id();
+            state
+                .ar_to_kr_adapters
+                .insert((sv, sp), (node, out_bus));
+            adapters_to_spawn.push(AdapterSpawn {
+                node,
+                in_bus,
+                out_bus,
+            });
+        }
+
+        let mut adapters_to_free: Vec<(NodeId, ControlBusId)> = Vec::new();
+        let stale_adapter_keys: Vec<(VoiceId, String)> = state
+            .ar_to_kr_adapters
+            .keys()
+            .filter(|k| !active_sources.contains(k))
+            .cloned()
+            .collect();
+        for k in stale_adapter_keys {
+            if let Some((node, bus)) = state.ar_to_kr_adapters.remove(&k) {
+                adapters_to_free.push((node, bus));
+            }
+        }
 
         // Build a deterministic order of affected target keys: removals
         // first, then additions; deduplicated while preserving first-seen
@@ -707,7 +837,7 @@ impl<B: Backend> RoutesHandler<B> {
             });
         }
 
-        (planned, summers_to_free)
+        (planned, summers_to_free, adapters_to_spawn, adapters_to_free)
     }
 
     /// Allocate intermediate bus + summer node, register
@@ -2450,6 +2580,405 @@ mod tests {
                 .contains_key(&(s2_voice, "lfo".to_string())),
             "BEND s2→t0 entry pruned",
         );
+    }
+
+    // ==================== ar→param coercion (.to_param_audio) tests ====================
+
+    /// Build a SET fixture where the source voice exposes an audio-rate
+    /// port (synthdef "ar_kr_source_synth" with one ar port "out") plus
+    /// a target voice with one active synth node. Mirrors
+    /// `setup_split_fixture` shape.
+    async fn setup_ar_source_fixture(
+        n_ar_sources: usize,
+        active_target_nodes: usize,
+    ) -> (
+        RoutesHandler<MockBackend>,
+        Arc<MockBackend>,
+        Arc<RwLock<State>>,
+        Vec<VoiceId>,
+        Vec<BusId>,
+        VoiceId,
+        String,
+        Vec<NodeId>,
+    ) {
+        let backend = Arc::new(MockBackend::new());
+        let state = Arc::new(RwLock::new(State::default()));
+        let handler = RoutesHandler::new(backend.clone(), state.clone());
+
+        let voice_group_id = GroupId::new(1);
+        let target_voice = VoiceId::new(200);
+        let target_param = "cutoff".to_string();
+        let mut source_voices = Vec::with_capacity(n_ar_sources);
+        let mut source_buses = Vec::with_capacity(n_ar_sources);
+        let mut target_nodes = Vec::with_capacity(active_target_nodes);
+        {
+            let mut s = state.write().await;
+            s.synthdefs.insert("ar_source_synth".to_string());
+            s.synthdef_outputs.insert(
+                "ar_source_synth".to_string(),
+                vec![vibelang_dsp::OutputPort {
+                    name: "out".to_string(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                }],
+            );
+            s.synthdefs.insert("ar_target_synth".to_string());
+            s.synthdef_outputs.insert(
+                "ar_target_synth".to_string(),
+                vec![vibelang_dsp::OutputPort {
+                    name: "out".to_string(),
+                    channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
+                }],
+            );
+
+            let voice_group_node = s.alloc_node_id();
+            let voice_group_bus = s.alloc_audio_bus(2);
+            s.groups.insert(
+                voice_group_id,
+                GroupState {
+                    id: voice_group_id,
+                    name: "g".to_string(),
+                    parent: None,
+                    node_id: voice_group_node,
+                    audio_bus: voice_group_bus,
+                    link_synth_node_id: None,
+                    muted: false,
+                    soloed: false,
+                    params: ParamMap::new(),
+                    output_bus: None,
+                },
+            );
+
+            for i in 0..n_ar_sources {
+                let vid = VoiceId::new(50 + i as u32);
+                let ar_bus = s.alloc_audio_bus(1);
+                s.voices.insert(
+                    vid,
+                    VoiceState {
+                        id: vid,
+                        config: VoiceConfig::new(
+                            &format!("arsrc{}", i),
+                            "ar_source_synth",
+                            voice_group_id,
+                        ),
+                        active_nodes: Vec::new(),
+                        note_nodes: HashMap::new(),
+                        round_robin_position: 0,
+                        pending_params: HashMap::new(),
+                        output_buses: vec![("out".to_string(), ar_bus)],
+                    },
+                );
+                source_voices.push(vid);
+                source_buses.push(ar_bus);
+            }
+
+            for _ in 0..active_target_nodes {
+                target_nodes.push(s.alloc_node_id());
+            }
+            let target_audio_bus = s.alloc_audio_bus(2);
+            s.voices.insert(
+                target_voice,
+                VoiceState {
+                    id: target_voice,
+                    config: VoiceConfig::new(
+                        "ar_target",
+                        "ar_target_synth",
+                        voice_group_id,
+                    ),
+                    active_nodes: target_nodes.clone(),
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![("out".to_string(), target_audio_bus)],
+                },
+            );
+        }
+
+        (
+            handler,
+            backend,
+            state,
+            source_voices,
+            source_buses,
+            target_voice,
+            target_param,
+            target_nodes,
+        )
+    }
+
+    #[tokio::test]
+    async fn ar_to_param_set_spawns_a2k_adapter_and_summer_and_n_maps() {
+        // .to_param_audio: ar source coerced to kr via a2k_adapter_1, then
+        // routed into the same summer infrastructure as kr SET.
+        let (
+            handler,
+            backend,
+            state,
+            sources,
+            source_buses,
+            target_voice,
+            target_param,
+            target_nodes,
+        ) = setup_ar_source_fixture(1, 1).await;
+
+        let set_diff = route_for_sources(&sources, target_voice, &target_param);
+        handler
+            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .await
+            .unwrap();
+
+        let creates = backend.creates();
+        let adapters: Vec<&CreateSynthCall> = creates
+            .iter()
+            .filter(|c| c.def == "a2k_adapter_1")
+            .collect();
+        assert_eq!(
+            adapters.len(),
+            1,
+            "exactly one a2k adapter spawned per (source, port)",
+        );
+        // Adapter reads the source's audio bus and writes a kr bus.
+        let adapter = adapters[0];
+        assert_eq!(*adapter.params.get("in_bus").unwrap() as u32, source_buses[0].raw());
+        let adapter_kr_bus = *adapter.params.get("out_bus").unwrap() as u32;
+        assert!(
+            adapter_kr_bus >= 1000,
+            "adapter writes to a control-bus-pool kr bus (got {})",
+            adapter_kr_bus,
+        );
+
+        // Summer reads the adapter's kr bus, not the source's audio bus.
+        let summers: Vec<&CreateSynthCall> = creates
+            .iter()
+            .filter(|c| c.def == "param_kr_modulate_1")
+            .collect();
+        assert_eq!(summers.len(), 1, "SET path still goes through modulate_1");
+        let summer = summers[0];
+        assert_eq!(
+            *summer.params.get("in_a").unwrap() as u32,
+            adapter_kr_bus,
+            "summer in_a reads the adapter's kr bus, not the source audio bus",
+        );
+        assert_eq!(*summer.params.get("baseline").unwrap(), 0.0, "SET pins baseline=0");
+
+        let intermediate = *summer.params.get("out_bus").unwrap() as u32;
+        let maps = backend.maps();
+        assert_eq!(maps.len(), 1);
+        assert_eq!(maps[0].node, target_nodes[0]);
+        assert_eq!(maps[0].param, target_param);
+        assert_eq!(maps[0].bus, intermediate);
+
+        // State carries the adapter so future diffs can locate it.
+        let s = state.read().await;
+        let (adapter_node, adapter_bus) = s
+            .ar_to_kr_adapters
+            .get(&(sources[0], "out".to_string()))
+            .copied()
+            .expect("adapter recorded in state");
+        assert_eq!(adapter_node, adapter.node);
+        assert_eq!(adapter_bus.raw(), adapter_kr_bus);
+        // The summer's source bus matches the adapter's kr bus too.
+        let recorded_summer = s
+            .param_summers
+            .get(&(target_voice, target_param.clone()))
+            .expect("summer recorded");
+        assert_eq!(recorded_summer.sources[0].bus.raw(), adapter_kr_bus);
+        assert_eq!(recorded_summer.sources[0].scale, 1.0);
+        assert_eq!(recorded_summer.sources[0].offset, 0.0);
+    }
+
+    #[tokio::test]
+    async fn ar_to_param_removal_frees_summer_and_adapter() {
+        // Tear down the only ar→param route on a source: summer + intermediate
+        // bus go back to the pool, adapter + its kr bus too.
+        let (handler, backend, state, sources, _src_buses, target_voice, target_param, _target_nodes) =
+            setup_ar_source_fixture(1, 1).await;
+
+        let set_diff = route_for_sources(&sources, target_voice, &target_param);
+        handler
+            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .await
+            .unwrap();
+
+        let (adapter_node, summer_node, adapter_bus, summer_bus) = {
+            let s = state.read().await;
+            let (adapter_node, adapter_bus) = s
+                .ar_to_kr_adapters
+                .get(&(sources[0], "out".to_string()))
+                .copied()
+                .unwrap();
+            let summer = s
+                .param_summers
+                .get(&(target_voice, target_param.clone()))
+                .unwrap();
+            (adapter_node, summer.node, adapter_bus, summer.bus)
+        };
+        assert_ne!(adapter_node, summer_node, "distinct nodes");
+        assert_ne!(adapter_bus.raw(), summer_bus.raw(), "distinct kr buses");
+
+        let mut rm = ParamRouteDiff::default();
+        rm.removals.push(ParamRoute {
+            source_voice: sources[0],
+            source_port: "out".to_string(),
+            target_voice,
+            target_param: target_param.clone(),
+        });
+        handler
+            .finalize_params(&rm, &ParamRouteDiff::default())
+            .await
+            .unwrap();
+
+        let frees = backend.frees();
+        assert!(frees.contains(&summer_node), "summer freed");
+        assert!(frees.contains(&adapter_node), "adapter freed");
+
+        let s = state.read().await;
+        assert!(s.ar_to_kr_adapters.is_empty(), "adapter cleared from state");
+        assert!(s.param_summers.is_empty(), "summer cleared from state");
+    }
+
+    #[tokio::test]
+    async fn ar_to_param_adapter_shared_across_targets_from_one_source() {
+        // One ar source feeding two distinct targets via .to_param_audio:
+        // ONE adapter handles both. Each target still gets its own summer
+        // + intermediate bus.
+        let (handler, backend, state, sources, _src_buses, _, _, _) =
+            setup_ar_source_fixture(1, 0).await;
+
+        // Add a second target voice with its own active node.
+        let target_a = VoiceId::new(300);
+        let target_b = VoiceId::new(301);
+        let voice_group_id = GroupId::new(1);
+        let (target_a_node, target_b_node) = {
+            let mut s = state.write().await;
+            s.synthdefs.insert("dual_target_synth".to_string());
+            s.synthdef_outputs.insert(
+                "dual_target_synth".to_string(),
+                vec![vibelang_dsp::OutputPort {
+                    name: "out".to_string(),
+                    channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
+                }],
+            );
+            let a_node = s.alloc_node_id();
+            let b_node = s.alloc_node_id();
+            let bus_a = s.alloc_audio_bus(2);
+            let bus_b = s.alloc_audio_bus(2);
+            s.voices.insert(
+                target_a,
+                VoiceState {
+                    id: target_a,
+                    config: VoiceConfig::new("ta", "dual_target_synth", voice_group_id),
+                    active_nodes: vec![a_node],
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![("out".to_string(), bus_a)],
+                },
+            );
+            s.voices.insert(
+                target_b,
+                VoiceState {
+                    id: target_b,
+                    config: VoiceConfig::new("tb", "dual_target_synth", voice_group_id),
+                    active_nodes: vec![b_node],
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![("out".to_string(), bus_b)],
+                },
+            );
+            (a_node, b_node)
+        };
+
+        let mut diff = ParamRouteDiff::default();
+        diff.additions.push(ParamRoute {
+            source_voice: sources[0],
+            source_port: "out".to_string(),
+            target_voice: target_a,
+            target_param: "x".to_string(),
+        });
+        diff.additions.push(ParamRoute {
+            source_voice: sources[0],
+            source_port: "out".to_string(),
+            target_voice: target_b,
+            target_param: "y".to_string(),
+        });
+        // Both targets point at distinct (target_voice, target_param) pairs
+        // so the SET multi-source guard is not tripped — the same source
+        // port fans out into two SET targets, which is allowed.
+        handler
+            .finalize_params(&diff, &ParamRouteDiff::default())
+            .await
+            .unwrap();
+
+        let creates = backend.creates();
+        let n_adapters = creates
+            .iter()
+            .filter(|c| c.def == "a2k_adapter_1")
+            .count();
+        let n_summers = creates
+            .iter()
+            .filter(|c| c.def.starts_with("param_kr_modulate_"))
+            .count();
+        assert_eq!(
+            n_adapters, 1,
+            "shared adapter for one (source, port) — got {}",
+            n_adapters,
+        );
+        assert_eq!(n_summers, 2, "one summer per target");
+
+        // /n_map issued for both target nodes.
+        let map_nodes: HashSet<NodeId> = backend.maps().iter().map(|m| m.node).collect();
+        assert!(map_nodes.contains(&target_a_node));
+        assert!(map_nodes.contains(&target_b_node));
+
+        // Both summers read from the same adapter bus.
+        let s = state.read().await;
+        let (_, adapter_bus) = *s
+            .ar_to_kr_adapters
+            .get(&(sources[0], "out".to_string()))
+            .unwrap();
+        let summer_a = s
+            .param_summers
+            .get(&(target_a, "x".to_string()))
+            .unwrap();
+        let summer_b = s
+            .param_summers
+            .get(&(target_b, "y".to_string()))
+            .unwrap();
+        assert_eq!(summer_a.sources[0].bus.raw(), adapter_bus.raw());
+        assert_eq!(summer_b.sources[0].bus.raw(), adapter_bus.raw());
+    }
+
+    #[tokio::test]
+    async fn kr_source_to_param_does_not_spawn_adapter() {
+        // Sanity check the rate-detection: a kr source going into the SET
+        // path must NOT trigger adapter allocation.
+        let (handler, backend, state, sources, source_buses, target_voice, target_param, _) =
+            setup_split_fixture(1, 1).await;
+
+        let set_diff = route_for_sources(&sources, target_voice, &target_param);
+        handler
+            .finalize_params(&set_diff, &ParamRouteDiff::default())
+            .await
+            .unwrap();
+
+        let creates = backend.creates();
+        assert!(
+            creates.iter().all(|c| c.def != "a2k_adapter_1"),
+            "kr source must not spawn an a2k adapter",
+        );
+        let summer = creates
+            .iter()
+            .find(|c| c.def == "param_kr_modulate_1")
+            .expect("kr SET still spawns the summer");
+        // Summer reads the source's own kr bus directly.
+        assert_eq!(*summer.params.get("in_a").unwrap() as u32, source_buses[0].raw());
+
+        let s = state.read().await;
+        assert!(s.ar_to_kr_adapters.is_empty());
     }
 
     #[tokio::test]
