@@ -11,7 +11,7 @@
 
 use crate::backend::{AddAction, Backend};
 use crate::compat::RwLock;
-use crate::state::State;
+use crate::state::{ParamSummerSource, ParamSummerState, State};
 use crate::types::{BusId, ControlBusId, GroupId, NodeId, ParamMap, VoiceId};
 use crate::{Error, Result};
 use std::collections::{HashMap, HashSet};
@@ -205,15 +205,14 @@ enum ParamPlan {
     /// where `value` is the target voice's current `set_param` baseline so
     /// the param falls back to the user's value (not the synthdef default).
     Unmap { restore_value: Option<f32> },
-    /// SET path — direct `/n_map` to the source's control bus. The user's
-    /// `set_param` is silently masked while the mapping is active (that's
-    /// the SET semantic).
-    DirectSet(BusId),
-    /// BEND path — spawn a `param_kr_modulate_<n>` summer that reads
-    /// `baseline + Σ source kr buses` and writes to `intermediate_bus`,
-    /// then `/n_map` the target to that bus. The arity is encoded in the
-    /// synthdef name and tracked in `state.param_summers`.
-    BendSummer {
+    /// Spawn a `param_kr_modulate_<n>` summer and bind the target's
+    /// `/n_map` to the summer's intermediate bus.
+    ///
+    /// Multi-output v3 unified routing: SET and BEND share this path. SET
+    /// pins `baseline=0` (so the source carries through unchanged at the
+    /// default scale=1/offset=0); BEND seeds `baseline` from the user's
+    /// last `set_param` value so modulators bend around it.
+    Summer {
         synthdef: String,
         summer_node: NodeId,
         target_group: NodeId,
@@ -520,15 +519,22 @@ impl<B: Backend> RoutesHandler<B> {
 
     /// Apply SET + BEND Param-route diffs in one pass.
     ///
-    /// Multi-output v2 split:
-    ///   - **SET path** (`.to_param`): direct `/n_map` from source bus to
-    ///     target param. Multi-source on the same target is rejected (script
-    ///     time should already have caught this; runtime drops the late
-    ///     entries with a warning to avoid undefined behaviour).
-    ///   - **BEND path** (`.modulate_by`): always spawns a
-    ///     `param_kr_modulate_<n>` summer (even at N=1) so the user's
-    ///     `set_param` value rides the `baseline` while modulators add on
-    ///     top. Respawns when the source set's arity changes.
+    /// Multi-output v3 unified routing: both `.to_param` (SET) and
+    /// `.modulate_by` (BEND) spawn a `param_kr_modulate_<n>` summer that
+    /// reads `baseline + Σ (scale_i * In.kr(in_i, 1) + offset_i)` and
+    /// writes the result to an intermediate control bus; the target is
+    /// `/n_map`-bound to that bus. The verb difference is purely the
+    /// `baseline` source:
+    ///
+    /// - **SET path** (`.to_param`): `baseline=0`. The source signal flows
+    ///   through unchanged at the default `scale=1, offset=0`; the user's
+    ///   `set_param` value is silently masked while the route is active.
+    ///   Multi-source on the same target is rejected at script time;
+    ///   runtime drops the late entries with a warning if it sees them.
+    /// - **BEND path** (`.modulate_by`): `baseline` rides the user's last
+    ///   `set_param` value so modulators add on top. `voices::set_param`
+    ///   pokes the summer's `baseline` control on subsequent updates.
+    ///   Respawns when the source set's arity changes.
     ///
     /// Order:
     /// 1. Stage both diffs against [`State::param_routes_set`] /
@@ -550,9 +556,9 @@ impl<B: Backend> RoutesHandler<B> {
             return Ok(());
         }
 
-        // BEND summers need a dedicated group at the head of the root group
-        // so they tick before voice synths read their `/n_map`-bound params.
-        if !bend_diff.additions.is_empty() {
+        // Summers run in a dedicated group at the head of the root group so
+        // they tick before voice synths read their `/n_map`-bound params.
+        if !set_diff.additions.is_empty() || !bend_diff.additions.is_empty() {
             self.ensure_param_summer_group().await?;
         }
 
@@ -619,10 +625,12 @@ impl<B: Backend> RoutesHandler<B> {
 
         for tgt in affected {
             // Tear down any existing summer for this target up-front.
-            // We respawn whenever the bend source set is non-empty so the
-            // summer's parameter list reflects the new source bus IDs.
-            if let Some((node, bus, _arity)) = state.param_summers.remove(&tgt) {
-                summers_to_free.push((node, ControlBusId::new(bus.raw())));
+            // We respawn whenever the (set ∪ bend) source set is non-empty
+            // so the summer's parameter list reflects the new source bus
+            // IDs and per-source scale/offset values.
+            if let Some(prev) = state.param_summers.remove(&tgt) {
+                summers_to_free
+                    .push((prev.node, ControlBusId::new(prev.bus.raw())));
             }
 
             let target_nodes: Vec<NodeId> = state
@@ -637,9 +645,8 @@ impl<B: Backend> RoutesHandler<B> {
                 })
                 .unwrap_or_default();
 
-            // Gather SET sources targeting this `(target, param)`.
+            // Gather SET / BEND sources targeting this `(target, param)`.
             let set_buses = collect_source_buses(&state, &state.param_routes_set, &tgt);
-            // Gather BEND sources targeting this `(target, param)`.
             let bend_buses = collect_source_buses(&state, &state.param_routes_bend, &tgt);
 
             let plan = if !set_buses.is_empty() && !bend_buses.is_empty() {
@@ -653,6 +660,9 @@ impl<B: Backend> RoutesHandler<B> {
                 let restore_value = baseline_for_target(&state, &tgt);
                 ParamPlan::Unmap { restore_value }
             } else if !set_buses.is_empty() {
+                // SET path through the unified summer: pin baseline=0 so
+                // the source signal flows through unchanged at the default
+                // scale=1/offset=0 shaping (the SET "replace" semantic).
                 if set_buses.len() > 1 {
                     tracing::warn!(
                         "RoutesHandler::finalize_params: target {:?} param {:?} has \
@@ -663,8 +673,11 @@ impl<B: Backend> RoutesHandler<B> {
                         set_buses.len(),
                     );
                 }
-                ParamPlan::DirectSet(set_buses[0])
+                let used = vec![set_buses[0]];
+                self.plan_summer(&mut state, &tgt, &used, /*baseline=*/ 0.0)
             } else if !bend_buses.is_empty() {
+                // BEND path: baseline rides the user's set_param value so
+                // modulators add on top.
                 let max_n = vibelang_dsp::system_synthdefs::PARAM_KR_MODULATE_MAX;
                 let used: Vec<BusId> = if bend_buses.len() > max_n {
                     tracing::warn!(
@@ -679,39 +692,8 @@ impl<B: Backend> RoutesHandler<B> {
                 } else {
                     bend_buses
                 };
-                let arity = used.len();
                 let baseline = baseline_for_target(&state, &tgt).unwrap_or(0.0);
-
-                let intermediate = state.alloc_control_bus();
-                let intermediate_bus = BusId::new(intermediate.raw());
-                let summer_node = state.alloc_node_id();
-                state.param_summers.insert(
-                    tgt.clone(),
-                    (summer_node, intermediate_bus, arity as u8),
-                );
-
-                let target_group = state
-                    .param_summer_group
-                    .unwrap_or_else(|| NodeId::new(0));
-
-                let mut params = ParamMap::new();
-                params.insert("baseline".to_string(), baseline);
-                let port_letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-                for (i, src_bus) in used.iter().enumerate() {
-                    params.insert(
-                        format!("in_{}", port_letters[i]),
-                        src_bus.raw() as f32,
-                    );
-                }
-                params.insert("out_bus".to_string(), intermediate_bus.raw() as f32);
-
-                ParamPlan::BendSummer {
-                    synthdef: format!("param_kr_modulate_{}", arity),
-                    summer_node,
-                    target_group,
-                    params,
-                    intermediate_bus,
-                }
+                self.plan_summer(&mut state, &tgt, &used, baseline)
             } else {
                 let restore_value = baseline_for_target(&state, &tgt);
                 ParamPlan::Unmap { restore_value }
@@ -726,6 +708,65 @@ impl<B: Backend> RoutesHandler<B> {
         }
 
         (planned, summers_to_free)
+    }
+
+    /// Allocate intermediate bus + summer node, register
+    /// [`ParamSummerState`] with default per-source scale=1.0 / offset=0.0,
+    /// and produce a [`ParamPlan::Summer`] action.
+    ///
+    /// Default scale/offset are wired to the summer params on first spawn
+    /// so subsequent `.scale()` / `.offset()` builder updates can be poked
+    /// via `/n_set` against the recorded summer node without a respawn.
+    fn plan_summer(
+        &self,
+        state: &mut State,
+        tgt: &(VoiceId, String),
+        used: &[BusId],
+        baseline: f32,
+    ) -> ParamPlan {
+        let arity = used.len();
+        let intermediate = state.alloc_control_bus();
+        let intermediate_bus = BusId::new(intermediate.raw());
+        let summer_node = state.alloc_node_id();
+        let sources: Vec<ParamSummerSource> = used
+            .iter()
+            .map(|b| ParamSummerSource {
+                bus: *b,
+                scale: 1.0,
+                offset: 0.0,
+            })
+            .collect();
+        state.param_summers.insert(
+            tgt.clone(),
+            ParamSummerState {
+                node: summer_node,
+                bus: intermediate_bus,
+                sources: sources.clone(),
+            },
+        );
+
+        let target_group = state
+            .param_summer_group
+            .unwrap_or_else(|| NodeId::new(0));
+
+        let mut params = ParamMap::new();
+        params.insert("baseline".to_string(), baseline);
+        let port_letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+        for (i, src) in sources.iter().enumerate() {
+            let letter = port_letters[i];
+            params.insert(format!("in_{}", letter), src.bus.raw() as f32);
+            params.insert(format!("scale_{}", letter), src.scale);
+            params.insert(format!("offset_{}", letter), src.offset);
+        }
+        params.insert("out_bus".to_string(), intermediate_bus.raw() as f32);
+
+        ParamPlan::Summer {
+            synthdef: format!("param_kr_modulate_{}", arity),
+            summer_node,
+            target_group,
+            params,
+            intermediate_bus,
+        }
     }
 
     /// Drive a single [`PlannedParamAction`] to the backend.
@@ -764,15 +805,7 @@ impl<B: Backend> RoutesHandler<B> {
                     }
                 }
             }
-            ParamPlan::DirectSet(bus) => {
-                for node in action.target_nodes {
-                    self.backend
-                        .map_param_to_bus(node, &action.target_param, bus.raw())
-                        .await
-                        .map_err(Error::backend)?;
-                }
-            }
-            ParamPlan::BendSummer {
+            ParamPlan::Summer {
                 synthdef,
                 summer_node,
                 target_group,
@@ -1950,10 +1983,25 @@ mod tests {
     // ---------- SET path ----------
 
     #[tokio::test]
-    async fn set_finalize_single_source_emits_direct_n_map() {
-        // .to_param single-source: direct /n_map to the source's control bus.
+    async fn set_finalize_single_source_spawns_modulate_1_summer_with_zero_baseline() {
+        // Multi-output v3: SET path goes through `param_kr_modulate_1` with
+        // baseline=0 and the per-source defaults scale=1 / offset=0, so the
+        // source signal flows through unchanged — preserving the SET
+        // "replace" semantic while sharing the BEND infrastructure.
         let (handler, backend, state, sources, source_buses, target_voice, target_param, target_nodes) =
             setup_split_fixture(1, 1).await;
+
+        // Stamp a baseline value the SET summer must NOT use (SET pins
+        // baseline=0 regardless of set_param).
+        {
+            let mut s = state.write().await;
+            s.voices
+                .get_mut(&target_voice)
+                .unwrap()
+                .config
+                .params
+                .insert(target_param.clone(), 9999.0);
+        }
 
         let set_diff = route_for_sources(&sources, target_voice, &target_param);
 
@@ -1962,35 +2010,55 @@ mod tests {
             .await
             .unwrap();
 
-        // No summer was spawned for SET.
         let creates = backend.creates();
-        assert!(
-            creates.iter().all(|c| !c.def.starts_with("param_kr_")),
-            "SET path must not spawn any summer synth, got creates: {:?}",
-            creates,
+        let summers: Vec<&CreateSynthCall> = creates
+            .iter()
+            .filter(|c| c.def == "param_kr_modulate_1")
+            .collect();
+        assert_eq!(summers.len(), 1, "SET N=1 must spawn modulate_1 summer");
+        let summer = summers[0];
+        assert_eq!(
+            *summer.params.get("baseline").unwrap(),
+            0.0,
+            "SET pins baseline=0 regardless of set_param baseline",
         );
+        assert_eq!(*summer.params.get("scale_a").unwrap(), 1.0);
+        assert_eq!(*summer.params.get("offset_a").unwrap(), 0.0);
+        assert_eq!(
+            *summer.params.get("in_a").unwrap() as u32,
+            source_buses[0].raw()
+        );
+        let intermediate = *summer.params.get("out_bus").unwrap() as u32;
 
         let maps = backend.maps();
         assert_eq!(maps.len(), 1);
         assert_eq!(maps[0].node, target_nodes[0]);
         assert_eq!(maps[0].param, target_param);
-        assert_eq!(maps[0].bus, source_buses[0].raw());
+        assert_eq!(maps[0].bus, intermediate);
 
         let s = state.read().await;
         assert!(s
             .param_routes_set
             .contains_key(&(sources[0], "out".to_string())));
         assert!(s.param_routes_bend.is_empty());
-        assert!(s.param_summers.is_empty());
+        let recorded = s
+            .param_summers
+            .get(&(target_voice, target_param.clone()))
+            .expect("SET summer tracked");
+        assert_eq!(recorded.node, summer.node);
+        assert_eq!(recorded.arity(), 1);
+        assert_eq!(recorded.sources[0].bus, source_buses[0]);
+        assert_eq!(recorded.sources[0].scale, 1.0);
+        assert_eq!(recorded.sources[0].offset, 0.0);
     }
 
     #[tokio::test]
-    async fn set_finalize_drops_extra_sources_with_warning_no_summer_spawned() {
+    async fn set_finalize_drops_extra_sources_with_warning_uses_summer() {
         // Defence-in-depth: the script-time check rejects multi-source SET,
         // but if a misbehaving caller stuffs two SET sources at the same
         // target, finalize_params must drop the extras (warning) rather than
-        // produce undefined behaviour. No summer is spawned — SET path is
-        // direct only.
+        // produce undefined behaviour. The runtime spawns a single
+        // modulate_1 summer for the surviving source.
         let (handler, backend, state, sources, source_buses, target_voice, target_param, target_nodes) =
             setup_split_fixture(2, 1).await;
 
@@ -2001,15 +2069,23 @@ mod tests {
             .unwrap();
 
         let creates = backend.creates();
-        assert!(creates.iter().all(|c| !c.def.starts_with("param_kr_")));
+        let summers: Vec<&CreateSynthCall> = creates
+            .iter()
+            .filter(|c| c.def.starts_with("param_kr_modulate_"))
+            .collect();
+        assert_eq!(summers.len(), 1);
+        assert_eq!(summers[0].def, "param_kr_modulate_1");
 
-        // Map binds to the lower-id source bus (sort order is deterministic).
+        // Summer reads the lower-id source bus (sort order is deterministic).
         let mut sorted: Vec<u32> = source_buses.iter().map(|b| b.raw()).collect();
         sorted.sort();
+        assert_eq!(*summers[0].params.get("in_a").unwrap() as u32, sorted[0]);
+        let intermediate = *summers[0].params.get("out_bus").unwrap() as u32;
+
         let maps = backend.maps();
         assert_eq!(maps.len(), 1);
         assert_eq!(maps[0].node, target_nodes[0]);
-        assert_eq!(maps[0].bus, sorted[0]);
+        assert_eq!(maps[0].bus, intermediate);
 
         // Both source-side keys are still recorded in param_routes_set.
         let s = state.read().await;
@@ -2017,12 +2093,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_removal_unmaps_target() {
-        // Removed SET route: target unmapped via `/n_map -1`.
+    async fn set_removal_unmaps_target_and_frees_summer() {
+        // Removed SET route: target unmapped via `/n_map -1`, summer node
+        // freed.
         let (handler, backend, state, sources, _source_buses, target_voice, target_param, target_nodes) =
             setup_split_fixture(1, 1).await;
 
-        // Stamp a baseline value the runtime should fall back to.
+        // Stamp a baseline value the unmap should restore as a fallback.
         {
             let mut s = state.write().await;
             s.voices
@@ -2039,6 +2116,14 @@ mod tests {
             .await
             .unwrap();
 
+        let summer_node = {
+            let s = state.read().await;
+            s.param_summers
+                .get(&(target_voice, target_param.clone()))
+                .unwrap()
+                .node
+        };
+
         let mut rm = ParamRouteDiff::default();
         rm.removals.push(ParamRoute {
             source_voice: sources[0],
@@ -2051,6 +2136,7 @@ mod tests {
             .await
             .unwrap();
 
+        assert!(backend.frees().contains(&summer_node));
         let maps = backend.maps();
         let unmap = maps.last().unwrap();
         assert_eq!(unmap.node, target_nodes[0]);
@@ -2060,6 +2146,7 @@ mod tests {
         assert!(!s
             .param_routes_set
             .contains_key(&(sources[0], "out".to_string())));
+        assert!(s.param_summers.is_empty());
     }
 
     // ---------- BEND path ----------
@@ -2098,6 +2185,16 @@ mod tests {
         let summer = summers[0];
         assert_eq!(*summer.params.get("baseline").unwrap(), 1500.0);
         assert_eq!(*summer.params.get("in_a").unwrap() as u32, source_buses[0].raw());
+        assert_eq!(
+            *summer.params.get("scale_a").unwrap(),
+            1.0,
+            "default scale_a=1.0 wired even with no .scale() override",
+        );
+        assert_eq!(
+            *summer.params.get("offset_a").unwrap(),
+            0.0,
+            "default offset_a=0.0 wired even with no .offset() override",
+        );
         let intermediate = *summer.params.get("out_bus").unwrap() as u32;
         assert!(intermediate >= 1000, "intermediate bus from control pool");
 
@@ -2111,9 +2208,12 @@ mod tests {
             .param_summers
             .get(&(target_voice, target_param.clone()))
             .expect("summer tracked");
-        assert_eq!(recorded.0, summer.node);
-        assert_eq!(recorded.1.raw(), intermediate);
-        assert_eq!(recorded.2, 1, "arity recorded as 1");
+        assert_eq!(recorded.node, summer.node);
+        assert_eq!(recorded.bus.raw(), intermediate);
+        assert_eq!(recorded.arity(), 1, "arity recorded as 1");
+        assert_eq!(recorded.sources[0].bus, source_buses[0]);
+        assert_eq!(recorded.sources[0].scale, 1.0);
+        assert_eq!(recorded.sources[0].offset, 0.0);
     }
 
     #[tokio::test]
@@ -2140,6 +2240,17 @@ mod tests {
         assert_eq!(*summer.params.get("in_a").unwrap() as u32, sorted[0]);
         assert_eq!(*summer.params.get("in_b").unwrap() as u32, sorted[1]);
         assert_eq!(*summer.params.get("in_c").unwrap() as u32, sorted[2]);
+        // Default per-source scale/offset wired even at multi-arity.
+        for letter in ['a', 'b', 'c'] {
+            assert_eq!(
+                *summer.params.get(&format!("scale_{}", letter)).unwrap(),
+                1.0,
+            );
+            assert_eq!(
+                *summer.params.get(&format!("offset_{}", letter)).unwrap(),
+                0.0,
+            );
+        }
         // baseline defaults to 0 when no prior set_param was issued.
         assert_eq!(*summer.params.get("baseline").unwrap(), 0.0);
     }
@@ -2160,9 +2271,11 @@ mod tests {
 
         let (old_summer_node, old_intermediate, old_arity) = {
             let s = state.read().await;
-            *s.param_summers
+            let recorded = s
+                .param_summers
                 .get(&(target_voice, target_param.clone()))
-                .unwrap()
+                .unwrap();
+            (recorded.node, recorded.bus, recorded.arity())
         };
         assert_eq!(old_arity, 3);
 
@@ -2227,7 +2340,7 @@ mod tests {
             s.param_summers
                 .get(&(target_voice, target_param.clone()))
                 .unwrap()
-                .0
+                .node
         };
 
         let mut rm = ParamRouteDiff::default();

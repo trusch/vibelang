@@ -213,6 +213,7 @@ fn ar_rate_to_param_error(
     let rate_str = match rate {
         PortRate::Ar => "ar",
         PortRate::Kr => "kr",
+        PortRate::Tr => "tr",
     };
     Box::new(EvalAltResult::ErrorRuntime(
         format!(
@@ -406,6 +407,7 @@ fn modulate_by_ar_rate_error(
     let rate_str = match rate {
         PortRate::Ar => "ar",
         PortRate::Kr => "kr",
+        PortRate::Tr => "tr",
     };
     Box::new(EvalAltResult::ErrorRuntime(
         format!(

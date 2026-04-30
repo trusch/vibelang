@@ -154,6 +154,7 @@ fn rate_label(r: PortRate) -> &'static str {
     match r {
         PortRate::Ar => "ar",
         PortRate::Kr => "kr",
+        PortRate::Tr => "tr",
     }
 }
 
@@ -243,7 +244,7 @@ pub fn reconcile_voice_ports(
         if let Some(bus) = bus {
             match port.rate {
                 PortRate::Ar => state.free_audio_bus(bus, port.channels),
-                PortRate::Kr => {
+                PortRate::Kr | PortRate::Tr => {
                     state.free_control_bus(ControlBusId::new(bus.raw()));
                 }
             }
@@ -280,7 +281,7 @@ pub fn reconcile_voice_ports(
     for port in &diff.added {
         let bus = match port.rate {
             PortRate::Ar => state.alloc_audio_bus(port.channels),
-            PortRate::Kr => BusId::new(state.alloc_control_bus().raw()),
+            PortRate::Kr | PortRate::Tr => BusId::new(state.alloc_control_bus().raw()),
         };
         if let Some(voice) = state.voices.get_mut(&voice_id) {
             voice.output_buses.push((port.name.clone(), bus));
@@ -460,7 +461,7 @@ mod tests {
         for p in ports {
             let bus = match p.rate {
                 PortRate::Ar => state.alloc_audio_bus(p.channels),
-                PortRate::Kr => BusId::new(state.alloc_control_bus().raw()),
+                PortRate::Kr | PortRate::Tr => BusId::new(state.alloc_control_bus().raw()),
             };
             output_buses.push((p.name.clone(), bus));
         }

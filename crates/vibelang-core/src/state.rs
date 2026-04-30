@@ -895,18 +895,56 @@ pub struct State {
     /// [`vibelang_dsp::system_synthdefs::PARAM_KR_MODULATE_MAX`].
     pub param_routes_bend: HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
 
-    /// Active BEND-path summer synths, keyed by the target side
+    /// Active param-summer synths, keyed by the target side
     /// `(target_voice_id, target_param_name)`.
     ///
-    /// Multi-output v2 BEND: every `modulate_by` target gets a
-    /// `param_kr_modulate_<n>` synth that reads the user's set_param value
-    /// from `baseline` plus each source's control bus, and writes the sum to
-    /// an intermediate control bus. The target's `/n_map` binds to the
-    /// intermediate bus. The stored tuple is `(summer_node, intermediate_bus,
-    /// arity_n)`; `arity_n` lets the runtime tell whether an arity change
-    /// requires a fresh summer or just a `/n_set baseline` poke. Maintained
-    /// exclusively by [`crate::handlers::RoutesHandler::finalize_params`].
-    pub param_summers: HashMap<(VoiceId, String), (NodeId, BusId, u8)>,
+    /// Multi-output v3 unified routing: every routed param target gets a
+    /// `param_kr_modulate_<n>` synth that computes
+    /// `baseline + Σ (scale_i * In.kr(in_i, 1) + offset_i)` and writes the
+    /// result to an intermediate control bus. The target's `/n_map` binds to
+    /// that bus. SET routes pin `baseline=0` and use the per-source
+    /// scale/offset defaults (1.0 / 0.0). BEND routes drive `baseline` from
+    /// the user's `set_param` value; per-source scale/offset still apply.
+    /// `sources` records each contributing source's `(bus, scale, offset)`
+    /// in the same letter order (`a`..`h`) as the synthdef's params, so the
+    /// runtime can update `scale_<i>` / `offset_<i>` without rebuilding the
+    /// summer. Maintained exclusively by
+    /// [`crate::handlers::RoutesHandler::finalize_params`].
+    pub param_summers: HashMap<(VoiceId, String), ParamSummerState>,
+}
+
+/// Live state of one `param_kr_modulate_<n>` summer instance.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParamSummerState {
+    /// Node ID of the summer synth.
+    pub node: NodeId,
+    /// Intermediate control bus the summer writes to (target's `/n_map`
+    /// destination).
+    pub bus: BusId,
+    /// Per-source contributions in summer-arg order (`in_a`/`scale_a`/
+    /// `offset_a`, `in_b`/`scale_b`/`offset_b`, …). `sources.len()` is the
+    /// summer's arity `n`.
+    pub sources: Vec<ParamSummerSource>,
+}
+
+impl ParamSummerState {
+    /// Convenience: arity (number of source contributions).
+    pub fn arity(&self) -> usize {
+        self.sources.len()
+    }
+}
+
+/// One source contribution inside a [`ParamSummerState`]: a control bus
+/// plus the per-source affine shaping parameters that go to the
+/// `param_kr_modulate_<n>` synth (`scale_<i> * In.kr(in_<i>, 1) + offset_<i>`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParamSummerSource {
+    /// Source kr bus the summer reads from (`in_<i>` parameter).
+    pub bus: BusId,
+    /// Linear gain on this source (`scale_<i>`, default 1.0).
+    pub scale: f32,
+    /// DC offset added after scaling (`offset_<i>`, default 0.0).
+    pub offset: f32,
 }
 
 impl Default for State {

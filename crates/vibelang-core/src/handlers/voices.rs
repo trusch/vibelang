@@ -468,7 +468,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         for port in &ports {
             let bus = match port.rate {
                 vibelang_dsp::PortRate::Ar => state.alloc_audio_bus(port.channels),
-                vibelang_dsp::PortRate::Kr => {
+                // Tr ports share the control-bus allocator with Kr — both
+                // ride the Out.kr path; only downstream routing differs.
+                vibelang_dsp::PortRate::Kr | vibelang_dsp::PortRate::Tr => {
                     BusId::new(state.alloc_control_bus().raw())
                 }
             };
@@ -1055,7 +1057,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let voice_config = voice.config.clone();
 
             let key = (id, param.to_string());
-            let summer_node = state.param_summers.get(&key).map(|(n, _, _)| *n);
+            let summer_node = state.param_summers.get(&key).map(|s| s.node);
             let set_routed = state
                 .param_routes_set
                 .values()
@@ -1076,7 +1078,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             nodes.extend(voice.note_nodes.values().copied());
 
             let key = (id, param.to_string());
-            let summer_node = state.param_summers.get(&key).map(|(n, _, _)| *n);
+            let summer_node = state.param_summers.get(&key).map(|s| s.node);
             let set_routed = state
                 .param_routes_set
                 .values()
@@ -1121,8 +1123,15 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         // the new value into the summer's `baseline` control so the user's
         // set_param shifts the static center. The summer's intermediate bus
         // already feeds the target via /n_map, so this is sufficient.
+        //
+        // SET-routed targets share the same summer infrastructure but pin
+        // `baseline=0` (the source signal "replaces" the user's value),
+        // so we skip the forwarding when `set_routed` — pushing baseline
+        // there would break the SET semantic.
         if let Some(summer) = summer_node {
-            let _ = self.backend.set_param(summer, "baseline", value).await;
+            if !set_routed {
+                let _ = self.backend.set_param(summer, "baseline", value).await;
+            }
         }
 
         Ok(())
@@ -1155,7 +1164,9 @@ fn free_voice_output_buses(state: &mut State, voice: &VoiceState) {
                 let channels = port.map(|p| p.channels).unwrap_or(2);
                 state.free_audio_bus(*bus_id, channels);
             }
-            vibelang_dsp::PortRate::Kr => {
+            // Tr ports return their bus to the control-bus free list, same
+            // as Kr — both were allocated from there at create time.
+            vibelang_dsp::PortRate::Kr | vibelang_dsp::PortRate::Tr => {
                 state.free_control_bus(ControlBusId::new(bus_id.raw()));
             }
         }

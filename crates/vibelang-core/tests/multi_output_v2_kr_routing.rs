@@ -251,7 +251,7 @@ async fn insert_voice(
     for p in ports {
         let bus = match p.rate {
             PortRate::Ar => s.alloc_audio_bus(p.channels),
-            PortRate::Kr => BusId::new(s.alloc_control_bus().raw()),
+            PortRate::Kr | PortRate::Tr => BusId::new(s.alloc_control_bus().raw()),
         };
         output_buses.push((p.name.clone(), bus));
     }
@@ -370,7 +370,7 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
     )
     .await;
 
-    let env_bus = port_bus_raw(&state, src, "env").await;
+    let _env_bus = port_bus_raw(&state, src, "env").await;
 
     let mut diff = ParamRouteDiff::default();
     diff.additions.push(ParamRoute {
@@ -385,17 +385,30 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
         .await
         .unwrap();
 
+    // Post-A1.a unification: SET routes go through a `param_kr_modulate_1`
+    // summer with scale=1, offset=0, baseline=0 — `/n_map` targets the
+    // summer's intermediate kr bus (functionally equivalent to the source
+    // bus, since the summer is the identity at default scale/offset).
+    let summer_bus = state
+        .read()
+        .await
+        .param_summers
+        .get(&(tgt, "cutoff".to_string()))
+        .expect("summer registered for (tgt, cutoff)")
+        .bus
+        .raw();
+
     let maps = backend.map_log();
     assert_eq!(maps.len(), 2, "one /n_map per active target node");
     let want_a = MapCall {
         node: target_active[0],
         param: "cutoff".to_string(),
-        bus: env_bus,
+        bus: summer_bus,
     };
     let want_b = MapCall {
         node: target_active[1],
         param: "cutoff".to_string(),
-        bus: env_bus,
+        bus: summer_bus,
     };
     assert!(
         maps.contains(&want_a),
@@ -416,8 +429,10 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
         .expect("source key recorded");
     assert_eq!(entries.as_slice(), &[(tgt, "cutoff".to_string())]);
 
-    // Param routes do not spawn audio-mixer synths.
-    assert_eq!(backend.creates(), 0);
+    // Post-A1.a: SET routes spawn one `param_kr_modulate_1` summer per
+    // (target, param) pair so `.scale/.offset` modifiers can apply
+    // uniformly. No audio-mixer synths (those are for Group/Main routes).
+    assert_eq!(backend.creates(), 1);
     assert_eq!(backend.frees(), 0);
 }
 
@@ -467,7 +482,7 @@ async fn multiple_to_param_routes_from_one_source() {
     )
     .await;
 
-    let env_bus = port_bus_raw(&state, src, "env").await;
+    let _env_bus = port_bus_raw(&state, src, "env").await;
 
     let mut diff = ParamRouteDiff::default();
     diff.additions.push(ParamRoute {
@@ -488,17 +503,34 @@ async fn multiple_to_param_routes_from_one_source() {
         .await
         .unwrap();
 
+    // Each (target, param) gets its own param_kr_modulate_1 summer (post
+    // A1.a unification). `/n_map` points at the per-target summer's bus.
+    let s = state.read().await;
+    let bus_a = s
+        .param_summers
+        .get(&(tgt_a, "cutoff".to_string()))
+        .expect("summer for (tgt_a, cutoff)")
+        .bus
+        .raw();
+    let bus_b = s
+        .param_summers
+        .get(&(tgt_b, "pitch".to_string()))
+        .expect("summer for (tgt_b, pitch)")
+        .bus
+        .raw();
+    drop(s);
+
     let maps = backend.map_log();
     assert_eq!(maps.len(), 2, "one /n_map per fan-out target");
     assert!(maps.contains(&MapCall {
         node: node_a,
         param: "cutoff".to_string(),
-        bus: env_bus,
+        bus: bus_a,
     }));
     assert!(maps.contains(&MapCall {
         node: node_b,
         param: "pitch".to_string(),
-        bus: env_bus,
+        bus: bus_b,
     }));
 
     // Both fan-out pairs recorded under the same source key in the SET map.
@@ -513,7 +545,8 @@ async fn multiple_to_param_routes_from_one_source() {
     assert!(entries.contains(&(tgt_a, "cutoff".to_string())));
     assert!(entries.contains(&(tgt_b, "pitch".to_string())));
 
-    assert_eq!(backend.creates(), 0);
+    // Post-A1.a: one summer per (target, param) — fan-out spawns 2 summers.
+    assert_eq!(backend.creates(), 2);
 }
 
 // =========================================================================
