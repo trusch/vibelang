@@ -259,6 +259,80 @@ impl RouteHandle {
         Ok(self)
     }
 
+    /// Install a CV-to-param route from this **trigger-rate** (`Tr`) output port
+    /// to the named parameter on `target`. Edge-typed companion to `.to_param`.
+    ///
+    /// Multi-output v3 Story B2.c. The source port must be trigger-rate
+    /// (`output_tr`); audio- and control-rate ports are rejected with a clean
+    /// error citing the actual rate plus a hint pointing at `.to()` /
+    /// `.to_param()` / `.to_param_audio()` as appropriate. The target param
+    /// must exist on the target voice's synthdef; unknown params produce the
+    /// same error shape as `.to_param`.
+    ///
+    /// Wiring: trigger-rate sources land in `param_routes_set` alongside
+    /// kr-rate sources — both feed the same `/n_map` pipeline at finalize.
+    /// At default scale=1 / offset=0 the summer is the identity, so the
+    /// sample-accurate edge from `Out.tr` is preserved end-to-end. (A future
+    /// optimization will dispatch to a dedicated `port_tr_to_param_link_1`
+    /// synthdef instead of the kr summer for guaranteed sub-buffer timing.)
+    pub fn to_trigger(
+        mut self,
+        target: Voice,
+        param_name: String,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        let mut target = target;
+        target.resolve_name();
+        let target_name = target.name.clone();
+        let target_synth = target.get_synth_name();
+
+        let src_synth = source_synthdef_name(self.voice_id);
+        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
+        match src_outputs.iter().find(|p| p.name == self.port_name) {
+            Some(p) if p.rate == PortRate::Tr => {}
+            Some(p) => {
+                return Err(non_tr_rate_to_trigger_error(
+                    &self.port_name,
+                    &src_synth,
+                    p.rate,
+                ));
+            }
+            None => {
+                return Err(missing_source_port_error(
+                    &self.port_name,
+                    &src_synth,
+                    &src_outputs,
+                ));
+            }
+        }
+
+        let target_params = get_synthdef_param_defaults(&target_synth);
+        if !target_params.contains_key(&param_name) {
+            return Err(unknown_target_param_error(
+                &target_name,
+                &target_synth,
+                &param_name,
+                &target_params,
+            ));
+        }
+
+        let target_id = context::get_or_create_voice_id(&target_name);
+        let conflict = context::with_state(|state| {
+            state
+                .add_param_route_set(
+                    self.voice_id,
+                    self.port_name.clone(),
+                    target_id,
+                    param_name.clone(),
+                )
+                .err()
+        });
+        if let Some(c) = conflict {
+            return Err(param_route_conflict_error("to_trigger", &c));
+        }
+        self.last_param_target = Some((target_id, param_name));
+        Ok(self)
+    }
+
     /// Set the per-source `scale` factor on the most-recently-installed
     /// `.to_param(...)` route on this handle. Default is `1.0`. Multi-call:
     /// last `.scale()` wins (offset is left untouched).
@@ -361,6 +435,28 @@ fn ar_rate_to_param_error(
              port with .output_kr(...) on the synthdef, or use .to(group(...)) \
              / .to_main() for audio-rate routing",
             port, synth, rate_str
+        )
+        .into(),
+        Position::NONE,
+    ))
+}
+
+fn non_tr_rate_to_trigger_error(
+    port: &str,
+    synth: &str,
+    rate: PortRate,
+) -> Box<EvalAltResult> {
+    let (rate_str, hint) = match rate {
+        PortRate::Ar => ("ar", "use .to(group(...)) / .to_main() for audio routing, or .to_param_audio() for ar→param coercion"),
+        PortRate::Kr => ("kr", "use .to_param() for kr→param routing"),
+        PortRate::Tr => ("tr", "(unreachable — Tr is the valid rate for .to_trigger)"),
+    };
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "to_trigger() on port '{}' (synthdef '{}'): port is {}-rate, but \
+             .to_trigger() requires a tr-rate (trigger) port — declare the \
+             port with .output_tr(...) on the synthdef. {}",
+            port, synth, rate_str, hint
         )
         .into(),
         Position::NONE,
@@ -774,6 +870,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("to_current_group", RouteHandle::to_current_group);
     engine.register_fn("to_param", RouteHandle::to_param);
     engine.register_fn("to_param_audio", RouteHandle::to_param_audio);
+    engine.register_fn("to_trigger", RouteHandle::to_trigger);
     engine.register_fn("scale", RouteHandle::scale);
     engine.register_fn("offset", RouteHandle::offset);
 
