@@ -6,13 +6,20 @@
 > `kb/voice-multi-output-v2-plan.md` (v2).
 >
 > **Status snapshot:** v1 (audio-only) + v2 (kr-rate ports, CV-to-param
-> routing) shipped. The legacy `modulator` builder + `voice.modulate`
-> surface has been removed — the canonical kr-routing surfaces are
-> `.to_param` (source-first SET) and `.param(...).modulate_by(...)`
-> (target-first BEND), see §3c. The per-port FX feature was implemented
-> and then reverted: sub-group routing covers every use case with shared
-> FX state and fewer buses (see §3b). The remaining v3 work
-> — ar→param coercion, fan-out to multiple groups — is documented in §8.
+> routing) + v3 (per-source attenuverter shaping, ar→param coercion,
+> sample-accurate trigger ports, multi-target audio fan-out) all
+> shipped. The legacy `modulator` builder + `voice.modulate` surface
+> has been removed — the canonical kr-routing surfaces are `.to_param`
+> (source-first SET) and `.param(...).modulate_by(...)` (target-first
+> BEND), see §3c, both with chainable `.scale(s)` / `.offset(o)`
+> per-source shaping (§3d). Audio-rate sources reach kr params via
+> `.to_param_audio(...)` (§3e). Sample-accurate triggers use the
+> dedicated `Out.tr` path: `.output_tr(...)` on the synthdef, then
+> `.to_trigger(target, "param")` on the route (§3f). `.to(group)` is
+> additive — chaining `.to(g_a).to(g_b)` installs both, no more voice
+> duplication for splitter / mult patterns. The per-port FX feature
+> was implemented and then reverted: sub-group routing covers every
+> use case with shared FX state and fewer buses (see §3b).
 
 A vibelang voice can expose **N named output ports**. Each port is an
 independent signal that the script routes wherever it likes — to a group
@@ -112,11 +119,13 @@ terminal verb to commit the route:
 
 | Verb | Effect | Port rate |
 |---|---|---|
-| `.to(group)` | Sum this port into the named group's mix bus. | ar only |
-| `.to_main()` | Send straight to main hardware output (bus 0), bypassing groups. | ar only |
-| `.to_current_group()` | Sum into whichever group the voice was last `.group("name")`-ed into. Errors when the voice has no explicit group set. | ar only |
-| `.mute()` | Discard the port's signal. | ar or kr |
-| `.to_param(target, "param")` | **Source-first (SET).** Map this port's control bus into `target.param` via scsynth `/n_map` (see §3c). | kr only |
+| `.to(group)` | Sum this port into the named group's mix bus. **Additive** — chaining `.to(g_a).to(g_b)` installs both edges (one mixer synth per (port, group)). | ar only |
+| `.to_main()` | Send straight to main hardware output (bus 0), bypassing groups. Replace semantics. | ar only |
+| `.to_current_group()` | Sum into whichever group the voice was last `.group("name")`-ed into. Errors when the voice has no explicit group set. Additive (same as `.to`). | ar only |
+| `.mute()` | Discard the port's signal. Replace semantics. | ar, kr, or tr |
+| `.to_param(target, "param")` | **Source-first (SET).** Map this port's control bus into `target.param` via scsynth `/n_map` (see §3c, §3d for shaping). | kr only |
+| `.to_param_audio(target, "param")` | **ar→kr coerced SET.** Same SET semantics as `.to_param`, but the source is ar — the runtime spawns a shared `a2k_adapter_1` synth that downsamples to kr, then feeds the standard summer (see §3e). | ar only |
+| `.to_trigger(target, "param")` | **Sample-accurate trigger routing.** Forwards a Tr-rate port through `port_tr_to_param_link_1` so an `Out.tr` edge lands on the target param's input at sample-accurate timing — distinct from kr-rate `.to_param` (no scale/offset shaping, no fan-in). See §3f. | tr only |
 
 The dual surface lives on the **target** voice via
 `voice.param("name")`, which returns a `ParamHandle`:
@@ -124,6 +133,13 @@ The dual surface lives on the **target** voice via
 | Verb | Effect | Port rate |
 |---|---|---|
 | `.modulate_by(source, "port")` | **Target-first (BEND).** Same registry entry as `.to_param`, written from the receiving side. Multi-source fan-in to one param is supported here (see §3c). | kr only |
+
+Both `.to_param(...)` and `.modulate_by(...)` accept chainable
+`.scale(s)` / `.offset(o)` modifiers (see §3d) for per-source
+attenuverter shaping. `.to_param_audio(...)` does too — the coerced
+ar→kr bus runs through the same summer. `.to_trigger(...)` does **not**
+expose `.scale` / `.offset` (triggers are sample-accurate edges, not
+analog levels).
 
 To send a port through an FX chain, route it into a sub-group that owns
 the effects. The sub-group's mix bus auto-mixes back into its parent
@@ -141,10 +157,19 @@ v.output("odd").to_current_group();         // == .to(group("leads"))
 v.output("even").to(group("fx_evens"));     // distinct FX bus
 ```
 
-Re-routing the same `(voice, port)` pair **replaces** the prior
-destination — semantics inherited from `HashMap::insert` on the routes
-map. Additive fan-out (one port → many destinations) is deferred; if you
-need that today, use a second voice on the same synthdef.
+Re-route semantics by terminal verb:
+
+* **`.to(group)`** is **additive** (post-v3 B3) — `.to(g_a).to(g_b)`
+  on the same `(voice, port)` installs both edges. Repeated `.to(g_a)`
+  is deduplicated. The runtime spawns one mixer synth per distinct
+  (port, group) pair on finalize.
+* **`.to_main()`** and **`.mute()`** keep replace semantics — Main is
+  the hardware bus, Muted is silence; neither benefits from fan-out.
+* **Switching variants** (e.g. `.to_main()` after `.to(g_a)`) clears
+  the prior dest — the variants are mutually exclusive.
+
+The pre-v3 voice-duplication workaround for splitter / mult patterns
+is no longer needed.
 
 > Source: `crates/vibelang-rhai/src/api/route.rs::RouteHandle`.
 
@@ -227,24 +252,31 @@ direction and intent:
   `/n_map`-ing the target. Use this when the target is the natural
   subject — e.g. a voice's freq is bent by env + LFO together.
 
-Both surfaces feed the same `ScriptState::add_param_route` registry —
-direction is purely an authoring choice. The two registries (SET vs.
-BEND) are separate however, so calling both `.to_param` and
-`.modulate_by` on the same `(target, param)` is rejected with a clean
-cross-verb conflict error pointing at the verb you should pick.
+SET and BEND feed sibling registries: `param_routes_set` (source-first
+authoring) and `param_routes_bend` (target-first authoring). They share
+the same `param_kr_modulate_<n>` summer infrastructure on finalize, so
+direction is purely an authoring choice — but the registries are
+separate, so calling both `.to_param` and `.modulate_by` on the same
+`(target, param)` is rejected with a clean cross-verb conflict error
+pointing at the verb you should pick. Trigger routes (`.to_trigger`,
+§3f) live in a third registry (`param_routes_trigger`); the three are
+mutually exclusive on a single `(target, param)`.
 
 Common rules:
 
-* **Kr only.** Source ports must have been declared with
-  `.output_kr(...)`. Calling either verb on an ar-rate port is rejected
-  with an error citing the rate, port name, and the `output_kr`
-  remediation. Auto-coercion via `A2K.kr` is deferred to v3.
+* **Kr only on the source** for `.to_param` / `.modulate_by`. Source
+  ports must have been declared with `.output_kr(...)`. Calling either
+  verb on an ar-rate port is rejected with a clean rate-mismatch error
+  pointing at `.to_param_audio(...)` (see §3e) for ar sources, or
+  `.output_kr(...)` if you want to declare the source as kr instead.
 * **Param must exist on the target synthdef.** Unknown params produce
   a clean error citing the target voice, its synthdef, and the full
   set of available params.
-* **Group/Main/Muted destinations stay single** — re-routing replaces
-  the prior dest. Both kr-routing surfaces are additive across
-  distinct `(target, param)` pairs.
+* **Group/Main/Muted destinations stay single per replace-variant** —
+  switching from `.to_main()` to `.to_param(...)` etc. clears the
+  prior dest. Both kr-routing surfaces are additive across distinct
+  `(target, param)` pairs (and `.to(group)` is additive across
+  distinct groups, post-B3).
 
 #### SET — source-first
 
@@ -291,18 +323,169 @@ bass.param("freq")
     .modulate_by(lfo, "out");      // env + lfo → bass.freq (summer spawned)
 ```
 
-When ≥2 kr sources point at the same `(target_voice, target_param)`
-via `.modulate_by`, the runtime allocates an intermediate control bus
-and spawns a `param_kr_sum_<N>` summer (N in 2..=8) that sums each
-source bus, then `/n_map`s the target to the intermediate bus.
-Teardown respawns a smaller summer when N shrinks, collapses to direct
-`/n_map` at N=1, and unmaps at N=0. Per-target summer state lives in
-`State::param_summers: HashMap<(VoiceId, String), (NodeId, BusId)>`.
+**All param routes go through a `param_kr_modulate_<N>` summer.**
+Post-v3 A1.a, even a single SET source no longer `/n_map`s directly to
+the source bus — `finalize_params` allocates an intermediate kr bus,
+spawns a `param_kr_modulate_1` summer (with `baseline=0`, `scale_1=1`,
+`offset_1=0` by default — the identity), and `/n_map`s the target to
+the intermediate. This unification is what lets §3d's `.scale(s)` /
+`.offset(o)` modifiers work uniformly across SET / BEND / SET-via-
+`.to_param_audio` without special-casing direct vs. summer-routed
+routes. For multi-source BEND, N grows to 2..=8; teardown respawns a
+smaller summer when N shrinks and unmaps at N=0. Per-target summer
+state lives in `State::param_summers: HashMap<(VoiceId, String),
+ParamSummerState>`.
 
 > Source: `crates/vibelang-rhai/src/api/route.rs::RouteHandle::to_param`
 > and `ParamHandle::modulate_by`,
 > `crates/vibelang-core/src/handlers/routes.rs::finalize_params`,
-> `RouteDest::Param { voice_id, param_name }`.
+> `RouteDest::Param { voice_id, param_name }`,
+> `crates/vibelang-dsp/src/system_synthdefs/routing.rs` for the
+> `param_kr_modulate_<N>` summer + `a2k_adapter_1` +
+> `port_tr_to_param_link_1` synthdefs.
+
+### 3d. Per-source attenuverter — `.scale(s)` / `.offset(o)`
+
+Both `.to_param(...)` and `.modulate_by(...)` (and
+`.to_param_audio(...)`, §3e) accept chainable `.scale(s)` /
+`.offset(o)` modifiers that shape the source signal entering the
+target's summer. Defaults are `scale=1.0`, `offset=0.0` — the
+identity, matching v2 behaviour.
+
+```rhai
+// SET form: source-first scale/offset.
+env.output("ch1").to_param(bass, "cutoff").scale(3000.0).offset(500.0);
+
+// BEND form: target-first.
+bass.param("freq")
+    .modulate_by(env, "ch4")
+    .scale(60.0)
+    .offset(0.0);
+```
+
+What lands on the target is per-source affine shaping inside the
+summer:
+
+```
+target_param = baseline + Σ_i (scale_i * In.kr(in_i, 1) + offset_i)
+```
+
+where `baseline=0` and `i` ranges over each `(source_voice,
+source_port)` in the summer's input slots. Each call to `.scale(s)` /
+`.offset(o)` updates the slot for the **most-recently-installed**
+`.to_param(...)` / `.modulate_by(...)` on the handle (tracked via
+`last_param_target` / `last_modulate_source`); chaining
+`.to_param(A, "p1").scale(0.5).to_param(B, "p2").scale(2.0)` attaches
+0.5 to A and 2.0 to B without bleed-through. Multi-call: last
+`.scale` / `.offset` wins independently — they do not reset each
+other.
+
+Calling `.scale(...)` / `.offset(...)` before any `.to_param(...)` /
+`.modulate_by(...)` install errors with a clean message pointing at
+the missing install verb.
+
+> Source: `RouteHandle::scale` / `RouteHandle::offset` and the
+> `ParamHandle` duals at `crates/vibelang-rhai/src/api/route.rs`;
+> `ScriptState::param_route_set_shaping` /
+> `param_route_bend_shaping` side-tables in
+> `crates/vibelang-core/src/reload/script_state.rs`.
+
+### 3e. Audio-rate sources via `.to_param_audio()`
+
+`.to_param_audio(target, "param")` mirrors `.to_param` but flips the
+rate constraint: the source port must be `output(...)` (ar). The
+runtime spawns one shared `a2k_adapter_1` synth per `(source_voice,
+source_port)` pair (`Out.kr(out_bus, A2K.kr(In.ar(in_bus, 1)))`),
+routes the resulting kr bus into the same `param_kr_modulate_<n>`
+summer infrastructure as a kr-native source, and `/n_map`s the target.
+
+```rhai
+// `audio_lfo`'s `wobble` port is ar-rate. .to_param_audio coerces it
+// to kr via a shared a2k_adapter_1 synth, then attenuverter shaping
+// (§3d) still applies because the coerced bus enters the same summer.
+pad_lfo.output("wobble")
+       .to_param_audio(bass, "amp")
+       .scale(0.4)
+       .offset(0.3);
+```
+
+* **Adapter sharing.** One adapter per `(source_voice, source_port)`,
+  reused across every SET/BEND route from that pair. Orphaned
+  adapters are freed on the next `finalize_params` when no param
+  route still references the source.
+* **Cross-verb conflicts** behave the same as `.to_param` —
+  `.to_param_audio` lands in the SET registry, so a later
+  `.modulate_by(...)` on the same `(target, param)` is rejected.
+* **Rate guards stay strict in both directions.** `.to_param_audio()`
+  on a kr or tr source errors with a hint pointing at `.to_param()`;
+  `.to_param()` on an ar source still errors with a hint pointing at
+  `.to_param_audio()`. Auto-coercion is opt-in, not silent.
+
+> Source: `RouteHandle::to_param_audio` at
+> `crates/vibelang-rhai/src/api/route.rs`; adapter spawn / share /
+> teardown at `crates/vibelang-core/src/handlers/routes.rs`;
+> `a2k_adapter_1` synthdef at
+> `crates/vibelang-dsp/src/system_synthdefs/routing.rs`.
+
+### 3f. Sample-accurate triggers — `.output_tr(...)` + `.to_trigger(...)`
+
+For sample-accurate trigger edges (`Out.tr` semantics), declare the
+port as **trigger-rate** with `.output_tr(name)` on the synthdef
+builder. Trigger ports share scsynth's control-bus pool with kr ports
+but emit `Out.tr` so single-sample edges survive the bus boundary.
+
+```rhai
+define_synthdef("step_trig", |builder| {
+    builder
+        .output_tr("trig_out")          // tr-rate port
+        .param("rate", 4.0)
+        .body(|rate| { impulse_kr(rate, 0.0) })
+});
+```
+
+On the route side, `.to_trigger(target, "param")` validates the source
+is Tr-rate and wires it through `port_tr_to_param_link_1` — a 1:1
+`Out.kr ∘ In.kr` link synthdef — onto an intermediate kr bus that
+`/n_map`s the target's param input. Edges are preserved end-to-end at
+sample-accurate timing; this is genuinely sample-accurate (via
+`Out.tr` on the source and the link's tight forwarding loop), **not**
+the kr summer treated as a trigger path.
+
+```rhai
+seq.output("trig_out").to_trigger(kick, "trig");
+```
+
+Constraints:
+
+* **Tr-rate sources only.** ar / kr ports on `.to_trigger()` error
+  with rate-mismatch + a hint pointing at `.to_param()` /
+  `.to_param_audio()` / `.to(group)` / `.to_main()`.
+* **No `.scale(...)` / `.offset(...)` slot.** Triggers are
+  sample-accurate edges, not analog levels — there is no attenuverter
+  shaping. Use a separate kr envelope on the target side if you want
+  to shape the trigger's downstream effect.
+* **No multi-source fan-in.** Trigger routing is 1:1 per
+  `(target_voice, target_param)` — `.to_trigger` from a second
+  source onto the same target/param errors with a single-source
+  conflict.
+* **Three-way cross-verb exclusion.** TRIGGER, SET, and BEND can't
+  coexist on the same `(target, param)`; the runtime rejects collisions
+  in all three pairs (TRIGGER↔SET, TRIGGER↔BEND, SET↔BEND).
+* **Reload reconcile.** Source-port rate flips that turn a kr/ar port
+  into a Tr port (or vice versa) drop the previously registered route
+  on that source-side key with a `tracing::warn!` and free the bus
+  back to its allocator pool, mirroring the kr↔ar flip behaviour.
+
+> Source: `PortRate::Tr` + `.output_tr(...)` at
+> `crates/vibelang-dsp/src/builder.rs`; `RouteHandle::to_trigger`
+> at `crates/vibelang-rhai/src/api/route.rs`;
+> `ScriptState::param_routes_trigger` +
+> `add_param_route_trigger` at
+> `crates/vibelang-core/src/reload/script_state.rs`;
+> `port_tr_to_param_link_1` synthdef at
+> `crates/vibelang-dsp/src/system_synthdefs/routing.rs`;
+> `param_triggers: HashMap<(VoiceId, String), (NodeId, BusId)>`
+> teardown tracker on `State`.
 
 ---
 
@@ -383,7 +566,7 @@ Three categories of change to plan for:
 | Port added | New bus allocated (audio or control depending on the port's rate). Default route for the new port is `mute()` unless the script already declared a route for it (the script's intent always wins). |
 | Port removed | Bus freed (returned to the matching audio or control free-list). Routes targeting the removed port are dropped, with a `tracing::warn!` log naming each dropped route. |
 | Port renamed | Surfaces as **remove + add** — the old name's bus is freed, routes referring to the old name are dropped (with the same warning), and the new name gets a fresh bus + default `mute()`. Renames break routes; the rationale is that guessing intent on rename is worse than a clear warning. |
-| Port rate changed (ar↔kr) | Surfaces as a **rate-flip remove+add** — the old-rate bus is freed back to its allocator, a new bus is allocated from the *other* rate's free-list, and any routes that were rate-incompatible with the new rate are dropped with a warning (`.to(group)` requires ar; `.to_param(...)` requires kr). Mute routes survive a rate flip since `.mute()` is rate-agnostic. |
+| Port rate changed (ar ↔ kr ↔ tr) | Surfaces as a **rate-flip remove+add** — the old-rate bus is freed back to its allocator, a new bus is allocated from the appropriate pool (audio for ar; control for kr and tr — they share the control-bus pool), and any routes that were rate-incompatible with the new rate are dropped with a warning (`.to(group)` / `.to_main()` / `.to_current_group()` require ar; `.to_param(...)` / `.modulate_by(...)` require kr; `.to_param_audio(...)` requires ar; `.to_trigger(...)` requires tr). Mute routes survive a rate flip since `.mute()` is rate-agnostic. |
 
 > Source: `crates/vibelang-core/src/reload/port_diff.rs::reconcile_voice_port_set`.
 
@@ -487,38 +670,98 @@ bass (tb303_bass)  ─group("bass")─► main
 The `ctrl` group is a logical container — Maths' kr ports drive params
 via `/n_map`, so nothing audible flows through it. See the example file
 for the long-form explanation, including the kr-unit-to-Hz scaling
-caveat (no per-route multiplier in v2; rescale on the synthdef side or
-wait for v3).
+caveat (the per-route multiplier the v2 example calls "deferred to v3"
+is exactly what `.scale(s)` / `.offset(o)` now provides — see §3d and
+the v3 worked example below).
+
+### 7b. v3 worked example — `examples/v3_modular_demo.vibe`
+
+The v3 integration demo exercises every feature shipped in this round
+(`.scale` / `.offset`, `.to_param_audio`, `.output_tr` + `.to_trigger`,
+multi-target `.to`) in a single self-contained patch. Headline shape:
+
+```rhai
+// 1. Attenuverter shaping on SET + BEND.
+env.output("ch1").to_param(bass, "cutoff").scale(3000.0).offset(500.0);
+bass.param("freq").modulate_by(env, "ch4").scale(60.0).offset(0.0);
+bass.param("resonance").modulate_by(env, "eor1").scale(0.4);
+
+// 2. ar→kr coercion via .to_param_audio (shared a2k_adapter_1).
+pad_lfo.output("wobble").to_param_audio(bass, "amp").scale(0.4).offset(0.3);
+
+// 3. Sample-accurate triggers via .output_tr + .to_trigger.
+//    `step_trig` declares its port with `.output_tr("trig_out")`.
+seq.output("trig_out").to_trigger(kick, "trig");
+
+// 4. Multi-target audio fan-out — kick.out reaches BOTH groups.
+kick.output("out").to(group("main_mix")).to(group("verb_send"));
+```
+
+Topology highlights:
+
+```
+env (maths)  ch1   ──.to_param + scale/offset──► bass.cutoff   (SET — summer slot 1)
+             ch4   ──.modulate_by + scale──────► bass.freq     (BEND — distinct param)
+             eor1  ──.modulate_by + scale──────► bass.resonance(BEND — distinct param)
+
+pad_lfo      wobble (ar)  ──a2k_adapter_1──.to_param_audio──► bass.amp
+
+seq          trig_out (Tr)  ──port_tr_to_param_link_1──► kick.trig
+
+kick         out  ──.to(main_mix).to(verb_send)──► both groups (additive)
+```
+
+Read the file for the long-form commentary on each route choice;
+particularly the why-this-target-not-that-one explanation for the
+SET/BEND split and the cross-verb conflict guards.
 
 ---
 
-## 8. Limitations (v2)
+## 8. Limitations
 
-The v2 surface is shipped end-to-end. The legacy `modulator` builder
-and `voice.modulate` surface have been removed — wire kr sources
-into params directly via the SET / BEND verbs in §3c. The following
-are documented non-features in v2; deferred to v3:
+The v1 + v2 + v3 surfaces are all shipped end-to-end. The legacy
+`modulator` builder and `voice.modulate` surface have been removed —
+wire kr sources into params directly via the SET / BEND verbs (§3c)
+with optional `.scale` / `.offset` shaping (§3d). Crossed-out items
+below were v2 limitations that v3 has now resolved; the remaining
+non-crossed bullets are deferred non-features.
 
-* **No ar→param coercion.** `.to_param` / `.modulate_by` require a
-  kr-rate port — declare CV outputs with `.output_kr(...)`.
-  Auto-coercion via an internal `A2K.kr` is doable but hides
-  rate-mismatch bugs and is intentionally deferred. Calling either
-  verb on an ar port produces a clean Rhai error pointing at
-  `.output_kr`.
-* **No fan-out to multiple groups.** Calling `.to(...)` twice on the
-  same `(voice, port)` overwrites the prior destination rather than
-  splitting the signal. Use a second voice on the same synthdef as a
-  workaround. (`.to_param` *is* additive across different
-  `(target, param)` pairs — see §3c.)
+* ~~**No ar→param coercion.**~~ **Resolved in v3 (commit 6870961).**
+  `.to_param_audio(target, "param")` coerces ar→kr through a shared
+  `a2k_adapter_1` synth and feeds the standard summer (§3e). The
+  pure-kr verbs (`.to_param`, `.modulate_by`) still require kr — the
+  rate-mismatch error now points at `.to_param_audio()` so picking the
+  right verb is one rename away.
+* ~~**No fan-out to multiple groups.**~~ **Resolved in v3 (commit
+  9cb9b73).** `.to(g_a).to(g_b)` is additive — finalize spawns one
+  mixer synth per (port, group) edge. `.to_main()` and `.mute()`
+  remain replace-only since neither benefits from fan-out.
+* ~~**No per-route attenuverter (kr-unit-to-Hz scaling caveat).**~~
+  **Resolved in v3 (commits 4860106 / fd88ba0).** Chainable `.scale(s)`
+  / `.offset(o)` modifiers on `.to_param` / `.modulate_by` /
+  `.to_param_audio` apply per-source affine shaping inside the
+  `param_kr_modulate_<n>` summer (§3d).
+* ~~**No sample-accurate trigger ports.**~~ **Resolved in v3 (commits
+  b9f17d5 / d0f9243 / 61821bb).** `.output_tr(...)` declares a Tr-rate
+  port (codegen flips to `Out.tr`); `.to_trigger(target, "param")`
+  routes it through `port_tr_to_param_link_1` for sample-accurate
+  edge forwarding (§3f). No scale/offset on triggers and no fan-in;
+  trigger routing is 1:1.
 * **No `solo()`, `tap()`, `scope()`** — the wider verb table from the
   plan §5.2 is still deferred. Today the verb set is `to`, `to_main`,
-  `to_current_group`, `mute`, `to_param` (source-first SET) and
-  `param().modulate_by` (target-first BEND). Per-port FX is covered by
-  the sub-group pattern (§3b); a per-port FX modifier was reverted
-  because sub-groups gave better economics (shared FX state, fewer
-  buses).
-* **No sample-accurate trigger ports** — `Out.tr` semantics are not
-  exposed yet.
+  `to_current_group`, `mute`, `to_param` (kr SET), `to_param_audio`
+  (ar SET), `to_trigger` (Tr), and `param().modulate_by` (kr BEND).
+  Per-port FX is covered by the sub-group pattern (§3b); a per-port FX
+  modifier was reverted because sub-groups gave better economics
+  (shared FX state, fewer buses).
+* **No multi-source fan-in for triggers.** `.to_trigger` is 1:1;
+  if you need to OR several edges together, sum them on the source-side
+  synthdef and expose a single `.output_tr` port. Multi-source kr
+  fan-in (`.modulate_by` chained from N sources) is unaffected.
+* **No fan-out from `.to_main()` / `.mute()`.** `.to_main()` targets the
+  one hardware bus, `.mute()` targets silence — neither variant benefits
+  from a `Vec<Dest>`, so they keep replace semantics and `.to_main()`
+  after `.to(g)` clears the prior dest.
 
 ---
 
@@ -532,21 +775,36 @@ are documented non-features in v2; deferred to v3:
   (audio routing, dry/wet split via groups).
 * `examples/maths_to_param.vibe` — v2 CV-to-param smoke test
   (Maths kr envelope → tb303 cutoff via `/n_map`).
+* `examples/v3_modular_demo.vibe` — v3 integration demo exercising all
+  four v3 features (`.scale` / `.offset`, `.to_param_audio`,
+  `.output_tr` + `.to_trigger`, multi-target `.to(...)`) in a single
+  patch.
 * `crates/vibelang-std/stdlib/instruments/spectral/spectraphon_side.vibe`
   — multi-port spectral synthdef (ar).
 * `crates/vibelang-std/stdlib/instruments/eurorack/maths.vibe`
   — multi-port CV synthdef with kr ports `ch1..ch4`.
 * `crates/vibelang-rhai/src/api/route.rs` — `RouteHandle` /
   `MultiRouteHandle` Rhai surface (`.to`, `.to_main`,
-  `.to_current_group`, `.mute`, `.to_param`); `ParamHandle.modulate_by`.
+  `.to_current_group`, `.mute`, `.to_param`, `.to_param_audio`,
+  `.to_trigger`, `.scale`, `.offset`); `ParamHandle.modulate_by` +
+  `.scale` / `.offset`.
 * `crates/vibelang-rhai/src/api/voice.rs::Voice` — `output_by_name`,
   `output_by_idx`, `outputs`, `param`.
 * `crates/vibelang-core/src/handlers/routes.rs` —
   `RouteDest::{Group, Main, Muted, Param}`, default routing rule,
-  finalize (audio + param paths).
+  finalize (audio + param paths, summer/adapter/link spawn + teardown).
 * `crates/vibelang-core/src/reload/port_diff.rs` /
   `crates/vibelang-core/src/reload/script_state.rs` — reload
-  reconciler (incl. port-rate change diff) and `param_routes`
-  storage.
+  reconciler (incl. port-rate change diff for ar↔kr↔tr), the three
+  param-route maps (`param_routes_set` / `param_routes_bend` /
+  `param_routes_trigger`), and the per-source shaping side-tables
+  (`param_route_set_shaping` / `param_route_bend_shaping`).
+* `crates/vibelang-dsp/src/builder.rs` — `PortRate::{Ar, Kr, Tr}` +
+  `.output(...)` / `.output_kr(...)` / `.output_tr(...)` builder.
+* `crates/vibelang-dsp/src/system_synthdefs/routing.rs` — system
+  synthdefs underpinning the v3 routing pipeline:
+  `param_kr_modulate_<n>` (1..=8 source summer with per-slot scale +
+  offset), `a2k_adapter_1` (ar→kr coercion), and
+  `port_tr_to_param_link_1` (1:1 Tr forwarder).
 * `kb/spectraphon-howto.md` — Spectraphon user manual; the multi-output
   example links back into routing here.

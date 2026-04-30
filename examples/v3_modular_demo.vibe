@@ -1,0 +1,291 @@
+// V3 modular routing demo — exercises every feature shipped in the v3
+// multi-output / CV-routing epic in a single patch:
+//
+//   1. `.scale(s)` / `.offset(o)` chainable affine shaping on .to_param +
+//      .modulate_by — the per-source attenuverter the v2 surface lacked
+//      (commits 4860106 / fd88ba0).
+//   2. `.to_param_audio(target, "param")` — ar→kr coercion via the
+//      shared `a2k_adapter_1` synth, so an audio-rate output port can
+//      drive a kr param without re-declaring the source synthdef
+//      (commit 6870961).
+//   3. `.output_tr(name)` + `.to_trigger(target, "param")` — sample-
+//      accurate trigger routing through `port_tr_to_param_link_1`
+//      (NOT the kr summer; triggers don't bend, so no scale/offset
+//      slot is exposed). Edges from `Out.tr` survive end-to-end
+//      (commits b9f17d5 / d0f9243 / 61821bb).
+//   4. Multi-target `.to(g_a).to(g_b)` audio fan-out — replaces the v2
+//      "duplicate the voice" workaround for splitter / mult patterns
+//      (commit 9cb9b73).
+//
+// Topology (one self-contained patch):
+//
+//                                      ┌──── env.ch1 (kr) ──.to_param(bass, "cutoff").scale(3000).offset(500)
+//                                      │     ┌── env.ch4 (kr) ──.modulate_by(env, "ch4").scale(60).offset(0)
+//                                      │     │
+//   ┌───────────────────────┐     ┌────┴─────┴────┐
+//   │ env (maths)           │     │ bass (tb303)  │ ── melody → main_mix
+//   │ ch1, ch4, eor1 (kr)   │     │ cutoff, freq  │
+//   └───────────────────────┘     └───────────────┘
+//                                          ▲
+//                                          │ env.eor1 (kr peaks ≈ 0.5)
+//                                          │  driving bass.resonance via
+//                                          │  .modulate_by(env, "eor1")
+//                                          │  (third source on bass — distinct
+//                                          │   target param so no SET/BEND clash)
+//
+//   ┌───────────────────────┐     ┌──────────────────┐     ┌───────────────────────┐
+//   │ seq (step_trig)       │     │ kick (trig_kick) │     │ pad_buzz (audio_lfo)  │
+//   │ trig_out (Tr)         │────▶│ trig param       │     │ wobble (ar)           │
+//   └───────────────────────┘     │ out (ar)         │     └─────────┬─────────────┘
+//                                 │  ┌───────┐       │               │
+//                                 │  │.to(g_main_mix)│               │ .to_param_audio(bass, "amp")
+//                                 │  │.to(g_verb_send)              │  (a2k_adapter coerces ar→kr)
+//                                 └──┴───────┘       │               ▼
+//                                                                bass.amp
+//
+// What you should hear: an acid bass note with the cutoff sweeping at
+// the maths-channel-1 cycle rate (~2 Hz), pitch drifting gently with
+// channel 4, resonance pulsing on each EOR (end-of-rise) gate, kick
+// hits at 4/sec landing on both the dry mix and a long parallel reverb
+// tail, and the bass amplitude tremolo'd by an audio-rate LFO routed
+// through .to_param_audio.
+
+import "stdlib/instruments/eurorack/maths.vibe";
+import "stdlib/synths/tb303.vibe";
+import "stdlib/effects/reverbs/reverb.vibe";
+
+set_tempo(96);
+
+// ============================================================
+// Inline synthdefs
+// ============================================================
+
+// Step-sequencer with a Tr-rate output port. `impulse_kr` emits a
+// 1-sample pulse at `rate` Hz; declaring the port with `.output_tr`
+// flips codegen to `Out.tr` so .to_trigger on the Rhai side can wire
+// it through `port_tr_to_param_link_1` for sample-accurate edges.
+define_synthdef("step_trig", |builder| {
+    builder
+        .output_tr("trig_out")
+        .param("rate", 4.0)
+        .body(|rate| {
+            [impulse_kr(rate, 0.0)]
+        })
+});
+
+// Re-triggerable kick. Unlike the stdlib kicks (which use
+// `cleanup_on_finish`, freeing the synth after one envelope cycle),
+// this one stays alive so repeated `.to_trigger` edges refire it.
+// `trig` arrives as a kr-rate trigger on the param input, fed by the
+// trigger-link synth's intermediate bus — `decay2_ar` re-edges on
+// each non-positive→positive transition.
+define_synthdef("trig_kick", |builder| {
+    builder
+        .output("out")
+        .param("trig", 0.0)
+        .param("freq", 50.0)
+        .param("amp", 0.9)
+        .body(|trig, freq, amp| {
+            let amp_env = decay2_ar(trig, 0.001, 0.45);
+            let pitch_env = decay2_ar(trig, 0.001, 0.07);
+            let f = freq + pitch_env * freq * 3.0;
+            [sin_osc_ar(f) * amp_env * amp]
+        })
+});
+
+// Audio-rate LFO with a single ar output port — the source for the
+// `.to_param_audio` demo. The runtime spawns a shared `a2k_adapter_1`
+// for this (source_voice, port) pair; downstream the coerced kr bus
+// feeds the same `param_kr_modulate_<n>` summer infrastructure as
+// pure-kr routes, so chained .scale/.offset still work.
+define_synthdef("audio_lfo", |builder| {
+    builder
+        .output("wobble")
+        .param("rate", 5.5)
+        .param("depth", 0.3)
+        .body(|rate, depth| {
+            // Centred at +0.5 so after .scale(0.4).offset(0.3) the bass
+            // amplitude lands in roughly [0.3, 0.7] — audible tremolo
+            // without hard duck-to-zero.
+            [sin_osc_ar(rate) * depth + 0.5]
+        })
+});
+
+// ============================================================
+// Groups
+// ============================================================
+
+// Logical container for kr/Tr CV sources — the buses live on
+// scsynth's control-bus pool and never carry audio, so this group
+// stays silent. Group exists purely so the kr-source voices have a
+// place to live.
+define_group("ctrl", || { });
+
+// Dry mix bus.
+define_group("main_mix", || { });
+
+// Parallel reverb send. mix=1.0 makes the FX 100% wet — the dry
+// signal is supplied by main_mix on the multi-target fan-out. The
+// verb_send group's bus auto-mixes up into `main` (the implicit
+// parent) alongside main_mix, so both reach the hardware out.
+define_group("verb_send", || {
+    fx("kick_verb")
+        .synth("reverb")
+        .param("room", 0.85)
+        .param("damp", 0.3)
+        .param("mix", 1.0)        // 100% wet — main_mix supplies the dry on the fan-out
+        .param("level", 0.7)
+        .apply();
+});
+
+// ============================================================
+// Voice 1: maths envelope (kr CV source for features 1)
+// ============================================================
+//
+// cycle1=1 free-runs ch1 at `1 / (rise1 + fall1)` ≈ 2 Hz.
+// trig4=1 fires ch4 once at start, so ch4 traces a long decaying
+// curve over the first ~2.7 s and then sits at zero — gives the
+// patch a slow opening sweep that resolves into the steady-state
+// 2 Hz wobble.
+let env = voice("env")
+    .synth("maths")
+    .group("ctrl")
+    .set_param("rise1", 0.10)
+    .set_param("fall1", 0.40)
+    .set_param("cycle1", 1.0)
+    .set_param("rise4", 0.20)
+    .set_param("fall4", 2.50)
+    .set_param("trig4", 1.0);
+
+// ============================================================
+// Voice 2: tb303 bass (target of CV-to-param routes)
+// ============================================================
+//
+// env_mod=0 disables tb303's internal env→cutoff modulation so all
+// audible filter movement comes from routed kr sources only.
+let bass = voice("bass")
+    .synth("tb303_bass")
+    .group("main_mix")
+    .set_param("freq", 55.0)
+    .set_param("amp", 0.5)
+    .set_param("cutoff", 800.0)
+    .set_param("resonance", 0.65)
+    .set_param("env_mod", 0.0)
+    .set_param("decay", 0.6);
+
+// ---- Feature 1a: SET form (.to_param) with attenuverter shaping ----
+//
+// Maths ch1 envelope peaks ≈ 1.0. .scale(3000.0).offset(500.0) maps
+// it onto a 500..3500 Hz cutoff sweep. Mechanically: A1.a moved every
+// SET route through `param_kr_modulate_1` (a one-source summer with
+// baseline=0); A1.b's `.scale` / `.offset` write into that summer's
+// `scale_1` / `offset_1` slots, so the kr bus arriving at the target
+// is `scale_1 * In.kr(in_1, 1) + offset_1`. The target's `/n_map` then
+// binds bass.cutoff to the summer's intermediate bus.
+env.output("ch1")
+   .to_param(bass, "cutoff")
+   .scale(3000.0)
+   .offset(500.0);
+
+// ---- Feature 1b: BEND form (.modulate_by) with attenuverter ----
+//
+// Same affine shaping, target-first surface. ch4 envelope peaks ≈ 1.0;
+// .scale(60.0) bends bass.freq up by 0..60 Hz over the 2.7 s ch4
+// cycle for a slow upward pitch drift. Distinct (target, param) pair
+// from the SET route above, so the cross-verb conflict guard is
+// satisfied (.to_param + .modulate_by can't both target the same
+// param — the runtime rejects that with a clean error).
+bass.param("freq")
+    .modulate_by(env, "ch4")
+    .scale(60.0)
+    .offset(0.0);
+
+// ---- Feature 1c: BEND form, third source into a third param ----
+//
+// ch4 already drives freq via .modulate_by; eor1 (the maths
+// end-of-rise gate, peaks ≈ 0.5 audio = +5V) drives resonance via
+// another .modulate_by on a different target param. .scale(0.4)
+// maps the 0..0.5 gate height into 0..0.2 resonance bumps that ride
+// on top of the 0.65 baseline.
+bass.param("resonance")
+    .modulate_by(env, "eor1")
+    .scale(0.4)
+    .offset(0.0);
+
+// ============================================================
+// Voice 3: audio_lfo → bass.amp via .to_param_audio (feature 2)
+// ============================================================
+//
+// `audio_lfo`'s `wobble` port is ar-rate, so a plain .to_param would
+// be rejected with a rate-mismatch error. .to_param_audio spawns a
+// shared `a2k_adapter_1` (one per source (voice, port) pair) that
+// reads In.ar(in_bus, 1) and writes Out.kr(out_bus, A2K.kr(...)).
+// The resulting kr bus enters the same param_kr_modulate_<n> summer
+// path as a kr-native source, so chained .scale/.offset still apply.
+let pad_lfo = voice("pad_lfo")
+    .synth("audio_lfo")
+    .group("ctrl")
+    .set_param("rate", 5.5)
+    .set_param("depth", 0.3);
+
+pad_lfo.output("wobble")
+       .to_param_audio(bass, "amp")
+       .scale(0.4)
+       .offset(0.3);
+
+// ============================================================
+// Voice 4: step_trig → kick.trig via .to_trigger (feature 3)
+// ============================================================
+//
+// `seq.output("trig_out")` is Tr-rate (declared via .output_tr).
+// .to_trigger takes a target voice + param and routes the source's
+// Tr bus through `port_tr_to_param_link_1` (Out.kr ∘ In.kr 1:1
+// forwarder) onto an intermediate kr bus, then /n_map's the target
+// param. There is NO scale/offset slot — triggers are sample-
+// accurate edges, not analog levels, so attenuverter shaping doesn't
+// apply. Likewise no multi-source fan-in: trigger routing is 1:1.
+let seq = voice("seq")
+    .synth("step_trig")
+    .group("ctrl")
+    .set_param("rate", 4.0);
+
+let kick = voice("kick")
+    .synth("trig_kick")
+    .set_param("freq", 50.0)
+    .set_param("amp", 0.85);
+
+seq.output("trig_out").to_trigger(kick, "trig");
+
+// ============================================================
+// Feature 4: multi-target fan-out — kick.out → main_mix + verb_send
+// ============================================================
+//
+// In v2, `.to(g_a).to(g_b)` would replace g_a with g_b on the
+// HashMap. Post-B3, RouteDest::Group is stored as `Vec<RouteDest>`
+// per source port and finalize_params spawns one mixer synth per
+// (port, group) edge — so the kick's audio reaches BOTH groups in
+// parallel without duplicating the voice. Main_mix gets the dry hit;
+// verb_send's reverb tail blends back through the parent group bus.
+kick.output("out")
+    .to(group("main_mix"))
+    .to(group("verb_send"));
+
+// ============================================================
+// Run continuous voices + bass melody
+// ============================================================
+
+// Maths, the audio LFO, the trigger sequencer, and the kick are all
+// always-on voices — no note pattern, just continuously emitting
+// their respective signals. .run() marks them for auto-spawn at
+// startup and across reloads.
+env.run();
+pad_lfo.run();
+seq.run();
+kick.run();
+
+// Bass plays a held drone so the cutoff/freq/resonance/amp
+// modulations are audible across many envelope cycles.
+melody("bass_drone")
+    .on(bass)
+    .notes("A1 A1 A1 A1")
+    .start();
