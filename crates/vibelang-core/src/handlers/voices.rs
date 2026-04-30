@@ -499,11 +499,11 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             },
         );
 
-        for (port_name, dest) in defaults {
+        for (port_name, dests) in defaults {
             state
                 .default_routes
                 .entry((id, port_name))
-                .or_insert(dest);
+                .or_insert(dests);
         }
 
         Ok(())
@@ -1482,7 +1482,7 @@ mod tests {
         assert_eq!(s.default_routes.len(), 1);
         assert_eq!(
             s.default_routes[&(voice_id, "out".to_string())],
-            crate::handlers::RouteDest::Group(group),
+            vec![crate::handlers::RouteDest::Group(group)],
         );
     }
 
@@ -1513,7 +1513,7 @@ mod tests {
         assert_eq!(s.default_routes.len(), 1);
         assert_eq!(
             s.default_routes[&(voice_id, "out".to_string())],
-            crate::handlers::RouteDest::Group(group),
+            vec![crate::handlers::RouteDest::Group(group)],
         );
     }
 
@@ -1552,11 +1552,11 @@ mod tests {
         assert_eq!(s.default_routes.len(), 2);
         assert_eq!(
             s.default_routes[&(voice_id, "L".to_string())],
-            crate::handlers::RouteDest::Group(group),
+            vec![crate::handlers::RouteDest::Group(group)],
         );
         assert_eq!(
             s.default_routes[&(voice_id, "R".to_string())],
-            crate::handlers::RouteDest::Group(group),
+            vec![crate::handlers::RouteDest::Group(group)],
         );
     }
 
@@ -1641,7 +1641,7 @@ mod tests {
 
         let voice_id = VoiceId::new(7);
         let voice_group = GroupId::new(1);
-        let preset_dest = crate::handlers::RouteDest::Main;
+        let preset_dest = vec![crate::handlers::RouteDest::Main];
         {
             let mut s = state.write().await;
             s.default_routes

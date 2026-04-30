@@ -736,20 +736,48 @@ impl ScriptState {
         self.sfz_instruments.insert(id, config);
     }
 
-    /// Set the route destination for a voice's named output port.
+    /// Install a route destination for a voice's named output port.
     ///
-    /// Story 6a script-side mutation API. Overwrites any prior route for the
-    /// same `(voice_id, port_name)` key.
+    /// Variant-dependent semantics:
+    /// - [`RouteDest::Main`] / [`RouteDest::Muted`]: replace any prior list
+    ///   for the key (the hardware bus and silence are exclusive — no
+    ///   meaningful fan-out).
+    /// - [`RouteDest::Group`]: additively appended to the prior list,
+    ///   deduplicated against existing entries. If the prior list held a
+    ///   non-Group dest (Main or Muted), it is replaced with the new Group
+    ///   list — the variants are mutually exclusive on a single port.
+    /// - [`RouteDest::Param`]: never stored here (Param routes live in
+    ///   `param_routes_set` / `param_routes_bend`); calls with this variant
+    ///   are a no-op against the route map.
     pub fn set_route(
         &mut self,
         voice_id: VoiceId,
         port_name: impl Into<String>,
         dest: crate::handlers::RouteDest,
     ) {
-        self.routes.insert((voice_id, port_name.into()), dest);
+        use crate::handlers::RouteDest;
+        let key = (voice_id, port_name.into());
+        match dest {
+            RouteDest::Param { .. } => {}
+            RouteDest::Main | RouteDest::Muted => {
+                self.routes.insert(key, vec![dest]);
+            }
+            RouteDest::Group(_) => {
+                let entry = self.routes.entry(key).or_default();
+                let group_only = entry
+                    .iter()
+                    .all(|d| matches!(d, RouteDest::Group(_)));
+                if !group_only {
+                    entry.clear();
+                }
+                if !entry.iter().any(|d| d == &dest) {
+                    entry.push(dest);
+                }
+            }
+        }
     }
 
-    /// Remove the route for a voice's named output port, if any.
+    /// Remove all route entries for a voice's named output port, if any.
     pub fn clear_route(&mut self, voice_id: VoiceId, port_name: &str) {
         let key = (voice_id, port_name.to_string());
         self.routes.remove(&key);

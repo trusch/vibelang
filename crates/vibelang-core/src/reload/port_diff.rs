@@ -298,7 +298,7 @@ pub fn reconcile_voice_ports(
             let key = (voice_id, port.name.clone());
             // Only inject the silent default if the script hasn't already
             // declared a route for the new port — preserves user intent.
-            routes.entry(key.clone()).or_insert(RouteDest::Muted);
+            routes.entry(key.clone()).or_insert_with(|| vec![RouteDest::Muted]);
             default_muted.push(key);
         }
     }
@@ -509,7 +509,7 @@ mod tests {
         for p in &ports {
             routes.insert(
                 (voice_id, p.name.clone()),
-                RouteDest::Group(group_id),
+                vec![RouteDest::Group(group_id)],
             );
         }
         let routes_before = routes.clone();
@@ -537,7 +537,7 @@ mod tests {
         for p in &old {
             routes.insert(
                 (voice_id, p.name.clone()),
-                RouteDest::Group(group_id),
+                vec![RouteDest::Group(group_id)],
             );
         }
 
@@ -559,7 +559,7 @@ mod tests {
         for p in &old {
             assert_eq!(
                 routes.get(&(voice_id, p.name.clone())),
-                Some(&RouteDest::Group(group_id)),
+                Some(&vec![RouteDest::Group(group_id)]),
                 "existing route for {:?} disturbed",
                 p.name
             );
@@ -567,7 +567,7 @@ mod tests {
         // New port gets a silent default.
         assert_eq!(
             routes.get(&(voice_id, "d".to_string())),
-            Some(&RouteDest::Muted)
+            Some(&vec![RouteDest::Muted])
         );
 
         // A bus was allocated for the new port.
@@ -620,8 +620,8 @@ mod tests {
             .unwrap();
 
         let mut routes: RouteMap = HashMap::new();
-        routes.insert((voice_id, "out".into()), RouteDest::Group(group_id));
-        routes.insert((voice_id, "send".into()), RouteDest::Group(group_id));
+        routes.insert((voice_id, "out".into()), vec![RouteDest::Group(group_id)]);
+        routes.insert((voice_id, "send".into()), vec![RouteDest::Group(group_id)]);
 
         let new = vec![port("out", 2)];
         let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
@@ -637,7 +637,7 @@ mod tests {
         // Sibling route untouched.
         assert_eq!(
             routes.get(&(voice_id, "out".to_string())),
-            Some(&RouteDest::Group(group_id))
+            Some(&vec![RouteDest::Group(group_id)])
         );
 
         // Bus chunk back in the allocator's free list.
@@ -664,7 +664,7 @@ mod tests {
         let (voice_id, group_id, _) = setup_voice_with_ports(&mut state, "vs", &old);
 
         let mut routes: RouteMap = HashMap::new();
-        routes.insert((voice_id, "cv_old".into()), RouteDest::Group(group_id));
+        routes.insert((voice_id, "cv_old".into()), vec![RouteDest::Group(group_id)]);
 
         let new = vec![port("cv_new", 1)];
         let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
@@ -683,7 +683,7 @@ mod tests {
         assert!(!routes.contains_key(&(voice_id, "cv_old".to_string())));
         assert_eq!(
             routes.get(&(voice_id, "cv_new".to_string())),
-            Some(&RouteDest::Muted)
+            Some(&vec![RouteDest::Muted])
         );
 
         // Voice now owns a bus for cv_new and none for cv_old.
@@ -703,7 +703,7 @@ mod tests {
 
         let mut routes: RouteMap = HashMap::new();
         // User explicitly routes the new port to a group before reload runs.
-        routes.insert((voice_id, "send".into()), RouteDest::Group(group_id));
+        routes.insert((voice_id, "send".into()), vec![RouteDest::Group(group_id)]);
 
         let new = vec![port("out", 2), port("send", 1)];
         let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
@@ -711,7 +711,7 @@ mod tests {
         assert_eq!(outcome.diff.added, vec![port("send", 1)]);
         assert_eq!(
             routes.get(&(voice_id, "send".to_string())),
-            Some(&RouteDest::Group(group_id)),
+            Some(&vec![RouteDest::Group(group_id)]),
             "user-declared route survived the reconcile"
         );
     }
@@ -777,7 +777,7 @@ mod tests {
         for p in &old {
             routes.insert(
                 (voice_id, p.name.clone()),
-                RouteDest::Group(group_id),
+                vec![RouteDest::Group(group_id)],
             );
         }
 
@@ -806,7 +806,7 @@ mod tests {
         for sibling in &["out", "a", "b"] {
             assert_eq!(
                 routes.get(&(voice_id, (*sibling).to_string())),
-                Some(&RouteDest::Group(group_id)),
+                Some(&vec![RouteDest::Group(group_id)]),
                 "sibling route on {:?} disturbed by env rate flip",
                 sibling
             );
@@ -875,7 +875,7 @@ mod tests {
             if matches!(p.rate, PortRate::Ar) {
                 routes.insert(
                     (voice_id, p.name.clone()),
-                    RouteDest::Group(group_id),
+                    vec![RouteDest::Group(group_id)],
                 );
             }
         }
@@ -927,7 +927,7 @@ mod tests {
         for sibling in &["out", "a", "b"] {
             assert_eq!(
                 routes.get(&(voice_id, (*sibling).to_string())),
-                Some(&RouteDest::Group(group_id)),
+                Some(&vec![RouteDest::Group(group_id)]),
                 "sibling route on {:?} disturbed by env rate flip",
                 sibling
             );
@@ -935,7 +935,7 @@ mod tests {
         // env got a default Muted entry as a non-`out` newly-added ar port.
         assert_eq!(
             routes.get(&(voice_id, "env".to_string())),
-            Some(&RouteDest::Muted),
+            Some(&vec![RouteDest::Muted]),
             "ar env should default-route to silent per Story 5"
         );
 
@@ -1056,7 +1056,7 @@ mod tests {
             .unwrap();
 
         let mut routes: RouteMap = HashMap::new();
-        routes.insert((voice_id, "out".into()), RouteDest::Group(group_id));
+        routes.insert((voice_id, "out".into()), vec![RouteDest::Group(group_id)]);
         // Source-side Param route on the kr env port — must drain on flip.
         let target_voice = VoiceId::new(42);
         state.param_routes_set.insert(
@@ -1092,7 +1092,7 @@ mod tests {
         // Sibling Group route untouched.
         assert_eq!(
             routes.get(&(voice_id, "out".to_string())),
-            Some(&RouteDest::Group(group_id))
+            Some(&vec![RouteDest::Group(group_id)])
         );
         // Tr ports do not get RouteMap default-Muted entries (RouteMap is
         // ar-only); the new tr port simply has no routing until the user
@@ -1148,8 +1148,8 @@ mod tests {
             .unwrap();
 
         let mut routes: RouteMap = HashMap::new();
-        routes.insert((voice_id, "env".into()), RouteDest::Group(group_id));
-        routes.insert((voice_id, "out".into()), RouteDest::Group(group_id));
+        routes.insert((voice_id, "env".into()), vec![RouteDest::Group(group_id)]);
+        routes.insert((voice_id, "out".into()), vec![RouteDest::Group(group_id)]);
 
         let new = vec![tr_port("env", 1), port("out", 2)];
         let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
@@ -1169,7 +1169,7 @@ mod tests {
         assert!(!routes.contains_key(&(voice_id, "env".to_string())));
         assert_eq!(
             routes.get(&(voice_id, "out".to_string())),
-            Some(&RouteDest::Group(group_id))
+            Some(&vec![RouteDest::Group(group_id)])
         );
 
         // env now holds a control-bus id.
@@ -1251,7 +1251,7 @@ mod tests {
             if matches!(p.rate, PortRate::Ar) {
                 routes.insert(
                     (voice_id, p.name.clone()),
-                    RouteDest::Group(group_id),
+                    vec![RouteDest::Group(group_id)],
                 );
             }
         }

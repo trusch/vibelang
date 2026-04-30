@@ -1457,10 +1457,9 @@ impl<B: Backend> Runtime<B> {
         let route_diff = RoutesHandler::<B>::diff(&self.current_routes, &merged_routes);
         if !route_diff.is_empty() {
             tracing::debug!(
-                "Reload: finalizing routes (additions={}, removals={}, changes={})",
+                "Reload: finalizing routes (additions={}, removals={})",
                 route_diff.additions.len(),
                 route_diff.removals.len(),
-                route_diff.changes.len()
             );
             if let Err(e) = self.routes.finalize(&route_diff).await {
                 tracing::error!("Reload: routes.finalize failed: {}", e);

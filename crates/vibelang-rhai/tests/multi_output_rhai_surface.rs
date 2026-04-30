@@ -119,11 +119,11 @@ fn rhai_outputs_name_list_to_group_fans_out() {
 
     assert_eq!(
         state.routes.get(&(voice_id, "sine".to_string())),
-        Some(&RouteDest::Group(g_id))
+        Some(&vec![RouteDest::Group(g_id)])
     );
     assert_eq!(
         state.routes.get(&(voice_id, "odd".to_string())),
-        Some(&RouteDest::Group(g_id))
+        Some(&vec![RouteDest::Group(g_id)])
     );
     assert!(state.routes.get(&(voice_id, "even".to_string())).is_none());
 }
@@ -147,11 +147,11 @@ fn rhai_outputs_idx_list_to_main_fans_out() {
     let voice_id = VoiceId::new(fnv1a_id("vox_outs_idx_rhai"));
     assert_eq!(
         state.routes.get(&(voice_id, "even".to_string())),
-        Some(&RouteDest::Main)
+        Some(&vec![RouteDest::Main])
     );
     assert_eq!(
         state.routes.get(&(voice_id, "odd".to_string())),
-        Some(&RouteDest::Main)
+        Some(&vec![RouteDest::Main])
     );
     assert!(state.routes.get(&(voice_id, "sine".to_string())).is_none());
 }
@@ -175,11 +175,11 @@ fn rhai_outputs_mixed_types_mute_fans_out() {
     let voice_id = VoiceId::new(fnv1a_id("vox_outs_mixed_rhai"));
     assert_eq!(
         state.routes.get(&(voice_id, "sine".to_string())),
-        Some(&RouteDest::Muted)
+        Some(&vec![RouteDest::Muted])
     );
     assert_eq!(
         state.routes.get(&(voice_id, "odd".to_string())),
-        Some(&RouteDest::Muted)
+        Some(&vec![RouteDest::Muted])
     );
 }
 
@@ -233,17 +233,18 @@ fn rhai_outputs_empty_list_clean_error() {
 }
 
 #[test]
-fn rhai_outputs_replace_semantics_under_fanout() {
-    // Two consecutive outputs(["a"]).to(...) calls — the second wins; only
-    // one (voice, port) entry survives.
-    let synth = "ergo_rhai_outputs_replace";
+fn rhai_outputs_to_groups_fan_out_additively() {
+    // v3 B3: two consecutive outputs(["a"]).to(...) calls install BOTH
+    // group destinations as fan-out edges. The plural sugar inherits the
+    // singular `.to(group)`'s additive Group semantics.
+    let synth = "v3_b3_rhai_outputs_fan_out";
     declare_synth_with_ports(synth, &["a", "b"]);
 
     let script = format!(
         r#"
-        let v = voice("vox_outs_replace_rhai").synth("{synth}");
-        v.outputs(["a"]).to(group("outs_replace_g1"));
-        v.outputs(["a"]).to(group("outs_replace_g2"));
+        let v = voice("vox_v3_b3_outs_rhai").synth("{synth}");
+        v.outputs(["a"]).to(group("v3_b3_outs_rhai_g1"));
+        v.outputs(["a"]).to(group("v3_b3_outs_rhai_g2"));
         "#,
         synth = synth,
     );
@@ -251,35 +252,31 @@ fn rhai_outputs_replace_semantics_under_fanout() {
     let mut engine = ScriptEngine::new();
     let state = engine.execute(&script).expect("script must succeed");
 
-    let voice_id = VoiceId::new(fnv1a_id("vox_outs_replace_rhai"));
-    let g2_id = GroupId::new(fnv1a_id("main/outs_replace_g2"));
+    let voice_id = VoiceId::new(fnv1a_id("vox_v3_b3_outs_rhai"));
+    let g1_id = GroupId::new(fnv1a_id("main/v3_b3_outs_rhai_g1"));
+    let g2_id = GroupId::new(fnv1a_id("main/v3_b3_outs_rhai_g2"));
 
-    let count = state
+    let dests = state
         .routes
-        .keys()
-        .filter(|(vid, port)| *vid == voice_id && port == "a")
-        .count();
-    assert_eq!(count, 1, "expected exactly one route entry, got {}", count);
-
-    assert_eq!(
-        state.routes.get(&(voice_id, "a".to_string())),
-        Some(&RouteDest::Group(g2_id))
-    );
+        .get(&(voice_id, "a".to_string()))
+        .expect("route entry exists");
+    assert_eq!(dests.len(), 2, "both groups installed as edges");
+    assert!(dests.contains(&RouteDest::Group(g1_id)));
+    assert!(dests.contains(&RouteDest::Group(g2_id)));
 }
 
 #[test]
-fn rhai_output_re_route_replaces_prior_dest() {
-    // Single declared port — re-routing the same `(voice, port)` must
-    // overwrite the previous destination, not accumulate (additive
-    // fan-out is deferred to a v2 story).
-    let synth = "story14b_rhai_replaces";
+fn rhai_output_to_groups_fan_out_additively() {
+    // v3 B3: chaining `.to(g_a).to(g_b)` on the same `(voice, port)`
+    // installs both as distinct fan-out edges (splitter / mult pattern).
+    let synth = "v3_b3_rhai_fan_out";
     declare_synth_with_ports(synth, &["even"]);
 
     let script = format!(
         r#"
-        let v = voice("vox_replace14b").synth("{synth}");
-        v.output("even").to(group("replace14b_g1"));
-        v.output("even").to(group("replace14b_g2"));
+        let v = voice("vox_fan_out_v3").synth("{synth}");
+        v.output("even").to(group("fan_out_v3_g1"));
+        v.output("even").to(group("fan_out_v3_g2"));
         "#,
         synth = synth,
     );
@@ -287,30 +284,16 @@ fn rhai_output_re_route_replaces_prior_dest() {
     let mut engine = ScriptEngine::new();
     let state = engine.execute(&script).expect("script must succeed");
 
-    let voice_id = VoiceId::new(fnv1a_id("vox_replace14b"));
+    let voice_id = VoiceId::new(fnv1a_id("vox_fan_out_v3"));
     let port_key = (voice_id, "even".to_string());
+    let g1_id = GroupId::new(fnv1a_id("main/fan_out_v3_g1"));
+    let g2_id = GroupId::new(fnv1a_id("main/fan_out_v3_g2"));
 
-    // Exactly one entry for this `(voice, port)` after both `.to()` calls.
-    let count = state
-        .routes
-        .keys()
-        .filter(|(vid, port)| *vid == voice_id && port == "even")
-        .count();
-    assert_eq!(
-        count, 1,
-        "expected exactly one route entry for (voice, port), got {}",
-        count
-    );
-
-    // The surviving destination is g2 — last `.to()` wins.
-    let g2_id = GroupId::new(fnv1a_id("main/replace14b_g2"));
-    let dest = state
+    let dests = state
         .routes
         .get(&port_key)
         .expect("route entry must exist for the routed port");
-    assert_eq!(
-        dest,
-        &RouteDest::Group(g2_id),
-        "expected RouteDest::Group(g2) — replace semantics, not g1"
-    );
+    assert_eq!(dests.len(), 2, "both groups installed as edges");
+    assert!(dests.contains(&RouteDest::Group(g1_id)));
+    assert!(dests.contains(&RouteDest::Group(g2_id)));
 }

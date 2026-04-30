@@ -6,10 +6,14 @@
 //! (`to`, `to_main`, `mute`) that install a [`RouteDest`] into the
 //! [`ScriptState`](vibelang_core::reload::ScriptState) routes map.
 //!
-//! Re-routing the same `(voice_id, port_name)` overwrites the prior dest
-//! (`HashMap::insert` semantics on
-//! [`ScriptState::set_route`](vibelang_core::reload::ScriptState::set_route)).
-//! Additive fan-out is deferred to a later story.
+//! Variant-dependent semantics on a repeated `(voice, port)`:
+//! - `.to(group)` is **additive** — multiple `.to(g_a)` + `.to(g_b)` calls
+//!   on the same port install both as distinct fan-out edges (splitter /
+//!   mult patterns: instrument out → main + reverb send).
+//! - `.to_main()` and `.mute()` keep replace semantics — Main is the
+//!   hardware bus and Muted is silence, neither is meaningfully fanned out.
+//! - Routing across the variants (`.to_main()` after `.to(g_a)`, etc.) clears
+//!   prior entries on that port: the variants are mutually exclusive.
 
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, Position, TypeBuilder};
 use vibelang_core::handlers::RouteDest;
@@ -51,6 +55,12 @@ impl RouteHandle {
     }
 
     /// Install a route to the given group's mix bus.
+    ///
+    /// Multi-target fan-out: chaining `.to(g_a).to(g_b)` on a single
+    /// `(voice, port)` installs both groups as distinct fan-out edges.
+    /// A repeated `.to(g_a)` is deduplicated. If the port previously routed
+    /// to `Main` or was `Muted`, the prior dest is cleared first — the
+    /// variants are mutually exclusive (see [`crate::route`] module docs).
     pub fn to(self, group: GroupHandle) -> Self {
         let group_id = context::get_or_create_group_id(&group.path);
         self.commit(RouteDest::Group(group_id));

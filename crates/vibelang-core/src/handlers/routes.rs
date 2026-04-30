@@ -50,9 +50,17 @@ pub struct Route {
 
 /// Per-voice route registry, keyed by `(voice_id, port_name)`.
 ///
+/// The value is the list of destinations a single port fans out to. The
+/// invariant kept by [`crate::reload::ScriptState::set_route`] is that the
+/// list contains either exactly one [`RouteDest::Main`], exactly one
+/// [`RouteDest::Muted`], or one or more [`RouteDest::Group`] entries
+/// (deduplicated). Multi-target fan-out is supported only for
+/// [`RouteDest::Group`] — `Main` is the hardware bus and `Muted` is silence,
+/// so they keep replace semantics.
+///
 /// Stored on [`ScriptState`](crate::reload::ScriptState) so script-side mutations
-/// (Rhai surface lands in Story 8) can carry the desired route map across reloads.
-pub type RouteMap = HashMap<(VoiceId, String), RouteDest>;
+/// can carry the desired route map across reloads.
+pub type RouteMap = HashMap<(VoiceId, String), Vec<RouteDest>>;
 
 /// Compute the count-based default route entries for a freshly created voice.
 ///
@@ -79,7 +87,7 @@ pub type RouteMap = HashMap<(VoiceId, String), RouteDest>;
 pub fn default_routes_for_voice(
     voice_group: GroupId,
     ports: &[OutputPort],
-) -> Vec<(String, RouteDest)> {
+) -> Vec<(String, Vec<RouteDest>)> {
     let count = match ports.len() {
         0 => 0,
         1 | 2 => ports.len(),
@@ -88,7 +96,7 @@ pub fn default_routes_for_voice(
     ports
         .iter()
         .take(count)
-        .map(|p| (p.name.clone(), RouteDest::Group(voice_group)))
+        .map(|p| (p.name.clone(), vec![RouteDest::Group(voice_group)]))
         .collect()
 }
 
@@ -101,36 +109,32 @@ pub fn default_routes_for_voice(
 /// synths to spawn or free.
 pub fn merge_default_routes(user: &RouteMap, defaults: &RouteMap) -> RouteMap {
     let mut merged = defaults.clone();
-    for (key, dest) in user {
-        merged.insert(key.clone(), dest.clone());
+    for (key, dests) in user {
+        merged.insert(key.clone(), dests.clone());
     }
     merged
 }
 
-/// Description of how an existing route's destination changed.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RouteChange {
-    pub voice_id: VoiceId,
-    pub port_name: String,
-    pub old_dest: RouteDest,
-    pub new_dest: RouteDest,
-}
-
-/// Difference between two route maps.
+/// Difference between two route maps, computed at `(voice, port, dest)`-edge
+/// granularity.
+///
+/// Each route entry can fan out to multiple destinations (see [`RouteMap`]),
+/// so the diff is per-edge rather than per-key: dropping one of N group
+/// destinations on a port surfaces as a single removal, not a key-level
+/// change. Re-pointing a port from `Main` → `Group(g)` is therefore a
+/// removal of the old edge plus an addition of the new edge.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RouteDiff {
-    /// Keys present in `new` but not in `old`.
+    /// Edges present in `new` but not in `old`.
     pub additions: Vec<Route>,
-    /// Keys present in `old` but not in `new`. Carries the prior `dest`.
+    /// Edges present in `old` but not in `new`.
     pub removals: Vec<Route>,
-    /// Keys present in both, with a different `dest`.
-    pub changes: Vec<RouteChange>,
 }
 
 impl RouteDiff {
     /// True when there is nothing to apply.
     pub fn is_empty(&self) -> bool {
-        self.additions.is_empty() && self.removals.is_empty() && self.changes.is_empty()
+        self.additions.is_empty() && self.removals.is_empty()
     }
 }
 
@@ -379,34 +383,46 @@ impl<B: Backend> RoutesHandler<B> {
         Ok(group_node)
     }
 
-    /// Compute the additions, removals, and destination changes between two route maps.
+    /// Compute the additions and removals between two route maps at
+    /// `(voice, port, dest)`-edge granularity.
+    ///
+    /// Each port can fan out to multiple destinations (Group fan-out;
+    /// Main/Muted are always single). Adding a new group to an existing
+    /// port surfaces as a single addition for the new edge; dropping one
+    /// of N groups surfaces as a single removal. Re-pointing a port from
+    /// `Main` → `Group(g)` is removal of the old + addition of the new.
     pub fn diff(old: &RouteMap, new: &RouteMap) -> RouteDiff {
         let mut diff = RouteDiff::default();
 
-        for ((voice_id, port_name), new_dest) in new {
-            match old.get(&(*voice_id, port_name.clone())) {
-                None => diff.additions.push(Route {
-                    voice_id: *voice_id,
-                    port_name: port_name.clone(),
-                    dest: new_dest.clone(),
-                }),
-                Some(old_dest) if old_dest != new_dest => diff.changes.push(RouteChange {
-                    voice_id: *voice_id,
-                    port_name: port_name.clone(),
-                    old_dest: old_dest.clone(),
-                    new_dest: new_dest.clone(),
-                }),
-                _ => {}
+        for ((voice_id, port_name), new_dests) in new {
+            let old_dests = old.get(&(*voice_id, port_name.clone()));
+            for d in new_dests {
+                let in_old = old_dests
+                    .map(|v| v.iter().any(|x| x == d))
+                    .unwrap_or(false);
+                if !in_old {
+                    diff.additions.push(Route {
+                        voice_id: *voice_id,
+                        port_name: port_name.clone(),
+                        dest: d.clone(),
+                    });
+                }
             }
         }
 
-        for ((voice_id, port_name), old_dest) in old {
-            if !new.contains_key(&(*voice_id, port_name.clone())) {
-                diff.removals.push(Route {
-                    voice_id: *voice_id,
-                    port_name: port_name.clone(),
-                    dest: old_dest.clone(),
-                });
+        for ((voice_id, port_name), old_dests) in old {
+            let new_dests = new.get(&(*voice_id, port_name.clone()));
+            for d in old_dests {
+                let in_new = new_dests
+                    .map(|v| v.iter().any(|x| x == d))
+                    .unwrap_or(false);
+                if !in_new {
+                    diff.removals.push(Route {
+                        voice_id: *voice_id,
+                        port_name: port_name.clone(),
+                        dest: d.clone(),
+                    });
+                }
             }
         }
 
@@ -416,13 +432,12 @@ impl<B: Backend> RoutesHandler<B> {
     /// Apply a route diff: free old mixer synths, instantiate new ones.
     ///
     /// Order:
-    /// 1. Free mixer synths for *removals* and the old destination of *changes*.
-    /// 2. Instantiate mixer synths for *additions* and the new destination of
-    ///    *changes*.
+    /// 1. Free mixer synths for every removed `(voice, port, dest)` edge.
+    /// 2. Instantiate mixer synths for every added edge.
     ///
-    /// Step 1 runs before step 2 so a moved route can reuse the same node-id
-    /// pool slot; both steps drop the state lock before each backend call to
-    /// preserve the project's lock discipline.
+    /// Step 1 runs before step 2 so a re-pointed route can reuse the same
+    /// node-id pool slot; both steps drop the state lock before each backend
+    /// call to preserve the project's lock discipline.
     pub async fn finalize(&self, diff: &RouteDiff) -> Result<()> {
         if diff.is_empty() {
             return Ok(());
@@ -431,25 +446,17 @@ impl<B: Backend> RoutesHandler<B> {
         let nodes_to_free: Vec<NodeId> = {
             let mut state = self.state.write().await;
             let mut nodes = Vec::new();
-            let teardown_keys: Vec<(VoiceId, String)> = diff
-                .removals
-                .iter()
-                .map(|r| (r.voice_id, r.port_name.clone()))
-                .chain(
-                    diff.changes
-                        .iter()
-                        .map(|c| (c.voice_id, c.port_name.clone())),
-                )
-                .collect();
-            for key in teardown_keys {
+            for r in &diff.removals {
+                let key = (r.voice_id, r.port_name.clone(), r.dest.clone());
                 if let Some(node_id) = state.route_synths.remove(&key) {
                     state.free_node_id(node_id);
                     nodes.push(node_id);
                 } else {
                     tracing::debug!(
-                        "RoutesHandler::finalize: no live mixer for torn-down route voice={:?} port={:?} (already freed?)",
-                        key.0,
-                        key.1
+                        "RoutesHandler::finalize: no live mixer for torn-down route voice={:?} port={:?} dest={:?} (already freed or never spawned, e.g. Muted)",
+                        r.voice_id,
+                        r.port_name,
+                        r.dest,
                     );
                 }
             }
@@ -469,22 +476,10 @@ impl<B: Backend> RoutesHandler<B> {
                 .await
             {
                 tracing::warn!(
-                    "RoutesHandler::finalize: failed to spawn mixer for addition {:?}/{:?}: {}",
+                    "RoutesHandler::finalize: failed to spawn mixer for addition {:?}/{:?}/{:?}: {}",
                     r.voice_id,
                     r.port_name,
-                    e
-                );
-            }
-        }
-        for c in &diff.changes {
-            if let Err(e) = self
-                .spawn_route(c.voice_id, &c.port_name, &c.new_dest)
-                .await
-            {
-                tracing::warn!(
-                    "RoutesHandler::finalize: failed to spawn mixer for change {:?}/{:?}: {}",
-                    c.voice_id,
-                    c.port_name,
+                    r.dest,
                     e
                 );
             }
@@ -1047,7 +1042,7 @@ impl<B: Backend> RoutesHandler<B> {
             let link_node = state.alloc_node_id();
             state
                 .route_synths
-                .insert((voice_id, port_name.to_string()), link_node);
+                .insert((voice_id, port_name.to_string(), dest.clone()), link_node);
 
             (link_node, group_node, port_bus, channels, out_bus)
         };
@@ -1127,7 +1122,7 @@ mod tests {
         let routes = default_routes_for_voice(group, &[port("out", 1)]);
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].0, "out");
-        assert_eq!(routes[0].1, RouteDest::Group(group));
+        assert_eq!(routes[0].1, vec![RouteDest::Group(group)]);
     }
 
     #[test]
@@ -1137,7 +1132,7 @@ mod tests {
         let routes = default_routes_for_voice(group, &[port("out", 2)]);
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].0, "out");
-        assert_eq!(routes[0].1, RouteDest::Group(group));
+        assert_eq!(routes[0].1, vec![RouteDest::Group(group)]);
     }
 
     #[test]
@@ -1148,9 +1143,9 @@ mod tests {
         let routes = default_routes_for_voice(group, &[port("L", 1), port("R", 1)]);
         assert_eq!(routes.len(), 2);
         assert_eq!(routes[0].0, "L");
-        assert_eq!(routes[0].1, RouteDest::Group(group));
+        assert_eq!(routes[0].1, vec![RouteDest::Group(group)]);
         assert_eq!(routes[1].0, "R");
-        assert_eq!(routes[1].1, RouteDest::Group(group));
+        assert_eq!(routes[1].1, vec![RouteDest::Group(group)]);
     }
 
     #[test]
@@ -1191,18 +1186,21 @@ mod tests {
         let mut defaults = RouteMap::new();
         defaults.insert(
             (voice_id, "out".to_string()),
-            RouteDest::Group(group_default),
+            vec![RouteDest::Group(group_default)],
         );
 
         let mut user = RouteMap::new();
-        user.insert((voice_id, "out".to_string()), RouteDest::Group(group_user));
+        user.insert(
+            (voice_id, "out".to_string()),
+            vec![RouteDest::Group(group_user)],
+        );
 
         let merged = merge_default_routes(&user, &defaults);
 
         assert_eq!(merged.len(), 1);
         assert_eq!(
             merged[&(voice_id, "out".to_string())],
-            RouteDest::Group(group_user),
+            vec![RouteDest::Group(group_user)],
             "user route must win over default"
         );
     }
@@ -1213,19 +1211,28 @@ mod tests {
         let group = GroupId::new(8);
 
         let mut defaults = RouteMap::new();
-        defaults.insert((voice_id, "L".to_string()), RouteDest::Group(group));
-        defaults.insert((voice_id, "R".to_string()), RouteDest::Group(group));
+        defaults.insert(
+            (voice_id, "L".to_string()),
+            vec![RouteDest::Group(group)],
+        );
+        defaults.insert(
+            (voice_id, "R".to_string()),
+            vec![RouteDest::Group(group)],
+        );
 
         let mut user = RouteMap::new();
-        user.insert((voice_id, "L".to_string()), RouteDest::Main);
+        user.insert((voice_id, "L".to_string()), vec![RouteDest::Main]);
 
         let merged = merge_default_routes(&user, &defaults);
 
         assert_eq!(merged.len(), 2);
-        assert_eq!(merged[&(voice_id, "L".to_string())], RouteDest::Main);
+        assert_eq!(
+            merged[&(voice_id, "L".to_string())],
+            vec![RouteDest::Main]
+        );
         assert_eq!(
             merged[&(voice_id, "R".to_string())],
-            RouteDest::Group(group),
+            vec![RouteDest::Group(group)],
             "port without explicit route falls back to default"
         );
     }
@@ -1235,7 +1242,10 @@ mod tests {
         let voice_id = VoiceId::new(1);
         let group = GroupId::new(1);
         let mut defaults = RouteMap::new();
-        defaults.insert((voice_id, "out".to_string()), RouteDest::Group(group));
+        defaults.insert(
+            (voice_id, "out".to_string()),
+            vec![RouteDest::Group(group)],
+        );
 
         let merged = merge_default_routes(&RouteMap::new(), &defaults);
         assert_eq!(merged, defaults);
@@ -1248,7 +1258,9 @@ mod tests {
     fn make_map(entries: &[((u32, &str), RouteDest)]) -> RouteMap {
         entries
             .iter()
-            .map(|((vid, port), dest)| ((VoiceId::new(*vid), (*port).to_string()), dest.clone()))
+            .map(|((vid, port), dest)| {
+                ((VoiceId::new(*vid), (*port).to_string()), vec![dest.clone()])
+            })
             .collect()
     }
 
@@ -1265,7 +1277,6 @@ mod tests {
 
         assert_eq!(diff.additions.len(), 3);
         assert!(diff.removals.is_empty());
-        assert!(diff.changes.is_empty());
     }
 
     #[test]
@@ -1296,7 +1307,6 @@ mod tests {
         assert_eq!(added.port_name, "out");
         assert_eq!(added.dest, RouteDest::Main);
         assert!(diff.removals.is_empty());
-        assert!(diff.changes.is_empty());
     }
 
     #[test]
@@ -1315,36 +1325,40 @@ mod tests {
         assert_eq!(removed.voice_id, VoiceId::new(2));
         assert_eq!(removed.port_name, "out");
         assert_eq!(removed.dest, RouteDest::Main);
-        assert!(diff.changes.is_empty());
     }
 
     #[test]
-    fn diff_changed_dest_returns_one_change_only() {
+    fn diff_repointed_group_dest_is_remove_plus_add() {
+        // Per-edge diff: re-pointing a port from group 1 to group 2 is a
+        // removal of the old edge and an addition of the new edge.
         let old = make_map(&[((1, "out"), RouteDest::Group(GroupId::new(1)))]);
         let new = make_map(&[((1, "out"), RouteDest::Group(GroupId::new(2)))]);
 
         let diff = RoutesHandler::<MockBackend>::diff(&old, &new);
 
-        assert!(diff.additions.is_empty());
-        assert!(diff.removals.is_empty());
-        assert_eq!(diff.changes.len(), 1);
-        let chg = &diff.changes[0];
-        assert_eq!(chg.voice_id, VoiceId::new(1));
-        assert_eq!(chg.port_name, "out");
-        assert_eq!(chg.old_dest, RouteDest::Group(GroupId::new(1)));
-        assert_eq!(chg.new_dest, RouteDest::Group(GroupId::new(2)));
+        assert_eq!(diff.additions.len(), 1);
+        assert_eq!(diff.removals.len(), 1);
+        assert_eq!(
+            diff.removals[0].dest,
+            RouteDest::Group(GroupId::new(1))
+        );
+        assert_eq!(
+            diff.additions[0].dest,
+            RouteDest::Group(GroupId::new(2))
+        );
     }
 
     #[test]
-    fn diff_changed_dest_main_to_muted() {
+    fn diff_repointed_main_to_muted_is_remove_plus_add() {
         let old = make_map(&[((3, "fx_send"), RouteDest::Main)]);
         let new = make_map(&[((3, "fx_send"), RouteDest::Muted)]);
 
         let diff = RoutesHandler::<MockBackend>::diff(&old, &new);
 
-        assert_eq!(diff.changes.len(), 1);
-        assert_eq!(diff.changes[0].old_dest, RouteDest::Main);
-        assert_eq!(diff.changes[0].new_dest, RouteDest::Muted);
+        assert_eq!(diff.removals.len(), 1);
+        assert_eq!(diff.removals[0].dest, RouteDest::Main);
+        assert_eq!(diff.additions.len(), 1);
+        assert_eq!(diff.additions[0].dest, RouteDest::Muted);
     }
 
     // =========================================================================
@@ -1680,7 +1694,7 @@ mod tests {
             .read()
             .await
             .route_synths
-            .contains_key(&(voice_id, port_name)));
+            .contains_key(&(voice_id, port_name, RouteDest::Group(dest_group_id))));
     }
 
     #[tokio::test]
@@ -1740,7 +1754,7 @@ mod tests {
             .read()
             .await
             .route_synths
-            .contains_key(&(voice_id, port_name)));
+            .contains_key(&(voice_id, port_name, RouteDest::Muted)));
     }
 
     #[tokio::test]
@@ -1784,24 +1798,28 @@ mod tests {
             .read()
             .await
             .route_synths
-            .get(&(voice_id, port_name.clone()))
+            .get(&(voice_id, port_name.clone(), RouteDest::Group(dest_a)))
             .copied()
             .unwrap();
 
-        // Now move: change A → B.
+        // Now move: re-point from A → B as a per-edge remove + add.
         let mut change_diff = RouteDiff::default();
-        change_diff.changes.push(RouteChange {
+        change_diff.removals.push(Route {
             voice_id,
             port_name: port_name.clone(),
-            old_dest: RouteDest::Group(dest_a),
-            new_dest: RouteDest::Group(dest_b),
+            dest: RouteDest::Group(dest_a),
+        });
+        change_diff.additions.push(Route {
+            voice_id,
+            port_name: port_name.clone(),
+            dest: RouteDest::Group(dest_b),
         });
         handler.finalize(&change_diff).await.unwrap();
 
         // Old node freed, new node created.
         assert!(backend.frees().contains(&node_a), "old mixer was freed");
         let creates = backend.creates();
-        assert_eq!(creates.len(), 2, "one create on add, one on change");
+        assert_eq!(creates.len(), 2, "one create on add, one on re-point");
         let bus_b = state
             .read()
             .await
@@ -1820,7 +1838,7 @@ mod tests {
             .read()
             .await
             .route_synths
-            .get(&(voice_id, port_name))
+            .get(&(voice_id, port_name, RouteDest::Group(dest_b)))
             .copied()
             .unwrap();
         assert_eq!(
@@ -1855,7 +1873,7 @@ mod tests {
             .read()
             .await
             .route_synths
-            .contains_key(&(voice_id, port_name)));
+            .contains_key(&(voice_id, port_name, RouteDest::Group(dest))));
     }
 
     #[tokio::test]
@@ -1933,6 +1951,165 @@ mod tests {
 
         assert_eq!(backend.synths_created(), 0);
         assert_eq!(backend.nodes_freed(), 0);
+    }
+
+    // =========================================================================
+    // v3 B3: multi-target Group fan-out — `.to(g_a).to(g_b)` installs both edges
+    // =========================================================================
+
+    #[tokio::test]
+    async fn finalize_fan_out_spawns_one_mixer_per_group_edge() {
+        // A single port routed to two distinct groups must spawn two mixer
+        // synths (one per edge), each writing to the corresponding group's
+        // audio bus.
+        let (handler, backend, state, voice_id, port_name, dest_a) =
+            setup_voice_in_group(2).await;
+
+        let dest_b = GroupId::new(99);
+        let bus_b = {
+            let mut s = state.write().await;
+            let node = s.alloc_node_id();
+            let bus = s.alloc_audio_bus(2);
+            s.groups.insert(
+                dest_b,
+                GroupState {
+                    id: dest_b,
+                    name: "B".to_string(),
+                    parent: None,
+                    node_id: node,
+                    audio_bus: bus,
+                    link_synth_node_id: None,
+                    muted: false,
+                    soloed: false,
+                    params: ParamMap::new(),
+                    output_bus: None,
+                },
+            );
+            bus
+        };
+
+        let mut diff = RouteDiff::default();
+        diff.additions.push(Route {
+            voice_id,
+            port_name: port_name.clone(),
+            dest: RouteDest::Group(dest_a),
+        });
+        diff.additions.push(Route {
+            voice_id,
+            port_name: port_name.clone(),
+            dest: RouteDest::Group(dest_b),
+        });
+
+        handler.finalize(&diff).await.unwrap();
+
+        assert_eq!(backend.synths_created(), 2, "one mixer per group edge");
+        let creates = backend.creates();
+        let bus_a = state
+            .read()
+            .await
+            .groups
+            .get(&dest_a)
+            .unwrap()
+            .audio_bus
+            .0 as f32;
+        let mut out_buses: Vec<f32> = creates.iter().map(|c| c.out_bus).collect();
+        out_buses.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let mut want = vec![bus_a, bus_b.0 as f32];
+        want.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(out_buses, want);
+
+        // Per-edge tracking in `route_synths`.
+        let registry = state.read().await.route_synths.clone();
+        assert!(registry
+            .contains_key(&(voice_id, port_name.clone(), RouteDest::Group(dest_a))));
+        assert!(registry.contains_key(&(voice_id, port_name, RouteDest::Group(dest_b))));
+    }
+
+    #[tokio::test]
+    async fn finalize_fan_out_dropping_one_group_frees_only_that_mixer() {
+        // After fan-out is in place, removing one of the two group edges
+        // must free only the mixer for the dropped edge — the surviving
+        // edge keeps its mixer node ID untouched.
+        let (handler, backend, state, voice_id, port_name, dest_a) =
+            setup_voice_in_group(2).await;
+
+        let dest_b = GroupId::new(99);
+        {
+            let mut s = state.write().await;
+            let node = s.alloc_node_id();
+            let bus = s.alloc_audio_bus(2);
+            s.groups.insert(
+                dest_b,
+                GroupState {
+                    id: dest_b,
+                    name: "B".to_string(),
+                    parent: None,
+                    node_id: node,
+                    audio_bus: bus,
+                    link_synth_node_id: None,
+                    muted: false,
+                    soloed: false,
+                    params: ParamMap::new(),
+                    output_bus: None,
+                },
+            );
+        }
+
+        // Install both edges first.
+        let mut add = RouteDiff::default();
+        add.additions.push(Route {
+            voice_id,
+            port_name: port_name.clone(),
+            dest: RouteDest::Group(dest_a),
+        });
+        add.additions.push(Route {
+            voice_id,
+            port_name: port_name.clone(),
+            dest: RouteDest::Group(dest_b),
+        });
+        handler.finalize(&add).await.unwrap();
+        assert_eq!(backend.synths_created(), 2);
+
+        let node_a = state
+            .read()
+            .await
+            .route_synths
+            .get(&(voice_id, port_name.clone(), RouteDest::Group(dest_a)))
+            .copied()
+            .unwrap();
+        let node_b = state
+            .read()
+            .await
+            .route_synths
+            .get(&(voice_id, port_name.clone(), RouteDest::Group(dest_b)))
+            .copied()
+            .unwrap();
+
+        // Drop only the edge to A — node_b must survive.
+        let mut rm = RouteDiff::default();
+        rm.removals.push(Route {
+            voice_id,
+            port_name: port_name.clone(),
+            dest: RouteDest::Group(dest_a),
+        });
+        handler.finalize(&rm).await.unwrap();
+
+        assert!(
+            backend.frees().contains(&node_a),
+            "mixer for dropped edge freed"
+        );
+        assert!(
+            !backend.frees().contains(&node_b),
+            "mixer for surviving edge must not be freed",
+        );
+
+        let registry = state.read().await.route_synths.clone();
+        assert!(!registry
+            .contains_key(&(voice_id, port_name.clone(), RouteDest::Group(dest_a))));
+        assert_eq!(
+            registry.get(&(voice_id, port_name, RouteDest::Group(dest_b))),
+            Some(&node_b),
+        );
     }
 
     // =========================================================================

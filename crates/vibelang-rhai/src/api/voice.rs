@@ -1081,7 +1081,7 @@ mod tests {
             let voice_id = context::get_or_create_voice_id("vox_named");
             context::with_state(|state| {
                 let dest = state.routes.get(&(voice_id, "even".to_string()));
-                assert_eq!(dest, Some(&RouteDest::Group(group_id)));
+                assert_eq!(dest, Some(&vec![RouteDest::Group(group_id)]));
             });
         });
     }
@@ -1103,7 +1103,7 @@ mod tests {
             let voice_id = context::get_or_create_voice_id("vox_idx");
             context::with_state(|state| {
                 let dest = state.routes.get(&(voice_id, "odd".to_string()));
-                assert_eq!(dest, Some(&RouteDest::Group(group_id)));
+                assert_eq!(dest, Some(&vec![RouteDest::Group(group_id)]));
             });
         });
     }
@@ -1164,71 +1164,92 @@ mod tests {
             context::with_state(|state| {
                 assert_eq!(
                     state.routes.get(&(voice_id, "sub".to_string())),
-                    Some(&RouteDest::Main)
+                    Some(&vec![RouteDest::Main])
                 );
                 assert_eq!(
                     state.routes.get(&(voice_id, "click".to_string())),
-                    Some(&RouteDest::Muted)
+                    Some(&vec![RouteDest::Muted])
                 );
             });
         });
     }
 
     #[test]
-    fn test_voice_output_re_route_replaces_prior_dest() {
+    fn test_voice_output_to_groups_fan_out_additively() {
+        // v3 B3: chaining `.to(g1).to(g2)` on the same `(voice, port)`
+        // installs both group destinations as distinct fan-out edges.
         with_test_context(|| {
-            let synth = "story8_replaces";
+            let synth = "v3_b3_fan_out";
             declare_synth_with_ports(synth, &["even"]);
 
-            let g1_path = "main/replaces_g1".to_string();
-            let g2_path = "main/replaces_g2".to_string();
+            let g1_path = "main/fan_out_g1".to_string();
+            let g2_path = "main/fan_out_g2".to_string();
             let g1 = super::super::group::GroupHandle::new(g1_path.clone());
             let g2 = super::super::group::GroupHandle::new(g2_path.clone());
             let g1_id = context::get_or_create_group_id(&g1_path);
             let g2_id = context::get_or_create_group_id(&g2_path);
 
-            let mut v = test_voice("vox_replace").synth(synth.to_string());
+            let mut v = test_voice("vox_fan_out").synth(synth.to_string());
             v.output_by_name("even").expect("first").to(g1);
-            // First route installed.
-            let voice_id = context::get_or_create_voice_id("vox_replace");
-            context::with_state(|state| {
-                assert_eq!(
-                    state.routes.get(&(voice_id, "even".to_string())),
-                    Some(&RouteDest::Group(g1_id))
-                );
-            });
-
-            // Re-route to a different group; prior dest must be replaced (not
-            // accumulated — additive fan-out is v2).
             v.output_by_name("even").expect("second").to(g2);
+
+            let voice_id = context::get_or_create_voice_id("vox_fan_out");
             context::with_state(|state| {
-                assert_eq!(
-                    state.routes.get(&(voice_id, "even".to_string())),
-                    Some(&RouteDest::Group(g2_id))
-                );
-                // Exactly one entry for this (voice, port).
-                let count = state
+                let dests = state
                     .routes
-                    .keys()
-                    .filter(|(vid, port)| *vid == voice_id && port == "even")
-                    .count();
-                assert_eq!(count, 1);
+                    .get(&(voice_id, "even".to_string()))
+                    .expect("route entry exists");
+                assert_eq!(dests.len(), 2, "both groups installed as edges");
+                assert!(dests.contains(&RouteDest::Group(g1_id)));
+                assert!(dests.contains(&RouteDest::Group(g2_id)));
             });
 
-            // Re-route across destination variants too.
-            v.output_by_name("even").expect("third").to_main();
+            // Re-routing to the same group is deduplicated — still 2 edges.
+            let g1_again = super::super::group::GroupHandle::new(g1_path);
+            v.output_by_name("even").expect("third").to(g1_again);
+            context::with_state(|state| {
+                let dests = state
+                    .routes
+                    .get(&(voice_id, "even".to_string()))
+                    .expect("route entry exists");
+                assert_eq!(dests.len(), 2, "duplicate .to(g1) deduped");
+            });
+        });
+    }
+
+    #[test]
+    fn test_voice_output_to_main_or_mute_replaces_prior_groups() {
+        // Main and Muted keep replace semantics (they don't fan out):
+        // switching to `.to_main()` / `.mute()` after a `.to(g_a).to(g_b)`
+        // chain clears the group list. Variants are mutually exclusive.
+        with_test_context(|| {
+            let synth = "v3_b3_main_mute_replaces";
+            declare_synth_with_ports(synth, &["even"]);
+
+            let g1_path = "main/mr_g1".to_string();
+            let g2_path = "main/mr_g2".to_string();
+            let g1 = super::super::group::GroupHandle::new(g1_path);
+            let g2 = super::super::group::GroupHandle::new(g2_path);
+
+            let mut v = test_voice("vox_mr").synth(synth.to_string());
+            v.output_by_name("even").expect("g1").to(g1);
+            v.output_by_name("even").expect("g2").to(g2);
+
+            let voice_id = context::get_or_create_voice_id("vox_mr");
+
+            v.output_by_name("even").expect("main").to_main();
             context::with_state(|state| {
                 assert_eq!(
                     state.routes.get(&(voice_id, "even".to_string())),
-                    Some(&RouteDest::Main)
+                    Some(&vec![RouteDest::Main])
                 );
             });
 
-            v.output_by_name("even").expect("fourth").mute();
+            v.output_by_name("even").expect("mute").mute();
             context::with_state(|state| {
                 assert_eq!(
                     state.routes.get(&(voice_id, "even".to_string())),
-                    Some(&RouteDest::Muted)
+                    Some(&vec![RouteDest::Muted])
                 );
             });
         });
@@ -1257,7 +1278,7 @@ mod tests {
             context::with_state(|state| {
                 assert_eq!(
                     state.routes.get(&(voice_id, "even".to_string())),
-                    Some(&RouteDest::Group(leads_id))
+                    Some(&vec![RouteDest::Group(leads_id)])
                 );
             });
         });
@@ -1291,53 +1312,50 @@ mod tests {
     }
 
     #[test]
-    fn test_route_to_current_group_then_to_other_replaces() {
-        // After to_current_group() installs RouteDest::Group(leads), a later
-        // .to(other) on the same (voice, port) replaces the prior dest — same
-        // HashMap::insert semantics as the other terminal verbs.
+    fn test_route_to_current_group_then_to_other_fans_out() {
+        // v3 B3: chaining `.to_current_group()` then `.to(other)` on the
+        // same `(voice, port)` installs both group destinations as edges
+        // (additive). Both are `Group` variants, so they fan out.
         with_test_context(|| {
-            let synth = "ergo_to_current_group_replaces";
+            let synth = "v3_b3_to_current_group_fan_out";
             declare_synth_with_ports(synth, &["even"]);
 
-            let leads_path = "main/leads_replace".to_string();
-            let other_path = "main/fx_other".to_string();
+            let leads_path = "main/v3_b3_leads".to_string();
+            let other_path = "main/v3_b3_fx_other".to_string();
             let leads_id = context::get_or_create_group_id(&leads_path);
             let other_id = context::get_or_create_group_id(&other_path);
 
-            let mut v = test_voice("vox_tcg_replace")
+            let mut v = test_voice("vox_v3_b3_tcg")
                 .synth(synth.to_string())
-                .group("leads_replace".to_string());
+                .group("v3_b3_leads".to_string());
 
             v.output_by_name("even")
                 .expect("port resolves")
                 .to_current_group()
                 .expect("voice has group");
 
-            let voice_id = context::get_or_create_voice_id("vox_tcg_replace");
+            let voice_id = context::get_or_create_voice_id("vox_v3_b3_tcg");
             context::with_state(|state| {
                 assert_eq!(
                     state.routes.get(&(voice_id, "even".to_string())),
-                    Some(&RouteDest::Group(leads_id))
+                    Some(&vec![RouteDest::Group(leads_id)])
                 );
             });
 
-            // Re-route to a different group via explicit .to(other).
-            let other = super::super::group::GroupHandle::new(other_path.clone());
+            // Add a second group dest — both edges should remain.
+            let other = super::super::group::GroupHandle::new(other_path);
             v.output_by_name("even")
                 .expect("port resolves")
                 .to(other);
 
             context::with_state(|state| {
-                assert_eq!(
-                    state.routes.get(&(voice_id, "even".to_string())),
-                    Some(&RouteDest::Group(other_id))
-                );
-                let count = state
+                let dests = state
                     .routes
-                    .keys()
-                    .filter(|(vid, port)| *vid == voice_id && port == "even")
-                    .count();
-                assert_eq!(count, 1);
+                    .get(&(voice_id, "even".to_string()))
+                    .expect("route entry");
+                assert_eq!(dests.len(), 2, "both groups installed as edges");
+                assert!(dests.contains(&RouteDest::Group(leads_id)));
+                assert!(dests.contains(&RouteDest::Group(other_id)));
             });
         });
     }
@@ -1371,11 +1389,11 @@ mod tests {
             context::with_state(|state| {
                 assert_eq!(
                     state.routes.get(&(voice_id, "sine".to_string())),
-                    Some(&RouteDest::Group(g_id))
+                    Some(&vec![RouteDest::Group(g_id)])
                 );
                 assert_eq!(
                     state.routes.get(&(voice_id, "odd".to_string())),
-                    Some(&RouteDest::Group(g_id))
+                    Some(&vec![RouteDest::Group(g_id)])
                 );
                 // No route for the unlisted port.
                 assert!(state
@@ -1401,11 +1419,11 @@ mod tests {
             context::with_state(|state| {
                 assert_eq!(
                     state.routes.get(&(voice_id, "even".to_string())),
-                    Some(&RouteDest::Main)
+                    Some(&vec![RouteDest::Main])
                 );
                 assert_eq!(
                     state.routes.get(&(voice_id, "odd".to_string())),
-                    Some(&RouteDest::Main)
+                    Some(&vec![RouteDest::Main])
                 );
                 assert!(state
                     .routes
@@ -1430,11 +1448,11 @@ mod tests {
             context::with_state(|state| {
                 assert_eq!(
                     state.routes.get(&(voice_id, "sine".to_string())),
-                    Some(&RouteDest::Muted)
+                    Some(&vec![RouteDest::Muted])
                 );
                 assert_eq!(
                     state.routes.get(&(voice_id, "odd".to_string())),
-                    Some(&RouteDest::Muted)
+                    Some(&vec![RouteDest::Muted])
                 );
             });
         });
@@ -1464,11 +1482,11 @@ mod tests {
             context::with_state(|state| {
                 assert_eq!(
                     state.routes.get(&(voice_id, "a".to_string())),
-                    Some(&RouteDest::Group(leads_id))
+                    Some(&vec![RouteDest::Group(leads_id)])
                 );
                 assert_eq!(
                     state.routes.get(&(voice_id, "c".to_string())),
-                    Some(&RouteDest::Group(leads_id))
+                    Some(&vec![RouteDest::Group(leads_id)])
                 );
                 assert!(state.routes.get(&(voice_id, "b".to_string())).is_none());
             });
@@ -1539,27 +1557,29 @@ mod tests {
     }
 
     #[test]
-    fn test_voice_outputs_replace_semantics_under_fanout() {
-        // outputs(["a"]).to(g1); outputs(["a"]).to(g2) → "a" routes to g2 only.
+    fn test_voice_outputs_to_groups_fan_out_additively() {
+        // v3 B3: outputs(["a"]).to(g1); outputs(["a"]).to(g2) → port "a"
+        // routes to BOTH groups. The plural sugar inherits the singular
+        // form's additive Group semantics.
         with_test_context(|| {
-            let synth = "ergo_outputs_replace";
+            let synth = "v3_b3_outputs_fan_out";
             declare_synth_with_ports(synth, &["a", "b"]);
 
-            let g1_path = "main/outs_replace_g1".to_string();
-            let g2_path = "main/outs_replace_g2".to_string();
+            let g1_path = "main/v3_b3_outs_g1".to_string();
+            let g2_path = "main/v3_b3_outs_g2".to_string();
             let g1_id = context::get_or_create_group_id(&g1_path);
             let g2_id = context::get_or_create_group_id(&g2_path);
 
-            let mut v = test_voice("vox_outs_replace").synth(synth.to_string());
+            let mut v = test_voice("vox_v3_b3_outs").synth(synth.to_string());
             let arr1: rhai::Array = vec![dyn_str("a")];
             v.outputs(arr1)
                 .expect("first")
                 .to(super::super::group::GroupHandle::new(g1_path));
-            let voice_id = context::get_or_create_voice_id("vox_outs_replace");
+            let voice_id = context::get_or_create_voice_id("vox_v3_b3_outs");
             context::with_state(|state| {
                 assert_eq!(
                     state.routes.get(&(voice_id, "a".to_string())),
-                    Some(&RouteDest::Group(g1_id))
+                    Some(&vec![RouteDest::Group(g1_id)])
                 );
             });
 
@@ -1569,17 +1589,13 @@ mod tests {
                 .to(super::super::group::GroupHandle::new(g2_path));
 
             context::with_state(|state| {
-                assert_eq!(
-                    state.routes.get(&(voice_id, "a".to_string())),
-                    Some(&RouteDest::Group(g2_id))
-                );
-                // Exactly one entry (replace, not accumulate).
-                let count = state
+                let dests = state
                     .routes
-                    .keys()
-                    .filter(|(vid, port)| *vid == voice_id && port == "a")
-                    .count();
-                assert_eq!(count, 1);
+                    .get(&(voice_id, "a".to_string()))
+                    .expect("route entry");
+                assert_eq!(dests.len(), 2, "both groups installed as edges");
+                assert!(dests.contains(&RouteDest::Group(g1_id)));
+                assert!(dests.contains(&RouteDest::Group(g2_id)));
             });
         });
     }
@@ -1613,11 +1629,11 @@ mod tests {
             context::with_state(|state| {
                 assert_eq!(
                     state.routes.get(&(id_idx, "c".to_string())),
-                    Some(&RouteDest::Group(g_id))
+                    Some(&vec![RouteDest::Group(g_id)])
                 );
                 assert_eq!(
                     state.routes.get(&(id_name, "c".to_string())),
-                    Some(&RouteDest::Group(g_id))
+                    Some(&vec![RouteDest::Group(g_id)])
                 );
             });
         });

@@ -296,12 +296,13 @@ async fn setup(ports: &[OutputPort]) -> Harness {
 
         for p in ports {
             let key = (voice, p.name.clone());
-            routes_before.insert(key.clone(), RouteDest::Group(dest_group));
+            routes_before.insert(key.clone(), vec![RouteDest::Group(dest_group)]);
             // Pretend `finalize` already ran on a prior reload and these
             // mixer synths are alive. We just need a unique node id per
             // port so tests can identify which ones get freed.
             let node = s.alloc_node_id();
-            s.route_synths.insert(key, node);
+            s.route_synths
+                .insert((key.0, key.1, RouteDest::Group(dest_group)), node);
             mixer_nodes.push((p.name.clone(), node));
         }
     }
@@ -333,7 +334,7 @@ async fn port_set_unchanged_across_body_edit_keeps_routes_intact() {
     let h = setup(&ports).await;
 
     let mut routes = h.routes_before.clone();
-    let live_nodes_before: HashMap<(VoiceId, String), NodeId> =
+    let live_nodes_before: HashMap<(VoiceId, String, RouteDest), NodeId> =
         h.state.read().await.route_synths.clone();
 
     let outcome = {
@@ -354,7 +355,7 @@ async fn port_set_unchanged_across_body_edit_keeps_routes_intact() {
     // The diff against the *previous* route snapshot is empty, so finalize
     // is the no-op path: nothing freed, nothing created.
     let diff = RoutesHandler::<MockBackend>::diff(&h.routes_before, &routes);
-    assert!(diff.is_empty(), "no route additions/removals/changes");
+    assert!(diff.is_empty(), "no route additions or removals");
 
     h.handler.finalize(&diff).await.unwrap();
     assert_eq!(
@@ -366,7 +367,7 @@ async fn port_set_unchanged_across_body_edit_keeps_routes_intact() {
 
     // Live mixer node-ids unchanged — the running synths are still bound
     // to the same buses, so audio keeps flowing without interruption.
-    let live_nodes_after: HashMap<(VoiceId, String), NodeId> =
+    let live_nodes_after: HashMap<(VoiceId, String, RouteDest), NodeId> =
         h.state.read().await.route_synths.clone();
     assert_eq!(live_nodes_before, live_nodes_after);
 }
@@ -433,16 +434,15 @@ async fn port_removed_drops_route_warns_and_finalize_frees_orphan_mixer() {
     assert!(!routes.contains_key(&(h.voice, "send".to_string())));
     assert_eq!(
         routes.get(&(h.voice, "out".to_string())),
-        Some(&RouteDest::Group(h.dest_group)),
+        Some(&vec![RouteDest::Group(h.dest_group)]),
     );
 
-    // Diff drives finalize: one removal, no additions, no changes.
+    // Diff drives finalize: one removal, no additions.
     let diff = RoutesHandler::<MockBackend>::diff(&h.routes_before, &routes);
     assert_eq!(diff.removals.len(), 1);
     assert_eq!(diff.removals[0].voice_id, h.voice);
     assert_eq!(diff.removals[0].port_name, "send");
     assert!(diff.additions.is_empty());
-    assert!(diff.changes.is_empty());
 
     h.handler.finalize(&diff).await.unwrap();
 
@@ -462,9 +462,17 @@ async fn port_removed_drops_route_warns_and_finalize_frees_orphan_mixer() {
 
     // `state.route_synths`: `send` entry purged, `out` entry preserved.
     let route_synths = h.state.read().await.route_synths.clone();
-    assert!(!route_synths.contains_key(&(h.voice, "send".to_string())));
+    assert!(!route_synths.contains_key(&(
+        h.voice,
+        "send".to_string(),
+        RouteDest::Group(h.dest_group)
+    )));
     assert_eq!(
-        route_synths.get(&(h.voice, "out".to_string())),
+        route_synths.get(&(
+            h.voice,
+            "out".to_string(),
+            RouteDest::Group(h.dest_group)
+        )),
         Some(&out_mixer_node),
     );
 }
@@ -524,7 +532,7 @@ async fn port_renamed_drops_old_warns_and_new_name_is_silent() {
     assert!(!routes.contains_key(&(h.voice, "cv_old".to_string())));
     assert_eq!(
         routes.get(&(h.voice, "cv_new".to_string())),
-        Some(&RouteDest::Muted),
+        Some(&vec![RouteDest::Muted]),
     );
 
     // Diff drives finalize: one removal (cv_old) and one addition
@@ -558,6 +566,14 @@ async fn port_renamed_drops_old_warns_and_new_name_is_silent() {
     // `state.route_synths`: cv_old purged, no entry for cv_new (Muted
     // routes don't allocate a mixer node).
     let route_synths = h.state.read().await.route_synths.clone();
-    assert!(!route_synths.contains_key(&(h.voice, "cv_old".to_string())));
-    assert!(!route_synths.contains_key(&(h.voice, "cv_new".to_string())));
+    assert!(!route_synths.contains_key(&(
+        h.voice,
+        "cv_old".to_string(),
+        RouteDest::Group(h.dest_group)
+    )));
+    assert!(!route_synths.contains_key(&(
+        h.voice,
+        "cv_new".to_string(),
+        RouteDest::Muted
+    )));
 }

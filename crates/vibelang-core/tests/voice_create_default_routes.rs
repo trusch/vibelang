@@ -316,7 +316,7 @@ async fn create_voice_one_mono_port_default_routes_pan2_to_group() {
         assert_eq!(s.default_routes.len(), 1, "exactly one default route");
         assert_eq!(
             s.default_routes[&(voice, "out".to_string())],
-            RouteDest::Group(h.voice_group),
+            vec![RouteDest::Group(h.voice_group)],
         );
     }
 
@@ -361,7 +361,7 @@ async fn create_voice_one_stereo_port_default_routes_straight_to_group() {
         assert_eq!(s.default_routes.len(), 1);
         assert_eq!(
             s.default_routes[&(voice, "out".to_string())],
-            RouteDest::Group(h.voice_group),
+            vec![RouteDest::Group(h.voice_group)],
         );
     }
 
@@ -400,11 +400,11 @@ async fn create_voice_two_mono_ports_default_routes_both_to_group() {
         assert_eq!(s.default_routes.len(), 2, "both ports default-routed");
         assert_eq!(
             s.default_routes[&(voice, "L".to_string())],
-            RouteDest::Group(h.voice_group),
+            vec![RouteDest::Group(h.voice_group)],
         );
         assert_eq!(
             s.default_routes[&(voice, "R".to_string())],
-            RouteDest::Group(h.voice_group),
+            vec![RouteDest::Group(h.voice_group)],
         );
     }
 
@@ -509,10 +509,11 @@ async fn create_voice_four_mono_ports_only_first_two_default_routed_rest_silent(
     // route_synths registry mirrors the same shape: only sine/sub recorded.
     let registry = h.state.read().await.route_synths.clone();
     assert_eq!(registry.len(), 2);
-    assert!(registry.contains_key(&(voice, "sine".to_string())));
-    assert!(registry.contains_key(&(voice, "sub".to_string())));
-    assert!(!registry.contains_key(&(voice, "odd".to_string())));
-    assert!(!registry.contains_key(&(voice, "even".to_string())));
+    let g = RouteDest::Group(h.voice_group);
+    assert!(registry.contains_key(&(voice, "sine".to_string(), g.clone())));
+    assert!(registry.contains_key(&(voice, "sub".to_string(), g.clone())));
+    assert!(!registry.contains_key(&(voice, "odd".to_string(), g.clone())));
+    assert!(!registry.contains_key(&(voice, "even".to_string(), g)));
 }
 
 // =========================================================================
@@ -569,7 +570,7 @@ async fn explicit_user_route_on_port_zero_not_overridden_by_default() {
         let s = h.state.read().await;
         assert_eq!(
             s.default_routes[&(voice, "out".to_string())],
-            RouteDest::Group(h.voice_group),
+            vec![RouteDest::Group(h.voice_group)],
             "default for stereo port[0] is the voice's own group",
         );
     }
@@ -579,7 +580,7 @@ async fn explicit_user_route_on_port_zero_not_overridden_by_default() {
     let mut user_routes = RouteMap::new();
     user_routes.insert(
         (voice, "out".to_string()),
-        RouteDest::Group(dest_group),
+        vec![RouteDest::Group(dest_group)],
     );
 
     let merged = merge_diff_finalize(&h, &user_routes).await;
@@ -589,12 +590,12 @@ async fn explicit_user_route_on_port_zero_not_overridden_by_default() {
     // reload that drops the user route falls back cleanly to the default).
     assert_eq!(
         merged[&(voice, "out".to_string())],
-        RouteDest::Group(dest_group),
+        vec![RouteDest::Group(dest_group)],
         "user's explicit `voice.output(0).to(g_explicit)` wins over default",
     );
     assert_eq!(
         h.state.read().await.default_routes[&(voice, "out".to_string())],
-        RouteDest::Group(h.voice_group),
+        vec![RouteDest::Group(h.voice_group)],
         "default_routes itself is not mutated by the merge — it just loses at merge time",
     );
 

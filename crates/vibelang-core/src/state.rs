@@ -856,13 +856,15 @@ pub struct State {
     // =========================================================================
     // Routing
     // =========================================================================
-    /// Per-route mixer synth node IDs, keyed by `(voice_id, port_name)`.
+    /// Per-edge mixer synth node IDs, keyed by `(voice_id, port_name, dest)`.
     ///
-    /// Populated by [`crate::handlers::RoutesHandler::finalize`] when a route
-    /// is added; drained when a route is removed/changed or its owning voice
-    /// is deleted. The synth reads the voice's port audio bus and writes to
-    /// the destination group's audio bus (or bus 0 for `RouteDest::Main`).
-    pub route_synths: HashMap<(VoiceId, String), NodeId>,
+    /// One entry per `(voice, port) → dest` edge — a port that fans out to
+    /// multiple group destinations has one entry per destination. Populated
+    /// by [`crate::handlers::RoutesHandler::finalize`] when an edge is added;
+    /// drained when an edge is removed or its owning voice is deleted. The
+    /// synth reads the voice's port audio bus and writes to the destination
+    /// group's audio bus (or bus 0 for `RouteDest::Main`).
+    pub route_synths: HashMap<(VoiceId, String, crate::handlers::RouteDest), NodeId>,
 
     /// Default per-voice port routes installed at voice-create time.
     ///
@@ -872,7 +874,10 @@ pub struct State {
     /// entries are merged with the script-supplied `ScriptState::routes` at
     /// reload time, with explicit user routes taking precedence over defaults.
     /// Drained on voice delete so a re-created voice gets fresh defaults.
-    pub default_routes: HashMap<(VoiceId, String), crate::handlers::RouteDest>,
+    ///
+    /// Defaults are stored as `Vec<RouteDest>` to match [`RouteMap`]'s shape;
+    /// a port's default is conventionally a single-element vec.
+    pub default_routes: HashMap<(VoiceId, String), Vec<crate::handlers::RouteDest>>,
 
     /// Active SET Param-route mappings (`.to_param` verb): source
     /// `(voice_id, port_name)` → list of `(target_voice_id, target_param_name)`
@@ -1073,7 +1078,7 @@ impl State {
     /// one pass without needing a route diff. The caller is responsible for
     /// freeing the returned nodes on the backend.
     pub fn take_voice_route_nodes(&mut self, voice_id: VoiceId) -> Vec<NodeId> {
-        let keys: Vec<(VoiceId, String)> = self
+        let keys: Vec<(VoiceId, String, crate::handlers::RouteDest)> = self
             .route_synths
             .keys()
             .filter(|k| k.0 == voice_id)
