@@ -2648,6 +2648,106 @@ mod tests {
         assert_eq!(a, b, "freed bus set must equal reused bus set");
     }
 
+    // =========================================================================
+    // B2.b: Tr port voice bus alloc — shares the control-bus path with kr.
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_voice_with_one_tr_port_owns_one_control_bus() {
+        // A 1-port tr synthdef carves exactly one ID from the control-bus
+        // pool — no audio-bus advance beyond the group's stereo pair.
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_multiport_synthdef(
+            &state,
+            "trig_synth",
+            vec![OutputPort {
+                name: "trig".into(),
+                channels: 1,
+                rate: vibelang_dsp::PortRate::Tr,
+            }],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("voice", "trig_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        let state_read = state.read().await;
+        let voice = state_read.voices.get(&voice_id).unwrap();
+        assert_eq!(voice.output_buses.len(), 1);
+        assert_eq!(voice.output_buses[0].0, "trig");
+
+        let bus = voice.output_buses[0].1.raw();
+        assert!(
+            bus >= 1000,
+            "tr port owns a control-bus id (got {})",
+            bus
+        );
+        assert_eq!(
+            state_read.control_buses.allocated_count(),
+            1,
+            "one tr port advances the control-bus counter by 1",
+        );
+        // Audio-bus counter is untouched — the test group hard-wires its
+        // audio_bus rather than allocating, and the tr port lives on the
+        // control-bus pool.
+        assert_eq!(state_read.audio_buses.allocated_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_voice_drop_frees_tr_port_control_bus() {
+        // After `delete`, the tr port's control bus returns to the pool,
+        // so the next control-bus alloc hands it back.
+        let (handler, _, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_multiport_synthdef(
+            &state,
+            "trig_synth",
+            vec![OutputPort {
+                name: "trig".into(),
+                channels: 1,
+                rate: vibelang_dsp::PortRate::Tr,
+            }],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("voice", "trig_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        let trig_bus = {
+            let s = state.read().await;
+            s.voices
+                .get(&voice_id)
+                .unwrap()
+                .output_buses
+                .iter()
+                .find(|(n, _)| n == "trig")
+                .map(|(_, b)| b.raw())
+                .unwrap()
+        };
+
+        handler.delete(voice_id).await.unwrap();
+
+        // Control-bus counter does NOT advance on free.
+        {
+            let s = state.read().await;
+            assert_eq!(s.control_buses.allocated_count(), 1);
+        }
+
+        // Next alloc reuses the freed id.
+        let reused = {
+            let mut s = state.write().await;
+            s.alloc_control_bus()
+        };
+        assert_eq!(
+            reused.raw(),
+            trig_bus,
+            "freed tr control-bus reused on next alloc"
+        );
+    }
+
     #[tokio::test]
     async fn test_alloc_free_alloc_reuse_for_both_pools() {
         // Direct hammer test for the State wrappers — alloc, free, alloc must

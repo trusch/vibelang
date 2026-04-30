@@ -547,6 +547,102 @@ pub fn create_port_to_group_link_2_bytes() -> Result<Vec<u8>, std::io::Error> {
     Ok(buf)
 }
 
+/// Create the `port_tr_to_param_link_1` synthdef bytes.
+///
+/// One-to-one trigger forwarding from a Tr-rate source bus to a kr destination
+/// bus, used by `RoutesHandler::finalize` (B2.c) to wire a voice's Tr port onto
+/// a target voice's param. SC has no separate `Out.tr` UGen — Tr ports already
+/// ride the `Out.kr` codegen path, so the source's trigger sits on a control
+/// bus as a kr-rate signal whose single-sample edges land on kr-block
+/// boundaries. `In.kr` reads it back unchanged; `Out.kr` forwards it,
+/// preserving the edge alignment without the scale/offset shaping that
+/// `param_kr_modulate_<n>` would impose. Equivalent to:
+///
+/// ```supercollider
+/// SynthDef("port_tr_to_param_link_1", { |in_bus=0, out_bus=0|
+///     Out.kr(out_bus, In.kr(in_bus, 1))
+/// })
+/// ```
+///
+/// Triggers route to params, not group/main buses, so there is intentionally
+/// no `port_tr_to_group_*` variant — group destinations are an audio-rate
+/// concept.
+pub fn create_port_tr_to_param_link_1_bytes() -> Result<Vec<u8>, std::io::Error> {
+    let mut buf = Vec::new();
+
+    // File header
+    buf.write_all(b"SCgf")?;
+    buf.write_all(&2i32.to_be_bytes())?; // version 2
+    buf.write_all(&1i16.to_be_bytes())?; // num synthdefs
+
+    // Name
+    let name = b"port_tr_to_param_link_1";
+    buf.push(name.len() as u8);
+    buf.write_all(name)?;
+
+    // No constants
+    buf.write_all(&0i32.to_be_bytes())?;
+
+    // Parameters: in_bus=0, out_bus=0
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+
+    buf.write_all(&2i32.to_be_bytes())?;
+    let in_bus_name = b"in_bus";
+    buf.push(in_bus_name.len() as u8);
+    buf.write_all(in_bus_name)?;
+    buf.write_all(&0i32.to_be_bytes())?;
+    let out_bus_name = b"out_bus";
+    buf.push(out_bus_name.len() as u8);
+    buf.write_all(out_bus_name)?;
+    buf.write_all(&1i32.to_be_bytes())?;
+
+    // UGens:
+    //   0: Control (kr) — 2 outputs: in_bus, out_bus
+    //   1: In.kr(in_bus, 1) — 1 mono kr output
+    //   2: Out.kr(out_bus, In[0])
+    buf.write_all(&3i32.to_be_bytes())?;
+
+    // UGen 0: Control
+    let control_name = b"Control";
+    buf.push(control_name.len() as u8);
+    buf.write_all(control_name)?;
+    buf.push(1); // control rate
+    buf.write_all(&0i32.to_be_bytes())?;
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    buf.push(1); // output 0 rate
+    buf.push(1); // output 1 rate
+
+    // UGen 1: In.kr(in_bus, 1) → mono kr (carries the trigger edge unchanged)
+    let in_name = b"In";
+    buf.push(in_name.len() as u8);
+    buf.write_all(in_name)?;
+    buf.push(1); // control rate
+    buf.write_all(&1i32.to_be_bytes())?; // 1 input (the bus)
+    buf.write_all(&1i32.to_be_bytes())?; // 1 output (mono kr)
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 0, 0)?; // Control[0] = in_bus
+    buf.push(1); // output rate
+
+    // UGen 2: Out.kr(out_bus, In[0])
+    let out_name = b"Out";
+    buf.push(out_name.len() as u8);
+    buf.write_all(out_name)?;
+    buf.push(1); // control rate
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&0i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 0, 1)?; // Control[1] = out_bus
+    write_ugen_input(&mut buf, 1, 0)?; // In[0]
+
+    // No variants
+    buf.write_all(&0i16.to_be_bytes())?;
+
+    Ok(buf)
+}
+
 /// Maximum number of source kr signals supported by `param_kr_modulate_<n>`.
 ///
 /// Sets the upper bound that [`create_param_kr_modulate_n_bytes`] will accept
@@ -803,6 +899,20 @@ mod tests {
         let bytes = create_port_to_group_link_2_bytes().unwrap();
         assert_eq!(&bytes[0..4], b"SCgf");
         let needle = b"port_to_group_link_2";
+        assert!(
+            bytes.windows(needle.len()).any(|w| w == needle),
+            "synthdef name not found in encoded bytes"
+        );
+        assert!(bytes.windows(6).any(|w| w == b"in_bus"));
+        assert!(bytes.windows(7).any(|w| w == b"out_bus"));
+    }
+
+    #[test]
+    fn test_create_port_tr_to_param_link_1_bytes() {
+        let bytes = create_port_tr_to_param_link_1_bytes().unwrap();
+        assert_eq!(&bytes[0..4], b"SCgf");
+        assert_eq!(&bytes[4..8], &2i32.to_be_bytes());
+        let needle = b"port_tr_to_param_link_1";
         assert!(
             bytes.windows(needle.len()).any(|w| w == needle),
             "synthdef name not found in encoded bytes"

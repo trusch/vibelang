@@ -75,6 +75,17 @@ pub fn generate_builtins() -> Vec<(String, Vec<u8>)> {
         tracing::warn!("Failed to create port_to_group_link_2 from vibelang-dsp");
     }
 
+    // Trigger forwarder for Tr ports — reads In.kr from a Tr-rate source bus
+    // and writes Out.kr to a kr destination bus, preserving sample-accurate
+    // edges without the scale/offset shaping that param_kr_modulate_<n> would
+    // apply. Triggers route to params only; group/main destinations are
+    // audio-rate.
+    if let Ok(bytes) = system_synthdefs::create_port_tr_to_param_link_1_bytes() {
+        all_defs.push(("port_tr_to_param_link_1".to_string(), bytes));
+    } else {
+        tracing::warn!("Failed to create port_tr_to_param_link_1 from vibelang-dsp");
+    }
+
     // Add per-target kr modulate-summer synthdefs (RoutesHandler::finalize_params
     // taps these for the BEND path: every `modulate_by` target gets a summer
     // that adds `baseline + Σ source kr buses`, even at N=1, so the user's

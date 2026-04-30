@@ -124,11 +124,13 @@ pub fn diff_port_set(old: &[OutputPort], new: &[OutputPort]) -> PortSetDiff {
 /// exists. `dropped_param_routes` lists source-side
 /// `(voice_id, port_name)` keys that were stripped from BOTH
 /// [`State::param_routes_set`] and [`State::param_routes_bend`] for the
-/// same reason — typically a kr port that was either removed outright or
-/// rate-flipped to ar. The caller is expected
-/// to log a warning naming each dropped route so the user can clean up their
-/// script; [`PortReconcile::rate_changes`] separately surfaces names whose
-/// rate flipped, which the reconcile already logs at warn level.
+/// same reason — typically a kr or tr port that was either removed outright
+/// or rate-flipped to ar. Tr ports share the kr control-bus path and host
+/// Param routes the same way (B2.b), so kr↔tr and kr/tr↔ar flips both
+/// surface here. The caller is expected to log a warning naming each
+/// dropped route so the user can clean up their script;
+/// [`PortReconcile::rate_changes`] separately surfaces names whose rate
+/// flipped, which the reconcile already logs at warn level.
 #[derive(Clone, Debug, Default)]
 pub struct PortReconcile {
     /// The computed port-set diff (added/removed/kept).
@@ -223,12 +225,12 @@ pub fn reconcile_voice_ports(
     //
     // Each removed entry carries the *old* rate, so we dispatch to the
     // matching allocator: ar ports return their chunk to the audio-bus free
-    // list with the original channel width, kr ports return a single ID to
-    // the control-bus free list. RouteMap entries belong to ar ports; kr
-    // ports' Param routes live in `state.param_routes_set` /
-    // `state.param_routes_bend` keyed at the source side, so we drain those
-    // too — otherwise a kr→ar flip would leave a dangling source key
-    // pointing at a freed control bus.
+    // list with the original channel width, kr/tr ports return a single ID
+    // to the control-bus free list (Tr ports share the kr storage path).
+    // RouteMap entries belong to ar ports; kr and tr ports' Param routes
+    // live in `state.param_routes_set` / `state.param_routes_bend` keyed at
+    // the source side, so we drain those too — otherwise a kr/tr→ar flip
+    // would leave a dangling source key pointing at a freed control bus.
     let mut dropped_routes = Vec::new();
     let mut dropped_param_routes = Vec::new();
     for port in &diff.removed {
@@ -256,7 +258,7 @@ pub fn reconcile_voice_ports(
         if routes.remove(&key).is_some() {
             dropped_routes.push(key.clone());
         }
-        if matches!(port.rate, PortRate::Kr) {
+        if matches!(port.rate, PortRate::Kr | PortRate::Tr) {
             let mut hit = false;
             if state.param_routes_set.remove(&key).is_some() {
                 hit = true;
@@ -365,6 +367,14 @@ mod tests {
             name: name.to_string(),
             channels,
             rate: PortRate::Kr,
+        }
+    }
+
+    fn tr_port(name: &str, channels: u8) -> OutputPort {
+        OutputPort {
+            name: name.to_string(),
+            channels,
+            rate: PortRate::Tr,
         }
     }
 
@@ -958,6 +968,265 @@ mod tests {
             .find(|p| p.name == "env")
             .expect("env still registered");
         assert_eq!(env_in_registry.rate, PortRate::Ar);
+    }
+
+    // -------------------------------------------------------------------
+    // B2.b — Tr port reconcile (rate change involving Tr is remove + add)
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn diff_kr_to_tr_surfaces_as_remove_plus_add() {
+        // Same shape as the kr↔ar diff, but with a tr leg. Tr is a kr-rate
+        // signal semantically, but downstream routing treats it as a distinct
+        // destination shape (no scale/offset shaping), so the bus gets
+        // re-allocated and dependent routes drop with a warning.
+        let old = vec![kr_port("env", 1)];
+        let new = vec![tr_port("env", 1)];
+        let d = diff_port_set(&old, &new);
+        assert_eq!(d.added, vec![tr_port("env", 1)]);
+        assert_eq!(d.removed, vec![kr_port("env", 1)]);
+        assert!(d.kept.is_empty());
+        assert_eq!(
+            d.rate_changes(),
+            vec![("env".to_string(), PortRate::Kr, PortRate::Tr)]
+        );
+    }
+
+    #[test]
+    fn diff_ar_to_tr_surfaces_as_remove_plus_add() {
+        let old = vec![port("env", 1)];
+        let new = vec![tr_port("env", 1)];
+        let d = diff_port_set(&old, &new);
+        assert_eq!(d.added, vec![tr_port("env", 1)]);
+        assert_eq!(d.removed, vec![port("env", 1)]);
+        assert_eq!(
+            d.rate_changes(),
+            vec![("env".to_string(), PortRate::Ar, PortRate::Tr)]
+        );
+    }
+
+    #[test]
+    fn reconcile_voice_with_one_tr_port_owns_one_control_bus() {
+        // Tr ports share the kr control-bus path. A 1-port tr synthdef must
+        // carve exactly one ID from the control-bus pool (id ≥ 1000) and
+        // leave the audio-bus counter untouched.
+        let mut state = State::default();
+        let ports = vec![tr_port("trig", 1)];
+        let (voice_id, _, _) = setup_voice_with_ports(&mut state, "vs", &ports);
+
+        let buses = &state.voices[&voice_id].output_buses;
+        assert_eq!(buses.len(), 1, "one tr port → one output_bus entry");
+        assert_eq!(buses[0].0, "trig");
+        assert!(
+            buses[0].1.raw() >= 1000,
+            "tr port must own a control-bus id (got {})",
+            buses[0].1.raw(),
+        );
+        assert_eq!(
+            state.audio_buses.allocated_count(),
+            2,
+            "tr port does not advance the audio-bus counter past the group's stereo pair"
+        );
+        assert_eq!(
+            state.control_buses.allocated_count(),
+            1,
+            "tr port advances the control-bus counter by 1"
+        );
+    }
+
+    #[test]
+    fn reconcile_rate_change_kr_to_tr_drops_param_route_and_swaps_bus() {
+        // Kr → Tr is structurally remove + add, even though both ride the
+        // control-bus path: the source port descriptor flips from kr to tr,
+        // dependent routes drop with a warning (B2.c will re-route via
+        // port_tr_to_param_link_1 once the user wires `.to_trigger`), and
+        // the source bus gets a fresh control-bus id.
+        let mut state = State::default();
+        let old = vec![
+            port("out", 2),
+            kr_port("env", 1),
+        ];
+        let (voice_id, group_id, _) = setup_voice_with_ports(&mut state, "vs", &old);
+
+        let env_old_bus = state.voices[&voice_id]
+            .output_buses
+            .iter()
+            .find(|(n, _)| n == "env")
+            .map(|(_, b)| *b)
+            .unwrap();
+
+        let mut routes: RouteMap = HashMap::new();
+        routes.insert((voice_id, "out".into()), RouteDest::Group(group_id));
+        // Source-side Param route on the kr env port — must drain on flip.
+        let target_voice = VoiceId::new(42);
+        state.param_routes_set.insert(
+            (voice_id, "env".to_string()),
+            vec![(target_voice, "cutoff".to_string())],
+        );
+
+        let new = vec![
+            port("out", 2),
+            tr_port("env", 1),
+        ];
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+
+        assert_eq!(outcome.diff.removed, vec![kr_port("env", 1)]);
+        assert_eq!(outcome.diff.added, vec![tr_port("env", 1)]);
+        assert_eq!(
+            outcome.rate_changes,
+            vec![("env".to_string(), PortRate::Kr, PortRate::Tr)]
+        );
+
+        // Tr ports also host source-side Param routes (B2.b), so the
+        // teardown drained the kr→tr source key from the SET map.
+        assert_eq!(
+            outcome.dropped_param_routes,
+            vec![(voice_id, "env".to_string())]
+        );
+        assert!(
+            !state
+                .param_routes_set
+                .contains_key(&(voice_id, "env".to_string())),
+            "kr→tr flip must drain the source-side Param route entry"
+        );
+        // Sibling Group route untouched.
+        assert_eq!(
+            routes.get(&(voice_id, "out".to_string())),
+            Some(&RouteDest::Group(group_id))
+        );
+        // Tr ports do not get RouteMap default-Muted entries (RouteMap is
+        // ar-only); the new tr port simply has no routing until the user
+        // installs one via `.to_trigger` (B2.c).
+        assert!(!routes.contains_key(&(voice_id, "env".to_string())));
+        assert!(outcome.default_muted.is_empty());
+
+        // env now holds a control-bus id. Kr and Tr share the same pool, so
+        // the same id may come back from the free-list during the same
+        // reconcile pass — what matters is that the bus is still in the
+        // control range and the registry rate flipped to Tr.
+        let env_new_bus = state.voices[&voice_id]
+            .output_buses
+            .iter()
+            .find(|(n, _)| n == "env")
+            .map(|(_, b)| *b)
+            .expect("env still owns a bus after rate flip");
+        assert!(
+            env_new_bus.raw() >= 1000,
+            "tr env must hold a control-bus id (got {})",
+            env_new_bus.raw(),
+        );
+        // Bus counter does not advance — the freed kr id was reused.
+        assert_eq!(
+            state.control_buses.allocated_count(),
+            1,
+            "freed kr control-bus reused by the new tr port (counter unchanged)",
+        );
+        let _ = env_old_bus; // referenced for future-proof readers
+
+        let registered = state.synthdef_outputs(&"vs".to_string());
+        let env_in_registry = registered
+            .iter()
+            .find(|p| p.name == "env")
+            .expect("env still registered");
+        assert_eq!(env_in_registry.rate, PortRate::Tr);
+    }
+
+    #[test]
+    fn reconcile_rate_change_ar_to_tr_drops_route_and_swaps_to_control_bus() {
+        // Ar → Tr crosses the bus-allocator boundary: the audio chunk goes
+        // back to the audio-bus free list, a fresh control-bus is carved,
+        // and the existing Group route on the ar port drops with a warning.
+        let mut state = State::default();
+        let old = vec![port("env", 1), port("out", 2)];
+        let (voice_id, group_id, _) = setup_voice_with_ports(&mut state, "vs", &old);
+
+        let env_old_bus = state.voices[&voice_id]
+            .output_buses
+            .iter()
+            .find(|(n, _)| n == "env")
+            .map(|(_, b)| *b)
+            .unwrap();
+
+        let mut routes: RouteMap = HashMap::new();
+        routes.insert((voice_id, "env".into()), RouteDest::Group(group_id));
+        routes.insert((voice_id, "out".into()), RouteDest::Group(group_id));
+
+        let new = vec![tr_port("env", 1), port("out", 2)];
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+
+        assert_eq!(outcome.diff.removed, vec![port("env", 1)]);
+        assert_eq!(outcome.diff.added, vec![tr_port("env", 1)]);
+        assert_eq!(
+            outcome.rate_changes,
+            vec![("env".to_string(), PortRate::Ar, PortRate::Tr)]
+        );
+
+        // The ar Group route on env got dropped; sibling out route survives.
+        assert_eq!(
+            outcome.dropped_routes,
+            vec![(voice_id, "env".to_string())]
+        );
+        assert!(!routes.contains_key(&(voice_id, "env".to_string())));
+        assert_eq!(
+            routes.get(&(voice_id, "out".to_string())),
+            Some(&RouteDest::Group(group_id))
+        );
+
+        // env now holds a control-bus id.
+        let env_new_bus = state.voices[&voice_id]
+            .output_buses
+            .iter()
+            .find(|(n, _)| n == "env")
+            .map(|(_, b)| *b)
+            .expect("env still owns a bus after rate flip");
+        assert_ne!(env_new_bus, env_old_bus);
+        assert!(
+            env_new_bus.raw() >= 1000,
+            "tr env must hold a control-bus id (got {})",
+            env_new_bus.raw(),
+        );
+
+        // Old audio chunk is back in the audio-bus free list — next mono
+        // alloc returns it.
+        let reused = state.alloc_audio_bus(1);
+        assert_eq!(reused, env_old_bus, "freed audio chunk reused");
+    }
+
+    #[test]
+    fn reconcile_voice_drop_frees_tr_port_control_bus() {
+        // The setup_voice_with_ports helper-bound voice owns a control bus
+        // for its tr port; running the standard remove-port path
+        // (replaying the synthdef without that port) should return the
+        // control-bus id to the free-list pool.
+        let mut state = State::default();
+        let old = vec![tr_port("trig", 1), port("out", 2)];
+        let (voice_id, _, _) = setup_voice_with_ports(&mut state, "vs", &old);
+
+        let trig_bus = state.voices[&voice_id]
+            .output_buses
+            .iter()
+            .find(|(n, _)| n == "trig")
+            .map(|(_, b)| *b)
+            .unwrap();
+        assert!(trig_bus.raw() >= 1000);
+
+        let mut routes: RouteMap = HashMap::new();
+        let new = vec![port("out", 2)];
+        let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
+
+        assert_eq!(outcome.diff.removed, vec![tr_port("trig", 1)]);
+        assert!(!state.voices[&voice_id]
+            .output_buses
+            .iter()
+            .any(|(n, _)| n == "trig"));
+
+        // Bus back in the control-bus pool — next alloc reuses it.
+        let reused = state.alloc_control_bus();
+        assert_eq!(
+            reused.raw(),
+            trig_bus.raw(),
+            "freed tr control-bus must be reused on next alloc",
+        );
     }
 
     #[test]
