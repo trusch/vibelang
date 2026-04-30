@@ -11,7 +11,7 @@
 //! [`ScriptState::set_route`](vibelang_core::reload::ScriptState::set_route)).
 //! Additive fan-out is deferred to a later story.
 
-use rhai::{CustomType, Engine, EvalAltResult, Position, TypeBuilder};
+use rhai::{CustomType, Dynamic, Engine, EvalAltResult, Position, TypeBuilder};
 use vibelang_core::handlers::RouteDest;
 use vibelang_core::reload::ParamRouteConflict;
 use vibelang_core::types::VoiceId;
@@ -34,6 +34,11 @@ pub struct RouteHandle {
     /// Resolved port name — already validated against the synthdef's
     /// declared `OutputPort` set when the handle was created.
     port_name: String,
+    /// `(target_voice_id, target_param_name)` of the most-recently-installed
+    /// `.to_param(...)` call on this handle. Read by the chained
+    /// `.scale(...)` / `.offset(...)` modifiers to know which `(source, target)`
+    /// shaping slot to update. `None` until the first successful `.to_param`.
+    last_param_target: Option<(VoiceId, String)>,
 }
 
 impl RouteHandle {
@@ -41,6 +46,7 @@ impl RouteHandle {
         Self {
             voice_id,
             port_name,
+            last_param_target: None,
         }
     }
 
@@ -111,7 +117,7 @@ impl RouteHandle {
     /// which feeds [`RoutesHandler::finalize_params`](vibelang_core::handlers::RoutesHandler::finalize_params)'s
     /// `/n_map` pipeline at reload time.
     pub fn to_param(
-        self,
+        mut self,
         target: Voice,
         param_name: String,
     ) -> Result<Self, Box<EvalAltResult>> {
@@ -164,6 +170,54 @@ impl RouteHandle {
         if let Some(c) = conflict {
             return Err(param_route_conflict_error("to_param", &c));
         }
+        self.last_param_target = Some((target_id, param_name));
+        Ok(self)
+    }
+
+    /// Set the per-source `scale` factor on the most-recently-installed
+    /// `.to_param(...)` route on this handle. Default is `1.0`. Multi-call:
+    /// last `.scale()` wins (offset is left untouched).
+    ///
+    /// Errors if called before any `.to_param(...)` install — chained order
+    /// must be `.to_param(...).scale(...)`, not the other way around.
+    pub fn scale(self, scale: f64) -> Result<Self, Box<EvalAltResult>> {
+        let (target_voice, target_param) = self
+            .last_param_target
+            .clone()
+            .ok_or_else(|| no_prior_param_route_error("scale", "RouteHandle"))?;
+        let scale = scale as f32;
+        context::with_state(|state| {
+            state.set_param_route_set_scale(
+                self.voice_id,
+                self.port_name.clone(),
+                target_voice,
+                target_param,
+                scale,
+            );
+        });
+        Ok(self)
+    }
+
+    /// Set the per-source `offset` factor on the most-recently-installed
+    /// `.to_param(...)` route. Default is `0.0`. Multi-call: last `.offset()`
+    /// wins (scale is left untouched).
+    ///
+    /// Errors if called before any `.to_param(...)` install.
+    pub fn offset(self, offset: f64) -> Result<Self, Box<EvalAltResult>> {
+        let (target_voice, target_param) = self
+            .last_param_target
+            .clone()
+            .ok_or_else(|| no_prior_param_route_error("offset", "RouteHandle"))?;
+        let offset = offset as f32;
+        context::with_state(|state| {
+            state.set_param_route_set_offset(
+                self.voice_id,
+                self.port_name.clone(),
+                target_voice,
+                target_param,
+                offset,
+            );
+        });
         Ok(self)
     }
 
@@ -313,6 +367,11 @@ pub struct ParamHandle {
     target_voice_name: String,
     target_synth: String,
     param_name: String,
+    /// `(source_voice_id, source_port_name)` of the most-recently-installed
+    /// `.modulate_by(...)` call on this handle. Read by chained `.scale(...)`
+    /// / `.offset(...)` modifiers to know which `(source, target)` shaping
+    /// slot to update. `None` until the first successful `.modulate_by`.
+    last_modulate_source: Option<(VoiceId, String)>,
 }
 
 impl ParamHandle {
@@ -327,6 +386,7 @@ impl ParamHandle {
             target_voice_name,
             target_synth,
             param_name,
+            last_modulate_source: None,
         }
     }
 
@@ -346,7 +406,7 @@ impl ParamHandle {
     /// [`ScriptState::param_routes`] — additive fan-in is recorded; runtime
     /// last-write-wins resolution is the v2 contract.
     pub fn modulate_by(
-        self,
+        mut self,
         source: Voice,
         port: String,
     ) -> Result<Self, Box<EvalAltResult>> {
@@ -395,8 +455,75 @@ impl ParamHandle {
         if let Some(c) = conflict {
             return Err(param_route_conflict_error("modulate_by", &c));
         }
+        self.last_modulate_source = Some((source_id, port));
         Ok(self)
     }
+
+    /// Set the per-source `scale` factor on the most-recently-installed
+    /// `.modulate_by(...)` route on this handle. Default is `1.0`. Multi-call:
+    /// last `.scale()` wins (offset is left untouched).
+    ///
+    /// Errors if called before any `.modulate_by(...)` install — chained
+    /// order must be `.modulate_by(...).scale(...)`.
+    pub fn scale(self, scale: f64) -> Result<Self, Box<EvalAltResult>> {
+        let (source_voice, source_port) = self
+            .last_modulate_source
+            .clone()
+            .ok_or_else(|| no_prior_param_route_error("scale", "ParamHandle"))?;
+        let scale = scale as f32;
+        context::with_state(|state| {
+            state.set_param_route_bend_scale(
+                source_voice,
+                source_port,
+                self.target_voice_id,
+                self.param_name.clone(),
+                scale,
+            );
+        });
+        Ok(self)
+    }
+
+    /// Set the per-source `offset` factor on the most-recently-installed
+    /// `.modulate_by(...)` route. Default is `0.0`. Multi-call: last
+    /// `.offset()` wins (scale is left untouched).
+    ///
+    /// Errors if called before any `.modulate_by(...)` install.
+    pub fn offset(self, offset: f64) -> Result<Self, Box<EvalAltResult>> {
+        let (source_voice, source_port) = self
+            .last_modulate_source
+            .clone()
+            .ok_or_else(|| no_prior_param_route_error("offset", "ParamHandle"))?;
+        let offset = offset as f32;
+        context::with_state(|state| {
+            state.set_param_route_bend_offset(
+                source_voice,
+                source_port,
+                self.target_voice_id,
+                self.param_name.clone(),
+                offset,
+            );
+        });
+        Ok(self)
+    }
+}
+
+fn no_prior_param_route_error(
+    verb: &str,
+    handle_kind: &str,
+) -> Box<EvalAltResult> {
+    let install_verb = match handle_kind {
+        "ParamHandle" => ".modulate_by(source, \"port\")",
+        _ => ".to_param(target, \"param\")",
+    };
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "{}() called on a {} with no prior {} install — chain it after \
+             the route is committed: e.g. `{}.{}(value)`",
+            verb, handle_kind, install_verb, install_verb, verb,
+        )
+        .into(),
+        Position::NONE,
+    ))
 }
 
 fn modulate_by_ar_rate_error(
@@ -538,6 +665,8 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("mute", RouteHandle::mute);
     engine.register_fn("to_current_group", RouteHandle::to_current_group);
     engine.register_fn("to_param", RouteHandle::to_param);
+    engine.register_fn("scale", RouteHandle::scale);
+    engine.register_fn("offset", RouteHandle::offset);
 
     engine.build_type::<MultiRouteHandle>();
     engine.register_fn("to", MultiRouteHandle::to);
@@ -547,6 +676,8 @@ pub fn register(engine: &mut Engine) {
 
     engine.build_type::<ParamHandle>();
     engine.register_fn("modulate_by", ParamHandle::modulate_by);
+    engine.register_fn("scale", ParamHandle::scale);
+    engine.register_fn("offset", ParamHandle::offset);
 }
 
 #[cfg(test)]
@@ -1126,6 +1257,277 @@ mod tests {
             assert!(
                 msg.contains("to_param") && msg.contains("modulate_by"),
                 "msg should suggest using modulate_by, got: {}",
+                msg,
+            );
+        });
+    }
+
+    // ==================== .scale() / .offset() shaping tests ====================
+
+    #[test]
+    fn to_param_scale_round_trips_via_set_shaping_map() {
+        with_test_context(|| {
+            let src_synth = "v3_a1b_to_param_scale_src";
+            let tgt_synth = "v3_a1b_to_param_scale_tgt";
+            declare_kr_synthdef(src_synth, &["env"]);
+            declare_synthdef_with_params(tgt_synth, &["cutoff"]);
+
+            let mut src = make_voice("vox_src_scale_rt").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_scale_rt").synth(tgt_synth.to_string());
+
+            src.output_by_name("env")
+                .expect("port resolves")
+                .to_param(tgt, "cutoff".to_string())
+                .expect("install")
+                .scale(0.5)
+                .expect("scale install");
+
+            let src_id = context::get_or_create_voice_id("vox_src_scale_rt");
+            let tgt_id = context::get_or_create_voice_id("vox_tgt_scale_rt");
+            context::with_state(|state| {
+                let key = (src_id, "env".to_string(), tgt_id, "cutoff".to_string());
+                let (scale, offset) = state
+                    .param_route_set_shaping
+                    .get(&key)
+                    .copied()
+                    .expect("shaping entry installed");
+                assert_eq!(scale, 0.5);
+                assert_eq!(offset, 0.0, "offset must remain at default");
+                // BEND map must not be touched.
+                assert!(state.param_route_bend_shaping.get(&key).is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn modulate_by_offset_round_trips_via_bend_shaping_map() {
+        with_test_context(|| {
+            let src_synth = "v3_a1b_modulate_by_offset_src";
+            let tgt_synth = "v3_a1b_modulate_by_offset_tgt";
+            declare_kr_synthdef(src_synth, &["out"]);
+            declare_synthdef_with_params(tgt_synth, &["freq"]);
+
+            let src = make_voice("vox_src_offset_rt").synth(src_synth.to_string());
+            let mut tgt = make_voice("vox_tgt_offset_rt").synth(tgt_synth.to_string());
+
+            tgt.param_handle("freq")
+                .modulate_by(src, "out".to_string())
+                .expect("install")
+                .offset(-0.25)
+                .expect("offset install");
+
+            let src_id = context::get_or_create_voice_id("vox_src_offset_rt");
+            let tgt_id = context::get_or_create_voice_id("vox_tgt_offset_rt");
+            context::with_state(|state| {
+                let key = (src_id, "out".to_string(), tgt_id, "freq".to_string());
+                let (scale, offset) = state
+                    .param_route_bend_shaping
+                    .get(&key)
+                    .copied()
+                    .expect("shaping entry installed");
+                assert_eq!(scale, 1.0, "scale must remain at default");
+                assert_eq!(offset, -0.25);
+                // SET map must not be touched.
+                assert!(state.param_route_set_shaping.get(&key).is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn chained_scale_then_offset_round_trips_both() {
+        with_test_context(|| {
+            let src_synth = "v3_a1b_chain_scale_offset_src";
+            let tgt_synth = "v3_a1b_chain_scale_offset_tgt";
+            declare_kr_synthdef(src_synth, &["env"]);
+            declare_synthdef_with_params(tgt_synth, &["cutoff"]);
+
+            let mut src = make_voice("vox_src_chain_so").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_chain_so").synth(tgt_synth.to_string());
+
+            src.output_by_name("env")
+                .expect("port resolves")
+                .to_param(tgt, "cutoff".to_string())
+                .expect("install")
+                .scale(2.0)
+                .expect("scale install")
+                .offset(0.125)
+                .expect("offset install");
+
+            let src_id = context::get_or_create_voice_id("vox_src_chain_so");
+            let tgt_id = context::get_or_create_voice_id("vox_tgt_chain_so");
+            context::with_state(|state| {
+                let key = (src_id, "env".to_string(), tgt_id, "cutoff".to_string());
+                let (scale, offset) = state
+                    .param_route_set_shaping
+                    .get(&key)
+                    .copied()
+                    .expect("shaping entry installed");
+                assert_eq!(scale, 2.0);
+                assert_eq!(offset, 0.125);
+            });
+        });
+    }
+
+    #[test]
+    fn to_param_without_scale_or_offset_uses_defaults() {
+        with_test_context(|| {
+            let src_synth = "v3_a1b_default_src";
+            let tgt_synth = "v3_a1b_default_tgt";
+            declare_kr_synthdef(src_synth, &["env"]);
+            declare_synthdef_with_params(tgt_synth, &["cutoff"]);
+
+            let mut src = make_voice("vox_src_default").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_default").synth(tgt_synth.to_string());
+
+            src.output_by_name("env")
+                .expect("port resolves")
+                .to_param(tgt, "cutoff".to_string())
+                .expect("install");
+
+            let src_id = context::get_or_create_voice_id("vox_src_default");
+            let tgt_id = context::get_or_create_voice_id("vox_tgt_default");
+            context::with_state(|state| {
+                let key = (src_id, "env".to_string(), tgt_id, "cutoff".to_string());
+                let (scale, offset) = state
+                    .param_route_set_shaping
+                    .get(&key)
+                    .copied()
+                    .expect("shaping entry seeded by add_param_route_set");
+                assert_eq!(scale, 1.0);
+                assert_eq!(offset, 0.0);
+            });
+        });
+    }
+
+    #[test]
+    fn modulate_by_without_scale_or_offset_uses_defaults() {
+        with_test_context(|| {
+            let src_synth = "v3_a1b_modby_default_src";
+            let tgt_synth = "v3_a1b_modby_default_tgt";
+            declare_kr_synthdef(src_synth, &["out"]);
+            declare_synthdef_with_params(tgt_synth, &["freq"]);
+
+            let src = make_voice("vox_src_modby_default").synth(src_synth.to_string());
+            let mut tgt = make_voice("vox_tgt_modby_default").synth(tgt_synth.to_string());
+
+            tgt.param_handle("freq")
+                .modulate_by(src, "out".to_string())
+                .expect("install");
+
+            let src_id = context::get_or_create_voice_id("vox_src_modby_default");
+            let tgt_id = context::get_or_create_voice_id("vox_tgt_modby_default");
+            context::with_state(|state| {
+                let key = (src_id, "out".to_string(), tgt_id, "freq".to_string());
+                let (scale, offset) = state
+                    .param_route_bend_shaping
+                    .get(&key)
+                    .copied()
+                    .expect("shaping entry seeded by add_param_route_bend");
+                assert_eq!(scale, 1.0);
+                assert_eq!(offset, 0.0);
+            });
+        });
+    }
+
+    #[test]
+    fn last_scale_call_wins_on_repeated_invocations() {
+        with_test_context(|| {
+            let src_synth = "v3_a1b_last_wins_src";
+            let tgt_synth = "v3_a1b_last_wins_tgt";
+            declare_kr_synthdef(src_synth, &["env"]);
+            declare_synthdef_with_params(tgt_synth, &["cutoff"]);
+
+            let mut src = make_voice("vox_src_lw").synth(src_synth.to_string());
+            let tgt = make_voice("vox_tgt_lw").synth(tgt_synth.to_string());
+
+            src.output_by_name("env")
+                .expect("port resolves")
+                .to_param(tgt, "cutoff".to_string())
+                .expect("install")
+                .scale(0.25)
+                .expect("first scale")
+                .scale(0.75)
+                .expect("second scale — must overwrite the first");
+
+            let src_id = context::get_or_create_voice_id("vox_src_lw");
+            let tgt_id = context::get_or_create_voice_id("vox_tgt_lw");
+            context::with_state(|state| {
+                let key = (src_id, "env".to_string(), tgt_id, "cutoff".to_string());
+                let (scale, offset) = state
+                    .param_route_set_shaping
+                    .get(&key)
+                    .copied()
+                    .expect("shaping entry");
+                assert_eq!(scale, 0.75, "second .scale() must win");
+                assert_eq!(offset, 0.0);
+            });
+        });
+    }
+
+    #[test]
+    fn scale_per_target_when_chained_to_param_calls_share_a_handle() {
+        // Subtle: a single RouteHandle returned by .output(...) keeps
+        // `last_param_target` tracking the most-recent .to_param(...). Chained
+        // .to_param().scale().to_param().scale() applies each scale to its
+        // respective target without bleed-through.
+        with_test_context(|| {
+            let src_synth = "v3_a1b_per_target_src";
+            let tgt_synth_a = "v3_a1b_per_target_tgt_a";
+            let tgt_synth_b = "v3_a1b_per_target_tgt_b";
+            declare_kr_synthdef(src_synth, &["env"]);
+            declare_synthdef_with_params(tgt_synth_a, &["cutoff"]);
+            declare_synthdef_with_params(tgt_synth_b, &["pitch"]);
+
+            let mut src = make_voice("vox_src_per_tgt").synth(src_synth.to_string());
+            let tgt_a = make_voice("vox_tgt_per_tgt_a").synth(tgt_synth_a.to_string());
+            let tgt_b = make_voice("vox_tgt_per_tgt_b").synth(tgt_synth_b.to_string());
+
+            src.output_by_name("env")
+                .expect("port resolves")
+                .to_param(tgt_a, "cutoff".to_string())
+                .expect("install A")
+                .scale(0.5)
+                .expect("scale A")
+                .to_param(tgt_b, "pitch".to_string())
+                .expect("install B")
+                .scale(2.0)
+                .expect("scale B");
+
+            let src_id = context::get_or_create_voice_id("vox_src_per_tgt");
+            let tgt_a_id = context::get_or_create_voice_id("vox_tgt_per_tgt_a");
+            let tgt_b_id = context::get_or_create_voice_id("vox_tgt_per_tgt_b");
+            context::with_state(|state| {
+                let key_a =
+                    (src_id, "env".to_string(), tgt_a_id, "cutoff".to_string());
+                let key_b = (src_id, "env".to_string(), tgt_b_id, "pitch".to_string());
+                assert_eq!(
+                    state.param_route_set_shaping.get(&key_a).copied(),
+                    Some((0.5, 0.0)),
+                );
+                assert_eq!(
+                    state.param_route_set_shaping.get(&key_b).copied(),
+                    Some((2.0, 0.0)),
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn scale_before_to_param_errors_with_clean_message() {
+        with_test_context(|| {
+            let src_synth = "v3_a1b_no_prior_src";
+            declare_kr_synthdef(src_synth, &["env"]);
+
+            let mut src = make_voice("vox_src_no_prior").synth(src_synth.to_string());
+            let err = src
+                .output_by_name("env")
+                .expect("port resolves")
+                .scale(0.5)
+                .expect_err("scale before .to_param must error");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("scale") && msg.contains("to_param"),
+                "msg should mention both scale and to_param, got: {}",
                 msg,
             );
         });

@@ -498,6 +498,21 @@ pub struct ScriptState {
     /// [`vibelang_dsp::system_synthdefs::PARAM_KR_MODULATE_MAX`].
     pub param_routes_bend: ParamRouteMap,
 
+    /// Per-route affine shaping for SET routes, populated by chained
+    /// `.scale(s)` / `.offset(o)` modifiers in the Rhai surface.
+    ///
+    /// Keyed by the full quad `(source_voice, source_port, target_voice,
+    /// target_param)` → `(scale, offset)`. Defaults to `(1.0, 0.0)` when an
+    /// entry is created (the summer identity); `.scale(s)` overwrites the
+    /// `scale` slot, `.offset(o)` overwrites the `offset` slot. The runtime
+    /// reads these in `RoutesHandler::finalize_params` to seed each
+    /// `param_kr_modulate_<n>`'s `scale_<i>` / `offset_<i>` per source slot.
+    pub param_route_set_shaping: HashMap<(VoiceId, String, VoiceId, String), (f32, f32)>,
+
+    /// Per-route affine shaping for BEND routes; same shape and defaults as
+    /// [`Self::param_route_set_shaping`].
+    pub param_route_bend_shaping: HashMap<(VoiceId, String, VoiceId, String), (f32, f32)>,
+
     /// Recordings to start (native only).
     #[cfg(not(target_arch = "wasm32"))]
     pub recordings: HashMap<RecordingId, RecordingConfig>,
@@ -782,11 +797,14 @@ impl ScriptState {
 
         let entry = self
             .param_routes_set
-            .entry((source_voice, source_port))
+            .entry((source_voice, source_port.clone()))
             .or_default();
         if !entry.iter().any(|t| t == &target_pair) {
             entry.push(target_pair);
         }
+        self.param_route_set_shaping
+            .entry((source_voice, source_port, target_voice, target_param))
+            .or_insert((1.0, 0.0));
         Ok(())
     }
 
@@ -817,12 +835,112 @@ impl ScriptState {
 
         let entry = self
             .param_routes_bend
-            .entry((source_voice, source_port))
+            .entry((source_voice, source_port.clone()))
             .or_default();
         if !entry.iter().any(|t| t == &target_pair) {
             entry.push(target_pair);
         }
+        self.param_route_bend_shaping
+            .entry((source_voice, source_port, target_voice, target_param))
+            .or_insert((1.0, 0.0));
         Ok(())
+    }
+
+    /// Update the per-source `scale` shaping factor on a SET route.
+    ///
+    /// Lazily creates the entry at the default `(1.0, 0.0)` if not already
+    /// present (the route should have been installed via
+    /// [`Self::add_param_route_set`] first; bare callers still get sensible
+    /// defaults). Multi-call: last `.scale()` wins — this overwrites the
+    /// scale slot leaving offset untouched.
+    pub fn set_param_route_set_scale(
+        &mut self,
+        source_voice: VoiceId,
+        source_port: impl Into<String>,
+        target_voice: VoiceId,
+        target_param: impl Into<String>,
+        scale: f32,
+    ) {
+        let key = (
+            source_voice,
+            source_port.into(),
+            target_voice,
+            target_param.into(),
+        );
+        let entry = self
+            .param_route_set_shaping
+            .entry(key)
+            .or_insert((1.0, 0.0));
+        entry.0 = scale;
+    }
+
+    /// Update the per-source `offset` shaping factor on a SET route. See
+    /// [`Self::set_param_route_set_scale`] for semantics.
+    pub fn set_param_route_set_offset(
+        &mut self,
+        source_voice: VoiceId,
+        source_port: impl Into<String>,
+        target_voice: VoiceId,
+        target_param: impl Into<String>,
+        offset: f32,
+    ) {
+        let key = (
+            source_voice,
+            source_port.into(),
+            target_voice,
+            target_param.into(),
+        );
+        let entry = self
+            .param_route_set_shaping
+            .entry(key)
+            .or_insert((1.0, 0.0));
+        entry.1 = offset;
+    }
+
+    /// Update the per-source `scale` shaping factor on a BEND route. See
+    /// [`Self::set_param_route_set_scale`] for semantics.
+    pub fn set_param_route_bend_scale(
+        &mut self,
+        source_voice: VoiceId,
+        source_port: impl Into<String>,
+        target_voice: VoiceId,
+        target_param: impl Into<String>,
+        scale: f32,
+    ) {
+        let key = (
+            source_voice,
+            source_port.into(),
+            target_voice,
+            target_param.into(),
+        );
+        let entry = self
+            .param_route_bend_shaping
+            .entry(key)
+            .or_insert((1.0, 0.0));
+        entry.0 = scale;
+    }
+
+    /// Update the per-source `offset` shaping factor on a BEND route. See
+    /// [`Self::set_param_route_set_scale`] for semantics.
+    pub fn set_param_route_bend_offset(
+        &mut self,
+        source_voice: VoiceId,
+        source_port: impl Into<String>,
+        target_voice: VoiceId,
+        target_param: impl Into<String>,
+        offset: f32,
+    ) {
+        let key = (
+            source_voice,
+            source_port.into(),
+            target_voice,
+            target_param.into(),
+        );
+        let entry = self
+            .param_route_bend_shaping
+            .entry(key)
+            .or_insert((1.0, 0.0));
+        entry.1 = offset;
     }
 }
 
