@@ -676,16 +676,14 @@ impl Voice {
 
     /// Run the voice continuously (for line-in, drones, etc.).
     ///
-    /// This syncs the voice config and marks it for auto-triggering.
-    /// The voice will be triggered automatically on startup and after
-    /// reloads, producing continuous sound (e.g., for line-in monitors,
-    /// drones, or other always-on sounds).
-    pub fn run(mut self) -> Self {
-        self.resolve_name();
-        self.sync_to_state();
-        self.warn_if_no_sound_source();
-        context::mark_voice_for_running(&self.name);
-        self
+    /// Equivalent to `.apply()` followed by marking the voice as
+    /// auto-triggering: the voice will be triggered automatically on
+    /// startup and after reloads, producing continuous sound (e.g., for
+    /// line-in monitors, drones, or other always-on sounds).
+    pub fn run(self) -> Self {
+        let me = self.apply();
+        context::mark_voice_for_running(&me.name);
+        me
     }
 }
 
@@ -1034,6 +1032,31 @@ mod tests {
 
         assert!(v.is_muted());
         assert!(v.is_soloed());
+    }
+
+    // ==================== Terminal Verb Tests ====================
+
+    #[test]
+    fn test_voice_run_registers_and_marks_for_running() {
+        // `.run()` alone (no `.apply()` chained before it) must register
+        // the voice in state AND insert its id into running_voices.
+        with_test_context(|| {
+            let _ = test_voice("run_only")
+                .synth("test_synth".to_string())
+                .run();
+
+            let voice_id = context::get_or_create_voice_id("run_only");
+            context::with_state(|state| {
+                assert!(
+                    state.voices.contains_key(&voice_id),
+                    ".run() must register the voice in state.voices",
+                );
+                assert!(
+                    state.running_voices.contains(&voice_id),
+                    ".run() must mark the voice for auto-triggering",
+                );
+            });
+        });
     }
 
     // ==================== Default Values Tests ====================
