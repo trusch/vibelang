@@ -1,14 +1,14 @@
-// kind=cv | category=envelope | flavor=maths | range=-10..+10V | params=rate,trig_in,rise_ms,fall_ms,peak_v,bipolar
+// kind=cv | category=envelope | flavor=maths | range=-10..+10V | params=rate,gate,rise_ms,fall_ms,peak_v,bipolar
 //
 // Make Noise Maths-style function generator — a single Maths channel. Behaves
 // either as a free-running cycling envelope (`rate > 0`) or as a one-shot
-// triggered AD envelope (drive `trig_in`, leave `rate = 0`). Both inputs sum
+// triggered AD envelope (drive `gate`, leave `rate = 0`). Both inputs sum
 // internally, so a triggered shape will arrive even while the LFO is cycling.
 //
 // Params:
 //   rate     : free-run cycle rate in Hz. 0 disables the internal cycle (use
-//              `trig_in` for one-shot mode).
-//   trig_in  : external rising-edge trigger; each edge fires a single AD shape.
+//              `gate` for one-shot mode).
+//   gate  : external rising-edge trigger; each edge fires a single AD shape.
 //   rise_ms  : attack time in milliseconds.
 //   fall_ms  : decay time in milliseconds.
 //   peak_v   : envelope peak in volts (default +8 V — standard Eurorack swing).
@@ -20,7 +20,7 @@
 // `decay2_kr`, which renders an exponential AD shape with independent attack
 // and decay time-constants — both fully runtime-modulatable. Free-run mode
 // uses `impulse_ar` at `rate` Hz to drive the gate; setting `rate = 0`
-// produces no impulses, leaving `trig_in` as the only edge source.
+// produces no impulses, leaving `gate` as the only edge source.
 //
 // Maths' canonical curve is exponential, which `decay2_kr` provides. For
 // linear or logarithmic slopes, post-process this output through `cv_slew`
@@ -34,19 +34,19 @@
 
 define_synthdef("cv_maths")
     .param("rate", 0.0)
-    .param("trig_in", 0.0)
+    .param("gate", 0.0)
     .param("rise_ms", 50.0)
     .param("fall_ms", 250.0)
     .param("peak_v", 8.0)
     .param("bipolar", 0.0)
-    .body(|rate, trig_in, rise_ms, fall_ms, peak_v, bipolar| {
+    .body(|rate, gate, rise_ms, fall_ms, peak_v, bipolar| {
         let rise_s = rise_ms * 0.001;
         let fall_s = fall_ms * 0.001;
 
         // Internal cycle: impulse train at `rate` Hz. At rate=0 the impulse
-        // generator is silent, so only `trig_in` drives the envelope.
+        // generator is silent, so only `gate` drives the envelope.
         let cycle = impulse_ar(rate, 0.0);
-        let combined = cycle + trig_in;
+        let combined = cycle + gate;
 
         // Exponential AD shape, peak ~1.0 on a unit trigger.
         let env = decay2_kr(combined, rise_s, fall_s);

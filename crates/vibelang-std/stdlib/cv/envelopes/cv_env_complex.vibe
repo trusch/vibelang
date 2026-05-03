@@ -1,4 +1,4 @@
-// kind=cv | category=envelope | flavor=complex_breakpoint | range=0..+10V | params=gate_in,time_scale,level_scale
+// kind=cv | category=envelope | flavor=complex_breakpoint | range=0..+10V | params=gate,time_scale,level_scale
 //
 // Multi-segment breakpoint envelope. Four exponential stages cycling through
 // the level breakpoints `[0 V → +8 V → +4 V → +6 V → 0 V]` with stage times
@@ -12,9 +12,9 @@
 // Live modulation is exposed through `EnvGen`'s built-in scaling inputs:
 //   • `time_scale` — multiplies every stage duration (0.5 = 2× faster, 2.0 = half speed)
 //   • `level_scale` — multiplies every level (1.0 = nominal full-scale)
-// `gate_in` retriggers the envelope on each rising edge.
+// `gate` retriggers the envelope on each rising edge.
 //
-// To loop the envelope, retrigger `gate_in` at the desired rate (drive it from
+// To loop the envelope, retrigger `gate` at the desired rate (drive it from
 // `cv_clock` for a tempo-locked loop). The story-3 ticket lists a `loop` flag,
 // but `EnvGen` here doesn't expose `loop_node`, so looping happens externally
 // via retrigger — that also keeps the looping cadence under the user's clock
@@ -29,10 +29,10 @@
 
 define_synthdef("cv_env_complex", |builder| {
     builder
-        .param("gate_in", 0.0)
+        .param("gate", 0.0)
         .param("time_scale", 1.0)
         .param("level_scale", 1.0)
-        .body(|gate_in, time_scale, level_scale| {
+        .body(|gate, time_scale, level_scale| {
             // Four-stage breakpoint envelope (5 levels, 4 times). Levels are
             // already in audio space (1.0 = +10 V). Curve = 1.0 → linear
             // segments; EnvGen's `shape` mapping translates that to a gentle
@@ -48,7 +48,7 @@ define_synthdef("cv_env_complex", |builder| {
             // wrapped as kr DC nodes to satisfy the NodeRef signature.
             let level_bias = dc_kr(0.0);
             let done_action = dc_kr(0.0);
-            let env_out = env_gen(env, gate_in, level_scale, level_bias, time_scale, done_action);
+            let env_out = env_gen(env, gate, level_scale, level_bias, time_scale, done_action);
 
             let clipped = clip_ar(env_out, -1.0, 1.0);
             [clipped]

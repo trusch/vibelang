@@ -1,8 +1,8 @@
-// kind=cv | category=envelope | flavor=ad | range=0..+10V | params=trig_in,attack_ms,decay_ms,peak_v
+// kind=cv | category=envelope | flavor=ad | range=0..+10V | params=gate,attack_ms,decay_ms,peak_v
 //
-// Attack-decay envelope, single-shot. On a rising edge of `trig_in` the output
+// Attack-decay envelope, single-shot. On a rising edge of `gate` the output
 // rises exponentially from 0 V to `peak_v` over `attack_ms`, then decays
-// exponentially back to 0 V over `decay_ms`. While `trig_in` stays high after
+// exponentially back to 0 V over `decay_ms`. While `gate` stays high after
 // the rise, the output continues to decay — there is no sustain phase.
 //
 // Implementation uses `decay2_kr`, which runs an exponential AD shape with
@@ -21,16 +21,16 @@
 // no leak_dc / soft-sat. See kb/stdlib-cv-spec.md.
 
 define_synthdef("cv_env_ad")
-    .param("trig_in", 0.0)
+    .param("gate", 0.0)
     .param("attack_ms", 5.0)
     .param("decay_ms", 200.0)
     .param("peak_v", 8.0)
-    .body(|trig_in, attack_ms, decay_ms, peak_v| {
+    .body(|gate, attack_ms, decay_ms, peak_v| {
         let attack_s = attack_ms * 0.001;
         let decay_s = decay_ms * 0.001;
 
         // Exponential AD shape, peak amplitude ~1.0 on a unit trigger.
-        let env = decay2_kr(trig_in, attack_s, decay_s);
+        let env = decay2_kr(gate, attack_s, decay_s);
 
         // Scale unit envelope to peak_v volts (audio = volts / 10).
         let cv = env * (peak_v * 0.1);

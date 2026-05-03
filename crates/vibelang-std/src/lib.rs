@@ -221,4 +221,62 @@ mod tests {
         }
         assert!(!files.is_empty(), "Should have stdlib files");
     }
+
+    /// Regression: stdlib CV synthdefs that are meant to be driven by
+    /// vibelang's pattern/melody trigger protocol must declare their
+    /// trigger/gate input as `gate` — matching the param name fired by
+    /// `pattern().on(voice).step(...)` and `melody().on(voice).notes(...)`.
+    /// Previously these used `gate_in` / `trig_in` (designed for explicit
+    /// `.modulate_by(src, "out")` wiring), which silently no-ops a pattern.
+    #[test]
+    fn cv_trigger_gate_synthdefs_use_gate_param() {
+        let files = get_stdlib_files();
+        let cases: &[(&str, &[&str])] = &[
+            ("cv/triggers/cv_gate.vibe", &[".param(\"gate\","]),
+            ("cv/triggers/cv_trigger.vibe", &[".param(\"gate\","]),
+            ("cv/triggers/cv_burst.vibe", &[".param(\"gate\","]),
+            ("cv/util/cv_sample_hold.vibe", &[".param(\"gate\","]),
+            ("cv/envelopes/cv_env_ad.vibe", &[".param(\"gate\","]),
+            ("cv/envelopes/cv_env_adsr.vibe", &[".param(\"gate\","]),
+            ("cv/envelopes/cv_env_complex.vibe", &[".param(\"gate\","]),
+        ];
+
+        for (path, must_contain) in cases {
+            let body = files
+                .get(*path)
+                .unwrap_or_else(|| panic!("stdlib missing {}", path));
+            for needle in *must_contain {
+                assert!(
+                    body.contains(needle),
+                    "{} should declare {} (vibelang gate convention)",
+                    path,
+                    needle
+                );
+            }
+            assert!(
+                !body.contains(".param(\"gate_in\","),
+                "{} still declares legacy `gate_in` param",
+                path
+            );
+            assert!(
+                !body.contains(".param(\"trig_in\","),
+                "{} still declares legacy `trig_in` param",
+                path
+            );
+        }
+
+        // cv_maths' rising-edge trigger input is also renamed to `gate` —
+        // patterns/melodies fire `gate` and a Maths trigger IS a gate edge.
+        let maths = files
+            .get("cv/eurorack/cv_maths.vibe")
+            .expect("stdlib missing cv/eurorack/cv_maths.vibe");
+        assert!(
+            maths.contains(".param(\"gate\","),
+            "cv_maths should declare `gate` (vibelang trigger convention)"
+        );
+        assert!(
+            !maths.contains(".param(\"trig_in\","),
+            "cv_maths still declares legacy `trig_in`"
+        );
+    }
 }

@@ -1,12 +1,12 @@
-// kind=cv | category=utility | flavor=sample_hold | range=-10..+10 V | params=cv_in,trig_in
+// kind=cv | category=utility | flavor=sample_hold | range=-10..+10 V | params=cv_in,gate
 //
-// Sample & hold. On each rising edge of `trig_in`, capture the instantaneous
+// Sample & hold. On each rising edge of `gate`, capture the instantaneous
 // value of `cv_in` and hold it on the output until the next trigger. Between
 // triggers the output sits at the last captured sample — so a slowly drifting
 // CV becomes a stepped sequence, locked to whatever clock you feed in.
 //
 // Pair this with `cv_lfo_random` or any noise source on `cv_in` and a clock
-// on `trig_in` to get the classic stepped-random / Buchla-source-of-uncertainty
+// on `gate` to get the classic stepped-random / Buchla-source-of-uncertainty
 // CV that makes a quantized-melody patch feel alive without any extra logic.
 //
 // SuperCollider `Latch` does the work; it samples on positive-going zero
@@ -17,9 +17,9 @@
 
 define_synthdef("cv_sample_hold")
     .param("cv_in", 0.0)
-    .param("trig_in", 0.0)
-    .body(|cv_in, trig_in| {
-        let held = latch_ar(cv_in, trig_in);
+    .param("gate", 0.0)
+    .body(|cv_in, gate| {
+        let held = latch_ar(cv_in, gate);
         let clipped = clip_ar(held, -1.0, 1.0);
         [clipped]
     });

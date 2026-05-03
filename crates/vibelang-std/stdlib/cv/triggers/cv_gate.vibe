@@ -1,17 +1,17 @@
-// kind=cv | category=gate | flavor=sustained | range=0..+5V | params=gate_in
+// kind=cv | category=gate | flavor=sustained | range=0..+5V | params=gate
 //
-// Sustained gate. Outputs +5V while `gate_in` > 0 and 0V otherwise.
+// Sustained gate. Outputs +5V while `gate` > 0 and 0V otherwise.
 // Edges are smoothed with a ~0.1 ms exponential lag to prevent click artefacts
 // from sample-aligned discontinuities driving the ES-3.
 //
 // CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
 
 define_synthdef("cv_gate")
-    .param("gate_in", 0.0)
-    .body(|gate_in| {
+    .param("gate", 0.0)
+    .body(|gate| {
         // ~0.1 ms 60 dB lag: quick enough to feel hard at the jack, slow enough
         // to round the sample-step edge that produces click energy.
-        let smoothed = lag_ar(gate_in, 0.0001);
+        let smoothed = lag_ar(gate, 0.0001);
 
         // Scale 1.0 -> 0.5 audio (= +5V), hard clip to +/-1.0.
         clip_ar(smoothed * 0.5, -1.0, 1.0)

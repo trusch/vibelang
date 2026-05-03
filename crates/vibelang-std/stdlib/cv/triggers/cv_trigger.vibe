@@ -1,16 +1,16 @@
-// kind=cv | category=trigger | flavor=edge | range=0..+5V | params=trig_in,width_ms
+// kind=cv | category=trigger | flavor=edge | range=0..+5V | params=gate,width_ms
 //
-// Rising-edge trigger pulse. On each rising zero-crossing of `trig_in`,
+// Rising-edge trigger pulse. On each rising zero-crossing of `gate`,
 // emit a single +5V pulse of `width_ms` milliseconds.
 //
 // CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
 
 define_synthdef("cv_trigger")
-    .param("trig_in", 0.0)
+    .param("gate", 0.0)
     .param("width_ms", 5.0)
-    .body(|trig_in, width_ms| {
+    .body(|gate, width_ms| {
         // Trig1 fires a 1.0 pulse of `dur` seconds on each rising edge of its input.
-        let pulse = trig1_ar(trig_in, width_ms * 0.001);
+        let pulse = trig1_ar(gate, width_ms * 0.001);
 
         // Scale unit pulse to 0.5 audio (= +5V at the ES-3 jack), hard clip to +/-1.0.
         clip_ar(pulse * 0.5, -1.0, 1.0)
