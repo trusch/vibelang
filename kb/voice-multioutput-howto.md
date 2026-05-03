@@ -487,6 +487,98 @@ Constraints:
 > `param_triggers: HashMap<(VoiceId, String), (NodeId, BusId)>`
 > teardown tracker on `State`.
 
+### 3g. Group → hardware output
+
+A group's mix bus normally folds back into its parent (or, for a
+top-level group, into the main hardware pair on bus 0). Pin a group
+to a specific hardware bus with `group("name").output(...)`:
+
+| Form | Hardware bus | Link synth | Use |
+|---|---|---|---|
+| `group("g").output(N)` | single bus `N` (mono) | `system_link_audio_mono` | One DC-coupled CV channel, one mono stem to a separate jack. |
+| `group("g").output([N])` | single bus `N` (mono) | `system_link_audio_mono` | Sugar identical to `output(N)`. |
+| `group("g").output([L, R])` | consecutive pair `[L, L+1]` | `system_link_audio` | Stereo group output. `R` must be `L+1`; non-consecutive errors out at script-load. |
+| `group("g").output(...)` not called | parent / main | `system_link_audio` | Legacy default. |
+
+**Sum, no halve.** The mono link synthdef computes `L + R` from the
+group's stereo mix bus and writes that straight to the declared
+hardware bus. Two consequences:
+
+* A mono synthdef in a mono group matches a mono synthdef in a
+  stereo group in level — both are unity gain at the hardware bus.
+  `Pan2.ar(sig)` puts equal energy on L and R; the mono fold sums
+  them back. (Halving would bias toward stereo synthdefs by 6 dB.)
+* True stereo content (a wide reverb tail, a `[L, R]` body) routed
+  into a mono group sums to ~6 dB hot at the bus. That's by design,
+  not a bug — pull the group's gain down if you want a balanced
+  fold.
+
+#### Single-channel (mono) hardware output — 8-CV-on-ES-3 pattern
+
+The Expert Sleepers ES-3 (and any DC-coupled audio interface)
+exposes 8 mono jacks on JACK output channels 1..8 (vibelang bus
+indices `0..7`). Eight independent CVs, one per jack, collapse to a
+flat list of mono groups using `output(N)`:
+
+```rhai
+import "stdlib/cv/lfo/cv_lfo_sine.vibe";
+import "stdlib/cv/lfo/cv_lfo_tri.vibe";
+import "stdlib/cv/lfo/cv_lfo_square.vibe";
+import "stdlib/cv/lfo/cv_lfo_random.vibe";
+
+// One mono group per ES-3 jack (1-indexed jack N → bus index N-1).
+group("cv1").output(0);
+group("cv2").output(1);
+group("cv3").output(2);
+group("cv4").output(3);
+group("cv5").output(4);
+group("cv6").output(5);
+group("cv7").output(6);
+group("cv8").output(7);
+
+// One mono CV synthdef per group — each writes one channel of CV
+// to its own jack. No `[0, signal]` wrapper, no overlapping bus
+// pairs, no wasted `R` half.
+voice("slow_sine").synth("cv_lfo_sine").group("cv1")
+    .set_param("rate", 0.1).set_param("depth_v", 5.0).start();
+
+voice("ramp").synth("cv_lfo_tri").group("cv2")
+    .set_param("rate", 0.25).set_param("depth_v", 8.0).start();
+
+voice("gate").synth("cv_lfo_square").group("cv3")
+    .set_param("rate", 2.0).set_param("depth_v", 5.0).start();
+
+voice("noise").synth("cv_lfo_random").group("cv4")
+    .set_param("rate", 4.0).set_param("depth_v", 3.0).start();
+
+// ... cv5..cv8 the same way, one synthdef per jack.
+```
+
+Why this is the canonical CV-on-DC-interface pattern:
+
+* **No bus waste.** The pre-mono-group form (`group("cvN").output([2*k, 2*k+1])`)
+  reserved a stereo pair per CV and silenced the `R` half — half
+  the routing budget went unused. `output(N)` claims exactly one
+  bus per jack.
+* **No overlapping pairs.** Eight CVs no longer collide pairwise
+  (`[0,1]`, `[2,3]`, ...) — each group owns one bus index, so the
+  layout reads jack-by-jack instead of pair-by-pair.
+* **No `[0, signal]` wrapper in the synthdef.** A mono CV synthdef
+  body returns a single scalar (`[clipped]`), not `[signal, 0]`
+  — `system_link_audio_mono` does the fold at the group → hardware
+  boundary, so the synthdef stays one-channel end-to-end.
+
+Run with `--output-channels 8` so scsynth allocates the JACK ports
+(see `crates/vibelang-cli/src/main.rs`); the channel-index range
+guard in `group.output(N)` rejects `N >= 16` at script-load time.
+
+> Source: `crates/vibelang-rhai/src/api/group.rs::output_mono` /
+> `output(channels: Array)` (mono int form, mono `[N]` sugar,
+> stereo `[L, R]`); dispatch at
+> `crates/vibelang-core/src/handlers/groups.rs::finalize`;
+> `system_link_audio_mono` synthdef at
+> `crates/vibelang-dsp/src/system_synthdefs/`.
+
 ---
 
 ## 4. Plural sugar — `voice.outputs([…])`
