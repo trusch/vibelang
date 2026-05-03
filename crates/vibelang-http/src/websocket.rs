@@ -736,6 +736,7 @@ mod tests {
                 soloed: false,
                 params: HashMap::new(),
                 output_bus: None,
+                output_channels: None,
             },
         );
 

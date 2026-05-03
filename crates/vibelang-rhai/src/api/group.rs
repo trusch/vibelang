@@ -192,6 +192,11 @@ impl GroupHandle {
         context::with_state(|state| {
             if let Some(config) = state.groups.get_mut(&group_id) {
                 config.output_bus = Some(left as u32);
+                // Existing `.output([L, R])` is the stereo path; the new
+                // `output_channels` field is coupled with `output_bus`, so
+                // keep the pair consistent (Task C extends the surface for
+                // mono / N-channel selection).
+                config.output_channels = Some(2);
             }
         });
 
@@ -250,6 +255,7 @@ pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> Gro
         muted: false,
         soloed: false,
         output_bus: None,
+        output_channels: None,
     };
 
     // Add to script state
@@ -290,9 +296,14 @@ fn group_body(ctx: NativeCallContext, handle: GroupHandle, closure: FnPtr) -> Gr
         Some(context::get_or_create_group_id(parent_path))
     };
 
-    // Create group config (preserves existing output_bus if already set)
-    let existing_output_bus = context::with_state(|state| {
-        state.groups.get(&group_id).and_then(|c| c.output_bus)
+    // Create group config (preserves existing output_bus / output_channels
+    // if already set — group_body() runs after the builder methods that
+    // configure routing, so those settings must survive the rebuild).
+    let (existing_output_bus, existing_output_channels) = context::with_state(|state| {
+        match state.groups.get(&group_id) {
+            Some(c) => (c.output_bus, c.output_channels),
+            None => (None, None),
+        }
     });
 
     let config = GroupConfig {
@@ -303,6 +314,7 @@ fn group_body(ctx: NativeCallContext, handle: GroupHandle, closure: FnPtr) -> Gr
         muted: false,
         soloed: false,
         output_bus: existing_output_bus,
+        output_channels: existing_output_channels,
     };
 
     context::with_state(|state| {

@@ -469,6 +469,7 @@ mod tests {
                 soloed: false,
                 params: ParamMap::new(),
                 output_bus: None,
+                output_channels: None,
             },
         );
 

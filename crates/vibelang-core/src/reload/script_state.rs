@@ -47,6 +47,13 @@ pub struct GroupConfig {
     /// When set, the link synth routes directly to this hardware bus
     /// instead of mixing into the parent group.
     pub output_bus: Option<u32>,
+
+    /// Number of hardware output channels this group writes to.
+    /// `Some(1)` selects the `system_link_audio_mono` mixdown variant;
+    /// `Some(2)` selects the stereo `system_link_audio` (default behaviour).
+    /// Coupled with `output_bus`: must be `Some(_)` iff `output_bus` is
+    /// `Some(_)`. Set together by the Rhai surface.
+    pub output_channels: Option<u32>,
 }
 
 /// Configuration for an effect (from script, no runtime IDs).
@@ -1163,6 +1170,7 @@ mod tests {
                 muted: false,
                 soloed: false,
                 output_bus: None,
+                output_channels: None,
             },
         );
 

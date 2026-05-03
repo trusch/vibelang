@@ -169,6 +169,7 @@ pub fn calculate_diff(current: &State, new: &ScriptState) -> ReloadDiff {
             muted: g.muted,
             soloed: g.soloed,
             output_bus: g.output_bus,
+            output_channels: g.output_channels,
         })
     });
 
@@ -386,6 +387,7 @@ mod tests {
             soloed: false,
             params: ParamMap::new(),
             output_bus: None,
+            output_channels: None,
         }
     }
 
@@ -459,6 +461,7 @@ mod tests {
                 muted: false,
                 soloed: false,
                 output_bus: None,
+                output_channels: None,
             },
         );
 
@@ -490,6 +493,7 @@ mod tests {
                 muted: false,
                 soloed: false,
                 output_bus: None,
+                output_channels: None,
             },
         );
         configs.insert(
@@ -502,6 +506,7 @@ mod tests {
                 muted: false,
                 soloed: false,
                 output_bus: None,
+                output_channels: None,
             },
         );
 

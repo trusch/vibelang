@@ -27,7 +27,7 @@ impl<B: Backend> GroupsHandler<B> {
     /// group's audio bus to its parent's bus (or bus 0 for the main output).
     pub async fn finalize(&self) -> Result<()> {
         // Collect groups that need link synths
-        let groups_to_link: Vec<(GroupId, NodeId, BusId, BusId)> = {
+        let groups_to_link: Vec<(GroupId, NodeId, BusId, BusId, Option<u32>)> = {
             let state = self.state.read().await;
 
             state
@@ -48,14 +48,14 @@ impl<B: Backend> GroupsHandler<B> {
                             .unwrap_or(BusId::new(0))
                     };
 
-                    (g.id, g.node_id, g.audio_bus, out_bus)
+                    (g.id, g.node_id, g.audio_bus, out_bus, g.output_channels)
                 })
                 .collect()
         };
 
         // Create link synths for each group
         let num_groups = groups_to_link.len();
-        for (group_id, group_node_id, in_bus, out_bus) in groups_to_link {
+        for (group_id, group_node_id, in_bus, out_bus, output_channels) in groups_to_link {
             // Allocate node ID for link synth
             let link_node_id = {
                 let mut state = self.state.write().await;
@@ -70,9 +70,17 @@ impl<B: Backend> GroupsHandler<B> {
             params.insert("outbus".to_string(), out_bus.0 as f32);
             params.insert("amp".to_string(), 1.0);
 
+            // Pick the link-synth variant based on the group's hardware
+            // channel count: Some(1) → mono mixdown variant; Some(2) or
+            // None (the implicit-stereo default) → the stereo default.
+            let link_synth_name = match output_channels {
+                Some(1) => "system_link_audio_mono",
+                _ => "system_link_audio",
+            };
+
             self.backend
                 .create_synth(
-                    "system_link_audio",
+                    link_synth_name,
                     link_node_id,
                     group_node_id,
                     AddAction::Tail, // Add at tail of the group
@@ -149,6 +157,7 @@ impl<B: Backend> Groups for GroupsHandler<B> {
                 soloed: false,
                 params: ParamMap::new(),
                 output_bus: None,
+                output_channels: None,
             },
         );
 
@@ -288,6 +297,7 @@ mod tests {
     use crate::types::BufferId;
     use std::path::Path;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Mutex;
 
     // =========================================================================
     // Mock Backend for Testing
@@ -310,6 +320,7 @@ mod tests {
         nodes_freed: AtomicU32,
         params_set: AtomicU32,
         run_node_calls: AtomicU32,
+        synth_names: Mutex<Vec<String>>,
     }
 
     impl MockBackend {
@@ -320,6 +331,7 @@ mod tests {
                 nodes_freed: AtomicU32::new(0),
                 params_set: AtomicU32::new(0),
                 run_node_calls: AtomicU32::new(0),
+                synth_names: Mutex::new(Vec::new()),
             }
         }
 
@@ -342,6 +354,10 @@ mod tests {
         fn run_node_calls(&self) -> u32 {
             self.run_node_calls.load(Ordering::Relaxed)
         }
+
+        fn synth_names(&self) -> Vec<String> {
+            self.synth_names.lock().unwrap().clone()
+        }
     }
 
     #[async_trait::async_trait]
@@ -358,13 +374,14 @@ mod tests {
 
         async fn create_synth(
             &self,
-            _def: &str,
+            def: &str,
             _node: NodeId,
             _target: NodeId,
             _action: AddAction,
             _params: &ParamMap,
         ) -> std::result::Result<(), Self::Error> {
             self.synths_created.fetch_add(1, Ordering::Relaxed);
+            self.synth_names.lock().unwrap().push(def.to_string());
             Ok(())
         }
 
@@ -751,6 +768,62 @@ mod tests {
         handler.finalize().await.unwrap();
 
         assert_eq!(backend.synths_created(), 2, "Link synth for each group");
+    }
+
+    #[tokio::test]
+    async fn test_finalize_default_spawns_stereo_link_synth() {
+        // Default group (output_channels = None, output_bus = None) keeps the
+        // legacy stereo behaviour: spawn `system_link_audio`.
+        let (handler, backend, _state) = create_handler();
+        handler
+            .create(GroupId::new(1), "stereo", None)
+            .await
+            .unwrap();
+        handler.finalize().await.unwrap();
+        assert_eq!(backend.synth_names(), vec!["system_link_audio".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_finalize_mono_group_spawns_mono_link_synth() {
+        // Mono-routed group (output_channels = Some(1), output_bus = Some(2))
+        // dispatches to the mixdown variant.
+        let (handler, backend, state) = create_handler();
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "mono", None).await.unwrap();
+
+        // Mirror what the Rhai layer (Task C) will do once it sets both
+        // fields together: mono output to hardware bus 2.
+        {
+            let mut state = state.write().await;
+            let group = state.groups.get_mut(&group_id).unwrap();
+            group.output_bus = Some(2);
+            group.output_channels = Some(1);
+        }
+
+        handler.finalize().await.unwrap();
+        assert_eq!(
+            backend.synth_names(),
+            vec!["system_link_audio_mono".to_string()],
+            "output_channels=Some(1) must spawn the mono mixdown variant"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_finalize_stereo_group_with_output_bus_spawns_stereo() {
+        // Stereo-routed group (output_channels = Some(2), output_bus = Some(2))
+        // keeps the existing `system_link_audio` synthdef.
+        let (handler, backend, state) = create_handler();
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "stereo_hw", None).await.unwrap();
+        {
+            let mut state = state.write().await;
+            let group = state.groups.get_mut(&group_id).unwrap();
+            group.output_bus = Some(2);
+            group.output_channels = Some(2);
+        }
+
+        handler.finalize().await.unwrap();
+        assert_eq!(backend.synth_names(), vec!["system_link_audio".to_string()]);
     }
 
     #[tokio::test]

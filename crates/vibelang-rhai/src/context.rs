@@ -377,6 +377,7 @@ pub fn get_or_create_group_id(name: &str) -> GroupId {
                 muted: false,
                 soloed: false,
                 output_bus: None,
+                output_channels: None,
             };
             c.state.groups.insert(group_id, config);
         }

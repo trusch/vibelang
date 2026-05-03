@@ -1194,11 +1194,15 @@ impl<B: Backend> Runtime<B> {
                 if config.soloed {
                     let _ = self.groups.solo(id, true).await;
                 }
-                // Apply output_bus routing override
+                // Apply output_bus / output_channels routing override.
+                // The two fields are coupled (both Some(_) or both None);
+                // mirror them together so the link-synth dispatch in
+                // `GroupsHandler::finalize` sees a consistent pair.
                 if config.output_bus.is_some() {
                     let mut state = self.state.write().await;
                     if let Some(group) = state.groups.get_mut(&id) {
                         group.output_bus = config.output_bus;
+                        group.output_channels = config.output_channels;
                     }
                 }
             }
@@ -1278,6 +1282,7 @@ impl<B: Backend> Runtime<B> {
                     if group.output_bus != new_config.output_bus {
                         let old_output = group.output_bus;
                         group.output_bus = new_config.output_bus;
+                        group.output_channels = new_config.output_channels;
 
                         // Update link synth's outbus parameter if it exists
                         if let Some(link_node) = group.link_synth_node_id {
@@ -2791,6 +2796,7 @@ mod tests {
                 muted: false,
                 soloed: false,
                 output_bus: None,
+                output_channels: None,
             },
         );
 

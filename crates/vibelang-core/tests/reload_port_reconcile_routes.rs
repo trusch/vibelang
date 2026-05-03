@@ -256,6 +256,7 @@ async fn setup(ports: &[OutputPort]) -> Harness {
                 soloed: false,
                 params: ParamMap::new(),
                 output_bus: None,
+                output_channels: None,
             },
         );
 
@@ -274,6 +275,7 @@ async fn setup(ports: &[OutputPort]) -> Harness {
                 soloed: false,
                 params: ParamMap::new(),
                 output_bus: None,
+                output_channels: None,
             },
         );
 

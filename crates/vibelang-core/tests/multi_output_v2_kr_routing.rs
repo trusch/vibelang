@@ -292,6 +292,7 @@ async fn insert_group(
             soloed: false,
             params: ParamMap::new(),
             output_bus: None,
+            output_channels: None,
         },
     );
     bus.0

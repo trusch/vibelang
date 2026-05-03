@@ -253,6 +253,7 @@ async fn setup(ports: &[OutputPort]) -> Harness {
                 soloed: false,
                 params: ParamMap::new(),
                 output_bus: None,
+                output_channels: None,
             },
         );
         voice_group_bus.0
@@ -549,6 +550,7 @@ async fn explicit_user_route_on_port_zero_not_overridden_by_default() {
                 soloed: false,
                 params: ParamMap::new(),
                 output_bus: None,
+                output_channels: None,
             },
         );
         dest_group_bus.0
