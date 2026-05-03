@@ -147,43 +147,17 @@ impl GroupHandle {
         self
     }
 
-    /// Route this group's audio to a specific hardware output pair.
+    /// Route this group's audio to a specific hardware output bus (mono).
     ///
-    /// `channels` is a two-element array of 0-indexed hardware output channels,
-    /// e.g. `[2, 3]` for the second stereo pair.
-    /// Without this, the group mixes into its parent (default behavior).
-    pub fn output(self, channels: Array) -> Self {
-        if channels.len() != 2 {
+    /// `bus` is a 0-indexed hardware output channel; the group mixdown is
+    /// routed via `system_link_audio_mono` to that single channel.
+    pub fn output_mono(self, bus: i64) -> Self {
+        if bus < 0 || (bus as u32) >= 16 {
             log::error!(
-                "group('{}').output() expects [left, right] array, got {} elements",
+                "group('{}').output({}): bus must be in 0..16. Supported forms: \
+                 group.output(N) for mono, group.output([N]) for mono, group.output([L, R]) for stereo",
                 self.name,
-                channels.len()
-            );
-            return self;
-        }
-
-        let left = channels[0].as_int().unwrap_or(-1);
-        let right = channels[1].as_int().unwrap_or(-1);
-
-        if left < 0 || right < 0 || right != left + 1 {
-            log::error!(
-                "group('{}').output([{}, {}]): channels must be consecutive (e.g. [0,1], [2,3])",
-                self.name,
-                left,
-                right
-            );
-            return self;
-        }
-
-        if left as u32 >= 16 {
-            log::error!(
-                "group('{}').output([{}, {}]): channel index {} exceeds reasonable hardware output range (0-15). \
-                 Make sure scsynth is started with enough output channels (--output-channels {})",
-                self.name,
-                left,
-                right,
-                right,
-                right + 1,
+                bus,
             );
             return self;
         }
@@ -191,23 +165,88 @@ impl GroupHandle {
         let group_id = context::get_or_create_group_id(&self.path);
         context::with_state(|state| {
             if let Some(config) = state.groups.get_mut(&group_id) {
-                config.output_bus = Some(left as u32);
-                // Existing `.output([L, R])` is the stereo path; the new
-                // `output_channels` field is coupled with `output_bus`, so
-                // keep the pair consistent (Task C extends the surface for
-                // mono / N-channel selection).
-                config.output_channels = Some(2);
+                config.output_bus = Some(bus as u32);
+                config.output_channels = Some(1);
             }
         });
 
         tracing::info!(
-            "Group '{}' output routed to hardware channels [{}, {}]",
+            "Group '{}' output routed to hardware channel {} (mono)",
             self.name,
-            left,
-            right
+            bus
         );
 
         self
+    }
+
+    /// Route this group's audio to a specific hardware output bus or pair.
+    ///
+    /// Accepts:
+    /// - `[N]` — mono, equivalent to `output(N)`.
+    /// - `[L, R]` — stereo, consecutive channels (e.g. `[2, 3]`).
+    ///
+    /// Without this, the group mixes into its parent (default behavior).
+    pub fn output(self, channels: Array) -> Self {
+        match channels.len() {
+            1 => {
+                let bus = channels[0].as_int().unwrap_or(-1);
+                self.output_mono(bus)
+            }
+            2 => {
+                let left = channels[0].as_int().unwrap_or(-1);
+                let right = channels[1].as_int().unwrap_or(-1);
+
+                if left < 0 || right < 0 || right != left + 1 {
+                    log::error!(
+                        "group('{}').output([{}, {}]): channels must be consecutive (e.g. [0,1], [2,3]). \
+                         Supported forms: group.output(N) for mono, group.output([L, R]) for stereo",
+                        self.name,
+                        left,
+                        right
+                    );
+                    return self;
+                }
+
+                if (left as u32) >= 16 {
+                    log::error!(
+                        "group('{}').output([{}, {}]): channel index {} exceeds reasonable hardware output range (0-15). \
+                         Make sure scsynth is started with enough output channels (--output-channels {})",
+                        self.name,
+                        left,
+                        right,
+                        right,
+                        right + 1,
+                    );
+                    return self;
+                }
+
+                let group_id = context::get_or_create_group_id(&self.path);
+                context::with_state(|state| {
+                    if let Some(config) = state.groups.get_mut(&group_id) {
+                        config.output_bus = Some(left as u32);
+                        config.output_channels = Some(2);
+                    }
+                });
+
+                tracing::info!(
+                    "Group '{}' output routed to hardware channels [{}, {}] (stereo)",
+                    self.name,
+                    left,
+                    right
+                );
+
+                self
+            }
+            n => {
+                log::error!(
+                    "group('{}').output() got {}-element array; supported forms: \
+                     group.output(N) for mono, group.output([N]) for mono, group.output([L, R]) for stereo",
+                    self.name,
+                    n,
+                );
+                self
+            }
+        }
     }
 
     /// Clear all effects from this group.
@@ -373,6 +412,7 @@ pub fn register(engine: &mut Engine) {
     // Group body and output routing
     engine.register_fn("body", group_body);
     engine.register_fn("output", GroupHandle::output);
+    engine.register_fn("output", GroupHandle::output_mono);
 
     // Effect management
     engine.register_fn("remove_effect", GroupHandle::remove_effect);
@@ -461,5 +501,112 @@ mod tests {
 
         let h3 = GroupHandle::new("main/a/b/c".to_string());
         assert_eq!(h3.name, "c");
+    }
+
+    // ==================== output() Tests ====================
+
+    fn with_test_context<F: FnOnce()>(f: F) {
+        context::init_context();
+        f();
+        context::clear_context();
+    }
+
+    fn read_output(path: &str) -> (Option<u32>, Option<u32>) {
+        let group_id = context::get_or_create_group_id(path);
+        context::with_state(|state| {
+            state
+                .groups
+                .get(&group_id)
+                .map(|c| (c.output_bus, c.output_channels))
+                .unwrap_or((None, None))
+        })
+    }
+
+    #[test]
+    fn test_group_output_int_mono() {
+        with_test_context(|| {
+            let h = GroupHandle::new("main/cv1".to_string());
+            let _ = h.clone().output_mono(2);
+            assert_eq!(read_output("main/cv1"), (Some(2), Some(1)));
+        });
+    }
+
+    #[test]
+    fn test_group_output_array_one_element_mono() {
+        with_test_context(|| {
+            let h = GroupHandle::new("main/cv2".to_string());
+            let arr: Array = vec![rhai::Dynamic::from(2_i64)];
+            let _ = h.clone().output(arr);
+            assert_eq!(read_output("main/cv2"), (Some(2), Some(1)));
+        });
+    }
+
+    #[test]
+    fn test_group_output_array_pair_stereo() {
+        with_test_context(|| {
+            let h = GroupHandle::new("main/leads".to_string());
+            let arr: Array = vec![rhai::Dynamic::from(2_i64), rhai::Dynamic::from(3_i64)];
+            let _ = h.clone().output(arr);
+            assert_eq!(read_output("main/leads"), (Some(2), Some(2)));
+        });
+    }
+
+    #[test]
+    fn test_group_output_rejects_three_elements() {
+        with_test_context(|| {
+            let h = GroupHandle::new("main/bad3".to_string());
+            // Touch the group so it exists with default routing.
+            let _ = context::get_or_create_group_id("main/bad3");
+            let arr: Array = vec![
+                rhai::Dynamic::from(1_i64),
+                rhai::Dynamic::from(2_i64),
+                rhai::Dynamic::from(3_i64),
+            ];
+            let _ = h.clone().output(arr);
+            // Unchanged: still no routing applied.
+            assert_eq!(read_output("main/bad3"), (None, None));
+        });
+    }
+
+    #[test]
+    fn test_group_output_rejects_zero_elements() {
+        with_test_context(|| {
+            let h = GroupHandle::new("main/bad0".to_string());
+            let _ = context::get_or_create_group_id("main/bad0");
+            let arr: Array = vec![];
+            let _ = h.clone().output(arr);
+            assert_eq!(read_output("main/bad0"), (None, None));
+        });
+    }
+
+    #[test]
+    fn test_group_output_negative_bus_rejected() {
+        with_test_context(|| {
+            let h = GroupHandle::new("main/neg".to_string());
+            let _ = context::get_or_create_group_id("main/neg");
+            let _ = h.clone().output_mono(-1);
+            assert_eq!(read_output("main/neg"), (None, None));
+        });
+    }
+
+    #[test]
+    fn test_group_output_out_of_range_int_rejected() {
+        with_test_context(|| {
+            let h = GroupHandle::new("main/big".to_string());
+            let _ = context::get_or_create_group_id("main/big");
+            let _ = h.clone().output_mono(16);
+            assert_eq!(read_output("main/big"), (None, None));
+        });
+    }
+
+    #[test]
+    fn test_group_output_array_one_element_negative_rejected() {
+        with_test_context(|| {
+            let h = GroupHandle::new("main/neg_arr".to_string());
+            let _ = context::get_or_create_group_id("main/neg_arr");
+            let arr: Array = vec![rhai::Dynamic::from(-1_i64)];
+            let _ = h.clone().output(arr);
+            assert_eq!(read_output("main/neg_arr"), (None, None));
+        });
     }
 }
