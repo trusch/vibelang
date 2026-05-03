@@ -556,12 +556,6 @@ impl Voice {
         );
 
         let synthdef = self.synth_name.clone().unwrap_or_default();
-        if synthdef.is_empty() {
-            tracing::warn!(
-                "Voice '{}': no synthdef set — use .synth(\"name\") or .on(\"sample\")",
-                self.name
-            );
-        }
 
         let config = VoiceConfig {
             name: self.name.clone(),
@@ -612,7 +606,40 @@ impl Voice {
     pub fn apply(mut self) -> Self {
         self.resolve_name();
         self.sync_to_state();
+        self.warn_if_no_sound_source();
         self
+    }
+
+    /// Warn at terminal-verb time if neither this builder nor any existing
+    /// voice in state has a sound source (synth / sfz / midi). Only `.apply()`
+    /// and `.run()` invoke this — earlier builder calls would false-warn
+    /// before the user has had a chance to chain `.synth(...)`.
+    fn warn_if_no_sound_source(&self) {
+        if self.synth_name.is_some() {
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.sfz_instrument.is_some() {
+            return;
+        }
+        #[cfg(feature = "midi")]
+        if self.midi_output_device.is_some() {
+            return;
+        }
+        let voice_id = context::get_or_create_voice_id(&self.name);
+        let existing_has_source = context::with_state(|state| {
+            state
+                .voices
+                .get(&voice_id)
+                .map(|v| v.has_sound_source())
+                .unwrap_or(false)
+        });
+        if !existing_has_source {
+            tracing::warn!(
+                "Voice '{}': no synthdef set — use .synth(\"name\") or .on(\"sample\")",
+                self.name
+            );
+        }
     }
 
     /// Construct a `Voice` for unit tests without a `NativeCallContext`.
@@ -656,6 +683,7 @@ impl Voice {
     pub fn run(mut self) -> Self {
         self.resolve_name();
         self.sync_to_state();
+        self.warn_if_no_sound_source();
         context::mark_voice_for_running(&self.name);
         self
     }
