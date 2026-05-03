@@ -352,6 +352,357 @@ pub fn create_system_link_audio_bytes() -> Result<Vec<u8>, std::io::Error> {
     Ok(buf)
 }
 
+/// Create the system_link_audio_mono synthdef bytes.
+///
+/// Mono-mixdown variant of [`create_system_link_audio_bytes`]: the internal
+/// graph (gain, pan, metering) is identical and operates on a 2-channel bus
+/// exactly as in the stereo version, but the final `Out.ar` writes a single
+/// channel = `panned_left + panned_right` (sum, no halving) to a single
+/// hardware bus. Used for `group.output(N)` with one hw channel.
+///
+/// True-stereo content summed without halving will be ~6 dB hotter than the
+/// stereo version — this is intentional: mono synthdefs run at unity gain and
+/// the user accepts the headroom hit for true-stereo program material.
+///
+/// # Parameters
+///
+/// - `inbus`: 2-channel input bus (default: 0)
+/// - `outbus`: 1-channel output bus (default: 0)
+/// - `amp`: Amplitude multiplier (default: 1.0)
+/// - `pan`: Stereo balance applied *before* the L+R sum, so the user can
+///   bias the mixdown toward one side of the source (default: 0.0)
+///
+/// # Metering
+///
+/// Identical to the stereo synthdef — Peak/Amplitude UGens tap `panned_left`
+/// and `panned_right` (the internal 2-channel signal pre-mixdown), so the
+/// SendTrig payload at trigger IDs 0..3 carries the same data the dashboard
+/// already understands. Mixdown to mono only affects the final `Out.ar`.
+pub fn create_system_link_audio_mono_bytes() -> Result<Vec<u8>, std::io::Error> {
+    let mut buf = Vec::new();
+
+    // File header
+    buf.write_all(b"SCgf")?; // Magic
+    buf.write_all(&2i32.to_be_bytes())?; // Version 2
+    buf.write_all(&1i16.to_be_bytes())?; // Number of synthdefs
+
+    // SynthDef name
+    let name = b"system_link_audio_mono";
+    buf.push(name.len() as u8);
+    buf.write_all(name)?;
+
+    // Constants (7 total) — identical layout to system_link_audio.
+    // 0: 0.0   (SendTrig ID 0 / pan zero)
+    // 1: 1.0   (SendTrig ID 1 / gain unity)
+    // 2: 2.0   (SendTrig ID 2)
+    // 3: 3.0   (SendTrig ID 3)
+    // 4: 20.0  (Impulse meter rate)
+    // 5: 0.01  (Amplitude attack)
+    // 6: 0.1   (Amplitude release)
+    buf.write_all(&7i32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+    buf.write_all(&1.0f32.to_be_bytes())?;
+    buf.write_all(&2.0f32.to_be_bytes())?;
+    buf.write_all(&3.0f32.to_be_bytes())?;
+    buf.write_all(&20.0f32.to_be_bytes())?;
+    buf.write_all(&0.01f32.to_be_bytes())?;
+    buf.write_all(&0.1f32.to_be_bytes())?;
+
+    // Parameters: inbus=0, outbus=0, amp=1.0, pan=0.0 (same surface as stereo).
+    buf.write_all(&4i32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+    buf.write_all(&1.0f32.to_be_bytes())?;
+    buf.write_all(&0.0f32.to_be_bytes())?;
+
+    // Param names
+    buf.write_all(&4i32.to_be_bytes())?;
+    let inbus_name = b"inbus";
+    buf.push(inbus_name.len() as u8);
+    buf.write_all(inbus_name)?;
+    buf.write_all(&0i32.to_be_bytes())?;
+    let outbus_name = b"outbus";
+    buf.push(outbus_name.len() as u8);
+    buf.write_all(outbus_name)?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    let amp_name = b"amp";
+    buf.push(amp_name.len() as u8);
+    buf.write_all(amp_name)?;
+    buf.write_all(&2i32.to_be_bytes())?;
+    let pan_name = b"pan";
+    buf.push(pan_name.len() as u8);
+    buf.write_all(pan_name)?;
+    buf.write_all(&3i32.to_be_bytes())?;
+
+    // UGens (21 total)
+    //
+    // 0:  Control (4 outputs: inbus, outbus, amp, pan)
+    // 1:  In.ar (2 outputs: left, right)
+    // 2:  BinaryOp * (left * amp)            = scaled_left
+    // 3:  BinaryOp * (right * amp)           = scaled_right
+    // 4:  BinaryOp max(0, pan)               = max_pan      [kr]
+    // 5:  BinaryOp 1 - max_pan               = left_gain    [kr]
+    // 6:  BinaryOp min(0, pan)               = min_pan      [kr]
+    // 7:  BinaryOp 1 + min_pan               = right_gain   [kr]
+    // 8:  BinaryOp scaled_left * left_gain   = panned_left  [ar]
+    // 9:  BinaryOp scaled_right * right_gain = panned_right [ar]
+    // 10: BinaryOp panned_left + panned_right = mono_sum    [ar]   ← mono mixdown
+    // 11: Out.ar (outbus, mono_sum)                                   ← 1 channel
+    // 12: Impulse.kr (20Hz)
+    // 13-14: Peak.kr (panned_left, panned_right)
+    // 15-16: Amplitude.kr (panned_left, panned_right)
+    // 17-20: SendTrig.kr (peak_l, peak_r, rms_l, rms_r)
+    buf.write_all(&21i32.to_be_bytes())?;
+
+    let binop_name = b"BinaryOpUGen";
+
+    // UGen 0: Control (kr, 4 outputs)
+    let control_name = b"Control";
+    buf.push(control_name.len() as u8);
+    buf.write_all(control_name)?;
+    buf.push(1);
+    buf.write_all(&0i32.to_be_bytes())?;
+    buf.write_all(&4i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    buf.push(1);
+    buf.push(1);
+    buf.push(1);
+    buf.push(1);
+
+    // UGen 1: In.ar (2 outputs: left, right)
+    let in_name = b"In";
+    buf.push(in_name.len() as u8);
+    buf.write_all(in_name)?;
+    buf.push(2);
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 0, 0)?; // Control[0] (inbus)
+    buf.push(2);
+    buf.push(2);
+
+    // UGen 2: scaled_left = left * amp
+    buf.push(binop_name.len() as u8);
+    buf.write_all(binop_name)?;
+    buf.push(2);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&2i16.to_be_bytes())?; // mul
+    write_ugen_input(&mut buf, 1, 0)?;
+    write_ugen_input(&mut buf, 0, 2)?;
+    buf.push(2);
+
+    // UGen 3: scaled_right = right * amp
+    buf.push(binop_name.len() as u8);
+    buf.write_all(binop_name)?;
+    buf.push(2);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&2i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 1, 1)?;
+    write_ugen_input(&mut buf, 0, 2)?;
+    buf.push(2);
+
+    // UGen 4: max_pan = max(0, pan)  [kr]
+    buf.push(binop_name.len() as u8);
+    buf.write_all(binop_name)?;
+    buf.push(1);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&13i16.to_be_bytes())?; // max
+    write_const_input(&mut buf, 0)?;
+    write_ugen_input(&mut buf, 0, 3)?;
+    buf.push(1);
+
+    // UGen 5: left_gain = 1 - max_pan  [kr]
+    buf.push(binop_name.len() as u8);
+    buf.write_all(binop_name)?;
+    buf.push(1);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&1i16.to_be_bytes())?; // sub
+    write_const_input(&mut buf, 1)?;
+    write_ugen_input(&mut buf, 4, 0)?;
+    buf.push(1);
+
+    // UGen 6: min_pan = min(0, pan)  [kr]
+    buf.push(binop_name.len() as u8);
+    buf.write_all(binop_name)?;
+    buf.push(1);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&12i16.to_be_bytes())?; // min
+    write_const_input(&mut buf, 0)?;
+    write_ugen_input(&mut buf, 0, 3)?;
+    buf.push(1);
+
+    // UGen 7: right_gain = 1 + min_pan  [kr]
+    buf.push(binop_name.len() as u8);
+    buf.write_all(binop_name)?;
+    buf.push(1);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?; // add
+    write_const_input(&mut buf, 1)?;
+    write_ugen_input(&mut buf, 6, 0)?;
+    buf.push(1);
+
+    // UGen 8: panned_left = scaled_left * left_gain  [ar]
+    buf.push(binop_name.len() as u8);
+    buf.write_all(binop_name)?;
+    buf.push(2);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&2i16.to_be_bytes())?; // mul
+    write_ugen_input(&mut buf, 2, 0)?;
+    write_ugen_input(&mut buf, 5, 0)?;
+    buf.push(2);
+
+    // UGen 9: panned_right = scaled_right * right_gain  [ar]
+    buf.push(binop_name.len() as u8);
+    buf.write_all(binop_name)?;
+    buf.push(2);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&2i16.to_be_bytes())?; // mul
+    write_ugen_input(&mut buf, 3, 0)?;
+    write_ugen_input(&mut buf, 7, 0)?;
+    buf.push(2);
+
+    // UGen 10: mono_sum = panned_left + panned_right  [ar]
+    // No halving: unity-gain mono mixdown. True-stereo content runs ~6 dB hot.
+    buf.push(binop_name.len() as u8);
+    buf.write_all(binop_name)?;
+    buf.push(2);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?; // add
+    write_ugen_input(&mut buf, 8, 0)?; // panned_left
+    write_ugen_input(&mut buf, 9, 0)?; // panned_right
+    buf.push(2);
+
+    // UGen 11: Out.ar(outbus, mono_sum) — 1 channel only.
+    let out_name = b"Out";
+    buf.push(out_name.len() as u8);
+    buf.write_all(out_name)?;
+    buf.push(2);
+    buf.write_all(&2i32.to_be_bytes())?; // 2 inputs: bus + 1 channel
+    buf.write_all(&0i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 0, 1)?; // Control[1] (outbus)
+    write_ugen_input(&mut buf, 10, 0)?; // mono_sum
+
+    // UGen 12: Impulse.kr (20Hz)
+    let impulse_name = b"Impulse";
+    buf.push(impulse_name.len() as u8);
+    buf.write_all(impulse_name)?;
+    buf.push(1);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_const_input(&mut buf, 4)?;
+    write_const_input(&mut buf, 0)?;
+    buf.push(1);
+
+    // UGen 13: Peak.kr (panned_left)
+    let peak_name = b"Peak";
+    buf.push(peak_name.len() as u8);
+    buf.write_all(peak_name)?;
+    buf.push(1);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 8, 0)?;
+    write_ugen_input(&mut buf, 12, 0)?;
+    buf.push(1);
+
+    // UGen 14: Peak.kr (panned_right)
+    buf.push(peak_name.len() as u8);
+    buf.write_all(peak_name)?;
+    buf.push(1);
+    buf.write_all(&2i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 9, 0)?;
+    write_ugen_input(&mut buf, 12, 0)?;
+    buf.push(1);
+
+    // UGen 15: Amplitude.kr (panned_left)
+    let amplitude_name = b"Amplitude";
+    buf.push(amplitude_name.len() as u8);
+    buf.write_all(amplitude_name)?;
+    buf.push(1);
+    buf.write_all(&3i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 8, 0)?;
+    write_const_input(&mut buf, 5)?;
+    write_const_input(&mut buf, 6)?;
+    buf.push(1);
+
+    // UGen 16: Amplitude.kr (panned_right)
+    buf.push(amplitude_name.len() as u8);
+    buf.write_all(amplitude_name)?;
+    buf.push(1);
+    buf.write_all(&3i32.to_be_bytes())?;
+    buf.write_all(&1i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 9, 0)?;
+    write_const_input(&mut buf, 5)?;
+    write_const_input(&mut buf, 6)?;
+    buf.push(1);
+
+    // UGen 17: SendTrig.kr (peak_left)
+    let sendtrig_name = b"SendTrig";
+    buf.push(sendtrig_name.len() as u8);
+    buf.write_all(sendtrig_name)?;
+    buf.push(1);
+    buf.write_all(&3i32.to_be_bytes())?;
+    buf.write_all(&0i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 12, 0)?;
+    write_const_input(&mut buf, 0)?;
+    write_ugen_input(&mut buf, 13, 0)?;
+
+    // UGen 18: SendTrig.kr (peak_right)
+    buf.push(sendtrig_name.len() as u8);
+    buf.write_all(sendtrig_name)?;
+    buf.push(1);
+    buf.write_all(&3i32.to_be_bytes())?;
+    buf.write_all(&0i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 12, 0)?;
+    write_const_input(&mut buf, 1)?;
+    write_ugen_input(&mut buf, 14, 0)?;
+
+    // UGen 19: SendTrig.kr (rms_left)
+    buf.push(sendtrig_name.len() as u8);
+    buf.write_all(sendtrig_name)?;
+    buf.push(1);
+    buf.write_all(&3i32.to_be_bytes())?;
+    buf.write_all(&0i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 12, 0)?;
+    write_const_input(&mut buf, 2)?;
+    write_ugen_input(&mut buf, 15, 0)?;
+
+    // UGen 20: SendTrig.kr (rms_right)
+    buf.push(sendtrig_name.len() as u8);
+    buf.write_all(sendtrig_name)?;
+    buf.push(1);
+    buf.write_all(&3i32.to_be_bytes())?;
+    buf.write_all(&0i32.to_be_bytes())?;
+    buf.write_all(&0i16.to_be_bytes())?;
+    write_ugen_input(&mut buf, 12, 0)?;
+    write_const_input(&mut buf, 3)?;
+    write_ugen_input(&mut buf, 16, 0)?;
+
+    // Variants: none
+    buf.write_all(&0i16.to_be_bytes())?;
+
+    Ok(buf)
+}
+
 /// Write a constant input reference to the buffer.
 fn write_const_input(buf: &mut Vec<u8>, const_idx: i32) -> std::io::Result<()> {
     buf.write_all(&(-1i32).to_be_bytes())?; // -1 means constant
@@ -982,6 +1333,87 @@ mod tests {
         assert_eq!(&bytes[0..4], b"SCgf");
         // Should have reasonable size
         assert!(bytes.len() > 100);
+    }
+
+    #[test]
+    fn test_create_system_link_audio_mono_bytes() {
+        let bytes = create_system_link_audio_mono_bytes().unwrap();
+
+        // Magic + version 2.
+        assert_eq!(&bytes[0..4], b"SCgf");
+        assert_eq!(&bytes[4..8], &2i32.to_be_bytes());
+
+        // Synthdef name "system_link_audio_mono" must be encoded.
+        let needle = b"system_link_audio_mono";
+        assert!(
+            bytes.windows(needle.len()).any(|w| w == needle),
+            "synthdef name not found in encoded bytes",
+        );
+
+        // Same parameter surface as the stereo synthdef.
+        assert!(bytes.windows(5).any(|w| w == b"inbus"));
+        assert!(bytes.windows(6).any(|w| w == b"outbus"));
+        assert!(bytes.windows(3).any(|w| w == b"amp"));
+        assert!(bytes.windows(3).any(|w| w == b"pan"));
+
+        // Walk the encoded UGen list to find the final Out.ar — the mono
+        // synthdef must end with an `Out` UGen that has exactly one signal
+        // input (bus + 1 channel = 2 inputs total). The stereo synthdef writes
+        // 3 inputs (bus + 2 channels), so this assertion catches accidental
+        // regressions back to a stereo Out.ar.
+        //
+        // Layout:
+        //   "SCgf" (4) + version (4) + num_synthdefs (2) = 10
+        //   pstr name = 1 + 22 ("system_link_audio_mono")              = 23
+        //   num_constants (4) + 7 * f32 (28)                            = 32
+        //   num_params (4) + 4 * f32 (16)                               = 20
+        //   num_param_names (4)                                         = 4
+        //     pstr "inbus"  + i32  = 1 + 5 + 4                          = 10
+        //     pstr "outbus" + i32  = 1 + 6 + 4                          = 11
+        //     pstr "amp"    + i32  = 1 + 3 + 4                          = 8
+        //     pstr "pan"    + i32  = 1 + 3 + 4                          = 8
+        //   num_ugens (4)                                               = 4
+        let mut off = 10 + 23 + 32 + 20 + 4 + 10 + 11 + 8 + 8 + 4;
+        let num_ugens =
+            i32::from_be_bytes(bytes[off - 4..off].try_into().unwrap());
+        assert_eq!(num_ugens, 21, "expected 21 UGens in mono variant");
+
+        // Walk UGens and find the one named "Out" — should be exactly one,
+        // with 2 inputs and 0 outputs.
+        let mut out_input_count: Option<i32> = None;
+        for _ in 0..num_ugens {
+            let name_len = bytes[off] as usize;
+            off += 1;
+            let ugen_name = &bytes[off..off + name_len];
+            off += name_len;
+            // rate (1 byte)
+            off += 1;
+            let num_inputs =
+                i32::from_be_bytes(bytes[off..off + 4].try_into().unwrap());
+            off += 4;
+            let num_outputs =
+                i32::from_be_bytes(bytes[off..off + 4].try_into().unwrap());
+            off += 4;
+            // special index (2 bytes)
+            off += 2;
+            // input refs: 8 bytes each (i32 ugen_idx + i32 output_idx)
+            off += (num_inputs as usize) * 8;
+            // output rates: 1 byte each
+            off += num_outputs as usize;
+
+            if ugen_name == b"Out" {
+                assert!(
+                    out_input_count.is_none(),
+                    "found multiple Out UGens — should be exactly one",
+                );
+                out_input_count = Some(num_inputs);
+            }
+        }
+        let inputs = out_input_count.expect("missing final Out UGen");
+        assert_eq!(
+            inputs, 2,
+            "Out.ar must have 2 inputs (bus + 1 channel) for mono mixdown",
+        );
     }
 
     #[test]

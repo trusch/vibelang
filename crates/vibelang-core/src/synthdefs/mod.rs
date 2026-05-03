@@ -62,6 +62,17 @@ pub fn generate_builtins() -> Vec<(String, Vec<u8>)> {
         ));
     }
 
+    // Mono-mixdown variant of system_link_audio for `group.output(N)` single-
+    // channel hardware routing. Internal graph + metering match the stereo
+    // synthdef exactly; only the final Out.ar differs (1 channel = L+R sum,
+    // no halving). No simple fallback — this synthdef is feature-gated by the
+    // group config, so a missing builder just disables mono group outputs.
+    if let Ok(bytes) = system_synthdefs::create_system_link_audio_mono_bytes() {
+        all_defs.push(("system_link_audio_mono".to_string(), bytes));
+    } else {
+        tracing::warn!("Failed to create system_link_audio_mono from vibelang-dsp");
+    }
+
     // Add per-port → group mixer synthdefs (RoutesHandler::finalize taps these
     // to wire each voice's output port into its destination group's audio bus).
     if let Ok(bytes) = system_synthdefs::create_port_to_group_link_1_bytes() {
