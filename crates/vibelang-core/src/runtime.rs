@@ -1275,38 +1275,50 @@ impl<B: Backend> Runtime<B> {
             let _ = self.groups.mute(*id, new_config.muted).await;
             let _ = self.groups.solo(*id, new_config.soloed).await;
 
-            // Update output_bus routing if changed
-            {
+            // Update output_bus / output_channels routing if either changed.
+            //
+            // `output_channels` selects between the stereo `system_link_audio`
+            // and the mono `system_link_audio_mono` mixdown variants — a
+            // mono↔stereo flip therefore can't be patched in place. To keep
+            // the code path uniform across all four mono/stereo × bus-change
+            // combinations, we always tear down the existing link synth and
+            // clear `link_synth_node_id` when either field changes; Phase 5's
+            // `groups.finalize()` then spawns the right variant for the new
+            // `output_channels` and routes it to the resolved out_bus, reusing
+            // the dispatch already covered by `handlers::groups` unit tests.
+            let teardown_link_node: Option<crate::types::NodeId> = {
                 let mut state = self.state.write().await;
                 if let Some(group) = state.groups.get_mut(id) {
-                    if group.output_bus != new_config.output_bus {
-                        let old_output = group.output_bus;
+                    let bus_changed = group.output_bus != new_config.output_bus;
+                    let channels_changed =
+                        group.output_channels != new_config.output_channels;
+                    if bus_changed || channels_changed {
+                        let old_bus = group.output_bus;
+                        let old_channels = group.output_channels;
                         group.output_bus = new_config.output_bus;
                         group.output_channels = new_config.output_channels;
-
-                        // Update link synth's outbus parameter if it exists
-                        if let Some(link_node) = group.link_synth_node_id {
-                            let new_outbus = if let Some(hw_bus) = new_config.output_bus {
-                                hw_bus as f32
-                            } else {
-                                // Route back to parent or main
-                                group
-                                    .parent
-                                    .and_then(|p| state.groups.get(&p))
-                                    .map(|pg| pg.audio_bus.0 as f32)
-                                    .unwrap_or(0.0)
-                            };
-                            drop(state);
-                            let _ = self.backend.set_param(link_node, "outbus", new_outbus).await;
-                            tracing::info!(
-                                "Reload: updated group {:?} output_bus {:?} -> {:?}",
-                                id,
-                                old_output,
-                                new_config.output_bus
-                            );
+                        let teardown = group.link_synth_node_id.take();
+                        if let Some(node) = teardown {
+                            state.free_node_id(node);
                         }
+                        tracing::info!(
+                            "Reload: group {:?} routing changed (bus {:?} -> {:?}, channels {:?} -> {:?}); link will be respawned by finalize",
+                            id,
+                            old_bus,
+                            new_config.output_bus,
+                            old_channels,
+                            new_config.output_channels
+                        );
+                        teardown
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
+            };
+            if let Some(node) = teardown_link_node {
+                let _ = self.backend.free_node(node).await;
             }
         }
 
@@ -2900,6 +2912,25 @@ mod tests {
     /// this transcript to prove the post-mix invariant.
     struct RecordingBackend {
         create_synth_log: std::sync::Mutex<Vec<RecordedSynth>>,
+        free_node_log: std::sync::Mutex<Vec<NodeId>>,
+        /// Unified create/free event stream — preserves ordering across both
+        /// op kinds so reload-reconciler tests can resolve "what is alive at
+        /// node N after free+respawn" even when the ID pool recycles a freed
+        /// id back into the next create.
+        events: std::sync::Mutex<Vec<BackendEvent>>,
+    }
+
+    #[derive(Clone, Debug)]
+    #[allow(dead_code)]
+    enum BackendEvent {
+        Create {
+            def: String,
+            node: NodeId,
+            link_outbus: Option<f32>,
+        },
+        Free {
+            node: NodeId,
+        },
     }
 
     #[derive(Clone, Debug)]
@@ -2913,17 +2944,51 @@ mod tests {
         out_bus: Option<f32>,
         fx_bus_in: Option<f32>,
         fx_bus_out: Option<f32>,
+        /// `outbus` param from `system_link_audio*` synths (no underscore).
+        link_outbus: Option<f32>,
     }
 
     impl RecordingBackend {
         fn new() -> Self {
             Self {
                 create_synth_log: std::sync::Mutex::new(Vec::new()),
+                free_node_log: std::sync::Mutex::new(Vec::new()),
+                events: std::sync::Mutex::new(Vec::new()),
             }
         }
 
         fn synths(&self) -> Vec<RecordedSynth> {
             self.create_synth_log.lock().unwrap().clone()
+        }
+
+        /// Link synths (`system_link_audio*`) that are still alive — i.e. the
+        /// most recent op for each node id is a `Create`. Walks the unified
+        /// event log so it stays correct across IDPool reuse (free + alloc
+        /// can return the same id, and we still want to see the surviving
+        /// synth attributed to the latest spawn).
+        fn alive_link_synths(&self) -> Vec<(String, NodeId, Option<f32>)> {
+            use std::collections::HashMap;
+            let events = self.events.lock().unwrap();
+            // Map node_id -> latest create attributes, cleared on Free.
+            let mut latest: HashMap<NodeId, (String, Option<f32>)> = HashMap::new();
+            for ev in events.iter() {
+                match ev {
+                    BackendEvent::Create { def, node, link_outbus } => {
+                        if def.starts_with("system_link_audio") {
+                            latest.insert(*node, (def.clone(), *link_outbus));
+                        }
+                    }
+                    BackendEvent::Free { node } => {
+                        latest.remove(node);
+                    }
+                }
+            }
+            let mut alive: Vec<_> = latest
+                .into_iter()
+                .map(|(n, (def, outbus))| (def, n, outbus))
+                .collect();
+            alive.sort_by_key(|(_, n, _)| n.0);
+            alive
         }
     }
 
@@ -2948,6 +3013,7 @@ mod tests {
             action: AddAction,
             params: &ParamMap,
         ) -> std::result::Result<(), Self::Error> {
+            let link_outbus = params.get("outbus").copied();
             self.create_synth_log.lock().unwrap().push(RecordedSynth {
                 def: def.to_string(),
                 node,
@@ -2957,6 +3023,12 @@ mod tests {
                 out_bus: params.get("out_bus").copied(),
                 fx_bus_in: params.get("__fx_bus_in").copied(),
                 fx_bus_out: params.get("__fx_bus_out").copied(),
+                link_outbus,
+            });
+            self.events.lock().unwrap().push(BackendEvent::Create {
+                def: def.to_string(),
+                node,
+                link_outbus,
             });
             Ok(())
         }
@@ -2970,7 +3042,9 @@ mod tests {
             Ok(())
         }
 
-        async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+        async fn free_node(&self, node: NodeId) -> std::result::Result<(), Self::Error> {
+            self.free_node_log.lock().unwrap().push(node);
+            self.events.lock().unwrap().push(BackendEvent::Free { node });
             Ok(())
         }
 
@@ -3399,5 +3473,179 @@ mod tests {
                 );
             }
         }
+    }
+
+    // =========================================================================
+    // Task D: reload reconciler handles `output_channels` delta
+    //
+    // These tests pin the four mono/stereo transitions exercised when a
+    // hot-reload flips a group's hardware routing. The reload reconciler
+    // (`apply_reload` Phase 4 group update) tears down the old link synth
+    // on any (output_bus, output_channels) change; Phase 5
+    // `groups.finalize` then respawns the variant matching the new
+    // channel count, routed at the new bus.
+    //
+    // After reload we assert: exactly one `system_link_audio*` synth is
+    // alive, with the synthdef name and `outbus` matching the new
+    // routing, and the live node id matches `GroupState.link_synth_node_id`.
+    // =========================================================================
+
+    fn build_routing_config(output_bus: u32, output_channels: u32) -> reload::GroupConfig {
+        reload::GroupConfig {
+            name: "g".to_string(),
+            parent: None,
+            params: ParamMap::new(),
+            effects: Vec::new(),
+            muted: false,
+            soloed: false,
+            output_bus: Some(output_bus),
+            output_channels: Some(output_channels),
+        }
+    }
+
+    fn expected_link_def(channels: u32) -> &'static str {
+        match channels {
+            1 => "system_link_audio_mono",
+            _ => "system_link_audio",
+        }
+    }
+
+    /// Drive a runtime through an initial reload (creating one routed group)
+    /// then a second reload that flips its routing, and assert that exactly
+    /// one link synth survives with the right variant and outbus.
+    async fn assert_routing_reload_transition(
+        initial_bus: u32,
+        initial_channels: u32,
+        new_bus: u32,
+        new_channels: u32,
+    ) {
+        use crate::message::ReloadMessage;
+        use crate::reload::ScriptState;
+        use crate::types::GroupId;
+
+        let backend = RecordingBackend::new();
+        let mut runtime = Runtime::new(backend);
+        let group_id = GroupId::new(1);
+
+        // Initial reload — create the group with its starting routing.
+        let mut s0 = ScriptState::new();
+        s0.add_group(group_id, build_routing_config(initial_bus, initial_channels));
+        runtime
+            .send(ReloadMessage::Apply { state: s0 }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        // Sanity: initial finalize spawned the right starting variant.
+        let initial_alive = runtime.backend.alive_link_synths();
+        assert_eq!(
+            initial_alive.len(),
+            1,
+            "initial finalize should spawn exactly one link synth, got {:?}",
+            initial_alive
+        );
+        assert_eq!(
+            initial_alive[0].0,
+            expected_link_def(initial_channels),
+            "initial variant must match starting output_channels"
+        );
+        assert_eq!(
+            initial_alive[0].2,
+            Some(initial_bus as f32),
+            "initial outbus must match starting hardware bus"
+        );
+        let initial_link_node = initial_alive[0].1;
+
+        // Second reload — flip routing on the same group.
+        let mut s1 = ScriptState::new();
+        s1.add_group(group_id, build_routing_config(new_bus, new_channels));
+        runtime
+            .send(ReloadMessage::Apply { state: s1 }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        // After reload: exactly one link synth alive, matching the new
+        // routing. The old one has been freed (verified via the unified
+        // event log inside `alive_link_synths`).
+        let alive = runtime.backend.alive_link_synths();
+        assert_eq!(
+            alive.len(),
+            1,
+            "exactly one link synth alive after reload (transition {}ch@{} -> {}ch@{}); got {:?}",
+            initial_channels, initial_bus, new_channels, new_bus, alive
+        );
+        let (def, node, outbus) = alive[0].clone();
+        assert_eq!(
+            def,
+            expected_link_def(new_channels),
+            "post-reload variant must match new output_channels"
+        );
+        assert_eq!(
+            outbus,
+            Some(new_bus as f32),
+            "post-reload outbus must match new hardware bus"
+        );
+
+        // The old link node must have been freed at least once.
+        let frees = runtime.backend.free_node_log.lock().unwrap().clone();
+        assert!(
+            frees.contains(&initial_link_node),
+            "old link node {:?} must be freed during reload (frees: {:?})",
+            initial_link_node,
+            frees
+        );
+
+        // The live node id matches what's stored on GroupState.
+        let state_link = {
+            let s = runtime.state.read().await;
+            s.groups
+                .get(&group_id)
+                .and_then(|g| g.link_synth_node_id)
+                .expect("group has link_synth_node_id after reload")
+        };
+        assert_eq!(
+            state_link, node,
+            "GroupState.link_synth_node_id points at the alive link synth"
+        );
+
+        // GroupState reflects the new routing fields.
+        let (state_bus, state_channels) = {
+            let s = runtime.state.read().await;
+            let g = s.groups.get(&group_id).unwrap();
+            (g.output_bus, g.output_channels)
+        };
+        assert_eq!(state_bus, Some(new_bus));
+        assert_eq!(state_channels, Some(new_channels));
+    }
+
+    #[tokio::test]
+    async fn test_reload_stereo_bus_change() {
+        // Regression: stereo [2,3] → stereo [4,5]. Same variant, new bus.
+        assert_routing_reload_transition(2, 2, 4, 2).await;
+    }
+
+    #[tokio::test]
+    async fn test_reload_stereo_to_mono_same_bus() {
+        // Variant swap: stereo [2,3] → mono (2). Old `system_link_audio`
+        // must be freed; only `system_link_audio_mono` survives at bus 2.
+        assert_routing_reload_transition(2, 2, 2, 1).await;
+    }
+
+    #[tokio::test]
+    async fn test_reload_mono_to_stereo_same_bus() {
+        // Variant swap back: mono (2) → stereo [2,3]. Old
+        // `system_link_audio_mono` must be freed; only `system_link_audio`
+        // survives at bus 2.
+        assert_routing_reload_transition(2, 1, 2, 2).await;
+    }
+
+    #[tokio::test]
+    async fn test_reload_mono_bus_change() {
+        // Bus change, same mono variant: (2) → (3). Even though the
+        // variant is unchanged, the diff path still tears down + respawns
+        // (collapses all four cases into one). Only one mono link
+        // survives, at bus 3.
+        assert_routing_reload_transition(2, 1, 3, 1).await;
     }
 }
