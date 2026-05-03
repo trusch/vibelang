@@ -215,22 +215,24 @@
   },
   {
     "name": "SoundIn",
-    "description": "Read from hardware audio input. Convenient wrapper around In for reading from sound card inputs.",
+    "description": "Read from hardware audio input. Convenient wrapper that expands to In.ar(NumOutputBuses.ir + channel, 1) — adapts to scsynth's -o setting automatically. Hand-written in vibelang-dsp helpers (see sound_in_channel) because SoundIn is sclang-only and not a server-side UGen.",
     "rates": [
-      "ar"
+      "builder"
     ],
     "inputs": [
       {
         "name": "channel",
         "type": "float",
         "default": 0,
-        "description": "Hardware input channel number"
+        "description": "Hardware input channel number (0 = first input)"
       }
     ],
     "outputs": 1,
     "category": "InOut",
     "functions": [
-      "sound_in_ar"
+      "sound_in_ar",
+      "sound_in_channel",
+      "sound_in"
     ]
   }
 ]

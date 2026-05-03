@@ -806,47 +806,73 @@ pub fn envelope() -> EnvelopeBuilder {
 }
 
 /// Read from hardware audio input (microphone, line-in, etc.).
-/// Channel 0 is the first hardware input.
-/// Returns an array of audio signals, one per channel.
+///
+/// `channel` 0 is the first hardware input. Reads `num_channels` consecutive
+/// inputs starting there. The bus offset is computed at synth-instantiation
+/// time via the `NumOutputBuses` UGen (`In.ar(NumOutputBuses.ir + channel,
+/// num_channels)`), so the synthdef adapts to whatever `-o` value scsynth
+/// was started with — no hardcoded layout.
+///
+/// `SoundIn` is sclang-only and does not exist as a server-side UGen; we
+/// emit the same expansion the SC class library does.
 pub fn sound_in(num_channels: f64) -> Result<Array> {
     let num_ch = num_channels as u32;
-    // SoundIn with bus=0 reads from hardware inputs starting at channel 0
-    // For mono, just read channel 0; for stereo, read channels 0 and 1
-    if num_ch == 1 {
-        // Single channel - SoundIn.ar(0)
-        let node_ref = with_builder(|builder| {
-            builder.add_constant(0.0);
-            let inputs = vec![Input::Constant(0.0)];
-            builder.add_node("SoundIn".to_string(), Rate::Audio, inputs, 1, 0)
-        })?;
-        Ok(vec![Dynamic::from(node_ref)])
-    } else {
-        // Multiple channels - use In.ar reading from NumOutputBusChannels
-        // SoundIn internally does: In.ar(NumOutputBusChannels.ir + bus, numChannels)
-        // Since we have 2 output channels, hardware inputs start at bus 2
-        // Note: In.ar only takes bus as input - numChannels is determined by output count
-        let node_ref = with_builder(|builder| {
-            builder.add_constant(2.0); // NumOutputBusChannels = 2
-            let inputs = vec![Input::Constant(2.0)];
-            builder.add_node("In".to_string(), Rate::Audio, inputs, num_ch, 0)
-        })?;
+    let in_node = with_builder(|builder| {
+        let num_outs =
+            builder.add_node("NumOutputBuses".to_string(), Rate::Scalar, vec![], 1, 0);
+        builder.add_node(
+            "In".to_string(),
+            Rate::Audio,
+            vec![num_outs.to_input()],
+            num_ch,
+            0,
+        )
+    })?;
 
-        let mut result = Array::new();
-        for ch in 0..num_ch {
-            let channel_ref = NodeRef::new_with_output(node_ref.id(), ch);
-            result.push(Dynamic::from(channel_ref));
-        }
-        Ok(result)
+    let mut result = Array::new();
+    for ch in 0..num_ch {
+        let channel_ref = NodeRef::new_with_output(in_node.id(), ch);
+        result.push(Dynamic::from(channel_ref));
     }
+    Ok(result)
 }
 
-/// Read from hardware audio input, single channel version.
-/// Channel specifies which hardware input to read (0 = first input).
+/// Read from a single hardware audio input by channel index.
+///
+/// Same expansion as `sound_in` but for one channel: `In.ar(NumOutputBuses.ir
+/// + channel, 1)`. SC reads the bus index once at synth creation, so changing
+/// `channel` after the synth is running has no effect — but it's fine for
+/// per-instance selection via `set_param` at instantiation.
 pub fn sound_in_channel(channel: f64) -> Result<NodeRef> {
     with_builder(|builder| {
+        let num_outs =
+            builder.add_node("NumOutputBuses".to_string(), Rate::Scalar, vec![], 1, 0);
         builder.add_constant(channel as f32);
-        let inputs = vec![Input::Constant(channel as f32)];
-        builder.add_node("SoundIn".to_string(), Rate::Audio, inputs, 1, 0)
+        let bus = builder.add_node(
+            "BinaryOpUGen".to_string(),
+            Rate::Scalar,
+            vec![num_outs.to_input(), Input::Constant(channel as f32)],
+            1,
+            0,
+        );
+        builder.add_node("In".to_string(), Rate::Audio, vec![bus.to_input()], 1, 0)
+    })
+}
+
+/// Read from a hardware audio input where the channel index is a synthdef
+/// parameter or another node (NodeRef variant of `sound_in_channel`).
+///
+/// Lets a synthdef expose `channel` as a parameter and have the runtime
+/// handle the offset arithmetic, so script authors never need to know
+/// scsynth's `-o` value.
+pub fn sound_in_channel_n(channel: NodeRef) -> Result<NodeRef> {
+    with_builder(|builder| {
+        let num_outs =
+            builder.add_node("NumOutputBuses".to_string(), Rate::Scalar, vec![], 1, 0);
+        let inputs = vec![num_outs.to_input(), channel.to_input()];
+        let rate = builder.max_rate_from_inputs(&inputs);
+        let bus = builder.add_node("BinaryOpUGen".to_string(), rate, inputs, 1, 0);
+        builder.add_node("In".to_string(), Rate::Audio, vec![bus.to_input()], 1, 0)
     })
 }
 
@@ -989,6 +1015,25 @@ pub fn register_helpers(engine: &mut rhai::Engine) {
     engine.register_fn("sound_in_channel", |channel: i64| {
         sound_in_channel(channel as f64).unwrap()
     });
+    engine.register_fn("sound_in_channel", |channel: NodeRef| {
+        sound_in_channel_n(channel).unwrap()
+    });
+
+    // `sound_in_ar` is the manifest-style alias for `sound_in_channel`.
+    // The SoundIn manifest entry is documentation-only (rates: ["builder"])
+    // because SoundIn is a sclang pseudo-UGen; the SC server only knows
+    // In + NumOutputBuses, which is what these helpers emit.
+    engine.register_fn("sound_in_ar", |channel: f64| {
+        sound_in_channel(channel).unwrap()
+    });
+    engine.register_fn("sound_in_ar", |channel: i64| {
+        sound_in_channel(channel as f64).unwrap()
+    });
+    engine.register_fn("sound_in_ar", |channel: NodeRef| {
+        sound_in_channel_n(channel).unwrap()
+    });
+    // Allow zero-arg call: `sound_in_ar()` reads channel 0.
+    engine.register_fn("sound_in_ar", || sound_in_channel(0.0).unwrap());
 
     // Mix and utilities
     engine.register_fn("mix", |arr: Array| mix(arr).unwrap());
