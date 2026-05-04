@@ -12,11 +12,49 @@
 use crate::backend::{AddAction, Backend};
 use crate::compat::RwLock;
 use crate::state::{ParamSummerSource, ParamSummerState, State};
-use crate::types::{BusId, ControlBusId, GroupId, NodeId, ParamMap, VoiceId};
+use crate::types::{BusId, ControlBusId, EffectId, GroupId, NodeId, ParamMap, VoiceId};
 use crate::{Error, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use vibelang_dsp::{OutputPort, PortRate};
+
+/// Target side of a CV-to-param route.
+///
+/// A route's source is always a Voice (only voices own kr/tr/ar output ports),
+/// but the target can be either another Voice's param or an Effect's param.
+/// Voice-target routes resolve to every active voice node (`active_nodes` +
+/// `note_nodes`); fx-target routes resolve to the effect's single
+/// [`crate::state::EffectState::node_id`]. The `/n_map` pipeline doesn't
+/// care which kind of node it's binding to — same backend call either way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ParamRouteTarget {
+    Voice(VoiceId),
+    Effect(EffectId),
+}
+
+impl From<VoiceId> for ParamRouteTarget {
+    fn from(v: VoiceId) -> Self {
+        Self::Voice(v)
+    }
+}
+
+impl From<EffectId> for ParamRouteTarget {
+    fn from(e: EffectId) -> Self {
+        Self::Effect(e)
+    }
+}
+
+impl ParamRouteTarget {
+    /// Convenience: `true` when this target is a Voice.
+    pub fn is_voice(&self) -> bool {
+        matches!(self, Self::Voice(_))
+    }
+
+    /// Convenience: `true` when this target is an Effect.
+    pub fn is_effect(&self) -> bool {
+        matches!(self, Self::Effect(_))
+    }
+}
 
 /// Where a voice's output port should send its audio (or, for kr ports,
 /// its CV signal).
@@ -139,24 +177,25 @@ impl RouteDiff {
 }
 
 /// Multi-target Param routes: source `(voice_id, port_name)` →
-/// list of `(target_voice_id, target_param_name)` pairs.
+/// list of `(target, target_param_name)` pairs.
 ///
-/// One source kr port can drive params on multiple target voices, so unlike
-/// [`RouteMap`] the value is a list. The map is shared between the SET
-/// pipeline (`.to_param`) and the BEND pipeline (`.modulate_by`) — each
-/// pipeline owns its own [`ParamRouteMap`] in
-/// [`crate::state::State::param_routes_set`] and
+/// One source kr port can drive params on multiple target voices and/or
+/// effects, so unlike [`RouteMap`] the value is a list. The target side is a
+/// [`ParamRouteTarget`] enum so a single source key can fan out to any mix of
+/// voice and fx targets. The map is shared between the SET pipeline
+/// (`.to_param`) and the BEND pipeline (`.modulate_by`) — each pipeline owns
+/// its own [`ParamRouteMap`] in [`crate::state::State::param_routes_set`] and
 /// [`crate::state::State::param_routes_bend`]. Diffed by
 /// [`RoutesHandler::diff_params`] and applied by
 /// [`RoutesHandler::finalize_params`].
-pub type ParamRouteMap = HashMap<(VoiceId, String), Vec<(VoiceId, String)>>;
+pub type ParamRouteMap = HashMap<(VoiceId, String), Vec<(ParamRouteTarget, String)>>;
 
 /// A single Param route — one source kr port → one target param.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ParamRoute {
     pub source_voice: VoiceId,
     pub source_port: String,
-    pub target_voice: VoiceId,
+    pub target: ParamRouteTarget,
     pub target_param: String,
 }
 
@@ -199,16 +238,18 @@ struct AdapterSpawn {
     out_bus: ControlBusId,
 }
 
-/// A single planned action against one `(target_voice, target_param)` pair,
+/// A single planned action against one `(target, target_param)` pair,
 /// produced by [`RoutesHandler::plan_param_actions`] and consumed by
 /// [`RoutesHandler::apply_param_action`].
 struct PlannedParamAction {
     /// Kept for diagnostic logging — `target_nodes` carries the actual
     /// per-node dispatch list, so this isn't read on the hot path.
     #[allow(dead_code)]
-    target_voice: VoiceId,
+    target: ParamRouteTarget,
     target_param: String,
-    /// Active synth nodes of the target voice that need their param remapped.
+    /// Active synth nodes of the target that need their param remapped.
+    /// Voice targets contribute their `active_nodes` + `note_nodes`; fx
+    /// targets contribute their single [`crate::state::EffectState::node_id`].
     target_nodes: Vec<NodeId>,
     plan: ParamPlan,
 }
@@ -256,15 +297,15 @@ enum ParamMapKind {
 
 /// Stage a [`ParamRouteDiff`] against the matching map on the locked state.
 ///
-/// Drops removed `(target_voice, target_param)` from each source's target
-/// list (pruning empty source keys), then appends additions, skipping any
-/// addition whose source port is no longer registered on the source voice.
+/// Drops removed `(target, target_param)` from each source's target list
+/// (pruning empty source keys), then appends additions, skipping any addition
+/// whose source port is no longer registered on the source voice.
 fn apply_param_diff_to_map(
     state: &mut State,
     diff: &ParamRouteDiff,
     kind: ParamMapKind,
 ) {
-    let map: &mut HashMap<(VoiceId, String), Vec<(VoiceId, String)>> = match kind {
+    let map: &mut ParamRouteMap = match kind {
         ParamMapKind::Set => &mut state.param_routes_set,
         ParamMapKind::Bend => &mut state.param_routes_bend,
         ParamMapKind::Trigger => &mut state.param_routes_trigger,
@@ -274,7 +315,7 @@ fn apply_param_diff_to_map(
         let src_key = (r.source_voice, r.source_port.clone());
         let mut empty_now = false;
         if let Some(targets) = map.get_mut(&src_key) {
-            targets.retain(|(tv, tp)| !(*tv == r.target_voice && *tp == r.target_param));
+            targets.retain(|(t, tp)| !(*t == r.target && *tp == r.target_param));
             empty_now = targets.is_empty();
         }
         if empty_now {
@@ -284,7 +325,7 @@ fn apply_param_diff_to_map(
 
     // Source-port existence check needs the voices map, which lives on the
     // same `state` borrow — extract source info first to avoid double-borrow.
-    let mut to_add: Vec<((VoiceId, String), (VoiceId, String))> = Vec::new();
+    let mut to_add: Vec<((VoiceId, String), (ParamRouteTarget, String))> = Vec::new();
     for r in &diff.additions {
         let source_exists = state
             .voices
@@ -301,10 +342,10 @@ fn apply_param_diff_to_map(
         }
         to_add.push((
             (r.source_voice, r.source_port.clone()),
-            (r.target_voice, r.target_param.clone()),
+            (r.target, r.target_param.clone()),
         ));
     }
-    let map: &mut HashMap<(VoiceId, String), Vec<(VoiceId, String)>> = match kind {
+    let map: &mut ParamRouteMap = match kind {
         ParamMapKind::Set => &mut state.param_routes_set,
         ParamMapKind::Bend => &mut state.param_routes_bend,
         ParamMapKind::Trigger => &mut state.param_routes_trigger,
@@ -327,8 +368,8 @@ fn apply_param_diff_to_map(
 /// oblivious to the upstream rate.
 fn collect_source_buses(
     state: &State,
-    map: &HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
-    tgt: &(VoiceId, String),
+    map: &ParamRouteMap,
+    tgt: &(ParamRouteTarget, String),
 ) -> Vec<BusId> {
     let mut source_buses: Vec<BusId> = Vec::new();
     for ((sv, sp), targets) in map.iter() {
@@ -353,15 +394,22 @@ fn collect_source_buses(
     source_buses
 }
 
-/// Look up the user-set baseline for `(target_voice, target_param)` — the
-/// last value passed to `voice.set_param(param, value)`. `None` if the
-/// target voice isn't registered or the param has never been set; the
-/// caller decides whether to fall back to the synthdef default.
-fn baseline_for_target(state: &State, tgt: &(VoiceId, String)) -> Option<f32> {
-    state
-        .voices
-        .get(&tgt.0)
-        .and_then(|v| v.config.params.get(&tgt.1).copied())
+/// Look up the user-set baseline for `(target, target_param)` — the last
+/// value passed to `voice.set_param(param, value)` or `fx.param(name,
+/// value)`. `None` if the target isn't registered or the param has never
+/// been set; the caller decides whether to fall back to the synthdef
+/// default.
+fn baseline_for_target(state: &State, tgt: &(ParamRouteTarget, String)) -> Option<f32> {
+    match tgt.0 {
+        ParamRouteTarget::Voice(vid) => state
+            .voices
+            .get(&vid)
+            .and_then(|v| v.config.params.get(&tgt.1).copied()),
+        ParamRouteTarget::Effect(eid) => state
+            .effects
+            .get(&eid)
+            .and_then(|e| e.params.get(&tgt.1).copied()),
+    }
 }
 
 impl<B: Backend> RoutesHandler<B> {
@@ -575,15 +623,15 @@ ar-rate audio. Either:\n  \
 
         for ((src_voice, src_port), new_targets) in new {
             let old_targets = old.get(&(*src_voice, src_port.clone()));
-            for (tgt_voice, tgt_param) in new_targets {
+            for (tgt, tgt_param) in new_targets {
                 let in_old = old_targets
-                    .map(|v| v.iter().any(|t| t.0 == *tgt_voice && t.1 == *tgt_param))
+                    .map(|v| v.iter().any(|t| t.0 == *tgt && t.1 == *tgt_param))
                     .unwrap_or(false);
                 if !in_old {
                     diff.additions.push(ParamRoute {
                         source_voice: *src_voice,
                         source_port: src_port.clone(),
-                        target_voice: *tgt_voice,
+                        target: *tgt,
                         target_param: tgt_param.clone(),
                     });
                 }
@@ -592,15 +640,15 @@ ar-rate audio. Either:\n  \
 
         for ((src_voice, src_port), old_targets) in old {
             let new_targets = new.get(&(*src_voice, src_port.clone()));
-            for (tgt_voice, tgt_param) in old_targets {
+            for (tgt, tgt_param) in old_targets {
                 let in_new = new_targets
-                    .map(|v| v.iter().any(|t| t.0 == *tgt_voice && t.1 == *tgt_param))
+                    .map(|v| v.iter().any(|t| t.0 == *tgt && t.1 == *tgt_param))
                     .unwrap_or(false);
                 if !in_new {
                     diff.removals.push(ParamRoute {
                         source_voice: *src_voice,
                         source_port: src_port.clone(),
-                        target_voice: *tgt_voice,
+                        target: *tgt,
                         target_param: tgt_param.clone(),
                     });
                 }
@@ -841,8 +889,8 @@ ar-rate audio. Either:\n  \
         // Build a deterministic order of affected target keys: removals
         // first, then additions; deduplicated while preserving first-seen
         // order. All three diffs contribute.
-        let mut seen: HashSet<(VoiceId, String)> = HashSet::new();
-        let mut affected: Vec<(VoiceId, String)> = Vec::new();
+        let mut seen: HashSet<(ParamRouteTarget, String)> = HashSet::new();
+        let mut affected: Vec<(ParamRouteTarget, String)> = Vec::new();
         for r in set_diff
             .removals
             .iter()
@@ -852,7 +900,7 @@ ar-rate audio. Either:\n  \
             .chain(bend_diff.additions.iter())
             .chain(trigger_diff.additions.iter())
         {
-            let key = (r.target_voice, r.target_param.clone());
+            let key = (r.target, r.target_param.clone());
             if seen.insert(key.clone()) {
                 affected.push(key);
             }
@@ -879,17 +927,26 @@ ar-rate audio. Either:\n  \
                 triggers_to_free.push((prev_node, ControlBusId::new(prev_bus.raw())));
             }
 
-            let target_nodes: Vec<NodeId> = state
-                .voices
-                .get(&tgt.0)
-                .map(|v| {
-                    v.active_nodes
-                        .iter()
-                        .copied()
-                        .chain(v.note_nodes.values().copied())
-                        .collect()
-                })
-                .unwrap_or_default();
+            // Voice targets contribute every active node + every note node;
+            // fx targets contribute their single effect node.
+            let target_nodes: Vec<NodeId> = match tgt.0 {
+                ParamRouteTarget::Voice(vid) => state
+                    .voices
+                    .get(&vid)
+                    .map(|v| {
+                        v.active_nodes
+                            .iter()
+                            .copied()
+                            .chain(v.note_nodes.values().copied())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                ParamRouteTarget::Effect(eid) => state
+                    .effects
+                    .get(&eid)
+                    .map(|e| vec![e.node_id])
+                    .unwrap_or_default(),
+            };
 
             // Gather SET / BEND / TRIGGER sources targeting this `(target,
             // param)`.
@@ -976,7 +1033,7 @@ ar-rate audio. Either:\n  \
             };
 
             planned.push(PlannedParamAction {
-                target_voice: tgt.0,
+                target: tgt.0,
                 target_param: tgt.1,
                 target_nodes,
                 plan,
@@ -1002,7 +1059,7 @@ ar-rate audio. Either:\n  \
     fn plan_summer(
         &self,
         state: &mut State,
-        tgt: &(VoiceId, String),
+        tgt: &(ParamRouteTarget, String),
         used: &[BusId],
         baseline: f32,
     ) -> ParamPlan {
@@ -1059,7 +1116,7 @@ ar-rate audio. Either:\n  \
     fn plan_trigger_link(
         &self,
         state: &mut State,
-        tgt: &(VoiceId, String),
+        tgt: &(ParamRouteTarget, String),
         in_bus: BusId,
     ) -> ParamPlan {
         let intermediate = state.alloc_control_bus();
@@ -2465,7 +2522,7 @@ mod tests {
             diff.additions.push(ParamRoute {
                 source_voice: *sv,
                 source_port: "out".to_string(),
-                target_voice,
+                target: ParamRouteTarget::Voice(target_voice),
                 target_param: target_param.to_string(),
             });
         }
@@ -2484,8 +2541,13 @@ mod tests {
                     (VoiceId::new(*vid), (*port).to_string()),
                     targets
                         .iter()
-                        .map(|(tv, tp)| (VoiceId::new(*tv), (*tp).to_string()))
-                        .collect::<Vec<(VoiceId, String)>>(),
+                        .map(|(tv, tp)| {
+                            (
+                                ParamRouteTarget::Voice(VoiceId::new(*tv)),
+                                (*tp).to_string(),
+                            )
+                        })
+                        .collect::<Vec<(ParamRouteTarget, String)>>(),
                 )
             })
             .collect()
@@ -2570,7 +2632,7 @@ mod tests {
         assert!(s.param_routes_bend.is_empty());
         let recorded = s
             .param_summers
-            .get(&(target_voice, target_param.clone()))
+            .get(&(ParamRouteTarget::Voice(target_voice), target_param.clone()))
             .expect("SET summer tracked");
         assert_eq!(recorded.node, summer.node);
         assert_eq!(recorded.arity(), 1);
@@ -2646,7 +2708,7 @@ mod tests {
         let summer_node = {
             let s = state.read().await;
             s.param_summers
-                .get(&(target_voice, target_param.clone()))
+                .get(&(ParamRouteTarget::Voice(target_voice), target_param.clone()))
                 .unwrap()
                 .node
         };
@@ -2655,7 +2717,7 @@ mod tests {
         rm.removals.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
-            target_voice,
+            target: ParamRouteTarget::Voice(target_voice),
             target_param: target_param.clone(),
         });
         handler
@@ -2733,7 +2795,7 @@ mod tests {
         let s = state.read().await;
         let recorded = s
             .param_summers
-            .get(&(target_voice, target_param.clone()))
+            .get(&(ParamRouteTarget::Voice(target_voice), target_param.clone()))
             .expect("summer tracked");
         assert_eq!(recorded.node, summer.node);
         assert_eq!(recorded.bus.raw(), intermediate);
@@ -2800,7 +2862,7 @@ mod tests {
             let s = state.read().await;
             let recorded = s
                 .param_summers
-                .get(&(target_voice, target_param.clone()))
+                .get(&(ParamRouteTarget::Voice(target_voice), target_param.clone()))
                 .unwrap();
             (recorded.node, recorded.bus, recorded.arity())
         };
@@ -2811,7 +2873,7 @@ mod tests {
         rm.removals.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
-            target_voice,
+            target: ParamRouteTarget::Voice(target_voice),
             target_param: target_param.clone(),
         });
         handler
@@ -2865,7 +2927,7 @@ mod tests {
         let summer_node = {
             let s = state.read().await;
             s.param_summers
-                .get(&(target_voice, target_param.clone()))
+                .get(&(ParamRouteTarget::Voice(target_voice), target_param.clone()))
                 .unwrap()
                 .node
         };
@@ -2875,7 +2937,7 @@ mod tests {
             rm.removals.push(ParamRoute {
                 source_voice: *sv,
                 source_port: "out".to_string(),
-                target_voice,
+                target: ParamRouteTarget::Voice(target_voice),
                 target_param: target_param.clone(),
             });
         }
@@ -2943,15 +3005,15 @@ mod tests {
             let mut st = state.write().await;
             st.param_routes_set.insert(
                 (s_voice, "env".to_string()),
-                vec![(t0, "cutoff".to_string())],
+                vec![(ParamRouteTarget::Voice(t0), "cutoff".to_string())],
             );
             st.param_routes_bend.insert(
                 (s_voice, "lfo".to_string()),
-                vec![(t1, "amp".to_string())],
+                vec![(ParamRouteTarget::Voice(t1), "amp".to_string())],
             );
             st.param_routes_bend.insert(
                 (s2_voice, "lfo".to_string()),
-                vec![(t0, "freq".to_string())],
+                vec![(ParamRouteTarget::Voice(t0), "freq".to_string())],
             );
         }
 
@@ -3179,7 +3241,7 @@ mod tests {
         // The summer's source bus matches the adapter's kr bus too.
         let recorded_summer = s
             .param_summers
-            .get(&(target_voice, target_param.clone()))
+            .get(&(ParamRouteTarget::Voice(target_voice), target_param.clone()))
             .expect("summer recorded");
         assert_eq!(recorded_summer.sources[0].bus.raw(), adapter_kr_bus);
         assert_eq!(recorded_summer.sources[0].scale, 1.0);
@@ -3208,7 +3270,7 @@ mod tests {
                 .unwrap();
             let summer = s
                 .param_summers
-                .get(&(target_voice, target_param.clone()))
+                .get(&(ParamRouteTarget::Voice(target_voice), target_param.clone()))
                 .unwrap();
             (adapter_node, summer.node, adapter_bus, summer.bus)
         };
@@ -3219,7 +3281,7 @@ mod tests {
         rm.removals.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
-            target_voice,
+            target: ParamRouteTarget::Voice(target_voice),
             target_param: target_param.clone(),
         });
         handler
@@ -3294,13 +3356,13 @@ mod tests {
         diff.additions.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
-            target_voice: target_a,
+            target: ParamRouteTarget::Voice(target_a),
             target_param: "x".to_string(),
         });
         diff.additions.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
-            target_voice: target_b,
+            target: ParamRouteTarget::Voice(target_b),
             target_param: "y".to_string(),
         });
         // Both targets point at distinct (target_voice, target_param) pairs
@@ -3340,11 +3402,11 @@ mod tests {
             .unwrap();
         let summer_a = s
             .param_summers
-            .get(&(target_a, "x".to_string()))
+            .get(&(ParamRouteTarget::Voice(target_a), "x".to_string()))
             .unwrap();
         let summer_b = s
             .param_summers
-            .get(&(target_b, "y".to_string()))
+            .get(&(ParamRouteTarget::Voice(target_b), "y".to_string()))
             .unwrap();
         assert_eq!(summer_a.sources[0].bus.raw(), adapter_bus.raw());
         assert_eq!(summer_b.sources[0].bus.raw(), adapter_bus.raw());
@@ -3522,7 +3584,7 @@ mod tests {
         trigger_diff.additions.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
-            target_voice,
+            target: ParamRouteTarget::Voice(target_voice),
             target_param: target_param.clone(),
         });
 
@@ -3574,7 +3636,7 @@ mod tests {
         let s = state.read().await;
         let (link_node, link_bus) = s
             .param_triggers
-            .get(&(target_voice, target_param.clone()))
+            .get(&(ParamRouteTarget::Voice(target_voice), target_param.clone()))
             .expect("trigger link tracked")
             .clone();
         assert_eq!(link_node, link.node);
@@ -3617,7 +3679,7 @@ mod tests {
         trigger_diff.additions.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
-            target_voice,
+            target: ParamRouteTarget::Voice(target_voice),
             target_param: target_param.clone(),
         });
         handler
@@ -3632,7 +3694,7 @@ mod tests {
         let (link_node, link_bus) = {
             let s = state.read().await;
             *s.param_triggers
-                .get(&(target_voice, target_param.clone()))
+                .get(&(ParamRouteTarget::Voice(target_voice), target_param.clone()))
                 .unwrap()
         };
 
@@ -3641,7 +3703,7 @@ mod tests {
         rm.removals.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
-            target_voice,
+            target: ParamRouteTarget::Voice(target_voice),
             target_param: target_param.clone(),
         });
         handler
@@ -3686,7 +3748,7 @@ mod tests {
         trigger_diff.additions.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
-            target_voice,
+            target: ParamRouteTarget::Voice(target_voice),
             target_param: target_param.clone(),
         });
         handler
@@ -3767,11 +3829,11 @@ mod tests {
             );
             s.param_routes_set.insert(
                 (kr_source_id, "env".to_string()),
-                vec![(target_voice, target_param.clone())],
+                vec![(ParamRouteTarget::Voice(target_voice), target_param.clone())],
             );
             s.param_routes_trigger.insert(
                 (sources[0], "out".to_string()),
-                vec![(target_voice, target_param.clone())],
+                vec![(ParamRouteTarget::Voice(target_voice), target_param.clone())],
             );
         }
 
@@ -3780,7 +3842,7 @@ mod tests {
         trigger_diff.additions.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
-            target_voice,
+            target: ParamRouteTarget::Voice(target_voice),
             target_param: target_param.clone(),
         });
         handler
@@ -3816,11 +3878,11 @@ mod tests {
             let mut s = state.write().await;
             s.param_routes_set.insert(
                 (sources[0], "out".to_string()),
-                vec![(target_voice, target_param.clone())],
+                vec![(ParamRouteTarget::Voice(target_voice), target_param.clone())],
             );
             s.param_routes_bend.insert(
                 (sources[1], "out".to_string()),
-                vec![(target_voice, target_param.clone())],
+                vec![(ParamRouteTarget::Voice(target_voice), target_param.clone())],
             );
         }
 
@@ -3830,7 +3892,7 @@ mod tests {
         diff.additions.push(ParamRoute {
             source_voice: sources[0],
             source_port: "out".to_string(),
-            target_voice,
+            target: ParamRouteTarget::Voice(target_voice),
             target_param: target_param.clone(),
         });
         handler

@@ -46,6 +46,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use tokio::sync::RwLock;
+use vibelang_core::handlers::ParamRouteTarget;
 use vibelang_core::handlers::{
     ParamRoute, ParamRouteDiff, RouteMap, RoutesHandler,
 };
@@ -377,7 +378,7 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
     diff.additions.push(ParamRoute {
         source_voice: src,
         source_port: "env".to_string(),
-        target_voice: tgt,
+        target: ParamRouteTarget::Voice(tgt),
         target_param: "cutoff".to_string(),
     });
 
@@ -394,8 +395,8 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
         .read()
         .await
         .param_summers
-        .get(&(tgt, "cutoff".to_string()))
-        .expect("summer registered for (tgt, cutoff)")
+        .get(&(ParamRouteTarget::Voice(tgt), "cutoff".to_string()))
+        .expect("summer registered for (ParamRouteTarget::Voice(tgt), cutoff)")
         .bus
         .raw();
 
@@ -428,7 +429,7 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
     let entries = baseline
         .get(&(src, "env".to_string()))
         .expect("source key recorded");
-    assert_eq!(entries.as_slice(), &[(tgt, "cutoff".to_string())]);
+    assert_eq!(entries.as_slice(), &[(ParamRouteTarget::Voice(tgt), "cutoff".to_string())]);
 
     // Post-A1.a: SET routes spawn one `param_kr_modulate_1` summer per
     // (target, param) pair so `.scale/.offset` modifiers can apply
@@ -489,13 +490,13 @@ async fn multiple_to_param_routes_from_one_source() {
     diff.additions.push(ParamRoute {
         source_voice: src,
         source_port: "env".to_string(),
-        target_voice: tgt_a,
+        target: ParamRouteTarget::Voice(tgt_a),
         target_param: "cutoff".to_string(),
     });
     diff.additions.push(ParamRoute {
         source_voice: src,
         source_port: "env".to_string(),
-        target_voice: tgt_b,
+        target: ParamRouteTarget::Voice(tgt_b),
         target_param: "pitch".to_string(),
     });
 
@@ -509,14 +510,14 @@ async fn multiple_to_param_routes_from_one_source() {
     let s = state.read().await;
     let bus_a = s
         .param_summers
-        .get(&(tgt_a, "cutoff".to_string()))
-        .expect("summer for (tgt_a, cutoff)")
+        .get(&(ParamRouteTarget::Voice(tgt_a), "cutoff".to_string()))
+        .expect("summer for (ParamRouteTarget::Voice(tgt_a), cutoff)")
         .bus
         .raw();
     let bus_b = s
         .param_summers
-        .get(&(tgt_b, "pitch".to_string()))
-        .expect("summer for (tgt_b, pitch)")
+        .get(&(ParamRouteTarget::Voice(tgt_b), "pitch".to_string()))
+        .expect("summer for (ParamRouteTarget::Voice(tgt_b), pitch)")
         .bus
         .raw();
     drop(s);
@@ -543,8 +544,8 @@ async fn multiple_to_param_routes_from_one_source() {
         .cloned()
         .expect("source key recorded");
     assert_eq!(entries.len(), 2);
-    assert!(entries.contains(&(tgt_a, "cutoff".to_string())));
-    assert!(entries.contains(&(tgt_b, "pitch".to_string())));
+    assert!(entries.contains(&(ParamRouteTarget::Voice(tgt_a), "cutoff".to_string())));
+    assert!(entries.contains(&(ParamRouteTarget::Voice(tgt_b), "pitch".to_string())));
 
     // Post-A1.a: one summer per (target, param) — fan-out spawns 2 summers.
     assert_eq!(backend.creates(), 2);
@@ -593,7 +594,7 @@ async fn reload_preserves_kr_param_routes_when_port_rates_unchanged() {
         let mut s = state.write().await;
         s.param_routes_set.insert(
             (src, "env".to_string()),
-            vec![(tgt, "cutoff".to_string())],
+            vec![(ParamRouteTarget::Voice(tgt), "cutoff".to_string())],
         );
     }
 
@@ -629,7 +630,7 @@ async fn reload_preserves_kr_param_routes_when_port_rates_unchanged() {
         .get(&(src, "env".to_string()))
         .cloned()
         .expect("param route preserved across body-only reload");
-    assert_eq!(entries, vec![(tgt, "cutoff".to_string())]);
+    assert_eq!(entries, vec![(ParamRouteTarget::Voice(tgt), "cutoff".to_string())]);
 
     // RouteMap stays empty — kr ports do not populate it.
     assert!(routes.is_empty());

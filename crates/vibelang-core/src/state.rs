@@ -887,17 +887,21 @@ pub struct State {
     pub default_routes: HashMap<(VoiceId, String), Vec<crate::handlers::RouteDest>>,
 
     /// Active SET Param-route mappings (`.to_param` verb): source
-    /// `(voice_id, port_name)` → list of `(target_voice_id, target_param_name)`
-    /// currently `/n_map`-bound directly to the source's control bus.
+    /// `(voice_id, port_name)` → list of `(target, target_param_name)`
+    /// currently `/n_map`-bound directly to the source's control bus. The
+    /// target side is a [`crate::handlers::ParamRouteTarget`] enum so a
+    /// single source can fan out to any mix of voice and fx targets.
     ///
     /// Multi-output v2 split SET vs BEND: SET overrides the user's `set_param`
     /// while the mapping is active, so multi-source on the same target is
     /// rejected at script time. [`Self::take_voice_param_routes`] drains both
-    /// source-side and target-side appearances on voice delete.
-    pub param_routes_set: HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
+    /// source-side and target-side voice appearances on voice delete;
+    /// [`Self::take_effect_param_routes`] drains target-side fx appearances on
+    /// effect delete.
+    pub param_routes_set: crate::handlers::ParamRouteMap,
 
     /// Active BEND Param-route mappings (`.modulate_by` verb): source
-    /// `(voice_id, port_name)` → list of `(target_voice_id, target_param_name)`
+    /// `(voice_id, port_name)` → list of `(target, target_param_name)`
     /// whose target param is `/n_map`-bound to a `param_kr_modulate_<n>`
     /// summer's intermediate control bus.
     ///
@@ -905,10 +909,10 @@ pub struct State {
     /// of the user's `set_param` baseline, so the runtime always spawns a
     /// summer (even at N=1). Multi-source fan-in is supported up to
     /// [`vibelang_dsp::system_synthdefs::PARAM_KR_MODULATE_MAX`].
-    pub param_routes_bend: HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
+    pub param_routes_bend: crate::handlers::ParamRouteMap,
 
     /// Active TRIGGER Param-route mappings (`.to_trigger` verb): source
-    /// `(voice_id, port_name)` → list of `(target_voice_id, target_param_name)`
+    /// `(voice_id, port_name)` → list of `(target, target_param_name)`
     /// whose target param is `/n_map`-bound to a `port_tr_to_param_link_1`
     /// link synth's intermediate control bus.
     ///
@@ -917,10 +921,10 @@ pub struct State {
     /// (triggers don't bend). Single-source per `(target, param)`; multi-
     /// source fan-in is rejected at script time. Cross-verb-exclusive with
     /// [`Self::param_routes_set`] and [`Self::param_routes_bend`].
-    pub param_routes_trigger: HashMap<(VoiceId, String), Vec<(VoiceId, String)>>,
+    pub param_routes_trigger: crate::handlers::ParamRouteMap,
 
     /// Active param-summer synths, keyed by the target side
-    /// `(target_voice_id, target_param_name)`.
+    /// `(target, target_param_name)`.
     ///
     /// Multi-output v3 unified routing: every routed param target gets a
     /// `param_kr_modulate_<n>` synth that computes
@@ -934,7 +938,8 @@ pub struct State {
     /// runtime can update `scale_<i>` / `offset_<i>` without rebuilding the
     /// summer. Maintained exclusively by
     /// [`crate::handlers::RoutesHandler::finalize_params`].
-    pub param_summers: HashMap<(VoiceId, String), ParamSummerState>,
+    pub param_summers:
+        HashMap<(crate::handlers::ParamRouteTarget, String), ParamSummerState>,
 
     /// Active `a2k_adapter_1` synths spawned to coerce an audio-rate source
     /// port into a kr-rate signal so it can drive a `param_kr_modulate_<n>`
@@ -952,14 +957,17 @@ pub struct State {
 
     /// Active `port_tr_to_param_link_1` link synths spawned by
     /// `.to_trigger` routes. Keyed by the target side
-    /// `(target_voice_id, target_param_name)`.
+    /// `(target, target_param_name)` — the target side is a
+    /// [`crate::handlers::ParamRouteTarget`] enum so fx-target trigger
+    /// routes share the same registry.
     ///
     /// `(NodeId, BusId)` records the link synth node and the intermediate
     /// control bus it writes to (the target's `/n_map` destination). One
     /// link synth per `(target, param)` — single-source trigger only, no
     /// summer or scale/offset shaping. Maintained exclusively by
     /// [`crate::handlers::RoutesHandler::finalize_params`].
-    pub param_triggers: HashMap<(VoiceId, String), (NodeId, BusId)>,
+    pub param_triggers:
+        HashMap<(crate::handlers::ParamRouteTarget, String), (NodeId, BusId)>,
 }
 
 /// Live state of one `param_kr_modulate_<n>` summer instance.
@@ -1143,10 +1151,10 @@ impl State {
     /// target side.
     ///
     /// Returns the source-side drains as
-    /// `((source_voice, source_port), [(target_voice, target_param), ...])`
-    /// so the caller can issue `/n_map ... -1` on each `(target, param)` pair
-    /// (the source's bus is going away with the voice). Target-side scrubbing
-    /// is done in-place: any `(voice_id, *)` tuple in any other source's Vec
+    /// `((source_voice, source_port), [(target, target_param), ...])` so the
+    /// caller can issue `/n_map ... -1` on each `(target, param)` pair (the
+    /// source's bus is going away with the voice). Target-side scrubbing is
+    /// done in-place: any `Voice(voice_id)` tuple in any other source's Vec
     /// is removed; entries whose Vec drops to empty after scrubbing are
     /// pruned. The deleted target voice's synth nodes are about to be freed
     /// anyway, so unmapping them is moot — only the source-side state needs
@@ -1155,7 +1163,11 @@ impl State {
     pub fn take_voice_param_routes(
         &mut self,
         voice_id: VoiceId,
-    ) -> Vec<((VoiceId, String), Vec<(VoiceId, String)>)> {
+    ) -> Vec<(
+        (VoiceId, String),
+        Vec<(crate::handlers::ParamRouteTarget, String)>,
+    )> {
+        use crate::handlers::ParamRouteTarget;
         let mut drained = Vec::new();
         for map in [
             &mut self.param_routes_set,
@@ -1173,11 +1185,37 @@ impl State {
                 }
             }
             map.retain(|_, targets| {
-                targets.retain(|(t_vid, _)| *t_vid != voice_id);
+                targets.retain(|(t, _)| *t != ParamRouteTarget::Voice(voice_id));
                 !targets.is_empty()
             });
         }
         drained
+    }
+
+    /// Drain every Param-route entry that mentions `effect_id` (target-side
+    /// only — fx are never sources) from [`State::param_routes_set`],
+    /// [`State::param_routes_bend`], and [`State::param_routes_trigger`].
+    ///
+    /// Effects don't own kr/tr/ar output ports, so there's nothing to drain
+    /// on the source side; the only state to clean up is the appearances of
+    /// `Effect(effect_id)` in target lists. Entries whose Vec drops to empty
+    /// after scrubbing are pruned. Mirrors the target-side scrubbing in
+    /// [`Self::take_voice_param_routes`].
+    pub fn take_effect_param_routes(
+        &mut self,
+        effect_id: crate::types::EffectId,
+    ) {
+        use crate::handlers::ParamRouteTarget;
+        for map in [
+            &mut self.param_routes_set,
+            &mut self.param_routes_bend,
+            &mut self.param_routes_trigger,
+        ] {
+            map.retain(|_, targets| {
+                targets.retain(|(t, _)| *t != ParamRouteTarget::Effect(effect_id));
+                !targets.is_empty()
+            });
+        }
     }
 
     /// Resolve the output-port set for a synthdef name.

@@ -3,7 +3,7 @@
 //! This module defines the state extracted from a `.vibe` script,
 //! without runtime-specific IDs (node IDs, buffer IDs, etc.).
 
-use crate::handlers::{ParamRouteMap, RouteMap};
+use crate::handlers::{ParamRouteMap, ParamRouteTarget, RouteMap};
 #[cfg(feature = "midi")]
 use crate::traits::FadeTarget;
 #[cfg(not(target_arch = "wasm32"))]
@@ -521,17 +521,21 @@ pub struct ScriptState {
     /// Per-route affine shaping for SET routes, populated by chained
     /// `.scale(s)` / `.offset(o)` modifiers in the Rhai surface.
     ///
-    /// Keyed by the full quad `(source_voice, source_port, target_voice,
-    /// target_param)` → `(scale, offset)`. Defaults to `(1.0, 0.0)` when an
-    /// entry is created (the summer identity); `.scale(s)` overwrites the
-    /// `scale` slot, `.offset(o)` overwrites the `offset` slot. The runtime
-    /// reads these in `RoutesHandler::finalize_params` to seed each
-    /// `param_kr_modulate_<n>`'s `scale_<i>` / `offset_<i>` per source slot.
-    pub param_route_set_shaping: HashMap<(VoiceId, String, VoiceId, String), (f32, f32)>,
+    /// Keyed by the full quad `(source_voice, source_port, target,
+    /// target_param)` → `(scale, offset)`. The `target` is a
+    /// [`ParamRouteTarget`] enum so fx-target shaping shares the same map.
+    /// Defaults to `(1.0, 0.0)` when an entry is created (the summer
+    /// identity); `.scale(s)` overwrites the `scale` slot, `.offset(o)`
+    /// overwrites the `offset` slot. The runtime reads these in
+    /// `RoutesHandler::finalize_params` to seed each `param_kr_modulate_<n>`'s
+    /// `scale_<i>` / `offset_<i>` per source slot.
+    pub param_route_set_shaping:
+        HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
 
     /// Per-route affine shaping for BEND routes; same shape and defaults as
     /// [`Self::param_route_set_shaping`].
-    pub param_route_bend_shaping: HashMap<(VoiceId, String, VoiceId, String), (f32, f32)>,
+    pub param_route_bend_shaping:
+        HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
 
     /// Recordings to start (native only).
     #[cfg(not(target_arch = "wasm32"))]
@@ -804,32 +808,33 @@ impl ScriptState {
     }
 
     /// Install a SET-semantic CV-to-param route (`.to_param` verb) from
-    /// `(source_voice, source_port)` to `(target_voice, target_param)`.
+    /// `(source_voice, source_port)` to `(target, target_param)`. The target
+    /// can be either a Voice or an Effect — see [`ParamRouteTarget`].
     ///
-    /// Returns an error if `(target_voice, target_param)` is already routed
-    /// via the BEND map (`.modulate_by`) or the TRIGGER map (`.to_trigger`)
-    /// — the three verbs are mutually exclusive on the same target — or if
-    /// a *different* SET source already targets the same
-    /// `(target_voice, target_param)` (multi-source SET is disallowed; use
-    /// `.modulate_by` for additive multi-source fan-in). A repeat call with
-    /// the same `(source, target)` quad is a deduplicated no-op, so re-runs
-    /// of a script don't accumulate dupes.
+    /// Returns an error if `(target, target_param)` is already routed via
+    /// the BEND map (`.modulate_by`) or the TRIGGER map (`.to_trigger`) —
+    /// the three verbs are mutually exclusive on the same target — or if a
+    /// *different* SET source already targets the same `(target,
+    /// target_param)` (multi-source SET is disallowed; use `.modulate_by`
+    /// for additive multi-source fan-in). A repeat call with the same
+    /// `(source, target)` quad is a deduplicated no-op, so re-runs of a
+    /// script don't accumulate dupes.
     pub fn add_param_route_set(
         &mut self,
         source_voice: VoiceId,
         source_port: impl Into<String>,
-        target_voice: VoiceId,
+        target: ParamRouteTarget,
         target_param: impl Into<String>,
     ) -> Result<(), ParamRouteConflict> {
         let source_port = source_port.into();
         let target_param = target_param.into();
-        let target_pair = (target_voice, target_param.clone());
+        let target_pair = (target, target_param.clone());
 
         if route_map_contains_target(&self.param_routes_bend, &target_pair)
             || route_map_contains_target(&self.param_routes_trigger, &target_pair)
         {
             return Err(ParamRouteConflict::CrossVerb {
-                target_voice,
+                target,
                 target_param,
             });
         }
@@ -840,7 +845,7 @@ impl ScriptState {
                 && targets.iter().any(|t| t == &target_pair)
             {
                 return Err(ParamRouteConflict::MultiSourceSet {
-                    target_voice,
+                    target,
                     target_param,
                 });
             }
@@ -854,16 +859,17 @@ impl ScriptState {
             entry.push(target_pair);
         }
         self.param_route_set_shaping
-            .entry((source_voice, source_port, target_voice, target_param))
+            .entry((source_voice, source_port, target, target_param))
             .or_insert((1.0, 0.0));
         Ok(())
     }
 
     /// Install a BEND-semantic CV-to-param route (`.modulate_by` verb) from
-    /// `(source_voice, source_port)` to `(target_voice, target_param)`.
+    /// `(source_voice, source_port)` to `(target, target_param)`. The target
+    /// can be either a Voice or an Effect — see [`ParamRouteTarget`].
     ///
-    /// Returns an error if `(target_voice, target_param)` is already routed
-    /// via the SET map (`.to_param`) or the TRIGGER map (`.to_trigger`).
+    /// Returns an error if `(target, target_param)` is already routed via
+    /// the SET map (`.to_param`) or the TRIGGER map (`.to_trigger`).
     /// Additive across multiple sources on the same target — that's the
     /// whole point of BEND. A repeat call with the same `(source, target)`
     /// quad is deduplicated.
@@ -871,18 +877,18 @@ impl ScriptState {
         &mut self,
         source_voice: VoiceId,
         source_port: impl Into<String>,
-        target_voice: VoiceId,
+        target: ParamRouteTarget,
         target_param: impl Into<String>,
     ) -> Result<(), ParamRouteConflict> {
         let source_port = source_port.into();
         let target_param = target_param.into();
-        let target_pair = (target_voice, target_param.clone());
+        let target_pair = (target, target_param.clone());
 
         if route_map_contains_target(&self.param_routes_set, &target_pair)
             || route_map_contains_target(&self.param_routes_trigger, &target_pair)
         {
             return Err(ParamRouteConflict::CrossVerb {
-                target_voice,
+                target,
                 target_param,
             });
         }
@@ -895,38 +901,39 @@ impl ScriptState {
             entry.push(target_pair);
         }
         self.param_route_bend_shaping
-            .entry((source_voice, source_port, target_voice, target_param))
+            .entry((source_voice, source_port, target, target_param))
             .or_insert((1.0, 0.0));
         Ok(())
     }
 
     /// Install a TRIGGER-semantic CV-to-param route (`.to_trigger` verb)
-    /// from a Tr-rate `(source_voice, source_port)` to
-    /// `(target_voice, target_param)`.
+    /// from a Tr-rate `(source_voice, source_port)` to `(target,
+    /// target_param)`. The target can be either a Voice or an Effect — see
+    /// [`ParamRouteTarget`].
     ///
-    /// Returns an error if `(target_voice, target_param)` is already routed
-    /// via the SET map (`.to_param`) or the BEND map (`.modulate_by`) — the
+    /// Returns an error if `(target, target_param)` is already routed via
+    /// the SET map (`.to_param`) or the BEND map (`.modulate_by`) — the
     /// three verbs are mutually exclusive on the same target — or if a
-    /// *different* TRIGGER source already targets the same
-    /// `(target_voice, target_param)` (multi-source TRIGGER fan-in is
-    /// disallowed; trigger routing is 1:1, not summable). A repeat call with
-    /// the same `(source, target)` quad is a deduplicated no-op.
+    /// *different* TRIGGER source already targets the same `(target,
+    /// target_param)` (multi-source TRIGGER fan-in is disallowed; trigger
+    /// routing is 1:1, not summable). A repeat call with the same
+    /// `(source, target)` quad is a deduplicated no-op.
     pub fn add_param_route_trigger(
         &mut self,
         source_voice: VoiceId,
         source_port: impl Into<String>,
-        target_voice: VoiceId,
+        target: ParamRouteTarget,
         target_param: impl Into<String>,
     ) -> Result<(), ParamRouteConflict> {
         let source_port = source_port.into();
         let target_param = target_param.into();
-        let target_pair = (target_voice, target_param.clone());
+        let target_pair = (target, target_param.clone());
 
         if route_map_contains_target(&self.param_routes_set, &target_pair)
             || route_map_contains_target(&self.param_routes_bend, &target_pair)
         {
             return Err(ParamRouteConflict::CrossVerb {
-                target_voice,
+                target,
                 target_param,
             });
         }
@@ -935,7 +942,7 @@ impl ScriptState {
                 && targets.iter().any(|t| t == &target_pair)
             {
                 return Err(ParamRouteConflict::MultiSourceTrigger {
-                    target_voice,
+                    target,
                     target_param,
                 });
             }
@@ -962,14 +969,14 @@ impl ScriptState {
         &mut self,
         source_voice: VoiceId,
         source_port: impl Into<String>,
-        target_voice: VoiceId,
+        target: ParamRouteTarget,
         target_param: impl Into<String>,
         scale: f32,
     ) {
         let key = (
             source_voice,
             source_port.into(),
-            target_voice,
+            target,
             target_param.into(),
         );
         let entry = self
@@ -985,14 +992,14 @@ impl ScriptState {
         &mut self,
         source_voice: VoiceId,
         source_port: impl Into<String>,
-        target_voice: VoiceId,
+        target: ParamRouteTarget,
         target_param: impl Into<String>,
         offset: f32,
     ) {
         let key = (
             source_voice,
             source_port.into(),
-            target_voice,
+            target,
             target_param.into(),
         );
         let entry = self
@@ -1008,14 +1015,14 @@ impl ScriptState {
         &mut self,
         source_voice: VoiceId,
         source_port: impl Into<String>,
-        target_voice: VoiceId,
+        target: ParamRouteTarget,
         target_param: impl Into<String>,
         scale: f32,
     ) {
         let key = (
             source_voice,
             source_port.into(),
-            target_voice,
+            target,
             target_param.into(),
         );
         let entry = self
@@ -1031,14 +1038,14 @@ impl ScriptState {
         &mut self,
         source_voice: VoiceId,
         source_port: impl Into<String>,
-        target_voice: VoiceId,
+        target: ParamRouteTarget,
         target_param: impl Into<String>,
         offset: f32,
     ) {
         let key = (
             source_voice,
             source_port.into(),
-            target_voice,
+            target,
             target_param.into(),
         );
         let entry = self
@@ -1049,7 +1056,10 @@ impl ScriptState {
     }
 }
 
-fn route_map_contains_target(map: &ParamRouteMap, pair: &(VoiceId, String)) -> bool {
+fn route_map_contains_target(
+    map: &ParamRouteMap,
+    pair: &(ParamRouteTarget, String),
+) -> bool {
     map.values().any(|targets| targets.iter().any(|t| t == pair))
 }
 
@@ -1057,35 +1067,35 @@ fn route_map_contains_target(map: &ParamRouteMap, pair: &(VoiceId, String)) -> b
 /// `add_param_route_trigger` call may fail.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ParamRouteConflict {
-    /// The same `(target_voice, target_param)` is already wired via a
-    /// different verb (any of SET / BEND / TRIGGER). The three verbs are
-    /// mutually exclusive on a single target.
+    /// The same `(target, target_param)` is already wired via a different
+    /// verb (any of SET / BEND / TRIGGER). The three verbs are mutually
+    /// exclusive on a single target.
     CrossVerb {
-        target_voice: VoiceId,
+        target: ParamRouteTarget,
         target_param: String,
     },
-    /// A different SET source already targets the same
-    /// `(target_voice, target_param)`. Multi-source on a `.to_param` is
-    /// disallowed; use `.modulate_by` for additive fan-in.
+    /// A different SET source already targets the same `(target,
+    /// target_param)`. Multi-source on a `.to_param` is disallowed; use
+    /// `.modulate_by` for additive fan-in.
     MultiSourceSet {
-        target_voice: VoiceId,
+        target: ParamRouteTarget,
         target_param: String,
     },
-    /// A different TRIGGER source already targets the same
-    /// `(target_voice, target_param)`. Trigger routing is 1:1; multi-source
-    /// fan-in is not supported.
+    /// A different TRIGGER source already targets the same `(target,
+    /// target_param)`. Trigger routing is 1:1; multi-source fan-in is not
+    /// supported.
     MultiSourceTrigger {
-        target_voice: VoiceId,
+        target: ParamRouteTarget,
         target_param: String,
     },
 }
 
 impl ParamRouteConflict {
-    pub fn target_voice(&self) -> VoiceId {
+    pub fn target(&self) -> ParamRouteTarget {
         match self {
-            Self::CrossVerb { target_voice, .. }
-            | Self::MultiSourceSet { target_voice, .. }
-            | Self::MultiSourceTrigger { target_voice, .. } => *target_voice,
+            Self::CrossVerb { target, .. }
+            | Self::MultiSourceSet { target, .. }
+            | Self::MultiSourceTrigger { target, .. } => *target,
         }
     }
     pub fn target_param(&self) -> &str {
@@ -1101,33 +1111,33 @@ impl std::fmt::Display for ParamRouteConflict {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::CrossVerb {
-                target_voice,
+                target,
                 target_param,
             } => write!(
                 f,
                 "cannot combine .to_param / .modulate_by / .to_trigger on the \
-                 same (voice {:?}, param {:?}) — pick exactly one verb",
-                target_voice, target_param
+                 same ({:?}, param {:?}) — pick exactly one verb",
+                target, target_param
             ),
             Self::MultiSourceSet {
-                target_voice,
+                target,
                 target_param,
             } => write!(
                 f,
-                ".to_param on (voice {:?}, param {:?}) is already routed from \
+                ".to_param on ({:?}, param {:?}) is already routed from \
                  another source — multi-source SET is disallowed; use \
                  .modulate_by for additive fan-in",
-                target_voice, target_param
+                target, target_param
             ),
             Self::MultiSourceTrigger {
-                target_voice,
+                target,
                 target_param,
             } => write!(
                 f,
-                ".to_trigger on (voice {:?}, param {:?}) is already routed \
+                ".to_trigger on ({:?}, param {:?}) is already routed \
                  from another source — multi-source TRIGGER fan-in is not \
                  supported (trigger routing is 1:1)",
-                target_voice, target_param
+                target, target_param
             ),
         }
     }

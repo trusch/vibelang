@@ -91,7 +91,7 @@ pub use melodies::MelodiesHandler;
 pub use patterns::PatternsHandler;
 pub use routes::{
     default_routes_for_voice, merge_default_routes, ParamRoute, ParamRouteDiff, ParamRouteMap,
-    Route, RouteDest, RouteDiff, RouteMap, RoutesHandler,
+    ParamRouteTarget, Route, RouteDest, RouteDiff, RouteMap, RoutesHandler,
 };
 pub use samples::SamplesHandler;
 pub use sequences::SequencesHandler;

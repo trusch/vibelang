@@ -16,7 +16,7 @@
 //!   prior entries on that port: the variants are mutually exclusive.
 
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, Position, TypeBuilder};
-use vibelang_core::handlers::RouteDest;
+use vibelang_core::handlers::{ParamRouteTarget, RouteDest};
 use vibelang_core::reload::ParamRouteConflict;
 use vibelang_core::types::VoiceId;
 use vibelang_dsp::{
@@ -24,6 +24,7 @@ use vibelang_dsp::{
 };
 
 use super::group::GroupHandle;
+use super::sequence::Fx;
 use super::voice::Voice;
 use crate::context;
 
@@ -38,11 +39,13 @@ pub struct RouteHandle {
     /// Resolved port name — already validated against the synthdef's
     /// declared `OutputPort` set when the handle was created.
     port_name: String,
-    /// `(target_voice_id, target_param_name)` of the most-recently-installed
-    /// `.to_param(...)` call on this handle. Read by the chained
-    /// `.scale(...)` / `.offset(...)` modifiers to know which `(source, target)`
-    /// shaping slot to update. `None` until the first successful `.to_param`.
-    last_param_target: Option<(VoiceId, String)>,
+    /// `(target, target_param_name)` of the most-recently-installed
+    /// `.to_param(...)` (or `.to_param_audio(...)`) call on this handle.
+    /// Read by the chained `.scale(...)` / `.offset(...)` modifiers to know
+    /// which `(source, target)` shaping slot to update. `None` until the
+    /// first successful install. The target side is a [`ParamRouteTarget`]
+    /// enum so fx-target routes share the same shaping path.
+    last_param_target: Option<(ParamRouteTarget, String)>,
 }
 
 impl RouteHandle {
@@ -167,12 +170,13 @@ impl RouteHandle {
         }
 
         let target_id = context::get_or_create_voice_id(&target_name);
+        let target = ParamRouteTarget::Voice(target_id);
         let conflict = context::with_state(|state| {
             state
                 .add_param_route_set(
                     self.voice_id,
                     self.port_name.clone(),
-                    target_id,
+                    target,
                     param_name.clone(),
                 )
                 .err()
@@ -180,7 +184,7 @@ impl RouteHandle {
         if let Some(c) = conflict {
             return Err(param_route_conflict_error("to_param", &c));
         }
-        self.last_param_target = Some((target_id, param_name));
+        self.last_param_target = Some((target, param_name));
         Ok(self)
     }
 
@@ -242,12 +246,13 @@ impl RouteHandle {
         }
 
         let target_id = context::get_or_create_voice_id(&target_name);
+        let target = ParamRouteTarget::Voice(target_id);
         let conflict = context::with_state(|state| {
             state
                 .add_param_route_set(
                     self.voice_id,
                     self.port_name.clone(),
-                    target_id,
+                    target,
                     param_name.clone(),
                 )
                 .err()
@@ -255,7 +260,7 @@ impl RouteHandle {
         if let Some(c) = conflict {
             return Err(param_route_conflict_error("to_param_audio", &c));
         }
-        self.last_param_target = Some((target_id, param_name));
+        self.last_param_target = Some((target, param_name));
         Ok(self)
     }
 
@@ -317,12 +322,13 @@ impl RouteHandle {
         }
 
         let target_id = context::get_or_create_voice_id(&target_name);
+        let target = ParamRouteTarget::Voice(target_id);
         let conflict = context::with_state(|state| {
             state
                 .add_param_route_trigger(
                     self.voice_id,
                     self.port_name.clone(),
-                    target_id,
+                    target,
                     param_name.clone(),
                 )
                 .err()
@@ -340,7 +346,7 @@ impl RouteHandle {
     /// Errors if called before any `.to_param(...)` install — chained order
     /// must be `.to_param(...).scale(...)`, not the other way around.
     pub fn scale(self, scale: f64) -> Result<Self, Box<EvalAltResult>> {
-        let (target_voice, target_param) = self
+        let (target, target_param) = self
             .last_param_target
             .clone()
             .ok_or_else(|| no_prior_param_route_error("scale", "RouteHandle"))?;
@@ -349,7 +355,7 @@ impl RouteHandle {
             state.set_param_route_set_scale(
                 self.voice_id,
                 self.port_name.clone(),
-                target_voice,
+                target,
                 target_param,
                 scale,
             );
@@ -363,7 +369,7 @@ impl RouteHandle {
     ///
     /// Errors if called before any `.to_param(...)` install.
     pub fn offset(self, offset: f64) -> Result<Self, Box<EvalAltResult>> {
-        let (target_voice, target_param) = self
+        let (target, target_param) = self
             .last_param_target
             .clone()
             .ok_or_else(|| no_prior_param_route_error("offset", "RouteHandle"))?;
@@ -372,11 +378,190 @@ impl RouteHandle {
             state.set_param_route_set_offset(
                 self.voice_id,
                 self.port_name.clone(),
-                target_voice,
+                target,
                 target_param,
                 offset,
             );
         });
+        Ok(self)
+    }
+
+    /// Fx-target variant of [`Self::to_param`]. Same semantics, but the
+    /// route's target is an [`Fx`]'s param instead of a Voice's. Rhai
+    /// dispatches by argument type so the surface verb is just `.to_param`.
+    pub fn to_param_fx(
+        mut self,
+        target: Fx,
+        param_name: String,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        let target_name = target.id.clone();
+        let target_synth = target.synth_name();
+
+        let src_synth = source_synthdef_name(self.voice_id);
+        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
+        match src_outputs.iter().find(|p| p.name == self.port_name) {
+            Some(p) if p.rate == PortRate::Kr => {}
+            Some(p) => {
+                return Err(ar_rate_to_param_error(
+                    &self.port_name,
+                    &src_synth,
+                    p.rate,
+                ));
+            }
+            None => {
+                return Err(missing_source_port_error(
+                    &self.port_name,
+                    &src_synth,
+                    &src_outputs,
+                ));
+            }
+        }
+
+        let target_params = get_synthdef_param_defaults(&target_synth);
+        if !target_params.contains_key(&param_name) {
+            return Err(unknown_target_param_error(
+                &target_name,
+                &target_synth,
+                &param_name,
+                &target_params,
+            ));
+        }
+
+        let effect_id = context::get_or_create_effect_id(&target_name);
+        let target = ParamRouteTarget::Effect(effect_id);
+        let conflict = context::with_state(|state| {
+            state
+                .add_param_route_set(
+                    self.voice_id,
+                    self.port_name.clone(),
+                    target,
+                    param_name.clone(),
+                )
+                .err()
+        });
+        if let Some(c) = conflict {
+            return Err(param_route_conflict_error("to_param", &c));
+        }
+        self.last_param_target = Some((target, param_name));
+        Ok(self)
+    }
+
+    /// Fx-target variant of [`Self::to_param_audio`]. ar source coerced to
+    /// kr via the shared `a2k_adapter_1`, then routed into the target fx's
+    /// param via the same summer infrastructure as voice targets.
+    pub fn to_param_audio_fx(
+        mut self,
+        target: Fx,
+        param_name: String,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        let target_name = target.id.clone();
+        let target_synth = target.synth_name();
+
+        let src_synth = source_synthdef_name(self.voice_id);
+        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
+        match src_outputs.iter().find(|p| p.name == self.port_name) {
+            Some(p) if p.rate == PortRate::Ar => {}
+            Some(p) => {
+                return Err(kr_or_tr_rate_to_param_audio_error(
+                    &self.port_name,
+                    &src_synth,
+                    p.rate,
+                ));
+            }
+            None => {
+                return Err(missing_source_port_error(
+                    &self.port_name,
+                    &src_synth,
+                    &src_outputs,
+                ));
+            }
+        }
+
+        let target_params = get_synthdef_param_defaults(&target_synth);
+        if !target_params.contains_key(&param_name) {
+            return Err(unknown_target_param_error(
+                &target_name,
+                &target_synth,
+                &param_name,
+                &target_params,
+            ));
+        }
+
+        let effect_id = context::get_or_create_effect_id(&target_name);
+        let target = ParamRouteTarget::Effect(effect_id);
+        let conflict = context::with_state(|state| {
+            state
+                .add_param_route_set(
+                    self.voice_id,
+                    self.port_name.clone(),
+                    target,
+                    param_name.clone(),
+                )
+                .err()
+        });
+        if let Some(c) = conflict {
+            return Err(param_route_conflict_error("to_param_audio", &c));
+        }
+        self.last_param_target = Some((target, param_name));
+        Ok(self)
+    }
+
+    /// Fx-target variant of [`Self::to_trigger`]. Tr-rate sources forward
+    /// edges to the target fx's param via the same `port_tr_to_param_link_1`
+    /// infrastructure used for voice targets.
+    pub fn to_trigger_fx(
+        self,
+        target: Fx,
+        param_name: String,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        let target_name = target.id.clone();
+        let target_synth = target.synth_name();
+
+        let src_synth = source_synthdef_name(self.voice_id);
+        let src_outputs = get_synthdef_outputs(&src_synth).unwrap_or_default();
+        match src_outputs.iter().find(|p| p.name == self.port_name) {
+            Some(p) if p.rate == PortRate::Tr => {}
+            Some(p) => {
+                return Err(non_tr_rate_to_trigger_error(
+                    &self.port_name,
+                    &src_synth,
+                    p.rate,
+                ));
+            }
+            None => {
+                return Err(missing_source_port_error(
+                    &self.port_name,
+                    &src_synth,
+                    &src_outputs,
+                ));
+            }
+        }
+
+        let target_params = get_synthdef_param_defaults(&target_synth);
+        if !target_params.contains_key(&param_name) {
+            return Err(unknown_target_param_error(
+                &target_name,
+                &target_synth,
+                &param_name,
+                &target_params,
+            ));
+        }
+
+        let effect_id = context::get_or_create_effect_id(&target_name);
+        let target = ParamRouteTarget::Effect(effect_id);
+        let conflict = context::with_state(|state| {
+            state
+                .add_param_route_trigger(
+                    self.voice_id,
+                    self.port_name.clone(),
+                    target,
+                    param_name.clone(),
+                )
+                .err()
+        });
+        if let Some(c) = conflict {
+            return Err(param_route_conflict_error("to_trigger", &c));
+        }
         Ok(self)
     }
 
@@ -577,9 +762,16 @@ fn no_current_group_error(port: &str) -> Box<EvalAltResult> {
 /// distinct source ports; duplicate `(source, port)` pairs deduplicated).
 #[derive(Debug, Clone, CustomType)]
 pub struct ParamHandle {
-    target_voice_id: VoiceId,
-    target_voice_name: String,
+    /// Resolved target — either a Voice or an Effect. Recorded as a
+    /// [`ParamRouteTarget`] so the route registry can carry both.
+    target: ParamRouteTarget,
+    /// User-visible name of the target (voice name or fx id). Used only
+    /// for error messages.
+    target_name: String,
+    /// Synthdef declaring the target's params — needed to validate
+    /// `param_name` against the target's declared param set.
     target_synth: String,
+    /// The param on `target` that this handle binds.
     param_name: String,
     /// `(source_voice_id, source_port_name)` of the most-recently-installed
     /// `.modulate_by(...)` call on this handle. Read by chained `.scale(...)`
@@ -590,14 +782,14 @@ pub struct ParamHandle {
 
 impl ParamHandle {
     pub(crate) fn new(
-        target_voice_id: VoiceId,
-        target_voice_name: String,
+        target: ParamRouteTarget,
+        target_name: String,
         target_synth: String,
         param_name: String,
     ) -> Self {
         Self {
-            target_voice_id,
-            target_voice_name,
+            target,
+            target_name,
             target_synth,
             param_name,
             last_modulate_source: None,
@@ -649,7 +841,7 @@ impl ParamHandle {
         let target_params = get_synthdef_param_defaults(&self.target_synth);
         if !target_params.contains_key(&self.param_name) {
             return Err(modulate_by_unknown_target_param_error(
-                &self.target_voice_name,
+                &self.target_name,
                 &self.target_synth,
                 &self.param_name,
                 &target_params,
@@ -661,7 +853,7 @@ impl ParamHandle {
                 .add_param_route_bend(
                     source_id,
                     port.clone(),
-                    self.target_voice_id,
+                    self.target,
                     self.param_name.clone(),
                 )
                 .err()
@@ -689,7 +881,7 @@ impl ParamHandle {
             state.set_param_route_bend_scale(
                 source_voice,
                 source_port,
-                self.target_voice_id,
+                self.target,
                 self.param_name.clone(),
                 scale,
             );
@@ -712,7 +904,7 @@ impl ParamHandle {
             state.set_param_route_bend_offset(
                 source_voice,
                 source_port,
-                self.target_voice_id,
+                self.target,
                 self.param_name.clone(),
                 offset,
             );
@@ -878,9 +1070,14 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("to_main", RouteHandle::to_main);
     engine.register_fn("mute", RouteHandle::mute);
     engine.register_fn("to_current_group", RouteHandle::to_current_group);
+    // Voice-target verbs (existing surface).
     engine.register_fn("to_param", RouteHandle::to_param);
     engine.register_fn("to_param_audio", RouteHandle::to_param_audio);
     engine.register_fn("to_trigger", RouteHandle::to_trigger);
+    // Fx-target overloads — Rhai dispatches by argument type.
+    engine.register_fn("to_param", RouteHandle::to_param_fx);
+    engine.register_fn("to_param_audio", RouteHandle::to_param_audio_fx);
+    engine.register_fn("to_trigger", RouteHandle::to_trigger_fx);
     engine.register_fn("scale", RouteHandle::scale);
     engine.register_fn("offset", RouteHandle::offset);
 
@@ -907,6 +1104,7 @@ mod tests {
     //! installation surface for CV-to-param routes (mirrors
     //! `RouteDest::Param` semantics: `(target_voice_id, target_param_name)`
     //! pairs keyed by source `(voice_id, port_name)`).
+    use super::ParamRouteTarget;
     use crate::api::voice::Voice;
     use crate::context;
     use vibelang_dsp::{
@@ -997,7 +1195,7 @@ mod tests {
                     .get(&(src_id, "env".to_string()))
                     .expect("param route installed");
                 assert_eq!(entries.len(), 1);
-                assert_eq!(entries[0], (tgt_id, "cutoff".to_string()));
+                assert_eq!(entries[0], (ParamRouteTarget::Voice(tgt_id), "cutoff".to_string()));
 
                 // No legacy audio-route entry installed.
                 assert!(state
@@ -1106,8 +1304,8 @@ mod tests {
                     .get(&(src_id, "env".to_string()))
                     .expect("param routes installed");
                 assert_eq!(entries.len(), 2, "both targets must be present");
-                assert!(entries.contains(&(tgt_a_id, "cutoff".to_string())));
-                assert!(entries.contains(&(tgt_b_id, "pitch".to_string())));
+                assert!(entries.contains(&(ParamRouteTarget::Voice(tgt_a_id), "cutoff".to_string())));
+                assert!(entries.contains(&(ParamRouteTarget::Voice(tgt_b_id), "pitch".to_string())));
             });
         });
     }
@@ -1175,7 +1373,7 @@ mod tests {
                     .get(&(src_id, "out".to_string()))
                     .expect("bend route installed");
                 assert_eq!(entries.len(), 1);
-                assert_eq!(entries[0], (tgt_id, "freq".to_string()));
+                assert_eq!(entries[0], (ParamRouteTarget::Voice(tgt_id), "freq".to_string()));
 
                 // SET map and audio routes untouched.
                 assert!(state
@@ -1283,13 +1481,13 @@ mod tests {
                     .param_routes_bend
                     .get(&(s_id, "out".to_string()))
                     .expect("first source wire installed");
-                assert_eq!(from_s, &vec![(tgt_id, "a".to_string())]);
+                assert_eq!(from_s, &vec![(ParamRouteTarget::Voice(tgt_id), "a".to_string())]);
 
                 let from_s2 = state
                     .param_routes_bend
                     .get(&(s2_id, "other".to_string()))
                     .expect("second source wire installed");
-                assert_eq!(from_s2, &vec![(tgt_id, "a".to_string())]);
+                assert_eq!(from_s2, &vec![(ParamRouteTarget::Voice(tgt_id), "a".to_string())]);
             });
         });
     }
@@ -1332,14 +1530,14 @@ mod tests {
                     .get(&(src_a_id, "out".to_string()))
                     .expect("A installed in SET map");
                 assert_eq!(set_entries.len(), 1);
-                assert_eq!(set_entries[0], (tgt_a_id, "freq".to_string()));
+                assert_eq!(set_entries[0], (ParamRouteTarget::Voice(tgt_a_id), "freq".to_string()));
 
                 let bend_entries = state
                     .param_routes_bend
                     .get(&(src_b_id, "out".to_string()))
                     .expect("B installed in BEND map");
                 assert_eq!(bend_entries.len(), 1);
-                assert_eq!(bend_entries[0], (tgt_b_id, "freq".to_string()));
+                assert_eq!(bend_entries[0], (ParamRouteTarget::Voice(tgt_b_id), "freq".to_string()));
 
                 // Cross-pollination: A's source key is *not* in BEND, B's source
                 // key is *not* in SET. The maps are disjoint.
@@ -1501,7 +1699,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_scale_rt");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_scale_rt");
             context::with_state(|state| {
-                let key = (src_id, "env".to_string(), tgt_id, "cutoff".to_string());
+                let key = (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
                 let (scale, offset) = state
                     .param_route_set_shaping
                     .get(&key)
@@ -1535,7 +1733,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_offset_rt");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_offset_rt");
             context::with_state(|state| {
-                let key = (src_id, "out".to_string(), tgt_id, "freq".to_string());
+                let key = (src_id, "out".to_string(), ParamRouteTarget::Voice(tgt_id), "freq".to_string());
                 let (scale, offset) = state
                     .param_route_bend_shaping
                     .get(&key)
@@ -1572,7 +1770,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_chain_so");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_chain_so");
             context::with_state(|state| {
-                let key = (src_id, "env".to_string(), tgt_id, "cutoff".to_string());
+                let key = (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
                 let (scale, offset) = state
                     .param_route_set_shaping
                     .get(&key)
@@ -1603,7 +1801,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_default");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_default");
             context::with_state(|state| {
-                let key = (src_id, "env".to_string(), tgt_id, "cutoff".to_string());
+                let key = (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
                 let (scale, offset) = state
                     .param_route_set_shaping
                     .get(&key)
@@ -1633,7 +1831,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_modby_default");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_modby_default");
             context::with_state(|state| {
-                let key = (src_id, "out".to_string(), tgt_id, "freq".to_string());
+                let key = (src_id, "out".to_string(), ParamRouteTarget::Voice(tgt_id), "freq".to_string());
                 let (scale, offset) = state
                     .param_route_bend_shaping
                     .get(&key)
@@ -1668,7 +1866,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_lw");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_lw");
             context::with_state(|state| {
-                let key = (src_id, "env".to_string(), tgt_id, "cutoff".to_string());
+                let key = (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
                 let (scale, offset) = state
                     .param_route_set_shaping
                     .get(&key)
@@ -1714,8 +1912,8 @@ mod tests {
             let tgt_b_id = context::get_or_create_voice_id("vox_tgt_per_tgt_b");
             context::with_state(|state| {
                 let key_a =
-                    (src_id, "env".to_string(), tgt_a_id, "cutoff".to_string());
-                let key_b = (src_id, "env".to_string(), tgt_b_id, "pitch".to_string());
+                    (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_a_id), "cutoff".to_string());
+                let key_b = (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_b_id), "pitch".to_string());
                 assert_eq!(
                     state.param_route_set_shaping.get(&key_a).copied(),
                     Some((0.5, 0.0)),
@@ -1754,10 +1952,10 @@ mod tests {
                     .get(&(src_id, "sine".to_string()))
                     .expect("param route installed in SET map");
                 assert_eq!(entries.len(), 1);
-                assert_eq!(entries[0], (tgt_id, "cutoff".to_string()));
+                assert_eq!(entries[0], (ParamRouteTarget::Voice(tgt_id), "cutoff".to_string()));
 
                 // Default shaping seeded so chained .scale/.offset work.
-                let key = (src_id, "sine".to_string(), tgt_id, "cutoff".to_string());
+                let key = (src_id, "sine".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
                 let shaping =
                     state.param_route_set_shaping.get(&key).copied();
                 assert_eq!(shaping, Some((1.0, 0.0)));
@@ -1867,7 +2065,7 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_tpa_shape");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_tpa_shape");
             context::with_state(|state| {
-                let key = (src_id, "sine".to_string(), tgt_id, "cutoff".to_string());
+                let key = (src_id, "sine".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
                 let (scale, offset) = state
                     .param_route_set_shaping
                     .get(&key)
@@ -1971,7 +2169,7 @@ mod tests {
                     .get(&(src_id, "kick_trig".to_string()))
                     .expect("trigger route installed");
                 assert_eq!(entries.len(), 1);
-                assert_eq!(entries[0], (tgt_id, "gate".to_string()));
+                assert_eq!(entries[0], (ParamRouteTarget::Voice(tgt_id), "gate".to_string()));
 
                 // SET / BEND maps stay empty.
                 assert!(state

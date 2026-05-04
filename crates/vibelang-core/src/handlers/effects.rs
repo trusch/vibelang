@@ -181,6 +181,13 @@ impl<B: Backend> Effects for EffectsHandler<B> {
         let node_to_free = {
             let mut state = self.state.write().await;
             let effect = state.effects.remove(&id).ok_or(Error::EffectNotFound(id))?;
+            // Drain any param routes targeting this fx so the route registry
+            // doesn't carry stale `Effect(id)` entries through the next
+            // reload diff. Mirrors the voice-removal path
+            // ([`State::take_voice_param_routes`]) — fx are never sources, so
+            // there are no source-side entries to follow up on; the in-place
+            // scrub is sufficient.
+            state.take_effect_param_routes(id);
             effect.node_id
         };
 

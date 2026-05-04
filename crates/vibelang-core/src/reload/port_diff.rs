@@ -20,7 +20,7 @@
 //! [`RoutesHandler::finalize`]: crate::handlers::RoutesHandler::finalize
 //! [`BusId`]: crate::types::BusId
 
-use crate::handlers::{RouteDest, RouteMap};
+use crate::handlers::{ParamRouteTarget, RouteDest, RouteMap};
 use crate::state::State;
 use crate::types::{BusId, ControlBusId, VoiceId};
 use std::collections::HashMap;
@@ -890,7 +890,7 @@ mod tests {
         let target_voice = VoiceId::new(42);
         state.param_routes_set.insert(
             (voice_id, "env".to_string()),
-            vec![(target_voice, "cutoff".to_string())],
+            vec![(ParamRouteTarget::Voice(target_voice), "cutoff".to_string())],
         );
 
         let new = vec![
@@ -1067,7 +1067,7 @@ mod tests {
         let target_voice = VoiceId::new(42);
         state.param_routes_set.insert(
             (voice_id, "env".to_string()),
-            vec![(target_voice, "cutoff".to_string())],
+            vec![(ParamRouteTarget::Voice(target_voice), "cutoff".to_string())],
         );
 
         let new = vec![
@@ -1264,7 +1264,7 @@ mod tests {
         let routes_before = routes.clone();
         state.param_routes_set.insert(
             (voice_id, "env".to_string()),
-            vec![(VoiceId::new(99), "cutoff".to_string())],
+            vec![(ParamRouteTarget::Voice(VoiceId::new(99)), "cutoff".to_string())],
         );
 
         let outcome = reconcile_voice_ports(&mut state, voice_id, &ports, &mut routes);

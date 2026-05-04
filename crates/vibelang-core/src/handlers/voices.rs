@@ -1056,12 +1056,13 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             nodes.extend(voice.note_nodes.values().copied());
             let voice_config = voice.config.clone();
 
-            let key = (id, param.to_string());
+            let target = crate::handlers::ParamRouteTarget::Voice(id);
+            let key = (target, param.to_string());
             let summer_node = state.param_summers.get(&key).map(|s| s.node);
             let set_routed = state
                 .param_routes_set
                 .values()
-                .any(|targets| targets.iter().any(|(tv, tp)| *tv == id && tp == param));
+                .any(|targets| targets.iter().any(|(t, tp)| *t == target && tp == param));
 
             (nodes, voice_config, summer_node, set_routed)
         };
@@ -1077,12 +1078,13 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let mut nodes: Vec<NodeId> = voice.active_nodes.clone();
             nodes.extend(voice.note_nodes.values().copied());
 
-            let key = (id, param.to_string());
+            let target = crate::handlers::ParamRouteTarget::Voice(id);
+            let key = (target, param.to_string());
             let summer_node = state.param_summers.get(&key).map(|s| s.node);
             let set_routed = state
                 .param_routes_set
                 .values()
-                .any(|targets| targets.iter().any(|(tv, tp)| *tv == id && tp == param));
+                .any(|targets| targets.iter().any(|(t, tp)| *t == target && tp == param));
 
             (nodes, summer_node, set_routed)
         };

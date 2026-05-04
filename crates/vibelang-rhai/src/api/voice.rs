@@ -388,10 +388,16 @@ impl Voice {
     /// construction here just resolves the target voice's id and snapshots
     /// the synthdef name for the rate-validation step later.
     pub fn param_handle(&mut self, name: &str) -> ParamHandle {
+        use vibelang_core::handlers::ParamRouteTarget;
         self.resolve_name();
         let voice_id = context::get_or_create_voice_id(&self.name);
         let synth = self.synth_name.clone().unwrap_or_default();
-        ParamHandle::new(voice_id, self.name.clone(), synth, name.to_string())
+        ParamHandle::new(
+            ParamRouteTarget::Voice(voice_id),
+            self.name.clone(),
+            synth,
+            name.to_string(),
+        )
     }
 
     /// Begin a route from this voice's named output port.

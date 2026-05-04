@@ -6,12 +6,14 @@ use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Positi
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Range;
+use vibelang_core::handlers::ParamRouteTarget;
 use vibelang_core::reload::EffectConfig;
 use vibelang_core::traits::{Clip, FadeConfig, FadeCurve, FadeTarget, SequenceConfig};
 use vibelang_core::types::{Beat, Duration};
 
 use super::melody::Melody;
 use super::pattern::Pattern;
+use super::route::ParamHandle;
 use super::voice::Voice;
 use crate::context;
 
@@ -676,10 +678,42 @@ impl Fx {
         self
     }
 
-    /// Set a parameter.
+    /// Read the resolved synthdef name. Empty string when no `.synth(...)`
+    /// has been called yet (the route layer surfaces a clean
+    /// "no param '<x>'" error in that case rather than panicking).
+    pub(crate) fn synth_name(&self) -> String {
+        self.synth_name.clone().unwrap_or_default()
+    }
+
+    /// Set a parameter to an initial value (two-arg overload).
     pub fn param(mut self, key: String, value: f64) -> Self {
         self.params.insert(key, value as f32);
         self
+    }
+
+    /// Begin a target-first CV-to-param wiring on this fx's named param
+    /// (one-arg overload — Rhai dispatches by arity).
+    ///
+    /// Dual to [`crate::api::route::RouteHandle::to_param`] for fx targets:
+    /// `fx.param("pan").modulate_by(source, "out")` records the same
+    /// `(source_voice, source_port) → (Effect(fx), param)` entry in
+    /// [`vibelang_core::reload::ScriptState::param_routes_bend`] that the
+    /// source-first form does, so either reading installs an identical
+    /// registry row.
+    ///
+    /// Infallible — the param-name and source-port-rate validation runs in
+    /// [`ParamHandle::modulate_by`] where both sides are known. Bare
+    /// construction here just resolves the effect's id and snapshots the
+    /// synthdef name for the rate-validation step later.
+    pub fn param_handle(&mut self, name: &str) -> ParamHandle {
+        let effect_id = context::get_or_create_effect_id(&self.id);
+        let synth = self.synth_name();
+        ParamHandle::new(
+            ParamRouteTarget::Effect(effect_id),
+            self.id.clone(),
+            synth,
+            name.to_string(),
+        )
     }
 
     /// Apply the effect to the current group.
@@ -794,5 +828,9 @@ pub fn register(engine: &mut Engine) {
     // Fx builder methods
     engine.register_fn("synth", Fx::synth);
     engine.register_fn("param", Fx::param);
+    // 1-arg overload of `.param`: returns a ParamHandle for the named fx
+    // param, used to install fx-target modulation routes via
+    // `fx.param("name").modulate_by(source, "port")`.
+    engine.register_fn("param", Fx::param_handle);
     engine.register_fn("apply", Fx::apply);
 }
