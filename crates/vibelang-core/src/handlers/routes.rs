@@ -490,20 +490,21 @@ impl<B: Backend> RoutesHandler<B> {
         diff
     }
 
-    /// Reject route additions whose source port is kr-rate when the
-    /// destination group is hardware-routed (`output_bus = Some(_)`).
+    /// Reject route additions whose source port is kr-rate and whose
+    /// destination is `RouteDest::Group(_)` — regardless of whether the
+    /// group is hardware-routed.
     ///
-    /// kr-rate ports feed control buses; hw-output groups go through
-    /// `system_link_audio[_mono]` which read the group's audio bus with
-    /// `In.ar` and produce undefined output (typically silence or stuck
-    /// DC) when fed kr data. Catching this at finalize time avoids the
-    /// silent-failure-at-the-jack class of bug surfaced by the
-    /// CV-via-ADAT debugging session (cv_clock + mono group).
+    /// kr-rate ports feed control buses; group destinations always feed
+    /// audio paths (`system_link_audio[_mono]` for hw-output groups,
+    /// audio-bus mixing into the parent for sub-groups). Either path
+    /// reads with `In.ar`, so kr data lands as DC bias / undefined output
+    /// — silent at hw outputs, leaking garbage into the parent chain for
+    /// non-hw sub-groups.
     ///
     /// Tr-rate ports are not yet covered — current scope is Kr only.
-    /// kr-port → `RouteDest::Param`, `RouteDest::Main`, `RouteDest::Muted`,
-    /// or a non-hw `RouteDest::Group` are all left to existing handling.
-    fn validate_kr_to_hw_group(state: &State, r: &Route) -> Result<()> {
+    /// kr-port → `RouteDest::Param`, `RouteDest::Main`, or
+    /// `RouteDest::Muted` are all left to existing handling.
+    fn validate_kr_to_group(state: &State, r: &Route) -> Result<()> {
         let group_id = match &r.dest {
             RouteDest::Group(g) => *g,
             _ => return Ok(()),
@@ -524,20 +525,17 @@ impl<B: Backend> RoutesHandler<B> {
             Some(g) => g,
             None => return Ok(()),
         };
-        let Some(output_bus) = group.output_bus else {
-            return Ok(());
-        };
         Err(Error::InvalidConfig(format!(
-            "Voice '{voice_name}': port '{port}' (kr-rate) cannot route to group '{group_name}' \
-which is hardware-routed (output_bus = {output_bus}). Hardware-output groups need \
-ar-rate audio. Either:\n  \
+            "Voice '{voice_name}': port '{port}' (kr-rate) cannot route to group '{group_name}'. \
+kr-rate ports carry control signals; group destinations feed audio paths and read with \
+`In.ar`, producing DC bias / undefined output. Either:\n  \
   - declare the synthdef's port as `.output(...)` (ar) instead of `.output_kr(...)`,\n  \
   - or use the ar-rate variant of the source UGen (e.g. sin_osc_ar instead of sin_osc_kr),\n  \
-  - or use `.to_param(target, \"param\")` for cross-voice kr modulation.",
+  - or route to a param via `.to_param(target, \"param\")`, `.to_param_audio(target, \"param\")`, \
+or `target.param(\"param\").modulate_by(source, \"port\")`.",
             voice_name = voice.config.name,
             port = r.port_name,
             group_name = group.name,
-            output_bus = output_bus,
         )))
     }
 
@@ -562,7 +560,7 @@ ar-rate audio. Either:\n  \
         {
             let state = self.state.read().await;
             for r in &diff.additions {
-                Self::validate_kr_to_hw_group(&state, r)?;
+                Self::validate_kr_to_group(&state, r)?;
             }
         }
 

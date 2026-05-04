@@ -312,8 +312,8 @@ async fn kr_port_to_hw_routed_group_rejected() {
         .expect_err("kr-port → hw-routed-group must be rejected");
     let msg = err.to_string();
 
-    // The message must name the voice, the port, the group, and the bus,
-    // and point at the legit alternatives.
+    // The message must name the voice, the port, the group, and point at
+    // the legit alternatives.
     assert!(
         msg.contains("cv_clock_inst"),
         "error names the voice — got: {msg}"
@@ -321,10 +321,6 @@ async fn kr_port_to_hw_routed_group_rejected() {
     assert!(msg.contains("'out'"), "error names the port — got: {msg}");
     assert!(msg.contains("kr-rate"), "error names the rate — got: {msg}");
     assert!(msg.contains("'cv1'"), "error names the group — got: {msg}");
-    assert!(
-        msg.contains("output_bus = 2"),
-        "error names the hw bus — got: {msg}"
-    );
     assert!(
         msg.contains("`.output(...)`"),
         "error suggests ar-port fix — got: {msg}"
@@ -447,5 +443,72 @@ async fn kr_port_to_param_route_accepted() {
         backend.creates(),
         0,
         "Param routes do not spawn mixer synths in finalize"
+    );
+}
+
+// =========================================================================
+// (4) kr-port → non-hw sub-group is also rejected.
+// =========================================================================
+
+#[tokio::test]
+async fn kr_port_to_non_hw_group_also_rejected() {
+    // A non-hw sub-group still feeds an audio path: its mix bus folds into
+    // the parent group via `system_link_audio`, which reads with `In.ar`.
+    // kr data lands as DC bias / undefined output and leaks into the parent
+    // chain — the same class of silent failure as the hw-group case, just
+    // one step removed from the jack. The validator must reject it too.
+    let backend = MockBackend::new();
+    let state = Arc::new(RwLock::new(State::default()));
+
+    // Sub-group with NO output_bus — purely an internal mix bus.
+    let sub_group = GroupId::new(1);
+    insert_group(&state, sub_group, "leads_fx", None).await;
+
+    let voice = VoiceId::new(103);
+    insert_voice(
+        &state,
+        voice,
+        sub_group,
+        "lfo_inst",
+        "cv_lfo_test",
+        &[kr_port("out")],
+    )
+    .await;
+
+    let handler = RoutesHandler::new(backend.clone(), state.clone());
+    let new_routes = one_route(voice, "out", RouteDest::Group(sub_group));
+    let diff = RoutesHandler::<MockBackend>::diff(&RouteMap::new(), &new_routes);
+
+    let err = handler
+        .finalize(&diff)
+        .await
+        .expect_err("kr-port → non-hw sub-group must also be rejected");
+    let msg = err.to_string();
+
+    assert!(
+        msg.contains("lfo_inst"),
+        "error names the voice — got: {msg}"
+    );
+    assert!(msg.contains("'out'"), "error names the port — got: {msg}");
+    assert!(msg.contains("kr-rate"), "error names the rate — got: {msg}");
+    assert!(
+        msg.contains("'leads_fx'"),
+        "error names the group — got: {msg}"
+    );
+    assert!(
+        msg.contains(".to_param"),
+        "error still suggests .to_param fix — got: {msg}"
+    );
+
+    // No mixer was spawned and no route_synths entry was inserted.
+    assert_eq!(
+        backend.creates(),
+        0,
+        "no synth must be spawned when validation fails"
+    );
+    let s = state.read().await;
+    assert!(
+        s.route_synths.is_empty(),
+        "route_synths must stay empty when finalize bails"
     );
 }
