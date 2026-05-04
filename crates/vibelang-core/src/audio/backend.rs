@@ -38,6 +38,16 @@ pub trait AudioBackend: Send + Sync {
 
     /// List all connections for a given port.
     fn list_connections(&self, port: &str) -> Result<Vec<String>>;
+
+    /// List every active port-to-port connection in one shot, as
+    /// `(source, destination)` pairs.
+    ///
+    /// Backends that can't enumerate the global graph in a single call
+    /// should leave the default impl in place; callers must fall back
+    /// to per-port `list_connections` queries when this returns empty.
+    fn list_all_connections(&self) -> Result<Vec<(String, String)>> {
+        Ok(Vec::new())
+    }
 }
 
 /// PipeWire backend using pw-link.
@@ -194,6 +204,71 @@ impl AudioBackend for PipeWireBackend {
             .map(|line| line.trim().to_string())
             .collect())
     }
+
+    fn list_all_connections(&self) -> Result<Vec<(String, String)>> {
+        let output =
+            Command::new("pw-link")
+                .arg("-l")
+                .output()
+                .map_err(|e| AudioError::CommandFailed {
+                    command: "pw-link -l".into(),
+                    reason: e.to_string(),
+                })?;
+
+        if !output.status.success() {
+            return Ok(Vec::new());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_pw_link_l(&stdout))
+    }
+}
+
+/// Parse `pw-link -l` output into `(source, destination)` pairs.
+///
+/// Output format (verified on PipeWire 1.x): each port that participates
+/// in any link gets a header line at column 0 (`node:port`), followed by
+/// indented connection lines that begin with `|->` (egress; this header
+/// is the source) or `|<-` (ingress; this header is the destination).
+/// Each link therefore appears twice — once on each endpoint's block.
+/// We consume only `|->` lines to emit each link exactly once.
+///
+/// Example:
+/// ```text
+/// some_source:port_a
+///   |-> dest_node:port_x
+///   |-> dest_node:port_y
+/// dest_node:port_x
+///   |<- some_source:port_a
+/// ```
+/// yields `[("some_source:port_a", "dest_node:port_x"),
+///          ("some_source:port_a", "dest_node:port_y")]`.
+fn parse_pw_link_l(output: &str) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    let mut current_header: Option<String> = None;
+
+    for line in output.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let is_indented = line.starts_with(' ') || line.starts_with('\t');
+        if !is_indented {
+            current_header = Some(line.trim().to_string());
+            continue;
+        }
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("|->") {
+            if let Some(src) = current_header.as_deref() {
+                let dst = rest.trim();
+                if !dst.is_empty() && dst.contains(':') {
+                    pairs.push((src.to_string(), dst.to_string()));
+                }
+            }
+        }
+        // `|<-` lines describe the same link from the destination side; skip.
+    }
+
+    pairs
 }
 
 /// JACK backend using jack_connect/jack_disconnect/jack_lsp.
@@ -422,5 +497,94 @@ impl AudioBackend for JackBackend {
         }
 
         Ok(connections)
+    }
+
+    fn list_all_connections(&self) -> Result<Vec<(String, String)>> {
+        let output =
+            Command::new("jack_lsp")
+                .arg("-c")
+                .output()
+                .map_err(|e| AudioError::CommandFailed {
+                    command: "jack_lsp -c".into(),
+                    reason: e.to_string(),
+                })?;
+
+        if !output.status.success() {
+            return Ok(Vec::new());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let (outputs, _) = self.parse_jack_lsp_output(&stdout);
+        // Emit pairs from the outputs side only — the same link is also
+        // listed under its input port, so iterating only outputs gives
+        // each link exactly once.
+        let mut pairs = Vec::new();
+        for port in outputs {
+            for dst in port.connections {
+                pairs.push((port.name.clone(), dst));
+            }
+        }
+        Ok(pairs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_pw_link_l;
+
+    #[test]
+    fn parse_pw_link_l_extracts_egress_pairs() {
+        // Captured fixture: header lines at column 0 are port names;
+        // indented `|->` lines mean the header is the source; `|<-`
+        // means the header is the destination (same link, listed twice).
+        let fixture = "\
+alsa_output.pci-0000_00_1f.3:playback_FL
+  |<- Brave:output_FL
+alsa_input.pci-0000_00_1f.3:capture_FL
+  |-> Brave input:input_FL
+  |-> Brave input:input_FL
+Brave:output_FL
+  |-> alsa_output.pci-0000_00_1f.3:playback_FL
+Brave input:input_FL
+  |<- alsa_input.pci-0000_00_1f.3:capture_FL
+";
+        let pairs = parse_pw_link_l(fixture);
+
+        // Three `|->` edges in the fixture; each `|<-` is the same link
+        // viewed from the destination side, so it must NOT yield a pair.
+        assert_eq!(
+            pairs,
+            vec![
+                (
+                    "alsa_input.pci-0000_00_1f.3:capture_FL".to_string(),
+                    "Brave input:input_FL".to_string(),
+                ),
+                (
+                    "alsa_input.pci-0000_00_1f.3:capture_FL".to_string(),
+                    "Brave input:input_FL".to_string(),
+                ),
+                (
+                    "Brave:output_FL".to_string(),
+                    "alsa_output.pci-0000_00_1f.3:playback_FL".to_string(),
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn parse_pw_link_l_handles_empty_output() {
+        assert!(parse_pw_link_l("").is_empty());
+    }
+
+    #[test]
+    fn parse_pw_link_l_handles_indented_without_header() {
+        // Defensive: indented line before any header should be ignored,
+        // not panic / not produce a malformed pair.
+        let fixture = "  |-> some:port\nheader:port\n  |-> dest:port\n";
+        let pairs = parse_pw_link_l(fixture);
+        assert_eq!(
+            pairs,
+            vec![("header:port".to_string(), "dest:port".to_string())],
+        );
     }
 }

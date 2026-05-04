@@ -206,45 +206,61 @@ impl AudioConnector {
     }
 
     /// Disconnect all connections from/to a client.
+    ///
+    /// Uses the backend's global `list_all_connections` enumeration when
+    /// available (one shell call), filtering in-process to the subset of
+    /// links involving this client. Falls back to per-port
+    /// `list_connections` queries only when the backend can't enumerate
+    /// the graph globally — that path is O(N×M) and historically caused
+    /// `disconnect_client` to hang on busy PipeWire graphs.
     pub fn disconnect_client(&self, client_name: &str) -> Result<()> {
+        use std::collections::HashSet;
+
         info!("Disconnecting all ports for client: {}", client_name);
 
-        // Get all ports for this client
         let outputs = self.list_output_ports()?;
         let inputs = self.list_input_ports()?;
 
-        let client_outputs: Vec<_> = outputs
+        let client_output_names: HashSet<String> = outputs
             .iter()
             .filter(|p| p.client.contains(client_name) || p.name.starts_with(client_name))
+            .map(|p| p.name.clone())
             .collect();
 
-        let client_inputs: Vec<_> = inputs
+        let client_input_names: HashSet<String> = inputs
             .iter()
             .filter(|p| p.client.contains(client_name) || p.name.starts_with(client_name))
+            .map(|p| p.name.clone())
             .collect();
 
-        // Disconnect all output connections
-        for port in client_outputs {
-            if let Some(backend) = self.backends.first() {
-                if let Ok(connections) = backend.list_connections(&port.name) {
-                    for conn in connections {
-                        let _ = backend.disconnect(&port.name, &conn);
-                    }
+        let Some(backend) = self.backends.first() else {
+            return Ok(());
+        };
+
+        let all = backend.list_all_connections().unwrap_or_default();
+        if !all.is_empty() {
+            for (src, dst) in &all {
+                if client_output_names.contains(src) || client_input_names.contains(dst) {
+                    let _ = backend.disconnect(src, dst);
+                }
+            }
+            return Ok(());
+        }
+
+        // Fallback: backend doesn't support global enumeration.
+        for name in &client_output_names {
+            if let Ok(connections) = backend.list_connections(name) {
+                for conn in connections {
+                    let _ = backend.disconnect(name, &conn);
                 }
             }
         }
-
-        // Disconnect all input connections
-        for port in client_inputs {
-            if let Some(backend) = self.backends.first() {
-                // For inputs, we need to find what's connected TO them
-                // This is trickier - we'd need to scan all outputs
-                let all_outputs = backend.list_output_ports().unwrap_or_default();
-                for out_port in all_outputs {
-                    if let Ok(connections) = backend.list_connections(&out_port.name) {
-                        if connections.iter().any(|c| c == &port.name) {
-                            let _ = backend.disconnect(&out_port.name, &port.name);
-                        }
+        for name in &client_input_names {
+            let all_outputs = backend.list_output_ports().unwrap_or_default();
+            for out_port in all_outputs {
+                if let Ok(connections) = backend.list_connections(&out_port.name) {
+                    if connections.iter().any(|c| c == name) {
+                        let _ = backend.disconnect(&out_port.name, name);
                     }
                 }
             }
