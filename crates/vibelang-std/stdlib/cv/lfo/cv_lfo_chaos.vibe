@@ -12,9 +12,12 @@
 // make the output suitable as a CV modulation source. The default is 4 Hz.
 //
 // Implementation notes:
-//   - Only `lorenz_l_ar` exists (no kr sibling); we run it at audio rate
-//     but with a low iteration `freq` so each sample is interpolated from
-//     the same orbit segment — sub-audio modulation in practice.
+//   - `lorenz_l_ar` is audio-rate (LorenzL has no kr sibling). Direct kr-param
+//     input works: `lorenz_l_ar(rate)` re-reads freq per block.
+//   - Note: SC's LorenzL initializes its internal phase counter once at
+//     synth start. Mid-life rate changes ARE honoured for new iterations,
+//     but the orbit has already been advancing at the previous rate, so
+//     dramatic changes can take a moment to "catch up" in perceived feel.
 //   - Lorenz x runs at roughly ±20–30 in raw form (s=10, r=28, b=2.667
 //     defaults). A `1/25` pre-scale brings it into the [-1, +1] space the
 //     CV pipeline expects; the final `clip_ar` rail catches the rare

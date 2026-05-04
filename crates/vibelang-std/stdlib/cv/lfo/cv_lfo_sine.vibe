@@ -9,9 +9,11 @@
 // sample by `depth_v / 10`. `bipolar` is a 0.0 / 1.0 switch — values in between
 // give a continuous mix of the two polarities.
 //
-// The implementation runs at control rate (`sin_osc_kr`) — sub-audio
-// modulation does not need audio-rate fidelity, and kr keeps the synthdef
-// cheap when many LFOs run in parallel.
+// The implementation runs at audio rate (`sin_osc_ar`). Earlier versions used
+// `sin_osc_kr`, but vibelang's kr-rate Control wire to SC's `SinOsc.kr` doesn't
+// re-read freq each block — output stuck near-DC regardless of the `rate` param
+// value. Audio rate works correctly with kr-rate inputs and the CV contract
+// delivers ar to the ES-3 anyway, so there's no penalty.
 //
 // CV contract (kb/stdlib-cv-spec.md): mono, hard-clipped to ±1.0, no
 // leak_dc, no soft-sat, no envelope on the carrier.
@@ -21,7 +23,7 @@ define_synthdef("cv_lfo_sine")
     .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
     .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
     .body(|rate, depth_v, bipolar| {
-        let osc = sin_osc_kr(rate, 0.0);
+        let osc = sin_osc_ar(rate, 0.0);
         // Mix bipolar [-1,+1] vs unipolar [0,+1]:
         //   bipolar=1 → osc                          (peak ±1)
         //   bipolar=0 → osc * 0.5 + 0.5              (peak  0..+1)

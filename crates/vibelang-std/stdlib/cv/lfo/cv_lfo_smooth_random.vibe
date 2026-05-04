@@ -15,7 +15,8 @@
 // targets. The actual signal is much smoother than `rate` suggests because
 // of the quadratic interpolation between targets.
 //
-// Runs at control rate (`lf_noise2_kr`).
+// Runs at audio rate (`lf_noise2_ar`) — kr variants don't re-read freq per
+// block in vibelang's wiring; ar works correctly.
 //
 // CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
 
@@ -24,7 +25,7 @@ define_synthdef("cv_lfo_smooth_random")
     .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
     .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
     .body(|rate, depth_v, bipolar| {
-        let noise = lf_noise2_kr(rate);
+        let noise = lf_noise2_ar(rate);
         let shaped = noise * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
         let cv = shaped * (depth_v / 10.0);
         let clipped = clip_ar(cv, -1.0, 1.0);

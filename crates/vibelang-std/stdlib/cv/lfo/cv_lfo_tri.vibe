@@ -9,7 +9,8 @@
 //   bipolar = 0.0 → 0 V .. +depth_v volts
 //
 // `rate` (Hz) is the LFO frequency. `depth_v` is the peak amplitude in volts
-// (0..10 V). Runs at control rate (`lf_tri_kr`).
+// (0..10 V). Runs at audio rate (`lf_tri_ar`) — kr variants of LF oscillators
+// don't re-read freq per block in vibelang's wiring; ar works correctly.
 //
 // CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
 
@@ -18,7 +19,7 @@ define_synthdef("cv_lfo_tri")
     .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
     .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
     .body(|rate, depth_v, bipolar| {
-        let osc = lf_tri_kr(rate, 0.0);
+        let osc = lf_tri_ar(rate, 0.0);
         let shaped = osc * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
         let cv = shaped * (depth_v / 10.0);
         let clipped = clip_ar(cv, -1.0, 1.0);
