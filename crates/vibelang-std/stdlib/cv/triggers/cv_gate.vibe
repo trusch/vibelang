@@ -4,15 +4,26 @@
 // Edges are smoothed with a ~0.1 ms exponential lag to prevent click artefacts
 // from sample-aligned discontinuities driving the ES-3.
 //
+// **Self-frees on gate falling edge** via a `linen_kr` ASR envelope with
+// `doneAction=2`. Critical for pattern/melody-driven use: without this,
+// each `step("x..")` trigger would leave a zombie synth at 0V and exhaust
+// scsynth's node pool after a couple hundred steps (`/s_new too many nodes`).
+//
 // CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
 
 define_synthdef("cv_gate")
     .param("gate", 0.0)
     .body(|gate| {
+        // ASR shape: 0.1ms attack, sustain at 1.0 while gate>0, 1ms release
+        // on gate=0 — then doneAction=2 frees the synth.
+        let env = linen_kr(gate, 0.0001, 1.0, 0.001, 2.0);
+
         // ~0.1 ms 60 dB lag: quick enough to feel hard at the jack, slow enough
         // to round the sample-step edge that produces click energy.
         let smoothed = lag_ar(gate, 0.0001);
 
         // Scale 1.0 -> 0.5 audio (= +5V), hard clip to +/-1.0.
-        clip_ar(smoothed * 0.5, -1.0, 1.0)
+        // env multiplier is redundant for the gate-low case (smoothed is
+        // already 0) but it's the carrier for doneAction=2.
+        clip_ar(smoothed * env * 0.5, -1.0, 1.0)
     });
