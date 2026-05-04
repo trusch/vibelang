@@ -20,6 +20,11 @@
 // via retrigger — that also keeps the looping cadence under the user's clock
 // rather than a hidden internal oscillator.
 //
+// **Self-frees on envelope completion** via `done_action = dc_kr(2.0)`. EnvGen
+// fires the doneAction when the final breakpoint hits 0 (the shape returns to
+// 0 at the end). Critical for pattern/melody-driven retrigger use — without
+// this, every fire would leak a zombie synth and exhaust scsynth's pool.
+//
 // Voltage scaling: levels are written in audio units already scaled to the
 // 0..+10 V convention (0.8 audio = +8 V, etc.). The hard ±1.0 clip on the way
 // out protects the DAC against an over-driven `level_scale`.
@@ -44,10 +49,10 @@ define_synthdef("cv_env_complex", |builder| {
             );
 
             // All-NodeRef env_gen variant — params can stay live. level_bias
-            // and done_action stay at their neutral values (0) but must be
-            // wrapped as kr DC nodes to satisfy the NodeRef signature.
+            // stays at 0 (neutral). done_action = 2.0 → synth frees itself
+            // when the envelope completes (final segment ends at 0).
             let level_bias = dc_kr(0.0);
-            let done_action = dc_kr(0.0);
+            let done_action = dc_kr(2.0);
             let env_out = env_gen(env, gate, level_scale, level_bias, time_scale, done_action);
 
             let clipped = clip_ar(env_out, -1.0, 1.0);

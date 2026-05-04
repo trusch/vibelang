@@ -3,15 +3,28 @@
 // Rising-edge trigger pulse. On each rising zero-crossing of `gate`,
 // emit a single +5V pulse of `width_ms` milliseconds.
 //
+// **Self-frees on gate falling edge** via a `linen_kr` watchdog with
+// `doneAction=2`. Without this each pattern/melody trigger would leak a
+// zombie synth and exhaust scsynth's node pool after a few hundred steps
+// (`/s_new too many nodes`).
+//
 // CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
 
 define_synthdef("cv_trigger")
     .param("gate", 0.0)
     .param("width_ms", 5.0)
     .body(|gate, width_ms| {
+        let width_s = width_ms * 0.001;
+
         // Trig1 fires a 1.0 pulse of `dur` seconds on each rising edge of its input.
-        let pulse = trig1_ar(gate, width_ms * 0.001);
+        let pulse = trig1_ar(gate, width_s);
+
+        // ASR watchdog: holds at 1.0 while gate>0, on gate=0 takes width_s
+        // (plus a small tail) to release, then doneAction=2 frees the synth.
+        // Multiplied into the output as the carrier — pulse is already 0 by
+        // the time gate falls, so the unity-gain sustain doesn't change levels.
+        let env = linen_kr(gate, 0.0001, 1.0, width_s + 0.005, 2.0);
 
         // Scale unit pulse to 0.5 audio (= +5V at the ES-3 jack), hard clip to +/-1.0.
-        clip_ar(pulse * 0.5, -1.0, 1.0)
+        clip_ar(pulse * env * 0.5, -1.0, 1.0)
     });

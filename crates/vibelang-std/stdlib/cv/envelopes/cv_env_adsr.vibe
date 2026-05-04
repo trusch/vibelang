@@ -33,6 +33,10 @@
 // pass `gate` directly so the user's gate must be 0/+ — matching the rest
 // of the CV stdlib gate convention (0 = low, ≥1 = high).
 //
+// **Self-frees on gate falling edge**: the `linen_kr` ASR leg carries
+// `doneAction=2`, so once its release stage completes the synth frees.
+// Critical for pattern/melody-driven use to prevent node-pool exhaustion.
+//
 // CV contract: 0..+10 V output, mono, hard ±1.0 clip, no leak_dc / soft-sat.
 // See kb/stdlib-cv-spec.md.
 
@@ -51,7 +55,8 @@ define_synthdef("cv_env_adsr")
         let peak_audio = peak_v * 0.1;
 
         // ASR leg: rises to sustain on gate-high, falls to 0 on gate-low.
-        let asr = linen_kr(gate, attack_s, sustain_audio, release_s, 0.0);
+        // doneAction=2 → synth frees when the release stage completes.
+        let asr = linen_kr(gate, attack_s, sustain_audio, release_s, 2.0);
 
         // Decay overshoot: fires on gate rising edge, peaks at (peak − sustain),
         // falls back to 0 over `decay_ms` — the "decay" stage of the ADSR.

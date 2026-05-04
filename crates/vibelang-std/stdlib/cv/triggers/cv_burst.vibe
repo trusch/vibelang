@@ -10,6 +10,10 @@
 // internal oscillator, not exactly to the trigger edge — accept up to one
 // `rate_hz` period of jitter on burst-start.)
 //
+// **Self-frees on gate falling edge** via a `linen_kr` watchdog with
+// `doneAction=2`. Without this each pattern/melody trigger leaks a zombie
+// synth and exhausts scsynth's node pool.
+//
 // CV contract: 0.5 audio = +5V, mono, hard +/-1.0 clip, no DC blocking.
 
 define_synthdef("cv_burst")
@@ -31,5 +35,11 @@ define_synthdef("cv_burst")
 
         // Stretch each impulse to a 5 ms +5V pulse and clip.
         let pulse = trig1_ar(gated, 0.005);
-        clip_ar(pulse * 0.5, -1.0, 1.0)
+
+        // ASR watchdog: holds while gate>0, on gate=0 takes window_dur (the
+        // full burst length, so any in-flight pulse completes) plus a tail,
+        // then doneAction=2 frees the synth.
+        let env = linen_kr(gate, 0.0001, 1.0, window_dur + 0.01, 2.0);
+
+        clip_ar(pulse * env * 0.5, -1.0, 1.0)
     });
