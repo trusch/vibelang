@@ -442,9 +442,64 @@ impl<B: Backend> RoutesHandler<B> {
         diff
     }
 
+    /// Reject route additions whose source port is kr-rate when the
+    /// destination group is hardware-routed (`output_bus = Some(_)`).
+    ///
+    /// kr-rate ports feed control buses; hw-output groups go through
+    /// `system_link_audio[_mono]` which read the group's audio bus with
+    /// `In.ar` and produce undefined output (typically silence or stuck
+    /// DC) when fed kr data. Catching this at finalize time avoids the
+    /// silent-failure-at-the-jack class of bug surfaced by the
+    /// CV-via-ADAT debugging session (cv_clock + mono group).
+    ///
+    /// Tr-rate ports are not yet covered — current scope is Kr only.
+    /// kr-port → `RouteDest::Param`, `RouteDest::Main`, `RouteDest::Muted`,
+    /// or a non-hw `RouteDest::Group` are all left to existing handling.
+    fn validate_kr_to_hw_group(state: &State, r: &Route) -> Result<()> {
+        let group_id = match &r.dest {
+            RouteDest::Group(g) => *g,
+            _ => return Ok(()),
+        };
+        let voice = match state.voices.get(&r.voice_id) {
+            Some(v) => v,
+            None => return Ok(()),
+        };
+        let ports = state.synthdef_outputs(&voice.config.synthdef);
+        let port_rate = match ports.iter().find(|p| p.name == r.port_name) {
+            Some(p) => p.rate,
+            None => return Ok(()),
+        };
+        if !matches!(port_rate, PortRate::Kr) {
+            return Ok(());
+        }
+        let group = match state.groups.get(&group_id) {
+            Some(g) => g,
+            None => return Ok(()),
+        };
+        let Some(output_bus) = group.output_bus else {
+            return Ok(());
+        };
+        Err(Error::InvalidConfig(format!(
+            "Voice '{voice_name}': port '{port}' (kr-rate) cannot route to group '{group_name}' \
+which is hardware-routed (output_bus = {output_bus}). Hardware-output groups need \
+ar-rate audio. Either:\n  \
+  - declare the synthdef's port as `.output(...)` (ar) instead of `.output_kr(...)`,\n  \
+  - or use the ar-rate variant of the source UGen (e.g. sin_osc_ar instead of sin_osc_kr),\n  \
+  - or use `.to_param(target, \"param\")` for cross-voice kr modulation.",
+            voice_name = voice.config.name,
+            port = r.port_name,
+            group_name = group.name,
+            output_bus = output_bus,
+        )))
+    }
+
     /// Apply a route diff: free old mixer synths, instantiate new ones.
     ///
     /// Order:
+    /// 0. Validate every addition against the kr-port → hw-group rule.
+    ///    If any addition violates, return Err before any spawn or free
+    ///    runs — the route diff stays atomic, the script-side error is
+    ///    surfaced unambiguously.
     /// 1. Free mixer synths for every removed `(voice, port, dest)` edge.
     /// 2. Instantiate mixer synths for every added edge.
     ///
@@ -454,6 +509,13 @@ impl<B: Backend> RoutesHandler<B> {
     pub async fn finalize(&self, diff: &RouteDiff) -> Result<()> {
         if diff.is_empty() {
             return Ok(());
+        }
+
+        {
+            let state = self.state.read().await;
+            for r in &diff.additions {
+                Self::validate_kr_to_hw_group(&state, r)?;
+            }
         }
 
         let nodes_to_free: Vec<NodeId> = {
