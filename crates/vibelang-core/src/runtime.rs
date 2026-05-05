@@ -32,9 +32,9 @@ use crate::compat::{timeout, Duration};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::handlers::RecordingsHandler;
 use crate::handlers::{
-    merge_default_routes, EffectsHandler, FadesHandler, GroupsHandler, MelodiesHandler,
-    PatternsHandler, RouteMap, RoutesHandler, SamplesHandler, SequencesHandler, SfzHandler,
-    SynthDefsHandler, TransportHandler, VoicesHandler,
+    merge_default_routes, suppress_modulation_only_defaults, EffectsHandler, FadesHandler,
+    GroupsHandler, MelodiesHandler, PatternsHandler, RouteMap, RoutesHandler, SamplesHandler,
+    SequencesHandler, SfzHandler, SynthDefsHandler, TransportHandler, VoicesHandler,
 };
 #[cfg(feature = "midi")]
 use crate::message::MidiMessage;
@@ -1469,7 +1469,19 @@ impl<B: Backend> Runtime<B> {
         // and a removal of a user route correctly falls back to the default.
         let merged_routes = {
             let state = self.state.read().await;
-            merge_default_routes(&new_state.routes, &state.default_routes)
+            // Heuristic auto-mute: drop count-based default group mixes for
+            // voices that are used purely as modulation sources (no explicit
+            // user route + at least one outgoing param route). Otherwise an
+            // LFO voice's raw waveform leaks into its surrounding group bus.
+            let filtered_defaults = suppress_modulation_only_defaults(
+                &state.default_routes,
+                &new_state.routes,
+                &new_state.param_routes_set,
+                &new_state.param_routes_bend,
+                &new_state.param_routes_trigger,
+                |vid| state.voices.get(&vid).map(|v| v.config.name.clone()),
+            );
+            merge_default_routes(&new_state.routes, &filtered_defaults)
         };
         let route_diff = RoutesHandler::<B>::diff(&self.current_routes, &merged_routes);
         if !route_diff.is_empty() {

@@ -153,6 +153,71 @@ pub fn merge_default_routes(user: &RouteMap, defaults: &RouteMap) -> RouteMap {
     merged
 }
 
+/// Drop count-based default audio routes for voices that are used purely as
+/// modulation sources.
+///
+/// Heuristic: a voice qualifies as "modulation-only" when (a) the script
+/// installed *no* explicit user routes against any of its ports
+/// (`user_routes` carries no `(voice, *)` key) and (b) at least one of the
+/// voice's ports appears as a *source* in any of the param-route maps
+/// (SET via `.to_param` / `.to_param_audio`, BEND via `.modulate_by`, or
+/// TRIGGER via `.to_trigger`). For such voices, the implicit default
+/// `Group(voice_group)` mix would dump the voice's raw waveform into the
+/// surrounding group's audio bus — audible bleed for an LFO whose only
+/// purpose is modulating another voice's param.
+///
+/// The check is per-voice (not per-port): the typical case is a single-output
+/// LFO synthdef whose one port is being used for modulation. If a voice has
+/// even one explicit `RouteDest::{Group,Main,Muted}` entry in `user_routes`
+/// the heuristic does not fire — the script author has stated their intent
+/// and the existing routing rules take over.
+///
+/// `voice_name_fn` is used purely for the `tracing::info!` line emitted on
+/// activation (one per suppressed voice).
+pub fn suppress_modulation_only_defaults(
+    defaults: &RouteMap,
+    user_routes: &RouteMap,
+    set: &ParamRouteMap,
+    bend: &ParamRouteMap,
+    trigger: &ParamRouteMap,
+    voice_name_fn: impl Fn(VoiceId) -> Option<String>,
+) -> RouteMap {
+    let voices_with_user_route: HashSet<VoiceId> =
+        user_routes.keys().map(|(v, _)| *v).collect();
+
+    let mut param_route_counts: HashMap<VoiceId, usize> = HashMap::new();
+    for map in [set, bend, trigger] {
+        for ((vid, _), targets) in map {
+            *param_route_counts.entry(*vid).or_insert(0) += targets.len();
+        }
+    }
+
+    let mut suppressed: HashSet<VoiceId> = HashSet::new();
+    let mut filtered = RouteMap::new();
+    for (key, dests) in defaults {
+        let (vid, _) = key;
+        let has_param = param_route_counts.contains_key(vid);
+        let has_user = voices_with_user_route.contains(vid);
+        if has_param && !has_user {
+            suppressed.insert(*vid);
+        } else {
+            filtered.insert(key.clone(), dests.clone());
+        }
+    }
+
+    for vid in &suppressed {
+        let count = param_route_counts.get(vid).copied().unwrap_or(0);
+        let name = voice_name_fn(*vid).unwrap_or_else(|| format!("{:?}", vid));
+        tracing::info!(
+            "Voice '{}': skipping default audio routing — modulation-only ({} outgoing param routes)",
+            name,
+            count
+        );
+    }
+
+    filtered
+}
+
 /// Difference between two route maps, computed at `(voice, port, dest)`-edge
 /// granularity.
 ///
