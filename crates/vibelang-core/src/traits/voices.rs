@@ -82,6 +82,23 @@ pub struct VoiceConfig {
     /// where an open hi-hat should be stopped when a closed hi-hat is triggered.
     pub choke_group: Option<String>,
 
+    /// Explicit "modulation source only" flag.
+    ///
+    /// When true the runtime suppresses the count-based default audio mix
+    /// for this voice unconditionally — even when an explicit
+    /// `RouteDest::{Group,Main}` user route is present and even when the
+    /// voice has no outgoing param routes. The author's intent is "this
+    /// voice is wired to other voices' params; do not also dump it into
+    /// the surrounding group bus." Explicit user routes still apply, so
+    /// `voice("lfo").modulator_only(); voice("lfo").to(group("rec"))` will
+    /// mix into `rec` only and skip the implicit default.
+    ///
+    /// Set via the Rhai `modulator_only()` chain method on
+    /// [`crate::api::voice::Voice`](https://docs.rs/) — paired with the
+    /// auto-mute heuristic in
+    /// [`crate::handlers::routes::suppress_modulation_only_defaults`].
+    pub modulator_only: bool,
+
     /// MIDI output device (if routing to external MIDI).
     #[cfg(feature = "midi")]
     pub midi_output: Option<MidiDeviceId>,
@@ -113,6 +130,7 @@ impl PartialEq for VoiceConfig {
             && self.round_robin_count == other.round_robin_count
             && self.trigger_mode == other.trigger_mode
             && self.choke_group == other.choke_group
+            && self.modulator_only == other.modulator_only
             && {
                 #[cfg(feature = "midi")]
                 {
@@ -144,6 +162,7 @@ impl VoiceConfig {
             round_robin_count: 0,
             trigger_mode: "gate".to_string(),
             choke_group: None,
+            modulator_only: false,
             #[cfg(feature = "midi")]
             midi_output: None,
             #[cfg(feature = "midi")]

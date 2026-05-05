@@ -1205,6 +1205,7 @@ mod tests {
                 trigger_mode: "gate".to_string(),
                 choke_group: None,
                 round_robin_count: 0,
+                modulator_only: false,
                 #[cfg(feature = "midi")]
                 midi_output: None,
                 #[cfg(feature = "midi")]

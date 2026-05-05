@@ -156,21 +156,30 @@ pub fn merge_default_routes(user: &RouteMap, defaults: &RouteMap) -> RouteMap {
 /// Drop count-based default audio routes for voices that are used purely as
 /// modulation sources.
 ///
-/// Heuristic: a voice qualifies as "modulation-only" when (a) the script
-/// installed *no* explicit user routes against any of its ports
-/// (`user_routes` carries no `(voice, *)` key) and (b) at least one of the
-/// voice's ports appears as a *source* in any of the param-route maps
-/// (SET via `.to_param` / `.to_param_audio`, BEND via `.modulate_by`, or
-/// TRIGGER via `.to_trigger`). For such voices, the implicit default
-/// `Group(voice_group)` mix would dump the voice's raw waveform into the
-/// surrounding group's audio bus — audible bleed for an LFO whose only
-/// purpose is modulating another voice's param.
+/// Two activation paths:
 ///
-/// The check is per-voice (not per-port): the typical case is a single-output
-/// LFO synthdef whose one port is being used for modulation. If a voice has
-/// even one explicit `RouteDest::{Group,Main,Muted}` entry in `user_routes`
-/// the heuristic does not fire — the script author has stated their intent
-/// and the existing routing rules take over.
+/// 1. **Heuristic** — a voice qualifies as "modulation-only" when (a) the
+///    script installed *no* explicit user routes against any of its ports
+///    (`user_routes` carries no `(voice, *)` key) and (b) at least one of
+///    the voice's ports appears as a *source* in any of the param-route
+///    maps (SET via `.to_param` / `.to_param_audio`, BEND via
+///    `.modulate_by`, or TRIGGER via `.to_trigger`). For such voices, the
+///    implicit default `Group(voice_group)` mix would dump the voice's raw
+///    waveform into the surrounding group's audio bus — audible bleed for
+///    an LFO whose only purpose is modulating another voice's param.
+///
+/// 2. **Explicit flag** — `is_modulator_only_fn(vid)` returning true forces
+///    suppression regardless of the heuristic conditions, even when an
+///    explicit `RouteDest::{Group,Main,Muted}` user route is present and
+///    even when there are no outgoing param routes. The user's explicit
+///    routes still apply via [`merge_default_routes`]; only the implicit
+///    default is dropped. This is the escape hatch for voices that legit
+///    have both a wet audio destination (e.g. a recording group) and a
+///    modulation role, where the heuristic's "any explicit route disables
+///    me" rule would leave the implicit group mix in place.
+///
+/// The check is per-voice (not per-port): the typical case is a
+/// single-output LFO synthdef whose one port is being used for modulation.
 ///
 /// `voice_name_fn` is used purely for the `tracing::info!` line emitted on
 /// activation (one per suppressed voice).
@@ -181,6 +190,7 @@ pub fn suppress_modulation_only_defaults(
     bend: &ParamRouteMap,
     trigger: &ParamRouteMap,
     voice_name_fn: impl Fn(VoiceId) -> Option<String>,
+    is_modulator_only_fn: impl Fn(VoiceId) -> bool,
 ) -> RouteMap {
     let voices_with_user_route: HashSet<VoiceId> =
         user_routes.keys().map(|(v, _)| *v).collect();
@@ -193,13 +203,18 @@ pub fn suppress_modulation_only_defaults(
     }
 
     let mut suppressed: HashSet<VoiceId> = HashSet::new();
+    let mut suppressed_via_flag: HashSet<VoiceId> = HashSet::new();
     let mut filtered = RouteMap::new();
     for (key, dests) in defaults {
         let (vid, _) = key;
         let has_param = param_route_counts.contains_key(vid);
         let has_user = voices_with_user_route.contains(vid);
-        if has_param && !has_user {
+        let explicit_flag = is_modulator_only_fn(*vid);
+        if explicit_flag || (has_param && !has_user) {
             suppressed.insert(*vid);
+            if explicit_flag {
+                suppressed_via_flag.insert(*vid);
+            }
         } else {
             filtered.insert(key.clone(), dests.clone());
         }
@@ -208,9 +223,15 @@ pub fn suppress_modulation_only_defaults(
     for vid in &suppressed {
         let count = param_route_counts.get(vid).copied().unwrap_or(0);
         let name = voice_name_fn(*vid).unwrap_or_else(|| format!("{:?}", vid));
+        let reason = if suppressed_via_flag.contains(vid) {
+            "explicit modulator_only() flag"
+        } else {
+            "modulation-only"
+        };
         tracing::info!(
-            "Voice '{}': skipping default audio routing — modulation-only ({} outgoing param routes)",
+            "Voice '{}': skipping default audio routing — {} ({} outgoing param routes)",
             name,
+            reason,
             count
         );
     }

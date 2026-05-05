@@ -1480,6 +1480,13 @@ impl<B: Backend> Runtime<B> {
                 &new_state.param_routes_bend,
                 &new_state.param_routes_trigger,
                 |vid| state.voices.get(&vid).map(|v| v.config.name.clone()),
+                |vid| {
+                    state
+                        .voices
+                        .get(&vid)
+                        .map(|v| v.config.modulator_only)
+                        .unwrap_or(false)
+                },
             );
             merge_default_routes(&new_state.routes, &filtered_defaults)
         };

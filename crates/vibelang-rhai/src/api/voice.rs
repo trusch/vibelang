@@ -50,6 +50,8 @@ pub struct Voice {
     round_robin_count: u32,
     /// Choke group name for exclusive triggering.
     choke_group: Option<String>,
+    /// Explicit "modulation source only" flag — see [`Self::modulator_only`].
+    modulator_only: bool,
     /// MIDI output device (if routing to external MIDI).
     #[cfg(feature = "midi")]
     midi_output_device: Option<MidiDeviceId>,
@@ -79,6 +81,7 @@ impl Voice {
             trigger_mode: "gate".to_string(),
             round_robin_count: 0,
             choke_group: None,
+            modulator_only: false,
             #[cfg(feature = "midi")]
             midi_output_device: None,
             #[cfg(feature = "midi")]
@@ -105,6 +108,7 @@ impl Voice {
             trigger_mode: "gate".to_string(),
             round_robin_count: 0,
             choke_group: None,
+            modulator_only: false,
             #[cfg(feature = "midi")]
             midi_output_device: None,
             #[cfg(feature = "midi")]
@@ -375,6 +379,23 @@ impl Voice {
         self
     }
 
+    /// Mark this voice as a modulation-source only — explicit opt-in.
+    ///
+    /// Sets [`VoiceConfig::modulator_only`] so the runtime suppresses the
+    /// count-based default audio mix for this voice unconditionally. Any
+    /// explicit `.to(group)` / `.to_main()` user route is still honoured;
+    /// only the implicit default is dropped.
+    ///
+    /// Use when the heuristic in `suppress_modulation_only_defaults` is too
+    /// narrow — typically when the voice has both an explicit audio route
+    /// (e.g. `.to(group("rec"))`) AND param routes, where the heuristic
+    /// would not fire because of the explicit user route.
+    pub fn modulator_only(mut self) -> Self {
+        self.modulator_only = true;
+        self.sync_to_state();
+        self
+    }
+
     /// Begin a target-first CV-to-param wiring on this voice's named param.
     ///
     /// Dual to [`RouteHandle::to_param`](super::route::RouteHandle::to_param):
@@ -579,6 +600,7 @@ impl Voice {
             trigger_mode: self.trigger_mode.clone(),
             round_robin_count: self.round_robin_count,
             choke_group: self.choke_group.clone(),
+            modulator_only: self.modulator_only,
             #[cfg(feature = "midi")]
             midi_output: self.midi_output_device,
             #[cfg(feature = "midi")]
@@ -672,6 +694,7 @@ impl Voice {
             trigger_mode: "gate".to_string(),
             round_robin_count: 0,
             choke_group: None,
+            modulator_only: false,
             param_cc_map: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_output_device: None,
@@ -754,6 +777,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("param", Voice::param_handle);
     engine.register_fn("round_robin", Voice::round_robin);
     engine.register_fn("choke", Voice::choke);
+    engine.register_fn("modulator_only", Voice::modulator_only);
 
     // Mute/solo
     engine.register_fn("mute", Voice::mute);
@@ -880,6 +904,7 @@ mod tests {
             trigger_mode: "gate".to_string(),
             round_robin_count: 0,
             choke_group: None,
+            modulator_only: false,
             param_cc_map: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_output_device: None,

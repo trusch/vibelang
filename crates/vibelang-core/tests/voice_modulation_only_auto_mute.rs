@@ -374,6 +374,12 @@ async fn suppress_merge_diff_finalize(
             bend,
             trigger,
             |vid| s.voices.get(&vid).map(|v| v.config.name.clone()),
+            |vid| {
+                s.voices
+                    .get(&vid)
+                    .map(|v| v.config.modulator_only)
+                    .unwrap_or(false)
+            },
         );
         merge_default_routes(user_routes, &filtered)
     };
@@ -584,6 +590,150 @@ async fn voice_with_only_audio_routes_unaffected() {
     assert!(
         !info_match,
         "heuristic must stay silent for non-modulation voices; got {:?}",
+        log_lines,
+    );
+}
+
+// =========================================================================
+// (4) Explicit `modulator_only()` flag — Story C.
+//
+// The flag forces suppression even when the heuristic conditions are not
+// met. This test checks the simple case: voice has the flag set, no user
+// routes, AND no outgoing param routes (the heuristic alone would NOT
+// fire because there are no param routes — but the flag does).
+// =========================================================================
+
+#[tokio::test(flavor = "current_thread")]
+async fn voice_modulator_only_skips_audio() {
+    let h = setup(&[ar_port("out", 1)]).await;
+
+    let voice = VoiceId::new(204);
+    let mut config = VoiceConfig::new("lfo_explicit", SYNTH, h.voice_group);
+    config.modulator_only = true;
+    h.voices.create(voice, config).await.unwrap();
+
+    // Sanity: default-route installer recorded one entry into the voice
+    // group — the flag must drop it before finalize spawns any mixer.
+    {
+        let s = h.state.read().await;
+        assert_eq!(
+            s.default_routes[&(voice, "out".to_string())],
+            vec![RouteDest::Group(h.voice_group)],
+        );
+    }
+
+    // No user routes, no param routes — the heuristic alone would NOT
+    // fire here. Only the explicit flag triggers suppression.
+    let (captured, _guard) = install_tracing_capture();
+    let merged = suppress_merge_diff_finalize(
+        &h,
+        &RouteMap::new(),
+        &ParamRouteMap::new(),
+        &ParamRouteMap::new(),
+        &ParamRouteMap::new(),
+    )
+    .await;
+    let log_lines = captured.lines();
+
+    assert!(
+        merged.is_empty(),
+        "modulator_only() voice's default group mix must be suppressed; got {:?}",
+        merged
+    );
+    assert_eq!(
+        h.backend.creates(),
+        0,
+        "no port_to_group_link_* mixer should spawn for a modulator_only() voice",
+    );
+    assert_eq!(h.backend.frees(), 0);
+
+    // INFO log marker — explicit-flag wording, distinct from the
+    // heuristic's "modulation-only" line.
+    let info_match = log_lines.iter().any(|l| {
+        l.contains("Voice 'lfo_explicit'")
+            && l.contains("skipping default audio routing")
+            && l.contains("explicit modulator_only() flag")
+    });
+    assert!(
+        info_match,
+        "expected INFO line about explicit-flag suppression for 'lfo_explicit'; got {:?}",
+        log_lines,
+    );
+}
+
+// =========================================================================
+// (5) Explicit `modulator_only()` flag with an explicit audio route — the
+// heuristic from Story B would NOT fire (because of the user route), but
+// the flag must still drop the implicit default. Net result: the voice
+// mixes only into the user's chosen destination, and the surrounding
+// voice-group bus stays clean.
+// =========================================================================
+
+#[tokio::test(flavor = "current_thread")]
+async fn voice_modulator_only_with_audio_route_still_skips_implicit() {
+    let h = setup(&[ar_port("out", 1)]).await;
+
+    let voice = VoiceId::new(205);
+    let mut config = VoiceConfig::new("lfo_dual", SYNTH, h.voice_group);
+    config.modulator_only = true;
+    h.voices.create(voice, config).await.unwrap();
+
+    // Allocate a separate destination group for the explicit user route.
+    let (dest_group, dest_group_bus_id) = add_group(&h.state, 99, "rec").await;
+    assert_ne!(dest_group_bus_id, h.voice_group_bus_id);
+
+    // User route: `voice.output("out").to(group("rec"))`.
+    let mut user_routes = RouteMap::new();
+    user_routes.insert(
+        (voice, "out".to_string()),
+        vec![RouteDest::Group(dest_group)],
+    );
+
+    let (captured, _guard) = install_tracing_capture();
+    let merged = suppress_merge_diff_finalize(
+        &h,
+        &user_routes,
+        &ParamRouteMap::new(),
+        &ParamRouteMap::new(),
+        &ParamRouteMap::new(),
+    )
+    .await;
+    let log_lines = captured.lines();
+
+    // Merged map should contain ONLY the user's explicit destination —
+    // the implicit `Group(voice_group)` default has been suppressed by
+    // the flag.
+    assert_eq!(
+        merged.len(),
+        1,
+        "merged map should contain only the explicit user route; got {:?}",
+        merged,
+    );
+    assert_eq!(
+        merged[&(voice, "out".to_string())],
+        vec![RouteDest::Group(dest_group)],
+        "explicit `.to(rec)` must survive; implicit default must be dropped",
+    );
+
+    // Exactly one mixer spawned, bound to the user's `rec` group bus —
+    // not the voice-group bus.
+    assert_eq!(h.backend.creates(), 1);
+    let creates = h.backend.create_log();
+    assert_eq!(creates[0].def, "port_to_group_link_1");
+    assert_eq!(
+        creates[0].out_bus, dest_group_bus_id as f32,
+        "mixer must target the user's explicit `rec` group, not the voice group",
+    );
+
+    // INFO log marker — flag-driven suppression, distinct from heuristic.
+    let info_match = log_lines.iter().any(|l| {
+        l.contains("Voice 'lfo_dual'")
+            && l.contains("skipping default audio routing")
+            && l.contains("explicit modulator_only() flag")
+    });
+    assert!(
+        info_match,
+        "expected INFO line about explicit-flag suppression for 'lfo_dual'; got {:?}",
         log_lines,
     );
 }
