@@ -321,6 +321,8 @@ impl<B: Backend> VoicesHandler<B> {
             // Convert sample offset/length from seconds to synth params
             if let Some(sample_id) = voice.config.sample_id {
                 if let Some(sample_info) = state.samples.get(&sample_id) {
+                    params.insert("bufnum".to_string(), sample_info.buffer_id.0 as f32);
+
                     let sample_rate = sample_info.sample_rate;
                     let duration = sample_info.duration_secs;
                     let is_warp = voice.config.synthdef.contains("warp");
@@ -589,6 +591,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Convert sample offset/length from seconds to synth params
             if let Some(sample_id) = voice.config.sample_id {
                 if let Some(sample_info) = state.samples.get(&sample_id) {
+                    merged_params.insert("bufnum".to_string(), sample_info.buffer_id.0 as f32);
+
                     let sample_rate = sample_info.sample_rate;
                     let duration = sample_info.duration_secs;
                     let is_warp = voice.config.synthdef.contains("warp");
@@ -851,6 +855,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Convert sample offset/length from seconds to synth params
             if let Some(sample_id) = voice.config.sample_id {
                 if let Some(sample_info) = state.samples.get(&sample_id) {
+                    params.insert("bufnum".to_string(), sample_info.buffer_id.0 as f32);
+
                     let sample_rate = sample_info.sample_rate;
                     let duration = sample_info.duration_secs;
                     let is_warp = voice.config.synthdef.contains("warp");
