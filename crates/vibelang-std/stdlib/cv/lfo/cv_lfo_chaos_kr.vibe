@@ -1,0 +1,36 @@
+// kind=cv | category=lfo | flavor=chaos | rate=kr | range=-10..+10 V | params=rate,depth_v,bipolar
+//
+// kr-output sibling of `cv_lfo_chaos.vibe` — same Lorenz-attractor wander,
+// kr port for use as a modulation source via `.to_param` / `.modulate_by`.
+// Task A's tightened kr-port validator rejects accidental audio routing
+// (`.to(group)` / `.to_main()`), so misuse fails at script-load.
+//
+// `rate` is the iteration frequency of the Lorenz solver in Hz. Sub-audio
+// values (1–20 Hz) keep the attractor in slow-motion mode and make the
+// output suitable as a CV modulation source. The default is 4 Hz.
+//
+// Implementation:
+//   - `lorenz_l_ar` is audio-rate (LorenzL has no kr sibling). Direct
+//     kr-param input works: `lorenz_l_ar(rate)` re-reads freq per block.
+//   - Lorenz x peaks around ±25; pre-scale by 1/25 into the ±1 CV space.
+//   - Decimate to kr at the output via `a2k_kr`.
+//
+// Output:
+//   bipolar = 1.0 → ±depth_v volts (centred chaotic wander)
+//   bipolar = 0.0 → 0 V .. +depth_v volts
+//
+// CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
+
+define_synthdef("cv_lfo_chaos_kr")
+    .output_kr("out")
+    .param("rate", 4.0)       // Hz — Lorenz iteration speed
+    .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
+    .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
+    .body(|rate, depth_v, bipolar| {
+        let chaos = lorenz_l_ar(rate);
+        let normalized = chaos * (1.0 / 25.0);
+        let shaped = normalized * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+        let cv = shaped * (depth_v / 10.0);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [a2k_kr(clipped)]
+    });

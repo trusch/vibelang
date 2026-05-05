@@ -279,4 +279,46 @@ mod tests {
             "cv_maths still declares legacy `trig_in`"
         );
     }
+
+    /// kr-output LFO siblings (Task D of Modulator-class voices epic):
+    /// each `cv_lfo_*_kr.vibe` declares `.output_kr("out")` (the kr
+    /// modulator port), uses `a2k_kr` to decimate the internal ar
+    /// computation back to kr at the output, and does NOT carry a
+    /// bare ar `.output(...)` declaration that would shadow the kr port.
+    #[test]
+    fn cv_lfo_kr_synthdefs_declare_kr_output_and_a2k() {
+        let files = get_stdlib_files();
+        let kr_lfos: &[&str] = &[
+            "cv/lfo/cv_lfo_sine_kr.vibe",
+            "cv/lfo/cv_lfo_tri_kr.vibe",
+            "cv/lfo/cv_lfo_square_kr.vibe",
+            "cv/lfo/cv_lfo_random_kr.vibe",
+            "cv/lfo/cv_lfo_smooth_random_kr.vibe",
+            "cv/lfo/cv_lfo_chaos_kr.vibe",
+        ];
+
+        for path in kr_lfos {
+            let body = files
+                .get(*path)
+                .unwrap_or_else(|| panic!("stdlib missing {}", path));
+            assert!(
+                body.contains(".output_kr(\"out\")"),
+                "{} should declare `.output_kr(\"out\")` (kr modulator port)",
+                path,
+            );
+            assert!(
+                body.contains("a2k_kr("),
+                "{} should call `a2k_kr(...)` to decimate ar → kr at the output",
+                path,
+            );
+            // Sanity: must not also declare a bare ar `.output("out")` /
+            // `.output("out", ...)`.  `.output_kr(...)` is the only port.
+            assert!(
+                !body.contains(".output(\"out\""),
+                "{} declares a bare ar `.output(\"out\"...)` — the kr-only port \
+                 must not be shadowed by an ar output",
+                path,
+            );
+        }
+    }
 }

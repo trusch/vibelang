@@ -1,0 +1,35 @@
+// kind=cv | category=lfo | flavor=sine | rate=kr | range=-10..+10 V | params=rate,depth_v,bipolar
+//
+// kr-output sibling of `cv_lfo_sine.vibe` — same waveform, kr port for use as
+// a modulation source via `.to_param` / `.modulate_by`. Task A's tightened
+// kr-port validator rejects accidental audio routing (`.to(group)` /
+// `.to_main()`), so misuse fails at script-load instead of leaking DC into
+// an audio path.
+//
+// Output:
+//   bipolar = 1.0 → ±depth_v volts
+//   bipolar = 0.0 → 0 V .. +depth_v volts
+//
+// Implementation: `sin_osc_kr` has a stuck-output bug when freq comes from a
+// kr-rate Control wire — output sits near-DC regardless of `rate`. Workaround
+// is to compute the oscillator at audio rate internally and decimate back to
+// kr at the output via `a2k_kr` (sister of `k2_a_ar` per the Conversion UGen
+// manifest). The kr output port hands a control bus to the routing layer,
+// which fans out via `/n_map` (or via the per-target summer for SET routes).
+//
+// CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
+
+define_synthdef("cv_lfo_sine_kr")
+    .output_kr("out")
+    .param("rate", 1.0)       // Hz
+    .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
+    .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
+    .body(|rate, depth_v, bipolar| {
+        // sin_osc_kr stuck-output bug — compute at ar internally.
+        let osc = sin_osc_ar(rate, 0.0);
+        let shaped = osc * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+        let cv = shaped * (depth_v / 10.0);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        // A2K decimates ar back to kr at the output port.
+        [a2k_kr(clipped)]
+    });

@@ -1,0 +1,30 @@
+// kind=cv | category=lfo | flavor=smooth_random | rate=kr | range=-10..+10 V | params=rate,depth_v,bipolar
+//
+// kr-output sibling of `cv_lfo_smooth_random.vibe` — same quadratically
+// interpolated random walk, kr port for use as a modulation source via
+// `.to_param` / `.modulate_by`. Task A's tightened kr-port validator
+// rejects accidental audio routing (`.to(group)` / `.to_main()`), so
+// misuse fails at script-load.
+//
+// Output:
+//   bipolar = 1.0 → ±depth_v volts
+//   bipolar = 0.0 → 0 V .. +depth_v volts
+//
+// Implementation: kr variants of LF noise oscillators don't re-read freq
+// per block in vibelang's wiring — compute at audio rate (`lf_noise2_ar`),
+// then decimate to kr at the output via `a2k_kr`.
+//
+// CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
+
+define_synthdef("cv_lfo_smooth_random_kr")
+    .output_kr("out")
+    .param("rate", 1.0)       // Hz — target-pick rate
+    .param("depth_v", 5.0)    // peak amplitude in volts (0..10)
+    .param("bipolar", 1.0)    // 1.0 = ±depth, 0.0 = 0..+depth
+    .body(|rate, depth_v, bipolar| {
+        let noise = lf_noise2_ar(rate);
+        let shaped = noise * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+        let cv = shaped * (depth_v / 10.0);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [a2k_kr(clipped)]
+    });

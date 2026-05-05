@@ -1,0 +1,39 @@
+// kind=cv | category=lfo | flavor=square | rate=kr | range=-10..+10 V | params=rate,depth_v,pulse_width,bipolar
+//
+// kr-output sibling of `cv_lfo_square.vibe` — same square / pulse waveform,
+// kr port for use as a modulation source via `.to_param` / `.modulate_by`.
+// Task A's tightened kr-port validator rejects accidental audio routing
+// (`.to(group)` / `.to_main()`), so misuse fails at script-load.
+//
+// `pulse_width` (0..1) is the duty cycle: 0.5 = symmetric square, smaller
+// values produce a narrow positive pulse, larger values a narrow negative
+// pulse.
+//
+// Output:
+//   bipolar = 1.0 → switches between -depth_v and +depth_v volts
+//   bipolar = 0.0 → switches between  0 V and +depth_v volts
+//
+// Implementation: `LFPulse.kr` with a kr-rate `width` input crashes scsynth.
+// `lf_pulse_ar` accepts a kr-modulated width without issue and produces the
+// same musical result for sub-audio modulation rates. Decimate to kr at the
+// output via `a2k_kr`.
+//
+// CV contract: mono, hard-clipped to ±1.0, no leak_dc, no soft-sat.
+
+define_synthdef("cv_lfo_square_kr")
+    .output_kr("out")
+    .param("rate", 1.0)         // Hz
+    .param("depth_v", 5.0)      // peak amplitude in volts (0..10)
+    .param("pulse_width", 0.5)  // 0..1 duty cycle
+    .param("bipolar", 1.0)      // 1.0 = ±depth, 0.0 = 0..+depth
+    .body(|rate, depth_v, pulse_width, bipolar| {
+        // LFPulse output is unipolar 0..1.
+        let pulse = lf_pulse_ar(rate, 0.0, pulse_width);
+        // Mix unipolar [0,+1] vs bipolar [-1,+1]:
+        //   bipolar=1 → pulse * 2 - 1                (range -1..+1)
+        //   bipolar=0 → pulse                        (range  0..+1)
+        let shaped = pulse * (1.0 + bipolar) - bipolar;
+        let cv = shaped * (depth_v / 10.0);
+        let clipped = clip_ar(cv, -1.0, 1.0);
+        [a2k_kr(clipped)]
+    });
