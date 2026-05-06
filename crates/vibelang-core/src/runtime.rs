@@ -1112,10 +1112,15 @@ impl<B: Backend> Runtime<B> {
         // Phase 3: Create new entities (parents before children for groups)
         // =========================================================================
 
-        // Load new samples first (other entities may depend on them)
-        for (id, config) in &diff.samples.created {
-            tracing::debug!("Reload: loading sample {:?}", id);
-            let _ = self.samples.load(*id, config.clone()).await;
+        // Load new samples first (other entities may depend on them).
+        // Parallelize: scsynth /b_allocRead + /b_query round-trips can overlap,
+        // turning N×rtt sequential waits into a single batch.
+        if !diff.samples.created.is_empty() {
+            let loads = diff.samples.created.iter().map(|(id, config)| {
+                tracing::debug!("Reload: loading sample {:?}", id);
+                self.samples.load(*id, config.clone())
+            });
+            let _ = futures::future::join_all(loads).await;
         }
 
         // Allocate new script buffers (and re-allocate updated ones at new
