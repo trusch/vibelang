@@ -934,19 +934,6 @@ impl Backend for ScsynthBackend {
             ScsynthError::Io(io::Error::new(io::ErrorKind::InvalidInput, "Invalid path"))
         })?;
 
-        // Create oneshot channel for buffer info response
-        let (tx, rx) = oneshot::channel();
-
-        // Register pending request
-        {
-            let mut pending = self
-                .pending_buffer_info
-                .lock()
-                .map_err(|_| ScsynthError::LockPoisoned)?;
-            pending.insert(id.0, tx);
-        }
-
-        // Send allocRead command
         self.send_msg(
             "/b_allocRead",
             vec![
@@ -957,39 +944,17 @@ impl Backend for ScsynthBackend {
             ],
         )?;
 
-        // Wait for buffer info response with timeout
-        // Note: scsynth sends /done /b_allocRead but NOT /b_info automatically
-        // So this timeout will usually fire and we'll query manually
-        match tokio::time::timeout(Duration::from_millis(500), rx).await {
-            Ok(Ok(info)) => {
-                tracing::debug!(
-                    "Loaded buffer {} from {:?} ({} frames, {} channels, {}Hz)",
-                    id.0,
-                    path,
-                    info.frames,
-                    info.channels,
-                    info.sample_rate
-                );
-                Ok(info)
-            }
-            Ok(Err(_)) => {
-                // Channel closed, return placeholder
-                tracing::warn!(
-                    "Buffer info channel closed for {}, using placeholder values",
-                    id.0
-                );
-                Ok(BufferInfo {
-                    frames: 0,
-                    channels: 2,
-                    sample_rate: 44100.0,
-                })
-            }
-            Err(_) => {
-                // Timeout - query buffer info manually
-                tracing::warn!("Buffer {} load timeout, querying info manually", id.0);
-                self.query_buffer_info(id).await
-            }
-        }
+        // scsynth sends /done /b_allocRead but not /b_info — query explicitly.
+        let info = self.query_buffer_info(id).await?;
+        tracing::debug!(
+            "Loaded buffer {} from {:?} ({} frames, {} channels, {}Hz)",
+            id.0,
+            path,
+            info.frames,
+            info.channels,
+            info.sample_rate
+        );
+        Ok(info)
     }
 
     async fn alloc_buffer(
