@@ -241,6 +241,18 @@ impl ScsynthBackend {
         // Wait for server to be ready
         backend.wait_for_server(Duration::from_secs(5)).await?;
 
+        // scsynth is a separate process and survives `systemctl restart
+        // vibelang.service`. Without this reset, link/voice synths from
+        // the previous vibelang PID keep running and sum onto hardware
+        // buses — the user-visible symptom is asymmetric audio (e.g. R-only
+        // stereo) until a full host reboot. /g_freeAll on root group 0
+        // frees every synth; /clearSched drops any pending bundle
+        // schedule; /sync waits for both to complete before any later
+        // commands (group/voice spawns) run against a now-empty tree.
+        backend.send_msg("/g_freeAll", vec![OscType::Int(0)])?;
+        backend.send_msg("/clearSched", vec![])?;
+        backend.sync().await?;
+
         tracing::info!("Connected to scsynth at {}", addr);
         Ok(backend)
     }
@@ -1213,5 +1225,169 @@ mod tests {
         };
         let debug_str = format!("{:?}", response);
         assert!(debug_str.contains("Status"));
+    }
+
+    /// Regression test for the scsynth-zombie-on-reconnect bug.
+    ///
+    /// scsynth is a separate process that survives `systemctl restart
+    /// vibelang.service`. Before this fix, `ScsynthBackend::connect` only
+    /// sent `/notify` and `/status` — leaving the entire synth tree from
+    /// the prior vibelang PID running. New voices then summed onto
+    /// hardware buses alongside zombie link/voice synths and produced
+    /// asymmetric audio (R-only stereo, mono silent) until host reboot.
+    ///
+    /// The fix: connect must also send `/g_freeAll [0]` (free everything
+    /// under root group 0), `/clearSched` (drop pending bundles), and a
+    /// `/sync` ack so the cleanup completes before later commands.
+    ///
+    /// This test stands up a fake-scsynth UDP server that records every
+    /// inbound OSC message, replies to `/status` so `wait_for_server`
+    /// returns, and replies to `/sync` so the cleanup ack lands. The
+    /// assertion is that the cleanup messages arrived in the right order
+    /// (free + clear before the sync that gates further work).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn scsynth_reconnect_clears_orphan_synths() {
+        use std::sync::atomic::AtomicBool;
+
+        let server = UdpSocket::bind("127.0.0.1:0").expect("bind fake scsynth");
+        server
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .expect("set timeout");
+        let server_addr = server.local_addr().expect("server addr").to_string();
+
+        let recorded: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+
+        let recorded_clone = Arc::clone(&recorded);
+        let stop_clone = Arc::clone(&stop);
+        let server_thread = thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            while !stop_clone.load(Ordering::Relaxed) {
+                let (size, peer) = match server.recv_from(&mut buf) {
+                    Ok(x) => x,
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => continue,
+                    Err(_) => break,
+                };
+                let Ok((_, packet)) = decoder::decode_udp(&buf[..size]) else {
+                    continue;
+                };
+                fake_scsynth_handle(packet, &server, peer, &recorded_clone);
+            }
+        });
+
+        let backend = ScsynthBackend::connect(&server_addr)
+            .await
+            .expect("connect should succeed against fake scsynth");
+
+        // Drop backend to halt its listener thread before we join the
+        // fake-server thread (drop signals running=false on the backend).
+        drop(backend);
+        stop.store(true, Ordering::Relaxed);
+        server_thread.join().expect("server thread join");
+
+        let log = recorded.lock().expect("recorded lock").clone();
+        let g_free_pos = log
+            .iter()
+            .position(|s| s == "/g_freeAll(0)")
+            .unwrap_or_else(|| {
+                panic!("connect must send /g_freeAll [0] — got: {:?}", log)
+            });
+        let clear_sched_pos = log
+            .iter()
+            .position(|s| s == "/clearSched")
+            .unwrap_or_else(|| panic!("connect must send /clearSched — got: {:?}", log));
+        let sync_pos = log
+            .iter()
+            .position(|s| s.starts_with("/sync("))
+            .unwrap_or_else(|| panic!("connect must send /sync — got: {:?}", log));
+
+        assert!(
+            g_free_pos < sync_pos,
+            "/g_freeAll must precede /sync — got: {:?}",
+            log
+        );
+        assert!(
+            clear_sched_pos < sync_pos,
+            "/clearSched must precede /sync — got: {:?}",
+            log
+        );
+    }
+
+    /// Fake-scsynth packet handler. Records the path (with a short summary
+    /// of the leading int arg for `/g_freeAll` / `/sync`), and answers
+    /// `/status` with `/status.reply` plus `/sync N` with `/synced N` so
+    /// `ScsynthBackend::connect` makes forward progress.
+    fn fake_scsynth_handle(
+        packet: OscPacket,
+        server: &UdpSocket,
+        peer: std::net::SocketAddr,
+        recorded: &Arc<Mutex<Vec<String>>>,
+    ) {
+        match packet {
+            OscPacket::Message(msg) => {
+                let summary = match msg.addr.as_str() {
+                    "/g_freeAll" => {
+                        let arg =
+                            msg.args.first().and_then(|v| {
+                                if let OscType::Int(i) = v {
+                                    Some(*i)
+                                } else {
+                                    None
+                                }
+                            });
+                        format!("/g_freeAll({})", arg.unwrap_or(i32::MIN))
+                    }
+                    "/sync" => {
+                        let id = msg.args.first().and_then(|v| {
+                            if let OscType::Int(i) = v {
+                                Some(*i)
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(id) = id {
+                            let reply = OscPacket::Message(OscMessage {
+                                addr: "/synced".to_string(),
+                                args: vec![OscType::Int(id)],
+                            });
+                            if let Ok(buf) = encoder::encode(&reply) {
+                                let _ = server.send_to(&buf, peer);
+                            }
+                        }
+                        format!("/sync({})", id.unwrap_or(i32::MIN))
+                    }
+                    "/status" => {
+                        let reply = OscPacket::Message(OscMessage {
+                            addr: "/status.reply".to_string(),
+                            args: vec![
+                                OscType::Int(1),
+                                OscType::Int(0),
+                                OscType::Int(0),
+                                OscType::Int(1),
+                                OscType::Int(0),
+                                OscType::Float(0.0),
+                                OscType::Float(0.0),
+                                OscType::Double(44100.0),
+                                OscType::Double(44100.0),
+                            ],
+                        });
+                        if let Ok(buf) = encoder::encode(&reply) {
+                            let _ = server.send_to(&buf, peer);
+                        }
+                        "/status".to_string()
+                    }
+                    other => other.to_string(),
+                };
+                if let Ok(mut log) = recorded.lock() {
+                    log.push(summary);
+                }
+            }
+            OscPacket::Bundle(bundle) => {
+                for content in bundle.content {
+                    fake_scsynth_handle(content, server, peer, recorded);
+                }
+            }
+        }
     }
 }

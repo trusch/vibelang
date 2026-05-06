@@ -181,6 +181,9 @@ impl<B: Backend> Groups for GroupsHandler<B> {
             if let Some(link_id) = group.link_synth_node_id {
                 state.free_node_id(link_id);
             }
+            // Return the group's stereo audio bus to the free pool so
+            // long-running sessions don't burn through bus IDs.
+            state.free_audio_bus(group.audio_bus, 2);
             group
         };
 
