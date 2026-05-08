@@ -654,6 +654,159 @@ mod tests {
     }
 
     #[test]
+    fn test_group_alias_reference_resolves_to_canonical_group() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Drums")
+                .gain(0.5)
+                .output(2)
+                .alias("kit");
+
+            group("Song").body(|| {
+                group("kit").gain(0.25).body(|| {
+                    voice("kick").synth("kick_synth");
+                });
+            });
+        "#,
+            )
+            .unwrap();
+
+        let alias_target = state.group_aliases.get("kit").unwrap();
+        let drums = state.groups.get(&alias_target.group_id).unwrap();
+        let kick = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "kick")
+            .expect("kick voice should exist");
+
+        assert_eq!(alias_target.path, "main/Drums");
+        assert_eq!(drums.name, "Drums");
+        assert!(drums.parent.is_some());
+        assert_eq!(drums.output_bus, Some(2));
+        assert_eq!(drums.output_channels, Some(1));
+        assert_eq!(drums.params.get("amp"), Some(&0.25));
+        assert_eq!(kick.group, alias_target.group_id);
+        assert!(
+            state.groups.values().all(|config| config.name != "kit"),
+            "alias lookup should not create a contextual kit group"
+        );
+    }
+
+    #[test]
+    fn test_group_alias_shadows_contextual_group_creation() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("main/Drums").alias("kit");
+
+            group("Song").body(|| {
+                group("kit").body(|| {
+                    voice("snare").synth("snare_synth");
+                });
+            });
+        "#,
+            )
+            .unwrap();
+
+        let drums = state.group_aliases.get("kit").unwrap();
+        let snare = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "snare")
+            .expect("snare voice should exist");
+
+        assert_eq!(drums.path, "main/Drums");
+        assert_eq!(snare.group, drums.group_id);
+        assert!(
+            state.groups.values().all(|config| config.name != "kit"),
+            "alias should shadow main/Song/kit creation"
+        );
+        assert!(state
+            .body_contributions
+            .iter()
+            .any(|body| body.target_group == drums.group_id && body.target_path == "main/Drums"));
+    }
+
+    #[test]
+    fn test_define_group_alias_enters_canonical_context() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Drums").alias("kit");
+
+            group("Song").body(|| {
+                define_group("kit", || {
+                    voice("hat").synth("hat_synth");
+                });
+            });
+        "#,
+            )
+            .unwrap();
+
+        let drums = state.group_aliases.get("kit").unwrap();
+        let hat = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "hat")
+            .expect("hat voice should exist");
+
+        assert_eq!(drums.path, "main/Drums");
+        assert_eq!(hat.group, drums.group_id);
+        assert!(
+            state.groups.values().all(|config| config.name != "kit"),
+            "define_group should not create main/Song/kit for an alias"
+        );
+    }
+
+    #[test]
+    fn test_group_alias_through_alias_handle_stays_canonical() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Fx").alias("fx");
+            group("fx").alias("send");
+        "#,
+            )
+            .unwrap();
+
+        let fx = state.group_aliases.get("fx").unwrap();
+        let send = state.group_aliases.get("send").unwrap();
+
+        assert_eq!(fx.path, "main/Fx");
+        assert_eq!(send.path, "main/Fx");
+        assert_eq!(fx.group_id, send.group_id);
+    }
+
+    #[test]
+    fn test_group_alias_after_contextual_claim_conflict_is_script_error() {
+        let mut engine = ScriptEngine::new();
+        let err = engine
+            .execute(
+                r#"
+            group("Song").body(|| {
+                group("kit").gain(0.5);
+            });
+
+            group("Drums").alias("kit");
+        "#,
+            )
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("group alias 'kit' conflicts with prior contextual group claim"),
+            "{msg}"
+        );
+        assert!(msg.contains("main/Song/kit"), "{msg}");
+        assert!(msg.contains("main/Drums"), "{msg}");
+    }
+
+    #[test]
     fn test_group_body_uses_saved_handle_canonical_context() {
         let mut engine = ScriptEngine::new();
         let state = engine

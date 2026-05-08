@@ -507,6 +507,31 @@ pub fn get_group_id(name: &str) -> Option<GroupId> {
     })
 }
 
+/// Resolve a script group reference to its canonical full path.
+pub fn resolve_group_reference(raw: &str) -> Result<String, GroupAliasError> {
+    if let Some(target) = CONTEXT.with(|ctx| {
+        ctx.borrow()
+            .as_ref()
+            .and_then(|c| c.state.group_aliases.get(raw).cloned())
+    }) {
+        return Ok(target.path);
+    }
+
+    let full_path = if raw.starts_with("main/") || raw == "main" {
+        raw.to_string()
+    } else {
+        format!("{}/{}", current_group_path(), raw)
+    };
+
+    if raw != "main" && !raw.starts_with("main/") {
+        let group_id = get_or_create_group_id(&full_path);
+        let target = GroupAliasTarget::new(group_id, full_path.clone());
+        with_state(|state| state.add_contextual_group_claim(raw.to_string(), target))?;
+    }
+
+    Ok(full_path)
+}
+
 /// Register a global alias for a canonical group path.
 pub fn add_group_alias(alias: String, canonical_path: String) -> Result<(), GroupAliasError> {
     let group_id = get_or_create_group_id(&canonical_path);

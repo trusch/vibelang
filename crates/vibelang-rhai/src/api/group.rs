@@ -314,14 +314,22 @@ fn alias_error(err: GroupAliasError, pos: Position) -> Box<EvalAltResult> {
 }
 
 /// Define a group with a closure.
-pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> GroupHandle {
-    // Build the full path
-    let parent_path = context::current_group_path();
-    let full_path = if parent_path == "main" {
-        format!("main/{}", name)
-    } else {
-        format!("{}/{}", parent_path, name)
-    };
+pub fn define_group(
+    ctx: NativeCallContext,
+    name: String,
+    closure: FnPtr,
+) -> Result<GroupHandle, Box<EvalAltResult>> {
+    let full_path = context::resolve_group_reference(&name)
+        .map_err(|err| alias_error(err, ctx.call_position()))?;
+    let group_name = full_path
+        .rsplit('/')
+        .next()
+        .unwrap_or(&full_path)
+        .to_string();
+    let parent_path = full_path
+        .rsplit_once('/')
+        .map(|(parent, _)| parent.to_string())
+        .unwrap_or_else(|| "main".to_string());
 
     // Get or create group ID
     let group_id = context::get_or_create_group_id(&full_path);
@@ -335,7 +343,7 @@ pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> Gro
 
     // Create group config
     let config = GroupConfig {
-        name: name.clone(),
+        name: group_name.clone(),
         parent: parent_id,
         params: HashMap::new(),
         effects: Vec::new(),
@@ -347,21 +355,16 @@ pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> Gro
 
     // Add to script state
     context::with_state(|state| {
-        state.groups.insert(group_id, config);
+        state.groups.entry(group_id).or_insert(config);
     });
 
-    // Push group context for nested definitions
-    context::push_group(&name);
+    context::with_group_path(&full_path, || {
+        if let Err(e) = closure.call_within_context::<rhai::Dynamic>(&ctx, ()) {
+            log::error!("Error in define_group '{}': {}", group_name, e);
+        }
+    });
 
-    // Execute closure
-    if let Err(e) = closure.call_within_context::<rhai::Dynamic>(&ctx, ()) {
-        log::error!("Error in define_group '{}': {}", name, e);
-    }
-
-    // Pop group context
-    context::pop_group();
-
-    GroupHandle::new(full_path)
+    Ok(GroupHandle::new(full_path))
 }
 
 /// Define the group body with a closure (builder method).
@@ -410,14 +413,10 @@ fn group_alias(
 }
 
 /// Get a group handle by path.
-pub fn group(path: String) -> GroupHandle {
-    let full_path = if path.starts_with("main/") || path == "main" {
-        path
-    } else {
-        let current = context::current_group_path();
-        format!("{}/{}", current, path)
-    };
-    GroupHandle::new(full_path)
+pub fn group(ctx: NativeCallContext, path: String) -> Result<GroupHandle, Box<EvalAltResult>> {
+    let full_path = context::resolve_group_reference(&path)
+        .map_err(|err| alias_error(err, ctx.call_position()))?;
+    Ok(GroupHandle::new(full_path))
 }
 
 /// Register group API with the Rhai engine.
