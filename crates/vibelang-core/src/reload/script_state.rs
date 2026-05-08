@@ -63,6 +63,10 @@ pub struct GroupConfig {
     pub params: ParamMap,
 
     /// Effects in this group.
+    ///
+    /// Entries are appended in total script evaluation order. Repeated effect
+    /// ids keep the existing config replacement semantics in [`ScriptState::effects`],
+    /// while this list preserves the ordered chain contribution.
     pub effects: Vec<EffectId>,
 
     /// Whether this group is muted.
@@ -526,7 +530,16 @@ pub struct ScriptState {
     pub contextual_group_claims: BTreeMap<String, Vec<GroupAliasTarget>>,
 
     /// Ordered `group(...).body(...)` contributions seen during evaluation.
+    ///
+    /// Contributions are recorded in total script evaluation order after group
+    /// aliases and contextual references have resolved to canonical group ids.
     pub body_contributions: Vec<BodyContribution>,
+
+    /// First successful voice declarations in total script evaluation order.
+    ///
+    /// Duplicate voice ids keep their original order slot; the later config in
+    /// `voices` still wins, matching the existing replacement semantics.
+    pub voice_order: Vec<VoiceId>,
 
     /// Voices defined in the script.
     pub voices: HashMap<VoiceId, VoiceConfig>,
@@ -542,6 +555,13 @@ pub struct ScriptState {
 
     /// Effects defined in the script.
     pub effects: HashMap<EffectId, EffectConfig>,
+
+    /// First successful effect declarations in total script evaluation order.
+    ///
+    /// Group-local effect chain order lives in [`GroupConfig::effects`]; this
+    /// vector gives downstream reload/diff code a stable global effect order
+    /// without depending on `HashMap` iteration.
+    pub effect_order: Vec<EffectId>,
 
     /// Samples to load.
     pub samples: HashMap<SampleId, SampleConfig>,
@@ -565,6 +585,13 @@ pub struct ScriptState {
     /// stub in `handlers/routes.rs`).
     pub routes: RouteMap,
 
+    /// First successful audio route keys in total script evaluation order.
+    ///
+    /// Replacing the destination for an existing `(voice, port)` key does not
+    /// duplicate the key. Clearing a key removes it from this order so a later
+    /// re-add receives a new deterministic order slot.
+    pub route_order: Vec<(VoiceId, String)>,
+
     /// SET-semantic CV-to-param routes (`.to_param` verb) from kr output
     /// ports to target-voice parameters.
     ///
@@ -574,6 +601,9 @@ pub struct ScriptState {
     /// and overrides any `set_param` value while the mapping is active.
     /// Multi-source on the same target is rejected at script time.
     pub param_routes_set: ParamRouteMap,
+
+    /// First successful SET route keys in total script evaluation order.
+    pub param_route_set_order: Vec<(VoiceId, String)>,
 
     /// BEND-semantic CV-to-param routes (`.modulate_by` verb) from kr output
     /// ports to target-voice parameters.
@@ -587,6 +617,9 @@ pub struct ScriptState {
     /// [`vibelang_dsp::system_synthdefs::PARAM_KR_MODULATE_MAX`].
     pub param_routes_bend: ParamRouteMap,
 
+    /// First successful BEND route keys in total script evaluation order.
+    pub param_route_bend_order: Vec<(VoiceId, String)>,
+
     /// TRIGGER-semantic CV-to-param routes (`.to_trigger` verb) from
     /// trigger-rate (`Tr`) output ports to target-voice parameters.
     ///
@@ -599,6 +632,9 @@ pub struct ScriptState {
     /// cross-verb-exclusive with both [`Self::param_routes_set`] and
     /// [`Self::param_routes_bend`].
     pub param_routes_trigger: ParamRouteMap,
+
+    /// First successful TRIGGER route keys in total script evaluation order.
+    pub param_route_trigger_order: Vec<(VoiceId, String)>,
 
     /// Per-route affine shaping for SET routes, populated by chained
     /// `.scale(s)` / `.offset(o)` modifiers in the Rhai surface.
@@ -890,6 +926,7 @@ impl ScriptState {
 
     /// Add a voice.
     pub fn add_voice(&mut self, id: VoiceId, config: VoiceConfig) {
+        self.record_voice_order(id);
         self.voices.insert(id, config);
     }
 
@@ -910,7 +947,14 @@ impl ScriptState {
 
     /// Add an effect.
     pub fn add_effect(&mut self, id: EffectId, config: EffectConfig) {
+        self.record_effect_order(id);
         self.effects.insert(id, config);
+    }
+
+    /// Remove an effect and its deterministic order slot.
+    pub fn remove_effect(&mut self, id: &EffectId) -> Option<EffectConfig> {
+        self.effect_order.retain(|ordered| ordered != id);
+        self.effects.remove(id)
     }
 
     /// Add a sample.
@@ -952,9 +996,11 @@ impl ScriptState {
         match dest {
             RouteDest::Param { .. } => {}
             RouteDest::Main | RouteDest::Muted => {
+                self.record_route_order(&key);
                 self.routes.insert(key, vec![dest]);
             }
             RouteDest::Group(_) => {
+                self.record_route_order(&key);
                 let entry = self.routes.entry(key).or_default();
                 let group_only = entry.iter().all(|d| matches!(d, RouteDest::Group(_)));
                 if !group_only {
@@ -971,6 +1017,7 @@ impl ScriptState {
     pub fn clear_route(&mut self, voice_id: VoiceId, port_name: &str) {
         let key = (voice_id, port_name.to_string());
         self.routes.remove(&key);
+        self.route_order.retain(|ordered| ordered != &key);
     }
 
     /// Install a SET-semantic CV-to-param route (`.to_param` verb) from
@@ -1017,10 +1064,16 @@ impl ScriptState {
             }
         }
 
-        let entry = self
+        let source_key = (source_voice, source_port.clone());
+        let should_add = !self
             .param_routes_set
-            .entry((source_voice, source_port.clone()))
-            .or_default();
+            .get(&source_key)
+            .map(|entry| entry.iter().any(|t| t == &target_pair))
+            .unwrap_or(false);
+        if should_add {
+            self.record_param_route_set_order(source_voice, &source_port);
+        }
+        let entry = self.param_routes_set.entry(source_key).or_default();
         if !entry.iter().any(|t| t == &target_pair) {
             entry.push(target_pair);
         }
@@ -1059,10 +1112,16 @@ impl ScriptState {
             });
         }
 
-        let entry = self
+        let source_key = (source_voice, source_port.clone());
+        let should_add = !self
             .param_routes_bend
-            .entry((source_voice, source_port.clone()))
-            .or_default();
+            .get(&source_key)
+            .map(|entry| entry.iter().any(|t| t == &target_pair))
+            .unwrap_or(false);
+        if should_add {
+            self.record_param_route_bend_order(source_voice, &source_port);
+        }
+        let entry = self.param_routes_bend.entry(source_key).or_default();
         if !entry.iter().any(|t| t == &target_pair) {
             entry.push(target_pair);
         }
@@ -1114,14 +1173,71 @@ impl ScriptState {
             }
         }
 
-        let entry = self
+        let source_key = (source_voice, source_port.clone());
+        let should_add = !self
             .param_routes_trigger
-            .entry((source_voice, source_port))
-            .or_default();
+            .get(&source_key)
+            .map(|entry| entry.iter().any(|t| t == &target_pair))
+            .unwrap_or(false);
+        if should_add {
+            self.record_param_route_trigger_order(source_voice, &source_port);
+        }
+        let entry = self.param_routes_trigger.entry(source_key).or_default();
         if !entry.iter().any(|t| t == &target_pair) {
             entry.push(target_pair);
         }
         Ok(())
+    }
+
+    fn record_voice_order(&mut self, id: VoiceId) {
+        if !self.voice_order.contains(&id) {
+            self.voice_order.push(id);
+        }
+    }
+
+    fn record_effect_order(&mut self, id: EffectId) {
+        if !self.effect_order.contains(&id) {
+            self.effect_order.push(id);
+        }
+    }
+
+    fn record_route_order(&mut self, key: &(VoiceId, String)) {
+        if !self.route_order.iter().any(|ordered| ordered == key) {
+            self.route_order.push(key.clone());
+        }
+    }
+
+    fn record_param_route_set_order(&mut self, source_voice: VoiceId, source_port: &str) {
+        let key = (source_voice, source_port.to_string());
+        if !self
+            .param_route_set_order
+            .iter()
+            .any(|ordered| ordered == &key)
+        {
+            self.param_route_set_order.push(key);
+        }
+    }
+
+    fn record_param_route_bend_order(&mut self, source_voice: VoiceId, source_port: &str) {
+        let key = (source_voice, source_port.to_string());
+        if !self
+            .param_route_bend_order
+            .iter()
+            .any(|ordered| ordered == &key)
+        {
+            self.param_route_bend_order.push(key);
+        }
+    }
+
+    fn record_param_route_trigger_order(&mut self, source_voice: VoiceId, source_port: &str) {
+        let key = (source_voice, source_port.to_string());
+        if !self
+            .param_route_trigger_order
+            .iter()
+            .any(|ordered| ordered == &key)
+        {
+            self.param_route_trigger_order.push(key);
+        }
     }
 
     /// Update the per-source `scale` shaping factor on a SET route.
@@ -1356,32 +1472,106 @@ mod tests {
     #[test]
     fn test_add_voice() {
         let mut state = ScriptState::new();
-        state.add_voice(
-            VoiceId::new(1),
-            VoiceConfig {
-                name: "test".to_string(),
-                synthdef: "sine".to_string(),
-                group: GroupId::new(1),
-                polyphony: 8,
-                params: ParamMap::new(),
-                muted: false,
-                soloed: false,
-                sfz_instrument: None,
-                sample_id: None,
-                trigger_mode: "gate".to_string(),
-                choke_group: None,
-                round_robin_count: 0,
-                modulator_only: false,
-                #[cfg(feature = "midi")]
-                midi_output: None,
-                #[cfg(feature = "midi")]
-                midi_channel: 0,
-                #[cfg(feature = "midi")]
-                param_cc_map: std::collections::HashMap::new(),
-            },
-        );
+        let mut config = VoiceConfig {
+            name: "test".to_string(),
+            synthdef: "sine".to_string(),
+            group: GroupId::new(1),
+            polyphony: 8,
+            params: ParamMap::new(),
+            muted: false,
+            soloed: false,
+            sfz_instrument: None,
+            sample_id: None,
+            trigger_mode: "gate".to_string(),
+            choke_group: None,
+            round_robin_count: 0,
+            modulator_only: false,
+            #[cfg(feature = "midi")]
+            midi_output: None,
+            #[cfg(feature = "midi")]
+            midi_channel: 0,
+            #[cfg(feature = "midi")]
+            param_cc_map: std::collections::HashMap::new(),
+        };
+        state.add_voice(VoiceId::new(1), config.clone());
+        config.synthdef = "saw".to_string();
+        state.add_voice(VoiceId::new(1), config);
 
         assert!(state.voices.contains_key(&VoiceId::new(1)));
+        assert_eq!(state.voice_order, vec![VoiceId::new(1)]);
+        assert_eq!(state.voices[&VoiceId::new(1)].synthdef, "saw");
+    }
+
+    #[test]
+    fn test_route_order_is_recorded_deterministically() {
+        let mut state = ScriptState::new();
+        state.set_route(
+            VoiceId::new(2),
+            "out",
+            crate::handlers::RouteDest::Group(GroupId::new(10)),
+        );
+        state.set_route(VoiceId::new(1), "out", crate::handlers::RouteDest::Main);
+        state.set_route(
+            VoiceId::new(2),
+            "out",
+            crate::handlers::RouteDest::Group(GroupId::new(11)),
+        );
+
+        assert_eq!(
+            state.route_order,
+            vec![
+                (VoiceId::new(2), "out".to_string()),
+                (VoiceId::new(1), "out".to_string())
+            ]
+        );
+
+        state.clear_route(VoiceId::new(2), "out");
+        state.set_route(VoiceId::new(2), "out", crate::handlers::RouteDest::Muted);
+
+        assert_eq!(
+            state.route_order,
+            vec![
+                (VoiceId::new(1), "out".to_string()),
+                (VoiceId::new(2), "out".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_param_route_order_is_recorded_deterministically() {
+        let mut state = ScriptState::new();
+        state
+            .add_param_route_bend(
+                VoiceId::new(2),
+                "env",
+                ParamRouteTarget::Voice(VoiceId::new(10)),
+                "cutoff",
+            )
+            .unwrap();
+        state
+            .add_param_route_bend(
+                VoiceId::new(1),
+                "lfo",
+                ParamRouteTarget::Voice(VoiceId::new(10)),
+                "cutoff",
+            )
+            .unwrap();
+        state
+            .add_param_route_bend(
+                VoiceId::new(2),
+                "env",
+                ParamRouteTarget::Voice(VoiceId::new(10)),
+                "cutoff",
+            )
+            .unwrap();
+
+        assert_eq!(
+            state.param_route_bend_order,
+            vec![
+                (VoiceId::new(2), "env".to_string()),
+                (VoiceId::new(1), "lfo".to_string())
+            ]
+        );
     }
 
     #[test]

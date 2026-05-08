@@ -611,7 +611,7 @@ impl Voice {
 
         context::with_state(|state| {
             if config.has_sound_source() {
-                state.voices.insert(voice_id, config);
+                state.add_voice(voice_id, config);
                 return;
             }
             // Bare `voice("name")` (no synth / sample / SFZ / MIDI yet): do not clobber an

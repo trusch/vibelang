@@ -566,6 +566,79 @@ mod tests {
     }
 
     #[test]
+    fn test_repeated_group_body_records_deterministic_content_order() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Drums").gain(0.5).body(|| {
+                let kick = voice("kick").synth("kick_synth");
+                kick.output("out").to(group("dry"));
+                fx("drums_comp").synth("compressor").apply();
+            });
+
+            group("Drums").gain(0.75).body(|| {
+                let snare = voice("snare").synth("snare_synth");
+                snare.output("out").to(group("wet"));
+                fx("drums_verb").synth("reverb").apply();
+                voice("kick").synth("kick_v2");
+            });
+        "#,
+            )
+            .unwrap();
+
+        let drums_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Drums").then_some(*id))
+            .expect("Drums group should exist");
+        let drums = state.groups.get(&drums_id).unwrap();
+
+        let voice_names = state
+            .voice_order
+            .iter()
+            .map(|id| state.voices.get(id).unwrap().name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(voice_names, vec!["kick", "snare"]);
+        assert_eq!(
+            state.voices.get(&state.voice_order[0]).unwrap().synthdef,
+            "kick_v2",
+            "Duplicate voice names keep their order slot but use last config"
+        );
+
+        let effect_synthdefs = state
+            .effect_order
+            .iter()
+            .map(|id| state.effects.get(id).unwrap().synthdef.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(effect_synthdefs, vec!["compressor", "reverb"]);
+        let chain_synthdefs = drums
+            .effects
+            .iter()
+            .map(|id| state.effects.get(id).unwrap().synthdef.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(chain_synthdefs, vec!["compressor", "reverb"]);
+
+        let route_keys = state
+            .route_order
+            .iter()
+            .map(|(voice_id, port)| {
+                format!("{}:{}", state.voices.get(voice_id).unwrap().name, port)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(route_keys, vec!["kick:out", "snare:out"]);
+        assert_eq!(drums.params.get("amp"), Some(&0.75));
+        assert_eq!(
+            state
+                .body_contributions
+                .iter()
+                .map(|body| body.ordinal)
+                .collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+    }
+
+    #[test]
     fn test_group_alias_registers_chained_aliases() {
         let mut engine = ScriptEngine::new();
         let state = engine

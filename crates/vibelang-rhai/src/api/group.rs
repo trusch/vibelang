@@ -144,7 +144,7 @@ impl GroupHandle {
                 config.effects.retain(|&e| e != effect_id);
             }
             // Also remove from the effects map
-            state.effects.remove(&effect_id);
+            state.remove_effect(&effect_id);
         });
         self
     }
@@ -256,11 +256,14 @@ impl GroupHandle {
         let group_id = context::get_or_create_group_id(&self.path);
 
         context::with_state(|state| {
-            if let Some(config) = state.groups.get_mut(&group_id) {
+            let effect_ids = if let Some(config) = state.groups.get_mut(&group_id) {
                 // Remove all effect configs
-                for effect_id in config.effects.drain(..) {
-                    state.effects.remove(&effect_id);
-                }
+                config.effects.drain(..).collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+            for effect_id in effect_ids {
+                state.remove_effect(&effect_id);
             }
         });
         self

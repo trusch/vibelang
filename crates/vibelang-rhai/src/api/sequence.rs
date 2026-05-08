@@ -730,7 +730,7 @@ impl Fx {
         };
 
         context::with_state(|state| {
-            state.effects.insert(effect_id, config);
+            state.add_effect(effect_id, config);
 
             // Also add to the group's effects list
             if let Some(group_config) = state.groups.get_mut(&group_id) {
