@@ -1218,10 +1218,26 @@ impl<B: Backend> Runtime<B> {
             self.sync_with_retry("after group creation").await;
         }
 
-        // Create new voices
-        for (id, config) in &diff.voices.created {
+        // Create new voices in merged script evaluation order. Repeated
+        // group bodies contribute to one ScriptState, so this is the order the
+        // Rhai layer recorded after all body/include merging.
+        let mut created_voice_ids: Vec<_> = diff.voices.created.keys().copied().collect();
+        created_voice_ids.sort_by_key(|id| {
+            (
+                new_state
+                    .voice_order
+                    .iter()
+                    .position(|ordered| ordered == id)
+                    .unwrap_or(usize::MAX),
+                id.raw(),
+            )
+        });
+        for id in created_voice_ids {
+            let Some(config) = diff.voices.created.get(&id) else {
+                continue;
+            };
             tracing::debug!("Reload: creating voice {:?}", id);
-            if let Err(e) = self.voices.create(*id, config.clone()).await {
+            if let Err(e) = self.voices.create(id, config.clone()).await {
                 tracing::error!("Reload: failed to create voice {:?}: {}", id, e);
             }
         }
@@ -1527,12 +1543,28 @@ impl<B: Backend> Runtime<B> {
         // already inserts `AddAction::Before` link, which is also after the
         // routes. Either way: voices → routes → effects → link → main.
 
-        // Create new effects
-        for (id, config) in &diff.effects.created {
+        // Create new effects in merged script evaluation order so effect
+        // chains assembled across multiple group bodies stay deterministic at
+        // runtime, not just in ScriptState snapshots.
+        let mut created_effect_ids: Vec<_> = diff.effects.created.keys().copied().collect();
+        created_effect_ids.sort_by_key(|id| {
+            (
+                new_state
+                    .effect_order
+                    .iter()
+                    .position(|ordered| ordered == id)
+                    .unwrap_or(usize::MAX),
+                id.raw(),
+            )
+        });
+        for id in created_effect_ids {
+            let Some(config) = diff.effects.created.get(&id) else {
+                continue;
+            };
             tracing::debug!("Reload: creating effect {:?}", id);
             if let Err(e) = self
                 .effects
-                .add(*id, config.group, &config.synthdef, &config.params)
+                .add(id, config.group, &config.synthdef, &config.params)
                 .await
             {
                 tracing::error!("Reload: failed to create effect {:?}: {}", id, e);
@@ -1541,11 +1573,25 @@ impl<B: Backend> Runtime<B> {
 
         // Update effects - only recreate if synthdef or group changed
         // For param-only changes, use set_param to avoid audio gaps
-        for (id, new_config) in &diff.effects.updated {
+        let mut updated_effect_ids: Vec<_> = diff.effects.updated.keys().copied().collect();
+        updated_effect_ids.sort_by_key(|id| {
+            (
+                new_state
+                    .effect_order
+                    .iter()
+                    .position(|ordered| ordered == id)
+                    .unwrap_or(usize::MAX),
+                id.raw(),
+            )
+        });
+        for id in updated_effect_ids {
+            let Some(new_config) = diff.effects.updated.get(&id) else {
+                continue;
+            };
             // Get current effect state to compare
             let needs_recreate = {
                 let state = self.state.read().await;
-                if let Some(current_effect) = state.effects.get(id) {
+                if let Some(current_effect) = state.effects.get(&id) {
                     // Recreate if synthdef or group changed
                     current_effect.synthdef != new_config.synthdef
                         || current_effect.group != new_config.group
@@ -1562,11 +1608,11 @@ impl<B: Backend> Runtime<B> {
                     new_config.synthdef,
                     new_config.params.len()
                 );
-                let _ = self.effects.remove(*id).await;
+                let _ = self.effects.remove(id).await;
                 if let Err(e) = self
                     .effects
                     .add(
-                        *id,
+                        id,
                         new_config.group,
                         &new_config.synthdef,
                         &new_config.params,
@@ -1584,7 +1630,7 @@ impl<B: Backend> Runtime<B> {
                     new_config.params.len()
                 );
                 for (param, value) in &new_config.params {
-                    let _ = self.effects.set_param(*id, param, *value).await;
+                    let _ = self.effects.set_param(id, param, *value).await;
                 }
             }
         }
@@ -2112,7 +2158,7 @@ impl RuntimeHandle {
 mod tests {
     use super::*;
     use crate::backend::{AddAction, BufferInfo};
-    use crate::types::{BufferId, NodeId, ParamMap};
+    use crate::types::{BufferId, GroupId, NodeId, ParamMap};
     use std::collections::HashMap;
     use std::path::Path;
 
@@ -2942,6 +2988,7 @@ mod tests {
     /// this transcript to prove the post-mix invariant.
     struct RecordingBackend {
         create_synth_log: std::sync::Mutex<Vec<RecordedSynth>>,
+        create_group_log: std::sync::Mutex<Vec<NodeId>>,
         free_node_log: std::sync::Mutex<Vec<NodeId>>,
         /// Unified create/free event stream — preserves ordering across both
         /// op kinds so reload-reconciler tests can resolve "what is alive at
@@ -2982,6 +3029,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 create_synth_log: std::sync::Mutex::new(Vec::new()),
+                create_group_log: std::sync::Mutex::new(Vec::new()),
                 free_node_log: std::sync::Mutex::new(Vec::new()),
                 events: std::sync::Mutex::new(Vec::new()),
             }
@@ -2989,6 +3037,10 @@ mod tests {
 
         fn synths(&self) -> Vec<RecordedSynth> {
             self.create_synth_log.lock().unwrap().clone()
+        }
+
+        fn created_groups(&self) -> Vec<NodeId> {
+            self.create_group_log.lock().unwrap().clone()
         }
 
         /// Link synths (`system_link_audio*`) that are still alive — i.e. the
@@ -3084,10 +3136,11 @@ mod tests {
 
         async fn create_group(
             &self,
-            _node: NodeId,
+            node: NodeId,
             _target: NodeId,
             _action: AddAction,
         ) -> std::result::Result<(), Self::Error> {
+            self.create_group_log.lock().unwrap().push(node);
             Ok(())
         }
 
@@ -3180,6 +3233,25 @@ mod tests {
     /// Pre-register an effect synthdef name (no port descriptors needed).
     async fn register_effect_synthdef(runtime: &Runtime<RecordingBackend>, name: &str) {
         runtime.state.write().await.synthdefs.insert(name.to_string());
+    }
+
+    fn add_body_contribution(
+        state: &mut reload::ScriptState,
+        target_group: GroupId,
+        target_path: &str,
+        ordinal: u64,
+        source: &str,
+    ) {
+        state.body_contributions.push(reload::BodyContribution {
+            id: ordinal,
+            target_group,
+            target_path: target_path.to_string(),
+            ordinal,
+            source: Some(source.to_string()),
+            include_stack: vec![source.to_string()],
+            line: None,
+            column: None,
+        });
     }
 
     #[tokio::test]
@@ -3606,6 +3678,352 @@ mod tests {
             matches!(alive_line_nodes.as_slice(), [(def, _)] if def == "line_in"),
             "only the replacement running voice should remain alive"
         );
+    }
+
+    #[tokio::test]
+    async fn reload_merged_group_body_changes_keep_single_group_and_link() {
+        use crate::message::ReloadMessage;
+        use crate::reload::{EffectConfig, GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{EffectId, GroupId, VoiceId};
+
+        let backend = RecordingBackend::new();
+        let mut runtime = Runtime::new(backend);
+
+        for synthdef in ["kick_synth", "snare_synth", "hat_synth"] {
+            register_voice_synthdef(
+                &runtime,
+                synthdef,
+                vec![vibelang_dsp::OutputPort {
+                    name: "out".to_string(),
+                    channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
+                }],
+            )
+            .await;
+        }
+        for synthdef in ["body_a_fx", "body_b_fx", "body_c_fx"] {
+            register_effect_synthdef(&runtime, synthdef).await;
+        }
+
+        let group_id = GroupId::new(10);
+        let kick_id = VoiceId::new(1);
+        let snare_id = VoiceId::new(2);
+        let hat_id = VoiceId::new(3);
+        let body_a_effect = EffectId::new(1);
+        let body_b_effect = EffectId::new(2);
+        let body_c_effect = EffectId::new(3);
+
+        let mut initial = ScriptState::new();
+        initial.add_group(
+            group_id,
+            GroupConfig {
+                name: "Drums".to_string(),
+                ..GroupConfig::default()
+            },
+        );
+        add_body_contribution(&mut initial, group_id, "main/Drums", 0, "main.vibe");
+        initial.add_voice(kick_id, VoiceConfig::new("kick", "kick_synth", group_id));
+        initial.add_effect(
+            body_a_effect,
+            EffectConfig {
+                group: group_id,
+                synthdef: "body_a_fx".to_string(),
+                params: ParamMap::new(),
+            },
+        );
+        initial
+            .groups
+            .get_mut(&group_id)
+            .unwrap()
+            .effects
+            .push(body_a_effect);
+        add_body_contribution(&mut initial, group_id, "main/Drums", 1, "fills.vibe");
+        initial.add_voice(snare_id, VoiceConfig::new("snare", "snare_synth", group_id));
+        initial.add_effect(
+            body_b_effect,
+            EffectConfig {
+                group: group_id,
+                synthdef: "body_b_fx".to_string(),
+                params: ParamMap::new(),
+            },
+        );
+        initial
+            .groups
+            .get_mut(&group_id)
+            .unwrap()
+            .effects
+            .push(body_b_effect);
+        initial.running_voices.insert(kick_id);
+        initial.running_voices.insert(snare_id);
+
+        runtime
+            .send(ReloadMessage::Apply { state: initial }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let (initial_group_node, initial_link_node) = {
+            let state = runtime.state.read().await;
+            let group = state.groups.get(&group_id).expect("merged group exists");
+            (
+                group.node_id,
+                group
+                    .link_synth_node_id
+                    .expect("merged group has one link synth"),
+            )
+        };
+
+        let initial_snare_node = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .find_map(|(def, node)| (def == "snare_synth").then_some(node))
+            .expect("second body running voice is alive");
+
+        let initial_synths = runtime.backend.synths();
+        let body_a_fx_idx = initial_synths
+            .iter()
+            .position(|synth| synth.def == "body_a_fx")
+            .expect("first body effect was created");
+        let body_b_fx_idx = initial_synths
+            .iter()
+            .position(|synth| synth.def == "body_b_fx")
+            .expect("second body effect was created");
+        assert!(
+            body_a_fx_idx < body_b_fx_idx,
+            "merged-body effects should be created in ScriptState.effect_order"
+        );
+
+        let mut reloaded = ScriptState::new();
+        reloaded.add_group(
+            group_id,
+            GroupConfig {
+                name: "Drums".to_string(),
+                ..GroupConfig::default()
+            },
+        );
+        add_body_contribution(&mut reloaded, group_id, "main/Drums", 0, "main.vibe");
+        reloaded.add_voice(kick_id, VoiceConfig::new("kick", "kick_synth", group_id));
+        reloaded.add_effect(
+            body_a_effect,
+            EffectConfig {
+                group: group_id,
+                synthdef: "body_a_fx".to_string(),
+                params: ParamMap::new(),
+            },
+        );
+        reloaded
+            .groups
+            .get_mut(&group_id)
+            .unwrap()
+            .effects
+            .push(body_a_effect);
+        add_body_contribution(&mut reloaded, group_id, "main/Drums", 1, "fills.vibe");
+        reloaded.add_voice(hat_id, VoiceConfig::new("hat", "hat_synth", group_id));
+        reloaded.add_effect(
+            body_c_effect,
+            EffectConfig {
+                group: group_id,
+                synthdef: "body_c_fx".to_string(),
+                params: ParamMap::new(),
+            },
+        );
+        reloaded
+            .groups
+            .get_mut(&group_id)
+            .unwrap()
+            .effects
+            .push(body_c_effect);
+        reloaded.running_voices.insert(kick_id);
+        reloaded.running_voices.insert(hat_id);
+
+        runtime
+            .send(ReloadMessage::Apply { state: reloaded }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let state = runtime.state.read().await;
+        assert_eq!(
+            state.groups.len(),
+            1,
+            "merged bodies keep one group identity"
+        );
+        let group = state.groups.get(&group_id).expect("merged group remains");
+        assert_eq!(
+            group.node_id, initial_group_node,
+            "changing one body must not recreate the shared group"
+        );
+        assert_eq!(
+            group.link_synth_node_id,
+            Some(initial_link_node),
+            "unchanged merged group must keep its single link synth"
+        );
+        drop(state);
+
+        assert_eq!(
+            runtime.backend.created_groups(),
+            vec![initial_group_node],
+            "reload must not spawn a duplicate group node for the second body"
+        );
+        assert_eq!(
+            runtime.backend.alive_link_synths().len(),
+            1,
+            "only one group link synth should be alive after merged-body reload"
+        );
+
+        let alive_defs = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .map(|(def, _)| def)
+            .collect::<Vec<_>>();
+        assert!(
+            alive_defs.iter().any(|def| def == "kick_synth"),
+            "unchanged first body voice remains alive"
+        );
+        assert!(
+            alive_defs.iter().any(|def| def == "hat_synth"),
+            "new second body voice is alive"
+        );
+        assert!(
+            !alive_defs.iter().any(|def| def == "snare_synth"),
+            "removed second body voice must not stay alive"
+        );
+
+        let frees = runtime.backend.free_node_log.lock().unwrap().clone();
+        assert!(
+            frees.contains(&initial_snare_node),
+            "removed body voice node {:?} must be freed on reload; frees: {:?}",
+            initial_snare_node,
+            frees
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_group_rename_frees_old_group_link_and_running_voice_nodes() {
+        use crate::message::ReloadMessage;
+        use crate::reload::{GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, VoiceId};
+
+        let backend = RecordingBackend::new();
+        let mut runtime = Runtime::new(backend);
+
+        register_voice_synthdef(
+            &runtime,
+            "line_in",
+            vec![vibelang_dsp::OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: vibelang_dsp::PortRate::Ar,
+            }],
+        )
+        .await;
+
+        let old_group_id = GroupId::new(20);
+        let new_group_id = GroupId::new(21);
+        let old_voice_id = VoiceId::new(20);
+        let new_voice_id = VoiceId::new(21);
+
+        let mut initial = ScriptState::new();
+        initial.add_group(
+            old_group_id,
+            GroupConfig {
+                name: "Drums".to_string(),
+                ..GroupConfig::default()
+            },
+        );
+        add_body_contribution(&mut initial, old_group_id, "main/Drums", 0, "main.vibe");
+        initial.add_voice(
+            old_voice_id,
+            VoiceConfig::new("drums_in", "line_in", old_group_id),
+        );
+        initial.running_voices.insert(old_voice_id);
+
+        runtime
+            .send(ReloadMessage::Apply { state: initial }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let (old_group_node, old_link_node) = {
+            let state = runtime.state.read().await;
+            let group = state.groups.get(&old_group_id).expect("old group exists");
+            (
+                group.node_id,
+                group.link_synth_node_id.expect("old group has link synth"),
+            )
+        };
+        let old_voice_node = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .find_map(|(def, node)| (def == "line_in").then_some(node))
+            .expect("old running voice exists");
+
+        let mut renamed = ScriptState::new();
+        renamed.add_group(
+            new_group_id,
+            GroupConfig {
+                name: "DrumsRenamed".to_string(),
+                ..GroupConfig::default()
+            },
+        );
+        add_body_contribution(
+            &mut renamed,
+            new_group_id,
+            "main/DrumsRenamed",
+            0,
+            "main.vibe",
+        );
+        renamed.add_voice(
+            new_voice_id,
+            VoiceConfig::new("drums_in", "line_in", new_group_id),
+        );
+        renamed.running_voices.insert(new_voice_id);
+
+        runtime
+            .send(ReloadMessage::Apply { state: renamed }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let frees = runtime.backend.free_node_log.lock().unwrap().clone();
+        for node in [old_voice_node, old_link_node, old_group_node] {
+            assert!(
+                frees.contains(&node),
+                "group rename reload must free stale node {:?}; frees: {:?}",
+                node,
+                frees
+            );
+        }
+
+        let alive_links = runtime.backend.alive_link_synths();
+        assert_eq!(
+            alive_links.len(),
+            1,
+            "only the renamed group's link synth should survive"
+        );
+
+        let alive_line_nodes: Vec<_> = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .filter(|(def, _)| def == "line_in")
+            .collect();
+        assert_eq!(
+            alive_line_nodes.len(),
+            1,
+            "only the renamed group's running line_in should survive"
+        );
+
+        let state = runtime.state.read().await;
+        assert!(!state.groups.contains_key(&old_group_id));
+        assert!(state.groups.contains_key(&new_group_id));
+        assert!(!state.voices.contains_key(&old_voice_id));
+        assert!(state.voices.contains_key(&new_voice_id));
     }
 
     // =========================================================================
