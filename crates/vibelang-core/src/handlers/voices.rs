@@ -520,7 +520,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Story 5: drop the voice's default routes so the next reload's
             // merge step doesn't carry them forward against a deleted voice.
             state.take_voice_default_routes(id);
-            (voice.active_nodes, route_nodes)
+            let mut voice_nodes = voice.active_nodes;
+            voice_nodes.extend(voice.note_nodes.into_values());
+            (voice_nodes, route_nodes)
         };
 
         // Free all active synth nodes (lock released)
@@ -544,7 +546,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             free_voice_output_buses(&mut state, &voice);
             let route_nodes = state.take_voice_route_nodes(id);
             state.take_voice_default_routes(id);
-            (voice.active_nodes, route_nodes)
+            let mut voice_nodes = voice.active_nodes;
+            voice_nodes.extend(voice.note_nodes.into_values());
+            (voice_nodes, route_nodes)
         };
 
         // Free route mixers immediately — graceful delete does not extend to
@@ -735,7 +739,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
 
             let nodes: Vec<NodeId> = voice.active_nodes.drain(..).collect();
-            voice.note_nodes.clear();
+            let mut nodes = nodes;
+            nodes.extend(voice.note_nodes.drain().map(|(_, node)| node));
             nodes
         };
 
@@ -1754,6 +1759,27 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_delete_voice_frees_note_nodes() {
+        let (handler, backend, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        handler.note_on(voice_id, 60, 0.8).await.unwrap();
+        handler.note_on(voice_id, 64, 0.8).await.unwrap();
+
+        handler.delete(voice_id).await.unwrap();
+
+        assert_eq!(
+            backend.nodes_freed(),
+            2,
+            "Held note nodes should be freed on delete"
+        );
+    }
+
     // =========================================================================
     // Voice Trigger Tests
     // =========================================================================
@@ -1851,6 +1877,27 @@ mod tests {
             backend.nodes_freed(),
             2,
             "All nodes should be freed on stop"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_stop_voice_frees_note_nodes() {
+        let (handler, backend, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        handler.note_on(voice_id, 60, 0.8).await.unwrap();
+        handler.note_on(voice_id, 64, 0.8).await.unwrap();
+
+        handler.stop(voice_id).await.unwrap();
+
+        assert_eq!(
+            backend.nodes_freed(),
+            2,
+            "Held note nodes should be freed on stop"
         );
     }
 

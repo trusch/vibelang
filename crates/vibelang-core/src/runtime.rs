@@ -1327,6 +1327,8 @@ impl<B: Backend> Runtime<B> {
             }
         }
 
+        let mut structurally_recreated_voices = Vec::new();
+
         // Update voices - only recreate if synthdef, group, or sfz_instrument changed
         // For param-only changes, use set_param to avoid audio gaps
         for (id, new_config) in &diff.voices.updated {
@@ -1346,11 +1348,12 @@ impl<B: Backend> Runtime<B> {
 
             if needs_recreate {
                 tracing::debug!(
-                    "Reload: recreating voice {:?} (synthdef, group, or sfz changed)",
+                    "Reload: hard-recreating voice {:?} (synthdef, group, or sfz changed)",
                     id
                 );
-                let _ = self.voices.graceful_delete(*id).await;
+                let _ = self.voices.delete(*id).await;
                 let _ = self.voices.create(*id, new_config.clone()).await;
+                structurally_recreated_voices.push(*id);
             } else {
                 // Only params/config changed - update them without recreating the synth
                 tracing::debug!(
@@ -1495,6 +1498,9 @@ impl<B: Backend> Runtime<B> {
             );
             merge_default_routes(&new_state.routes, &filtered_defaults)
         };
+        for voice_id in &structurally_recreated_voices {
+            self.current_routes.retain(|(id, _), _| id != voice_id);
+        }
         let route_diff = RoutesHandler::<B>::diff(&self.current_routes, &merged_routes);
         if !route_diff.is_empty() {
             tracing::debug!(
@@ -3014,6 +3020,25 @@ mod tests {
             alive.sort_by_key(|(_, n, _)| n.0);
             alive
         }
+
+        fn alive_synths(&self) -> Vec<(String, NodeId)> {
+            use std::collections::HashMap;
+            let events = self.events.lock().unwrap();
+            let mut latest: HashMap<NodeId, String> = HashMap::new();
+            for ev in events.iter() {
+                match ev {
+                    BackendEvent::Create { def, node, .. } => {
+                        latest.insert(*node, def.clone());
+                    }
+                    BackendEvent::Free { node } => {
+                        latest.remove(node);
+                    }
+                }
+            }
+            let mut alive: Vec<_> = latest.into_iter().map(|(node, def)| (def, node)).collect();
+            alive.sort_by_key(|(_, node)| node.0);
+            alive
+        }
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -3497,6 +3522,90 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn reload_running_voice_synthdef_change_frees_old_node() {
+        use crate::message::ReloadMessage;
+        use crate::reload::{GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, VoiceId};
+
+        let backend = RecordingBackend::new();
+        let mut runtime = Runtime::new(backend);
+
+        register_voice_synthdef(
+            &runtime,
+            "line_in_stereo",
+            vec![vibelang_dsp::OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: vibelang_dsp::PortRate::Ar,
+            }],
+        )
+        .await;
+        register_voice_synthdef(
+            &runtime,
+            "line_in",
+            vec![vibelang_dsp::OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: vibelang_dsp::PortRate::Ar,
+            }],
+        )
+        .await;
+
+        let group_id = GroupId::new(1);
+        let voice_id = VoiceId::new(1);
+
+        let mut initial = ScriptState::new();
+        initial.add_group(group_id, GroupConfig::default());
+        initial.add_voice(
+            voice_id,
+            VoiceConfig::new("drums_in", "line_in_stereo", group_id),
+        );
+        initial.running_voices.insert(voice_id);
+        runtime
+            .send(ReloadMessage::Apply { state: initial }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let first_line_node = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .find_map(|(def, node)| (def == "line_in_stereo").then_some(node))
+            .expect("initial running line_in_stereo node exists");
+
+        let mut replacement = ScriptState::new();
+        replacement.add_group(group_id, GroupConfig::default());
+        replacement.add_voice(voice_id, VoiceConfig::new("drums_in", "line_in", group_id));
+        replacement.running_voices.insert(voice_id);
+        runtime
+            .send(ReloadMessage::Apply { state: replacement }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let frees = runtime.backend.free_node_log.lock().unwrap().clone();
+        assert!(
+            frees.contains(&first_line_node),
+            "old running line_in_stereo node {:?} must be freed on synthdef reload; frees: {:?}",
+            first_line_node,
+            frees
+        );
+
+        let alive_line_nodes: Vec<_> = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .filter(|(def, _)| def == "line_in" || def == "line_in_stereo")
+            .collect();
+        assert!(
+            matches!(alive_line_nodes.as_slice(), [(def, _)] if def == "line_in"),
+            "only the replacement running voice should remain alive"
+        );
     }
 
     // =========================================================================
