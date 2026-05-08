@@ -481,6 +481,27 @@ impl Default for ScriptEngine {
 mod tests {
     use super::*;
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn write_test_project(files: &[(&str, &str)]) -> std::path::PathBuf {
+        let mut dir = std::env::temp_dir();
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        dir.push(format!(
+            "vibelang-rhai-test-{}-{}",
+            std::process::id(),
+            nonce
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        for (name, contents) in files {
+            std::fs::write(dir.join(name), contents).unwrap();
+        }
+
+        dir
+    }
+
     #[test]
     fn test_execute_simple_script() {
         let mut engine = ScriptEngine::new();
@@ -563,6 +584,161 @@ mod tests {
             .all(|body| body.target_group == drums_id && body.target_path == "main/Drums"));
         assert_eq!(state.body_contributions[0].ordinal, 0);
         assert_eq!(state.body_contributions[1].ordinal, 1);
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_group_bodies_merge_across_imported_files_in_eval_order() {
+        let dir = write_test_project(&[
+            (
+                "main.vibe",
+                r#"
+            group("Drums").gain(0.5).body(|| {
+                voice("kick").synth("kick_synth");
+            });
+
+            import "effects.vibe";
+
+            group("Drums").body(|| {
+                voice("hat").synth("hat_synth");
+            });
+        "#,
+            ),
+            (
+                "effects.vibe",
+                r#"
+            group("Drums").gain(0.75).body(|| {
+                voice("snare").synth("snare_synth");
+            });
+        "#,
+            ),
+        ]);
+
+        let mut engine = ScriptEngine::new();
+        let state = engine.execute_file(dir.join("main.vibe")).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        let drums_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Drums").then_some(*id))
+            .expect("Drums group should exist");
+        let drums = state.groups.get(&drums_id).unwrap();
+
+        assert_eq!(
+            state
+                .groups
+                .values()
+                .filter(|config| config.name == "Drums")
+                .count(),
+            1,
+            "main and imported bodies should merge into one Drums group"
+        );
+        assert_eq!(drums.params.get("amp"), Some(&0.75));
+        assert!(state
+            .body_contributions
+            .iter()
+            .all(|body| body.target_group == drums_id && body.target_path == "main/Drums"));
+        assert_eq!(
+            state
+                .body_contributions
+                .iter()
+                .map(|body| body.ordinal)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+
+        let voice_names = state
+            .voice_order
+            .iter()
+            .map(|id| state.voices.get(id).unwrap().name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(voice_names, vec!["kick", "snare", "hat"]);
+        assert!(state.voices.values().all(|voice| voice.group == drums_id));
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_imported_body_uses_resolved_handle_not_caller_context() {
+        let dir = write_test_project(&[
+            (
+                "main.vibe",
+                r#"
+            group("Drums").body(|| {
+                voice("kick").synth("kick_synth");
+            });
+
+            import "fills.vibe";
+        "#,
+            ),
+            (
+                "fills.vibe",
+                r#"
+            let drums = group("Drums");
+
+            group("Song").body(|| {
+                drums.body(|| {
+                    voice("snare").synth("snare_synth");
+                });
+
+                voice("pad").synth("pad_synth");
+            });
+        "#,
+            ),
+        ]);
+
+        let mut engine = ScriptEngine::new();
+        let state = engine.execute_file(dir.join("main.vibe")).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        let drums_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Drums").then_some(*id))
+            .expect("Drums group should exist");
+        let song_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Song").then_some(*id))
+            .expect("Song group should exist");
+
+        let kick = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "kick")
+            .expect("kick voice should exist");
+        let snare = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "snare")
+            .expect("snare voice should exist");
+        let pad = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "pad")
+            .expect("pad voice should exist");
+
+        assert_eq!(kick.group, drums_id);
+        assert_eq!(snare.group, drums_id);
+        assert_eq!(pad.group, song_id);
+        assert_eq!(
+            state
+                .groups
+                .values()
+                .filter(|config| config.name == "Drums")
+                .count(),
+            1,
+            "resolved Drums handle should not be retargeted under Song"
+        );
+        assert_eq!(
+            state
+                .body_contributions
+                .iter()
+                .filter(|body| body.target_group == drums_id)
+                .map(|body| body.target_path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["main/Drums", "main/Drums"]
+        );
     }
 
     #[test]
