@@ -64,7 +64,8 @@ pub use bus_pool::BusAllocator;
 pub use diff::{diff_entities, EntityDiff, ParamDiff, ReloadDiff};
 pub use port_diff::{diff_port_set, reconcile_voice_ports, PortReconcile, PortSetDiff};
 pub use script_state::{
-    BodyContribution, EffectConfig, GroupConfig, ParamRouteConflict, ScriptState,
+    BodyContribution, EffectConfig, GroupAliasError, GroupAliasTarget, GroupConfig,
+    ParamRouteConflict, ScriptState,
 };
 // ChangeQuant is defined in this module and exported directly
 

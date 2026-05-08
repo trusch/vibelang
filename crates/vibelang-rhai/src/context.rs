@@ -19,7 +19,7 @@ use rhai::FnPtr;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use vibelang_core::reload::{BodyContribution, ScriptState};
+use vibelang_core::reload::{BodyContribution, GroupAliasError, GroupAliasTarget, ScriptState};
 use vibelang_core::types::{
     EffectId, FadeId, GroupId, MelodyId, PatternId, RecordingId, SampleId, SequenceId, SfzId,
     VoiceId,
@@ -505,6 +505,13 @@ pub fn get_group_id(name: &str) -> Option<GroupId> {
             .as_ref()
             .and_then(|c| c.group_ids.get(name).copied())
     })
+}
+
+/// Register a global alias for a canonical group path.
+pub fn add_group_alias(alias: String, canonical_path: String) -> Result<(), GroupAliasError> {
+    let group_id = get_or_create_group_id(&canonical_path);
+    let target = GroupAliasTarget::new(group_id, canonical_path);
+    with_state(|state| state.add_group_alias(alias, target))
 }
 
 define_id_accessors!(

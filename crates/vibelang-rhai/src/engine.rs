@@ -566,6 +566,94 @@ mod tests {
     }
 
     #[test]
+    fn test_group_alias_registers_chained_aliases() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Drums")
+                .alias("kit")
+                .alias("beat")
+                .gain(0.5);
+
+            group("Drums").alias("kit");
+        "#,
+            )
+            .unwrap();
+
+        let kit = state
+            .group_aliases
+            .get("kit")
+            .expect("kit alias should be registered");
+        let beat = state
+            .group_aliases
+            .get("beat")
+            .expect("beat alias should be registered");
+
+        assert_eq!(kit.path, "main/Drums");
+        assert_eq!(beat.path, "main/Drums");
+        assert_eq!(kit.group_id, beat.group_id);
+        assert_eq!(state.group_aliases.len(), 2);
+
+        let drums = state.groups.get(&kit.group_id).unwrap();
+        assert_eq!(drums.name, "Drums");
+        assert_eq!(drums.params.get("amp"), Some(&0.5));
+    }
+
+    #[test]
+    fn test_group_alias_uses_canonical_full_group_path() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Song").body(|| {
+                group("Drums").alias("kit");
+            });
+        "#,
+            )
+            .unwrap();
+
+        let target = state
+            .group_aliases
+            .get("kit")
+            .expect("kit alias should be registered");
+
+        assert_eq!(target.path, "main/Song/Drums");
+        let drums = state.groups.get(&target.group_id).unwrap();
+        assert_eq!(drums.name, "Drums");
+    }
+
+    #[test]
+    fn test_group_alias_conflicting_target_is_script_error() {
+        let mut engine = ScriptEngine::new();
+        let err = engine
+            .execute(
+                r#"
+            group("Drums").alias("kit");
+            group("Bass").alias("kit");
+        "#,
+            )
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("group alias 'kit' already points to"), "{msg}");
+        assert!(msg.contains("main/Drums"), "{msg}");
+        assert!(msg.contains("main/Bass"), "{msg}");
+    }
+
+    #[test]
+    fn test_group_alias_invalid_name_is_script_error() {
+        let mut engine = ScriptEngine::new();
+        let err = engine
+            .execute(r#"group("Drums").alias("main/kit");"#)
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("group alias 'main/kit' is invalid"), "{msg}");
+        assert!(msg.contains("single relative names"), "{msg}");
+    }
+
+    #[test]
     fn test_group_body_uses_saved_handle_canonical_context() {
         let mut engine = ScriptEngine::new();
         let state = engine

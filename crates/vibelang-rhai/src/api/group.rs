@@ -2,9 +2,11 @@
 //!
 //! Groups organize voices and provide hierarchical mixing.
 
-use rhai::{Array, CustomType, Engine, FnPtr, NativeCallContext, TypeBuilder};
+use rhai::{
+    Array, CustomType, Engine, EvalAltResult, FnPtr, NativeCallContext, Position, TypeBuilder,
+};
 use std::collections::HashMap;
-use vibelang_core::reload::GroupConfig;
+use vibelang_core::reload::{GroupAliasError, GroupAliasTarget, GroupConfig};
 
 use crate::context;
 
@@ -265,6 +267,52 @@ impl GroupHandle {
     }
 }
 
+fn format_alias_target(target: &GroupAliasTarget) -> String {
+    format!("'{}' ({:?})", target.path, target.group_id)
+}
+
+fn format_group_alias_error(err: GroupAliasError) -> String {
+    match err {
+        GroupAliasError::InvalidAliasName { alias, reason } => {
+            format!("group alias '{}' is invalid: {}", alias, reason)
+        }
+        GroupAliasError::ConflictingAliasTarget {
+            alias,
+            existing,
+            attempted,
+        } => format!(
+            "group alias '{}' already points to {}, cannot point it to {}",
+            alias,
+            format_alias_target(&existing),
+            format_alias_target(&attempted)
+        ),
+        GroupAliasError::ConflictingContextualClaims {
+            alias,
+            existing,
+            attempted,
+        } => {
+            let existing = existing
+                .iter()
+                .map(format_alias_target)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "group alias '{}' conflicts with prior contextual group claim(s) {}; cannot point it to {}",
+                alias,
+                existing,
+                format_alias_target(&attempted)
+            )
+        }
+    }
+}
+
+fn alias_error(err: GroupAliasError, pos: Position) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        format_group_alias_error(err).into(),
+        pos,
+    ))
+}
+
 /// Define a group with a closure.
 pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> GroupHandle {
     // Build the full path
@@ -350,6 +398,17 @@ fn group_body(ctx: NativeCallContext, handle: GroupHandle, closure: FnPtr) -> Gr
     handle
 }
 
+/// Register an authoring alias for a canonical group handle.
+fn group_alias(
+    ctx: NativeCallContext,
+    handle: GroupHandle,
+    alias: String,
+) -> Result<GroupHandle, Box<EvalAltResult>> {
+    context::add_group_alias(alias, handle.path.clone())
+        .map_err(|err| alias_error(err, ctx.call_position()))?;
+    Ok(handle)
+}
+
 /// Get a group handle by path.
 pub fn group(path: String) -> GroupHandle {
     let full_path = if path.starts_with("main/") || path == "main" {
@@ -391,6 +450,7 @@ pub fn register(engine: &mut Engine) {
 
     // Group body and output routing
     engine.register_fn("body", group_body);
+    engine.register_fn("alias", group_alias);
     engine.register_fn("output", GroupHandle::output);
     engine.register_fn("output", GroupHandle::output_mono);
 
