@@ -22,6 +22,34 @@ use crate::types::{
 };
 use std::collections::{HashMap, HashSet};
 
+/// Ordered contribution from one evaluated `group(...).body(...)` call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BodyContribution {
+    /// Stable-per-execution contribution id.
+    pub id: u64,
+
+    /// Canonical group receiving this body.
+    pub target_group: GroupId,
+
+    /// Canonical target path used for current-group context.
+    pub target_path: String,
+
+    /// Evaluation-order index for this script execution.
+    pub ordinal: u64,
+
+    /// Best available script source identity for this body call.
+    pub source: Option<String>,
+
+    /// Include/import stack identity placeholder for downstream reload work.
+    pub include_stack: Vec<String>,
+
+    /// 1-based source line of the body call when available.
+    pub line: Option<u32>,
+
+    /// 1-based source column of the body call when available.
+    pub column: Option<u32>,
+}
+
 /// Configuration for a group (from script, no runtime IDs).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct GroupConfig {
@@ -445,6 +473,9 @@ pub struct ScriptState {
 
     /// Groups defined in the script.
     pub groups: HashMap<GroupId, GroupConfig>,
+
+    /// Ordered `group(...).body(...)` contributions seen during evaluation.
+    pub body_contributions: Vec<BodyContribution>,
 
     /// Voices defined in the script.
     pub voices: HashMap<VoiceId, VoiceConfig>,

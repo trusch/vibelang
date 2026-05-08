@@ -508,6 +508,210 @@ mod tests {
     }
 
     #[test]
+    fn test_repeated_group_body_appends_to_existing_group() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Drums").gain(0.5).body(|| {
+                voice("kick").synth("kick_synth");
+                fx("drums_comp").synth("compressor").apply();
+            });
+
+            group("Drums").body(|| {
+                voice("snare").synth("snare_synth");
+            });
+        "#,
+            )
+            .unwrap();
+
+        let drums_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Drums").then_some(*id))
+            .expect("Drums group should exist");
+        let drums = state.groups.get(&drums_id).unwrap();
+
+        assert_eq!(
+            state
+                .groups
+                .values()
+                .filter(|config| config.name == "Drums")
+                .count(),
+            1,
+            "Repeated bodies should not create duplicate Drums groups"
+        );
+        assert_eq!(state.voices.len(), 2, "Both body voices should remain");
+        assert!(state
+            .voices
+            .values()
+            .any(|voice| voice.name == "kick" && voice.group == drums_id));
+        assert!(state
+            .voices
+            .values()
+            .any(|voice| voice.name == "snare" && voice.group == drums_id));
+        assert_eq!(
+            drums.effects.len(),
+            1,
+            "Later bodies should not clear effects"
+        );
+        assert_eq!(drums.params.get("amp"), Some(&0.5));
+        assert_eq!(state.body_contributions.len(), 2);
+        assert!(state
+            .body_contributions
+            .iter()
+            .all(|body| body.target_group == drums_id && body.target_path == "main/Drums"));
+        assert_eq!(state.body_contributions[0].ordinal, 0);
+        assert_eq!(state.body_contributions[1].ordinal, 1);
+    }
+
+    #[test]
+    fn test_group_body_uses_saved_handle_canonical_context() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            let drums = group("Drums");
+
+            group("Song").body(|| {
+                drums.body(|| {
+                    voice("kick").synth("kick_synth");
+                });
+
+                voice("song_voice").synth("pad_synth");
+            });
+        "#,
+            )
+            .unwrap();
+
+        let drums_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Drums").then_some(*id))
+            .expect("Drums group should exist");
+        let song_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Song").then_some(*id))
+            .expect("Song group should exist");
+
+        let kick = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "kick")
+            .expect("kick voice should exist");
+        let song_voice = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "song_voice")
+            .expect("song voice should exist");
+
+        assert_eq!(kick.group, drums_id);
+        assert_eq!(song_voice.group, song_id);
+        assert_eq!(
+            state
+                .groups
+                .values()
+                .filter(|config| config.name == "Drums")
+                .count(),
+            1,
+            "Saved handle body should not create main/Song/Drums"
+        );
+    }
+
+    #[test]
+    fn test_group_body_uses_absolute_nested_handle_context() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            let room = group("main/Drums/Room");
+
+            group("Other").body(|| {
+                room.body(|| {
+                    voice("verb").synth("reverb_synth");
+                });
+
+                voice("other_voice").synth("other_synth");
+            });
+        "#,
+            )
+            .unwrap();
+
+        let room_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Room").then_some(*id))
+            .expect("Room group should exist");
+        let other_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Other").then_some(*id))
+            .expect("Other group should exist");
+
+        let verb = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "verb")
+            .expect("verb voice should exist");
+        let other_voice = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "other_voice")
+            .expect("other voice should exist");
+
+        assert_eq!(verb.group, room_id);
+        assert_eq!(other_voice.group, other_id);
+        assert_eq!(
+            state
+                .groups
+                .values()
+                .filter(|config| config.name == "Room")
+                .count(),
+            1,
+            "Absolute nested handle should not create main/Other/Room"
+        );
+    }
+
+    #[test]
+    fn test_group_body_restores_context_after_inner_body_error() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Outer").body(|| {
+                group("Inner").body(|| {
+                    missing_function();
+                });
+
+                voice("outer_after").synth("pad_synth");
+            });
+        "#,
+            )
+            .unwrap();
+
+        let outer_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Outer").then_some(*id))
+            .expect("Outer group should exist");
+        let inner_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Inner").then_some(*id))
+            .expect("Inner group should exist");
+
+        let outer_after = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "outer_after")
+            .expect("outer_after voice should exist");
+
+        assert_eq!(outer_after.group, outer_id);
+        assert_ne!(outer_after.group, inner_id);
+    }
+
+    #[test]
     fn test_helper_functions() {
         let mut engine = ScriptEngine::new();
         let state = engine

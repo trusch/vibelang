@@ -19,7 +19,7 @@ use rhai::FnPtr;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use vibelang_core::reload::ScriptState;
+use vibelang_core::reload::{BodyContribution, ScriptState};
 use vibelang_core::types::{
     EffectId, FadeId, GroupId, MelodyId, PatternId, RecordingId, SampleId, SequenceId, SfzId,
     VoiceId,
@@ -128,6 +128,12 @@ struct ScriptContext {
     /// Current script file path.
     current_file: Option<PathBuf>,
 
+    /// Monotonic body contribution ordinal for this script execution.
+    next_body_contribution_ordinal: u64,
+
+    /// Stack of active body contribution ids.
+    active_body_contributions: Vec<u64>,
+
     /// Import paths for module resolution.
     import_paths: Vec<PathBuf>,
 
@@ -173,6 +179,8 @@ impl Default for ScriptContext {
             state: ScriptState::default(),
             group_stack: vec!["main".to_string()],
             current_file: None,
+            next_body_contribution_ordinal: 0,
+            active_body_contributions: Vec::new(),
             import_paths: Vec::new(),
             auto_name_counts: HashMap::new(),
             next_group_id: 1, // Start at 1, 0 is reserved
@@ -264,6 +272,27 @@ pub fn current_group_path() -> String {
     })
 }
 
+/// Execute a closure with the current group path temporarily replaced.
+pub fn with_group_path<R>(path: &str, f: impl FnOnce() -> R) -> R {
+    let previous = CONTEXT.with(|ctx| {
+        let mut borrow = ctx.borrow_mut();
+        let c = borrow.as_mut().expect("Script context not initialized");
+        let previous = c.group_stack.clone();
+        c.group_stack = path.split('/').map(str::to_string).collect();
+        previous
+    });
+
+    let result = f();
+
+    CONTEXT.with(|ctx| {
+        if let Some(c) = ctx.borrow_mut().as_mut() {
+            c.group_stack = previous;
+        }
+    });
+
+    result
+}
+
 /// Push a group onto the path stack.
 pub fn push_group(name: &str) {
     CONTEXT.with(|ctx| {
@@ -296,6 +325,56 @@ pub fn set_current_file(path: Option<PathBuf>) {
 /// Get the current script file.
 pub fn get_current_file() -> Option<PathBuf> {
     CONTEXT.with(|ctx| ctx.borrow().as_ref().and_then(|c| c.current_file.clone()))
+}
+
+/// Record an ordered body contribution and mark it as active.
+pub fn begin_body_contribution(
+    target_group: GroupId,
+    target_path: String,
+    source: Option<String>,
+    line: Option<u32>,
+    column: Option<u32>,
+) -> u64 {
+    CONTEXT.with(|ctx| {
+        let mut borrow = ctx.borrow_mut();
+        let c = borrow.as_mut().expect("Script context not initialized");
+        let ordinal = c.next_body_contribution_ordinal;
+        c.next_body_contribution_ordinal += 1;
+
+        let source = source.or_else(|| {
+            c.current_file
+                .as_ref()
+                .map(|path| path.to_string_lossy().into_owned())
+        });
+        let include_stack = source.iter().cloned().collect();
+
+        c.state.body_contributions.push(BodyContribution {
+            id: ordinal,
+            target_group,
+            target_path,
+            ordinal,
+            source,
+            include_stack,
+            line,
+            column,
+        });
+        c.active_body_contributions.push(ordinal);
+
+        ordinal
+    })
+}
+
+/// Leave the active body contribution scope.
+pub fn end_body_contribution(id: u64) {
+    CONTEXT.with(|ctx| {
+        if let Some(c) = ctx.borrow_mut().as_mut() {
+            if c.active_body_contributions.last().copied() == Some(id) {
+                c.active_body_contributions.pop();
+            } else {
+                c.active_body_contributions.retain(|&active| active != id);
+            }
+        }
+    });
 }
 
 /// Set import paths.

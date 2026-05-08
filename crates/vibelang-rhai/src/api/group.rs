@@ -323,49 +323,29 @@ pub fn define_group(ctx: NativeCallContext, name: String, closure: FnPtr) -> Gro
 fn group_body(ctx: NativeCallContext, handle: GroupHandle, closure: FnPtr) -> GroupHandle {
     let group_id = context::get_or_create_group_id(&handle.path);
 
-    // Find parent group ID from path
-    let parent_path = if let Some(pos) = handle.path.rfind('/') {
-        &handle.path[..pos]
-    } else {
-        "main"
-    };
-    let parent_id = if parent_path == "main" {
-        None
-    } else {
-        Some(context::get_or_create_group_id(parent_path))
-    };
-
-    // Create group config (preserves existing output_bus / output_channels
-    // if already set — group_body() runs after the builder methods that
-    // configure routing, so those settings must survive the rebuild).
-    let (existing_output_bus, existing_output_channels) = context::with_state(|state| {
-        match state.groups.get(&group_id) {
-            Some(c) => (c.output_bus, c.output_channels),
-            None => (None, None),
+    context::with_state(|state| {
+        if let Some(config) = state.groups.get_mut(&group_id) {
+            config.name = handle.name.clone();
         }
     });
 
-    let config = GroupConfig {
-        name: handle.name.clone(),
-        parent: parent_id,
-        params: HashMap::new(),
-        effects: Vec::new(),
-        muted: false,
-        soloed: false,
-        output_bus: existing_output_bus,
-        output_channels: existing_output_channels,
-    };
+    let pos = ctx.call_position();
+    let contribution_id = context::begin_body_contribution(
+        group_id,
+        handle.path.clone(),
+        ctx.call_source().map(ToOwned::to_owned),
+        pos.line().map(|line| line as u32),
+        pos.position().map(|column| column as u32),
+    );
 
-    context::with_state(|state| {
-        state.groups.insert(group_id, config);
+    let result = context::with_group_path(&handle.path, || {
+        closure.call_within_context::<rhai::Dynamic>(&ctx, ())
     });
+    context::end_body_contribution(contribution_id);
 
-    // Push group context, execute closure, pop
-    context::push_group(&handle.name);
-    if let Err(e) = closure.call_within_context::<rhai::Dynamic>(&ctx, ()) {
+    if let Err(e) = result {
         log::error!("Error in group('{}').body(): {}", handle.name, e);
     }
-    context::pop_group();
 
     handle
 }
