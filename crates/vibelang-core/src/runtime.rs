@@ -3902,6 +3902,406 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reload_removing_effect_body_keeps_voice_body() {
+        use crate::message::ReloadMessage;
+        use crate::reload::{EffectConfig, GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{EffectId, GroupId, VoiceId};
+
+        let backend = RecordingBackend::new();
+        let mut runtime = Runtime::new(backend);
+
+        register_voice_synthdef(
+            &runtime,
+            "kick_synth",
+            vec![vibelang_dsp::OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: vibelang_dsp::PortRate::Ar,
+            }],
+        )
+        .await;
+        register_effect_synthdef(&runtime, "body_fx").await;
+
+        let group_id = GroupId::new(30);
+        let voice_id = VoiceId::new(30);
+        let effect_id = EffectId::new(30);
+
+        let mut initial = ScriptState::new();
+        initial.add_group(
+            group_id,
+            GroupConfig {
+                name: "Drums".to_string(),
+                ..GroupConfig::default()
+            },
+        );
+        add_body_contribution(&mut initial, group_id, "main/Drums", 0, "voices.vibe");
+        initial.add_voice(voice_id, VoiceConfig::new("kick", "kick_synth", group_id));
+        initial.running_voices.insert(voice_id);
+        add_body_contribution(&mut initial, group_id, "main/Drums", 1, "effects.vibe");
+        initial.add_effect(
+            effect_id,
+            EffectConfig {
+                group: group_id,
+                synthdef: "body_fx".to_string(),
+                params: ParamMap::new(),
+            },
+        );
+        initial
+            .groups
+            .get_mut(&group_id)
+            .unwrap()
+            .effects
+            .push(effect_id);
+
+        runtime
+            .send(ReloadMessage::Apply { state: initial }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let (initial_group_node, initial_link_node) = {
+            let state = runtime.state.read().await;
+            let group = state.groups.get(&group_id).expect("merged group exists");
+            (
+                group.node_id,
+                group.link_synth_node_id.expect("group has link synth"),
+            )
+        };
+        let initial_effect_node = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .find_map(|(def, node)| (def == "body_fx").then_some(node))
+            .expect("effect body node is alive before removal");
+
+        let mut reloaded = ScriptState::new();
+        reloaded.add_group(
+            group_id,
+            GroupConfig {
+                name: "Drums".to_string(),
+                ..GroupConfig::default()
+            },
+        );
+        add_body_contribution(&mut reloaded, group_id, "main/Drums", 0, "voices.vibe");
+        reloaded.add_voice(voice_id, VoiceConfig::new("kick", "kick_synth", group_id));
+        reloaded.running_voices.insert(voice_id);
+
+        runtime
+            .send(ReloadMessage::Apply { state: reloaded }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let state = runtime.state.read().await;
+        let group = state
+            .groups
+            .get(&group_id)
+            .expect("voice body group remains");
+        assert_eq!(
+            group.node_id, initial_group_node,
+            "removing an effects body must not recreate the shared group"
+        );
+        assert_eq!(
+            group.link_synth_node_id,
+            Some(initial_link_node),
+            "remaining voice body keeps the existing group link"
+        );
+        assert!(
+            state.effects.get(&effect_id).is_none(),
+            "removed effects body should remove its effect config"
+        );
+        assert!(
+            state.voices.get(&voice_id).is_some(),
+            "voice body should survive effect-body removal"
+        );
+        drop(state);
+
+        assert!(
+            runtime
+                .backend
+                .alive_synths()
+                .into_iter()
+                .any(|(def, _)| def == "kick_synth"),
+            "remaining voice body keeps its running synth"
+        );
+
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        runtime.tick().await;
+        let frees = runtime.backend.free_node_log.lock().unwrap().clone();
+        assert!(
+            frees.contains(&initial_effect_node),
+            "removed effect node {:?} should be freed after its grace period; frees: {:?}",
+            initial_effect_node,
+            frees
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_removing_voice_body_keeps_effect_body() {
+        use crate::message::ReloadMessage;
+        use crate::reload::{EffectConfig, GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{EffectId, GroupId, VoiceId};
+
+        let backend = RecordingBackend::new();
+        let mut runtime = Runtime::new(backend);
+
+        register_voice_synthdef(
+            &runtime,
+            "snare_synth",
+            vec![vibelang_dsp::OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: vibelang_dsp::PortRate::Ar,
+            }],
+        )
+        .await;
+        register_effect_synthdef(&runtime, "shared_reverb").await;
+
+        let group_id = GroupId::new(40);
+        let voice_id = VoiceId::new(40);
+        let effect_id = EffectId::new(40);
+
+        let mut initial = ScriptState::new();
+        initial.add_group(
+            group_id,
+            GroupConfig {
+                name: "Drums".to_string(),
+                ..GroupConfig::default()
+            },
+        );
+        add_body_contribution(&mut initial, group_id, "main/Drums", 0, "voices.vibe");
+        initial.add_voice(voice_id, VoiceConfig::new("snare", "snare_synth", group_id));
+        initial.running_voices.insert(voice_id);
+        add_body_contribution(&mut initial, group_id, "main/Drums", 1, "effects.vibe");
+        initial.add_effect(
+            effect_id,
+            EffectConfig {
+                group: group_id,
+                synthdef: "shared_reverb".to_string(),
+                params: ParamMap::new(),
+            },
+        );
+        initial
+            .groups
+            .get_mut(&group_id)
+            .unwrap()
+            .effects
+            .push(effect_id);
+
+        runtime
+            .send(ReloadMessage::Apply { state: initial }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let (initial_group_node, initial_link_node) = {
+            let state = runtime.state.read().await;
+            let group = state.groups.get(&group_id).expect("merged group exists");
+            (
+                group.node_id,
+                group.link_synth_node_id.expect("group has link synth"),
+            )
+        };
+        let initial_voice_node = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .find_map(|(def, node)| (def == "snare_synth").then_some(node))
+            .expect("voice body node is alive before removal");
+        let initial_effect_node = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .find_map(|(def, node)| (def == "shared_reverb").then_some(node))
+            .expect("effect body node is alive before voice removal");
+
+        let mut reloaded = ScriptState::new();
+        reloaded.add_group(
+            group_id,
+            GroupConfig {
+                name: "Drums".to_string(),
+                ..GroupConfig::default()
+            },
+        );
+        add_body_contribution(&mut reloaded, group_id, "main/Drums", 0, "effects.vibe");
+        reloaded.add_effect(
+            effect_id,
+            EffectConfig {
+                group: group_id,
+                synthdef: "shared_reverb".to_string(),
+                params: ParamMap::new(),
+            },
+        );
+        reloaded
+            .groups
+            .get_mut(&group_id)
+            .unwrap()
+            .effects
+            .push(effect_id);
+
+        runtime
+            .send(ReloadMessage::Apply { state: reloaded }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let state = runtime.state.read().await;
+        let group = state
+            .groups
+            .get(&group_id)
+            .expect("effect body group remains");
+        assert_eq!(
+            group.node_id, initial_group_node,
+            "removing a voice body must not recreate the shared group"
+        );
+        assert_eq!(
+            group.link_synth_node_id,
+            Some(initial_link_node),
+            "remaining effect body keeps the existing group link"
+        );
+        let effect = state
+            .effects
+            .get(&effect_id)
+            .expect("effect body should survive voice-body removal");
+        assert_eq!(
+            effect.node_id, initial_effect_node,
+            "unchanged effect body should not be respawned"
+        );
+        assert!(
+            state.voices.get(&voice_id).is_none(),
+            "removed voice body should delete its voice config"
+        );
+        drop(state);
+
+        let frees = runtime.backend.free_node_log.lock().unwrap().clone();
+        assert!(
+            frees.contains(&initial_voice_node),
+            "removed voice node {:?} should be freed; frees: {:?}",
+            initial_voice_node,
+            frees
+        );
+        assert!(
+            runtime
+                .backend
+                .alive_synths()
+                .into_iter()
+                .any(|(def, node)| def == "shared_reverb" && node == initial_effect_node),
+            "remaining effect body stays alive"
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_removing_last_body_tears_down_group() {
+        use crate::message::ReloadMessage;
+        use crate::reload::{EffectConfig, GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{EffectId, GroupId, VoiceId};
+
+        let backend = RecordingBackend::new();
+        let mut runtime = Runtime::new(backend);
+
+        register_voice_synthdef(
+            &runtime,
+            "line_in",
+            vec![vibelang_dsp::OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: vibelang_dsp::PortRate::Ar,
+            }],
+        )
+        .await;
+        register_effect_synthdef(&runtime, "last_fx").await;
+
+        let group_id = GroupId::new(50);
+        let voice_id = VoiceId::new(50);
+        let effect_id = EffectId::new(50);
+
+        let mut initial = ScriptState::new();
+        initial.add_group(
+            group_id,
+            GroupConfig {
+                name: "Drums".to_string(),
+                ..GroupConfig::default()
+            },
+        );
+        add_body_contribution(&mut initial, group_id, "main/Drums", 0, "main.vibe");
+        initial.add_voice(voice_id, VoiceConfig::new("line", "line_in", group_id));
+        initial.running_voices.insert(voice_id);
+        initial.add_effect(
+            effect_id,
+            EffectConfig {
+                group: group_id,
+                synthdef: "last_fx".to_string(),
+                params: ParamMap::new(),
+            },
+        );
+        initial
+            .groups
+            .get_mut(&group_id)
+            .unwrap()
+            .effects
+            .push(effect_id);
+
+        runtime
+            .send(ReloadMessage::Apply { state: initial }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let (group_node, link_node) = {
+            let state = runtime.state.read().await;
+            let group = state.groups.get(&group_id).expect("group exists");
+            (
+                group.node_id,
+                group.link_synth_node_id.expect("group has link synth"),
+            )
+        };
+        let voice_node = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .find_map(|(def, node)| (def == "line_in").then_some(node))
+            .expect("voice node is alive before final body removal");
+        let effect_node = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .find_map(|(def, node)| (def == "last_fx").then_some(node))
+            .expect("effect node is alive before final body removal");
+
+        runtime
+            .send(
+                ReloadMessage::Apply {
+                    state: ScriptState::new(),
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let state = runtime.state.read().await;
+        assert!(state.groups.get(&group_id).is_none());
+        assert!(state.voices.get(&voice_id).is_none());
+        assert!(state.effects.get(&effect_id).is_none());
+        drop(state);
+
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        runtime.tick().await;
+        let frees = runtime.backend.free_node_log.lock().unwrap().clone();
+        for node in [voice_node, effect_node, link_node, group_node] {
+            assert!(
+                frees.contains(&node),
+                "removing the last body should free node {:?}; frees: {:?}",
+                node,
+                frees
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn reload_group_rename_frees_old_group_link_and_running_voice_nodes() {
         use crate::message::ReloadMessage;
         use crate::reload::{GroupConfig, ScriptState};
@@ -4080,7 +4480,10 @@ mod tests {
 
         // Initial reload — create the group with its starting routing.
         let mut s0 = ScriptState::new();
-        s0.add_group(group_id, build_routing_config(initial_bus, initial_channels));
+        s0.add_group(
+            group_id,
+            build_routing_config(initial_bus, initial_channels),
+        );
         runtime
             .send(ReloadMessage::Apply { state: s0 }.into())
             .await
@@ -4124,7 +4527,11 @@ mod tests {
             alive.len(),
             1,
             "exactly one link synth alive after reload (transition {}ch@{} -> {}ch@{}); got {:?}",
-            initial_channels, initial_bus, new_channels, new_bus, alive
+            initial_channels,
+            initial_bus,
+            new_channels,
+            new_bus,
+            alive
         );
         let (def, node, outbus) = alive[0].clone();
         assert_eq!(
