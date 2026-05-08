@@ -659,6 +659,79 @@ mod tests {
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
+    fn test_alias_body_merges_with_canonical_body_across_imports() {
+        let dir = write_test_project(&[
+            (
+                "main.vibe",
+                r#"
+            group("Drums").body(|| {
+                voice("kick").synth("kick_synth");
+            });
+
+            import "aliases.vibe";
+
+            group("kit").body(|| {
+                voice("hat").synth("hat_synth");
+            });
+        "#,
+            ),
+            (
+                "aliases.vibe",
+                r#"
+            group("Drums").alias("kit");
+
+            group("kit").body(|| {
+                voice("snare").synth("snare_synth");
+            });
+        "#,
+            ),
+        ]);
+
+        let mut engine = ScriptEngine::new();
+        let state = engine.execute_file(dir.join("main.vibe")).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        let alias_target = state.group_aliases.get("kit").unwrap();
+        let drums = state.groups.get(&alias_target.group_id).unwrap();
+
+        assert_eq!(alias_target.path, "main/Drums");
+        assert_eq!(drums.name, "Drums");
+        assert_eq!(
+            state
+                .groups
+                .values()
+                .filter(|config| config.name == "Drums")
+                .count(),
+            1,
+            "canonical and alias bodies should merge into one Drums group"
+        );
+        assert!(
+            state.groups.values().all(|config| config.name != "kit"),
+            "alias body should not create a kit group"
+        );
+        assert_eq!(
+            state
+                .body_contributions
+                .iter()
+                .map(|body| (body.target_path.as_str(), body.ordinal))
+                .collect::<Vec<_>>(),
+            vec![("main/Drums", 0), ("main/Drums", 1), ("main/Drums", 2)]
+        );
+
+        let voice_names = state
+            .voice_order
+            .iter()
+            .map(|id| state.voices.get(id).unwrap().name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(voice_names, vec!["kick", "snare", "hat"]);
+        assert!(state
+            .voices
+            .values()
+            .all(|voice| voice.group == alias_target.group_id));
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
     fn test_imported_body_uses_resolved_handle_not_caller_context() {
         let dir = write_test_project(&[
             (
@@ -940,6 +1013,71 @@ mod tests {
         assert!(
             state.groups.values().all(|config| config.name != "kit"),
             "alias lookup should not create a contextual kit group"
+        );
+    }
+
+    #[test]
+    fn test_group_alias_body_appends_to_canonical_group() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Drums").body(|| {
+                voice("kick").synth("kick_synth");
+            });
+
+            group("Drums").alias("kit");
+
+            group("Song").body(|| {
+                group("kit").body(|| {
+                    voice("snare").synth("snare_synth");
+                });
+
+                voice("pad").synth("pad_synth");
+            });
+        "#,
+            )
+            .unwrap();
+
+        let alias_target = state.group_aliases.get("kit").unwrap();
+        let song_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Song").then_some(*id))
+            .expect("Song group should exist");
+
+        let kick = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "kick")
+            .expect("kick voice should exist");
+        let snare = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "snare")
+            .expect("snare voice should exist");
+        let pad = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "pad")
+            .expect("pad voice should exist");
+
+        assert_eq!(alias_target.path, "main/Drums");
+        assert_eq!(kick.group, alias_target.group_id);
+        assert_eq!(snare.group, alias_target.group_id);
+        assert_eq!(pad.group, song_id);
+        assert!(
+            state.groups.values().all(|config| config.name != "kit"),
+            "alias body should not create main/Song/kit"
+        );
+        assert_eq!(
+            state
+                .body_contributions
+                .iter()
+                .filter(|body| body.target_group == alias_target.group_id)
+                .map(|body| body.target_path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["main/Drums", "main/Drums"]
         );
     }
 
