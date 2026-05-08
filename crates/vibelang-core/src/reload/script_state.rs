@@ -20,7 +20,7 @@ use crate::types::{
     BufferId, EffectId, FadeId, GroupId, MelodyId, ParamMap, PatternId, SampleId, SequenceId,
     SfzId, TimeSignature, VoiceId,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Ordered contribution from one evaluated `group(...).body(...)` call.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,6 +82,44 @@ pub struct GroupConfig {
     /// Coupled with `output_bus`: must be `Some(_)` iff `output_bus` is
     /// `Some(_)`. Set together by the Rhai surface.
     pub output_channels: Option<u32>,
+}
+
+/// Canonical target for a group alias or contextual raw-token claim.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GroupAliasTarget {
+    /// Stable canonical group identity.
+    pub group_id: GroupId,
+
+    /// Canonical full group path rooted at `main`.
+    pub path: String,
+}
+
+impl GroupAliasTarget {
+    pub fn new(group_id: GroupId, path: impl Into<String>) -> Self {
+        Self {
+            group_id,
+            path: path.into(),
+        }
+    }
+}
+
+/// Error raised when an alias registry operation would make group resolution ambiguous.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GroupAliasError {
+    InvalidAliasName {
+        alias: String,
+        reason: &'static str,
+    },
+    ConflictingAliasTarget {
+        alias: String,
+        existing: GroupAliasTarget,
+        attempted: GroupAliasTarget,
+    },
+    ConflictingContextualClaims {
+        alias: String,
+        existing: Vec<GroupAliasTarget>,
+        attempted: GroupAliasTarget,
+    },
 }
 
 /// Configuration for an effect (from script, no runtime IDs).
@@ -474,6 +512,19 @@ pub struct ScriptState {
     /// Groups defined in the script.
     pub groups: HashMap<GroupId, GroupConfig>,
 
+    /// Global group aliases declared during script evaluation.
+    ///
+    /// Alias names map directly to canonical group identity/path, never to
+    /// another alias. BTreeMap keeps debug/snapshot representation stable.
+    pub group_aliases: BTreeMap<String, GroupAliasTarget>,
+
+    /// Raw contextual group tokens already resolved during this evaluation.
+    ///
+    /// This lets later alias declarations reject ambiguous rewrites, e.g. a
+    /// prior contextual `group("kit")` under `main/Song` conflicting with a
+    /// later `kit -> main/Drums` alias.
+    pub contextual_group_claims: BTreeMap<String, Vec<GroupAliasTarget>>,
+
     /// Ordered `group(...).body(...)` contributions seen during evaluation.
     pub body_contributions: Vec<BodyContribution>,
 
@@ -560,13 +611,11 @@ pub struct ScriptState {
     /// overwrites the `offset` slot. The runtime reads these in
     /// `RoutesHandler::finalize_params` to seed each `param_kr_modulate_<n>`'s
     /// `scale_<i>` / `offset_<i>` per source slot.
-    pub param_route_set_shaping:
-        HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+    pub param_route_set_shaping: HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
 
     /// Per-route affine shaping for BEND routes; same shape and defaults as
     /// [`Self::param_route_set_shaping`].
-    pub param_route_bend_shaping:
-        HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+    pub param_route_bend_shaping: HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
 
     /// Recordings to start (native only).
     #[cfg(not(target_arch = "wasm32"))]
@@ -681,9 +730,9 @@ pub struct ScriptState {
 pub struct LooperConfig {
     pub device_id: MidiDeviceId,
     pub voice_id: VoiceId,
-    pub channel: Option<u8>,     // Optional MIDI channel filter (0-15)
-    pub silence_bars: f64,       // How many bars of silence before playback. Default: 1.0
-    pub quantize_beats: f64,     // Quantization grid for recorded notes. Default: 0.25 (16th notes)
+    pub channel: Option<u8>, // Optional MIDI channel filter (0-15)
+    pub silence_bars: f64,   // How many bars of silence before playback. Default: 1.0
+    pub quantize_beats: f64, // Quantization grid for recorded notes. Default: 0.25 (16th notes)
 }
 
 #[cfg(feature = "midi")]
@@ -696,6 +745,27 @@ impl Default for LooperConfig {
             silence_bars: 1.0,
             quantize_beats: 0.25,
         }
+    }
+}
+
+fn validate_group_alias_name(alias: &str) -> Result<(), GroupAliasError> {
+    let reason = if alias.is_empty() {
+        Some("aliases must be non-empty")
+    } else if alias == "main" {
+        Some("alias 'main' is reserved")
+    } else if alias.contains('/') {
+        Some("aliases must be single relative names")
+    } else {
+        None
+    };
+
+    if let Some(reason) = reason {
+        Err(GroupAliasError::InvalidAliasName {
+            alias: alias.to_string(),
+            reason,
+        })
+    } else {
+        Ok(())
     }
 }
 
@@ -749,6 +819,73 @@ impl ScriptState {
     /// Add a group.
     pub fn add_group(&mut self, id: GroupId, config: GroupConfig) {
         self.groups.insert(id, config);
+    }
+
+    /// Register a global group alias for a canonical target.
+    pub fn add_group_alias(
+        &mut self,
+        alias: impl Into<String>,
+        target: GroupAliasTarget,
+    ) -> Result<(), GroupAliasError> {
+        let alias = alias.into();
+        validate_group_alias_name(&alias)?;
+
+        if let Some(existing) = self.group_aliases.get(&alias) {
+            if existing == &target {
+                return Ok(());
+            }
+
+            return Err(GroupAliasError::ConflictingAliasTarget {
+                alias,
+                existing: existing.clone(),
+                attempted: target,
+            });
+        }
+
+        if let Some(existing) = self.contextual_group_claims.get(&alias) {
+            if existing.iter().any(|claim| claim != &target) {
+                return Err(GroupAliasError::ConflictingContextualClaims {
+                    alias,
+                    existing: existing.clone(),
+                    attempted: target,
+                });
+            }
+        }
+
+        self.group_aliases.insert(alias, target);
+        Ok(())
+    }
+
+    /// Record that a raw contextual token resolved to a canonical group target.
+    pub fn add_contextual_group_claim(
+        &mut self,
+        raw_token: impl Into<String>,
+        target: GroupAliasTarget,
+    ) -> Result<(), GroupAliasError> {
+        let raw_token = raw_token.into();
+
+        if let Some(existing) = self.group_aliases.get(&raw_token) {
+            if existing != &target {
+                return Err(GroupAliasError::ConflictingAliasTarget {
+                    alias: raw_token,
+                    existing: existing.clone(),
+                    attempted: target,
+                });
+            }
+        }
+
+        let claims = self.contextual_group_claims.entry(raw_token).or_default();
+
+        if !claims.iter().any(|claim| claim == &target) {
+            claims.push(target);
+            claims.sort_by(|a, b| {
+                a.path
+                    .cmp(&b.path)
+                    .then_with(|| a.group_id.raw().cmp(&b.group_id.raw()))
+            });
+        }
+
+        Ok(())
     }
 
     /// Add a voice.
@@ -819,9 +956,7 @@ impl ScriptState {
             }
             RouteDest::Group(_) => {
                 let entry = self.routes.entry(key).or_default();
-                let group_only = entry
-                    .iter()
-                    .all(|d| matches!(d, RouteDest::Group(_)));
+                let group_only = entry.iter().all(|d| matches!(d, RouteDest::Group(_)));
                 if !group_only {
                     entry.clear();
                 }
@@ -1087,11 +1222,9 @@ impl ScriptState {
     }
 }
 
-fn route_map_contains_target(
-    map: &ParamRouteMap,
-    pair: &(ParamRouteTarget, String),
-) -> bool {
-    map.values().any(|targets| targets.iter().any(|t| t == pair))
+fn route_map_contains_target(map: &ParamRouteMap, pair: &(ParamRouteTarget, String)) -> bool {
+    map.values()
+        .any(|targets| targets.iter().any(|t| t == pair))
 }
 
 /// Reasons a `add_param_route_set` / `add_param_route_bend` /
@@ -1185,6 +1318,8 @@ mod tests {
         let state = ScriptState::new();
         assert_eq!(state.tempo, 120.0);
         assert!(state.groups.is_empty());
+        assert!(state.group_aliases.is_empty());
+        assert!(state.contextual_group_claims.is_empty());
         assert!(state.voices.is_empty());
     }
 
@@ -1256,5 +1391,144 @@ mod tests {
         assert!(config.parent.is_none());
         assert!(config.params.is_empty());
         assert!(config.effects.is_empty());
+    }
+
+    #[test]
+    fn test_add_group_alias_records_canonical_target() {
+        let mut state = ScriptState::new();
+        let target = GroupAliasTarget::new(GroupId::new(42), "main/Drums");
+
+        state.add_group_alias("kit", target.clone()).unwrap();
+
+        assert_eq!(state.group_aliases.get("kit"), Some(&target));
+    }
+
+    #[test]
+    fn test_add_group_alias_same_target_is_idempotent() {
+        let mut state = ScriptState::new();
+        let target = GroupAliasTarget::new(GroupId::new(42), "main/Drums");
+
+        state.add_group_alias("kit", target.clone()).unwrap();
+        state.add_group_alias("kit", target.clone()).unwrap();
+
+        assert_eq!(state.group_aliases.len(), 1);
+        assert_eq!(state.group_aliases.get("kit"), Some(&target));
+    }
+
+    #[test]
+    fn test_add_group_alias_rejects_different_target() {
+        let mut state = ScriptState::new();
+        let existing = GroupAliasTarget::new(GroupId::new(42), "main/Drums");
+        let attempted = GroupAliasTarget::new(GroupId::new(7), "main/Bass");
+
+        state.add_group_alias("kit", existing.clone()).unwrap();
+        let err = state.add_group_alias("kit", attempted.clone()).unwrap_err();
+
+        assert_eq!(
+            err,
+            GroupAliasError::ConflictingAliasTarget {
+                alias: "kit".to_string(),
+                existing,
+                attempted,
+            }
+        );
+    }
+
+    #[test]
+    fn test_add_group_alias_rejects_invalid_alias_names() {
+        let target = GroupAliasTarget::new(GroupId::new(42), "main/Drums");
+
+        for alias in ["", "main", "main/kit", "drums/kit"] {
+            let mut state = ScriptState::new();
+            assert!(
+                matches!(
+                    state.add_group_alias(alias, target.clone()),
+                    Err(GroupAliasError::InvalidAliasName { .. })
+                ),
+                "alias {alias:?} should be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn test_contextual_group_claims_are_deduplicated_and_sorted() {
+        let mut state = ScriptState::new();
+        let song_kit = GroupAliasTarget::new(GroupId::new(12), "main/Song/kit");
+        let other_kit = GroupAliasTarget::new(GroupId::new(7), "main/Other/kit");
+
+        state
+            .add_contextual_group_claim("kit", song_kit.clone())
+            .unwrap();
+        state
+            .add_contextual_group_claim("kit", other_kit.clone())
+            .unwrap();
+        state.add_contextual_group_claim("kit", song_kit).unwrap();
+
+        assert_eq!(
+            state.contextual_group_claims.get("kit"),
+            Some(&vec![
+                other_kit,
+                GroupAliasTarget::new(GroupId::new(12), "main/Song/kit")
+            ])
+        );
+    }
+
+    #[test]
+    fn test_add_group_alias_rejects_conflicting_contextual_claims() {
+        let mut state = ScriptState::new();
+        let song_kit = GroupAliasTarget::new(GroupId::new(12), "main/Song/kit");
+        let other_kit = GroupAliasTarget::new(GroupId::new(7), "main/Other/kit");
+        let drums = GroupAliasTarget::new(GroupId::new(42), "main/Drums");
+
+        state
+            .add_contextual_group_claim("kit", song_kit.clone())
+            .unwrap();
+        state
+            .add_contextual_group_claim("kit", other_kit.clone())
+            .unwrap();
+        let err = state.add_group_alias("kit", drums.clone()).unwrap_err();
+
+        assert_eq!(
+            err,
+            GroupAliasError::ConflictingContextualClaims {
+                alias: "kit".to_string(),
+                existing: vec![other_kit, song_kit],
+                attempted: drums,
+            }
+        );
+    }
+
+    #[test]
+    fn test_add_group_alias_allows_matching_contextual_claim() {
+        let mut state = ScriptState::new();
+        let target = GroupAliasTarget::new(GroupId::new(12), "main/Song/kit");
+
+        state
+            .add_contextual_group_claim("kit", target.clone())
+            .unwrap();
+        state.add_group_alias("kit", target.clone()).unwrap();
+
+        assert_eq!(state.group_aliases.get("kit"), Some(&target));
+    }
+
+    #[test]
+    fn test_contextual_group_claim_rejects_conflicting_existing_alias() {
+        let mut state = ScriptState::new();
+        let alias_target = GroupAliasTarget::new(GroupId::new(42), "main/Drums");
+        let contextual_target = GroupAliasTarget::new(GroupId::new(12), "main/Song/kit");
+
+        state.add_group_alias("kit", alias_target.clone()).unwrap();
+        let err = state
+            .add_contextual_group_claim("kit", contextual_target.clone())
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            GroupAliasError::ConflictingAliasTarget {
+                alias: "kit".to_string(),
+                existing: alias_target,
+                attempted: contextual_target,
+            }
+        );
     }
 }
