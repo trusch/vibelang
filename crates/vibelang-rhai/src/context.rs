@@ -177,7 +177,7 @@ impl Default for ScriptContext {
     fn default() -> Self {
         Self {
             state: ScriptState::default(),
-            group_stack: vec!["main".to_string()],
+            group_stack: Vec::new(),
             current_file: None,
             next_body_contribution_ordinal: 0,
             active_body_contributions: Vec::new(),
@@ -263,12 +263,15 @@ pub fn take_state() -> ScriptState {
 }
 
 /// Get the current group path.
+///
+/// Returns an empty string when no `define_group` scope is active.
+/// Top-level definitions live at the root and have no implicit prefix.
 pub fn current_group_path() -> String {
     CONTEXT.with(|ctx| {
         ctx.borrow()
             .as_ref()
             .map(|c| c.group_stack.join("/"))
-            .unwrap_or_else(|| "main".to_string())
+            .unwrap_or_default()
     })
 }
 
@@ -508,6 +511,10 @@ pub fn get_group_id(name: &str) -> Option<GroupId> {
 }
 
 /// Resolve a script group reference to its canonical full path.
+///
+/// References containing `/` are absolute and used as-is. Single-segment
+/// references are prefixed with the current group path when one is active,
+/// or used bare at the top level (no implicit `main` prefix).
 pub fn resolve_group_reference(raw: &str) -> Result<String, GroupAliasError> {
     if let Some(target) = CONTEXT.with(|ctx| {
         ctx.borrow()
@@ -517,13 +524,18 @@ pub fn resolve_group_reference(raw: &str) -> Result<String, GroupAliasError> {
         return Ok(target.path);
     }
 
-    let full_path = if raw.starts_with("main/") || raw == "main" {
+    let full_path = if raw.contains('/') {
         raw.to_string()
     } else {
-        format!("{}/{}", current_group_path(), raw)
+        let current = current_group_path();
+        if current.is_empty() {
+            raw.to_string()
+        } else {
+            format!("{}/{}", current, raw)
+        }
     };
 
-    if raw != "main" && !raw.starts_with("main/") {
+    if !raw.contains('/') {
         let group_id = get_or_create_group_id(&full_path);
         let target = GroupAliasTarget::new(group_id, full_path.clone());
         with_state(|state| state.add_contextual_group_claim(raw.to_string(), target))?;
@@ -536,8 +548,8 @@ pub fn resolve_group_reference(raw: &str) -> Result<String, GroupAliasError> {
 pub fn add_group_alias(alias: String, canonical_path: String) -> Result<(), GroupAliasError> {
     let group_id = get_or_create_group_id(&canonical_path);
     let target = GroupAliasTarget::new(group_id, canonical_path);
-    if !alias.is_empty() && alias != "main" && !alias.contains('/') {
-        let root_path = format!("main/{alias}");
+    if !alias.is_empty() && !alias.contains('/') {
+        let root_path = alias.clone();
         let existing = CONTEXT.with(|ctx| {
             ctx.borrow()
                 .as_ref()

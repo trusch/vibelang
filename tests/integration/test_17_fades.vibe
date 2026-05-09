@@ -612,7 +612,7 @@ define_group("ExtremeDurations", || {
 
 // Verify all builder methods return Self and are chainable
 let chained = fade("chain_test")
-    .on_group("main")
+    .on_group("FadeTargetGroup")
     .param("amp")
     .from(0.0)
     .to(1.0)

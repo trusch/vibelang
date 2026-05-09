@@ -64,7 +64,7 @@ let path_group = define_group("PathGroup", || {
     let v = voice("path_voice").synth("group_test");
 });
 
-// The path should be "main/PathGroup"
+// The path should be "PathGroup" (top-level groups have no implicit prefix)
 assert_true(true, "group path accessible");
 
 // =============================================================================
@@ -76,7 +76,7 @@ let parent_group = define_group("ParentGroup", || {
 });
 
 let parent_path = parent_group.parent();
-assert_eq(parent_path, "main", "parent of top-level group should be main");
+assert_eq(parent_path, "", "top-level group has no parent (empty string)");
 
 // =============================================================================
 // Test 5: Nested Groups
@@ -259,7 +259,7 @@ let retrieved = group("HandleTestGroup");
 assert_eq(retrieved.name, "HandleTestGroup", "retrieved group name should match");
 
 // Full path retrieval
-let full_path = group("main/HandleTestGroup");
+let full_path = group("HandleTestGroup");
 assert_eq(full_path.name, "HandleTestGroup", "full path retrieval works");
 
 // =============================================================================

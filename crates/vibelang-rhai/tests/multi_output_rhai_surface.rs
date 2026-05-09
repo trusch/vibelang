@@ -115,7 +115,7 @@ fn rhai_outputs_name_list_to_group_fans_out() {
     let state = engine.execute(&script).expect("script must succeed");
 
     let voice_id = VoiceId::new(fnv1a_id("vox_outs_names_rhai"));
-    let g_id = GroupId::new(fnv1a_id("main/leads_outs_names"));
+    let g_id = GroupId::new(fnv1a_id("leads_outs_names"));
 
     assert_eq!(
         state.routes.get(&(voice_id, "sine".to_string())),
@@ -253,8 +253,8 @@ fn rhai_outputs_to_groups_fan_out_additively() {
     let state = engine.execute(&script).expect("script must succeed");
 
     let voice_id = VoiceId::new(fnv1a_id("vox_v3_b3_outs_rhai"));
-    let g1_id = GroupId::new(fnv1a_id("main/v3_b3_outs_rhai_g1"));
-    let g2_id = GroupId::new(fnv1a_id("main/v3_b3_outs_rhai_g2"));
+    let g1_id = GroupId::new(fnv1a_id("v3_b3_outs_rhai_g1"));
+    let g2_id = GroupId::new(fnv1a_id("v3_b3_outs_rhai_g2"));
 
     let dests = state
         .routes
@@ -286,8 +286,8 @@ fn rhai_output_to_groups_fan_out_additively() {
 
     let voice_id = VoiceId::new(fnv1a_id("vox_fan_out_v3"));
     let port_key = (voice_id, "even".to_string());
-    let g1_id = GroupId::new(fnv1a_id("main/fan_out_v3_g1"));
-    let g2_id = GroupId::new(fnv1a_id("main/fan_out_v3_g2"));
+    let g1_id = GroupId::new(fnv1a_id("fan_out_v3_g1"));
+    let g2_id = GroupId::new(fnv1a_id("fan_out_v3_g2"));
 
     let dests = state
         .routes

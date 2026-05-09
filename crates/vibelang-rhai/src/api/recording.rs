@@ -133,11 +133,8 @@ impl RecordHandle {
 
     /// Record from a specific group instead of the current group.
     pub fn from_group(mut self, group_path: String) -> Self {
-        self.group_path = if group_path.starts_with("main/") || group_path == "main" {
-            group_path
-        } else {
-            format!("{}/{}", context::current_group_path(), group_path)
-        };
+        self.group_path =
+            context::resolve_group_reference(&group_path).unwrap_or(group_path);
         self
     }
 

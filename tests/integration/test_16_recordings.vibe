@@ -193,7 +193,7 @@ define_group("RecordingSource", || {
 
     // Record from this specific group
     let group_rec = record("group_rec")
-        .from_group("main/RecordingSource")
+        .from_group("RecordingSource")
         .bars(4);
 
     assert_true(true, "recording from specific group configured");
@@ -219,7 +219,7 @@ define_group("FullRecording", || {
 
     // Full configuration combining all options
     let full_rec = record("full_test")
-        .from_group("main/FullRecording")
+        .from_group("FullRecording")
         .bars(8)
         .count_in(2)
         .metronome(true)

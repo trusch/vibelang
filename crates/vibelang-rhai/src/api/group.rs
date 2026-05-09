@@ -32,11 +32,14 @@ impl GroupHandle {
     }
 
     /// Get the parent group path.
+    ///
+    /// Returns an empty string for top-level groups: the implicit root has
+    /// no name.
     pub fn parent(&mut self) -> String {
         if let Some(pos) = self.path.rfind('/') {
             self.path[..pos].to_string()
         } else {
-            "main".to_string()
+            String::new()
         }
     }
 
@@ -531,13 +534,13 @@ mod tests {
     #[test]
     fn test_group_handle_parent_no_parent() {
         let mut handle = GroupHandle::new("main".to_string());
-        assert_eq!(handle.parent(), "main");
+        assert_eq!(handle.parent(), "");
     }
 
     #[test]
     fn test_group_handle_parent_root() {
         let mut handle = GroupHandle::new("drums".to_string());
-        assert_eq!(handle.parent(), "main");
+        assert_eq!(handle.parent(), "");
     }
 
     // ==================== Group Path Tests ====================

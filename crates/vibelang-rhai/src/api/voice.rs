@@ -127,14 +127,10 @@ impl Voice {
             return;
         }
         let synth = self.synth_name.as_deref().unwrap_or("voice");
-        let base = if self.group_path == "main" {
+        let base = if self.group_path.is_empty() {
             format!("_{}", synth)
         } else {
-            let group_suffix = self
-                .group_path
-                .strip_prefix("main/")
-                .unwrap_or(&self.group_path);
-            format!("_{}/{}", group_suffix, synth)
+            format!("_{}/{}", self.group_path, synth)
         };
         self.name = context::resolve_auto_name(&base);
     }
@@ -177,11 +173,7 @@ impl Voice {
 
     /// Set the group for this voice.
     pub fn group(mut self, group: String) -> Self {
-        self.group_path = if group.starts_with("main/") || group == "main" {
-            group
-        } else {
-            format!("{}/{}", context::current_group_path(), group)
-        };
+        self.group_path = context::resolve_group_reference(&group).unwrap_or(group);
         self.sync_to_state();
         self
     }
@@ -682,7 +674,7 @@ impl Voice {
         Self {
             name: name.to_string(),
             synth_name: None,
-            group_path: "main".to_string(),
+            group_path: String::new(),
             polyphony: 4,
             gain: 1.0,
             params: HashMap::new(),
@@ -892,7 +884,7 @@ mod tests {
         Voice {
             name: name.to_string(),
             synth_name: None,
-            group_path: "main".to_string(),
+            group_path: String::new(),
             polyphony: 4,
             gain: 1.0,
             params: HashMap::new(),
@@ -1151,7 +1143,7 @@ mod tests {
             let synth = "story8_round_trip_named";
             declare_synth_with_ports(synth, &["sine", "even", "odd"]);
 
-            let group_path = "main/fx_evens_named".to_string();
+            let group_path = "fx_evens_named".to_string();
             let group = super::super::group::GroupHandle::new(group_path.clone());
             let group_id = context::get_or_create_group_id(&group_path);
 
@@ -1175,7 +1167,7 @@ mod tests {
             // Indices: 0=sine, 1=even, 2=odd
             declare_synth_with_ports(synth, &["sine", "even", "odd"]);
 
-            let group_path = "main/fx_odds_idx".to_string();
+            let group_path = "fx_odds_idx".to_string();
             let group = super::super::group::GroupHandle::new(group_path.clone());
             let group_id = context::get_or_create_group_id(&group_path);
 
@@ -1264,8 +1256,8 @@ mod tests {
             let synth = "v3_b3_fan_out";
             declare_synth_with_ports(synth, &["even"]);
 
-            let g1_path = "main/fan_out_g1".to_string();
-            let g2_path = "main/fan_out_g2".to_string();
+            let g1_path = "fan_out_g1".to_string();
+            let g2_path = "fan_out_g2".to_string();
             let g1 = super::super::group::GroupHandle::new(g1_path.clone());
             let g2 = super::super::group::GroupHandle::new(g2_path.clone());
             let g1_id = context::get_or_create_group_id(&g1_path);
@@ -1308,8 +1300,8 @@ mod tests {
             let synth = "v3_b3_main_mute_replaces";
             declare_synth_with_ports(synth, &["even"]);
 
-            let g1_path = "main/mr_g1".to_string();
-            let g2_path = "main/mr_g2".to_string();
+            let g1_path = "mr_g1".to_string();
+            let g2_path = "mr_g2".to_string();
             let g1 = super::super::group::GroupHandle::new(g1_path);
             let g2 = super::super::group::GroupHandle::new(g2_path);
 
@@ -1345,7 +1337,7 @@ mod tests {
             let synth = "ergo_to_current_group_resolves";
             declare_synth_with_ports(synth, &["even"]);
 
-            let leads_path = "main/leads".to_string();
+            let leads_path = "leads".to_string();
             let leads_id = context::get_or_create_group_id(&leads_path);
 
             let mut v = test_voice("vox_tcg_resolves")
@@ -1402,8 +1394,8 @@ mod tests {
             let synth = "v3_b3_to_current_group_fan_out";
             declare_synth_with_ports(synth, &["even"]);
 
-            let leads_path = "main/v3_b3_leads".to_string();
-            let other_path = "main/v3_b3_fx_other".to_string();
+            let leads_path = "v3_b3_leads".to_string();
+            let other_path = "v3_b3_fx_other".to_string();
             let leads_id = context::get_or_create_group_id(&leads_path);
             let other_id = context::get_or_create_group_id(&other_path);
 
@@ -1458,7 +1450,7 @@ mod tests {
             let synth = "ergo_outputs_names_to_group";
             declare_synth_with_ports(synth, &["sine", "even", "odd"]);
 
-            let group_path = "main/leads_outs_names".to_string();
+            let group_path = "leads_outs_names".to_string();
             let g_id = context::get_or_create_group_id(&group_path);
 
             let mut v = test_voice("vox_outs_names").synth(synth.to_string());
@@ -1547,7 +1539,7 @@ mod tests {
             let synth = "ergo_outputs_tcg";
             declare_synth_with_ports(synth, &["a", "b", "c"]);
 
-            let leads_path = "main/leads_outs_tcg".to_string();
+            let leads_path = "leads_outs_tcg".to_string();
             let leads_id = context::get_or_create_group_id(&leads_path);
 
             let mut v = test_voice("vox_outs_tcg")
@@ -1647,8 +1639,8 @@ mod tests {
             let synth = "v3_b3_outputs_fan_out";
             declare_synth_with_ports(synth, &["a", "b"]);
 
-            let g1_path = "main/v3_b3_outs_g1".to_string();
-            let g2_path = "main/v3_b3_outs_g2".to_string();
+            let g1_path = "v3_b3_outs_g1".to_string();
+            let g2_path = "v3_b3_outs_g2".to_string();
             let g1_id = context::get_or_create_group_id(&g1_path);
             let g2_id = context::get_or_create_group_id(&g2_path);
 
@@ -1689,7 +1681,7 @@ mod tests {
             let synth = "story8_name_idx_match";
             declare_synth_with_ports(synth, &["a", "b", "c", "d"]);
 
-            let group_path = "main/match_grp".to_string();
+            let group_path = "match_grp".to_string();
             let g_id = context::get_or_create_group_id(&group_path);
 
             // Idx 2 → "c"

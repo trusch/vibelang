@@ -1232,17 +1232,48 @@ impl<B: Backend> Runtime<B> {
         for id in ordered_group_creations {
             if let Some(config) = diff.groups.created.get(&id) {
                 tracing::debug!("Reload: creating group {:?}", id);
-                let _ = self.groups.create(id, &config.name, config.parent).await;
+                if let Err(e) = self.groups.create(id, &config.name, config.parent).await {
+                    tracing::error!(
+                        "Reload: failed to create group {:?} '{}': {}",
+                        id,
+                        config.name,
+                        e
+                    );
+                    continue;
+                }
                 // Apply initial params
                 for (param, value) in &config.params {
-                    let _ = self.groups.set_param(id, param, *value).await;
+                    if let Err(e) = self.groups.set_param(id, param, *value).await {
+                        tracing::warn!(
+                            "Reload: failed to set initial param '{}'={} on group {:?} '{}': {}",
+                            param,
+                            value,
+                            id,
+                            config.name,
+                            e
+                        );
+                    }
                 }
                 // Apply initial mute/solo state
                 if config.muted {
-                    let _ = self.groups.mute(id, true).await;
+                    if let Err(e) = self.groups.mute(id, true).await {
+                        tracing::warn!(
+                            "Reload: failed to mute group {:?} '{}': {}",
+                            id,
+                            config.name,
+                            e
+                        );
+                    }
                 }
                 if config.soloed {
-                    let _ = self.groups.solo(id, true).await;
+                    if let Err(e) = self.groups.solo(id, true).await {
+                        tracing::warn!(
+                            "Reload: failed to solo group {:?} '{}': {}",
+                            id,
+                            config.name,
+                            e
+                        );
+                    }
                 }
                 // Apply output_bus / output_channels routing override.
                 // The two fields are coupled (both Some(_) or both None);
@@ -1342,7 +1373,16 @@ impl<B: Backend> Runtime<B> {
                     param,
                     value
                 );
-                let _ = self.groups.set_param(*id, param, *value).await;
+                if let Err(e) = self.groups.set_param(*id, param, *value).await {
+                    tracing::warn!(
+                        "Reload: failed to update param '{}'={} on group {:?} '{}': {}",
+                        param,
+                        value,
+                        id,
+                        new_config.name,
+                        e
+                    );
+                }
             }
             // Apply mute/solo state
             tracing::debug!(
@@ -1351,8 +1391,24 @@ impl<B: Backend> Runtime<B> {
                 new_config.muted,
                 new_config.soloed
             );
-            let _ = self.groups.mute(*id, new_config.muted).await;
-            let _ = self.groups.solo(*id, new_config.soloed).await;
+            if let Err(e) = self.groups.mute(*id, new_config.muted).await {
+                tracing::warn!(
+                    "Reload: failed to set mute={} on group {:?} '{}': {}",
+                    new_config.muted,
+                    id,
+                    new_config.name,
+                    e
+                );
+            }
+            if let Err(e) = self.groups.solo(*id, new_config.soloed).await {
+                tracing::warn!(
+                    "Reload: failed to set solo={} on group {:?} '{}': {}",
+                    new_config.soloed,
+                    id,
+                    new_config.name,
+                    e
+                );
+            }
 
             // Update output_bus / output_channels routing if either changed.
             //

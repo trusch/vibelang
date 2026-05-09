@@ -1087,7 +1087,7 @@ ${paramsCode}
             const code = `
                 let _preview_sample = load_sample("_preview", "${sample.path}");
                 let _preview_slice = _preview_sample.slice(${startSeconds}, ${endSeconds});
-                let _preview_voice = voice("_slice_preview").on_sample(_preview_slice).group("main");
+                let _preview_voice = voice("_slice_preview").on_sample(_preview_slice);
                 _preview_voice.trigger();
             `;
             await runtime.evalCode(code);

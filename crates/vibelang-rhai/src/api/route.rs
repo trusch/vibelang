@@ -89,17 +89,17 @@ impl RouteHandle {
     /// last set via `voice.group(...)` (or inferred from the surrounding
     /// `define_group` scope at voice-creation time).
     ///
-    /// Errors when the voice is in the implicit `main` group with no explicit
-    /// group set; the message points users at `.group("name")` on the voice or
+    /// Errors when the voice has no explicit group set (lives at the implicit
+    /// root); the message points users at `.group("name")` on the voice or
     /// `.to(group("name"))` on the route. Re-routing replaces the prior dest
     /// (same `HashMap::insert` semantics as the other terminal verbs).
     pub fn to_current_group(self) -> Result<Self, Box<EvalAltResult>> {
-        let main_id = context::get_or_create_group_id("main");
+        let root_id = context::get_or_create_group_id("");
         let voice_group = context::with_state(|state| {
             state.voices.get(&self.voice_id).map(|v| v.group)
         });
         match voice_group {
-            Some(gid) if gid != main_id => {
+            Some(gid) if gid != root_id => {
                 self.commit(RouteDest::Group(gid));
                 Ok(self)
             }

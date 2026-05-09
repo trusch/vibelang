@@ -792,8 +792,6 @@ impl Default for LooperConfig {
 fn validate_group_alias_name(alias: &str) -> Result<(), GroupAliasError> {
     let reason = if alias.is_empty() {
         Some("aliases must be non-empty")
-    } else if alias == "main" {
-        Some("alias 'main' is reserved")
     } else if alias.contains('/') {
         Some("aliases must be single relative names")
     } else {
@@ -1633,7 +1631,7 @@ mod tests {
     fn test_add_group_alias_rejects_invalid_alias_names() {
         let target = GroupAliasTarget::new(GroupId::new(42), "main/Drums");
 
-        for alias in ["", "main", "main/kit", "drums/kit"] {
+        for alias in ["", "main/kit", "drums/kit"] {
             let mut state = ScriptState::new();
             assert!(
                 matches!(

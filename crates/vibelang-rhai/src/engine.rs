@@ -581,7 +581,7 @@ mod tests {
         assert!(state
             .body_contributions
             .iter()
-            .all(|body| body.target_group == drums_id && body.target_path == "main/Drums"));
+            .all(|body| body.target_group == drums_id && body.target_path == "Drums"));
         assert_eq!(state.body_contributions[0].ordinal, 0);
         assert_eq!(state.body_contributions[1].ordinal, 1);
     }
@@ -638,7 +638,7 @@ mod tests {
         assert!(state
             .body_contributions
             .iter()
-            .all(|body| body.target_group == drums_id && body.target_path == "main/Drums"));
+            .all(|body| body.target_group == drums_id && body.target_path == "Drums"));
         assert_eq!(
             state
                 .body_contributions
@@ -694,7 +694,7 @@ mod tests {
         let alias_target = state.group_aliases.get("kit").unwrap();
         let drums = state.groups.get(&alias_target.group_id).unwrap();
 
-        assert_eq!(alias_target.path, "main/Drums");
+        assert_eq!(alias_target.path, "Drums");
         assert_eq!(drums.name, "Drums");
         assert_eq!(
             state
@@ -715,7 +715,7 @@ mod tests {
                 .iter()
                 .map(|body| (body.target_path.as_str(), body.ordinal))
                 .collect::<Vec<_>>(),
-            vec![("main/Drums", 0), ("main/Drums", 1), ("main/Drums", 2)]
+            vec![("Drums", 0), ("Drums", 1), ("Drums", 2)]
         );
 
         let voice_names = state
@@ -810,7 +810,7 @@ mod tests {
                 .filter(|body| body.target_group == drums_id)
                 .map(|body| body.target_path.as_str())
                 .collect::<Vec<_>>(),
-            vec!["main/Drums", "main/Drums"]
+            vec!["Drums", "Drums"]
         );
     }
 
@@ -888,7 +888,7 @@ mod tests {
                 .filter(|body| body.target_group == drums_id)
                 .map(|body| body.target_path.as_str())
                 .collect::<Vec<_>>(),
-            vec!["main/Song/Drums", "main/Song/Drums", "main/Song/Drums"]
+            vec!["Song/Drums", "Song/Drums", "Song/Drums"]
         );
     }
 
@@ -1084,8 +1084,8 @@ mod tests {
             .get("beat")
             .expect("beat alias should be registered");
 
-        assert_eq!(kit.path, "main/Drums");
-        assert_eq!(beat.path, "main/Drums");
+        assert_eq!(kit.path, "Drums");
+        assert_eq!(beat.path, "Drums");
         assert_eq!(kit.group_id, beat.group_id);
         assert_eq!(state.group_aliases.len(), 2);
 
@@ -1112,7 +1112,7 @@ mod tests {
             .get("kit")
             .expect("kit alias should be registered");
 
-        assert_eq!(target.path, "main/Song/Drums");
+        assert_eq!(target.path, "Song/Drums");
         let drums = state.groups.get(&target.group_id).unwrap();
         assert_eq!(drums.name, "Drums");
     }
@@ -1139,7 +1139,7 @@ mod tests {
             .find(|voice| voice.name == "kick")
             .expect("kick voice should exist");
 
-        assert_eq!(kit.path, "main/Drums");
+        assert_eq!(kit.path, "Drums");
         assert_eq!(kick.group, kit.group_id);
         assert!(
             state.groups.values().all(|config| config.name != "kit"),
@@ -1161,8 +1161,8 @@ mod tests {
 
         let msg = err.to_string();
         assert!(msg.contains("group alias 'kit' already points to"), "{msg}");
-        assert!(msg.contains("main/Drums"), "{msg}");
-        assert!(msg.contains("main/Bass"), "{msg}");
+        assert!(msg.contains("Drums"), "{msg}");
+        assert!(msg.contains("Bass"), "{msg}");
     }
 
     #[test]
@@ -1206,8 +1206,8 @@ mod tests {
         let err = engine
             .execute(
                 r#"
-            group("main/Drums").gain(0.5);
-            group("main/Bass").alias("Drums");
+            group("Drums").gain(0.5);
+            group("Bass").alias("Drums");
         "#,
             )
             .unwrap_err();
@@ -1217,8 +1217,8 @@ mod tests {
             msg.contains("group alias 'Drums' collides with canonical group"),
             "{msg}"
         );
-        assert!(msg.contains("main/Drums"), "{msg}");
-        assert!(msg.contains("main/Bass"), "{msg}");
+        assert!(msg.contains("Drums"), "{msg}");
+        assert!(msg.contains("Bass"), "{msg}");
     }
 
     #[test]
@@ -1249,9 +1249,9 @@ mod tests {
             .find(|voice| voice.name == "kick")
             .expect("kick voice should exist");
 
-        assert_eq!(alias_target.path, "main/Drums");
+        assert_eq!(alias_target.path, "Drums");
         assert_eq!(drums.name, "Drums");
-        assert!(drums.parent.is_some());
+        assert!(drums.parent.is_none());
         assert_eq!(drums.output_bus, Some(2));
         assert_eq!(drums.output_channels, Some(1));
         assert_eq!(drums.params.get("amp"), Some(&0.25));
@@ -1308,13 +1308,13 @@ mod tests {
             .find(|voice| voice.name == "pad")
             .expect("pad voice should exist");
 
-        assert_eq!(alias_target.path, "main/Drums");
+        assert_eq!(alias_target.path, "Drums");
         assert_eq!(kick.group, alias_target.group_id);
         assert_eq!(snare.group, alias_target.group_id);
         assert_eq!(pad.group, song_id);
         assert!(
             state.groups.values().all(|config| config.name != "kit"),
-            "alias body should not create main/Song/kit"
+            "alias body should not create Song/kit"
         );
         assert_eq!(
             state
@@ -1323,7 +1323,7 @@ mod tests {
                 .filter(|body| body.target_group == alias_target.group_id)
                 .map(|body| body.target_path.as_str())
                 .collect::<Vec<_>>(),
-            vec!["main/Drums", "main/Drums"]
+            vec!["Drums", "Drums"]
         );
     }
 
@@ -1389,16 +1389,16 @@ mod tests {
             .find(|voice| voice.name == "snare")
             .expect("snare voice should exist");
 
-        assert_eq!(kit.path, "main/Drums");
+        assert_eq!(kit.path, "Drums");
         assert_eq!(snare.group, kit.group_id);
         assert!(
             state.groups.values().all(|config| config.name != "kit"),
-            "nested alias lookup should not create main/Song/Verse/kit"
+            "nested alias lookup should not create Song/Verse/kit"
         );
         assert!(state
             .body_contributions
             .iter()
-            .any(|body| body.target_group == kit.group_id && body.target_path == "main/Drums"));
+            .any(|body| body.target_group == kit.group_id && body.target_path == "Drums"));
     }
 
     #[test]
@@ -1425,11 +1425,11 @@ mod tests {
             .find(|voice| voice.name == "hat")
             .expect("hat voice should exist");
 
-        assert_eq!(drums.path, "main/Drums");
+        assert_eq!(drums.path, "Drums");
         assert_eq!(hat.group, drums.group_id);
         assert!(
             state.groups.values().all(|config| config.name != "kit"),
-            "define_group should not create main/Song/kit for an alias"
+            "define_group should not create Song/kit for an alias"
         );
     }
 
@@ -1448,8 +1448,8 @@ mod tests {
         let fx = state.group_aliases.get("fx").unwrap();
         let send = state.group_aliases.get("send").unwrap();
 
-        assert_eq!(fx.path, "main/Fx");
-        assert_eq!(send.path, "main/Fx");
+        assert_eq!(fx.path, "Fx");
+        assert_eq!(send.path, "Fx");
         assert_eq!(fx.group_id, send.group_id);
     }
 
@@ -1482,8 +1482,8 @@ mod tests {
             .find(|voice| voice.name == "snare")
             .expect("snare voice should exist");
 
-        assert_eq!(first_kit.path, "main/Drums");
-        assert_eq!(second_kit.path, "main/Drums");
+        assert_eq!(first_kit.path, "Drums");
+        assert_eq!(second_kit.path, "Drums");
         assert_eq!(first_kit.group_id, second_kit.group_id);
         assert_eq!(snare.group, second_kit.group_id);
         assert_eq!(
@@ -1517,8 +1517,8 @@ mod tests {
             msg.contains("group alias 'kit' conflicts with prior contextual group claim"),
             "{msg}"
         );
-        assert!(msg.contains("main/Song/kit"), "{msg}");
-        assert!(msg.contains("main/Drums"), "{msg}");
+        assert!(msg.contains("Song/kit"), "{msg}");
+        assert!(msg.contains("Drums"), "{msg}");
     }
 
     #[test]
