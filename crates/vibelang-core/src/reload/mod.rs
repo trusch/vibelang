@@ -319,6 +319,13 @@ pub fn order_group_deletions(
             batch.extend(remaining.iter().copied());
         }
 
+        // Story 4: deterministic intra-batch order. `remaining` is a HashSet so
+        // its iteration order varies per process. Sort by `GroupId::raw()` (a
+        // stable FNV-1a hash of the group path) so the deletion order — and any
+        // bus IDs the BusAllocator hands back to the free pool — are byte
+        // identical across reloads.
+        batch.sort_by_key(|id| id.raw());
+
         for id in &batch {
             remaining.remove(id);
         }
@@ -362,6 +369,17 @@ pub fn order_group_creations(
             // Cycle detected - add remaining anyway (will error on apply)
             batch.extend(remaining.iter().copied());
         }
+
+        // Story 4: deterministic intra-batch order. Without this, the order of
+        // root groups (and any siblings sharing a parent) depends on `HashSet`
+        // iteration, which Rust randomises per process. That non-determinism
+        // propagates straight into `state.alloc_bus_id()` calls inside
+        // `groups.create()` — so two reboots of the same script can flip which
+        // root group lands at which audio bus. Sorting by `GroupId::raw()` (a
+        // stable FNV-1a hash of the group path) makes bus assignments byte
+        // identical across processes, fixing the "drums sometimes worked,
+        // sometimes didn't" bus collision in the studio script.
+        batch.sort_by_key(|id| id.raw());
 
         for id in &batch {
             remaining.remove(id);

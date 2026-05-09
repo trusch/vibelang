@@ -386,8 +386,10 @@ async fn run_simple_mode(
         .await
         .context("Failed to connect to scsynth")?;
 
-    // Create runtime
-    let mut runtime = Runtime::new(backend);
+    // Create runtime — thread the actual scsynth -i/-o channel counts in so
+    // the audio bus allocator starts past the hardware I/O block instead of
+    // colliding with hardware input buses on setups with >16 hardware buses.
+    let mut runtime = Runtime::new_with_audio_config(backend, output_channels, input_channels);
     let handle = runtime.handle();
 
     // Set up metering callback to receive SendTrig messages from link synths
@@ -773,8 +775,11 @@ async fn run_tui_mode(
         }
     };
 
-    // Create runtime
-    let mut runtime = Runtime::new(osc_backend);
+    // Create runtime — thread the actual scsynth -i/-o channel counts in so
+    // the audio bus allocator starts past the hardware I/O block instead of
+    // colliding with hardware input buses on setups with >16 hardware buses.
+    let mut runtime =
+        Runtime::new_with_audio_config(osc_backend, output_channels, input_channels);
     let handle = runtime.handle();
 
     // Set up metering callback to receive SendTrig messages from link synths

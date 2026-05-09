@@ -1050,6 +1050,25 @@ impl State {
         Self::default()
     }
 
+    /// Create a new empty state with the audio bus allocator configured for
+    /// the given hardware I/O.
+    ///
+    /// scsynth lays out audio buses contiguously: `[0..output_channels)`
+    /// holds the hardware outputs, `[output_channels..output_channels +
+    /// input_channels)` holds the hardware inputs, and user (private) buses
+    /// begin at `output_channels + input_channels`. With `-i 8 -o 10` the
+    /// boundary is bus 18, so the first user bus must be 18 — anything
+    /// lower aliases onto a hardware input bus and races with live audio.
+    /// The default `AudioBusAllocator::default()` hard-codes 16 (stereo out
+    /// + a small reserve) and silently corrupts any setup with more than
+    /// 16 hardware buses; this constructor is the hardware-aware variant.
+    pub fn with_audio_config(output_channels: u32, input_channels: u32) -> Self {
+        let start = output_channels.saturating_add(input_channels);
+        let mut state = Self::default();
+        state.audio_buses = AudioBusAllocator::new(start);
+        state
+    }
+
     /// Allocate a new node ID.
     pub fn alloc_node_id(&mut self) -> NodeId {
         NodeId::new(self.node_ids.alloc().expect("node IDs exhausted"))

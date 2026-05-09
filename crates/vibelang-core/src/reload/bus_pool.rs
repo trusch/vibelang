@@ -134,12 +134,6 @@ impl BusAllocator {
     }
 }
 
-impl Default for BusAllocator {
-    fn default() -> Self {
-        Self::new(16) // Default: reserve buses 0-15 for hardware I/O
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,12 +246,6 @@ mod tests {
         assert_eq!(allocator.allocated_count(), 0);
         assert_eq!(allocator.pool_size(), 0);
         assert_eq!(allocator.next_id(), 20);
-    }
-
-    #[test]
-    fn test_default() {
-        let allocator = BusAllocator::default();
-        assert_eq!(allocator.next_id(), 16);
     }
 
     #[test]

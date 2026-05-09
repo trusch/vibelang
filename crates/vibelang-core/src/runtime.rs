@@ -158,10 +158,39 @@ impl<B: Backend> Runtime<B> {
     ///
     /// The runtime creates an internal message channel with a buffer of 1024
     /// messages. Use [`Runtime::handle()`] to get a cloneable sender.
+    ///
+    /// Uses [`State::default()`] for the initial state, which configures the
+    /// audio bus allocator with a fixed 16-bus hardware reserve. Production
+    /// code paths that know the actual scsynth `-i`/`-o` channel counts
+    /// should use [`Runtime::new_with_audio_config`] instead so user bus
+    /// allocation cannot collide with hardware input/output buses.
     pub fn new(backend: B) -> Self {
+        Self::new_with_state(backend, State::default())
+    }
+
+    /// Create a new runtime configured for a known hardware I/O layout.
+    ///
+    /// Threads the scsynth `-i input_channels -o output_channels` settings
+    /// through to [`State::with_audio_config`] so the audio bus allocator
+    /// starts handing out user buses at exactly `output_channels +
+    /// input_channels`, the first private bus index in scsynth's contiguous
+    /// `[outputs | inputs | private]` layout. This is the constructor every
+    /// CLI / driver path should use.
+    pub fn new_with_audio_config(
+        backend: B,
+        output_channels: u32,
+        input_channels: u32,
+    ) -> Self {
+        Self::new_with_state(
+            backend,
+            State::with_audio_config(output_channels, input_channels),
+        )
+    }
+
+    fn new_with_state(backend: B, state: State) -> Self {
         let (tx, rx) = channel(1024);
         let backend = Arc::new(backend);
-        let state = Arc::new(RwLock::new(State::default()));
+        let state = Arc::new(RwLock::new(state));
         let transport_snapshot = Arc::new(TransportSnapshot::new());
 
         // Create MIDI handler first so we can share output channels with voices
@@ -931,16 +960,24 @@ impl<B: Backend> Runtime<B> {
 
         #[cfg(feature = "midi")]
         {
-            // Open MIDI inputs
-            for device_id in &new_state.midi_inputs {
+            // Story 4: open MIDI devices in `MidiDeviceId::raw()` order. The
+            // backing collections are `HashSet<MidiDeviceId>` so iteration is
+            // randomised per process; without sorting the order in which we
+            // grab ALSA/JACK MIDI ports — and any error reporting tied to the
+            // first/second device — would flicker reload-to-reload.
+            let mut midi_input_ids: Vec<_> = new_state.midi_inputs.iter().copied().collect();
+            midi_input_ids.sort_by_key(|id| id.raw());
+            for device_id in &midi_input_ids {
                 tracing::debug!("Reload: opening MIDI input {:?}", device_id);
                 if let Err(e) = self.midi.open_input(*device_id).await {
                     tracing::error!("Reload: failed to open MIDI input {:?}: {}", device_id, e);
                 }
             }
 
-            // Open MIDI outputs
-            for device_id in &new_state.midi_outputs {
+            // Open MIDI outputs (sorted, see Story 4 note above)
+            let mut midi_output_ids: Vec<_> = new_state.midi_outputs.iter().copied().collect();
+            midi_output_ids.sort_by_key(|id| id.raw());
+            for device_id in &midi_output_ids {
                 tracing::debug!("Reload: opening MIDI output {:?}", device_id);
                 if let Err(e) = self.midi.open_output(*device_id).await {
                     tracing::error!("Reload: failed to open MIDI output {:?}: {}", device_id, e);
@@ -1115,10 +1152,18 @@ impl<B: Backend> Runtime<B> {
         // Load new samples first (other entities may depend on them).
         // Parallelize: scsynth /b_allocRead + /b_query round-trips can overlap,
         // turning N×rtt sequential waits into a single batch.
+        //
+        // Story 4: stable iteration via sorted IDs. Sample loads themselves
+        // don't allocate buses (sample buffer IDs are pre-assigned), but the
+        // futures are dispatched in order, and any logging / error reporting
+        // surfaces deterministic per-reboot output. Cheap insurance.
         if !diff.samples.created.is_empty() {
-            let loads = diff.samples.created.iter().map(|(id, config)| {
+            let mut sample_ids: Vec<_> = diff.samples.created.keys().copied().collect();
+            sample_ids.sort_by_key(|id| id.raw());
+            let loads = sample_ids.into_iter().map(|id| {
+                let config = diff.samples.created.get(&id).expect("just collected").clone();
                 tracing::debug!("Reload: loading sample {:?}", id);
-                self.samples.load(*id, config.clone())
+                self.samples.load(id, config)
             });
             let _ = futures::future::join_all(loads).await;
         }
@@ -1274,8 +1319,21 @@ impl<B: Backend> Runtime<B> {
         // Phase 4: Update existing entities
         // =========================================================================
 
-        // Update groups (params and mute/solo, parent changes not supported during reload)
-        for (id, new_config) in &diff.groups.updated {
+        // Update groups (params and mute/solo, parent changes not supported during reload).
+        //
+        // Story 4: sort by `GroupId::raw()` for deterministic apply order. The
+        // body re-routes `output_bus`/`output_channels` and tears down link
+        // synth nodes; doing that in `HashMap`-iteration order means the same
+        // edit lands in different sequences on different processes, which can
+        // surface as different node-id allocations on the SC server. Same fix
+        // pattern as `order_group_creations`/`order_group_deletions`: hash-stable.
+        let mut updated_group_ids: Vec<_> = diff.groups.updated.keys().copied().collect();
+        updated_group_ids.sort_by_key(|id| id.raw());
+        for id in updated_group_ids {
+            let Some(new_config) = diff.groups.updated.get(&id) else {
+                continue;
+            };
+            let id = &id;
             // Apply all params from the new config
             for (param, value) in &new_config.params {
                 tracing::debug!(
@@ -1346,8 +1404,31 @@ impl<B: Backend> Runtime<B> {
         let mut structurally_recreated_voices = Vec::new();
 
         // Update voices - only recreate if synthdef, group, or sfz_instrument changed
-        // For param-only changes, use set_param to avoid audio gaps
-        for (id, new_config) in &diff.voices.updated {
+        // For param-only changes, use set_param to avoid audio gaps.
+        //
+        // Story 4: iterate in script-order then `id.raw()` tiebreak. The recreate
+        // branch below calls `voices.delete` + `voices.create`, and `voices.create`
+        // can `state.alloc_audio_bus(...)` for kr/ar output ports. `diff.voices.updated`
+        // is a `HashMap`, so without sorting two reloads of the same script would
+        // hand out kr-bus IDs in different orders — same class of bug as the root-group
+        // scramble, just on the voice level. Use the same sort key as voice creation
+        // (lines 1224–1234) so reload symmetry is preserved.
+        let mut updated_voice_ids: Vec<_> = diff.voices.updated.keys().copied().collect();
+        updated_voice_ids.sort_by_key(|id| {
+            (
+                new_state
+                    .voice_order
+                    .iter()
+                    .position(|ordered| ordered == id)
+                    .unwrap_or(usize::MAX),
+                id.raw(),
+            )
+        });
+        for id in updated_voice_ids {
+            let Some(new_config) = diff.voices.updated.get(&id) else {
+                continue;
+            };
+            let id = &id;
             // Get current voice state to compare
             let needs_recreate = {
                 let state = self.state.read().await;
