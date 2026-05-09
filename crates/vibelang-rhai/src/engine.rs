@@ -946,6 +946,36 @@ mod tests {
     }
 
     #[test]
+    fn test_group_alias_simple_lookup_uses_canonical_group() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Drums").alias("kit");
+
+            group("kit").body(|| {
+                voice("kick").synth("kick_synth");
+            });
+        "#,
+            )
+            .unwrap();
+
+        let kit = state.group_aliases.get("kit").unwrap();
+        let kick = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "kick")
+            .expect("kick voice should exist");
+
+        assert_eq!(kit.path, "main/Drums");
+        assert_eq!(kick.group, kit.group_id);
+        assert!(
+            state.groups.values().all(|config| config.name != "kit"),
+            "simple alias lookup should not create a kit group"
+        );
+    }
+
+    #[test]
     fn test_group_alias_conflicting_target_is_script_error() {
         let mut engine = ScriptEngine::new();
         let err = engine
@@ -1162,6 +1192,44 @@ mod tests {
     }
 
     #[test]
+    fn test_group_alias_lookup_ignores_nested_current_group_context() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Drums").alias("kit");
+
+            group("Song").body(|| {
+                group("Verse").body(|| {
+                    group("kit").body(|| {
+                        voice("snare").synth("snare_synth");
+                    });
+                });
+            });
+        "#,
+            )
+            .unwrap();
+
+        let kit = state.group_aliases.get("kit").unwrap();
+        let snare = state
+            .voices
+            .values()
+            .find(|voice| voice.name == "snare")
+            .expect("snare voice should exist");
+
+        assert_eq!(kit.path, "main/Drums");
+        assert_eq!(snare.group, kit.group_id);
+        assert!(
+            state.groups.values().all(|config| config.name != "kit"),
+            "nested alias lookup should not create main/Song/Verse/kit"
+        );
+        assert!(state
+            .body_contributions
+            .iter()
+            .any(|body| body.target_group == kit.group_id && body.target_path == "main/Drums"));
+    }
+
+    #[test]
     fn test_define_group_alias_enters_canonical_context() {
         let mut engine = ScriptEngine::new();
         let state = engine
@@ -1211,6 +1279,50 @@ mod tests {
         assert_eq!(fx.path, "main/Fx");
         assert_eq!(send.path, "main/Fx");
         assert_eq!(fx.group_id, send.group_id);
+    }
+
+    #[test]
+    fn test_group_alias_target_is_stable_across_reload_execution() {
+        let first_script = r#"
+            group("Drums").alias("kit");
+
+            group("kit").body(|| {
+                voice("kick").synth("kick_synth");
+            });
+        "#;
+        let second_script = r#"
+            group("Drums").gain(0.75).alias("kit");
+
+            group("kit").body(|| {
+                voice("snare").synth("snare_synth");
+            });
+        "#;
+
+        let mut engine = ScriptEngine::new();
+        let first = engine.execute(first_script).unwrap();
+        let second = engine.execute(second_script).unwrap();
+
+        let first_kit = first.group_aliases.get("kit").unwrap();
+        let second_kit = second.group_aliases.get("kit").unwrap();
+        let snare = second
+            .voices
+            .values()
+            .find(|voice| voice.name == "snare")
+            .expect("snare voice should exist");
+
+        assert_eq!(first_kit.path, "main/Drums");
+        assert_eq!(second_kit.path, "main/Drums");
+        assert_eq!(first_kit.group_id, second_kit.group_id);
+        assert_eq!(snare.group, second_kit.group_id);
+        assert_eq!(
+            second
+                .groups
+                .get(&second_kit.group_id)
+                .unwrap()
+                .params
+                .get("amp"),
+            Some(&0.75)
+        );
     }
 
     #[test]
