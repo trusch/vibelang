@@ -630,6 +630,12 @@
     "example": "let parent = group(\"Drums.Kick\").parent();  // Returns \"Drums\""
   },
   {
+    "name": "alias",
+    "description": "[GroupHandle] Register an alternate authoring name for this canonical group.",
+    "signature": ".alias(name: string) -> GroupHandle",
+    "example": "group(\"main/Arrangement/Drums\").alias(\"drums\").alias(\"kit\");"
+  },
+  {
     "name": "route_to",
     "description": "[GroupHandle] Route this group's audio to another group.",
     "signature": ".route_to(group: string) -> GroupHandle",

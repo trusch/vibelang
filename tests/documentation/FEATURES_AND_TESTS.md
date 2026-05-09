@@ -48,6 +48,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 **API Functions**:
 - `define_group(name, body)` - Define a new group with contents
 - `group(name)` - Get existing group by name
+- `group.alias(name)` - Register an alternate group name
 - `group.mute()` / `group.unmute()` - Mute/unmute group
 - `group.solo(bool)` - Solo/unsolo group
 - `group.gain(value)` - Set group gain

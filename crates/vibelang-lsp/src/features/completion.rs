@@ -524,6 +524,11 @@ fn get_fx_methods() -> Vec<CompletionItem> {
 
 fn get_group_methods() -> Vec<CompletionItem> {
     vec![
+        method_item(
+            "alias",
+            "(name: string)",
+            "Register an alternate group name",
+        ),
         method_item("gain", "(level: float)", "Set group gain in dB"),
         method_item("pan", "(value: float)", "Set group pan"),
         method_item("mute", "()", "Mute the group"),
