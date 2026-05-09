@@ -30,6 +30,45 @@ define_group("Drums", || {
 });
 ```
 
+## Repeated Bodies
+
+Groups can be extended with repeated `.body(|| { ... })` calls. Each call
+contributes more content to the same canonical group instead of replacing the
+previous body. This lets an arrangement file own the main structure, an imported
+file add input voices or fills, and another imported file add shared group
+effects while all content still lands on one bus.
+
+Bodies merge in total script evaluation order, including imports. Earlier bodies
+provide the first order slot for their voices, routes, patterns, melodies, and
+effects. Later bodies append new content. When a later body re-declares a
+replacement-style setting, such as group gain or a voice with the same name, the
+later configuration wins while the original ordering remains stable. Group
+effects append in evaluation order. Conflicts that are already hard authoring
+errors, such as incompatible aliases or route conflicts, still fail even when the
+calls are split across bodies.
+
+Use this style when the musical responsibilities are separate:
+
+```rhai
+// main.vibe
+group("Drums").gain(db(-8)).body(|| {
+    let kick = voice("kick").synth("kick_909");
+    pattern("kick").on(kick).step("x... x... x... x...").start();
+});
+
+import "./drum_fx.vibe";
+```
+
+```rhai
+// drum_fx.vibe
+group("Drums").body(|| {
+    fx("drum_room").synth("reverb").param("mix", 0.12).apply();
+});
+```
+
+See `examples/multi_body_authoring/main.vibe` and
+`examples/multi_body_authoring/drum_fx.vibe` for a runnable cross-file example.
+
 ## Group Controls
 
 ```rhai
@@ -46,12 +85,12 @@ drums.solo(true);        // solo (mute all others)
 - Buses 16+: group buses for submixing
 - Link synths route group buses to main output automatically
 
-## Planned Aliases
+## Aliases
 
-Group aliases are planned as convenient authoring names for canonical groups.
-After a group registers `.alias("alternative")`, later `group("alternative")`
-and explicit group string targets resolve to the canonical group instead of
-creating a second group.
+Group aliases are convenient authoring names for canonical groups. After a group
+registers `.alias("alternative")`, later `group("alternative")` calls and
+explicit group string targets resolve to the canonical group instead of creating
+a second group.
 
 ```rhai
 // groups.vibe
@@ -68,6 +107,10 @@ Alias lookup happens before contextual group creation. In the example above,
 `kit` resolves to `main/Arrangement/Drums` everywhere after the alias is
 registered; it does not become `main/Song/kit` just because the reference appears
 inside a `Song` group body.
+
+Aliases work with repeated bodies. Once an alias exists, a later
+`group("kit").body(...)` appends to the canonical group, even across imports or
+from inside a different current group body.
 
 Aliases are global for a full script evaluation, including includes. Duplicate
 aliases to the same group are allowed and treated as idempotent. Duplicate

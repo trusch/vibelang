@@ -21,7 +21,8 @@ updated: 2026-05-08T21:17:32+02:00
 
 ## Group Methods
 
-- `.alias("alternative")` — planned: register an alternate group name
+- `.body(|| { ... })` — evaluate content in this group
+- `.alias("alternative")` — register an alternate group name
 - `.gain(db(n))` — set group volume
 - `.mute()` — mute entire group
 - `.unmute()` — unmute
@@ -38,9 +39,37 @@ define_group("Drums", || {
 get_group("Drums").gain(db(-3));
 ```
 
-## Planned: Group Aliases
+## Repeated Bodies
 
-Group aliases are planned author-facing names for existing groups. The syntax is
+Calling `.body(|| { ... })` more than once for the same canonical group appends
+another body contribution to that group. This is useful when one file owns the
+playable structure, another file imports input voices or fills, and another file
+adds shared effects. The bodies merge into one group, so later files can extend a
+bus without replacing the voices, patterns, melodies, or effects that earlier
+bodies registered.
+
+Body calls are applied in total script evaluation order, including imported
+files. For example, in
+`examples/multi_body_authoring/main.vibe`, the main file creates the `Drums`
+voices and patterns, then imports `examples/multi_body_authoring/drum_fx.vibe`;
+the imported file calls `group("Drums").body(...)` again to add the room reverb
+to the same group.
+
+Content inside merged bodies follows the normal builder conflict rules:
+
+- New voices, patterns, melodies, effects, and routes are added in first-seen
+  order across all bodies.
+- Re-declaring the same voice or group parameter keeps the original order slot
+  but uses the later configuration, so later bodies can deliberately override
+  gain, synth, route destination, or other replacement-style settings.
+- Shared group effects append to the group chain in evaluation order.
+- Authoring errors still abort evaluation. A conflicting alias, invalid alias
+  name, or route conflict is not made safe by putting the call in a separate
+  body.
+
+## Group Aliases
+
+Group aliases are author-facing names for existing groups. The syntax is
 `group("canonical").alias("alternative")`; later `group("alternative")`
 returns the canonical group handle instead of creating another group.
 
@@ -50,7 +79,7 @@ then `group("drums")` resolves to `main/Arrangement/Drums` everywhere, even from
 inside another group body where `group("drums")` would otherwise create a nested
 contextual group.
 
-Planned group aliases live in one global script namespace. Use short, lower-case
+Aliases live in one global script namespace. Use short, lower-case
 single-segment aliases such as `drums`, `kit`, or `send`; do not use aliases that
 look like paths. Aliases map directly to the canonical group target, so chaining
 through an alias is normalized:
@@ -60,7 +89,11 @@ group("main/Arrangement/Drums").alias("drums");
 group("drums").alias("kit"); // kit also points to main/Arrangement/Drums
 ```
 
-### Planned Multi-File Example
+Alias targets and repeated bodies compose: `group("kit").body(...)` appends to
+`main/Arrangement/Drums` after `kit` is registered, even when the call appears in
+another file or inside a different current group body.
+
+### Multi-File Example
 
 ```rhai
 // groups.vibe
@@ -81,7 +114,7 @@ voice("kick")
 group("kit").effect("reverb_jpverb");
 ```
 
-### Planned Conflict Rules
+### Conflict Rules
 
 Registering the same alias for the same canonical group is idempotent.
 Registering the same alias for a different group is a hard authoring error.
