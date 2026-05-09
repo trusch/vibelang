@@ -3902,6 +3902,111 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reload_repeated_saved_handle_bodies_inside_current_group_keep_one_runtime_group() {
+        use crate::message::ReloadMessage;
+        use crate::reload::{GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, VoiceId};
+
+        let backend = RecordingBackend::new();
+        let mut runtime = Runtime::new(backend);
+
+        for synthdef in ["kick_synth", "snare_synth", "pad_synth"] {
+            register_voice_synthdef(
+                &runtime,
+                synthdef,
+                vec![vibelang_dsp::OutputPort {
+                    name: "out".to_string(),
+                    channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
+                }],
+            )
+            .await;
+        }
+
+        let drums_id = GroupId::new(60);
+        let song_id = GroupId::new(61);
+        let kick_id = VoiceId::new(60);
+        let snare_id = VoiceId::new(61);
+        let pad_id = VoiceId::new(62);
+
+        let mut state = ScriptState::new();
+        state.add_group(
+            drums_id,
+            GroupConfig {
+                name: "Drums".to_string(),
+                ..GroupConfig::default()
+            },
+        );
+        state.add_group(
+            song_id,
+            GroupConfig {
+                name: "Song".to_string(),
+                ..GroupConfig::default()
+            },
+        );
+        add_body_contribution(&mut state, song_id, "main/Song", 0, "song.vibe");
+        add_body_contribution(&mut state, drums_id, "main/Drums", 1, "song.vibe");
+        state.add_voice(kick_id, VoiceConfig::new("kick", "kick_synth", drums_id));
+        add_body_contribution(&mut state, drums_id, "main/Drums", 2, "song.vibe");
+        state.add_voice(snare_id, VoiceConfig::new("snare", "snare_synth", drums_id));
+        state.add_voice(pad_id, VoiceConfig::new("pad", "pad_synth", song_id));
+        state.running_voices.insert(kick_id);
+        state.running_voices.insert(snare_id);
+        state.running_voices.insert(pad_id);
+
+        runtime
+            .send(ReloadMessage::Apply { state }.into())
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let state = runtime.state.read().await;
+        assert_eq!(
+            state.groups.len(),
+            2,
+            "saved Drums handle bodies inside Song must not create a sibling or child Drums group"
+        );
+        let drums = state.groups.get(&drums_id).expect("Drums group exists");
+        let song = state.groups.get(&song_id).expect("Song group exists");
+        assert_eq!(drums.name, "Drums");
+        assert_eq!(song.name, "Song");
+        assert_eq!(
+            drums.parent, None,
+            "Drums must remain anchored at main/Drums, not main/Song/Drums"
+        );
+        assert_eq!(song.parent, None);
+        assert_eq!(state.voices.get(&kick_id).unwrap().config.group, drums_id);
+        assert_eq!(state.voices.get(&snare_id).unwrap().config.group, drums_id);
+        assert_eq!(state.voices.get(&pad_id).unwrap().config.group, song_id);
+        assert!(drums.link_synth_node_id.is_some());
+        assert!(song.link_synth_node_id.is_some());
+        drop(state);
+
+        assert_eq!(
+            runtime.backend.created_groups().len(),
+            2,
+            "runtime should allocate one group node per logical group"
+        );
+        assert_eq!(
+            runtime.backend.alive_link_synths().len(),
+            2,
+            "runtime should keep one group link synth per logical group"
+        );
+
+        let alive_route_links = runtime
+            .backend
+            .alive_synths()
+            .into_iter()
+            .filter(|(def, _)| def.starts_with("port_to_group_link_"))
+            .count();
+        assert_eq!(
+            alive_route_links, 3,
+            "each running voice should have exactly one default route into its resolved group"
+        );
+    }
+
+    #[tokio::test]
     async fn reload_removing_effect_body_keeps_voice_body() {
         use crate::message::ReloadMessage;
         use crate::reload::{EffectConfig, GroupConfig, ScriptState};
