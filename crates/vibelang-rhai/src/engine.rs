@@ -815,6 +815,178 @@ mod tests {
     }
 
     #[test]
+    fn test_repeated_nested_group_bodies_merge_single_file_content() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("Song").body(|| {
+                group("Drums").body(|| {
+                    voice("kick").synth("kick_synth");
+                });
+            });
+
+            group("Song").body(|| {
+                group("Drums").body(|| {
+                    fx("drums_comp").synth("compressor").apply();
+                });
+            });
+
+            group("Song").body(|| {
+                group("Drums").body(|| {
+                    voice("snare").synth("snare_synth");
+                });
+            });
+        "#,
+            )
+            .unwrap();
+
+        let song_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Song").then_some(*id))
+            .expect("Song group should exist");
+        let drums_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| {
+                (config.name == "Drums" && config.parent == Some(song_id)).then_some(*id)
+            })
+            .expect("nested Drums group should exist");
+        let drums = state.groups.get(&drums_id).unwrap();
+
+        assert_eq!(
+            state
+                .groups
+                .values()
+                .filter(|config| config.name == "Drums")
+                .count(),
+            1,
+            "repeated nested bodies should merge into one Drums group"
+        );
+        assert_eq!(drums.effects.len(), 1);
+        assert!(state.voices.values().all(|voice| voice.group == drums_id));
+
+        let voice_names = state
+            .voice_order
+            .iter()
+            .map(|id| state.voices.get(id).unwrap().name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(voice_names, vec!["kick", "snare"]);
+
+        let effect_synthdefs = drums
+            .effects
+            .iter()
+            .map(|id| state.effects.get(id).unwrap().synthdef.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(effect_synthdefs, vec!["compressor"]);
+
+        assert_eq!(
+            state
+                .body_contributions
+                .iter()
+                .filter(|body| body.target_group == drums_id)
+                .map(|body| body.target_path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["main/Song/Drums", "main/Song/Drums", "main/Song/Drums"]
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_nested_group_bodies_merge_across_imported_files() {
+        let dir = write_test_project(&[
+            (
+                "main.vibe",
+                r#"
+            import "voices.vibe";
+            import "effects.vibe";
+
+            group("Song").body(|| {
+                group("Drums").body(|| {
+                    voice("snare").synth("snare_synth");
+                });
+            });
+        "#,
+            ),
+            (
+                "voices.vibe",
+                r#"
+            group("Song").body(|| {
+                group("Drums").body(|| {
+                    voice("kick").synth("kick_synth");
+                });
+            });
+        "#,
+            ),
+            (
+                "effects.vibe",
+                r#"
+            group("Song").body(|| {
+                group("Drums").body(|| {
+                    fx("drums_room").synth("room_reverb").apply();
+                });
+            });
+        "#,
+            ),
+        ]);
+
+        let mut engine = ScriptEngine::new();
+        let state = engine.execute_file(dir.join("main.vibe")).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        let song_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| (config.name == "Song").then_some(*id))
+            .expect("Song group should exist");
+        let drums_id = state
+            .groups
+            .iter()
+            .find_map(|(id, config)| {
+                (config.name == "Drums" && config.parent == Some(song_id)).then_some(*id)
+            })
+            .expect("nested Drums group should exist");
+        let drums = state.groups.get(&drums_id).unwrap();
+
+        assert_eq!(
+            state
+                .groups
+                .values()
+                .filter(|config| config.name == "Drums")
+                .count(),
+            1,
+            "imported nested bodies should merge into one Drums group"
+        );
+        assert_eq!(drums.effects.len(), 1);
+        assert!(state.voices.values().all(|voice| voice.group == drums_id));
+
+        let voice_names = state
+            .voice_order
+            .iter()
+            .map(|id| state.voices.get(id).unwrap().name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(voice_names, vec!["kick", "snare"]);
+
+        let effect_synthdefs = state
+            .effect_order
+            .iter()
+            .map(|id| state.effects.get(id).unwrap().synthdef.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(effect_synthdefs, vec!["room_reverb"]);
+
+        assert_eq!(
+            state
+                .body_contributions
+                .iter()
+                .filter(|body| body.target_group == drums_id)
+                .map(|body| body.ordinal)
+                .collect::<Vec<_>>(),
+            vec![1, 3, 5]
+        );
+    }
+
+    #[test]
     fn test_repeated_group_body_records_deterministic_content_order() {
         let mut engine = ScriptEngine::new();
         let state = engine
