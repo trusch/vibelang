@@ -1,0 +1,31 @@
+// Multi-body authoring example: keep the playable structure in this file,
+// then import extra bodies that extend the same group.
+
+import "stdlib/drums/kicks/kick_909.vibe";
+import "stdlib/drums/snares/snare_909.vibe";
+import "stdlib/drums/hihats/hihat_909_closed.vibe";
+
+set_tempo(124);
+
+group("Drums").gain(db(-8)).body(|| {
+    let kick = voice("kick").synth("kick_909").gain(db(-5));
+    let snare = voice("snare").synth("snare_909").gain(db(-10));
+    let hat = voice("hat").synth("hihat_909_closed").gain(db(-16));
+
+    pattern("kick")
+        .on(kick)
+        .step("x... x... x... x...")
+        .start();
+
+    pattern("snare")
+        .on(snare)
+        .step(".... x... .... x...")
+        .start();
+
+    pattern("hat")
+        .on(hat)
+        .step("x.x. x.x. x.x. x.x.")
+        .start();
+});
+
+import "./drum_fx.vibe";

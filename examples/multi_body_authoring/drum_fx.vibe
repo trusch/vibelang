@@ -1,0 +1,13 @@
+// Imported after the drum voices: this second body appends effects to
+// the existing "Drums" group instead of replacing its voices.
+
+import "stdlib/effects/reverbs/reverb.vibe";
+
+group("Drums").body(|| {
+    fx("drum_room")
+        .synth("reverb")
+        .param("room", 0.25)
+        .param("damp", 0.7)
+        .param("mix", 0.12)
+        .apply();
+});
