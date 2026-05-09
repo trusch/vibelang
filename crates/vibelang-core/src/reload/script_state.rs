@@ -119,6 +119,11 @@ pub enum GroupAliasError {
         existing: GroupAliasTarget,
         attempted: GroupAliasTarget,
     },
+    ConflictingCanonicalGroupName {
+        alias: String,
+        existing: GroupAliasTarget,
+        attempted: GroupAliasTarget,
+    },
     ConflictingContextualClaims {
         alias: String,
         existing: Vec<GroupAliasTarget>,

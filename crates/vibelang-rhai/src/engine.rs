@@ -976,6 +976,50 @@ mod tests {
     }
 
     #[test]
+    fn test_group_alias_same_as_existing_canonical_root_name_is_allowed() {
+        let mut engine = ScriptEngine::new();
+        let state = engine
+            .execute(
+                r#"
+            group("main/Drums").gain(0.5);
+            group("main/Drums").alias("Drums");
+        "#,
+            )
+            .unwrap();
+
+        let alias = state
+            .group_aliases
+            .get("Drums")
+            .expect("Drums alias should be registered");
+        let drums = state.groups.get(&alias.group_id).unwrap();
+
+        assert_eq!(alias.path, "main/Drums");
+        assert_eq!(drums.name, "Drums");
+        assert_eq!(drums.params.get("amp"), Some(&0.5));
+    }
+
+    #[test]
+    fn test_group_alias_conflicting_canonical_root_name_is_script_error() {
+        let mut engine = ScriptEngine::new();
+        let err = engine
+            .execute(
+                r#"
+            group("main/Drums").gain(0.5);
+            group("main/Bass").alias("Drums");
+        "#,
+            )
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("group alias 'Drums' collides with canonical group"),
+            "{msg}"
+        );
+        assert!(msg.contains("main/Drums"), "{msg}");
+        assert!(msg.contains("main/Bass"), "{msg}");
+    }
+
+    #[test]
     fn test_group_alias_reference_resolves_to_canonical_group() {
         let mut engine = ScriptEngine::new();
         let state = engine

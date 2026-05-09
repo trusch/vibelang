@@ -536,6 +536,26 @@ pub fn resolve_group_reference(raw: &str) -> Result<String, GroupAliasError> {
 pub fn add_group_alias(alias: String, canonical_path: String) -> Result<(), GroupAliasError> {
     let group_id = get_or_create_group_id(&canonical_path);
     let target = GroupAliasTarget::new(group_id, canonical_path);
+    if !alias.is_empty() && alias != "main" && !alias.contains('/') {
+        let root_path = format!("main/{alias}");
+        let existing = CONTEXT.with(|ctx| {
+            ctx.borrow()
+                .as_ref()
+                .and_then(|c| c.group_ids.get(&root_path).copied())
+        });
+
+        if let Some(existing_group_id) = existing {
+            let existing_target = GroupAliasTarget::new(existing_group_id, root_path);
+            if existing_target != target {
+                return Err(GroupAliasError::ConflictingCanonicalGroupName {
+                    alias,
+                    existing: existing_target,
+                    attempted: target,
+                });
+            }
+        }
+    }
+
     with_state(|state| state.add_group_alias(alias, target))
 }
 

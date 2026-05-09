@@ -289,6 +289,16 @@ fn format_group_alias_error(err: GroupAliasError) -> String {
             format_alias_target(&existing),
             format_alias_target(&attempted)
         ),
+        GroupAliasError::ConflictingCanonicalGroupName {
+            alias,
+            existing,
+            attempted,
+        } => format!(
+            "group alias '{}' collides with canonical group {}, cannot point it to {}",
+            alias,
+            format_alias_target(&existing),
+            format_alias_target(&attempted)
+        ),
         GroupAliasError::ConflictingContextualClaims {
             alias,
             existing,
