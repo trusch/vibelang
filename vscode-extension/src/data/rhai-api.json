@@ -49,15 +49,15 @@
   },
   {
     "name": "define_group",
-    "description": "Define a mixer group with a name and body closure. Groups create hierarchical audio routing. All voices, patterns, melodies, and FX defined within are routed through the group's audio bus. Returns a GroupHandle.",
+    "description": "Define a mixer group with a name and body closure. Groups create hierarchical audio routing. All voices, patterns, melodies, and FX defined within are routed through the group's audio bus. Repeated bodies for the same resolved group append/merge contributions instead of replacing prior content. Returns a GroupHandle.",
     "signature": "define_group(name: string, body: fn) -> GroupHandle",
     "example": "let drums = define_group(\"Drums\", || {\n    let kick = voice(\"kick\").synth(\"kick_909\").gain(db(-6));\n    pattern(\"kick_pat\").on(kick).step(\"x...x...\").start();\n    fx(\"comp\").synth(\"compressor\").param(\"ratio\", 4.0).apply();\n});"
   },
   {
     "name": "group",
-    "description": "Get a handle to an existing group by name. Allows controlling groups defined elsewhere.",
+    "description": "Get a handle to a group by name or registered alias. Allows controlling groups defined elsewhere. Calling .body(...) on repeated handles for the same resolved group appends/merges contributions.",
     "signature": "group(name: string) -> GroupHandle",
-    "example": "let drums = group(\"Drums\");\ndrums.gain(db(-3));\ndrums.mute().now();"
+    "example": "let drums = group(\"Drums\");\ndrums.gain(db(-3));\ndrums.body(|| {\n    fx(\"room\").synth(\"reverb_jpverb\").apply();\n});"
   },
   {
     "name": "voice",
@@ -897,9 +897,9 @@
 
   {
     "name": "body",
-    "description": "[SynthdefBuilder/FxBuilder] Set the DSP processing body. Closure receives params as arguments.",
-    "signature": ".body(closure: fn) -> ()",
-    "example": "define_synthdef(\"sine\")\n    .param(\"freq\", 440.0)\n    .param(\"amp\", 0.5)\n    .body(|freq, amp| {\n        sin_ar(freq) * amp\n    });"
+    "description": "[GroupHandle/SynthdefBuilder/FxBuilder] Set the group or DSP processing body. On GroupHandle, repeated calls for the same resolved group append/merge contributions. DSP bodies receive params as arguments.",
+    "signature": ".body(closure: fn) -> GroupHandle | ()",
+    "example": "group(\"Drums\").body(|| {\n    fx(\"room\").synth(\"reverb_jpverb\").apply();\n});\n\ndefine_synthdef(\"sine\")\n    .param(\"freq\", 440.0)\n    .param(\"amp\", 0.5)\n    .body(|freq, amp| {\n        sin_ar(freq) * amp\n    });"
   },
 
   {

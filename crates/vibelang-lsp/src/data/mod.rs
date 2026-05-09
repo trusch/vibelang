@@ -106,19 +106,23 @@ pub fn get_api_docs() -> &'static HashMap<&'static str, ApiFunctionDoc> {
             ApiFunctionDoc {
                 name: "define_group",
                 signature: "(name: string, body: fn) -> GroupHandle",
-                description: "Define a mixer group with hierarchical audio routing. All voices and effects inside are routed through the group.",
+                description: "Define a mixer group with hierarchical audio routing. All voices and effects inside are routed through the group. Repeated bodies for the same resolved group append contributions instead of replacing prior content.",
                 example: "define_group(\"Drums\", || {\n    let kick = voice(\"kick\").synth(\"kick_909\");\n});",
                 parameters: &[
                     ("name", "string", "Group name"),
-                    ("body", "fn", "Closure containing group contents"),
+                    (
+                        "body",
+                        "fn",
+                        "Closure containing group contents; repeated calls for the same resolved group append/merge contributions",
+                    ),
                 ],
             },
             ApiFunctionDoc {
                 name: "group",
                 signature: "(name: string) -> GroupHandle",
-                description: "Get a handle to an existing group by name.",
-                example: "group(\"Drums\").mute().now();",
-                parameters: &[("name", "string", "Name of existing group")],
+                description: "Get a handle to a group by name. Calling .body(...) on repeated handles for the same resolved group appends/merges contributions.",
+                example: "group(\"Drums\").body(|| {\n    fx(\"room\").synth(\"reverb_jpverb\").apply();\n});",
+                parameters: &[("name", "string", "Group name or registered alias")],
             },
             ApiFunctionDoc {
                 name: "fx",

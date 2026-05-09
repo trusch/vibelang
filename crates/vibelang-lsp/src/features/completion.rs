@@ -525,6 +525,11 @@ fn get_fx_methods() -> Vec<CompletionItem> {
 fn get_group_methods() -> Vec<CompletionItem> {
     vec![
         method_item(
+            "body",
+            "(closure)",
+            "Evaluate content in this group; repeated bodies append/merge contributions for the same resolved group",
+        ),
+        method_item(
             "alias",
             "(name: string)",
             "Register an alternate group name",
