@@ -968,6 +968,21 @@ pub struct State {
     /// [`crate::handlers::RoutesHandler::finalize_params`].
     pub param_triggers:
         HashMap<(crate::handlers::ParamRouteTarget, String), (NodeId, BusId)>,
+
+    /// Per-voice mono note-stack for `poly(1)` MIDI-output voices.
+    ///
+    /// Maps a MIDI-output voice with `polyphony == 1` to the stack of
+    /// currently-held `(note, velocity)` pairs, most-recently-pressed at the
+    /// end. Drives last-note-priority monophonic behaviour in
+    /// [`crate::handlers::VoicesHandler::note_on`] / `note_off` — a
+    /// polyphonic input stream is collapsed to a single sounding note with a
+    /// clean retrigger on note steal and a return-to-held on note release.
+    /// Cleared on voice stop / delete / create (reload).
+    pub midi_mono_stack: HashMap<VoiceId, Vec<(u8, u8)>>,
+
+    /// The MIDI note currently sounding on each `poly(1)` MIDI-output voice.
+    /// Paired with [`Self::midi_mono_stack`]; absent when nothing is sounding.
+    pub midi_mono_sounding: HashMap<VoiceId, u8>,
 }
 
 /// Live state of one `param_kr_modulate_<n>` summer instance.
@@ -1040,6 +1055,8 @@ impl Default for State {
             param_summers: HashMap::new(),
             ar_to_kr_adapters: HashMap::new(),
             param_triggers: HashMap::new(),
+            midi_mono_stack: HashMap::new(),
+            midi_mono_sounding: HashMap::new(),
         }
     }
 }

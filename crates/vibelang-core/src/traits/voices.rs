@@ -107,6 +107,15 @@ pub struct VoiceConfig {
     #[cfg(feature = "midi")]
     pub midi_channel: u8,
 
+    /// Legato (portamento) mode for `poly(1)` MIDI-output voices.
+    ///
+    /// When `false` (default) a note-steal on a mono MIDI-output voice sends
+    /// `NoteOff(old)` before `NoteOn(new)` so the destination synth retriggers
+    /// its envelope. When `true` the `NoteOff(old)` is skipped, so glide /
+    /// portamento synths slur between overlapping notes. No effect unless
+    /// `polyphony == 1` and `midi_output` is set.
+    pub mono_legato: bool,
+
     /// Parameter to MIDI CC mapping.
     ///
     /// Maps parameter names to MIDI CC numbers (0-127).
@@ -131,6 +140,7 @@ impl PartialEq for VoiceConfig {
             && self.trigger_mode == other.trigger_mode
             && self.choke_group == other.choke_group
             && self.modulator_only == other.modulator_only
+            && self.mono_legato == other.mono_legato
             && {
                 #[cfg(feature = "midi")]
                 {
@@ -167,6 +177,7 @@ impl VoiceConfig {
             midi_output: None,
             #[cfg(feature = "midi")]
             midi_channel: 0,
+            mono_legato: false,
             #[cfg(feature = "midi")]
             param_cc_map: HashMap::new(),
         }
@@ -204,6 +215,14 @@ impl VoiceConfig {
     /// Set the polyphony.
     pub fn with_polyphony(mut self, polyphony: u8) -> Self {
         self.polyphony = polyphony;
+        self
+    }
+
+    /// Set legato (portamento) mode for `poly(1)` MIDI-output voices.
+    ///
+    /// See [`Self::mono_legato`].
+    pub fn with_mono_legato(mut self, legato: bool) -> Self {
+        self.mono_legato = legato;
         self
     }
 

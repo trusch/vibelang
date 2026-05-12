@@ -769,6 +769,7 @@ mod tests {
                     round_robin_count: 0,
                     choke_group: None,
                     modulator_only: false,
+                    mono_legato: false,
                     midi_output: None,
                     midi_channel: 0,
                     param_cc_map: HashMap::new(),

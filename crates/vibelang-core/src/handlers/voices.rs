@@ -71,6 +71,100 @@ impl<B: Backend> VoicesHandler<B> {
             .and_then(|guard| guard.get(&device_id).cloned())
     }
 
+    /// Send a single Note-On/Note-Off MIDI event to a device immediately.
+    ///
+    /// Prefers the low-latency direct channel; falls back to a sample-accurate
+    /// `vibelang_midi_note_{on,off}` synthdef when the direct channel is
+    /// unavailable or full. Used by the `poly(1)` mono note-stack path.
+    #[cfg(feature = "midi")]
+    async fn send_midi_event_now(
+        &self,
+        device_id: MidiDeviceId,
+        event: QueuedMidiEvent,
+    ) -> Result<()> {
+        // Try direct path first (lower latency).
+        if let Some(sender) = self.get_midi_sender(device_id) {
+            if sender.try_send(event.clone().immediate()).is_ok() {
+                tracing::debug!("MIDI mono: direct {:?} -> device {:?}", event, device_id);
+                return Ok(());
+            }
+        }
+
+        // Fallback: sample-accurate MIDI output via synthdef.
+        let (synthdef, packed_data) = match &event {
+            QueuedMidiEvent::NoteOn {
+                channel,
+                note,
+                velocity,
+            } => (
+                "vibelang_midi_note_on",
+                pack_note_on(device_id.0 as u8, *channel, *note, *velocity),
+            ),
+            QueuedMidiEvent::NoteOff { channel, note } => (
+                "vibelang_midi_note_off",
+                pack_note_off(device_id.0 as u8, *channel, *note),
+            ),
+            // The mono note-stack only ever emits NoteOn/NoteOff.
+            _ => return Ok(()),
+        };
+
+        let mut params = std::collections::HashMap::new();
+        params.insert("packed_data".to_string(), packed_data);
+        let node_id = { self.state.write().await.alloc_node_id() };
+        if let Err(e) = self
+            .backend
+            .create_synth(synthdef, node_id, NodeId::new(0), AddAction::Tail, &params)
+            .await
+        {
+            tracing::warn!("MIDI mono: failed to create {} synth: {:?}", synthdef, e);
+        }
+        Ok(())
+    }
+
+    /// Apply the `poly(1)` last-note-priority mono note-stack on note-on and
+    /// emit the resulting MIDI event sequence (a clean `NoteOff(old)` retrigger
+    /// on note steal, unless `legato`, followed by `NoteOn(new)`).
+    #[cfg(feature = "midi")]
+    async fn midi_mono_note_on(
+        &self,
+        id: VoiceId,
+        device_id: MidiDeviceId,
+        channel: u8,
+        note: u8,
+        velocity: u8,
+        legato: bool,
+    ) -> Result<()> {
+        let events = {
+            let mut state = self.state.write().await;
+            mono_note_on(&mut state, id, channel, note, velocity, legato)
+        };
+        for event in events {
+            let _ = self.send_midi_event_now(device_id, event).await;
+        }
+        Ok(())
+    }
+
+    /// Apply the `poly(1)` mono note-stack on note-off: drop the released note,
+    /// return to the most-recent still-held note (re-`NoteOn`), or `NoteOff`
+    /// when the stack drains.
+    #[cfg(feature = "midi")]
+    async fn midi_mono_note_off(
+        &self,
+        id: VoiceId,
+        device_id: MidiDeviceId,
+        channel: u8,
+        note: u8,
+    ) -> Result<()> {
+        let events = {
+            let mut state = self.state.write().await;
+            mono_note_off(&mut state, id, channel, note)
+        };
+        for event in events {
+            let _ = self.send_midi_event_now(device_id, event).await;
+        }
+        Ok(())
+    }
+
     /// Send a note-on scheduled for a specific time.
     ///
     /// This is the lookahead-aware version of `note_on`. If `timestamp` is provided,
@@ -92,11 +186,22 @@ impl<B: Backend> VoicesHandler<B> {
         let timestamp = timestamp.unwrap_or_else(Instant::now);
 
         // Check for MIDI output - schedule with timestamp
-        let (midi_output, midi_channel) = {
+        let (midi_output, midi_channel, polyphony) = {
             let state = self.state.read().await;
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
-            (voice.config.midi_output, voice.config.midi_channel)
+            (
+                voice.config.midi_output,
+                voice.config.midi_channel,
+                voice.config.polyphony,
+            )
         };
+
+        // poly(1) MIDI-output voices run the mono note-stack, which is
+        // stateful and order-sensitive — route through the immediate path
+        // (giving up sub-ms lookahead) so the stack stays consistent.
+        if midi_output.is_some() && polyphony == 1 {
+            return self.note_on(id, note, velocity).await;
+        }
 
         if let Some(device_id) = midi_output {
             let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
@@ -148,11 +253,23 @@ impl<B: Backend> VoicesHandler<B> {
         let timestamp = timestamp.unwrap_or_else(Instant::now);
 
         // Check for MIDI output - schedule with timestamp
-        let (midi_output, midi_channel) = {
+        let (midi_output, midi_channel, polyphony) = {
             let state = self.state.read().await;
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
-            (voice.config.midi_output, voice.config.midi_channel)
+            (
+                voice.config.midi_output,
+                voice.config.midi_channel,
+                voice.config.polyphony,
+            )
         };
+
+        // poly(1) MIDI-output voices: route through the immediate path so the
+        // mono note-stack stays consistent (see `note_on_at`).
+        if midi_output.is_some() && polyphony == 1 {
+            return self
+                .note_on_with_params(id, note, velocity, extra_params)
+                .await;
+        }
 
         if let Some(device_id) = midi_output {
             let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
@@ -213,17 +330,19 @@ impl<B: Backend> VoicesHandler<B> {
         // Check for MIDI output first
         #[cfg(feature = "midi")]
         {
-            let (midi_output, midi_channel, node_id) = {
+            let (midi_output, midi_channel, polyphony, mono_legato, node_id) = {
                 let mut state = self.state.write().await;
                 let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
                 let midi_out = voice.config.midi_output;
                 let ch = voice.config.midi_channel;
-                let node = if midi_out.is_some() {
+                let poly = voice.config.polyphony;
+                let legato = voice.config.mono_legato;
+                let node = if midi_out.is_some() && poly != 1 {
                     Some(state.alloc_node_id())
                 } else {
                     None
                 };
-                (midi_out, ch, node)
+                (midi_out, ch, poly, legato, node)
             };
 
             if let Some(device_id) = midi_output {
@@ -245,6 +364,21 @@ impl<B: Backend> VoicesHandler<B> {
                             }
                         }
                     }
+                }
+
+                // poly(1): the per-note params are still applied as CC above;
+                // the note itself goes through the mono note-stack.
+                if polyphony == 1 {
+                    return self
+                        .midi_mono_note_on(
+                            id,
+                            device_id,
+                            midi_channel,
+                            note,
+                            midi_velocity,
+                            mono_legato,
+                        )
+                        .await;
                 }
 
                 // Try direct path first
@@ -401,11 +535,21 @@ impl<B: Backend> VoicesHandler<B> {
         let timestamp = timestamp.unwrap_or_else(Instant::now);
 
         // Check for MIDI output - schedule with timestamp
-        let (midi_output, midi_channel) = {
+        let (midi_output, midi_channel, polyphony) = {
             let state = self.state.read().await;
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
-            (voice.config.midi_output, voice.config.midi_channel)
+            (
+                voice.config.midi_output,
+                voice.config.midi_channel,
+                voice.config.polyphony,
+            )
         };
+
+        // poly(1) MIDI-output voices: route through the immediate path so the
+        // mono note-stack stays consistent (see `note_on_at`).
+        if midi_output.is_some() && polyphony == 1 {
+            return self.note_off(id, note).await;
+        }
 
         if let Some(device_id) = midi_output {
             // Try direct path with timestamp
@@ -508,11 +652,20 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 .or_insert(dests);
         }
 
+        // Reload can reuse a voice id without an intervening delete; drop any
+        // stale `poly(1)` mono note-stack so it doesn't carry over.
+        #[cfg(feature = "midi")]
+        {
+            state.midi_mono_stack.remove(&id);
+            state.midi_mono_sounding.remove(&id);
+        }
+
         Ok(())
     }
 
     async fn delete(&self, id: VoiceId) -> Result<()> {
-        let (nodes_to_free, route_nodes_to_free) = {
+        #[cfg(feature = "midi")]
+        let (nodes_to_free, route_nodes_to_free, mono_cleanup) = {
             let mut state = self.state.write().await;
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
             free_voice_output_buses(&mut state, &voice);
@@ -520,10 +673,32 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Story 5: drop the voice's default routes so the next reload's
             // merge step doesn't carry them forward against a deleted voice.
             state.take_voice_default_routes(id);
+            let mono_channel = voice.config.midi_channel;
+            let mono_events = mono_clear(&mut state, id, mono_channel);
+            let mono_cleanup = voice.config.midi_output.map(|dev| (dev, mono_events));
+            let mut voice_nodes = voice.active_nodes;
+            voice_nodes.extend(voice.note_nodes.into_values());
+            (voice_nodes, route_nodes, mono_cleanup)
+        };
+        #[cfg(not(feature = "midi"))]
+        let (nodes_to_free, route_nodes_to_free) = {
+            let mut state = self.state.write().await;
+            let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
+            free_voice_output_buses(&mut state, &voice);
+            let route_nodes = state.take_voice_route_nodes(id);
+            state.take_voice_default_routes(id);
             let mut voice_nodes = voice.active_nodes;
             voice_nodes.extend(voice.note_nodes.into_values());
             (voice_nodes, route_nodes)
         };
+
+        // Release the still-sounding mono note (if any) on the external device.
+        #[cfg(feature = "midi")]
+        if let Some((device_id, events)) = mono_cleanup {
+            for event in events {
+                let _ = self.send_midi_event_now(device_id, event).await;
+            }
+        }
 
         // Free all active synth nodes (lock released)
         for node_id in nodes_to_free {
@@ -540,6 +715,21 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     }
 
     async fn graceful_delete(&self, id: VoiceId) -> Result<()> {
+        #[cfg(feature = "midi")]
+        let (nodes_to_release, route_nodes_to_free, mono_cleanup) = {
+            let mut state = self.state.write().await;
+            let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
+            free_voice_output_buses(&mut state, &voice);
+            let route_nodes = state.take_voice_route_nodes(id);
+            state.take_voice_default_routes(id);
+            let mono_channel = voice.config.midi_channel;
+            let mono_events = mono_clear(&mut state, id, mono_channel);
+            let mono_cleanup = voice.config.midi_output.map(|dev| (dev, mono_events));
+            let mut voice_nodes = voice.active_nodes;
+            voice_nodes.extend(voice.note_nodes.into_values());
+            (voice_nodes, route_nodes, mono_cleanup)
+        };
+        #[cfg(not(feature = "midi"))]
         let (nodes_to_release, route_nodes_to_free) = {
             let mut state = self.state.write().await;
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -550,6 +740,14 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             voice_nodes.extend(voice.note_nodes.into_values());
             (voice_nodes, route_nodes)
         };
+
+        // Release the still-sounding mono note (if any) on the external device.
+        #[cfg(feature = "midi")]
+        if let Some((device_id, events)) = mono_cleanup {
+            for event in events {
+                let _ = self.send_midi_event_now(device_id, event).await;
+            }
+        }
 
         // Free route mixers immediately — graceful delete does not extend to
         // the routing layer (the mixer is fed by the voice synth, which is
@@ -733,6 +931,23 @@ impl<B: Backend> Voices for VoicesHandler<B> {
     }
 
     async fn stop(&self, id: VoiceId) -> Result<()> {
+        #[cfg(feature = "midi")]
+        let (nodes_to_free, mono_cleanup) = {
+            let mut state = self.state.write().await;
+
+            let (mono_output, mono_channel) = {
+                let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
+                (voice.config.midi_output, voice.config.midi_channel)
+            };
+            let mono_events = mono_clear(&mut state, id, mono_channel);
+            let mono_cleanup = mono_output.map(|dev| (dev, mono_events));
+
+            let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
+            let mut nodes: Vec<NodeId> = voice.active_nodes.drain(..).collect();
+            nodes.extend(voice.note_nodes.drain().map(|(_, node)| node));
+            (nodes, mono_cleanup)
+        };
+        #[cfg(not(feature = "midi"))]
         let nodes_to_free = {
             let mut state = self.state.write().await;
 
@@ -743,6 +958,14 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             nodes.extend(voice.note_nodes.drain().map(|(_, node)| node));
             nodes
         };
+
+        // Release the still-sounding mono note (if any) on the external device.
+        #[cfg(feature = "midi")]
+        if let Some((device_id, events)) = mono_cleanup {
+            for event in events {
+                let _ = self.send_midi_event_now(device_id, event).await;
+            }
+        }
 
         // Free all active synth nodes (lock released)
         for node_id in nodes_to_free {
@@ -756,21 +979,40 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         // Check for MIDI output first - use sample-accurate timing via synthdef
         #[cfg(feature = "midi")]
         {
-            let (midi_output, midi_channel, node_id) = {
+            let (midi_output, midi_channel, polyphony, mono_legato, node_id) = {
                 let mut state = self.state.write().await;
                 let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
                 let midi_output = voice.config.midi_output;
                 let midi_channel = voice.config.midi_channel;
-                let node_id = if midi_output.is_some() {
+                let polyphony = voice.config.polyphony;
+                let mono_legato = voice.config.mono_legato;
+                // Mono path manages its own MIDI sends; only the verbatim-thru
+                // fallback synthdef path needs a pre-allocated node id.
+                let node_id = if midi_output.is_some() && polyphony != 1 {
                     Some(state.alloc_node_id())
                 } else {
                     None
                 };
-                (midi_output, midi_channel, node_id)
+                (midi_output, midi_channel, polyphony, mono_legato, node_id)
             };
 
             if let Some(device_id) = midi_output {
                 let midi_velocity = (velocity.clamp(0.0, 1.0) * 127.0) as u8;
+
+                // poly(1): last-note-priority mono note-stack instead of
+                // forwarding the (possibly overlapping) note stream verbatim.
+                if polyphony == 1 {
+                    return self
+                        .midi_mono_note_on(
+                            id,
+                            device_id,
+                            midi_channel,
+                            note,
+                            midi_velocity,
+                            mono_legato,
+                        )
+                        .await;
+                }
 
                 // Try direct path first (lower latency, ~2ms vs ~20ms)
                 // Uses immediate scheduling - for lookahead scheduling, use try_send with timestamp
@@ -945,20 +1187,28 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         // Check for MIDI output first - use sample-accurate timing via synthdef
         #[cfg(feature = "midi")]
         {
-            let (midi_output, midi_channel, node_id) = {
+            let (midi_output, midi_channel, polyphony, node_id) = {
                 let mut state = self.state.write().await;
                 let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
                 let midi_output = voice.config.midi_output;
                 let midi_channel = voice.config.midi_channel;
-                let node_id = if midi_output.is_some() {
+                let polyphony = voice.config.polyphony;
+                let node_id = if midi_output.is_some() && polyphony != 1 {
                     Some(state.alloc_node_id())
                 } else {
                     None
                 };
-                (midi_output, midi_channel, node_id)
+                (midi_output, midi_channel, polyphony, node_id)
             };
 
             if let Some(device_id) = midi_output {
+                // poly(1): drive the mono note-stack (return-to-held / NoteOff).
+                if polyphony == 1 {
+                    return self
+                        .midi_mono_note_off(id, device_id, midi_channel, note)
+                        .await;
+                }
+
                 // Try direct path first (lower latency, ~2ms vs ~20ms)
                 // Uses immediate scheduling - for lookahead scheduling, use try_send with timestamp
                 if let Some(sender) = self.get_midi_sender(device_id) {
@@ -1154,6 +1404,92 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 /// Convert MIDI note number to frequency in Hz.
 fn midi_to_freq(note: u8) -> f32 {
     440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0)
+}
+
+/// Last-note-priority mono note-stack: note-on side.
+///
+/// For a `poly(1)` MIDI-output voice. Mutates `state.midi_mono_stack` /
+/// `state.midi_mono_sounding` for `id` and returns the MIDI events to emit,
+/// in order: an optional `NoteOff(old)` (skipped when `legato`) to retrigger
+/// the destination synth cleanly, then `NoteOn(new)`. The new note is pushed
+/// to the top of the held-note stack (deduplicated).
+#[cfg(feature = "midi")]
+fn mono_note_on(
+    state: &mut State,
+    id: VoiceId,
+    channel: u8,
+    note: u8,
+    velocity: u8,
+    legato: bool,
+) -> Vec<QueuedMidiEvent> {
+    let mut events = Vec::new();
+    if let Some(old) = state.midi_mono_sounding.get(&id).copied() {
+        if old != note && !legato {
+            events.push(QueuedMidiEvent::NoteOff { channel, note: old });
+        }
+    }
+    events.push(QueuedMidiEvent::NoteOn {
+        channel,
+        note,
+        velocity,
+    });
+    let stack = state.midi_mono_stack.entry(id).or_default();
+    stack.retain(|&(n, _)| n != note);
+    stack.push((note, velocity));
+    state.midi_mono_sounding.insert(id, note);
+    events
+}
+
+/// Last-note-priority mono note-stack: note-off side.
+///
+/// Removes `note` from the held-note stack. If it was the sounding note,
+/// returns to the most-recent still-held note (`NoteOn` with its stored
+/// velocity), or `NoteOff` when nothing is left. Releasing a note that was
+/// already stolen (not currently sounding) emits nothing.
+#[cfg(feature = "midi")]
+fn mono_note_off(
+    state: &mut State,
+    id: VoiceId,
+    channel: u8,
+    note: u8,
+) -> Vec<QueuedMidiEvent> {
+    let mut events = Vec::new();
+    let stack = state.midi_mono_stack.entry(id).or_default();
+    stack.retain(|&(n, _)| n != note);
+    let top = stack.last().copied();
+    let empty = stack.is_empty();
+    if state.midi_mono_sounding.get(&id).copied() == Some(note) {
+        match top {
+            Some((top_note, top_vel)) => {
+                events.push(QueuedMidiEvent::NoteOn {
+                    channel,
+                    note: top_note,
+                    velocity: top_vel,
+                });
+                state.midi_mono_sounding.insert(id, top_note);
+            }
+            None => {
+                events.push(QueuedMidiEvent::NoteOff { channel, note });
+                state.midi_mono_sounding.remove(&id);
+            }
+        }
+    }
+    if empty {
+        state.midi_mono_stack.remove(&id);
+    }
+    events
+}
+
+/// Tear down the mono note-stack for `id` (voice stop / delete / reload):
+/// returns a `NoteOff` for the still-sounding note, if any, and clears state.
+#[cfg(feature = "midi")]
+fn mono_clear(state: &mut State, id: VoiceId, channel: u8) -> Vec<QueuedMidiEvent> {
+    let mut events = Vec::new();
+    if let Some(note) = state.midi_mono_sounding.remove(&id) {
+        events.push(QueuedMidiEvent::NoteOff { channel, note });
+    }
+    state.midi_mono_stack.remove(&id);
+    events
 }
 
 /// Return every bus owned by `voice` to its respective allocator.
@@ -1986,6 +2322,167 @@ mod tests {
         );
 
         assert_eq!(backend.params_set(), 0, "No params should be set");
+    }
+
+    // =========================================================================
+    // poly(1) mono note-stack for MIDI-output voices
+    // =========================================================================
+
+    #[cfg(feature = "midi")]
+    mod mono_midi {
+        use super::*;
+        use crate::midi::{QueuedMidiEvent, ScheduledMidiEvent};
+        use crate::types::MidiDeviceId;
+        use std::sync::Mutex;
+
+        const DEV: u8 = 7;
+
+        /// Handler wired to a mock MIDI sink; returns the receiver that records
+        /// every event the handler emits to the device.
+        fn midi_handler() -> (
+            VoicesHandler<MockBackend>,
+            Arc<RwLock<State>>,
+            crossbeam_channel::Receiver<ScheduledMidiEvent>,
+        ) {
+            let backend = Arc::new(MockBackend::new());
+            let state = Arc::new(RwLock::new(State::default()));
+            let mut handler = VoicesHandler::new(backend, state.clone());
+            let (tx, rx) = crossbeam_channel::unbounded();
+            let mut map = HashMap::new();
+            map.insert(MidiDeviceId::new(DEV as u32), tx);
+            handler.set_midi_outputs(Arc::new(Mutex::new(map)));
+            (handler, state, rx)
+        }
+
+        async fn make_midi_voice(
+            handler: &VoicesHandler<MockBackend>,
+            state: &Arc<RwLock<State>>,
+            polyphony: u8,
+            legato: bool,
+        ) -> VoiceId {
+            setup_state_with_group(state).await;
+            let voice_id = VoiceId::new(1);
+            let config = VoiceConfig::new("mono_midi", "", GroupId::new(1))
+                .with_midi_output(MidiDeviceId::new(DEV as u32), 0)
+                .with_polyphony(polyphony)
+                .with_mono_legato(legato);
+            handler.create(voice_id, config).await.unwrap();
+            voice_id
+        }
+
+        /// Drain the sink into a comparable `(kind, channel, note, velocity)` list.
+        fn drained(rx: &crossbeam_channel::Receiver<ScheduledMidiEvent>) -> Vec<(&'static str, u8, u8, u8)> {
+            let mut out = Vec::new();
+            while let Ok(scheduled) = rx.try_recv() {
+                out.push(match scheduled.event {
+                    QueuedMidiEvent::NoteOn {
+                        channel,
+                        note,
+                        velocity,
+                    } => ("on", channel, note, velocity),
+                    QueuedMidiEvent::NoteOff { channel, note } => ("off", channel, note, 0),
+                    other => panic!("unexpected MIDI event: {:?}", other),
+                });
+            }
+            out
+        }
+
+        // Acceptance #1: overlapping stream A on, B on, A off ⇒
+        // NoteOn A, NoteOff A, NoteOn B (B retriggers cleanly, survives A release).
+        #[tokio::test]
+        async fn steal_then_release_stolen_note() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+
+            handler.note_on(v, 60, 1.0).await.unwrap(); // A on (vel 127)
+            handler.note_on(v, 64, 0.5).await.unwrap(); // B on (vel 63)
+            handler.note_off(v, 60).await.unwrap(); // A off — A was stolen, nothing emitted
+
+            assert_eq!(
+                drained(&rx),
+                vec![("on", 0, 60, 127), ("off", 0, 60, 0), ("on", 0, 64, 63)],
+            );
+        }
+
+        // Acceptance #2: releasing the top note with an earlier note still held
+        // returns to that held note (re-NoteOn with its stored velocity).
+        #[tokio::test]
+        async fn release_top_returns_to_held() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+
+            handler.note_on(v, 60, 1.0).await.unwrap(); // A on
+            handler.note_on(v, 64, 0.5).await.unwrap(); // B on (steals A)
+            let _ = drained(&rx);
+            handler.note_off(v, 64).await.unwrap(); // B off — return to A at vel 127
+
+            assert_eq!(drained(&rx), vec![("on", 0, 60, 127)]);
+        }
+
+        // Acceptance #3: releasing the last held note sends NoteOff.
+        #[tokio::test]
+        async fn release_last_note_sends_note_off() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+
+            handler.note_on(v, 60, 1.0).await.unwrap();
+            let _ = drained(&rx);
+            handler.note_off(v, 60).await.unwrap();
+
+            assert_eq!(drained(&rx), vec![("off", 0, 60, 0)]);
+        }
+
+        // No regression: poly(2+) MIDI-output voices forward verbatim — every
+        // note-on/off passes through, no NoteOff-on-steal injected.
+        #[tokio::test]
+        async fn polyphonic_midi_voice_forwards_verbatim() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 4, false).await;
+
+            handler.note_on(v, 60, 1.0).await.unwrap();
+            handler.note_on(v, 64, 1.0).await.unwrap();
+            handler.note_off(v, 60).await.unwrap();
+            handler.note_off(v, 64).await.unwrap();
+
+            assert_eq!(
+                drained(&rx),
+                vec![
+                    ("on", 0, 60, 127),
+                    ("on", 0, 64, 127),
+                    ("off", 0, 60, 0),
+                    ("off", 0, 64, 0),
+                ],
+            );
+        }
+
+        // .mono_legato(true) skips the pre-NoteOff so portamento synths slur.
+        #[tokio::test]
+        async fn legato_skips_pre_note_off() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, true).await;
+
+            handler.note_on(v, 60, 1.0).await.unwrap();
+            handler.note_on(v, 64, 1.0).await.unwrap(); // no NoteOff(60) first
+
+            assert_eq!(drained(&rx), vec![("on", 0, 60, 127), ("on", 0, 64, 127)]);
+        }
+
+        // Voice stop releases the still-sounding mono note and clears the stack.
+        #[tokio::test]
+        async fn stop_releases_sounding_note() {
+            let (handler, state, rx) = midi_handler();
+            let v = make_midi_voice(&handler, &state, 1, false).await;
+
+            handler.note_on(v, 60, 1.0).await.unwrap();
+            handler.note_on(v, 64, 1.0).await.unwrap();
+            let _ = drained(&rx);
+            handler.stop(v).await.unwrap();
+
+            assert_eq!(drained(&rx), vec![("off", 0, 64, 0)]);
+            let s = state.read().await;
+            assert!(s.midi_mono_stack.is_empty());
+            assert!(s.midi_mono_sounding.is_empty());
+        }
     }
 
     #[tokio::test]

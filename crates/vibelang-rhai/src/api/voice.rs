@@ -52,6 +52,8 @@ pub struct Voice {
     choke_group: Option<String>,
     /// Explicit "modulation source only" flag — see [`Self::modulator_only`].
     modulator_only: bool,
+    /// Legato (portamento) mode for `poly(1)` MIDI-output voices.
+    mono_legato: bool,
     /// MIDI output device (if routing to external MIDI).
     #[cfg(feature = "midi")]
     midi_output_device: Option<MidiDeviceId>,
@@ -82,6 +84,7 @@ impl Voice {
             round_robin_count: 0,
             choke_group: None,
             modulator_only: false,
+            mono_legato: false,
             #[cfg(feature = "midi")]
             midi_output_device: None,
             #[cfg(feature = "midi")]
@@ -109,6 +112,7 @@ impl Voice {
             round_robin_count: 0,
             choke_group: None,
             modulator_only: false,
+            mono_legato: false,
             #[cfg(feature = "midi")]
             midi_output_device: None,
             #[cfg(feature = "midi")]
@@ -326,6 +330,18 @@ impl Voice {
     /// Set the polyphony.
     pub fn poly(mut self, count: i64) -> Self {
         self.polyphony = count.clamp(1, 255) as u8;
+        self.sync_to_state();
+        self
+    }
+
+    /// Legato (portamento) mode for `poly(1)` MIDI-output voices.
+    ///
+    /// When `true`, a note-steal on a mono MIDI-output voice skips the
+    /// `NoteOff(old)` before `NoteOn(new)` so glide/portamento synths slur
+    /// between overlapping notes. Default `false` (retrigger). No effect
+    /// unless the voice is `poly(1)` and routed `.on(midi_device(...))`.
+    pub fn mono_legato(mut self, legato: bool) -> Self {
+        self.mono_legato = legato;
         self.sync_to_state();
         self
     }
@@ -593,6 +609,7 @@ impl Voice {
             round_robin_count: self.round_robin_count,
             choke_group: self.choke_group.clone(),
             modulator_only: self.modulator_only,
+            mono_legato: self.mono_legato,
             #[cfg(feature = "midi")]
             midi_output: self.midi_output_device,
             #[cfg(feature = "midi")]
@@ -763,6 +780,7 @@ pub fn register(engine: &mut Engine) {
     #[cfg(feature = "midi")]
     engine.register_fn("cc_map", Voice::cc_map);
     engine.register_fn("poly", Voice::poly);
+    engine.register_fn("mono_legato", Voice::mono_legato);
     engine.register_fn("gain", Voice::gain);
     engine.register_fn("set_param", Voice::set_param);
     engine.register_fn("param", Voice::param);

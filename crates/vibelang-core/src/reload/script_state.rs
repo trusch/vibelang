@@ -1489,6 +1489,7 @@ mod tests {
             choke_group: None,
             round_robin_count: 0,
             modulator_only: false,
+            mono_legato: false,
             #[cfg(feature = "midi")]
             midi_output: None,
             #[cfg(feature = "midi")]
