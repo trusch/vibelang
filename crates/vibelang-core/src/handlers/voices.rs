@@ -1269,13 +1269,12 @@ fn midi_pool_note_on(
 /// Unified voice-allocation pool: note-off side.
 ///
 /// Releasing a sounding note frees its slot; if any note is still held in the
-/// overflow stack the most-recently-stolen one is revived into that slot
-/// (`NoteOn` with its stored velocity). For a mono destination (`n == 1`) the
-/// revived `NoteOn` implicitly cuts the released note so no `NoteOff` is sent
-/// for it (the `poly(1)` return-to-held behaviour); for a poly destination
-/// (`n > 1`) an explicit `NoteOff` for the released note precedes the revive's
-/// `NoteOn`. With nothing in the overflow stack a plain `NoteOff` is emitted.
-/// Releasing a note that was tracked in the
+/// overflow stack the most-recently-stolen one is revived into that slot — an
+/// explicit `NoteOff` for the released note is emitted *before* the revive's
+/// `NoteOn` (mono and poly alike: a mono synth with a note-priority stack keeps
+/// the released note "held" and would fall back to it — gate stuck — if it
+/// never sees the `NoteOff`). With nothing in the overflow stack a plain
+/// `NoteOff` is emitted. Releasing a note that was tracked in the
 /// overflow stack just drops it from there. Releasing a note we don't track at
 /// all still emits a `NoteOff` to the device (defensive — a redundant NoteOff
 /// is harmless, and it stops a permanently stuck gate if the pool bookkeeping
@@ -1301,20 +1300,21 @@ fn midi_pool_note_off(
         pool.alloc_order.retain(|&i| i != slot);
         if let Some((rev_note, rev_vel)) = pool.overflow.pop() {
             // Return-to-held: bring the most-recently-stolen still-held note
-            // back into this slot. On a mono destination (n == 1) the revived
-            // note's NoteOn implicitly cuts the released note, so we skip the
-            // NoteOff (matching legato/portamento behaviour). On a poly
-            // destination (n > 1) nothing cuts it, so we must emit an explicit
-            // NoteOff for the released note or its gate would stay open.
-            if n > 1 {
-                events.push(QueuedMidiEvent::NoteOff { channel, note });
-            }
+            // back into this slot. Emit an explicit NoteOff for the released
+            // note *before* the revived note's NoteOn — even on a mono
+            // destination. A mono synth with a note-priority stack (e.g. the
+            // Behringer Model 15) keeps the released note in its held-note
+            // stack if it never sees a NoteOff for it; when the revived note is
+            // later released the synth falls back to that ghost note and its
+            // gate stays open forever. The pre-NoteOff retriggers the envelope
+            // on the fallback, which is the expected non-legato behaviour.
+            events.push(QueuedMidiEvent::NoteOff { channel, note });
             pool.slots[slot] = Some((rev_note, rev_vel));
             pool.alloc_order.push(slot);
             tracing::debug!(
                 "MIDI pool: note_off voice={:?} note={} → slot {} freed, revived held note {} (vel {}); \
-                 explicit NoteOff for released note: {}; overflow now {} held, slots={:?}",
-                id, note, slot, rev_note, rev_vel, n > 1, pool.overflow.len(), pool.slots,
+                 explicit NoteOff for released note; overflow now {} held, slots={:?}",
+                id, note, slot, rev_note, rev_vel, pool.overflow.len(), pool.slots,
             );
             events.push(QueuedMidiEvent::NoteOn {
                 channel,
@@ -2338,9 +2338,9 @@ mod tests {
             handler.note_on(v, 60, 1.0).await.unwrap(); // A on
             handler.note_on(v, 64, 0.5).await.unwrap(); // B on (steals A)
             let _ = drained(&rx);
-            handler.note_off(v, 64).await.unwrap(); // B off — return to A at vel 127
+            handler.note_off(v, 64).await.unwrap(); // B off — NoteOff B, then return to A at vel 127
 
-            assert_eq!(drained(&rx), vec![("on", 0, 60, 127)]);
+            assert_eq!(drained(&rx), vec![("off", 0, 64, 0), ("on", 0, 60, 127)]);
         }
 
         // Acceptance #3: releasing the last held note sends NoteOff.
@@ -3483,11 +3483,17 @@ mod midi_pool_tests {
 
     #[test]
     fn mono_steal_and_revive() {
-        // Press A, press B (steals A → NoteOff A, NoteOn B), release B → revive A,
-        // release A → NoteOff A. (On a mono device the revive's NoteOn cuts B,
-        // so there is no NoteOff B — `assert_nothing_sounding` models that.)
+        // Press A, press B (steals A → NoteOff A, NoteOn B), release B → NoteOff B
+        // then revive A, release A → NoteOff A. Every note that got a NoteOn gets
+        // a matching NoteOff — a mono synth's note-priority stack must not be left
+        // thinking B is still held (otherwise releasing A sticks B's gate open).
         let emitted = drive(1, false, &[(true, 60), (true, 64), (false, 64), (false, 60)]);
+        assert_eq!(
+            emitted,
+            vec![(true, 60), (false, 60), (true, 64), (false, 64), (true, 60), (false, 60)],
+        );
         assert_nothing_sounding(1, &emitted);
+        assert!(net_per_note(&emitted).values().all(|&c| c == 0));
     }
 
     #[test]
@@ -3509,6 +3515,7 @@ mod midi_pool_tests {
             &[(true, 60), (true, 64), (true, 60), (false, 60), (false, 64)],
         );
         assert_nothing_sounding(1, &emitted);
+        assert!(net_per_note(&emitted).values().all(|&c| c == 0));
     }
 
     #[test]
@@ -3530,6 +3537,7 @@ mod midi_pool_tests {
             ],
         );
         assert_nothing_sounding(1, &emitted);
+        assert!(net_per_note(&emitted).values().all(|&c| c == 0));
     }
 
     #[test]
