@@ -831,6 +831,23 @@ impl<B: Backend> MidiHandler<B> {
         note: u8,
         velocity: u8,
     ) {
+        // Defensive: a "NoteOn velocity 0" is the running-status idiom for a
+        // note-off. The legacy input path already maps it via
+        // `convert_new_to_legacy_message`, but normalise again here at the
+        // routing boundary so no future caller can sneak a vel-0 NoteOn through
+        // — letting it fall through would retrigger the voice (and, for a
+        // MIDI-output voice, re-send `NoteOn vel 0`) instead of releasing it,
+        // which on some encoders/devices leaves the gate stuck open.
+        if velocity == 0 {
+            tracing::debug!(
+                "MIDI: NoteOn velocity 0 (note={}, ch={}) treated as NoteOff",
+                note,
+                channel
+            );
+            self.handle_note_off(routing, device_id, channel, note).await;
+            return;
+        }
+
         // If a looper is configured for this device, route exclusively through it.
         if self.looper_manager.lock().unwrap_or_else(|e| e.into_inner()).has_device(device_id) {
             let (current_beat, time_sig_num) = {

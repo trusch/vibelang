@@ -506,9 +506,45 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         }
 
         // Reload can reuse a voice id without an intervening delete; drop any
-        // stale voice-allocation pool so it doesn't carry over.
+        // stale voice-allocation pool so it doesn't carry over. If that pool
+        // still held sounding notes, flush a NoteOff for each to the device so
+        // a recreate-without-delete can't leave a stuck gate. (The normal
+        // reload path calls `delete`/`stop`/`graceful_delete` first, all of
+        // which already flush — this is the defensive belt for everything else.)
         #[cfg(feature = "midi")]
-        state.midi_voice_pool.remove(&id);
+        let stuck_pool_cleanup = {
+            let midi_info = {
+                let voice = state.voices.get(&id);
+                voice.and_then(|v| v.config.midi_output.map(|d| (d, v.config.midi_channel)))
+            };
+            match (midi_info, state.midi_voice_pool.contains_key(&id)) {
+                (Some((device_id, channel)), true) => {
+                    let events = midi_pool_clear(&mut state, id, channel);
+                    if !events.is_empty() {
+                        tracing::warn!(
+                            "Voice {:?}: recreated with {} still-sounding pool note(s) — \
+                             flushing NoteOffs to device {:?}",
+                            id,
+                            events.len(),
+                            device_id,
+                        );
+                    }
+                    Some((device_id, events))
+                }
+                _ => {
+                    state.midi_voice_pool.remove(&id);
+                    None
+                }
+            }
+        };
+        #[cfg(feature = "midi")]
+        drop(state);
+        #[cfg(feature = "midi")]
+        if let Some((device_id, events)) = stuck_pool_cleanup {
+            for event in events {
+                let _ = self.send_midi_event_now(device_id, event).await;
+            }
+        }
 
         Ok(())
     }
@@ -1234,10 +1270,17 @@ fn midi_pool_note_on(
 ///
 /// Releasing a sounding note frees its slot; if any note is still held in the
 /// overflow stack the most-recently-stolen one is revived into that slot
-/// (`NoteOn` with its stored velocity — the revive supersedes the released
-/// note on the destination, matching the `poly(1)` return-to-held behaviour),
-/// otherwise a `NoteOff` is emitted. Releasing a note that was already stolen
-/// just drops it from the overflow stack; anything else is ignored.
+/// (`NoteOn` with its stored velocity). For a mono destination (`n == 1`) the
+/// revived `NoteOn` implicitly cuts the released note so no `NoteOff` is sent
+/// for it (the `poly(1)` return-to-held behaviour); for a poly destination
+/// (`n > 1`) an explicit `NoteOff` for the released note precedes the revive's
+/// `NoteOn`. With nothing in the overflow stack a plain `NoteOff` is emitted.
+/// Releasing a note that was tracked in the
+/// overflow stack just drops it from there. Releasing a note we don't track at
+/// all still emits a `NoteOff` to the device (defensive — a redundant NoteOff
+/// is harmless, and it stops a permanently stuck gate if the pool bookkeeping
+/// ever desyncs, e.g. the pool was cleared by a reload between the NoteOn and
+/// this NoteOff).
 #[cfg(feature = "midi")]
 fn midi_pool_note_off(
     state: &mut State,
@@ -1257,21 +1300,54 @@ fn midi_pool_note_off(
         pool.slots[slot] = None;
         pool.alloc_order.retain(|&i| i != slot);
         if let Some((rev_note, rev_vel)) = pool.overflow.pop() {
-            // Return-to-held: the revived note's NoteOn supersedes the
-            // released note on the destination (no NoteOff for it).
+            // Return-to-held: bring the most-recently-stolen still-held note
+            // back into this slot. On a mono destination (n == 1) the revived
+            // note's NoteOn implicitly cuts the released note, so we skip the
+            // NoteOff (matching legato/portamento behaviour). On a poly
+            // destination (n > 1) nothing cuts it, so we must emit an explicit
+            // NoteOff for the released note or its gate would stay open.
+            if n > 1 {
+                events.push(QueuedMidiEvent::NoteOff { channel, note });
+            }
             pool.slots[slot] = Some((rev_note, rev_vel));
             pool.alloc_order.push(slot);
+            tracing::debug!(
+                "MIDI pool: note_off voice={:?} note={} → slot {} freed, revived held note {} (vel {}); \
+                 explicit NoteOff for released note: {}; overflow now {} held, slots={:?}",
+                id, note, slot, rev_note, rev_vel, n > 1, pool.overflow.len(), pool.slots,
+            );
             events.push(QueuedMidiEvent::NoteOn {
                 channel,
                 note: rev_note,
                 velocity: rev_vel,
             });
         } else {
+            tracing::debug!(
+                "MIDI pool: note_off voice={:?} note={} → slot {} freed, NoteOff emitted; \
+                 overflow {} held, slots={:?}",
+                id, note, slot, pool.overflow.len(), pool.slots,
+            );
             events.push(QueuedMidiEvent::NoteOff { channel, note });
         }
-    } else {
-        // Held-but-stolen note released (or unknown) → just forget it.
+    } else if pool.overflow.iter().any(|&(n_, _)| n_ == note) {
+        // Held-but-stolen note released → drop it from the overflow stack. Its
+        // original NoteOn was already matched by a NoteOff at steal time.
         pool.overflow.retain(|&(n_, _)| n_ != note);
+        tracing::debug!(
+            "MIDI pool: note_off voice={:?} note={} → was held-but-stolen, dropped from overflow; \
+             overflow now {} held, slots={:?}",
+            id, note, pool.overflow.len(), pool.slots,
+        );
+    } else {
+        // Untracked note released. We have no record of it sounding, but the
+        // device might — emit a defensive NoteOff so a desync can't leave the
+        // gate stuck open.
+        tracing::debug!(
+            "MIDI pool: note_off voice={:?} note={} → UNTRACKED (pool desync?); \
+             emitting defensive NoteOff; overflow {} held, slots={:?}",
+            id, note, pool.overflow.len(), pool.slots,
+        );
+        events.push(QueuedMidiEvent::NoteOff { channel, note });
     }
 
     let empty = pool.overflow.is_empty() && pool.slots.iter().all(|s| s.is_none());
@@ -2336,7 +2412,10 @@ mod tests {
 
         // poly(3) fed 4 overlapping note-ons (A, B, C, D): A/B/C take free
         // slots; D steals the oldest (A) → NoteOff A + NoteOn D, A to overflow.
-        // Releasing D revives A. Releasing the remaining 3 sends 3 NoteOffs.
+        // Releasing D revives A — and because this is a poly destination (n > 1)
+        // the released note D gets an explicit NoteOff first (nothing implicitly
+        // cuts it the way a NoteOn does on a mono synth), so D can't stick.
+        // Releasing the remaining 3 sends 3 NoteOffs.
         #[tokio::test]
         async fn poly3_steal_revive_and_drain() {
             let (handler, state, rx) = midi_handler();
@@ -2357,8 +2436,8 @@ mod tests {
                 ],
             );
 
-            handler.note_off(v, 65).await.unwrap(); // D off — revives A
-            assert_eq!(drained(&rx), vec![("on", 0, 60, 127)]);
+            handler.note_off(v, 65).await.unwrap(); // D off — NoteOff D, then revive A
+            assert_eq!(drained(&rx), vec![("off", 0, 65, 0), ("on", 0, 60, 127)]);
 
             handler.note_off(v, 62).await.unwrap();
             handler.note_off(v, 64).await.unwrap();
@@ -3313,5 +3392,230 @@ mod tests {
         // The two pools live in disjoint ranges (audio < 1000 ≤ control).
         assert!(a2.raw() < 1000);
         assert!(c2.raw() >= 1000);
+    }
+}
+
+
+#[cfg(all(test, feature = "midi"))]
+mod midi_pool_tests {
+    use super::*;
+    use std::collections::{HashMap, HashSet};
+
+    /// A note event: `(is_note_on, note)`.
+    type Ev = (bool, u8);
+
+    /// Drive a sequence of note events through the unified pool for one voice
+    /// with `n` slots and return the flat list of device events emitted
+    /// (`(is_note_on, note)`) in order.
+    fn drive(n: usize, legato: bool, events: &[Ev]) -> Vec<Ev> {
+        let mut state = State::default();
+        let id = VoiceId::new(1);
+        let channel = 0u8;
+        let mut out = Vec::new();
+        for &(on, note) in events {
+            let emitted = if on {
+                midi_pool_note_on(&mut state, id, channel, note, 64, n, legato)
+            } else {
+                midi_pool_note_off(&mut state, id, channel, note, n)
+            };
+            for ev in emitted {
+                match ev {
+                    QueuedMidiEvent::NoteOn { note, .. } => out.push((true, note)),
+                    QueuedMidiEvent::NoteOff { note, .. } => out.push((false, note)),
+                    other => panic!("pool emitted unexpected event: {other:?}"),
+                }
+            }
+        }
+        out
+    }
+
+    /// Replay the emitted device events and assert that, once every key is
+    /// released, no note is left sounding on the destination. A mono
+    /// destination (`n == 1`) implicitly cuts the previous note on each NoteOn;
+    /// a poly destination tracks each note independently. A NoteOff for a note
+    /// that isn't currently sounding (a defensive flush) is a harmless no-op.
+    fn assert_nothing_sounding(n: usize, emitted: &[Ev]) {
+        if n == 1 {
+            let mut sounding: Option<u8> = None;
+            for &(on, note) in emitted {
+                if on {
+                    sounding = Some(note);
+                } else if sounding == Some(note) {
+                    sounding = None;
+                }
+            }
+            assert!(
+                sounding.is_none(),
+                "mono voice left note {sounding:?} sounding (events: {emitted:?})"
+            );
+        } else {
+            let mut sounding: HashSet<u8> = HashSet::new();
+            for &(on, note) in emitted {
+                if on {
+                    sounding.insert(note);
+                } else {
+                    sounding.remove(&note);
+                }
+            }
+            assert!(
+                sounding.is_empty(),
+                "poly voice left notes {sounding:?} sounding (events: {emitted:?})"
+            );
+        }
+    }
+
+    /// Net (NoteOn − NoteOff) per note over the emitted events.
+    fn net_per_note(emitted: &[Ev]) -> HashMap<u8, i32> {
+        let mut net: HashMap<u8, i32> = HashMap::new();
+        for &(on, note) in emitted {
+            *net.entry(note).or_default() += if on { 1 } else { -1 };
+        }
+        net
+    }
+
+    #[test]
+    fn mono_simple_press_release_is_balanced() {
+        let emitted = drive(1, false, &[(true, 60), (false, 60)]);
+        assert_eq!(emitted, vec![(true, 60), (false, 60)]);
+        assert_nothing_sounding(1, &emitted);
+        assert!(net_per_note(&emitted).values().all(|&c| c == 0));
+    }
+
+    #[test]
+    fn mono_steal_and_revive() {
+        // Press A, press B (steals A → NoteOff A, NoteOn B), release B → revive A,
+        // release A → NoteOff A. (On a mono device the revive's NoteOn cuts B,
+        // so there is no NoteOff B — `assert_nothing_sounding` models that.)
+        let emitted = drive(1, false, &[(true, 60), (true, 64), (false, 64), (false, 60)]);
+        assert_nothing_sounding(1, &emitted);
+    }
+
+    #[test]
+    fn mono_release_stolen_note_out_of_order() {
+        // Press A, press B (steal A), release A first (the stolen one — must not
+        // resurrect or leak), release B → NoteOff B.
+        let emitted = drive(1, false, &[(true, 60), (true, 64), (false, 60), (false, 64)]);
+        assert_nothing_sounding(1, &emitted);
+        assert!(net_per_note(&emitted).values().all(|&c| c == 0));
+    }
+
+    #[test]
+    fn mono_repress_stolen_note() {
+        // Press A, press B (steals A), re-press A (steals B), release A → revive B,
+        // release B → NoteOff B.
+        let emitted = drive(
+            1,
+            false,
+            &[(true, 60), (true, 64), (true, 60), (false, 60), (false, 64)],
+        );
+        assert_nothing_sounding(1, &emitted);
+    }
+
+    #[test]
+    fn mono_deep_steal_chain_unwinds_cleanly() {
+        // Four notes held in turn on a mono voice, released in reverse — every
+        // release revives the previous held note; the last is a NoteOff.
+        let emitted = drive(
+            1,
+            false,
+            &[
+                (true, 60),
+                (true, 62),
+                (true, 64),
+                (true, 65),
+                (false, 65),
+                (false, 64),
+                (false, 62),
+                (false, 60),
+            ],
+        );
+        assert_nothing_sounding(1, &emitted);
+    }
+
+    #[test]
+    fn poly3_overflow_and_release_interleavings() {
+        // Fill 3 slots, a 4th steals the oldest (60 → NoteOff 60, overflow).
+        // Release a held note → poly destination gets an explicit NoteOff for it
+        // plus the revive's NoteOn for 60. Everything balances to zero.
+        let emitted = drive(
+            3,
+            false,
+            &[
+                (true, 60),
+                (true, 62),
+                (true, 64),
+                (true, 65),
+                (false, 62),
+                (false, 65),
+                (false, 64),
+                (false, 60),
+            ],
+        );
+        assert_nothing_sounding(3, &emitted);
+        assert!(
+            net_per_note(&emitted).values().all(|&c| c == 0),
+            "unbalanced NoteOn/NoteOff on poly(3): {emitted:?}"
+        );
+    }
+
+    #[test]
+    fn poly3_chord_balanced() {
+        let emitted = drive(
+            3,
+            false,
+            &[
+                (true, 60),
+                (true, 64),
+                (true, 67),
+                (false, 64),
+                (false, 67),
+                (false, 60),
+            ],
+        );
+        assert_eq!(
+            emitted,
+            vec![
+                (true, 60),
+                (true, 64),
+                (true, 67),
+                (false, 64),
+                (false, 67),
+                (false, 60),
+            ]
+        );
+        assert_nothing_sounding(3, &emitted);
+    }
+
+    #[test]
+    fn release_untracked_note_emits_defensive_note_off() {
+        // No prior NoteOn for note 47 — releasing it still flushes a NoteOff so a
+        // bookkeeping desync cannot leave the device's gate stuck open.
+        let emitted = drive(1, false, &[(false, 47)]);
+        assert_eq!(emitted, vec![(false, 47)]);
+        assert_nothing_sounding(1, &emitted);
+    }
+
+    #[test]
+    fn release_after_pool_cleared_mid_hold_emits_note_off() {
+        // Press A on a mono voice, simulate a reload clearing the pool (which
+        // flushes a NoteOff for the sounding slot), then the delayed release
+        // arrives → defensive NoteOff for A.
+        let mut state = State::default();
+        let id = VoiceId::new(1);
+        let on = midi_pool_note_on(&mut state, id, 0, 60, 64, 1, false);
+        assert!(matches!(on.as_slice(), [QueuedMidiEvent::NoteOn { note: 60, .. }]));
+        let cleared = midi_pool_clear(&mut state, id, 0);
+        assert!(matches!(cleared.as_slice(), [QueuedMidiEvent::NoteOff { note: 60, .. }]));
+        let off = midi_pool_note_off(&mut state, id, 0, 60, 1);
+        assert!(matches!(off.as_slice(), [QueuedMidiEvent::NoteOff { note: 60, .. }]));
+        assert!(!state.midi_voice_pool.contains_key(&id));
+    }
+
+    #[test]
+    fn legato_steal_skips_note_off_but_release_still_clears() {
+        // With legato, stealing does not emit NoteOff(stolen) (portamento slur),
+        // but the eventual releases must still leave nothing sounding.
+        let emitted = drive(1, true, &[(true, 60), (true, 64), (false, 64), (false, 60)]);
+        assert_nothing_sounding(1, &emitted);
     }
 }
