@@ -85,10 +85,34 @@ impl<B: Backend> VoicesHandler<B> {
         event: QueuedMidiEvent,
     ) -> Result<()> {
         // Try direct path first (lower latency).
-        if let Some(sender) = self.get_midi_sender(device_id) {
-            if sender.try_send(event.clone().immediate()).is_ok() {
-                tracing::debug!("MIDI mono: direct {:?} -> device {:?}", event, device_id);
-                return Ok(());
+        match self.get_midi_sender(device_id) {
+            Some(sender) => {
+                if sender.try_send(event.clone().immediate()).is_ok() {
+                    tracing::debug!("MIDI pool: direct {:?} -> device {:?}", event, device_id);
+                    return Ok(());
+                }
+                tracing::warn!(
+                    "MIDI pool: direct channel for device {:?} is full — dropping {:?}",
+                    device_id,
+                    event
+                );
+            }
+            None => {
+                // No output sender registered for this id. This is the symptom
+                // of a device-id mismatch (the voice's `midi_output` id is not
+                // the one the output port was opened under) — the synthdef
+                // fallback below only works when a `vibelang_midi_note_{on,off}`
+                // synthdef is loaded, which is not the deploy default, so warn
+                // loudly rather than silently no-op.
+                tracing::warn!(
+                    "MIDI pool: no output sender registered for device {:?} — \
+                     event {:?} not delivered via the direct path; the device \
+                     may not be open or the voice's MIDI output id is stale. \
+                     Attempting synthdef fallback (no-op unless a \
+                     vibelang_midi_note_* synthdef is loaded).",
+                    device_id,
+                    event
+                );
             }
         }
 

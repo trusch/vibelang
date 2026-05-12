@@ -4865,4 +4865,97 @@ mod tests {
         // survives, at bus 3.
         assert_routing_reload_transition(2, 1, 3, 1).await;
     }
+
+    // Regression: a poly(1) MIDI-output voice driven by a keyboard route must
+    // forward its NoteOn through the runtime to the device's output sender —
+    // i.e. the id `voice.config.midi_output` is registered as `note_on` ->
+    // `send_midi_event_now` -> `get_midi_sender` look it up, not silently lost
+    // to the (deploy-dead) synthdef fallback. This exercises one level above
+    // the `handlers::voices` mock-sink unit tests: VoiceMessage::NoteOn (what a
+    // keyboard route sends) -> Runtime dispatch -> VoicesHandler -> the sender
+    // registered in the runtime's MIDI output-channel map.
+    #[cfg(feature = "midi")]
+    #[tokio::test]
+    async fn midi_output_voice_note_on_reaches_device_sender() {
+        use crate::message::{GroupMessage, VoiceMessage};
+        use crate::midi::QueuedMidiEvent;
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, MidiDeviceId, VoiceId};
+
+        let mut runtime = Runtime::new(MockBackend);
+
+        // Register a fake output sender under the device id the voice will use.
+        const DEV: u32 = 5;
+        let (tx, rx) = crossbeam_channel::unbounded::<crate::midi::ScheduledMidiEvent>();
+        runtime
+            .midi
+            .output_channels()
+            .lock()
+            .unwrap()
+            .insert(MidiDeviceId::new(DEV), tx);
+
+        // Group + a poly(1) MIDI-output voice on that device.
+        runtime
+            .send(
+                GroupMessage::Create {
+                    id: GroupId::new(1),
+                    name: "g".to_string(),
+                    parent: None,
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let vid = VoiceId::new(1);
+        let cfg = VoiceConfig::new("lead", "", GroupId::new(1))
+            .with_midi_output(MidiDeviceId::new(DEV), 0)
+            .with_polyphony(1);
+        runtime
+            .send(
+                VoiceMessage::Create {
+                    id: vid,
+                    config: Box::new(cfg),
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        // Simulate the keyboard route firing (handlers::midi sends exactly this).
+        runtime
+            .send(
+                VoiceMessage::NoteOn {
+                    voice: vid,
+                    note: 60,
+                    velocity: 1.0,
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let scheduled = rx
+            .try_recv()
+            .expect("poly(1) MIDI-output voice must forward its NoteOn to the device sender");
+        match scheduled.event {
+            QueuedMidiEvent::NoteOn {
+                channel,
+                note,
+                velocity,
+            } => {
+                assert_eq!(channel, 0);
+                assert_eq!(note, 60);
+                assert_eq!(velocity, 127);
+            }
+            other => panic!("expected NoteOn, got {other:?}"),
+        }
+        assert!(
+            rx.try_recv().is_err(),
+            "a single keyboard note should produce exactly one device event"
+        );
+    }
 }

@@ -290,11 +290,31 @@ impl Voice {
     /// to configure the channel before passing to this method.
     #[cfg(feature = "midi")]
     pub fn on_midi_device(mut self, device: MidiDevice) -> Self {
-        self.midi_output_device = Some(device.id);
+        // `midi_device()` resolves names against the *input* port list first, so
+        // a device that is both an input and an output yields the input-port
+        // index — which addresses the wrong port (or no port) on the output
+        // side once the input list and output list diverge. Re-resolve by name
+        // against the output list so `.on(...)` always targets the real output.
+        let output_id = super::midi::resolve_output_device_id(&device.name).unwrap_or_else(|| {
+            if device.has_output {
+                // Already an output-resolved handle (or `midi_device(idx)`); the
+                // stored id is the output index.
+                device.id
+            } else {
+                tracing::warn!(
+                    "on_midi_device: '{}' (id {}) has no matching MIDI output port; \
+                     MIDI output for this voice will be a no-op",
+                    device.name,
+                    device.id.raw()
+                );
+                device.id
+            }
+        });
+        self.midi_output_device = Some(output_id);
         self.midi_channel = device.channel;
         // Mark this device for output opening during reload
         context::with_state(|state| {
-            state.midi_outputs.insert(device.id);
+            state.midi_outputs.insert(output_id);
         });
         self.sync_to_state();
         self

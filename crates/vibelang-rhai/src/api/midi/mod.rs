@@ -196,6 +196,38 @@ pub fn midi_device_by_id(id: i64) -> MidiDevice {
     midi_device(id.to_string())
 }
 
+/// Resolve a device name (or full port name) to an **output**-port index.
+///
+/// `midi_device()` searches the *input* port list before the output list, so a
+/// device that exposes both directions (e.g. an app like "MODEL 15" that
+/// presents a bidirectional ALSA port) is returned with the *input* port index
+/// — which is meaningless for output and, once the input list grows (another
+/// keyboard plugged in), no longer coincides with the output index. Anything
+/// that uses a `MidiDevice` for output (`.on(...)`, MIDI clock out, ...) must
+/// re-resolve against the output list; this is that lookup.
+pub fn resolve_output_device_id(name: &str) -> Option<MidiDeviceId> {
+    use midir::MidiOutput;
+    let midi_out = MidiOutput::new("vibelang-rhai-out-resolve").ok()?;
+    let ports = midi_out.ports();
+    // Exact port-name match first (midi_device stores the full resolved name).
+    for (idx, port) in ports.iter().enumerate() {
+        if midi_out.port_name(port).is_ok_and(|n| n == name) {
+            return Some(MidiDeviceId::new(idx as u32));
+        }
+    }
+    // Fall back to a case-insensitive substring match, mirroring midi_device().
+    let needle = name.to_lowercase();
+    for (idx, port) in ports.iter().enumerate() {
+        if midi_out
+            .port_name(port)
+            .is_ok_and(|n| n.to_lowercase().contains(&needle))
+        {
+            return Some(MidiDeviceId::new(idx as u32));
+        }
+    }
+    None
+}
+
 /// Register MIDI API with the Rhai engine.
 pub fn register(engine: &mut Engine) {
     // Register MidiDevice type
