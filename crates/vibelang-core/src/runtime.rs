@@ -1518,18 +1518,35 @@ impl<B: Backend> Runtime<B> {
                     let _ = self.voices.set_param(*id, param, *value).await;
                 }
                 // Update the stored config for non-param fields (name, polyphony, etc.)
-                let mut state = self.state.write().await;
-                if let Some(voice) = state.voices.get_mut(id) {
-                    voice.config.name = new_config.name.clone();
-                    voice.config.polyphony = new_config.polyphony;
-                    voice.config.round_robin_count = new_config.round_robin_count;
-                    voice.config.choke_group = new_config.choke_group.clone();
-                    #[cfg(feature = "midi")]
-                    {
-                        voice.config.midi_output = new_config.midi_output;
-                        voice.config.midi_channel = new_config.midi_channel;
-                        voice.config.param_cc_map = new_config.param_cc_map.clone();
+                #[cfg_attr(not(feature = "midi"), allow(unused_variables))]
+                let polyphony_changed = {
+                    let mut state = self.state.write().await;
+                    if let Some(voice) = state.voices.get_mut(id) {
+                        let changed = voice.config.polyphony != new_config.polyphony;
+                        voice.config.name = new_config.name.clone();
+                        voice.config.polyphony = new_config.polyphony;
+                        voice.config.round_robin_count = new_config.round_robin_count;
+                        voice.config.choke_group = new_config.choke_group.clone();
+                        voice.config.mono_legato = new_config.mono_legato;
+                        #[cfg(feature = "midi")]
+                        {
+                            voice.config.midi_output = new_config.midi_output;
+                            voice.config.midi_channel = new_config.midi_channel;
+                            voice.config.param_cc_map = new_config.param_cc_map.clone();
+                        }
+                        changed
+                    } else {
+                        false
                     }
+                };
+                // A polyphony change on a MIDI-output voice resizes its
+                // voice-allocation pool (NoteOff for notes that no longer fit).
+                #[cfg(feature = "midi")]
+                if polyphony_changed {
+                    let _ = self
+                        .voices
+                        .resize_midi_pool(*id, new_config.polyphony as usize)
+                        .await;
                 }
             }
         }

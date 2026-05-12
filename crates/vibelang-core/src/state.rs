@@ -969,20 +969,35 @@ pub struct State {
     pub param_triggers:
         HashMap<(crate::handlers::ParamRouteTarget, String), (NodeId, BusId)>,
 
-    /// Per-voice mono note-stack for `poly(1)` MIDI-output voices.
+    /// Per-voice voice-allocation pool for MIDI-output voices.
     ///
-    /// Maps a MIDI-output voice with `polyphony == 1` to the stack of
-    /// currently-held `(note, velocity)` pairs, most-recently-pressed at the
-    /// end. Drives last-note-priority monophonic behaviour in
-    /// [`crate::handlers::VoicesHandler::note_on`] / `note_off` — a
-    /// polyphonic input stream is collapsed to a single sounding note with a
-    /// clean retrigger on note steal and a return-to-held on note release.
-    /// Cleared on voice stop / delete / create (reload).
-    pub midi_mono_stack: HashMap<VoiceId, Vec<(u8, u8)>>,
+    /// Every MIDI-output voice (any `polyphony >= 1`) gets a [`MidiVoicePool`]
+    /// here on first note. It collapses a polyphonic input stream onto `n`
+    /// sounding slots with a clean retrigger on note steal, a return-to-held
+    /// on note release (notes whose slot was stolen sit in the pool's overflow
+    /// stack until their key is released), and a `NoteOff` for every sounding
+    /// slot when the voice is stopped / deleted / reloaded. `poly(1)` is just
+    /// the `n == 1` case. Drives [`crate::handlers::VoicesHandler::note_on`] /
+    /// `note_off`. Cleared on voice stop / delete / create (reload); resized
+    /// in place when `polyphony` changes on reload.
+    pub midi_voice_pool: HashMap<VoiceId, MidiVoicePool>,
+}
 
-    /// The MIDI note currently sounding on each `poly(1)` MIDI-output voice.
-    /// Paired with [`Self::midi_mono_stack`]; absent when nothing is sounding.
-    pub midi_mono_sounding: HashMap<VoiceId, u8>,
+/// Per-voice voice-allocation pool for a MIDI-output voice — see
+/// [`State::midi_voice_pool`].
+///
+/// Invariants: `slots.len() == polyphony` (`>= 1`); `alloc_order` holds
+/// exactly the indices of the occupied (`Some`) slots, oldest-allocated
+/// first; `overflow` holds held-but-not-sounding `(note, velocity)` pairs
+/// (their slot was stolen), most-recently-stolen last.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MidiVoicePool {
+    /// Sounding `(note, velocity)` per voice slot; `None` is a free slot.
+    pub slots: Vec<Option<(u8, u8)>>,
+    /// Held keys whose slot was stolen, most-recently-stolen last.
+    pub overflow: Vec<(u8, u8)>,
+    /// Occupied slot indices, oldest-allocated first (note-steal order).
+    pub alloc_order: Vec<usize>,
 }
 
 /// Live state of one `param_kr_modulate_<n>` summer instance.
@@ -1055,8 +1070,7 @@ impl Default for State {
             param_summers: HashMap::new(),
             ar_to_kr_adapters: HashMap::new(),
             param_triggers: HashMap::new(),
-            midi_mono_stack: HashMap::new(),
-            midi_mono_sounding: HashMap::new(),
+            midi_voice_pool: HashMap::new(),
         }
     }
 }
