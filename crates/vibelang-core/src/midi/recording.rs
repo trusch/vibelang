@@ -308,10 +308,19 @@ impl MidiRecording {
                 note.beat.to_f64()
             };
 
-            // Create step with note parameters
+            // Create step with note parameters.
+            //
+            // Velocity is stored as `amp` (0..1) because that's the step-param
+            // name the pattern playback handler reads
+            // (see `crates/vibelang-core/src/handlers/patterns.rs`, where it
+            // multiplies the voice's base `amp` by `step.params["amp"]` and
+            // passes the result through as the note-on velocity). Writing
+            // `velocity` here used to silently drop velocity on playback —
+            // every step replayed at `amp = 1.0`.
+            let amp = (note.velocity as f32 / 127.0).clamp(0.0, 1.0);
             let mut step = Step::at(beat_pos)
                 .with_param("note", note.note as f32)
-                .with_param("velocity", note.velocity as f32 / 127.0);
+                .with_param("amp", amp);
 
             // Add duration if available
             if let Some(dur) = note.duration {

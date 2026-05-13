@@ -27,6 +27,12 @@ pub struct PatternsHandler<B: Backend> {
 
 /// Info about a step that needs to be triggered.
 struct StepTrigger {
+    /// Owning pattern. Re-checked just before dispatch so that a `stop()` call
+    /// that lands after the tick collected triggers but before the dispatch
+    /// loop fires them is honoured (otherwise the last lookahead-window of
+    /// notes leaks past the stop — observable as the previous loop bleeding
+    /// over the start of a new looper recording).
+    pattern_id: PatternId,
     voice_id: VoiceId,
     params: ParamMap,
     /// Note number if this is a MIDI pattern step (from params).
@@ -194,6 +200,7 @@ impl<B: Backend> PatternsHandler<B> {
                         );
 
                         triggers.push(StepTrigger {
+                            pattern_id,
                             voice_id,
                             params,
                             note,
@@ -214,6 +221,23 @@ impl<B: Backend> PatternsHandler<B> {
             );
         }
         for trigger in triggers {
+            // Re-check that the owning pattern is still playing. The tick
+            // collected lookahead triggers inside a state lock that we have
+            // since released; if `stop()` ran in the meantime, the pattern
+            // is no longer playing and we must drop the trigger rather than
+            // fire one last batch of stale note-ons.
+            let still_playing = {
+                let state = self.state.read().await;
+                state
+                    .patterns
+                    .get(&trigger.pattern_id)
+                    .map(|p| p.playing)
+                    .unwrap_or(false)
+            };
+            if !still_playing {
+                continue;
+            }
+
             // If step has a note parameter and voice has MIDI output, use note_on_at
             // Otherwise, use trigger for audio synths
             #[cfg(feature = "midi")]
@@ -287,14 +311,35 @@ impl<B: Backend> Patterns for PatternsHandler<B> {
     }
 
     async fn stop(&self, id: PatternId) -> Result<()> {
-        let mut state = self.state.write().await;
+        // Flip `playing` to false inside the lock and capture the voice plus
+        // its currently held notes so we can send note-offs *outside* the
+        // lock. The looper relies on `stop()` actually silencing the loop —
+        // not just disabling the scheduler — because the next `tick()` will
+        // already have queued lookahead note-ons into the dispatch path,
+        // and MIDI sustains held notes until an explicit note-off arrives.
+        // Without this, the previous loop bleeds over the start of the next
+        // recording (audible as "altes Pattern noch da während ich das neue
+        // einspiele").
+        let (voice_id, held_notes) = {
+            let mut state = self.state.write().await;
+            let pattern = state
+                .patterns
+                .get_mut(&id)
+                .ok_or(Error::PatternNotFound(id))?;
+            pattern.playing = false;
+            let voice_id = pattern.content.voice;
+            let held = voice_id
+                .and_then(|vid| state.voices.get(&vid))
+                .map(|v| v.note_nodes.keys().copied().collect::<Vec<u8>>())
+                .unwrap_or_default();
+            (voice_id, held)
+        };
 
-        let pattern = state
-            .patterns
-            .get_mut(&id)
-            .ok_or(Error::PatternNotFound(id))?;
-
-        pattern.playing = false;
+        if let Some(vid) = voice_id {
+            for note in held_notes {
+                let _ = self.voices.note_off(vid, note).await;
+            }
+        }
 
         Ok(())
     }
