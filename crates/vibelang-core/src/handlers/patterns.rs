@@ -39,6 +39,13 @@ struct StepTrigger {
     note: Option<u8>,
     /// Wall-clock time when this step should fire.
     timestamp: Instant,
+    /// Duration after `timestamp` at which to send a matching MIDI note-off.
+    /// `None` for audio-synth steps or pattern steps without a `gate` param.
+    /// Set from the step's `gate` param (recorded beats) × `60 / tempo`.
+    /// Without this, the looper plays a note that's never released, and the
+    /// polyphony pool only evicts it when the NEXT note for the same voice
+    /// arrives — so the last note in a loop is held for the full loop length.
+    gate_dur: Option<Duration>,
 }
 
 impl<B: Backend> PatternsHandler<B> {
@@ -192,11 +199,29 @@ impl<B: Backend> PatternsHandler<B> {
                         // Check for note parameter (for MIDI patterns)
                         let note = step.params.get("note").map(|n| *n as u8);
 
+                        // Translate the recorded `gate` (beats) into a
+                        // wall-clock duration so the dispatch loop can
+                        // schedule a matching note-off. Only meaningful for
+                        // MIDI steps; ignored for audio-synth triggers.
+                        let gate_dur = if note.is_some() {
+                            step.params.get("gate").and_then(|gate_beats| {
+                                let secs = (*gate_beats as f64) * 60.0 / tempo;
+                                if secs.is_finite() && secs > 0.0 {
+                                    Some(Duration::from_secs_f64(secs))
+                                } else {
+                                    None
+                                }
+                            })
+                        } else {
+                            None
+                        };
+
                         tracing::debug!(
-                            "Pattern step scheduled: voice={:?}, note={:?}, offset={:.3}ms",
+                            "Pattern step scheduled: voice={:?}, note={:?}, offset={:.3}ms, gate={:?}",
                             voice_id,
                             note,
-                            offset_secs * 1000.0
+                            offset_secs * 1000.0,
+                            gate_dur
                         );
 
                         triggers.push(StepTrigger {
@@ -205,6 +230,7 @@ impl<B: Backend> PatternsHandler<B> {
                             params,
                             note,
                             timestamp,
+                            gate_dur,
                         });
                     }
                 }
@@ -247,6 +273,34 @@ impl<B: Backend> PatternsHandler<B> {
                     .voices
                     .note_on_at(trigger.voice_id, note, velocity, Some(trigger.timestamp))
                     .await;
+
+                // Schedule the matching note-off after the step's gate. Without
+                // this, MIDI sustains the note forever — the polyphony pool
+                // only evicts it when the NEXT note-on for the same voice
+                // arrives, so the loop's last note hangs for the full loop
+                // period. Fire-and-forget tokio task; if the pattern is
+                // stopped in the meantime, `stop()` already sweeps held notes,
+                // so the redundant note-off here is benign (or no-op if the
+                // pattern was deleted).
+                if let Some(gate) = trigger.gate_dur {
+                    let voices = self.voices.clone();
+                    let state = self.state.clone();
+                    let pattern_id = trigger.pattern_id;
+                    let voice_id = trigger.voice_id;
+                    tokio::spawn(async move {
+                        tokio::time::sleep(gate).await;
+                        let still_playing = state
+                            .read()
+                            .await
+                            .patterns
+                            .get(&pattern_id)
+                            .map(|p| p.playing)
+                            .unwrap_or(false);
+                        if still_playing {
+                            let _ = voices.note_off_at(voice_id, note, None).await;
+                        }
+                    });
+                }
             } else {
                 // Audio synth trigger (no MIDI)
                 let _ = self.voices.trigger(trigger.voice_id, &trigger.params).await;
