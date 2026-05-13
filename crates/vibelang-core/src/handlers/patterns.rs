@@ -382,10 +382,32 @@ impl<B: Backend> Patterns for PatternsHandler<B> {
                 .ok_or(Error::PatternNotFound(id))?;
             pattern.playing = false;
             let voice_id = pattern.content.voice;
-            let held = voice_id
-                .and_then(|vid| state.voices.get(&vid))
-                .map(|v| v.note_nodes.keys().copied().collect::<Vec<u8>>())
-                .unwrap_or_default();
+
+            // Collect every note that's currently sounding for the pattern's
+            // voice. Audio synths track held notes in `voice.note_nodes`;
+            // MIDI-output voices instead push through `state.midi_voice_pool`
+            // (slots + overflow). Without sweeping the pool, the previous
+            // loop's MIDI note-ons stay latched on the external synth — the
+            // pool only releases them when the next note-on for the same
+            // (voice, note) arrives, so the old pattern bleeds into the
+            // pauses of the new recording.
+            let mut held: Vec<u8> = Vec::new();
+            if let Some(vid) = voice_id {
+                if let Some(v) = state.voices.get(&vid) {
+                    held.extend(v.note_nodes.keys().copied());
+                }
+                #[cfg(feature = "midi")]
+                if let Some(pool) = state.midi_voice_pool.get(&vid) {
+                    for slot in &pool.slots {
+                        if let Some((note, _)) = slot {
+                            held.push(*note);
+                        }
+                    }
+                    for (note, _) in &pool.overflow {
+                        held.push(*note);
+                    }
+                }
+            }
             (voice_id, held)
         };
 
