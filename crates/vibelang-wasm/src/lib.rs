@@ -61,6 +61,50 @@ pub fn init_panic_hook() {
     set_deploy_callback(|_| Ok(()));
 }
 
+fn parse_note_name(name: &str) -> Option<u8> {
+    let name = name.trim();
+    if name.is_empty() {
+        return None;
+    }
+
+    let mut chars = name.chars().peekable();
+    let base = match chars.next()?.to_ascii_uppercase() {
+        'C' => 0,
+        'D' => 2,
+        'E' => 4,
+        'F' => 5,
+        'G' => 7,
+        'A' => 9,
+        'B' => 11,
+        _ => return None,
+    };
+
+    let mut accidental = 0i8;
+    while let Some(&c) = chars.peek() {
+        match c {
+            '#' | '\u{266f}' => {
+                accidental += 1;
+                chars.next();
+            }
+            'b' | '\u{266d}' => {
+                accidental -= 1;
+                chars.next();
+            }
+            _ => break,
+        }
+    }
+
+    let octave_str: String = chars.collect();
+    let octave = if octave_str.is_empty() {
+        4
+    } else {
+        octave_str.parse().ok()?
+    };
+    let note = (octave + 1) as i16 * 12 + base as i16 + accidental as i16;
+
+    (0..=127).contains(&note).then_some(note as u8)
+}
+
 /// Result from executing a VibeLang script.
 #[derive(Serialize, Deserialize)]
 pub struct ExecutionResult {
@@ -342,9 +386,7 @@ impl VibelangRuntime {
     /// Parse a note name to MIDI number.
     #[wasm_bindgen(js_name = parseNote)]
     pub fn parse_note(note: &str) -> i32 {
-        vibelang_core::midi::parse_note_name(note)
-            .map(|n| n as i32)
-            .unwrap_or(-1)
+        parse_note_name(note).map(|n| n as i32).unwrap_or(-1)
     }
 
     /// Convert decibels to linear amplitude.
@@ -505,4 +547,32 @@ pub fn log(message: &str) {
 #[wasm_bindgen]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_note_name;
+
+    #[test]
+    fn parse_note_name_handles_browser_safe_notes_without_midi_feature() {
+        assert_eq!(parse_note_name("C4"), Some(60));
+        assert_eq!(parse_note_name("A4"), Some(69));
+        assert_eq!(parse_note_name("C#4"), Some(61));
+        assert_eq!(parse_note_name("Db4"), Some(61));
+        assert_eq!(parse_note_name("C##4"), Some(62));
+        assert_eq!(parse_note_name("C\u{266f}4"), Some(61));
+        assert_eq!(parse_note_name("D\u{266d}4"), Some(61));
+        assert_eq!(parse_note_name("C-1"), Some(0));
+        assert_eq!(parse_note_name("G9"), Some(127));
+        assert_eq!(parse_note_name("C"), Some(60));
+        assert_eq!(parse_note_name("c4"), Some(60));
+    }
+
+    #[test]
+    fn parse_note_name_rejects_invalid_browser_notes_without_midi_feature() {
+        assert_eq!(parse_note_name(""), None);
+        assert_eq!(parse_note_name("H4"), None);
+        assert_eq!(parse_note_name("C-2"), None);
+        assert_eq!(parse_note_name("G#9"), None);
+    }
 }
