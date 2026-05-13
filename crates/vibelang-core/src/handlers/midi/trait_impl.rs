@@ -181,9 +181,23 @@ impl<B: Backend> Midi for MidiHandler<B> {
             .port_name(port)
             .unwrap_or_else(|_| format!("Unknown {}", id.0));
 
-        let conn = midi_out
+        let mut conn = midi_out
             .connect(port, "vibelang-output")
             .map_err(|e| Error::MidiError(format!("Failed to connect MIDI output: {}", e)))?;
+
+        // Panic-clear any zombie notes left on the device from a previous
+        // session (e.g., crash, kill -9, or service restart while the looper
+        // was playing). Without this, the previous PID's last note_on is
+        // still held on the external synth and we have no way to send the
+        // matching note_off — manifests as a stuck tone on startup. CC 123
+        // (All Notes Off) is the standard MIDI panic message; we send it on
+        // all 16 channels for completeness, plus CC 64 (Sustain Pedal) = 0
+        // in case the sustain pedal was latched.
+        for ch in 0..16u8 {
+            let status = 0xB0 | ch;
+            let _ = conn.send(&[status, 123, 0]); // All Notes Off
+            let _ = conn.send(&[status, 64, 0]); // Sustain Off
+        }
 
         self.outputs
             .lock()

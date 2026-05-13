@@ -336,9 +336,19 @@ impl MidiDeviceManager {
             .port_name(port)
             .unwrap_or_else(|_| format!("Output {}", id.0));
 
-        let connection = midi_out
+        let mut connection = midi_out
             .connect(port, "vibelang-output")
             .map_err(|e| format!("Failed to connect MIDI output: {}", e))?;
+
+        // Panic-clear any zombie notes left on the device from a previous
+        // session — see comment at the parallel site in
+        // `handlers/midi/trait_impl.rs::open_output`. CC 123 All Notes Off +
+        // CC 64 Sustain Off on every channel.
+        for ch in 0..16u8 {
+            let status = 0xB0 | ch;
+            let _ = connection.send(&[status, 123, 0]);
+            let _ = connection.send(&[status, 64, 0]);
+        }
 
         // Store state
         let mut outputs = self.outputs.write();
