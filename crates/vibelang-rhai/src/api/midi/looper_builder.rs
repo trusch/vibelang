@@ -29,7 +29,12 @@ impl LooperBuilder {
             device_id,
             channel: None,
             silence_bars: 1.0,
-            quantize_beats: 0.25,
+            // No quantization by default. The previous 16th-note default
+            // collapsed multiple fast hits onto the same step (e.g., snare
+            // rolls turned into a single sustained tone) and snapped every
+            // recorded note off the user's intended groove. Opt-in via
+            // `.quantize(0.25)` for a tight grid.
+            quantize_beats: 0.0,
         }
     }
 

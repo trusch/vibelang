@@ -250,8 +250,14 @@ impl LooperManager {
                 continue;
             }
 
-            // Silence threshold reached — finalise the recording.
-            inst.recording.stop(Beat::from_f64(current_beat));
+            // Silence threshold reached — finalise the recording AT the last
+            // note-off, not at the current tick. Stopping at the current tick
+            // bakes the silence_bars wait period into the recording length,
+            // so the loop replays your music followed by a bar of dead air.
+            // Cutting at the last note-off makes the loop length the actual
+            // played duration; the nearest-bar quantization below then snaps
+            // it to a musical loop boundary.
+            inst.recording.stop(last_off);
 
             // Quantize loop length to the nearest bar (minimum 1 bar).
             let bar_beats = time_sig_numerator as f64;
