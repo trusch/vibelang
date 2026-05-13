@@ -342,12 +342,16 @@ impl MidiDeviceManager {
 
         // Panic-clear any zombie notes left on the device from a previous
         // session — see comment at the parallel site in
-        // `handlers/midi/trait_impl.rs::open_output`. CC 123 All Notes Off +
-        // CC 64 Sustain Off on every channel.
+        // `handlers/midi/trait_impl.rs::open_output` for the rationale.
+        // Layered: Sustain Off, explicit Note-Off 0..128, then CC 123.
         for ch in 0..16u8 {
-            let status = 0xB0 | ch;
-            let _ = connection.send(&[status, 123, 0]);
-            let _ = connection.send(&[status, 64, 0]);
+            let cc_status = 0xB0 | ch;
+            let off_status = 0x80 | ch;
+            let _ = connection.send(&[cc_status, 64, 0]);
+            for note in 0..=127u8 {
+                let _ = connection.send(&[off_status, note, 0]);
+            }
+            let _ = connection.send(&[cc_status, 123, 0]);
         }
 
         // Store state

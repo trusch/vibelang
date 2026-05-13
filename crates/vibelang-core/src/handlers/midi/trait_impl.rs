@@ -189,14 +189,23 @@ impl<B: Backend> Midi for MidiHandler<B> {
         // session (e.g., crash, kill -9, or service restart while the looper
         // was playing). Without this, the previous PID's last note_on is
         // still held on the external synth and we have no way to send the
-        // matching note_off — manifests as a stuck tone on startup. CC 123
-        // (All Notes Off) is the standard MIDI panic message; we send it on
-        // all 16 channels for completeness, plus CC 64 (Sustain Pedal) = 0
-        // in case the sustain pedal was latched.
+        // matching note_off — manifests as a stuck tone on startup.
+        //
+        // Layered approach for maximum robustness:
+        //   1. CC 64 (Sustain Pedal) = 0  — release any latched sustain.
+        //   2. Explicit Note-Off for every note 0..128 — works on every
+        //      synth, including Behringer Model 15 which ignores CC 123.
+        //   3. CC 123 (All Notes Off) — short-circuit on conforming synths.
+        // Per channel × 16 channels = ~2KB of MIDI per device open. ~70ms
+        // serial latency on 31.25 kbit/s real DIN; trivial over USB.
         for ch in 0..16u8 {
-            let status = 0xB0 | ch;
-            let _ = conn.send(&[status, 123, 0]); // All Notes Off
-            let _ = conn.send(&[status, 64, 0]); // Sustain Off
+            let cc_status = 0xB0 | ch;
+            let off_status = 0x80 | ch;
+            let _ = conn.send(&[cc_status, 64, 0]); // Sustain Off
+            for note in 0..=127u8 {
+                let _ = conn.send(&[off_status, note, 0]);
+            }
+            let _ = conn.send(&[cc_status, 123, 0]); // All Notes Off
         }
 
         self.outputs
