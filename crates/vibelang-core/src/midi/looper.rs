@@ -243,6 +243,16 @@ impl LooperManager {
                 continue;
             };
 
+            // Don't count silence while the user is still holding keys.
+            // `last_note_off_beat` only tracks the most recent release; if
+            // the user lets one key go but keeps another held, the timer
+            // would otherwise expire mid-performance and snap the loop
+            // closed underneath them. Require *all* notes off for the
+            // full silence window before finalising.
+            if inst.recording.pending_count() > 0 {
+                continue;
+            }
+
             let silence_beats = current_beat - last_off.to_f64();
             let threshold = inst.config.silence_bars * time_sig_numerator as f64;
 

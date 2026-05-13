@@ -268,6 +268,13 @@ impl MidiRecording {
         self.cc_events.len()
     }
 
+    /// Number of note-on events still waiting for a matching note-off. The
+    /// looper uses this to suppress silence detection while the user is
+    /// still holding keys.
+    pub fn pending_count(&self) -> usize {
+        self.pending_notes.len()
+    }
+
     /// Quantize a beat value to the nearest grid position.
     fn quantize_beat(beat: f64, grid: f64) -> f64 {
         if grid <= 0.0 {

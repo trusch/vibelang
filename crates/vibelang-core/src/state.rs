@@ -132,6 +132,16 @@ pub struct PatternState {
     /// Current loop position.
     pub loop_position: Beat,
 
+    /// Absolute beat at which this pattern was last `start()`-ed.
+    ///
+    /// Playback positions in the tick loop are computed as
+    /// `(current_beat - start_beat) % length`, so the pattern always plays
+    /// from its own beat 0 instead of phase-locking to absolute song time.
+    /// Without this, a looper that finalises a recording at absolute beat
+    /// 17 with a 4-beat length would begin playback at offset
+    /// `17 % 4 = 1.0` — the middle of the recording.
+    pub start_beat: Beat,
+
     /// Pending content swap for hot reload.
     /// When set, the new content will be applied at the specified quantization boundary.
     pub pending_content: Option<(Arc<PatternContent>, ChangeQuant)>,
@@ -145,6 +155,7 @@ impl PatternState {
             content: PatternContent::arc_from_config(&config),
             playing: false,
             loop_position: Beat::ZERO,
+            start_beat: Beat::ZERO,
             pending_content: None,
         }
     }

@@ -115,8 +115,15 @@ impl<B: Backend> PatternsHandler<B> {
                     let length = pattern.content.length;
                     let last_pos = pattern.loop_position;
 
+                    // Position math runs in pattern-local time so playback
+                    // always starts at the pattern's beat 0, not at
+                    // `current_beat % length`. Clamp to zero in case a clock
+                    // jump moved `current_beat` backwards past `start_beat`.
+                    let elapsed_beats =
+                        Beat::from_f64((current_beat - pattern.start_beat).to_f64().max(0.0));
+
                     // Calculate lookahead position (where we're scheduling up to)
-                    let lookahead_pos = (current_beat + lookahead_beats) % length;
+                    let lookahead_pos = (elapsed_beats + lookahead_beats) % length;
 
                     // Find steps that should be scheduled
                     // Steps between last_pos (exclusive) and lookahead_pos (inclusive)
@@ -179,8 +186,11 @@ impl<B: Backend> PatternsHandler<B> {
                         params.insert("amp".to_string(), final_amp);
 
                         // Calculate beat offset and wall-clock timestamp
-                        // We need to figure out how far ahead (in beats) the step is from current_beat
-                        let current_pos_in_loop = current_beat % length;
+                        // We need to figure out how far ahead (in beats) the
+                        // step is from `current_beat`. Use pattern-local time
+                        // so the offset is measured against the pattern's own
+                        // beat 0, matching the `lookahead_pos` math above.
+                        let current_pos_in_loop = elapsed_beats % length;
                         let step_beat = step.beat;
 
                         // Calculate beat offset, handling wrap-around
@@ -353,6 +363,7 @@ impl<B: Backend> Patterns for PatternsHandler<B> {
     async fn start(&self, id: PatternId) -> Result<()> {
         let mut state = self.state.write().await;
 
+        let current_beat = state.current_beat;
         let pattern = state
             .patterns
             .get_mut(&id)
@@ -360,6 +371,12 @@ impl<B: Backend> Patterns for PatternsHandler<B> {
 
         pattern.playing = true;
         pattern.loop_position = Beat::ZERO;
+        // Anchor the pattern to "now" so position math in `tick` (which works
+        // on `current_beat - start_beat`) replays from beat 0 of the pattern.
+        // For a looper finalising a recording mid-song this is the difference
+        // between "playback starts at the beginning of what you played" and
+        // "playback starts at a random offset into the recording".
+        pattern.start_beat = current_beat;
 
         Ok(())
     }
