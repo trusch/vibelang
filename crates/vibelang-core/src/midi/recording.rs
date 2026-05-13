@@ -14,8 +14,9 @@
 //! // Stop recording and get events
 //! let recording = midi_handler.stop_recording(device_id).await?;
 //!
-//! // Convert to pattern with quantization
-//! let pattern_config = recording.to_pattern("recorded_pattern", 0.25, voice_id); // Quantize to 16th notes
+//! // Convert to pattern with quantization + explicit length (4 bars in 4/4)
+//! let length = Beat::from_f64(16.0);
+//! let pattern_config = recording.to_pattern("recorded_pattern", 0.25, voice_id, length);
 //! ```
 
 use crate::traits::{PatternConfig, Step};
@@ -284,20 +285,18 @@ impl MidiRecording {
     /// * `quantize_beats` - Grid size for quantization (e.g., 0.25 for 16th notes).
     ///   Use 0.0 for no quantization.
     /// * `voice` - The voice ID to assign to the pattern.
+    /// * `length` - Total pattern length in beats. The caller is responsible
+    ///   for bar-alignment (the looper passes the bar-quantized loop length
+    ///   it already computed from the time signature). Without explicit
+    ///   bar-alignment here the loop wraps at a non-bar-aligned offset and
+    ///   the rhythm drifts off the grid every iteration.
     pub fn to_pattern(
         &self,
         name: impl Into<String>,
         quantize_beats: f64,
         voice: VoiceId,
+        length: Beat,
     ) -> PatternConfig {
-        let duration = self.duration();
-        let length = if quantize_beats > 0.0 {
-            // Round up to nearest bar
-            let bars = (duration.to_f64() / 4.0).ceil();
-            Beat::from_f64(bars * 4.0)
-        } else {
-            duration
-        };
 
         let mut config = PatternConfig::new(name, voice, length);
 
@@ -448,8 +447,9 @@ mod tests {
 
         recording.stop(Beat::from_f64(1.0));
 
-        // Convert to pattern with 1/4 note quantization
-        let pattern = recording.to_pattern("test_pattern", 0.25, VoiceId::new(1));
+        // Convert to pattern with 1/4 note quantization and explicit 1-bar length.
+        let pattern =
+            recording.to_pattern("test_pattern", 0.25, VoiceId::new(1), Beat::from_f64(4.0));
 
         // First note should be at 0.0 (0.1/0.25=0.4 rounds to 0)
         // Second note should be at 0.5 (0.55/0.25=2.2 rounds to 2, * 0.25 = 0.5)

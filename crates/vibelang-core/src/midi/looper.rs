@@ -278,6 +278,11 @@ impl LooperManager {
                 &pattern_name,
                 inst.config.quantize_beats,
                 inst.config.voice_id,
+                // Pass the bar-aligned loop length we just computed. The
+                // pattern player wraps at this beat count; without it
+                // matching a multiple of `bar_beats`, the rhythm drifts
+                // off the bar grid every iteration.
+                Beat::from_f64(loop_length_beats),
             );
 
             inst.phase = LooperPhase::Playing {
