@@ -6,7 +6,7 @@
 //! Note: This module uses a callback function to deploy synthdefs to scsynth.
 //! The callback must be set by the host application (CLI) before using these functions.
 
-use crate::builder::{OutputPort, PortRate, SynthDef};
+use crate::builder::{InputPort, OutputPort, PortRate, SynthDef};
 use crate::encoder::encode_synthdef;
 use crate::errors::SynthDefError;
 use crate::graph::GraphIR;
@@ -27,6 +27,10 @@ static MODULATOR_REGISTRY: OnceLock<Mutex<HashMap<String, GraphIR>>> = OnceLock:
 // at deploy time so the Rhai surface can resolve `voice.output(name|idx)`).
 static SYNTHDEF_OUTPUTS_REGISTRY: OnceLock<Mutex<HashMap<String, Vec<OutputPort>>>> =
     OnceLock::new();
+// Per-synthdef declared input port set. Populated at deploy time alongside the
+// outputs registry so the runtime can allocate / route input buses without
+// re-running the builder.
+static SYNTHDEF_INPUTS_REGISTRY: OnceLock<Mutex<HashMap<String, Vec<InputPort>>>> = OnceLock::new();
 // Callback for deploying synthdef bytes to scsynth
 static DEPLOY_CALLBACK: OnceLock<Mutex<Option<DeployCallback>>> = OnceLock::new();
 
@@ -44,6 +48,10 @@ fn get_modulator_registry() -> &'static Mutex<HashMap<String, GraphIR>> {
 
 fn get_synthdef_outputs_registry() -> &'static Mutex<HashMap<String, Vec<OutputPort>>> {
     SYNTHDEF_OUTPUTS_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn get_synthdef_inputs_registry() -> &'static Mutex<HashMap<String, Vec<InputPort>>> {
+    SYNTHDEF_INPUTS_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Record the declared output port set for a synthdef name.
@@ -72,6 +80,33 @@ pub fn get_synthdef_outputs(name: &str) -> Option<Vec<OutputPort>> {
 /// Clear the synthdef output-port registry. Useful for tests and reload.
 pub fn clear_synthdef_outputs_registry() {
     get_synthdef_outputs_registry().lock().unwrap().clear();
+}
+
+/// Record the declared input port set for a synthdef name.
+///
+/// Mirror of [`register_synthdef_outputs`] for the input side. Called by
+/// [`SynthDefBuilderHandle::body`] / `body_map` at deploy time so the runtime
+/// can resolve per-synthdef input ports when allocating / routing input buses.
+pub fn register_synthdef_inputs(name: String, inputs: Vec<InputPort>) {
+    let mut registry = get_synthdef_inputs_registry().lock().unwrap();
+    registry.insert(name, inputs);
+}
+
+/// Look up the declared input port set for a registered synthdef.
+///
+/// Returns `None` for unknown synthdefs and for synthdefs that declared no
+/// inputs — callers should treat both as "no inputs".
+pub fn get_synthdef_inputs(name: &str) -> Option<Vec<InputPort>> {
+    get_synthdef_inputs_registry()
+        .lock()
+        .unwrap()
+        .get(name)
+        .cloned()
+}
+
+/// Clear the synthdef input-port registry. Useful for tests and reload.
+pub fn clear_synthdef_inputs_registry() {
+    get_synthdef_inputs_registry().lock().unwrap().clear();
 }
 
 fn get_deploy_callback() -> &'static Mutex<Option<DeployCallback>> {
@@ -318,19 +353,23 @@ impl SynthDefBuilderHandle {
     pub fn body(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
         let name = self.synthdef.name.clone();
         let outputs = self.synthdef.outputs.clone();
+        let inputs = self.synthdef.inputs.clone();
         let ir = self.build(closure).map_err(synthdef_error_to_eval)?;
         register_synthdef_outputs(name.clone(), outputs);
+        register_synthdef_inputs(name.clone(), inputs);
         deploy_synthdef_ir(&name, ir).map_err(synthdef_error_to_eval)
     }
 
     pub fn body_map(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
         let name = self.synthdef.name.clone();
         let outputs = self.synthdef.outputs.clone();
+        let inputs = self.synthdef.inputs.clone();
         let ir = self
             .synthdef
             .build_body_map_closure_with_options(closure, true)
             .map_err(synthdef_error_to_eval)?;
         register_synthdef_outputs(name.clone(), outputs);
+        register_synthdef_inputs(name.clone(), inputs);
         deploy_synthdef_ir(&name, ir).map_err(synthdef_error_to_eval)
     }
 }
@@ -680,10 +719,7 @@ pub fn register_synthdef_api(engine: &mut Engine) {
         .register_fn("param", ModulatorBuilderHandle::param)
         .register_fn("glide_ms", ModulatorBuilderHandle::glide_ms)
         .register_fn("output_kr", ModulatorBuilderHandle::output_kr)
-        .register_fn(
-            "output_kr",
-            ModulatorBuilderHandle::output_kr_with_channels,
-        )
+        .register_fn("output_kr", ModulatorBuilderHandle::output_kr_with_channels)
         .register_fn("body", ModulatorBuilderHandle::body)
         .register_fn("body_map", ModulatorBuilderHandle::body_map);
 

@@ -20,7 +20,7 @@
 //! [`RoutesHandler::finalize`]: crate::handlers::RoutesHandler::finalize
 //! [`BusId`]: crate::types::BusId
 
-use crate::handlers::{ParamRouteTarget, RouteDest, RouteMap};
+use crate::handlers::{RouteDest, RouteMap};
 use crate::state::State;
 use crate::types::{BusId, ControlBusId, VoiceId};
 use std::collections::HashMap;
@@ -354,6 +354,7 @@ pub fn reconcile_voice_ports(
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use crate::handlers::ParamRouteTarget;
     use crate::state::{GroupState, VoiceState};
     use crate::traits::VoiceConfig;
     use crate::types::{GroupId, ParamMap};
@@ -491,6 +492,7 @@ mod tests {
                 round_robin_position: 0,
                 pending_params: HashMap::new(),
                 output_buses,
+                input_buses: Vec::new(),
             },
         );
 

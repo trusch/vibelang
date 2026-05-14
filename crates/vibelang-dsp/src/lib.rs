@@ -43,7 +43,7 @@ pub use api::{
     register_synthdef_outputs, set_deploy_callback, synthdef_exists, synthdef_or_effect_exists,
     FxBuilderHandle, ModulatorBuilderHandle, SynthDefBuilderHandle,
 };
-pub use builder::{OutputPort, PortRate, SynthDef};
+pub use builder::{InputPort, OutputPort, PortRate, SynthDef};
 pub use encoder::encode_synthdef;
 pub use errors::{Result, SynthDefError};
 pub use graph::{

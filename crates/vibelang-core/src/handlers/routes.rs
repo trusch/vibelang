@@ -2320,6 +2320,7 @@ mod tests {
                     round_robin_position: 0,
                     pending_params: HashMap::new(),
                     output_buses: vec![(port_name.clone(), port_bus)],
+                    input_buses: Vec::new(),
                 },
             );
         }
@@ -2891,6 +2892,7 @@ mod tests {
                         round_robin_position: 0,
                         pending_params: HashMap::new(),
                         output_buses: vec![("out".to_string(), bus)],
+                        input_buses: Vec::new(),
                     },
                 );
                 source_voices.push(vid);
@@ -2911,6 +2913,7 @@ mod tests {
                     round_robin_position: 0,
                     pending_params: HashMap::new(),
                     output_buses: vec![("out".to_string(), target_audio_bus)],
+                    input_buses: Vec::new(),
                 },
             );
         }
@@ -3542,6 +3545,7 @@ mod tests {
                         round_robin_position: 0,
                         pending_params: HashMap::new(),
                         output_buses: vec![("out".to_string(), ar_bus)],
+                        input_buses: Vec::new(),
                     },
                 );
                 source_voices.push(vid);
@@ -3566,6 +3570,7 @@ mod tests {
                     round_robin_position: 0,
                     pending_params: HashMap::new(),
                     output_buses: vec![("out".to_string(), target_audio_bus)],
+                    input_buses: Vec::new(),
                 },
             );
         }
@@ -3750,6 +3755,7 @@ mod tests {
                     round_robin_position: 0,
                     pending_params: HashMap::new(),
                     output_buses: vec![("out".to_string(), bus_a)],
+                    input_buses: Vec::new(),
                 },
             );
             s.voices.insert(
@@ -3762,6 +3768,7 @@ mod tests {
                     round_robin_position: 0,
                     pending_params: HashMap::new(),
                     output_buses: vec![("out".to_string(), bus_b)],
+                    input_buses: Vec::new(),
                 },
             );
             (a_node, b_node)
@@ -3942,6 +3949,7 @@ mod tests {
                         round_robin_position: 0,
                         pending_params: HashMap::new(),
                         output_buses: vec![("out".to_string(), bus)],
+                        input_buses: Vec::new(),
                     },
                 );
                 source_voices.push(vid);
@@ -3962,6 +3970,7 @@ mod tests {
                     round_robin_position: 0,
                     pending_params: HashMap::new(),
                     output_buses: vec![("out".to_string(), target_audio_bus)],
+                    input_buses: Vec::new(),
                 },
             );
         }
@@ -4240,6 +4249,7 @@ mod tests {
                     round_robin_position: 0,
                     pending_params: HashMap::new(),
                     output_buses: vec![("env".to_string(), BusId::new(kr_bus.raw()))],
+                    input_buses: Vec::new(),
                 },
             );
             s.param_routes_set.insert(

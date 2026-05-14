@@ -251,6 +251,7 @@ async fn insert_voice(
             round_robin_position: 0,
             pending_params: HashMap::new(),
             output_buses,
+            input_buses: Vec::new(),
         },
     );
 }

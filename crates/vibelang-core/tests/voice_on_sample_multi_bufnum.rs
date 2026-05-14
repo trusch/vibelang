@@ -185,6 +185,7 @@ fn install_sample_voice(
             round_robin_position: 0,
             pending_params: Default::default(),
             output_buses: Vec::new(),
+            input_buses: Vec::new(),
         },
     );
 }

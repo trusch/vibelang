@@ -267,6 +267,7 @@ async fn insert_voice(
             round_robin_position: 0,
             pending_params: HashMap::new(),
             output_buses,
+            input_buses: Vec::new(),
         },
     );
 }
@@ -635,4 +636,3 @@ async fn reload_preserves_kr_param_routes_when_port_rates_unchanged() {
     // RouteMap stays empty — kr ports do not populate it.
     assert!(routes.is_empty());
 }
-

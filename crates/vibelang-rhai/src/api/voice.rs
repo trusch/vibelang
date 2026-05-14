@@ -14,7 +14,7 @@ use vibelang_core::types::SampleId;
 
 #[cfg(feature = "midi")]
 use super::midi::MidiDevice;
-use super::route::{MultiRouteHandle, ParamHandle, RouteHandle};
+use super::route::{InputHandle, MultiRouteHandle, ParamHandle, RouteHandle};
 use super::sample::SampleHandle;
 #[cfg(not(target_arch = "wasm32"))]
 use super::sfz::SfzHandle;
@@ -449,6 +449,25 @@ impl Voice {
         )
     }
 
+    /// Begin a wiring on this voice's named input port.
+    ///
+    /// Returns an [`InputHandle`] whose terminal verbs (`from`,
+    /// `from_current_group`, `disconnect`) write a single entry into the
+    /// script state's input-route map. Per the named-inputs design
+    /// (kb/named-inputs-design-notes.md decision #1), `.from(x)` replaces any
+    /// prior source on `(this_voice, port_name)` — explicit fan-in verbs
+    /// (`.add_from`, `.from_all` — P2.3) are the only path to a multi-source
+    /// Vec.
+    ///
+    /// The port name is not validated here (no synthdef-input registry yet);
+    /// downstream P3.3 dispatch resolves the bus, so unknown names land as
+    /// data and surface there if at all.
+    pub fn input(&mut self, name: &str) -> InputHandle {
+        self.resolve_name();
+        let voice_id = context::get_or_create_voice_id(&self.name);
+        InputHandle::new(voice_id, name.to_string())
+    }
+
     /// Begin a route from this voice's named output port.
     ///
     /// Resolves `name` against the voice's synthdef's declared
@@ -724,6 +743,8 @@ impl Voice {
             round_robin_count: 0,
             choke_group: None,
             modulator_only: false,
+            mono_legato: false,
+            #[cfg(feature = "midi")]
             param_cc_map: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_output_device: None,
@@ -829,6 +850,9 @@ pub fn register(engine: &mut Engine) {
 
     // Plural sugar — fan-out to a list of named/indexed ports.
     engine.register_fn("outputs", Voice::outputs);
+
+    // Multi-input routing entry point — named input port.
+    engine.register_fn("input", Voice::input);
 }
 
 /// Implicit legacy output port set for synthdefs that did not call `.output(...)`.
@@ -935,6 +959,8 @@ mod tests {
             round_robin_count: 0,
             choke_group: None,
             modulator_only: false,
+            mono_legato: false,
+            #[cfg(feature = "midi")]
             param_cc_map: HashMap::new(),
             #[cfg(feature = "midi")]
             midi_output_device: None,

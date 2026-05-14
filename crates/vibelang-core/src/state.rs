@@ -25,7 +25,7 @@ use crate::types::{
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use vibelang_dsp::OutputPort;
+use vibelang_dsp::{InputPort, OutputPort};
 
 /// Internal state for a group.
 #[derive(Clone, Debug)]
@@ -110,6 +110,17 @@ pub struct VoiceState {
     /// `channels` wide (allocated via [`State::alloc_audio_bus`]).
     /// Freed at voice drop with the matching channel count.
     pub output_buses: Vec<(String, BusId)>,
+
+    /// Audio buses owned by this voice, one per declared **input** port.
+    ///
+    /// TODO(P1.3): allocation of these buses at voice creation is not yet
+    /// implemented. The field exists so the named-inputs dispatcher
+    /// ([`crate::handlers::RoutesHandler::finalize_input_routes`]) can resolve
+    /// each `(target_voice, input_port_name)` edge to a concrete bus; until
+    /// P1.3 lands, the vec stays empty on production paths and the dispatcher
+    /// debug-logs + no-ops for any route whose target has no matching entry.
+    /// Tests populate this directly to exercise the dispatcher.
+    pub input_buses: Vec<(String, BusId)>,
 }
 
 /// Internal state for a pattern.
@@ -780,6 +791,12 @@ pub struct State {
     /// implicit `[("out", 2)]` set by [`State::synthdef_outputs`].
     pub synthdef_outputs: HashMap<String, Vec<OutputPort>>,
 
+    /// Per-synthdef input port descriptors (port name + channel count + rate).
+    ///
+    /// Populated at synthdef registration alongside [`Self::synthdef_outputs`].
+    /// Synthdefs not in this map have no declared inputs.
+    pub synthdef_inputs: HashMap<String, Vec<InputPort>>,
+
     /// Loaded samples.
     pub samples: HashMap<SampleId, SampleInfo>,
 
@@ -896,6 +913,49 @@ pub struct State {
     /// resolution land in P3.3.
     pub input_routes: crate::handlers::InputRouteMap,
 
+    /// Per-edge **input** router synth node IDs, keyed by
+    /// `(target_voice_id, input_port_name, source)`.
+    ///
+    /// Symmetric to [`Self::route_synths`] on the output side. Populated by
+    /// [`crate::handlers::RoutesHandler::finalize_input_routes`] when an input
+    /// edge is added; drained when an edge is removed or its owning voice is
+    /// deleted. The router synth (`input_link_1` / `input_link_2`) reads the
+    /// source bus and writes to the target voice's named-input bus; fan-in
+    /// sums naturally on the destination bus when multiple routers share it.
+    pub input_route_synths: HashMap<(VoiceId, String, crate::handlers::InputRouteSrc), NodeId>,
+
+    /// Shared silent audio (ar) bus.
+    ///
+    /// Per kb/named-inputs-design-notes.md decision #2, every declared ar input
+    /// port has a valid bus even when nothing is routed in: an `input_link_*`
+    /// router reads from this bus, which scsynth keeps zero-filled because
+    /// nothing writes to it. Allocated lazily by
+    /// [`crate::handlers::RoutesHandler::finalize_input_routes`] on first
+    /// `Silent` ar route and never freed.
+    pub silent_ar_bus: Option<BusId>,
+
+    /// Shared silent control (kr) bus.
+    ///
+    /// Per kb/named-inputs-design-notes.md decision #2, every declared kr input
+    /// port has a valid bus even when nothing is routed in. Allocated lazily
+    /// from [`Self::control_buses`] by
+    /// [`crate::handlers::RoutesHandler::finalize_input_routes`] on first
+    /// `Silent` kr route and never freed.
+    pub silent_kr_bus: Option<ControlBusId>,
+
+    /// Starting bus index for hardware *inputs* in scsynth's contiguous audio
+    /// bus layout (`[outputs | inputs | private]`).
+    ///
+    /// Equals `output_channels` (the count passed to
+    /// [`Self::with_audio_config`]) so a route source
+    /// `InputRouteSrc::HardwareInput(vec![ch])` resolves to bus
+    /// `hardware_input_offset + ch`. Defaults to 0 — combined with the default
+    /// `AudioBusAllocator`'s `min = 16`, this leaves the legacy
+    /// `[0..16)` hardware reserve in place but does not promise any specific
+    /// input-channel layout. Production paths set this via
+    /// [`Self::with_audio_config`].
+    pub hardware_input_offset: u32,
+
     /// Default per-voice port routes installed at voice-create time.
     ///
     /// Story 5: when a voice is created, the runtime walks the synthdef's
@@ -961,8 +1021,7 @@ pub struct State {
     /// runtime can update `scale_<i>` / `offset_<i>` without rebuilding the
     /// summer. Maintained exclusively by
     /// [`crate::handlers::RoutesHandler::finalize_params`].
-    pub param_summers:
-        HashMap<(crate::handlers::ParamRouteTarget, String), ParamSummerState>,
+    pub param_summers: HashMap<(crate::handlers::ParamRouteTarget, String), ParamSummerState>,
 
     /// Active `a2k_adapter_1` synths spawned to coerce an audio-rate source
     /// port into a kr-rate signal so it can drive a `param_kr_modulate_<n>`
@@ -989,8 +1048,7 @@ pub struct State {
     /// link synth per `(target, param)` — single-source trigger only, no
     /// summer or scale/offset shaping. Maintained exclusively by
     /// [`crate::handlers::RoutesHandler::finalize_params`].
-    pub param_triggers:
-        HashMap<(crate::handlers::ParamRouteTarget, String), (NodeId, BusId)>,
+    pub param_triggers: HashMap<(crate::handlers::ParamRouteTarget, String), (NodeId, BusId)>,
 
     /// Per-voice voice-allocation pool for MIDI-output voices.
     ///
@@ -1066,6 +1124,7 @@ impl Default for State {
             playing: false,
             synthdefs: HashSet::new(),
             synthdef_outputs: HashMap::new(),
+            synthdef_inputs: HashMap::new(),
             samples: HashMap::new(),
             buffers: HashMap::new(),
             sfz_instruments: HashMap::new(),
@@ -1087,6 +1146,10 @@ impl Default for State {
             audio_buses: AudioBusAllocator::default(),
             route_synths: HashMap::new(),
             input_routes: HashMap::new(),
+            input_route_synths: HashMap::new(),
+            silent_ar_bus: None,
+            silent_kr_bus: None,
+            hardware_input_offset: 0,
             default_routes: HashMap::new(),
             param_routes_set: HashMap::new(),
             param_routes_bend: HashMap::new(),
@@ -1121,6 +1184,7 @@ impl State {
         let start = output_channels.saturating_add(input_channels);
         let mut state = Self::default();
         state.audio_buses = AudioBusAllocator::new(start);
+        state.hardware_input_offset = output_channels;
         state
     }
 
@@ -1215,8 +1279,7 @@ impl State {
     /// voice's defaults as removed rather than carrying them forward against
     /// a non-existent voice.
     pub fn take_voice_default_routes(&mut self, voice_id: VoiceId) {
-        self.default_routes
-            .retain(|(vid, _), _| *vid != voice_id);
+        self.default_routes.retain(|(vid, _), _| *vid != voice_id);
     }
 
     /// Drain every Param-route entry that mentions `voice_id` from
@@ -1275,10 +1338,7 @@ impl State {
     /// `Effect(effect_id)` in target lists. Entries whose Vec drops to empty
     /// after scrubbing are pruned. Mirrors the target-side scrubbing in
     /// [`Self::take_voice_param_routes`].
-    pub fn take_effect_param_routes(
-        &mut self,
-        effect_id: crate::types::EffectId,
-    ) {
+    pub fn take_effect_param_routes(&mut self, effect_id: crate::types::EffectId) {
         use crate::handlers::ParamRouteTarget;
         for map in [
             &mut self.param_routes_set,
@@ -1302,6 +1362,15 @@ impl State {
             .get(name)
             .cloned()
             .unwrap_or_else(legacy_output_ports)
+    }
+
+    /// Resolve the input-port set for a synthdef name.
+    ///
+    /// Returns the explicitly declared ports if registered, otherwise an empty
+    /// vec — synthdefs that never called `.input(...)` have no inputs to
+    /// allocate buses for.
+    pub fn synthdef_inputs(&self, name: &str) -> Vec<InputPort> {
+        self.synthdef_inputs.get(name).cloned().unwrap_or_default()
     }
 
     /// Convert beats to seconds at current tempo.
@@ -1564,5 +1633,51 @@ mod tests {
         let a = state.alloc_bus_id();
         let b = state.alloc_bus_id();
         assert_eq!(b.raw(), a.raw() + 2);
+    }
+
+    #[test]
+    fn synthdef_inputs_round_trip_through_state() {
+        // Build a SynthDef declaring 2 ar inputs (1 + 2 channels) and 1 kr
+        // input; register the resulting `inputs` list into `State` and
+        // confirm the accessor recovers the original port list. Mirrors the
+        // `synthdef_outputs` registration shape exactly.
+        let mut sd = vibelang_dsp::SynthDef::new("input_round_trip".to_string());
+        sd.input("audio_mono".to_string(), 1)
+            .expect("ar mono input");
+        sd.input("audio_stereo".to_string(), 2)
+            .expect("ar stereo input");
+        // No `.input_kr()` builder method exists yet (P1.1 only ships
+        // ar-rate `.input`); construct the kr descriptor directly. The
+        // round-trip is over the State-side registration shape, not the
+        // builder surface.
+        sd.inputs.push(InputPort {
+            name: "cv".to_string(),
+            channels: 1,
+            rate: vibelang_dsp::PortRate::Kr,
+        });
+        let inputs = sd.inputs.clone();
+
+        let mut state = State::default();
+        assert!(
+            state.synthdef_inputs("input_round_trip").is_empty(),
+            "default state has no inputs registered"
+        );
+
+        state
+            .synthdef_inputs
+            .insert("input_round_trip".to_string(), inputs.clone());
+        let recovered = state.synthdef_inputs("input_round_trip");
+        assert_eq!(recovered, inputs, "recovered ports must match originals");
+        assert_eq!(recovered.len(), 3, "two ar + one kr input expected");
+        assert_eq!(recovered[0].channels, 1);
+        assert_eq!(recovered[0].rate, vibelang_dsp::PortRate::Ar);
+        assert_eq!(recovered[1].channels, 2);
+        assert_eq!(recovered[1].rate, vibelang_dsp::PortRate::Ar);
+        assert_eq!(recovered[2].rate, vibelang_dsp::PortRate::Kr);
+
+        assert!(
+            state.synthdef_inputs("unregistered").is_empty(),
+            "unregistered synthdefs resolve to no inputs"
+        );
     }
 }

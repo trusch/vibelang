@@ -16,12 +16,10 @@
 //!   prior entries on that port: the variants are mutually exclusive.
 
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, Position, TypeBuilder};
-use vibelang_core::handlers::{ParamRouteTarget, RouteDest};
+use vibelang_core::handlers::{InputRouteSrc, ParamRouteTarget, RouteDest};
 use vibelang_core::reload::ParamRouteConflict;
 use vibelang_core::types::VoiceId;
-use vibelang_dsp::{
-    get_synthdef_outputs, get_synthdef_param_defaults, OutputPort, PortRate,
-};
+use vibelang_dsp::{get_synthdef_outputs, get_synthdef_param_defaults, OutputPort, PortRate};
 
 use super::group::GroupHandle;
 use super::sequence::Fx;
@@ -95,9 +93,8 @@ impl RouteHandle {
     /// (same `HashMap::insert` semantics as the other terminal verbs).
     pub fn to_current_group(self) -> Result<Self, Box<EvalAltResult>> {
         let root_id = context::get_or_create_group_id("");
-        let voice_group = context::with_state(|state| {
-            state.voices.get(&self.voice_id).map(|v| v.group)
-        });
+        let voice_group =
+            context::with_state(|state| state.voices.get(&self.voice_id).map(|v| v.group));
         match voice_group {
             Some(gid) if gid != root_id => {
                 self.commit(RouteDest::Group(gid));
@@ -144,11 +141,7 @@ impl RouteHandle {
         match src_outputs.iter().find(|p| p.name == self.port_name) {
             Some(p) if p.rate == PortRate::Kr => {}
             Some(p) => {
-                return Err(ar_rate_to_param_error(
-                    &self.port_name,
-                    &src_synth,
-                    p.rate,
-                ));
+                return Err(ar_rate_to_param_error(&self.port_name, &src_synth, p.rate));
             }
             None => {
                 return Err(missing_source_port_error(
@@ -281,11 +274,7 @@ impl RouteHandle {
     /// from `Out.tr` are preserved end-to-end — there is no scale/offset
     /// shaping (triggers don't bend), and multi-source fan-in is rejected
     /// (trigger routing is 1:1).
-    pub fn to_trigger(
-        self,
-        target: Voice,
-        param_name: String,
-    ) -> Result<Self, Box<EvalAltResult>> {
+    pub fn to_trigger(self, target: Voice, param_name: String) -> Result<Self, Box<EvalAltResult>> {
         let mut target = target;
         target.resolve_name();
         let target_name = target.name.clone();
@@ -402,11 +391,7 @@ impl RouteHandle {
         match src_outputs.iter().find(|p| p.name == self.port_name) {
             Some(p) if p.rate == PortRate::Kr => {}
             Some(p) => {
-                return Err(ar_rate_to_param_error(
-                    &self.port_name,
-                    &src_synth,
-                    p.rate,
-                ));
+                return Err(ar_rate_to_param_error(&self.port_name, &src_synth, p.rate));
             }
             None => {
                 return Err(missing_source_port_error(
@@ -509,11 +494,7 @@ impl RouteHandle {
     /// Fx-target variant of [`Self::to_trigger`]. Tr-rate sources forward
     /// edges to the target fx's param via the same `port_tr_to_param_link_1`
     /// infrastructure used for voice targets.
-    pub fn to_trigger_fx(
-        self,
-        target: Fx,
-        param_name: String,
-    ) -> Result<Self, Box<EvalAltResult>> {
+    pub fn to_trigger_fx(self, target: Fx, param_name: String) -> Result<Self, Box<EvalAltResult>> {
         let target_name = target.id.clone();
         let target_synth = target.synth_name();
 
@@ -575,10 +556,7 @@ impl RouteHandle {
 
 /// Render a `ParamRouteConflict` as a Rhai EvalAltResult error, scoped by the
 /// surface verb so the message lands cleanly in the user's stack trace.
-fn param_route_conflict_error(
-    verb: &str,
-    conflict: &ParamRouteConflict,
-) -> Box<EvalAltResult> {
+fn param_route_conflict_error(verb: &str, conflict: &ParamRouteConflict) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(
         format!("{}(): {}", verb, conflict).into(),
         Position::NONE,
@@ -603,11 +581,7 @@ fn source_synthdef_name(voice_id: VoiceId) -> String {
     })
 }
 
-fn ar_rate_to_param_error(
-    port: &str,
-    synth: &str,
-    rate: PortRate,
-) -> Box<EvalAltResult> {
+fn ar_rate_to_param_error(port: &str, synth: &str, rate: PortRate) -> Box<EvalAltResult> {
     let rate_str = match rate {
         PortRate::Ar => "ar",
         PortRate::Kr => "kr",
@@ -626,25 +600,15 @@ fn ar_rate_to_param_error(
     ))
 }
 
-fn non_tr_rate_to_trigger_error(
-    port: &str,
-    synth: &str,
-    rate: PortRate,
-) -> Box<EvalAltResult> {
+fn non_tr_rate_to_trigger_error(port: &str, synth: &str, rate: PortRate) -> Box<EvalAltResult> {
     let (rate_str, hint) = match rate {
         PortRate::Ar => (
             "ar",
             "use .to(group(...)) / .to_main() for audio routing, or .to_param_audio() \
              for ar→param coercion",
         ),
-        PortRate::Kr => (
-            "kr",
-            "use .to_param() for kr→param routing",
-        ),
-        PortRate::Tr => (
-            "tr",
-            "(unreachable — Tr is the valid rate for .to_trigger)",
-        ),
+        PortRate::Kr => ("kr", "use .to_param() for kr→param routing"),
+        PortRate::Tr => ("tr", "(unreachable — Tr is the valid rate for .to_trigger)"),
     };
     Box::new(EvalAltResult::ErrorRuntime(
         format!(
@@ -811,11 +775,7 @@ impl ParamHandle {
     /// Each call appends a separate `(source_voice, source_port)` entry in
     /// [`ScriptState::param_routes`] — additive fan-in is recorded; runtime
     /// last-write-wins resolution is the v2 contract.
-    pub fn modulate_by(
-        mut self,
-        source: Voice,
-        port: String,
-    ) -> Result<Self, Box<EvalAltResult>> {
+    pub fn modulate_by(mut self, source: Voice, port: String) -> Result<Self, Box<EvalAltResult>> {
         let mut source = source;
         source.resolve_name();
         let source_id = context::get_or_create_voice_id(&source.name);
@@ -825,9 +785,7 @@ impl ParamHandle {
         match src_outputs.iter().find(|p| p.name == port) {
             Some(p) if p.rate == PortRate::Kr => {}
             Some(p) => {
-                return Err(modulate_by_ar_rate_error(
-                    &port, &src_synth, p.rate,
-                ));
+                return Err(modulate_by_ar_rate_error(&port, &src_synth, p.rate));
             }
             None => {
                 return Err(modulate_by_missing_source_port_error(
@@ -913,10 +871,7 @@ impl ParamHandle {
     }
 }
 
-fn no_prior_param_route_error(
-    verb: &str,
-    handle_kind: &str,
-) -> Box<EvalAltResult> {
+fn no_prior_param_route_error(verb: &str, handle_kind: &str) -> Box<EvalAltResult> {
     let install_verb = match handle_kind {
         "ParamHandle" => ".modulate_by(source, \"port\")",
         _ => ".to_param(target, \"param\")",
@@ -932,11 +887,7 @@ fn no_prior_param_route_error(
     ))
 }
 
-fn modulate_by_ar_rate_error(
-    port: &str,
-    synth: &str,
-    rate: PortRate,
-) -> Box<EvalAltResult> {
+fn modulate_by_ar_rate_error(port: &str, synth: &str, rate: PortRate) -> Box<EvalAltResult> {
     let rate_str = match rate {
         PortRate::Ar => "ar",
         PortRate::Kr => "kr",
@@ -1060,7 +1011,114 @@ impl MultiRouteHandle {
         }
         Ok(self)
     }
+}
 
+/// Chainable handle for installing an input wiring on a voice's named input
+/// port (target-first, single-source).
+///
+/// Constructed by [`Voice::input`](super::voice::Voice::input). Terminal verbs
+/// — `.from(...)`, `.from_current_group()`, `.disconnect()` — each commit one
+/// entry to the script state's input-route map, replacing any prior source
+/// on the same `(target_voice, input_port)` key per the named-inputs design
+/// (kb/named-inputs-design-notes.md decision #1).
+///
+/// Multi-source fan-in (`.add_from`, `.from_all`) lands in P2.3 — out of scope
+/// here. Source-first sugar (`source.output(port).to_input(target, name)`)
+/// lands in P2.2.
+#[derive(Debug, Clone, CustomType)]
+pub struct InputHandle {
+    /// Target voice ID — the voice receiving the input.
+    voice_id: VoiceId,
+    /// Target input port name on the voice's synthdef. Not validated against
+    /// the synthdef's declared input ports (no input registry yet); the
+    /// dispatcher (P3.3) is the source of truth on bus resolution.
+    port_name: String,
+}
+
+impl InputHandle {
+    pub(crate) fn new(voice_id: VoiceId, port_name: String) -> Self {
+        Self {
+            voice_id,
+            port_name,
+        }
+    }
+
+    /// Pin this input to a source voice's default output port (`"out"`).
+    ///
+    /// Replace semantics: any prior source on `(this_voice, port)` is
+    /// overwritten with a fresh single-element source list. Explicit port
+    /// selection on the source (e.g. `source.output("ring")`) is the P2.2
+    /// source-first sugar; this `.from(voice)` overload always pairs with
+    /// the legacy `"out"` port name on the source.
+    pub fn from_voice(self, source: Voice) -> Self {
+        let mut source = source;
+        source.resolve_name();
+        let source_id = context::get_or_create_voice_id(&source.name);
+        self.commit(InputRouteSrc::Voice(source_id, "out".to_string()));
+        self
+    }
+
+    /// Pin this input to a group's mix bus.
+    ///
+    /// The same audio bus that `.to(group)` writes into on the output side —
+    /// reading from it is symmetric with writing to it. Replace semantics
+    /// (see [`Self::from_voice`]).
+    pub fn from_group(self, source: GroupHandle) -> Self {
+        let group_id = context::get_or_create_group_id(&source.path);
+        self.commit(InputRouteSrc::Group(group_id));
+        self
+    }
+
+    /// Pin this input to the parent group's pre-fader mix bus — i.e. the
+    /// group this voice is currently configured into.
+    ///
+    /// Errors when the voice lives at the implicit root (no explicit
+    /// `.group(...)` call): the error message points users at
+    /// `.group("name")` on the voice or `.from(group("name"))` on the input
+    /// handle, matching the error path on the output-side
+    /// `RouteHandle::to_current_group`.
+    pub fn from_current_group(self) -> Result<Self, Box<EvalAltResult>> {
+        let root_id = context::get_or_create_group_id("");
+        let voice_group =
+            context::with_state(|state| state.voices.get(&self.voice_id).map(|v| v.group));
+        match voice_group {
+            Some(gid) if gid != root_id => {
+                self.commit(InputRouteSrc::Group(gid));
+                Ok(self)
+            }
+            _ => Err(no_current_group_input_error(&self.port_name)),
+        }
+    }
+
+    /// Pin this input to the shared silent bus.
+    ///
+    /// Explicit "no source" — the P3.3 dispatcher resolves `Silent` to the
+    /// shared silent ar/kr bus allocated at startup (kb/named-inputs-design-
+    /// notes.md decision #2). Replace semantics like the other verbs.
+    pub fn disconnect(self) -> Self {
+        self.commit(InputRouteSrc::Silent);
+        self
+    }
+
+    /// Commit the resolved source to script state.
+    fn commit(&self, src: InputRouteSrc) {
+        context::with_state(|state| {
+            state.set_input_route(self.voice_id, self.port_name.clone(), src);
+        });
+    }
+}
+
+fn no_current_group_input_error(port: &str) -> Box<EvalAltResult> {
+    Box::new(EvalAltResult::ErrorRuntime(
+        format!(
+            "from_current_group() on input '{}': voice has no explicit group set — \
+             call `.group(\"name\")` on the voice first, or write \
+             `.from(group(\"name\"))` to target a group explicitly",
+            port
+        )
+        .into(),
+        Position::NONE,
+    ))
 }
 
 /// Register the `RouteHandle` type and its terminal verbs with a Rhai engine.
@@ -1091,6 +1149,13 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("modulate_by", ParamHandle::modulate_by);
     engine.register_fn("scale", ParamHandle::scale);
     engine.register_fn("offset", ParamHandle::offset);
+
+    engine.build_type::<InputHandle>();
+    // `.from(...)` dispatches by argument type: Voice or GroupHandle.
+    engine.register_fn("from", InputHandle::from_voice);
+    engine.register_fn("from", InputHandle::from_group);
+    engine.register_fn("from_current_group", InputHandle::from_current_group);
+    engine.register_fn("disconnect", InputHandle::disconnect);
 }
 
 #[cfg(test)]
@@ -1195,13 +1260,13 @@ mod tests {
                     .get(&(src_id, "env".to_string()))
                     .expect("param route installed");
                 assert_eq!(entries.len(), 1);
-                assert_eq!(entries[0], (ParamRouteTarget::Voice(tgt_id), "cutoff".to_string()));
+                assert_eq!(
+                    entries[0],
+                    (ParamRouteTarget::Voice(tgt_id), "cutoff".to_string())
+                );
 
                 // No legacy audio-route entry installed.
-                assert!(state
-                    .routes
-                    .get(&(src_id, "env".to_string()))
-                    .is_none());
+                assert!(state.routes.get(&(src_id, "env".to_string())).is_none());
             });
         });
     }
@@ -1304,7 +1369,9 @@ mod tests {
                     .get(&(src_id, "env".to_string()))
                     .expect("param routes installed");
                 assert_eq!(entries.len(), 2, "both targets must be present");
-                assert!(entries.contains(&(ParamRouteTarget::Voice(tgt_a_id), "cutoff".to_string())));
+                assert!(
+                    entries.contains(&(ParamRouteTarget::Voice(tgt_a_id), "cutoff".to_string()))
+                );
                 assert!(entries.contains(&(ParamRouteTarget::Voice(tgt_b_id), "pitch".to_string())));
             });
         });
@@ -1373,17 +1440,17 @@ mod tests {
                     .get(&(src_id, "out".to_string()))
                     .expect("bend route installed");
                 assert_eq!(entries.len(), 1);
-                assert_eq!(entries[0], (ParamRouteTarget::Voice(tgt_id), "freq".to_string()));
+                assert_eq!(
+                    entries[0],
+                    (ParamRouteTarget::Voice(tgt_id), "freq".to_string())
+                );
 
                 // SET map and audio routes untouched.
                 assert!(state
                     .param_routes_set
                     .get(&(src_id, "out".to_string()))
                     .is_none());
-                assert!(state
-                    .routes
-                    .get(&(src_id, "out".to_string()))
-                    .is_none());
+                assert!(state.routes.get(&(src_id, "out".to_string())).is_none());
             });
         });
     }
@@ -1481,13 +1548,19 @@ mod tests {
                     .param_routes_bend
                     .get(&(s_id, "out".to_string()))
                     .expect("first source wire installed");
-                assert_eq!(from_s, &vec![(ParamRouteTarget::Voice(tgt_id), "a".to_string())]);
+                assert_eq!(
+                    from_s,
+                    &vec![(ParamRouteTarget::Voice(tgt_id), "a".to_string())]
+                );
 
                 let from_s2 = state
                     .param_routes_bend
                     .get(&(s2_id, "other".to_string()))
                     .expect("second source wire installed");
-                assert_eq!(from_s2, &vec![(ParamRouteTarget::Voice(tgt_id), "a".to_string())]);
+                assert_eq!(
+                    from_s2,
+                    &vec![(ParamRouteTarget::Voice(tgt_id), "a".to_string())]
+                );
             });
         });
     }
@@ -1530,14 +1603,20 @@ mod tests {
                     .get(&(src_a_id, "out".to_string()))
                     .expect("A installed in SET map");
                 assert_eq!(set_entries.len(), 1);
-                assert_eq!(set_entries[0], (ParamRouteTarget::Voice(tgt_a_id), "freq".to_string()));
+                assert_eq!(
+                    set_entries[0],
+                    (ParamRouteTarget::Voice(tgt_a_id), "freq".to_string())
+                );
 
                 let bend_entries = state
                     .param_routes_bend
                     .get(&(src_b_id, "out".to_string()))
                     .expect("B installed in BEND map");
                 assert_eq!(bend_entries.len(), 1);
-                assert_eq!(bend_entries[0], (ParamRouteTarget::Voice(tgt_b_id), "freq".to_string()));
+                assert_eq!(
+                    bend_entries[0],
+                    (ParamRouteTarget::Voice(tgt_b_id), "freq".to_string())
+                );
 
                 // Cross-pollination: A's source key is *not* in BEND, B's source
                 // key is *not* in SET. The maps are disjoint.
@@ -1699,7 +1778,12 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_scale_rt");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_scale_rt");
             context::with_state(|state| {
-                let key = (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
+                let key = (
+                    src_id,
+                    "env".to_string(),
+                    ParamRouteTarget::Voice(tgt_id),
+                    "cutoff".to_string(),
+                );
                 let (scale, offset) = state
                     .param_route_set_shaping
                     .get(&key)
@@ -1733,7 +1817,12 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_offset_rt");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_offset_rt");
             context::with_state(|state| {
-                let key = (src_id, "out".to_string(), ParamRouteTarget::Voice(tgt_id), "freq".to_string());
+                let key = (
+                    src_id,
+                    "out".to_string(),
+                    ParamRouteTarget::Voice(tgt_id),
+                    "freq".to_string(),
+                );
                 let (scale, offset) = state
                     .param_route_bend_shaping
                     .get(&key)
@@ -1770,7 +1859,12 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_chain_so");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_chain_so");
             context::with_state(|state| {
-                let key = (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
+                let key = (
+                    src_id,
+                    "env".to_string(),
+                    ParamRouteTarget::Voice(tgt_id),
+                    "cutoff".to_string(),
+                );
                 let (scale, offset) = state
                     .param_route_set_shaping
                     .get(&key)
@@ -1801,7 +1895,12 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_default");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_default");
             context::with_state(|state| {
-                let key = (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
+                let key = (
+                    src_id,
+                    "env".to_string(),
+                    ParamRouteTarget::Voice(tgt_id),
+                    "cutoff".to_string(),
+                );
                 let (scale, offset) = state
                     .param_route_set_shaping
                     .get(&key)
@@ -1831,7 +1930,12 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_modby_default");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_modby_default");
             context::with_state(|state| {
-                let key = (src_id, "out".to_string(), ParamRouteTarget::Voice(tgt_id), "freq".to_string());
+                let key = (
+                    src_id,
+                    "out".to_string(),
+                    ParamRouteTarget::Voice(tgt_id),
+                    "freq".to_string(),
+                );
                 let (scale, offset) = state
                     .param_route_bend_shaping
                     .get(&key)
@@ -1866,7 +1970,12 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_lw");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_lw");
             context::with_state(|state| {
-                let key = (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
+                let key = (
+                    src_id,
+                    "env".to_string(),
+                    ParamRouteTarget::Voice(tgt_id),
+                    "cutoff".to_string(),
+                );
                 let (scale, offset) = state
                     .param_route_set_shaping
                     .get(&key)
@@ -1911,9 +2020,18 @@ mod tests {
             let tgt_a_id = context::get_or_create_voice_id("vox_tgt_per_tgt_a");
             let tgt_b_id = context::get_or_create_voice_id("vox_tgt_per_tgt_b");
             context::with_state(|state| {
-                let key_a =
-                    (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_a_id), "cutoff".to_string());
-                let key_b = (src_id, "env".to_string(), ParamRouteTarget::Voice(tgt_b_id), "pitch".to_string());
+                let key_a = (
+                    src_id,
+                    "env".to_string(),
+                    ParamRouteTarget::Voice(tgt_a_id),
+                    "cutoff".to_string(),
+                );
+                let key_b = (
+                    src_id,
+                    "env".to_string(),
+                    ParamRouteTarget::Voice(tgt_b_id),
+                    "pitch".to_string(),
+                );
                 assert_eq!(
                     state.param_route_set_shaping.get(&key_a).copied(),
                     Some((0.5, 0.0)),
@@ -1952,12 +2070,19 @@ mod tests {
                     .get(&(src_id, "sine".to_string()))
                     .expect("param route installed in SET map");
                 assert_eq!(entries.len(), 1);
-                assert_eq!(entries[0], (ParamRouteTarget::Voice(tgt_id), "cutoff".to_string()));
+                assert_eq!(
+                    entries[0],
+                    (ParamRouteTarget::Voice(tgt_id), "cutoff".to_string())
+                );
 
                 // Default shaping seeded so chained .scale/.offset work.
-                let key = (src_id, "sine".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
-                let shaping =
-                    state.param_route_set_shaping.get(&key).copied();
+                let key = (
+                    src_id,
+                    "sine".to_string(),
+                    ParamRouteTarget::Voice(tgt_id),
+                    "cutoff".to_string(),
+                );
+                let shaping = state.param_route_set_shaping.get(&key).copied();
                 assert_eq!(shaping, Some((1.0, 0.0)));
 
                 // Not in BEND map, no audio mixer route installed.
@@ -1965,10 +2090,7 @@ mod tests {
                     .param_routes_bend
                     .get(&(src_id, "sine".to_string()))
                     .is_none());
-                assert!(state
-                    .routes
-                    .get(&(src_id, "sine".to_string()))
-                    .is_none());
+                assert!(state.routes.get(&(src_id, "sine".to_string())).is_none());
             });
         });
     }
@@ -2065,7 +2187,12 @@ mod tests {
             let src_id = context::get_or_create_voice_id("vox_src_tpa_shape");
             let tgt_id = context::get_or_create_voice_id("vox_tgt_tpa_shape");
             context::with_state(|state| {
-                let key = (src_id, "sine".to_string(), ParamRouteTarget::Voice(tgt_id), "cutoff".to_string());
+                let key = (
+                    src_id,
+                    "sine".to_string(),
+                    ParamRouteTarget::Voice(tgt_id),
+                    "cutoff".to_string(),
+                );
                 let (scale, offset) = state
                     .param_route_set_shaping
                     .get(&key)
@@ -2090,8 +2217,7 @@ mod tests {
             declare_synthdef_with_params(tgt_synth, &["freq"]);
 
             let src = make_voice("vox_src_tpa_xverb").synth(src_synth.to_string());
-            let lfo = make_voice("vox_lfo_tpa_xverb")
-                .synth("v3_a2_tpa_xverb_lfo".to_string());
+            let lfo = make_voice("vox_lfo_tpa_xverb").synth("v3_a2_tpa_xverb_lfo".to_string());
             let mut tgt = make_voice("vox_tgt_tpa_xverb").synth(tgt_synth.to_string());
 
             src.clone()
@@ -2169,7 +2295,10 @@ mod tests {
                     .get(&(src_id, "kick_trig".to_string()))
                     .expect("trigger route installed");
                 assert_eq!(entries.len(), 1);
-                assert_eq!(entries[0], (ParamRouteTarget::Voice(tgt_id), "gate".to_string()));
+                assert_eq!(
+                    entries[0],
+                    (ParamRouteTarget::Voice(tgt_id), "gate".to_string())
+                );
 
                 // SET / BEND maps stay empty.
                 assert!(state
@@ -2204,7 +2333,11 @@ mod tests {
             assert!(msg.contains("kr-rate"), "msg = {}", msg);
             assert!(msg.contains("'env'"), "msg = {}", msg);
             assert!(msg.contains("output_tr"), "msg = {}", msg);
-            assert!(msg.contains("to_param()"), "msg should hint at .to_param, got: {}", msg);
+            assert!(
+                msg.contains("to_param()"),
+                "msg should hint at .to_param, got: {}",
+                msg
+            );
 
             let src_id = context::get_or_create_voice_id("vox_src_b2c_kr");
             context::with_state(|state| {
@@ -2254,10 +2387,8 @@ mod tests {
             declare_tr_synthdef(tr_src_synth, &["trig"]);
             declare_synthdef_with_params(tgt_synth, &["gate"]);
 
-            let mut kr_src = make_voice("vox_kr_src_cross_set")
-                .synth(kr_src_synth.to_string());
-            let mut tr_src = make_voice("vox_tr_src_cross_set")
-                .synth(tr_src_synth.to_string());
+            let mut kr_src = make_voice("vox_kr_src_cross_set").synth(kr_src_synth.to_string());
+            let mut tr_src = make_voice("vox_tr_src_cross_set").synth(tr_src_synth.to_string());
             let tgt = make_voice("vox_tgt_cross_set").synth(tgt_synth.to_string());
 
             // Install SET first.
@@ -2342,6 +2473,238 @@ mod tests {
                 .expect_err("cross-verb conflict (TRIGGER ↔ SET) must error");
             let msg = err.to_string();
             assert!(msg.contains("to_param"), "msg = {}", msg);
+        });
+    }
+
+    // ==================== InputHandle / .from / .disconnect tests (P2.1) ====================
+
+    use crate::api::group::GroupHandle;
+    use vibelang_core::handlers::InputRouteSrc;
+
+    #[test]
+    fn input_from_voice_writes_single_source_entry() {
+        with_test_context(|| {
+            let src_synth = "p2_1_input_from_voice_src";
+            let tgt_synth = "p2_1_input_from_voice_tgt";
+            // No declared port set needed for inputs (no synthdef-input
+            // registry yet); the source-side default port name is hardcoded
+            // to "out" by `.from(voice)`.
+            declare_ar_synthdef(src_synth, &["out"]);
+            declare_synthdef_with_params(tgt_synth, &["amp"]);
+
+            let pad = make_voice("vox_pad_input_rt").synth(src_synth.to_string());
+            let mut voc = make_voice("vox_voc_input_rt").synth(tgt_synth.to_string());
+
+            voc.input("carrier").from_voice(pad);
+
+            let pad_id = context::get_or_create_voice_id("vox_pad_input_rt");
+            let voc_id = context::get_or_create_voice_id("vox_voc_input_rt");
+            context::with_state(|state| {
+                let entries = state
+                    .input_routes
+                    .get(&(voc_id, "carrier".to_string()))
+                    .expect("input route installed");
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0], InputRouteSrc::Voice(pad_id, "out".to_string()));
+            });
+        });
+    }
+
+    #[test]
+    fn input_from_voice_repeated_replaces_prior_source() {
+        with_test_context(|| {
+            let src_synth = "p2_1_input_replace_src";
+            let tgt_synth = "p2_1_input_replace_tgt";
+            declare_ar_synthdef(src_synth, &["out"]);
+            declare_synthdef_with_params(tgt_synth, &["amp"]);
+
+            let pad = make_voice("vox_pad_replace").synth(src_synth.to_string());
+            let other = make_voice("vox_other_replace").synth(src_synth.to_string());
+            let mut voc = make_voice("vox_voc_replace").synth(tgt_synth.to_string());
+
+            voc.input("carrier").from_voice(pad);
+            voc.input("carrier").from_voice(other);
+
+            let other_id = context::get_or_create_voice_id("vox_other_replace");
+            let voc_id = context::get_or_create_voice_id("vox_voc_replace");
+            context::with_state(|state| {
+                let entries = state
+                    .input_routes
+                    .get(&(voc_id, "carrier".to_string()))
+                    .expect("input route installed");
+                // Vec stays length 1 — single-source replace, not fan-in.
+                assert_eq!(entries.len(), 1, "replace, not fan-in");
+                assert_eq!(
+                    entries[0],
+                    InputRouteSrc::Voice(other_id, "out".to_string()),
+                    "second .from(...) must win over the first",
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn input_disconnect_writes_silent_source() {
+        with_test_context(|| {
+            let tgt_synth = "p2_1_input_disconnect_tgt";
+            declare_synthdef_with_params(tgt_synth, &["amp"]);
+
+            let mut voc = make_voice("vox_voc_disconnect").synth(tgt_synth.to_string());
+
+            voc.input("carrier").disconnect();
+
+            let voc_id = context::get_or_create_voice_id("vox_voc_disconnect");
+            context::with_state(|state| {
+                let entries = state
+                    .input_routes
+                    .get(&(voc_id, "carrier".to_string()))
+                    .expect("disconnect installs an entry, not a removal");
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0], InputRouteSrc::Silent);
+            });
+        });
+    }
+
+    #[test]
+    fn input_from_voice_then_disconnect_replaces_with_silent() {
+        with_test_context(|| {
+            let src_synth = "p2_1_input_from_then_disc_src";
+            let tgt_synth = "p2_1_input_from_then_disc_tgt";
+            declare_ar_synthdef(src_synth, &["out"]);
+            declare_synthdef_with_params(tgt_synth, &["amp"]);
+
+            let pad = make_voice("vox_pad_disc_after").synth(src_synth.to_string());
+            let mut voc = make_voice("vox_voc_disc_after").synth(tgt_synth.to_string());
+
+            voc.input("carrier").from_voice(pad);
+            voc.input("carrier").disconnect();
+
+            let voc_id = context::get_or_create_voice_id("vox_voc_disc_after");
+            context::with_state(|state| {
+                let entries = state
+                    .input_routes
+                    .get(&(voc_id, "carrier".to_string()))
+                    .expect("entry present");
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0], InputRouteSrc::Silent);
+            });
+        });
+    }
+
+    #[test]
+    fn input_from_group_writes_group_source() {
+        with_test_context(|| {
+            let tgt_synth = "p2_1_input_from_group_tgt";
+            declare_synthdef_with_params(tgt_synth, &["amp"]);
+
+            let mut voc = make_voice("vox_voc_from_group").synth(tgt_synth.to_string());
+
+            let bus_group = GroupHandle::new("kit".to_string());
+            let expected_gid = context::get_or_create_group_id("kit");
+            voc.input("carrier").from_group(bus_group);
+
+            let voc_id = context::get_or_create_voice_id("vox_voc_from_group");
+            context::with_state(|state| {
+                let entries = state
+                    .input_routes
+                    .get(&(voc_id, "carrier".to_string()))
+                    .expect("input route installed");
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0], InputRouteSrc::Group(expected_gid));
+            });
+        });
+    }
+
+    #[test]
+    fn input_from_current_group_pins_to_voices_group() {
+        with_test_context(|| {
+            let tgt_synth = "p2_1_input_fcg_tgt";
+            declare_synthdef_with_params(tgt_synth, &["amp"]);
+
+            // `.group("kit")` syncs the voice with `group_path = "kit"`, so
+            // state.voices[voc].group resolves to the kit GroupId.
+            let mut voc = make_voice("vox_voc_fcg")
+                .synth(tgt_synth.to_string())
+                .group("kit".to_string());
+
+            let expected_gid = context::get_or_create_group_id("kit");
+
+            voc.input("carrier")
+                .from_current_group()
+                .expect("voice has explicit group");
+
+            let voc_id = context::get_or_create_voice_id("vox_voc_fcg");
+            context::with_state(|state| {
+                let entries = state
+                    .input_routes
+                    .get(&(voc_id, "carrier".to_string()))
+                    .expect("input route installed");
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0], InputRouteSrc::Group(expected_gid));
+            });
+        });
+    }
+
+    #[test]
+    fn input_from_current_group_errors_when_voice_at_root() {
+        with_test_context(|| {
+            let tgt_synth = "p2_1_input_fcg_root_tgt";
+            declare_synthdef_with_params(tgt_synth, &["amp"]);
+
+            // No `.group(...)` → voice lives at the implicit root.
+            let mut voc = make_voice("vox_voc_fcg_root").synth(tgt_synth.to_string());
+
+            let err = voc
+                .input("carrier")
+                .from_current_group()
+                .expect_err("no explicit group must error");
+            let msg = err.to_string();
+            assert!(msg.contains("from_current_group"), "msg = {}", msg);
+            assert!(msg.contains("'carrier'"), "msg = {}", msg);
+            assert!(msg.contains("group("), "msg = {}", msg);
+
+            // No partial entry installed.
+            let voc_id = context::get_or_create_voice_id("vox_voc_fcg_root");
+            context::with_state(|state| {
+                assert!(state
+                    .input_routes
+                    .get(&(voc_id, "carrier".to_string()))
+                    .is_none());
+            });
+        });
+    }
+
+    #[test]
+    fn input_handle_does_not_touch_output_routes() {
+        with_test_context(|| {
+            let src_synth = "p2_1_input_no_output_leak_src";
+            let tgt_synth = "p2_1_input_no_output_leak_tgt";
+            declare_ar_synthdef(src_synth, &["out"]);
+            declare_synthdef_with_params(tgt_synth, &["amp"]);
+
+            let pad = make_voice("vox_pad_no_leak").synth(src_synth.to_string());
+            let mut voc = make_voice("vox_voc_no_leak").synth(tgt_synth.to_string());
+
+            voc.input("carrier").from_voice(pad);
+
+            let pad_id = context::get_or_create_voice_id("vox_pad_no_leak");
+            let voc_id = context::get_or_create_voice_id("vox_voc_no_leak");
+            context::with_state(|state| {
+                // Output-side routes/param-route maps stay empty.
+                assert!(state.routes.get(&(pad_id, "out".to_string())).is_none());
+                assert!(state
+                    .param_routes_set
+                    .get(&(pad_id, "out".to_string()))
+                    .is_none());
+                assert!(state
+                    .param_routes_bend
+                    .get(&(pad_id, "out".to_string()))
+                    .is_none());
+                // Input-route map carries the wiring.
+                assert!(state
+                    .input_routes
+                    .contains_key(&(voc_id, "carrier".to_string())));
+            });
         });
     }
 }

@@ -3,7 +3,7 @@
 //! This module defines the state extracted from a `.vibe` script,
 //! without runtime-specific IDs (node IDs, buffer IDs, etc.).
 
-use crate::handlers::{ParamRouteMap, ParamRouteTarget, RouteMap};
+use crate::handlers::{InputRouteMap, InputRouteSrc, ParamRouteMap, ParamRouteTarget, RouteMap};
 #[cfg(feature = "midi")]
 use crate::traits::FadeTarget;
 #[cfg(not(target_arch = "wasm32"))]
@@ -597,6 +597,22 @@ pub struct ScriptState {
     /// re-add receives a new deterministic order slot.
     pub route_order: Vec<(VoiceId, String)>,
 
+    /// Per-voice **input** routes, keyed by `(target_voice_id, input_port_name)`.
+    ///
+    /// Script-side mirror of [`crate::state::State::input_routes`]. Populated by
+    /// the Rhai `voice.input("name").from(...)` surface (P2.1). Per the
+    /// named-inputs design (kb/named-inputs-design-notes.md decision #1),
+    /// `.from(x)` produces a Vec of length 1 (replace by default); explicit
+    /// fan-in verbs (`.add_from`, `.from_all` — P2.3) are the only path to a
+    /// Vec with length > 1.
+    pub input_routes: InputRouteMap,
+
+    /// First successful input route keys in total script evaluation order.
+    ///
+    /// Mirrors [`Self::route_order`] on the output side so downstream reload
+    /// diff code has a stable iteration order independent of `HashMap`.
+    pub input_route_order: Vec<(VoiceId, String)>,
+
     /// SET-semantic CV-to-param routes (`.to_param` verb) from kr output
     /// ports to target-voice parameters.
     ///
@@ -1023,6 +1039,30 @@ impl ScriptState {
         self.route_order.retain(|ordered| ordered != &key);
     }
 
+    /// Install a single-source input route for `(target_voice, input_port)`.
+    ///
+    /// Per the named-inputs design (decision #1), `.from(x)` is replace-by-
+    /// default — this method overwrites any prior Vec on the key with a fresh
+    /// single-element Vec. Explicit fan-in verbs (`.add_from`, `.from_all`)
+    /// land via a separate entry point in P2.3.
+    pub fn set_input_route(
+        &mut self,
+        target_voice: VoiceId,
+        input_port: impl Into<String>,
+        src: InputRouteSrc,
+    ) {
+        let key = (target_voice, input_port.into());
+        self.record_input_route_order(&key);
+        self.input_routes.insert(key, vec![src]);
+    }
+
+    /// Remove all input-route entries for a voice's named input port, if any.
+    pub fn clear_input_route(&mut self, target_voice: VoiceId, input_port: &str) {
+        let key = (target_voice, input_port.to_string());
+        self.input_routes.remove(&key);
+        self.input_route_order.retain(|ordered| ordered != &key);
+    }
+
     /// Install a SET-semantic CV-to-param route (`.to_param` verb) from
     /// `(source_voice, source_port)` to `(target, target_param)`. The target
     /// can be either a Voice or an Effect — see [`ParamRouteTarget`].
@@ -1207,6 +1247,12 @@ impl ScriptState {
     fn record_route_order(&mut self, key: &(VoiceId, String)) {
         if !self.route_order.iter().any(|ordered| ordered == key) {
             self.route_order.push(key.clone());
+        }
+    }
+
+    fn record_input_route_order(&mut self, key: &(VoiceId, String)) {
+        if !self.input_route_order.iter().any(|ordered| ordered == key) {
+            self.input_route_order.push(key.clone());
         }
     }
 
