@@ -79,12 +79,45 @@ impl OutputPort {
     }
 }
 
+/// A named input port on a synthdef.
+///
+/// Input ports are lowered to hidden control params that hold audio bus
+/// numbers. `body_map` exposes each corresponding `In.ar(...)` signal under
+/// `p.inputs.<name>`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InputPort {
+    pub name: String,
+    pub channels: u8,
+    pub rate: PortRate,
+}
+
+impl InputPort {
+    /// Construct an audio-rate input port.
+    pub fn ar(name: impl Into<String>, channels: u8) -> Self {
+        Self {
+            name: name.into(),
+            channels,
+            rate: PortRate::Ar,
+        }
+    }
+}
+
+/// Placeholder used in generated synthdefs before the runtime maps an input to
+/// either a private silent bus or an active source output bus.
+pub const UNROUTED_INPUT_BUS_PLACEHOLDER: f32 = -1.0;
+
+/// Hidden control-param name for the bus backing an input declaration.
+pub fn input_bus_param_name(index: usize) -> String {
+    format!("__in{}", index)
+}
+
 /// SynthDef builder.
 #[derive(Clone, Debug)]
 pub struct SynthDef {
     pub name: String,
     pub params: Vec<(String, f32, Option<f32>)>, // (name, default, lag_ms)
     pub out_bus_tag: Option<String>,
+    pub inputs: Vec<InputPort>,
     pub outputs: Vec<OutputPort>,
     // True once the user has called `.output(...)` at least once. Tracks whether
     // `outputs` is the implicit legacy default or an explicit declaration.
@@ -98,6 +131,7 @@ impl SynthDef {
             name,
             params: Vec::new(),
             out_bus_tag: None,
+            inputs: Vec::new(),
             outputs: vec![OutputPort {
                 name: "out".to_string(),
                 channels: 2,
@@ -105,6 +139,42 @@ impl SynthDef {
             }],
             outputs_explicit: false,
         }
+    }
+
+    /// Declare a named audio-rate input port. Channels typically 1
+    /// (mono/CV-like audio stream) or 2 (stereo).
+    pub fn input(&mut self, name: String, channels: u8) -> Result<&mut Self> {
+        self.input_with_rate(name, channels, PortRate::Ar)
+    }
+
+    fn input_with_rate(
+        &mut self,
+        name: String,
+        channels: u8,
+        rate: PortRate,
+    ) -> Result<&mut Self> {
+        if name.is_empty() {
+            return Err(SynthDefError::ValidationError(
+                "Input port name cannot be empty".to_string(),
+            ));
+        }
+        if channels == 0 {
+            return Err(SynthDefError::ValidationError(
+                "Input port channels must be at least 1".to_string(),
+            ));
+        }
+        if self.inputs.iter().any(|p| p.name == name) {
+            return Err(SynthDefError::ValidationError(format!(
+                "Duplicate input port name: {}",
+                name
+            )));
+        }
+        self.inputs.push(InputPort {
+            name,
+            channels,
+            rate,
+        });
+        Ok(self)
     }
 
     /// Declare a named audio-rate output port. Channels typically 1
@@ -512,17 +582,75 @@ impl SynthDef {
         self.build_body_closure_with_options_inner(closure, add_out_node, BodyDispatch::Map)
     }
 
+    fn ensure_no_hidden_input_param_collisions(
+        params: &[(String, f32, Option<f32>)],
+        input_count: usize,
+    ) -> Result<()> {
+        for index in 0..input_count {
+            let hidden_name = input_bus_param_name(index);
+            if params.iter().any(|(name, _, _)| name == &hidden_name) {
+                return Err(SynthDefError::ValidationError(format!(
+                    "Parameter name '{}' is reserved for synthdef input routing",
+                    hidden_name
+                )));
+            }
+        }
+
+        if input_count > 0 && params.iter().any(|(name, _, _)| name == "inputs") {
+            return Err(SynthDefError::ValidationError(
+                "Parameter name 'inputs' is reserved for synthdef input routing".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn param_ref(builder: &GraphBuilderInner, name: &str) -> Result<NodeRef> {
+        builder
+            .params
+            .iter()
+            .find(|p| p.name == name)
+            .map(|spec| NodeRef(0xFFFFFFFF - spec.index as u32))
+            .ok_or_else(|| SynthDefError::ValidationError(format!("Missing param {}", name)))
+    }
+
+    fn body_map_inputs(&self) -> Result<rhai::Map> {
+        let mut inputs = rhai::Map::new();
+        for (index, port) in self.inputs.iter().enumerate() {
+            let bus_param = input_bus_param_name(index);
+            let bus_ref =
+                crate::graph::with_builder(|builder| Self::param_ref(builder, &bus_param))??;
+            let mut channels = helpers::in_ar_n(bus_ref, f64::from(port.channels))?;
+            let value = if port.channels == 1 {
+                channels.remove(0)
+            } else {
+                rhai::Dynamic::from(channels)
+            };
+            inputs.insert(port.name.as_str().into(), value);
+        }
+        Ok(inputs)
+    }
+
     fn build_body_closure_with_options_inner(
         self,
         closure: rhai::FnPtr,
         add_out_node: bool,
         dispatch: BodyDispatch,
     ) -> Result<GraphIR> {
+        if matches!(dispatch, BodyDispatch::Positional) && !self.inputs.is_empty() {
+            return Err(SynthDefError::ValidationError(format!(
+                "Synthdef `{}` declares {} input port(s); inputs require `.body_map(|p| ...)` and are available as `p.inputs.<name>`",
+                self.name,
+                self.inputs.len()
+            )));
+        }
+
         // Create a new graph builder
         let mut builder = GraphBuilderInner::new();
 
         // Use explicitly declared parameters
         let params = self.params.clone();
+        Self::ensure_no_hidden_input_param_collisions(&params, self.inputs.len())?;
 
         // Check if "out" parameter exists, if not add it automatically when add_out_node is true
         let has_out_param = params.iter().any(|(name, _, _)| name == "out");
@@ -530,6 +658,14 @@ impl SynthDef {
         // Add all parameters first (as single-value arrays)
         for (name, default, lag_ms) in &params {
             builder.add_param(name.clone(), vec![*default], *lag_ms);
+        }
+
+        for i in 0..self.inputs.len() {
+            builder.add_param(
+                input_bus_param_name(i),
+                vec![UNROUTED_INPUT_BUS_PLACEHOLDER],
+                None,
+            );
         }
 
         // Add output bus parameters. Legacy synthdefs (no explicit `.output()`) get
@@ -586,6 +722,16 @@ impl SynthDef {
                 let mut map = rhai::Map::new();
                 for ((name, _, _), node) in params.iter().zip(param_nodes.iter()) {
                     map.insert(name.as_str().into(), node.clone());
+                }
+                if !self.inputs.is_empty() {
+                    let inputs = match self.body_map_inputs() {
+                        Ok(inputs) => inputs,
+                        Err(e) => {
+                            clear_active_builder();
+                            return Err(e);
+                        }
+                    };
+                    map.insert("inputs".into(), rhai::Dynamic::from(inputs));
                 }
                 closure.call(&engine, &empty_ast, (rhai::Dynamic::from(map),))
             }
@@ -1843,5 +1989,169 @@ mod body_map_tests {
             vec![Rate::Audio, Rate::Control, Rate::Control],
             "Out UGen rates must follow declared port rates [Ar, Kr, Tr]"
         );
+    }
+
+    #[test]
+    fn input_descriptor_round_trips() {
+        let mut sd = SynthDef::new("input_ports".to_string());
+        sd.input("audio".to_string(), 1).expect("audio input");
+        sd.input("stereo".to_string(), 2).expect("stereo input");
+
+        assert_eq!(
+            sd.inputs,
+            vec![
+                InputPort {
+                    name: "audio".to_string(),
+                    channels: 1,
+                    rate: PortRate::Ar,
+                },
+                InputPort {
+                    name: "stereo".to_string(),
+                    channels: 2,
+                    rate: PortRate::Ar,
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn input_duplicate_name_errors() {
+        let mut sd = SynthDef::new("dup_input".to_string());
+        sd.input("audio".to_string(), 1).expect("first");
+        let err = sd
+            .input("audio".to_string(), 2)
+            .expect_err("duplicate input must error");
+
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                assert!(msg.contains("Duplicate"), "msg = {}", msg);
+                assert!(msg.contains("audio"), "msg = {}", msg);
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn input_empty_name_errors() {
+        let mut sd = SynthDef::new("empty_input".to_string());
+        let err = sd
+            .input(String::new(), 1)
+            .expect_err("empty input name must error");
+
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                assert!(msg.contains("empty"), "msg = {}", msg);
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn input_zero_channels_errors() {
+        let mut sd = SynthDef::new("zero_channel_input".to_string());
+        let err = sd
+            .input("audio".to_string(), 0)
+            .expect_err("zero-channel input must error");
+
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                assert!(msg.contains("channels"), "msg = {}", msg);
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn input_ports_require_body_map() {
+        let mut sd = SynthDef::new("input_positional".to_string());
+        sd.input("audio".to_string(), 1).expect("input");
+        let closure: FnPtr = parser_engine()
+            .eval("|| sin_osc_ar(440.0, 0.0)")
+            .expect("parse positional body");
+        let err = sd
+            .build_body_closure_with_options(closure, true)
+            .expect_err("inputs require body_map");
+
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                assert!(msg.contains("body_map"), "msg = {}", msg);
+                assert!(msg.contains("p.inputs"), "msg = {}", msg);
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn input_ports_reserve_inputs_param_name() {
+        let mut sd = SynthDef::new("input_param_collision".to_string());
+        sd.input("audio".to_string(), 1).expect("input");
+        sd.arg_f("inputs".to_string(), 0.0);
+        let closure: FnPtr = parser_engine()
+            .eval("|p| p.inputs.audio")
+            .expect("parse collision body_map");
+        let err = sd
+            .build_body_map_closure_with_options(closure, true)
+            .expect_err("inputs param should be reserved when input ports exist");
+
+        match err {
+            SynthDefError::ValidationError(msg) => {
+                assert!(msg.contains("inputs"), "msg = {}", msg);
+                assert!(msg.contains("reserved"), "msg = {}", msg);
+            }
+            other => panic!("expected ValidationError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn body_map_input_lowers_to_hidden_bus_param_and_in_ar() {
+        let mut sd = SynthDef::new("input_lowering".to_string());
+        sd.input("audio".to_string(), 1).expect("input");
+        sd.arg_f("gain".to_string(), 0.5);
+
+        let closure: FnPtr = parser_engine()
+            .eval("|p| p.inputs.audio * p.gain")
+            .expect("parse input body_map");
+        let ir = sd
+            .build_body_map_closure_with_options(closure, true)
+            .expect("build input body_map");
+
+        assert_eq!(ir.params[0].name, "gain");
+        assert_eq!(ir.params[1].name, input_bus_param_name(0));
+        assert_eq!(ir.params[1].default, vec![UNROUTED_INPUT_BUS_PLACEHOLDER]);
+        assert_eq!(ir.params[2].name, "out");
+
+        let in_nodes: Vec<&_> = ir.nodes.iter().filter(|n| n.name == "In").collect();
+        assert_eq!(in_nodes.len(), 1, "expected one In UGen");
+        assert_eq!(in_nodes[0].rate, Rate::Audio);
+        assert_eq!(in_nodes[0].num_outputs, 1);
+        assert_eq!(in_nodes[0].inputs.len(), 1);
+        match &in_nodes[0].inputs[0] {
+            Input::Node {
+                node_id,
+                output_index,
+            } => {
+                assert_eq!(*node_id, 0, "input bus should read Control");
+                assert_eq!(*output_index, 1, "input bus should use __in0 slot");
+            }
+            other => panic!("expected Control node input for input bus, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn body_map_stereo_input_exposes_channel_array() {
+        let mut sd = SynthDef::new("stereo_input_lowering".to_string());
+        sd.input("audio".to_string(), 2).expect("input");
+
+        let closure: FnPtr = parser_engine()
+            .eval("|p| [p.inputs.audio[0], p.inputs.audio[1]]")
+            .expect("parse stereo input body_map");
+        let ir = sd
+            .build_body_map_closure_with_options(closure, true)
+            .expect("build stereo input body_map");
+
+        let in_nodes: Vec<&_> = ir.nodes.iter().filter(|n| n.name == "In").collect();
+        assert_eq!(in_nodes.len(), 1, "expected one stereo In UGen");
+        assert_eq!(in_nodes[0].rate, Rate::Audio);
+        assert_eq!(in_nodes[0].num_outputs, 2);
     }
 }
