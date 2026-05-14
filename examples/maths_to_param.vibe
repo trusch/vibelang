@@ -1,4 +1,4 @@
-// Maths → param routing — v2 proof-of-life.
+// Maths → param routing — CV-to-param proof-of-life.
 //
 // Demonstrates the v2 multi-output / CV-routing surface end-to-end:
 //
@@ -7,7 +7,7 @@
 //   2. A real bass voice's `cutoff` param is driven directly from the
 //      Maths channel-1 kr envelope via
 //      `voice.output(name).to_param(target, param)`
-//      (Story 4 — Rhai surface for `RouteDest::Param`).
+//      with optional `.scale(...)` / `.offset(...)` shaping.
 //
 // Topology:
 //
@@ -29,22 +29,6 @@
 // with the defaults below is 1 / 0.5 = 2 Hz. End-to-end, no audio bus
 // crosses voice boundaries — just a kr bus and an `/n_map` mapping.
 //
-// =====================================================================
-// STATUS: Story 4 (Rhai `.to_param(voice, param)` API) is still in
-// flight on branch `v2-4-toparam`. Until that merges, this script will
-// not parse — `RouteHandle.to_param` is not yet registered on the Rhai
-// engine. Once Story 4 lands, this file becomes the v2 smoke test:
-//
-//   bash -c "cd examples && ../target/release/vibe run -w -I .. \\
-//     maths_to_param.vibe"
-//
-// In the meantime: the migrated Maths synthdef compiles fine
-// (`cargo build --release`); the kr ports and `MapN` finalize path are
-// already in tree (Stories 1-3, commits 546752f, 02efde1, 91840f0).
-// This example documents the exact syntax the user should expect from
-// the completed v2 surface — copy-pasteable the moment Story 4 lands.
-// =====================================================================
-
 import "stdlib/instruments/eurorack/maths.vibe";
 import "stdlib/synths/tb303.vibe";
 
@@ -75,17 +59,9 @@ let m = voice("env")
 // (1-port synthdef → voice.group → main) handles audio output without
 // an explicit `.to(...)` call.
 //
-// Note on cutoff range: Maths ch1 envelope peaks ≈ 1.0 (kr unit value).
-// scsynth's `/n_map` writes the kr bus value directly into the param
-// input — no per-route scaling in v2 (deferred to v3). With base cutoff
-// 800 Hz and the kr signal mapping in as a Hz value, the audible sweep
-// is the modulation deviation from base ≈ 0..1 Hz — subtle but
-// measurable on a scope. The bass tone itself stays near 800 Hz cutoff
-// throughout. For a wider sweep, use a future-MapN-with-multiplier
-// surface (Story TBD) or rescale on the synthdef side. Even so, the
-// test still proves the kr-bus-to-param path is wired correctly: a
-// scope on the bass cutoff will show a 2 Hz wobble synced with the
-// Maths cycle.
+// Maths ch1 peaks around 1.0. `.scale(3000).offset(500)` maps that unit
+// envelope onto a wide 500..3500 Hz filter sweep before `/n_map` binds the
+// target param to the intermediate control bus.
 let bass = voice("bass")
     .synth("tb303_bass")
     .group("bass")
@@ -111,7 +87,10 @@ let bass = voice("bass")
 // param_routes row, so feel free to pick whichever scans best per
 // patch (per the v2 docs). Below — the source-first form, currently
 // in use:
-m.output("ch1").to_param(bass, "cutoff");
+m.output("ch1")
+    .to_param(bass, "cutoff")
+    .scale(3000.0)
+    .offset(500.0);
 
 // Equivalent target-first form (uncomment to use either; both wire the
 // exact same kr bus → /n_map mapping):

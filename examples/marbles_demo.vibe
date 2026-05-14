@@ -1,34 +1,25 @@
 // Marbles multi-output demo — six-port routing topology.
 //
-// Wires the new `marbles` synthdef (six output ports: t1/t2/t3, x1/x2/x3)
-// into a three-group destination shape that mirrors how the hardware
-// Marbles patch points fan out: T1 trigger → kick voice; X1 V/oct → bass
-// freq; X2 → filter cutoff. A kick + Moog-style bass voice are spawned
-// alongside to give the demo audible context, with the cross-voice param
-// wire-up documented inline as the v2 follow-up.
+// Wires the `marbles` synthdef (six audio-rate CV-style output ports:
+// t1/t2/t3, x1/x2/x3) into the current routing surface:
 //
-// v1 (audio-only) limitation, per `kb/voice-multioutput-howto.md` §8:
-// `voice.output("name").to(...)` routes audio buses, not control rate, and
-// there is no `cv_to(target_voice, "param")` terminal verb yet. So in v1
-// the marbles outputs are routed to dedicated groups where they can be
-// pinned to ES-3 jack pairs (`group("trig_bus").output([N, N+1])` style)
-// for hardware monitoring; the kick + bass make sound through their own
-// melody / fixed-param drive. The line-by-line "what v2 will do" comments
-// below mark each place where a `cv_to` call replaces the current audible-
-// context drive once the v2 CV-to-param routing work in
-// `kb/voice-multi-output-cv-routing-plan.md` Phase 2 lands.
+//   t1 -> monitor group for hardware / scope routing
+//   x1 -> bass.freq through `.to_param_audio(...)`
+//   x2 -> bass.cutoff through `.to_param_audio(...)`
+//   x3 -> monitor group for hardware / scope routing
 //
 // Topology (read top-down — first three rows are marbles fan-out, last
 // three are the audible-context patch):
 //
-//   marbles.t1 ──► trig_bus group  (v2: → kick.gate)
-//   marbles.x1 ──► pitch_cv group  (v2: → bass.freq via 1V/oct mapping)
-//   marbles.x2 ──► filter_cv group (v2: → bass.cutoff)
-//   marbles.{t2,t3,x3} ──► muted (declared but unused in this demo)
+//   marbles.t1 ──► trig_bus group
+//   marbles.x1 ──► bass.freq       (linear Hz demo, not calibrated V/oct)
+//   marbles.x2 ──► bass.cutoff
+//   marbles.x3 ──► pitch_cv group
+//   marbles.{t2,t3} ──► muted
 //
 //   kick (kick_techno_deep) ──► main      [retriggered by a 4 Hz cv_clock
-//                                          modulator, until v2 wires t1]
-//   bass (bass_moog)        ──► main      [static A1, until v2 wires x1]
+//                                          melody for audible context]
+//   bass (bass_moog)        ──► main      [modulated by x1/x2]
 
 import "stdlib/instruments/eurorack/marbles.vibe";
 import "stdlib/drums/kicks/kick_techno_deep.vibe";
@@ -42,7 +33,6 @@ set_tempo(120);
 // demo runs on a default 2-channel JACK setup.
 define_group("trig_bus", || { });
 define_group("pitch_cv", || { });
-define_group("filter_cv", || { });
 
 // === Marbles generator ====================================================
 // One voice driving all six ports. Params chosen for an audible "natural
@@ -59,45 +49,35 @@ let m = voice("marbles")
     .set_param("quant_steps", 12.0)   // chromatic
     .gain(db(-12));
 
-// Per-port routing per the ticket spec. The unused outputs are explicitly
-// muted so they don't pick up the count-based default rule (which would
-// route the first two ports to the voice's group).
-m.output("t1").to(group("trig_bus"));
-m.output("x1").to(group("pitch_cv"));
-m.output("x2").to(group("filter_cv"));
-m.outputs(["t2", "t3", "x3"]).mute();
-
 // === Audible context — kick + bass =======================================
-// Until v2 lands the CV-to-param wiring, the kick and bass voices below
-// produce sound from their own static / modulator-driven config. Each
-// `set_param` line is paired with a "v2:" comment showing the eventual
-// `cv_to` replacement.
-//
-// Kick: retrigger via a 4 Hz cv_clock modulator on the kick's gate-like
-// behaviour. kick_techno_deep is a percussive one-shot, so we drive it
-// with a melody at the master rate to give an audible pulse.
+// Kick: kick_techno_deep is a percussive one-shot, so we drive it with a
+// melody at the master rate to give the Marbles patch audible context.
 let k = voice("kick")
     .synth("kick_techno_deep")
     .set_param("freq", 50.0)
     .set_param("amp", 0.9)
     .gain(db(-3));
-// v2: m.output("t1").to_param(k, "gate");  // replaces the melody below.
 
 melody("kick_pulse")
     .on(k)
     .notes("C2 - - -")                // 4 Hz at 120 BPM = quarter notes
     .start();
 
-// Bass: static A1 root note with a fixed Moog-ladder cutoff. In v2 the
-// X1 port replaces the static `freq`, and X2 replaces `cutoff`.
+// Bass: x1 bends frequency linearly around A1, and x2 sweeps the ladder
+// cutoff. For calibrated V/oct pitch, route x1 to hardware or add a
+// dedicated V/oct-to-Hz shaping stage.
 let b = voice("bass")
     .synth("bass_moog")
     .set_param("freq", 55.0)          // A1
     .set_param("cutoff", 600.0)
     .set_param("res", 0.5)
     .gain(db(-9));
-// v2: m.output("x1").to_param(b, "freq", VoctScale::A1Centred);
-// v2: m.output("x2").to_param(b, "cutoff", LinearScale::Hz(200.0, 4000.0));
+
+m.output("t1").to(group("trig_bus"));
+m.output("x1").to_param_audio(b, "freq").scale(35.0).offset(55.0);
+m.output("x2").to_param_audio(b, "cutoff").scale(1200.0).offset(1200.0);
+m.output("x3").to(group("pitch_cv"));
+m.outputs(["t2", "t3"]).mute();
 
 melody("bass_drone").on(b).notes("A1").start();
 

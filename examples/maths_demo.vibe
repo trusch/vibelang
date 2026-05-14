@@ -1,142 +1,61 @@
-// Maths demo — 6-port multi-output recreation of Make Noise Maths.
+// Maths demo — kr-port CV routing from Make Noise Maths.
 //
-// The synthdef declares 6 output ports (ch1, ch4, sum, inv, eor1, eoc1).
-// This patch routes them to demonstrate the two canonical Maths use
-// cases from the ticket spec:
+// The Maths synthdef exposes control-rate ports (`ch1`, `ch4`, `sum`, `eor1`,
+// and friends). This patch maps three of them into a held tb303 voice:
 //
-//   sum   → an oscillator's amp (a slow LFO summing both envelope
-//           channels into a tremolo-like amplitude shape).
-//   eor1  → a hi-hat trigger (the end-of-rise pulse fires a
-//           percussive metallic click on every channel-1 cycle peak).
+//   sum  -> bass.cutoff    via source-first `.to_param(...)`
+//   ch4  -> bass.freq      via target-first `.modulate_by(...)`
+//   eor1 -> bass.resonance via target-first `.modulate_by(...)`
 //
-// In vibelang v1, "drives an oscillator's amp" and "triggers a hi-hat"
-// are *audio-domain* patches: the maths ports emit audio-rate signals,
-// and the destination groups apply group-level FX that interpret those
-// signals as modulation. Phase 2 of the multi-output / CV-routing plan
-// (see `kb/voice-multi-output-cv-routing-plan.md`) lifts these to true
-// per-port CV-to-param routes; until then this script runs the same
-// patch via group-level audio mixing, which sounds the same to the ear
-// while producing genuine cross-voice interaction.
-//
-// Topology:
-//
-//   ch1   ─► dry_envs       (audible bipolar envelope, monitor)
-//   ch4   ─► dry_envs
-//   sum   ─► amp_mod_group  (FX: sin_osc multiplied by bus input)
-//   inv   ─► mute           (visible on a scope but silent here)
-//   eor1  ─► hat_group      (FX: bus input gates a metallic click)
-//   eoc1  ─► mute           (could trigger a separate kick — left as
-//                            an exercise for the reader)
-//
-// To hear the cycle action clearly we set `cycle1 = 1`, which makes
-// channel 1 free-run as an LFO at `1 / (rise1 + fall1)` Hz. With the
-// defaults below (rise1 = 0.05, fall1 = 0.45) the cycle rate is 2 Hz —
-// audible as a slow tremolo on the amp_mod sine and a 2 Hz hi-hat
-// ostinato through hat_group.
+// `.scale(...)` and `.offset(...)` shape the kr bus before it reaches the
+// target param, so the Maths unit envelopes become useful musical ranges.
 
 import "stdlib/instruments/eurorack/maths.vibe";
+import "stdlib/synths/tb303.vibe";
 
 set_tempo(120);
 
-// === Group 1: dry envelope monitor ========================================
-// Just sums ch1 + ch4 audio onto the main bus so you can hear the raw
-// envelope shapes. Useful when patching against this synthdef for the
-// first time — verify the cycle rate and trig timing before sending
-// the ports off to FX-bearing groups.
-define_group("dry_envs", || { });
+define_group("ctrl", || { });
+define_group("bass", || { });
 
-// === Group 2: sum-driven oscillator amp ===================================
-// `amp_mod_sine` is a one-shot inline FX synthdef: takes the two-channel
-// group bus (the routed `sum` signal arrives doubled into both L and R
-// since the maths ports are mono — the implicit-mono-to-stereo lift in
-// the routing layer mirrors the same value to both channels), runs a
-// 220 Hz sine carrier, and amplitude-modulates the carrier by the bus
-// input. Output is `(1.0 - mix) * dry + mix * (sine * sum)`. The result
-// is a sine that ducks/swells with the maths sum envelope — exactly
-// the "sum drives an oscillator's amp" patch the ticket calls for.
-define_fx("amp_mod_sine")
-    .param("freq", 220.0)
-    .param("depth", 1.0)
-    .body(|input, freq, depth| {
-        // Bus input carries the maths.sum signal (mirrored to both L/R).
-        // Use the L channel as the modulation source.
-        let mod_src = input[0];
-        let carrier = sin_osc_ar(freq);
-        // AM: carrier * (offset + depth*mod). offset=0 means full ring-mod
-        // (zero-crossing nulls the carrier); offset=1 - depth keeps a base
-        // amplitude even at mod_src=0. Clamp depth to [0,1] for safety.
-        let d = clip(depth, 0.0, 1.0);
-        let am = carrier * (1.0 - d + d * mod_src);
-        [am * 0.4, am * 0.4]
-    });
-
-define_group("amp_mod_group", || {
-    fx("amp_mod")
-        .synth("amp_mod_sine")
-        .param("freq", 220.0)
-        .param("depth", 0.9)
-        .apply();
-});
-
-// === Group 3: EOR-triggered hi-hat ========================================
-// `eor_hat` is an inline FX synthdef that interprets its bus input as a
-// rising-edge trigger. On each non-positive→positive crossing, a short
-// `decay_ar` envelope opens a high-pass-filtered saw-bank chord — the
-// classic 808 closed-hat construction — for ~40 ms. Effectively turns
-// the maths.eor1 audio gate into a percussive metallic click.
-//
-// Why we need a custom FX here rather than using `hihat_808_closed`:
-// `hihat_808_closed` uses `cleanup_on_finish()` which frees the synth
-// after one envelope cycle — fine when triggered from a pattern, but
-// useless as a continuous FX listener. The inline FX synthdef stays
-// alive and re-triggers its decay envelope on each EOR pulse without
-// being freed.
-define_fx("eor_hat")
-    .param("amp", 0.6)
-    .body(|input, amp| {
-        // Bus input is the EOR audio gate (≈ +5V / 0.5 audio at 5 ms).
-        let trig = input[0];
-        // Decay envelope: jumps to 1 on each rising trigger, exponential
-        // 40 ms decay. Independent of bus signal level above threshold.
-        let env = decay_ar(trig, 0.04);
-        // 808-style metallic-square saw bank.
-        let osc = (saw_ar(315.0) + saw_ar(380.0) + saw_ar(445.0)
-                 + saw_ar(540.0) + saw_ar(620.0) + saw_ar(745.0)) * 0.16;
-        let filtered = hpf_ar(osc, 8000.0);
-        let hit = filtered * env * amp;
-        // Stereo spread to keep the hat panned centre.
-        [hit, hit]
-    });
-
-define_group("hat_group", || {
-    fx("hat")
-        .synth("eor_hat")
-        .param("amp", 0.7)
-        .apply();
-});
-
-// === The maths voice ======================================================
-// cycle1=1 makes channel 1 free-run; the resulting envelope cycles at
-// `1 / (rise1 + fall1)` ≈ 2 Hz with these times. Channel 4 fires once
-// (trig4=1) at synth start, so ch4 contributes a single decay and then
-// rests at 0 — sum is then dominated by the cycling ch1 with a one-
-// shot ch4 lift at the very beginning.
-let m = voice("maths_demo")
+let m = voice("maths")
     .synth("maths")
+    .group("ctrl")
     .param("rise1", 0.05)
     .param("fall1", 0.45)
     .param("rise4", 0.10)
     .param("fall4", 1.20)
     .param("cycle1", 1.0)
-    .param("trig4", 1.0)
-    .gain(db(-6));
+    .param("cycle4", 1.0);
 
-// Per-port routing.
-m.output("ch1").to(group("dry_envs"));
-m.output("ch4").to(group("dry_envs"));
-m.output("sum").to(group("amp_mod_group"));
-m.output("inv").mute();
-m.output("eor1").to(group("hat_group"));
-m.output("eoc1").mute();
+let bass = voice("maths_bass")
+    .synth("tb303_bass")
+    .group("bass")
+    .set_param("freq", 55.0)
+    .set_param("amp", 0.45)
+    .set_param("cutoff", 800.0)
+    .set_param("resonance", 0.45)
+    .set_param("env_mod", 0.0)
+    .set_param("decay", 0.45);
 
-m.start();
+m.output("sum")
+    .to_param(bass, "cutoff")
+    .scale(2600.0)
+    .offset(500.0);
+
+bass.param("freq")
+    .modulate_by(m, "ch4")
+    .scale(35.0)
+    .offset(0.0);
+
+bass.param("resonance")
+    .modulate_by(m, "eor1")
+    .scale(0.35)
+    .offset(0.0);
+
+m.outputs(["ch1", "ch2", "ch3", "or", "inv", "eoc1", "eor4", "eoc4"]).mute();
+
+melody("bass_drone")
+    .on(bass)
+    .notes("A1 A1 A1 A1")
+    .start();
