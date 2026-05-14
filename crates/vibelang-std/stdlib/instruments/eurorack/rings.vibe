@@ -1,0 +1,70 @@
+// kind=processor | category=eurorack | flavor=mutable-rings | inputs=in:1 | outputs=odd:1,even:1,sum:1 | params=pit,structure,brightness,damping,position,model,polyphony,internal_exciter,bypass,gain,trigger
+//
+// Mutable Instruments Rings - modal resonator / sympathetic string processor.
+//
+// Thin wrapper around the canonical mi-UGens `mi_rings_ar` port. Feed
+// excitation audio into the named `in` jack, or set `internal_exciter=1` and
+// pulse `trigger` to let Rings sing without an `in` signal.
+//
+// Model table:
+//   0  modal
+//   1  sympathetic string
+//   2  string
+//   3  FM voice
+//   4  quantized sympathetic string
+//   5  string + reverb
+//
+// Outputs:
+//   odd  - first Rings output, conventionally routed as the odd resonator bank
+//   even - second Rings output, conventionally routed as the even resonator bank
+//   sum  - odd + even mono mix for simple single-port patches
+
+define_synthdef("rings", |builder| {
+    builder
+        .input("in", 1)             // 1ch - external excitation audio
+        .output("odd")              // 1ch - Rings first output
+        .output("even")             // 1ch - Rings second output
+        .output("sum")              // 1ch - odd + even convenience mix
+        .param("pit", 60.0)
+        .param("structure", 0.5)
+        .param("brightness", 0.5)
+        .param("damping", 0.5)
+        .param("position", 0.5)
+        .param("model", 0.0)
+        .param("polyphony", 1.0)
+        .param("internal_exciter", 0.0)
+        .param("bypass", 0.0)
+        .param("gain", 1.0)
+        .param("trigger", 0.0)
+        .body_map(|p| {
+            // mi_rings_ar args: in, trig, pit, struct, bright, damp, pos,
+            // model, poly, intern_exciter, easteregg, bypass, mul
+            let rings = channels(
+                mi_rings_ar(
+                    p.inputs["in"],
+                    p.trigger,
+                    p.pit,
+                    p.structure,
+                    p.brightness,
+                    p.damping,
+                    p.position,
+                    p.model,
+                    p.polyphony,
+                    p.internal_exciter,
+                    0.0,
+                    p.bypass,
+                    p.gain
+                ),
+                2
+            );
+
+            let odd = leak_dc_ar(rings[0], 0.995);
+            let even = leak_dc_ar(rings[1], 0.995);
+
+            [
+                odd,
+                even,
+                odd + even,
+            ]
+        })
+});
