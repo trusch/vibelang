@@ -1,0 +1,44 @@
+// Make Noise Wogglebug — simultaneous kr fanout.
+//
+// Ports: stepped, smooth, woggle, clock. The existing `cv_wogglebug` keeps the
+// single-output mode-select contract; this synthdef models the hardware fanout
+// for patches that want all control jacks at once.
+
+define_synthdef("wogglebug", |builder| {
+    builder
+        .output_kr("stepped")
+        .output_kr("smooth")
+        .output_kr("woggle")
+        .output_kr("clock")
+        .param("rate", 4.0)
+        .param("depth_v", 5.0)
+        .param("bipolar", 1.0)
+        .param("chaos", 0.5)
+        .body_map(|p| {
+            let rate = p.rate.max(0.001);
+            let depth = clip(p.depth_v / 10.0, 0.0, 1.0);
+            let bipolar = clip(p.bipolar, 0.0, 1.0);
+            let chaos = clip(p.chaos, 0.0, 1.0);
+
+            let clock_imp = impulse_kr(rate, 0.0);
+            let clock_out = clip_kr(trig1_kr(clock_imp, 0.005) * 0.5, -1.0, 1.0);
+
+            let stepped_raw = latch_kr(white_noise_kr(), clock_imp);
+            let smooth_raw = a2k_kr(lorenz_l_ar(rate * (0.5 + chaos))) * (1.0 / 25.0);
+            let prev_step = lag_ud_kr(stepped_raw, 0.001, 0.001);
+            let edge = in_range_kr(abs(stepped_raw - prev_step), 0.001, 10.0);
+            let ring_env = decay2_kr(edge, 0.001, 1.0 / (rate + 0.001));
+            let ring = sin_osc_kr(rate * (6.0 + chaos * 8.0), 0.0) * ring_env * 0.5;
+            let woggle_raw = stepped_raw * (1.0 - chaos * 0.35) + smooth_raw * chaos * 0.35 + ring;
+
+            let stepped_uni = stepped_raw * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+            let smooth_uni = smooth_raw * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+            let woggle_uni = woggle_raw * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+
+            let stepped_out = clip_kr(stepped_uni * depth, -1.0, 1.0);
+            let smooth_out = clip_kr(smooth_uni * depth, -1.0, 1.0);
+            let woggle_out = clip_kr(woggle_uni * depth, -1.0, 1.0);
+
+            [stepped_out, smooth_out, woggle_out, clock_out]
+        })
+});
