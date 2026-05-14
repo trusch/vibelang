@@ -1,0 +1,209 @@
+// Intellijel Quadrax-inspired quad function generator.
+//
+// Four independent kr function channels expose AD, AHR, cycling envelope,
+// burst, and LFO modes. Outputs are unipolar 0..+10 V-style function CVs;
+// EOR/EOF taps are +5 V-style 5 ms timing pulses.
+
+fn _quadrax_gate(x) {
+    clip_kr(x, 0.0, 1.0)
+}
+
+fn _quadrax_mode_weight(mode, target) {
+    clip_kr(1.0 - abs(mode - target), 0.0, 1.0)
+}
+
+fn _quadrax_shape(pos, curve_exp) {
+    exp(ln(pos.max(0.00001)) * curve_exp)
+}
+
+fn _quadrax_ad_shape(phase, rise_frac, curve_exp) {
+    let rise_pos = clip_kr(phase / rise_frac, 0.0, 1.0);
+    let fall_pos = clip_kr((phase - rise_frac) / (1.0 - rise_frac), 0.0, 1.0);
+    let rise_shape = _quadrax_shape(rise_pos, curve_exp);
+    let fall_shape = 1.0 - _quadrax_shape(fall_pos, curve_exp);
+    let rise_mask = in_range_kr(phase, 0.0, rise_frac);
+
+    rise_shape * rise_mask + fall_shape * (1.0 - rise_mask)
+}
+
+fn _quadrax_channel(trig_param, rise_param, fall_param, shape_param, mode_param, level_param) {
+    let trig = _quadrax_gate(trig_param);
+    let rise = clip_kr(rise_param, 0.0, 1.0).max(0.001);
+    let fall = clip_kr(fall_param, 0.0, 1.0).max(0.001);
+    let total = rise + fall;
+    let rate = 1.0 / total.max(0.002);
+    let rise_frac = clip_kr(rise / total.max(0.002), 0.001, 0.999);
+    let curve_exp = exp(clip_kr(shape_param, -1.0, 1.0) * 2.0);
+    let level = clip_kr(level_param, 0.0, 1.0);
+
+    let mode = round(clip_kr(mode_param, 0.0, 4.0));
+    let ad_w = _quadrax_mode_weight(mode, 0.0);
+    let ahr_w = _quadrax_mode_weight(mode, 1.0);
+    let cycle_w = _quadrax_mode_weight(mode, 2.0);
+    let burst_w = _quadrax_mode_weight(mode, 3.0);
+    let lfo_w = _quadrax_mode_weight(mode, 4.0);
+
+    let raw = sweep_kr(trig, rate);
+    let phase = wrap_kr(raw, 0.0, 1.0);
+    let prev_raw = delay1_kr(raw);
+    let prev_phase = delay1_kr(phase);
+    let shaped = _quadrax_ad_shape(phase, rise_frac, curve_exp);
+
+    let seen = clip_kr(pulse_count_kr(trig, 0.0), 0.0, 1.0);
+    let ad_active = seen * in_range_kr(raw, 0.0, 1.0);
+    let ad_env = shaped * ad_active;
+    let ad_eor_edge = in_range_kr(prev_phase, 0.0, rise_frac) * in_range_kr(phase, rise_frac, 1.0) * ad_active;
+    let ad_eof_edge = in_range_kr(prev_raw, 0.0, 1.0) * in_range_kr(raw, 1.0, 100000.0) * seen;
+
+    let ahr_raw = lag_ud_kr(trig, rise, fall);
+    let ahr_env = _quadrax_shape(ahr_raw, curve_exp);
+    let ahr_fall_edge = changed_kr(trig, 0.0) * (1.0 - trig);
+    let ahr_eor_edge = t_delay_kr(trig, rise);
+    let ahr_eof_edge = t_delay_kr(ahr_fall_edge, fall);
+
+    let reset_mask = 1.0 - clip_kr(trig1_kr(trig, 0.005), 0.0, 1.0);
+    let cycle_env = shaped;
+    let cycle_eor_edge = in_range_kr(prev_phase, 0.0, rise_frac) * in_range_kr(phase, rise_frac, 1.0);
+    let cycle_eof_edge = in_range_kr(prev_phase - phase, 0.001, 2.0) * reset_mask;
+
+    let burst_count = round(clip_kr(fall_param, 0.0, 1.0) * 4.0 + 4.0);
+    let burst_rate = 1.0 / rise.max(0.001);
+    let burst_window_dur = burst_count / burst_rate;
+    let burst_window = trig1_kr(trig, burst_window_dur);
+    let burst_imp = impulse_kr(burst_rate, 0.0);
+    let burst_pulse = trig1_kr(burst_imp * burst_window, 0.005);
+    let burst_env = burst_pulse * 0.5;
+    let burst_eor_edge = burst_pulse;
+    let burst_eof_edge = t_delay_kr(trig, burst_window_dur);
+
+    let env = clip_kr(
+        (ad_env * ad_w +
+            ahr_env * ahr_w +
+            cycle_env * cycle_w +
+            burst_env * burst_w +
+            cycle_env * lfo_w) * level,
+        -1.0,
+        1.0
+    );
+
+    let eor = clip_kr(trig1_kr(
+        ad_eor_edge * ad_w +
+            ahr_eor_edge * ahr_w +
+            cycle_eor_edge * cycle_w +
+            burst_eor_edge * burst_w +
+            cycle_eor_edge * lfo_w,
+        0.005
+    ) * 0.5, -1.0, 1.0);
+
+    let eof = clip_kr(trig1_kr(
+        ad_eof_edge * ad_w +
+            ahr_eof_edge * ahr_w +
+            cycle_eof_edge * cycle_w +
+            burst_eof_edge * burst_w +
+            cycle_eof_edge * lfo_w,
+        0.005
+    ) * 0.5, -1.0, 1.0);
+
+    [env, eor, eof]
+}
+
+define_synthdef("quadrax", |builder| {
+    builder
+        .output_kr("env1")
+        .output_kr("env2")
+        .output_kr("env3")
+        .output_kr("env4")
+        .output_kr("eor1")
+        .output_kr("eof1")
+        .output_kr("eor2")
+        .output_kr("eof2")
+        .output_kr("eor3")
+        .output_kr("eof3")
+        .output_kr("eor4")
+        .output_kr("eof4")
+        .param("trig_1", 0.0)
+        .param("rise_1", 0.1)
+        .param("fall_1", 0.3)
+        .param("shape_1", 0.0)
+        .param("mode_1", 0.0)
+        .param("level_1", 1.0)
+        .param("link_1", 0.0)
+        .param("trig_2", 0.0)
+        .param("rise_2", 0.1)
+        .param("fall_2", 0.3)
+        .param("shape_2", 0.0)
+        .param("mode_2", 0.0)
+        .param("level_2", 1.0)
+        .param("link_2", 0.0)
+        .param("trig_3", 0.0)
+        .param("rise_3", 0.1)
+        .param("fall_3", 0.3)
+        .param("shape_3", 0.0)
+        .param("mode_3", 0.0)
+        .param("level_3", 1.0)
+        .param("link_3", 0.0)
+        .param("trig_4", 0.0)
+        .param("rise_4", 0.1)
+        .param("fall_4", 0.3)
+        .param("shape_4", 0.0)
+        .param("mode_4", 0.0)
+        .param("level_4", 1.0)
+        .param("link_4", 0.0)
+        .body_map(|p| {
+            let ch1 = _quadrax_channel(
+                p.trig_1,
+                p.rise_1,
+                p.fall_1,
+                p.shape_1,
+                p.mode_1,
+                p.level_1
+            );
+            let env1 = ch1[0];
+            let eor1 = ch1[1];
+            let eof1 = ch1[2];
+
+            let link2 = clip_kr(round(p.link_2), 0.0, 1.0);
+            let ch2 = _quadrax_channel(
+                p.trig_2 + (eor1 + eof1) * link2,
+                p.rise_2,
+                p.fall_2,
+                p.shape_2,
+                p.mode_2,
+                p.level_2
+            );
+            let env2 = ch2[0];
+            let eor2 = ch2[1];
+            let eof2 = ch2[2];
+
+            let link3 = clip_kr(round(p.link_3), 0.0, 1.0);
+            let ch3 = _quadrax_channel(
+                p.trig_3 + (eor2 + eof2) * link3,
+                p.rise_3,
+                p.fall_3,
+                p.shape_3,
+                p.mode_3,
+                p.level_3
+            );
+            let env3 = ch3[0];
+            let eor3 = ch3[1];
+            let eof3 = ch3[2];
+
+            let link4 = clip_kr(round(p.link_4), 0.0, 1.0);
+            let ch4 = _quadrax_channel(
+                p.trig_4 + (eor3 + eof3) * link4,
+                p.rise_4,
+                p.fall_4,
+                p.shape_4,
+                p.mode_4,
+                p.level_4
+            );
+            let env4 = ch4[0];
+            let eor4 = ch4[1];
+            let eof4 = ch4[2];
+
+            [
+                env1, env2, env3, env4,
+                eor1, eof1, eor2, eof2, eor3, eof3, eor4, eof4,
+            ]
+        })
+});
