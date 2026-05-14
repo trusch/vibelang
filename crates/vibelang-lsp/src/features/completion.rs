@@ -404,6 +404,15 @@ fn get_method_completions(object_type: Option<&str>) -> Vec<CompletionItem> {
 }
 
 fn method_item(name: &str, signature: &str, description: &str) -> CompletionItem {
+    method_item_with_snippet(name, signature, description, format!("{}($1)$0", name))
+}
+
+fn method_item_with_snippet(
+    name: &str,
+    signature: &str,
+    description: &str,
+    snippet: String,
+) -> CompletionItem {
     CompletionItem {
         label: name.to_string(),
         kind: Some(CompletionItemKind::METHOD),
@@ -412,7 +421,7 @@ fn method_item(name: &str, signature: &str, description: &str) -> CompletionItem
             description: None,
         }),
         detail: Some(description.to_string()),
-        insert_text: Some(format!("{}($1)$0", name)),
+        insert_text: Some(snippet),
         insert_text_format: Some(InsertTextFormat::SNIPPET),
         ..Default::default()
     }
@@ -603,6 +612,18 @@ fn get_record_methods() -> Vec<CompletionItem> {
 fn get_synthdef_builder_methods() -> Vec<CompletionItem> {
     vec![
         method_item("param", "(name: string, default: float)", "Add a parameter"),
+        method_item_with_snippet(
+            "input",
+            "(name: string)",
+            "Declare a mono audio-rate named input",
+            "input(\"$1\")$0".to_string(),
+        ),
+        method_item_with_snippet(
+            "input",
+            "(name: string, channels: int)",
+            "Declare a mono/stereo audio-rate named input; channels must be 1 or 2",
+            "input(\"$1\", ${2:2})$0".to_string(),
+        ),
         method_item("body", "(closure)", "Set the DSP body"),
     ]
 }
@@ -630,4 +651,37 @@ fn get_envelope_methods() -> Vec<CompletionItem> {
         method_item("level_scale", "(scale: float)", "Scale envelope levels"),
         method_item("build", "()", "Build the envelope"),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn synthdef_builder_includes_named_input_completions() {
+        let methods = get_synthdef_builder_methods();
+        let input_methods: Vec<_> = methods
+            .iter()
+            .filter(|item| item.label == "input")
+            .collect();
+
+        assert_eq!(input_methods.len(), 2);
+        assert!(input_methods.iter().any(|item| {
+            item.label_details
+                .as_ref()
+                .and_then(|details| details.detail.as_deref())
+                == Some("(name: string)")
+        }));
+        assert!(input_methods.iter().any(|item| {
+            item.label_details
+                .as_ref()
+                .and_then(|details| details.detail.as_deref())
+                == Some("(name: string, channels: int)")
+        }));
+        assert!(input_methods.iter().all(|item| {
+            item.detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("audio-rate"))
+        }));
+    }
 }

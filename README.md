@@ -161,6 +161,31 @@ define_synthdef("my_bass")
     });
 ```
 
+### Named-Input Processors
+
+Custom synthdefs can declare patchable audio inputs with
+`.input("name")` for mono or `.input("name", channels)` for mono/stereo
+processors. Patch them from scripts with
+`target.input("name").from(source)`, where `source` can be a voice,
+group, current group, or silence.
+
+```ts
+define_synthdef("lowpass_box")
+    .input("in", 2)
+    .param("cutoff", 1200.0)
+    .body_map(|p| rlpf_ar(p.inputs.in, p.cutoff, 0.4));
+
+let target = voice("filter").synth("lowpass_box");
+target.input("in").from(source);
+```
+
+The standard library ships the first named-input processor catalogue under
+`stdlib/processors/`, following `design-named-input-stdlib-primitive-catalogue`:
+passthrough, lowpass, ring modulation, stereo crossfade, and stereo mixer
+primitives. See the [custom synthdef API](kb/tickets/api-reference/custom-synthdef-api/README.md)
+and [voice API](kb/tickets/api-reference/voice-api/README.md) for the full
+authoring and routing contract.
+
 <br>
 
 ## 🎹 Standard Library

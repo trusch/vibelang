@@ -161,8 +161,8 @@ pub fn get_api_docs() -> &'static HashMap<&'static str, ApiFunctionDoc> {
             ApiFunctionDoc {
                 name: "define_synthdef",
                 signature: "(name: string) -> SynthDefBuilder",
-                description: "Define a new synthesizer with parameters and DSP body.",
-                example: "define_synthdef(\"sine\").param(\"freq\", 440.0).body(|freq| sin_ar(freq));",
+                description: "Define a new synthesizer or named-input processor with parameters, mono/stereo audio-rate inputs, and DSP body.",
+                example: "define_synthdef(\"filter\").input(\"in\", 2).param(\"cutoff\", 1200.0).body_map(|p| rlpf_ar(p.inputs.in, p.cutoff, 0.4));",
                 parameters: &[("name", "string", "Synthdef name")],
             },
             ApiFunctionDoc {
