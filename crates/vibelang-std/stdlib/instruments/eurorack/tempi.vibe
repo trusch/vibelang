@@ -1,0 +1,36 @@
+// Make Noise Tempi — six related kr clock outputs.
+//
+// `multN` is a clock ratio against the base BPM quarter-note rate. Values below
+// 1 divide, values above 1 multiply. Outputs are 5 ms +5 V gates.
+
+define_synthdef("tempi", |builder| {
+    builder
+        .output_kr("ch1")
+        .output_kr("ch2")
+        .output_kr("ch3")
+        .output_kr("ch4")
+        .output_kr("ch5")
+        .output_kr("ch6")
+        .param("bpm", 120.0)
+        .param("run", 1.0)
+        .param("width", 0.005)
+        .param("mult1", 1.0)
+        .param("mult2", 2.0)
+        .param("mult3", 0.5)
+        .param("mult4", 4.0)
+        .param("mult5", 0.25)
+        .param("mult6", 3.0)
+        .body_map(|p| {
+            let base = (p.bpm.max(1.0) / 60.0) * p.run.max(0.0);
+            let width = p.width.max(0.001);
+
+            let c1 = clip_kr(trig1_kr(impulse_kr(base * p.mult1.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
+            let c2 = clip_kr(trig1_kr(impulse_kr(base * p.mult2.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
+            let c3 = clip_kr(trig1_kr(impulse_kr(base * p.mult3.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
+            let c4 = clip_kr(trig1_kr(impulse_kr(base * p.mult4.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
+            let c5 = clip_kr(trig1_kr(impulse_kr(base * p.mult5.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
+            let c6 = clip_kr(trig1_kr(impulse_kr(base * p.mult6.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
+
+            [c1, c2, c3, c4, c5, c6]
+        })
+});
