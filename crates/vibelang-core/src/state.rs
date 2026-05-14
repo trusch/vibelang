@@ -884,6 +884,18 @@ pub struct State {
     /// group's audio bus (or bus 0 for `RouteDest::Main`).
     pub route_synths: HashMap<(VoiceId, String, crate::handlers::RouteDest), NodeId>,
 
+    /// Per-voice **input** routes, keyed by `(target_voice_id, input_port_name)`.
+    ///
+    /// Symmetric to the output-side [`crate::handlers::RouteMap`]: the value is
+    /// the list of sources feeding a single named input port. Per the
+    /// named-inputs design (kb/named-inputs-design-notes.md decision #1),
+    /// `voice.input("name").from(x)` produces a Vec of length 1 (replace) and
+    /// `voice.input("name").from_all([…])` / `.add_from(x)` produces a Vec of
+    /// length > 1 (explicit fan-in). Diffed by
+    /// [`crate::handlers::compute_input_route_diff`]; the dispatcher and bus
+    /// resolution land in P3.3.
+    pub input_routes: crate::handlers::InputRouteMap,
+
     /// Default per-voice port routes installed at voice-create time.
     ///
     /// Story 5: when a voice is created, the runtime walks the synthdef's
@@ -1074,6 +1086,7 @@ impl Default for State {
             buffer_ids: FreeListAllocator::new(0, u32::MAX),
             audio_buses: AudioBusAllocator::default(),
             route_synths: HashMap::new(),
+            input_routes: HashMap::new(),
             default_routes: HashMap::new(),
             param_routes_set: HashMap::new(),
             param_routes_bend: HashMap::new(),
