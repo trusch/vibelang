@@ -1,0 +1,157 @@
+// kind=processor | category=delays | flavor=dld | inputs=in_a:1,in_b:1,return_a:1,return_b:1 | outputs=out_a:1,out_b:1,send_a:1,send_b:1,clock:kr,loop_a:kr,loop_b:kr | params=ping_hz,ping_lock,cft_ms,time_a,feedback_a,delay_feed_a,mix_a,hold_a,reverse_a,clear_a,time_b,feedback_b,delay_feed_b,mix_b,hold_b,reverse_b,clear_b
+//
+// 4ms Dual Looping Delay-inspired stereo clocked looper.
+//
+// The two channels share a ping clock but keep independent loop lengths,
+// feedback, hold, reverse, and cross-feed controls. `send_*` exposes the
+// pre-feedback loop tap; `return_*` is summed back into the corresponding loop
+// input for patchable insert-style processing.
+
+fn _dld_gate(x) {
+    clip_kr(round(x), 0.0, 1.0)
+}
+
+fn _dld_time_multiplier(index) {
+    let idx = clip_kr(round(index), 0.0, 5.0);
+    let m0 = 1.0 - clip_kr(abs(idx - 0.0), 0.0, 1.0);
+    let m1 = 1.0 - clip_kr(abs(idx - 1.0), 0.0, 1.0);
+    let m2 = 1.0 - clip_kr(abs(idx - 2.0), 0.0, 1.0);
+    let m3 = 1.0 - clip_kr(abs(idx - 3.0), 0.0, 1.0);
+    let m4 = 1.0 - clip_kr(abs(idx - 4.0), 0.0, 1.0);
+    let m5 = 1.0 - clip_kr(abs(idx - 5.0), 0.0, 1.0);
+    m0 * 0.25 + m1 * 0.5 + m2 + m3 * 2.0 + m4 * 4.0 + m5 * 8.0
+}
+
+fn _dld_feedback_path(tap, feedback) {
+    let fb = clip_kr(feedback, 0.0, 1.2);
+    let raw = tap * fb;
+    let hot = in_range_kr(fb, 0.9001, 1.2);
+    let limited = (raw * 1.35).tanh() / 1.35;
+    raw * (1.0 - hot) + limited * hot
+}
+
+define_synthdef("dld", |builder| {
+    builder
+        .input("in_a", 1)
+        .input("in_b", 1)
+        .input("return_a", 1)
+        .input("return_b", 1)
+        .output("out_a")
+        .output("out_b")
+        .output("send_a")
+        .output("send_b")
+        .output_kr("clock")
+        .output_kr("loop_a")
+        .output_kr("loop_b")
+        .param("ping_hz", 2.0)
+        .param("ping_lock", 1.0)
+        .param("cft_ms", 100.0)
+        .param("time_a", 2.0)
+        .param("feedback_a", 0.5)
+        .param("delay_feed_a", 0.0)
+        .param("mix_a", 0.5)
+        .param("hold_a", 0.0)
+        .param("reverse_a", 0.0)
+        .param("clear_a", 0.0)
+        .param("time_b", 2.0)
+        .param("feedback_b", 0.5)
+        .param("delay_feed_b", 0.0)
+        .param("mix_b", 0.5)
+        .param("hold_b", 0.0)
+        .param("reverse_b", 0.0)
+        .param("clear_b", 0.0)
+        .body_map(|p| {
+            let in_a = p.inputs["in_a"][0];
+            let in_b = p.inputs["in_b"][0];
+            let return_a = p.inputs["return_a"][0];
+            let return_b = p.inputs["return_b"][0];
+
+            let ping_hz = clip_kr(p.ping_hz, 0.05, 64.0);
+            let clock = impulse_kr(ping_hz);
+            let ping_lock = _dld_gate(p.ping_lock);
+            let cft_s = clip_kr(p.cft_ms, 50.0, 200.0) * 0.001;
+
+            let raw_delay_a = clip_kr(_dld_time_multiplier(p.time_a) / ping_hz, 0.003, 8.0);
+            let raw_delay_b = clip_kr(_dld_time_multiplier(p.time_b) / ping_hz, 0.003, 8.0);
+            let locked_a = latch_kr(raw_delay_a, clock);
+            let locked_b = latch_kr(raw_delay_b, clock);
+            let delay_a = clip_kr(raw_delay_a * (1.0 - ping_lock) + locked_a * ping_lock, 0.003, 8.0);
+            let delay_b = clip_kr(raw_delay_b * (1.0 - ping_lock) + locked_b * ping_lock, 0.003, 8.0);
+            let xfade_a = lag_kr(clip_kr(abs(delay_a - delay1_kr(delay_a)) * 1000.0, 0.0, 1.0), cft_s);
+            let xfade_b = lag_kr(clip_kr(abs(delay_b - delay1_kr(delay_b)) * 1000.0, 0.0, 1.0), cft_s);
+            let smooth_delay_a = lag_kr(delay_a, cft_s);
+            let smooth_delay_b = lag_kr(delay_b, cft_s);
+
+            let buf_a = local_buf_ir(1, 384000);
+            let buf_b = local_buf_ir(1, 384000);
+            let frames_per_sec = 48000.0;
+            let buf_frames = 384000.0;
+            let write_a = phasor_ar(_dld_gate(p.clear_a), 1.0, 0.0, buf_frames, 0.0);
+            let write_b = phasor_ar(_dld_gate(p.clear_b), 1.0, 0.0, buf_frames, 0.0);
+
+            let frames_a = delay_a * frames_per_sec;
+            let frames_b = delay_b * frames_per_sec;
+            let smooth_frames_a = smooth_delay_a * frames_per_sec;
+            let smooth_frames_b = smooth_delay_b * frames_per_sec;
+            let phase_a = phasor_ar(_dld_gate(p.clear_a), 1.0, 0.0, frames_a.max(1.0), 0.0);
+            let phase_b = phasor_ar(_dld_gate(p.clear_b), 1.0, 0.0, frames_b.max(1.0), 0.0);
+            let smooth_phase_a = phasor_ar(_dld_gate(p.clear_a), 1.0, 0.0, smooth_frames_a.max(1.0), 0.0);
+            let smooth_phase_b = phasor_ar(_dld_gate(p.clear_b), 1.0, 0.0, smooth_frames_b.max(1.0), 0.0);
+
+            let normal_pos_a = wrap_ar(write_a - frames_a, 0.0, buf_frames);
+            let normal_pos_b = wrap_ar(write_b - frames_b, 0.0, buf_frames);
+            let old_pos_a = wrap_ar(write_a - smooth_frames_a, 0.0, buf_frames);
+            let old_pos_b = wrap_ar(write_b - smooth_frames_b, 0.0, buf_frames);
+            let reverse_pos_a = wrap_ar(write_a - phase_a, 0.0, buf_frames);
+            let reverse_pos_b = wrap_ar(write_b - phase_b, 0.0, buf_frames);
+            let old_reverse_pos_a = wrap_ar(write_a - smooth_phase_a, 0.0, buf_frames);
+            let old_reverse_pos_b = wrap_ar(write_b - smooth_phase_b, 0.0, buf_frames);
+
+            let tap_a_now = buf_rd_ar(1, buf_a, normal_pos_a, 1.0, 4.0);
+            let tap_b_now = buf_rd_ar(1, buf_b, normal_pos_b, 1.0, 4.0);
+            let tap_a_old = buf_rd_ar(1, buf_a, old_pos_a, 1.0, 4.0);
+            let tap_b_old = buf_rd_ar(1, buf_b, old_pos_b, 1.0, 4.0);
+            let rev_a_now = buf_rd_ar(1, buf_a, reverse_pos_a, 1.0, 4.0);
+            let rev_b_now = buf_rd_ar(1, buf_b, reverse_pos_b, 1.0, 4.0);
+            let rev_a_old = buf_rd_ar(1, buf_a, old_reverse_pos_a, 1.0, 4.0);
+            let rev_b_old = buf_rd_ar(1, buf_b, old_reverse_pos_b, 1.0, 4.0);
+
+            let reverse_a = _dld_gate(p.reverse_a);
+            let reverse_b = _dld_gate(p.reverse_b);
+            let wet_a_now = tap_a_now * (1.0 - reverse_a) + rev_a_now * reverse_a;
+            let wet_b_now = tap_b_now * (1.0 - reverse_b) + rev_b_now * reverse_b;
+            let wet_a_old = tap_a_old * (1.0 - reverse_a) + rev_a_old * reverse_a;
+            let wet_b_old = tap_b_old * (1.0 - reverse_b) + rev_b_old * reverse_b;
+            let wet_a = leak_dc_ar(wet_a_now * (1.0 - xfade_a) + wet_a_old * xfade_a, 0.995);
+            let wet_b = leak_dc_ar(wet_b_now * (1.0 - xfade_b) + wet_b_old * xfade_b, 0.995);
+
+            let fb_a = _dld_feedback_path(wet_a, p.feedback_a);
+            let fb_b = _dld_feedback_path(wet_b, p.feedback_b);
+            let feed_a = clip_kr(p.delay_feed_a, 0.0, 1.0);
+            let feed_b = clip_kr(p.delay_feed_b, 0.0, 1.0);
+            let hold_a = _dld_gate(p.hold_a);
+            let hold_b = _dld_gate(p.hold_b);
+            let clear_a = _dld_gate(p.clear_a);
+            let clear_b = _dld_gate(p.clear_b);
+            let run_a = (1.0 - hold_a) * (1.0 - clear_a);
+            let run_b = (1.0 - hold_b) * (1.0 - clear_b);
+
+            let keep_a = buf_rd_ar(1, buf_a, write_a, 1.0, 1.0);
+            let keep_b = buf_rd_ar(1, buf_b, write_b, 1.0, 1.0);
+            let loop_in_a = softclip(in_a + return_a + fb_a + wet_b * feed_a);
+            let loop_in_b = softclip(in_b + return_b + fb_b + wet_a * feed_b);
+            let _write_a = buf_wr_ar(loop_in_a * run_a + keep_a * (1.0 - run_a), buf_a, write_a, 1.0);
+            let _write_b = buf_wr_ar(loop_in_b * run_b + keep_b * (1.0 - run_b), buf_b, write_b, 1.0);
+
+            let mix_a = clip_kr(p.mix_a, 0.0, 1.0);
+            let mix_b = clip_kr(p.mix_b, 0.0, 1.0);
+            let out_a = softclip((in_a * (1.0 - mix_a) + wet_a * mix_a) * (1.0 - clear_a));
+            let out_b = softclip((in_b * (1.0 - mix_b) + wet_b * mix_b) * (1.0 - clear_b));
+            let send_a = softclip(wet_a * (1.0 - clear_a));
+            let send_b = softclip(wet_b * (1.0 - clear_b));
+            let loop_a = impulse_kr(1.0 / delay_a);
+            let loop_b = impulse_kr(1.0 / delay_b);
+
+            [out_a, out_b, send_a, send_b, clock, loop_a, loop_b]
+        })
+});
