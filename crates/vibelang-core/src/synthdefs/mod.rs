@@ -86,6 +86,21 @@ pub fn generate_builtins() -> Vec<(String, Vec<u8>)> {
         tracing::warn!("Failed to create port_to_group_link_2 from vibelang-dsp");
     }
 
+    // Per-port → voice-input router synthdefs (named-inputs dispatcher taps
+    // these to wire a source bus into a voice's named-input bus). Symmetric
+    // to port_to_group_link_* but unity-gain mono→mono / stereo→stereo —
+    // no fader, no panning, no smoothing. Fan-in summing is free at the bus.
+    if let Ok(bytes) = system_synthdefs::create_input_link_1_bytes() {
+        all_defs.push(("input_link_1".to_string(), bytes));
+    } else {
+        tracing::warn!("Failed to create input_link_1 from vibelang-dsp");
+    }
+    if let Ok(bytes) = system_synthdefs::create_input_link_2_bytes() {
+        all_defs.push(("input_link_2".to_string(), bytes));
+    } else {
+        tracing::warn!("Failed to create input_link_2 from vibelang-dsp");
+    }
+
     // Trigger forwarder for Tr ports — reads In.kr from a Tr-rate source bus
     // and writes Out.kr to a kr destination bus, preserving sample-accurate
     // edges without the scale/offset shaping that param_kr_modulate_<n> would
