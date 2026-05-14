@@ -1,0 +1,72 @@
+// 4ms QCD - Quad Clock Distributor.
+//
+// Four phase-locked clock divider/multiplier outputs plus the master tap clock.
+// `div_mult_N` is bipolar: negative values divide (/1../32), positive values
+// multiply (x1..x16), and zero falls back to 1:1. Outputs are +5 V-style kr
+// gates scaled to the library's +/-1 CV range.
+
+define_synthdef("qcd", |builder| {
+    builder
+        .output_kr("ch1")
+        .output_kr("ch2")
+        .output_kr("ch3")
+        .output_kr("ch4")
+        .output_kr("tap")
+        .param("bpm", 120.0)
+        .param("div_mult_1", 1.0)
+        .param("div_mult_2", 1.0)
+        .param("div_mult_3", 1.0)
+        .param("div_mult_4", 1.0)
+        .param("reset", 0.0)
+        .param("run", 1.0)
+        .param("pulse_width", 0.5)
+        .param("trigger_delay_ch_1", 0.0)
+        .param("trigger_delay_ch_2", 0.0)
+        .param("trigger_delay_ch_3", 0.0)
+        .param("trigger_delay_ch_4", 0.0)
+        .param("mute_1", 0.0)
+        .param("mute_2", 0.0)
+        .param("mute_3", 0.0)
+        .param("mute_4", 0.0)
+        .param("tap", 0.0)
+        .body_map(|p| {
+            let run = clip_kr(p.run, 0.0, 1.0);
+            let base = (p.bpm.max(1.0) / 60.0) * run;
+            let phase = sweep_kr(p.reset + p.tap, base);
+            let width = clip_kr(p.pulse_width, 0.001, 0.95);
+
+            let dm1 = clip_kr(floor(p.div_mult_1 + 0.5), -32.0, 16.0);
+            let dm2 = clip_kr(floor(p.div_mult_2 + 0.5), -32.0, 16.0);
+            let dm3 = clip_kr(floor(p.div_mult_3 + 0.5), -32.0, 16.0);
+            let dm4 = clip_kr(floor(p.div_mult_4 + 0.5), -32.0, 16.0);
+
+            let div1 = in_range_kr(dm1, -32.0, -1.0);
+            let div2 = in_range_kr(dm2, -32.0, -1.0);
+            let div3 = in_range_kr(dm3, -32.0, -1.0);
+            let div4 = in_range_kr(dm4, -32.0, -1.0);
+
+            let r1 = div1 * (1.0 / abs(dm1).max(1.0)) + (1.0 - div1) * dm1.max(1.0);
+            let r2 = div2 * (1.0 / abs(dm2).max(1.0)) + (1.0 - div2) * dm2.max(1.0);
+            let r3 = div3 * (1.0 / abs(dm3).max(1.0)) + (1.0 - div3) * dm3.max(1.0);
+            let r4 = div4 * (1.0 / abs(dm4).max(1.0)) + (1.0 - div4) * dm4.max(1.0);
+
+            let p1 = wrap_kr(phase * r1 - p.trigger_delay_ch_1.max(0.0) * base * r1, 0.0, 1.0);
+            let p2 = wrap_kr(phase * r2 - p.trigger_delay_ch_2.max(0.0) * base * r2, 0.0, 1.0);
+            let p3 = wrap_kr(phase * r3 - p.trigger_delay_ch_3.max(0.0) * base * r3, 0.0, 1.0);
+            let p4 = wrap_kr(phase * r4 - p.trigger_delay_ch_4.max(0.0) * base * r4, 0.0, 1.0);
+            let ptap = wrap_kr(phase, 0.0, 1.0);
+
+            let a1 = 1.0 - clip_kr(p.mute_1, 0.0, 1.0);
+            let a2 = 1.0 - clip_kr(p.mute_2, 0.0, 1.0);
+            let a3 = 1.0 - clip_kr(p.mute_3, 0.0, 1.0);
+            let a4 = 1.0 - clip_kr(p.mute_4, 0.0, 1.0);
+
+            let ch1 = clip_kr(in_range_kr(p1, 0.0, width) * 0.5 * a1 * run, -1.0, 1.0);
+            let ch2 = clip_kr(in_range_kr(p2, 0.0, width) * 0.5 * a2 * run, -1.0, 1.0);
+            let ch3 = clip_kr(in_range_kr(p3, 0.0, width) * 0.5 * a3 * run, -1.0, 1.0);
+            let ch4 = clip_kr(in_range_kr(p4, 0.0, width) * 0.5 * a4 * run, -1.0, 1.0);
+            let tap = clip_kr(in_range_kr(ptap, 0.0, width) * 0.5 * run, -1.0, 1.0);
+
+            [ch1, ch2, ch3, ch4, tap]
+        })
+});
