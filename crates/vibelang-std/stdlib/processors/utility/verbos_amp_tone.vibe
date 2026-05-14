@@ -1,0 +1,45 @@
+// kind=processor | category=utility | flavor=verbos_amp_tone | inputs=in:1 | outputs=out:1 | params=gain,cutoff,resonance,cutoff_cv_amt,cutoff_cv,amp,lin_cv_amt,lin_cv,exp_cv_amt,exp_cv,drive,level
+//
+// Verbos Amplitude & Tone Controller-inspired mono output section.
+// Input gain and drive feed a resonant lowpass, then a VCA with simultaneous
+// linear and exponential CV response.
+
+define_synthdef("verbos_amp_tone")
+    .input("in", 1)
+    .output("out", 1)
+    .param("gain", 1.0)
+    .param("cutoff", 8000.0)
+    .param("resonance", 0.3)
+    .param("cutoff_cv_amt", 0.0)
+    .param("cutoff_cv", 0.0)
+    .param("amp", 0.8)
+    .param("lin_cv_amt", 0.0)
+    .param("lin_cv", 0.0)
+    .param("exp_cv_amt", 0.0)
+    .param("exp_cv", 0.0)
+    .param("drive", 0.1)
+    .param("level", 1.0)
+    .body_map(|p| {
+        let gain = clip(p.gain, 0.0, 2.0);
+        let drive = clip(p.drive, 0.0, 1.0);
+        let cutoff_cv_amt = clip(p.cutoff_cv_amt, 0.0, 1.0);
+        let resonance = clip(p.resonance, 0.0, 0.95);
+        let amp = clip(p.amp, 0.0, 1.0);
+        let lin_cv_amt = clip(p.lin_cv_amt, 0.0, 1.0);
+        let exp_cv_amt = clip(p.exp_cv_amt, 0.0, 1.0);
+        let level = clip(p.level, 0.0, 2.0);
+
+        let preamp = p.inputs["in"] * gain;
+        let preclip = clip((gain - 1.0) * 100.0, 0.0, 1.0);
+        let signal = preamp * (1.0 - preclip) + tanh_ar(preamp) * preclip;
+
+        let driven = tanh_ar(signal * (1.0 + drive * 2.0));
+        let cutoff = clip(p.cutoff * pow(2.0, p.cutoff_cv * cutoff_cv_amt / 12.0), 20.0, 20000.0);
+        let filtered = rlpf_ar(driven, cutoff, 1.0 - resonance);
+
+        let lin_factor = 1.0 + p.lin_cv * lin_cv_amt;
+        let exp_factor = pow(2.0, p.exp_cv * exp_cv_amt * 4.0);
+        let out = filtered * amp * lin_factor * exp_factor * level;
+
+        [out]
+    });
