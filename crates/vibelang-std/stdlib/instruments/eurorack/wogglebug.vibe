@@ -1,37 +1,79 @@
 // Make Noise Wogglebug — simultaneous kr fanout.
 //
-// Ports: stepped, smooth, woggle, clock. The existing `cv_wogglebug` keeps the
-// single-output mode-select contract; this synthdef models the hardware fanout
-// for patches that want all control jacks at once.
+// Ports: stepped, smooth, woggle, clock, woggle_clock. The existing
+// `cv_wogglebug` keeps the single-output mode-select contract; this synthdef
+// models the hardware fanout for patches that want all control jacks at once.
+//
+// `heart` and `chaos` are intentionally split: heart sets the amplitude of the
+// chaotic excursions, while chaos sets how tightly the stepped, smooth, and
+// woggle paths influence each other. `influence` is the hardware-style audio-in
+// jack; patch audio or CV there to perturb the Heart sample source.
+//
+// `vc_rate` forces the clock/sample path through audio-rate impulse/latch
+// internals before decimating back to kr outputs with `a2k_kr`. The same path
+// is selected automatically above roughly 20 Hz, keeping high-rate modulation
+// usable while preserving the existing kr port routing surface.
 
 define_synthdef("wogglebug", |builder| {
     builder
+        .input("influence", 1)
         .output_kr("stepped")
         .output_kr("smooth")
         .output_kr("woggle")
         .output_kr("clock")
+        .output_kr("woggle_clock")
         .param("rate", 4.0)
         .param("depth_v", 5.0)
         .param("bipolar", 1.0)
         .param("chaos", 0.5)
+        .param("heart", 0.75)
+        .param("vc_rate", 0.0)
         .body_map(|p| {
             let rate = p.rate.max(0.001);
             let depth = clip(p.depth_v / 10.0, 0.0, 1.0);
             let bipolar = clip(p.bipolar, 0.0, 1.0);
             let chaos = clip(p.chaos, 0.0, 1.0);
+            let heart = clip(p.heart, 0.0, 1.0);
+            let heart_amp = 0.15 + heart * 0.85;
+            let vc_fast = in_range_kr(rate, 20.0, 20000.0);
+            let vc_path = clip(p.vc_rate + vc_fast, 0.0, 1.0);
 
-            let clock_imp = impulse_kr(rate, 0.0);
-            let clock_out = clip_kr(trig1_kr(clock_imp, 0.005) * 0.5, -1.0, 1.0);
+            let influence_ar = clip_ar(p.inputs.influence, -1.0, 1.0);
+            let influence_kr = a2k_kr(influence_ar);
+            let influence_env = a2k_kr(amplitude_ar(influence_ar, 0.003, 0.05));
+            let influence_push = clip_kr(influence_kr * 0.55 + (influence_env - 0.15) * 0.35, -1.0, 1.0);
 
-            let stepped_raw = latch_kr(white_noise_kr(), clock_imp);
-            let smooth_raw = a2k_kr(lorenz_l_ar(rate * (0.5 + chaos))) * (1.0 / 25.0);
-            let prev_step = lag_ud_kr(stepped_raw, 0.001, 0.001);
-            let edge = in_range_kr(abs(stepped_raw - prev_step), 0.001, 10.0);
-            let ring_env = decay2_kr(edge, 0.001, 1.0 / (rate + 0.001));
-            let ring = sin_osc_kr(rate * (6.0 + chaos * 8.0), 0.0) * ring_env * 0.5;
-            let woggle_raw = stepped_raw * (1.0 - chaos * 0.35) + smooth_raw * chaos * 0.35 + ring;
+            let clock_imp_kr = impulse_kr(rate, 0.0);
+            let clock_imp_ar = impulse_ar(rate, 0.0);
+            let clock_imp = clock_imp_kr * (1.0 - vc_path) + a2k_kr(clock_imp_ar) * vc_path;
+            let clock_gate_kr = trig1_kr(clock_imp_kr, 0.005);
+            let clock_gate_ar = a2k_kr(trig1_ar(clock_imp_ar, 0.005));
+            let clock_out = clip_kr((clock_gate_kr * (1.0 - vc_path) + clock_gate_ar * vc_path) * 0.5, -1.0, 1.0);
 
-            let stepped_uni = stepped_raw * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+            let step_src_kr = white_noise_kr() + influence_push * (0.25 + heart * 0.35);
+            let step_src_ar = white_noise_ar() + influence_ar * (0.25 + heart * 0.35);
+            let stepped_kr = latch_kr(step_src_kr, clock_imp_kr);
+            let stepped_ar = a2k_kr(latch_ar(step_src_ar, clock_imp_ar));
+            let stepped_core = clip_kr((stepped_kr * (1.0 - vc_path) + stepped_ar * vc_path) * heart_amp, -1.0, 1.0);
+
+            let lorenz_rate = rate * (0.45 + chaos * 0.9) + influence_env * rate * 0.2;
+            let lorenz = a2k_kr(lorenz_l_ar(lorenz_rate)) * (1.0 / 25.0) * heart_amp;
+            let smooth_follow = lag_kr(stepped_core, 0.03 + (1.0 - chaos) * 0.28);
+            let smooth_raw = clip_kr(smooth_follow * (1.0 - chaos * 0.55) + lorenz * (0.45 + chaos * 0.55), -1.0, 1.0);
+
+            let edge = changed_kr(stepped_core, 0.001);
+            let ring_decay = (1.0 / (rate + 0.001)) * (0.35 + chaos * 0.75);
+            let ring_env = decay2_kr(edge, 0.001, ring_decay);
+            let ring_pitch = rate * (5.0 + chaos * 11.0) + abs(influence_kr) * rate * 2.0;
+            let ring = a2k_kr(sin_osc_ar(ring_pitch, 0.0) * k2a_ar(ring_env)) * (0.25 + chaos * 0.45);
+            let coupled = stepped_core * (1.0 - chaos * 0.4) + smooth_raw * chaos * 0.4;
+            let woggle_raw = clip_kr(coupled + ring, -1.0, 1.0);
+
+            let clock_period = 1.0 / (rate + 0.001);
+            let woggle_width = t_rand_kr(0.08, 0.75, clock_imp) * clock_period;
+            let woggle_clock = clip_kr(trig1_kr(clock_imp, woggle_width) * 0.5, -1.0, 1.0);
+
+            let stepped_uni = stepped_core * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
             let smooth_uni = smooth_raw * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
             let woggle_uni = woggle_raw * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
 
@@ -39,6 +81,6 @@ define_synthdef("wogglebug", |builder| {
             let smooth_out = clip_kr(smooth_uni * depth, -1.0, 1.0);
             let woggle_out = clip_kr(woggle_uni * depth, -1.0, 1.0);
 
-            [stepped_out, smooth_out, woggle_out, clock_out]
+            [stepped_out, smooth_out, woggle_out, clock_out, woggle_clock]
         })
 });

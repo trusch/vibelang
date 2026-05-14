@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use vibelang_dsp::{
     clear_synthdef_inputs_registry, clear_synthdef_outputs_registry, clear_synthdef_registry,
-    get_synthdef_outputs, get_synthdef_param_defaults, set_deploy_callback, synthdef_exists,
-    OutputPort, PortRate,
+    get_synthdef_inputs, get_synthdef_outputs, get_synthdef_param_defaults, set_deploy_callback,
+    synthdef_exists, InputPort, OutputPort, PortRate,
 };
 use vibelang_rhai::ScriptEngine;
 
@@ -46,7 +46,17 @@ fn resynthesizer_control_modules_import_and_register_kr_outputs() {
     );
     assert_eq!(
         get_synthdef_outputs("wogglebug"),
-        Some(kr_ports(&["stepped", "smooth", "woggle", "clock"]))
+        Some(kr_ports(&[
+            "stepped",
+            "smooth",
+            "woggle",
+            "clock",
+            "woggle_clock",
+        ]))
+    );
+    assert_eq!(
+        get_synthdef_inputs("wogglebug"),
+        Some(vec![InputPort::ar("influence", 1)])
     );
     assert_eq!(
         get_synthdef_outputs("tempi"),
@@ -97,6 +107,10 @@ fn resynthesizer_control_modules_import_and_register_kr_outputs() {
     assert_eq!(tempi_params.get("shift6"), Some(&0.0));
     assert_eq!(tempi_params.get("mute6"), Some(&0.0));
     assert_eq!(tempi_params.get("mult2"), Some(&2.0));
+
+    let wogglebug_params = get_synthdef_param_defaults("wogglebug");
+    assert_eq!(wogglebug_params.get("heart"), Some(&0.75));
+    assert_eq!(wogglebug_params.get("vc_rate"), Some(&0.0));
 
     let rene_params = get_synthdef_param_defaults("rene");
     assert_eq!(rene_params.get("note00"), Some(&60.0));
