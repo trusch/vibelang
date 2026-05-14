@@ -1,5 +1,5 @@
-// Spectraphon Story F2 — capture an Array from audio input, then play it
-// back as SAO.
+// Spectraphon Array capture — capture an Array from audio input, then play
+// it back as SAO.
 //
 // Walks through the full Spectraphon Array workflow on a single side:
 //
@@ -31,8 +31,8 @@
 // Array memory uses a script-allocated buffer wired into `bufnum`, so captures
 // survive hot-reload as long as the `allocate_buffer` call stays in the script.
 //
-// References: kb/spectraphon-howto.md §3, §4, §8d.
-//             kb/spectraphon-synthdef-plan.md §3.b, §6.C.
+// References: kb/spectraphon-howto.md ("spectraphon_side", "Array memory")
+//             and kb/spectraphon-synthdef-plan.md §3.b, §6.C.
 
 import "stdlib/instruments/spectral/spectraphon_side.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
