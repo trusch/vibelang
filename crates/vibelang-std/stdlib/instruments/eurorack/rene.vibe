@@ -1,8 +1,10 @@
-// Make Noise Rene — practical 4x4 cartesian kr sequencer.
+// Make Noise Rene — practical 4x4 cartesian kr sequencer with path memory.
 //
 // Ports: cv (V/oct), gate, x_gate, y_gate. X/Y can be stepped by clocks or
-// addressed by `x_cv`/`y_cv` when `cv_addr` is raised. Deferred hardware
-// features: touch programming, snake paths, quantizer pages, and access masks.
+// addressed by `x_cv`/`y_cv` when `cv_addr` is raised. `mode` selects grid,
+// snake, free, or seeded-random traversal; `memory` blends in a short
+// shift-register history; `quantize` snaps to the 12-bit `scale_mask`.
+// Deferred hardware features: touch programming and preset save/load.
 
 define_synthdef("rene", |builder| {
     builder
@@ -16,6 +18,13 @@ define_synthdef("rene", |builder| {
         .param("x_cv", 0.0)
         .param("y_cv", 0.0)
         .param("cv_addr", 0.0)
+        .param("mode", 0.0)
+        .param("quantize", 0.0)
+        .param("scale_mask", 2741.0)
+        .param("access_x", 15.0)
+        .param("access_y", 15.0)
+        .param("memory", 0.0)
+        .param("random_seed", 0.0)
         .param("note00", 60.0)
         .param("note01", 62.0)
         .param("note02", 64.0)
@@ -33,13 +42,45 @@ define_synthdef("rene", |builder| {
         .param("note32", 71.0)
         .param("note33", 72.0)
         .body_map(|p| {
+            let mode = clip_kr(round(p.mode), 0.0, 3.0);
+            let clock_any = clip_kr(p.clock_x + p.clock_y, 0.0, 1.0);
+
             let x_step = stepper_kr(p.clock_x, p.reset, 0.0, 3.0, 1.0, 0.0);
             let y_step = stepper_kr(p.clock_y, p.reset, 0.0, 3.0, 1.0, 0.0);
             let x_from_cv = floor(clip(p.x_cv, 0.0, 0.999) * 4.0);
             let y_from_cv = floor(clip(p.y_cv, 0.0, 0.999) * 4.0);
             let cv_addr = clip(p.cv_addr, 0.0, 1.0);
-            let x = x_step * (1.0 - cv_addr) + x_from_cv * cv_addr;
-            let y = y_step * (1.0 - cv_addr) + y_from_cv * cv_addr;
+
+            let path_step = stepper_kr(p.clock_x, p.reset, 0.0, 15.0, 1.0, 0.0);
+            let path_col = path_step.modulo(4.0);
+            let path_row = floor(path_step / 4.0);
+            let row_odd = path_row.modulo(2.0);
+            let snake_x = path_col * (1.0 - row_odd) + (3.0 - path_col) * row_odd;
+            let snake_y = path_row;
+
+            let random_count = pulse_count_kr(clock_any, p.reset);
+            let random_seed = floor(clip(p.random_seed, 0.0, 65535.0));
+            let random_cell = floor(
+                (random_count * 73.0 + random_seed * 11.0 + 5.0).modulo(16.0)
+            );
+            let random_x = random_cell.modulo(4.0);
+            let random_y = floor(random_cell / 4.0);
+
+            let m_cartesian = (1.0 - abs(mode - 0.0)).max(0.0);
+            let m_snake = (1.0 - abs(mode - 1.0)).max(0.0);
+            let m_free = (1.0 - abs(mode - 2.0)).max(0.0);
+            let m_random = (1.0 - abs(mode - 3.0)).max(0.0);
+
+            let path_x = x_step * m_cartesian
+                + snake_x * m_snake
+                + x_step * m_free
+                + random_x * m_random;
+            let path_y = y_step * m_cartesian
+                + snake_y * m_snake
+                + y_step * m_free
+                + random_y * m_random;
+            let x = path_x * (1.0 - cv_addr) + x_from_cv * cv_addr;
+            let y = path_y * (1.0 - cv_addr) + y_from_cv * cv_addr;
 
             let x0 = (1.0 - abs(x - 0.0)).max(0.0);
             let x1 = (1.0 - abs(x - 1.0)).max(0.0);
@@ -55,10 +96,132 @@ define_synthdef("rene", |builder| {
             let row2 = x0 * p.note20 + x1 * p.note21 + x2 * p.note22 + x3 * p.note23;
             let row3 = x0 * p.note30 + x1 * p.note31 + x2 * p.note32 + x3 * p.note33;
             let midi = y0 * row0 + y1 * row1 + y2 * row2 + y3 * row3;
-            let cv = clip_kr((midi - 60.0) / 12.0, -1.0, 1.0);
 
-            let x_gate = clip_kr(trig1_kr(p.clock_x, 0.005) * 0.5, -1.0, 1.0);
-            let y_gate = clip_kr(trig1_kr(p.clock_y, 0.005) * 0.5, -1.0, 1.0);
+            let midi_round = round(midi);
+            let degree = midi_round.modulo(12.0);
+            let scale_mask = floor(clip(p.scale_mask, 0.0, 4095.0));
+            let bit0 = floor(scale_mask / 1.0).modulo(2.0);
+            let bit1 = floor(scale_mask / 2.0).modulo(2.0);
+            let bit2 = floor(scale_mask / 4.0).modulo(2.0);
+            let bit3 = floor(scale_mask / 8.0).modulo(2.0);
+            let bit4 = floor(scale_mask / 16.0).modulo(2.0);
+            let bit5 = floor(scale_mask / 32.0).modulo(2.0);
+            let bit6 = floor(scale_mask / 64.0).modulo(2.0);
+            let bit7 = floor(scale_mask / 128.0).modulo(2.0);
+            let bit8 = floor(scale_mask / 256.0).modulo(2.0);
+            let bit9 = floor(scale_mask / 512.0).modulo(2.0);
+            let bit10 = floor(scale_mask / 1024.0).modulo(2.0);
+            let bit11 = floor(scale_mask / 2048.0).modulo(2.0);
+            let scale_on = clip(
+                bit0 + bit1 + bit2 + bit3 + bit4 + bit5
+                    + bit6 + bit7 + bit8 + bit9 + bit10 + bit11,
+                0.0,
+                1.0
+            );
+
+            let delta0 = (0.0 - degree + 6.0).modulo(12.0) - 6.0;
+            let delta1 = (1.0 - degree + 6.0).modulo(12.0) - 6.0;
+            let delta2 = (2.0 - degree + 6.0).modulo(12.0) - 6.0;
+            let delta3 = (3.0 - degree + 6.0).modulo(12.0) - 6.0;
+            let delta4 = (4.0 - degree + 6.0).modulo(12.0) - 6.0;
+            let delta5 = (5.0 - degree + 6.0).modulo(12.0) - 6.0;
+            let delta6 = (6.0 - degree + 6.0).modulo(12.0) - 6.0;
+            let delta7 = (7.0 - degree + 6.0).modulo(12.0) - 6.0;
+            let delta8 = (8.0 - degree + 6.0).modulo(12.0) - 6.0;
+            let delta9 = (9.0 - degree + 6.0).modulo(12.0) - 6.0;
+            let delta10 = (10.0 - degree + 6.0).modulo(12.0) - 6.0;
+            let delta11 = (11.0 - degree + 6.0).modulo(12.0) - 6.0;
+
+            let dist0 = abs(delta0) + (1.0 - bit0) * 24.0;
+            let dist1 = abs(delta1) + (1.0 - bit1) * 24.0;
+            let dist2 = abs(delta2) + (1.0 - bit2) * 24.0;
+            let dist3 = abs(delta3) + (1.0 - bit3) * 24.0;
+            let dist4 = abs(delta4) + (1.0 - bit4) * 24.0;
+            let dist5 = abs(delta5) + (1.0 - bit5) * 24.0;
+            let dist6 = abs(delta6) + (1.0 - bit6) * 24.0;
+            let dist7 = abs(delta7) + (1.0 - bit7) * 24.0;
+            let dist8 = abs(delta8) + (1.0 - bit8) * 24.0;
+            let dist9 = abs(delta9) + (1.0 - bit9) * 24.0;
+            let dist10 = abs(delta10) + (1.0 - bit10) * 24.0;
+            let dist11 = abs(delta11) + (1.0 - bit11) * 24.0;
+            let min_dist = dist0.min(dist1).min(dist2).min(dist3).min(dist4).min(dist5)
+                .min(dist6).min(dist7).min(dist8).min(dist9).min(dist10).min(dist11);
+
+            let q0 = (1.0 - abs(dist0 - min_dist)).max(0.0) * bit0;
+            let q1 = (1.0 - abs(dist1 - min_dist)).max(0.0) * bit1;
+            let q2 = (1.0 - abs(dist2 - min_dist)).max(0.0) * bit2;
+            let q3 = (1.0 - abs(dist3 - min_dist)).max(0.0) * bit3;
+            let q4 = (1.0 - abs(dist4 - min_dist)).max(0.0) * bit4;
+            let q5 = (1.0 - abs(dist5 - min_dist)).max(0.0) * bit5;
+            let q6 = (1.0 - abs(dist6 - min_dist)).max(0.0) * bit6;
+            let q7 = (1.0 - abs(dist7 - min_dist)).max(0.0) * bit7;
+            let q8 = (1.0 - abs(dist8 - min_dist)).max(0.0) * bit8;
+            let q9 = (1.0 - abs(dist9 - min_dist)).max(0.0) * bit9;
+            let q10 = (1.0 - abs(dist10 - min_dist)).max(0.0) * bit10;
+            let q11 = (1.0 - abs(dist11 - min_dist)).max(0.0) * bit11;
+            let q_sum = q0 + q1 + q2 + q3 + q4 + q5 + q6 + q7 + q8 + q9 + q10 + q11;
+            let q_midi = (
+                (midi_round + delta0) * q0
+                    + (midi_round + delta1) * q1
+                    + (midi_round + delta2) * q2
+                    + (midi_round + delta3) * q3
+                    + (midi_round + delta4) * q4
+                    + (midi_round + delta5) * q5
+                    + (midi_round + delta6) * q6
+                    + (midi_round + delta7) * q7
+                    + (midi_round + delta8) * q8
+                    + (midi_round + delta9) * q9
+                    + (midi_round + delta10) * q10
+                    + (midi_round + delta11) * q11
+            ) / q_sum.max(1.0);
+            let quantized_midi = q_midi * scale_on + midi_round * (1.0 - scale_on);
+            let quantize = clip(p.quantize, 0.0, 1.0);
+            let pitch_midi = midi * (1.0 - quantize) + quantized_midi * quantize;
+
+            let held_midi = latch_kr(pitch_midi, clock_any);
+            let shift1 = latch_kr(held_midi, pulse_divider_kr(clock_any, 2.0, 0.0));
+            let shift2 = latch_kr(held_midi, pulse_divider_kr(clock_any, 3.0, 1.0));
+            let shift3 = latch_kr(held_midi, pulse_divider_kr(clock_any, 4.0, 2.0));
+            let memory = clip(p.memory, 0.0, 1.0);
+            let memory_midi = held_midi * (1.0 - memory)
+                + ((shift1 + shift2 + shift3) / 3.0) * memory;
+            let cv = clip_kr((memory_midi - 60.0) / 12.0, -5.0, 5.0);
+
+            let access_x = floor(clip(p.access_x, 0.0, 15.0));
+            let access_y = floor(clip(p.access_y, 0.0, 15.0));
+            let ax0 = floor(access_x / 1.0).modulo(2.0);
+            let ax1 = floor(access_x / 2.0).modulo(2.0);
+            let ax2 = floor(access_x / 4.0).modulo(2.0);
+            let ax3 = floor(access_x / 8.0).modulo(2.0);
+            let ay0 = floor(access_y / 1.0).modulo(2.0);
+            let ay1 = floor(access_y / 2.0).modulo(2.0);
+            let ay2 = floor(access_y / 4.0).modulo(2.0);
+            let ay3 = floor(access_y / 8.0).modulo(2.0);
+            let access = clip(
+                (x0 * ax0 + x1 * ax1 + x2 * ax2 + x3 * ax3)
+                    * (y0 * ay0 + y1 * ay1 + y2 * ay2 + y3 * ay3),
+                0.0,
+                1.0
+            );
+
+            let x_pulse = trig1_kr(p.clock_x, 0.005) * 0.5;
+            let y_pulse = trig1_kr(p.clock_y, 0.005) * 0.5;
+            let path_pulse = trig1_kr(clock_any, 0.005) * 0.5;
+            let row_start = (1.0 - abs(path_col - 0.0)).max(0.0);
+            let x_gate = clip_kr(
+                (x_pulse * (m_cartesian + m_free) + path_pulse * (m_snake + m_random))
+                    * access,
+                -1.0,
+                1.0
+            );
+            let y_gate = clip_kr(
+                (y_pulse * (m_cartesian + m_free)
+                    + path_pulse * row_start * m_snake
+                    + path_pulse * m_random)
+                    * access,
+                -1.0,
+                1.0
+            );
             let gate = clip_kr(x_gate + y_gate, -1.0, 1.0);
 
             [cv, gate, x_gate, y_gate]
