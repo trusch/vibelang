@@ -1,0 +1,455 @@
+// Erica Synths Techno System rack performance patch.
+//
+// Signal chain:
+//   VC Clock at 130 BPM feeds the local trigger matrix: clock -> kick, snare, hats, acid, and stab gates.
+//   Bass Drum out, Snare out, Hi-Hats ch/oh -> Quad VCA2 in1..4; Quad VCA2 sum -> Black Output in1.
+//   Bassline main -> Polivoks VCF -> Black Hole DSP program 1 delay; folded wet return -> Black Output in2.
+//   Black VCO2 mix -> gated VCA -> Black BBD -> Black Output in3, with VC EG env routed to pan3_cv.
+//   Black Output out goes to_main as stereo; phones are muted.
+
+import "stdlib/instruments/eurorack/erica_bass_drum.vibe";
+import "stdlib/instruments/eurorack/erica_snare_drum.vibe";
+import "stdlib/instruments/eurorack/erica_hi_hats.vibe";
+import "stdlib/instruments/eurorack/erica_bassline.vibe";
+import "stdlib/instruments/eurorack/erica_black_vco2.vibe";
+import "stdlib/instruments/eurorack/erica_vc_clock.vibe";
+import "stdlib/instruments/eurorack/erica_vc_eg.vibe";
+import "stdlib/processors/mixers/erica_quad_vca2.vibe";
+import "stdlib/processors/mixers/erica_black_output.vibe";
+import "stdlib/processors/filters/erica_polivoks_vcf.vibe";
+import "stdlib/processors/delays/erica_black_bbd.vibe";
+import "stdlib/processors/fx/erica_black_hole_dsp.vibe";
+
+set_tempo(130);
+
+fn _erica_techno_step(step, target) {
+    (1.0 - abs(step - target)).max(0.0)
+}
+
+define_synthdef("erica_techno_trigger_matrix", |builder| {
+    builder
+        .output_kr("kick")
+        .output_kr("snare")
+        .output_kr("ch")
+        .output_kr("oh")
+        .output_kr("acid_gate")
+        .output_kr("acid_voct")
+        .output_kr("stab_gate")
+        .output_kr("stab_voct")
+        .output_kr("accent")
+        .output_kr("quarter")
+        .output_kr("whole")
+        .param("bpm", 130.0)
+        .param("run", 1.0)
+        .param("reset", 0.0)
+        .param("clock_in", 0.0)
+        .body_map(|p| {
+            let run = clip_kr(p.run, 0.0, 1.0);
+            let bpm = clip_kr(p.bpm, 30.0, 300.0);
+            let sixteenth = impulse_kr((bpm / 60.0) * 4.0 * run, 0.0);
+            let step = stepper_kr(sixteenth, p.reset, 0.0, 15.0, 1.0, 0.0);
+            let pulse = trig1_kr(sixteenth, 0.006) * 0.5 * run;
+
+            let s0 = _erica_techno_step(step, 0.0);
+            let s1 = _erica_techno_step(step, 1.0);
+            let s2 = _erica_techno_step(step, 2.0);
+            let s3 = _erica_techno_step(step, 3.0);
+            let s4 = _erica_techno_step(step, 4.0);
+            let s5 = _erica_techno_step(step, 5.0);
+            let s6 = _erica_techno_step(step, 6.0);
+            let s7 = _erica_techno_step(step, 7.0);
+            let s8 = _erica_techno_step(step, 8.0);
+            let s9 = _erica_techno_step(step, 9.0);
+            let s10 = _erica_techno_step(step, 10.0);
+            let s11 = _erica_techno_step(step, 11.0);
+            let s12 = _erica_techno_step(step, 12.0);
+            let s13 = _erica_techno_step(step, 13.0);
+            let s14 = _erica_techno_step(step, 14.0);
+            let s15 = _erica_techno_step(step, 15.0);
+
+            let quarter_mask = clip_kr(s0 + s4 + s8 + s12, 0.0, 1.0);
+            let whole_mask = s0;
+            let kick = pulse * quarter_mask;
+            let snare = pulse * clip_kr(s4 + s12, 0.0, 1.0);
+            let oh = pulse * clip_kr(s3 + s7 + s11 + s15, 0.0, 1.0);
+            let ch = pulse * clip_kr(s0 + s1 + s2 + s4 + s5 + s6 + s8 + s9 + s10 + s12 + s13 + s14, 0.0, 1.0);
+
+            let acid_mask = clip_kr(s0 + s3 + s6 + s7 + s10 + s12 + s14, 0.0, 1.0);
+            let acid_gate = pulse * acid_mask;
+            let acid_voct =
+                36.0 * s0 +
+                36.0 * s1 +
+                43.0 * s2 +
+                39.0 * s3 +
+                36.0 * s4 +
+                48.0 * s5 +
+                43.0 * s6 +
+                46.0 * s7 +
+                36.0 * s8 +
+                34.0 * s9 +
+                36.0 * s10 +
+                39.0 * s11 +
+                43.0 * s12 +
+                36.0 * s13 +
+                46.0 * s14 +
+                48.0 * s15;
+
+            let stab_mask = clip_kr(s2 + s10, 0.0, 1.0);
+            let stab_gate = pulse * stab_mask;
+            let stab_voct =
+                55.0 * s0 +
+                58.0 * s1 +
+                62.0 * s2 +
+                67.0 * s3 +
+                55.0 * s4 +
+                58.0 * s5 +
+                65.0 * s6 +
+                70.0 * s7 +
+                55.0 * s8 +
+                58.0 * s9 +
+                60.0 * s10 +
+                67.0 * s11 +
+                55.0 * s12 +
+                58.0 * s13 +
+                63.0 * s14 +
+                67.0 * s15;
+
+            let clock_edge = trig1_kr(schmidt_kr(p.clock_in, 0.05, 0.25), 0.006);
+            let quarter = clip_kr(pulse * quarter_mask + clock_edge, 0.0, 0.5);
+            let whole = pulse * whole_mask;
+            let accent = clip_kr(pulse * clip_kr(s0 + s4 + s7 + s12 + s14, 0.0, 1.0), 0.0, 0.5);
+
+            [kick, snare, ch, oh, acid_gate, acid_voct, stab_gate, stab_voct, accent, quarter, whole]
+        })
+});
+
+define_synthdef("erica_techno_mono_to_stereo", |builder| {
+    builder
+        .input("in", 1)
+        .output("out", 2)
+        .param("pan", 0.0)
+        .param("level", 1.0)
+        .body_map(|p| {
+            let sig = p.inputs["in"] * p.level;
+            let pan = clip(p.pan, -1.0, 1.0);
+            let left = sig * (1.0 - pan) * 0.5;
+            let right = sig * (1.0 + pan) * 0.5;
+
+            [[left, right]]
+        })
+});
+
+define_synthdef("erica_techno_stereo_to_mono", |builder| {
+    builder
+        .input("in", 2)
+        .output("out")
+        .param("balance", 0.0)
+        .param("level", 1.0)
+        .body_map(|p| {
+            let bal = clip(p.balance, -1.0, 1.0);
+            let left_gain = (1.0 - bal) * 0.5;
+            let right_gain = (1.0 + bal) * 0.5;
+            let mono = p.inputs["in"][0] * left_gain + p.inputs["in"][1] * right_gain;
+
+            [softclip(mono * p.level)]
+        })
+});
+
+define_synthdef("erica_techno_gate_vca", |builder| {
+    builder
+        .input("in", 1)
+        .output("out")
+        .param("gate", 0.0)
+        .param("attack", 0.004)
+        .param("decay", 0.18)
+        .param("level", 0.7)
+        .body_map(|p| {
+            let fire = trig1_ar(k2a_ar(clip(p.gate, 0.0, 1.0)), 0.001);
+            let env = decay2_ar(fire, clip(p.attack, 0.001, 0.08), clip(p.decay, 0.02, 1.2));
+
+            [softclip(p.inputs["in"] * env * clip(p.level, 0.0, 1.5))]
+        })
+});
+
+define_group("ctrl", || { });
+define_group("kick_bus", || { });
+define_group("snare_bus", || { });
+define_group("hat_ch_bus", || { });
+define_group("hat_oh_bus", || { });
+define_group("drum_sum", || { });
+define_group("acid_raw", || { });
+define_group("acid_filtered", || { });
+define_group("acid_stereo", || { });
+define_group("acid_wet", || { });
+define_group("acid_return", || { });
+define_group("stab_raw", || { });
+define_group("stab_gate", || { });
+define_group("stab_delay", || { });
+define_group("main_out", || { });
+
+group("ctrl").gain(0.0);
+group("kick_bus").gain(0.0);
+group("snare_bus").gain(0.0);
+group("hat_ch_bus").gain(0.0);
+group("hat_oh_bus").gain(0.0);
+group("drum_sum").gain(0.0);
+group("acid_raw").gain(0.0);
+group("acid_filtered").gain(0.0);
+group("acid_stereo").gain(0.0);
+group("acid_wet").gain(0.0);
+group("acid_return").gain(0.0);
+group("stab_raw").gain(0.0);
+group("stab_gate").gain(0.0);
+group("stab_delay").gain(0.0);
+group("main_out").gain(db(-7));
+
+let master_clock = voice("erica_vc_clock_130")
+    .synth("erica_vc_clock")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("bpm", 130.0)
+    .set_param("run", 1.0)
+    .set_param("division", 4.0)
+    .set_param("shuffle", 0.08)
+    .set_param("duty", 0.16)
+    .set_param("random_rate", 3.25);
+
+let trigger_matrix = voice("erica_techno_trigger_matrix_16")
+    .synth("erica_techno_trigger_matrix")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("bpm", 130.0)
+    .set_param("run", 1.0);
+
+master_clock.output("clock").to_param(trigger_matrix, "clock_in");
+master_clock.outputs(["div", "shuffle", "random", "reset"]).mute();
+
+let kick = voice("erica_kick_four_floor")
+    .synth("erica_bass_drum")
+    .group("kick_bus")
+    .set_param("pitch", 52.0)
+    .set_param("attack", 0.68)
+    .set_param("decay", 0.58)
+    .set_param("drive", 0.34)
+    .set_param("tune_depth", 18.0)
+    .set_param("tune_decay", 0.045);
+
+let snare = voice("erica_snare_backbeat")
+    .synth("erica_snare_drum")
+    .group("snare_bus")
+    .set_param("tune", 205.0)
+    .set_param("noise_tone", 0.72)
+    .set_param("snappy", 0.82)
+    .set_param("decay", 0.34);
+
+let hats = voice("erica_hats_choked")
+    .synth("erica_hi_hats")
+    .group("hat_ch_bus")
+    .set_param("exclusive", 1.0)
+    .set_param("tone", 0.72)
+    .set_param("ch_decay", 0.10)
+    .set_param("oh_decay", 0.42);
+
+trigger_matrix.output("kick").to_param(kick, "trig");
+trigger_matrix.output("snare").to_param(snare, "trig");
+trigger_matrix.output("ch").to_param(hats, "ch_trig");
+trigger_matrix.output("oh").to_param(hats, "oh_trig");
+trigger_matrix.output("accent").to_param(kick, "accent").scale(1.4).offset(0.0);
+trigger_matrix.output("accent").to_param(snare, "accent").scale(1.1).offset(0.0);
+trigger_matrix.output("accent").to_param(hats, "accent").scale(0.8).offset(0.0);
+
+kick.output("out").to(group("kick_bus"));
+kick.output("noise").mute();
+snare.output("out").to(group("snare_bus"));
+hats.output("ch").to(group("hat_ch_bus"));
+hats.output("oh").to(group("hat_oh_bus"));
+
+let drum_vca = voice("erica_quad_vca2_drum_cascade")
+    .synth("erica_quad_vca2")
+    .group("drum_sum")
+    .set_param("level_1", 0.98)
+    .set_param("bias_1", 1.0)
+    .set_param("curve_1", 0.0)
+    .set_param("level_2", 0.78)
+    .set_param("bias_2", 1.0)
+    .set_param("curve_2", 0.0)
+    .set_param("level_3", 0.42)
+    .set_param("bias_3", 1.0)
+    .set_param("curve_3", 1.0)
+    .set_param("level_4", 0.34)
+    .set_param("bias_4", 1.0)
+    .set_param("curve_4", 1.0);
+drum_vca.input("in1").from(group("kick_bus"));
+drum_vca.input("in2").from(group("snare_bus"));
+drum_vca.input("in3").from(group("hat_ch_bus"));
+drum_vca.input("in4").from(group("hat_oh_bus"));
+drum_vca.outputs(["out1", "out2", "out3", "out4"]).mute();
+drum_vca.output("sum").to(group("drum_sum"));
+
+let acid = voice("erica_bassline_acid_lane")
+    .synth("erica_bassline")
+    .group("acid_raw")
+    .set_param("wave", 1.0)
+    .set_param("sub_level", 0.42)
+    .set_param("detune", 0.18)
+    .set_param("cutoff", 650.0)
+    .set_param("resonance", 0.82)
+    .set_param("vcf_decay", 0.26)
+    .set_param("vcf_env_amt", 0.72)
+    .set_param("vca_decay", 0.28)
+    .set_param("beef", 0.45)
+    .set_param("level", 0.84);
+
+trigger_matrix.output("acid_gate").to_param(acid, "gate");
+trigger_matrix.output("acid_voct").to_param(acid, "voct");
+trigger_matrix.output("accent").to_param(acid, "accent").scale(1.1).offset(0.0);
+acid.output("main").to(group("acid_raw"));
+acid.outputs(["tri", "square", "sub"]).mute();
+
+let acid_env = voice("erica_vc_eg_acid_cutoff")
+    .synth("erica_vc_eg")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("attack", 0.008)
+    .set_param("decay", 0.24)
+    .set_param("sustain", 0.0)
+    .set_param("release", 0.18)
+    .set_param("level", 1.0);
+trigger_matrix.output("acid_gate").to_param(acid_env, "gate");
+trigger_matrix.output("acid_gate").to_param(acid_env, "trigger");
+
+let polivoks = voice("erica_polivoks_acid_sweep")
+    .synth("erica_polivoks_vcf")
+    .group("acid_filtered")
+    .set_param("cutoff", 360.0)
+    .set_param("resonance", 0.88)
+    .set_param("mode", 0.0)
+    .set_param("input_gain", 1.38)
+    .set_param("drive", 0.42)
+    .set_param("level", 0.82);
+polivoks.input("in").from(group("acid_raw"));
+polivoks.param("cutoff").modulate_by(acid_env, "env").scale(2100.0).offset(320.0);
+polivoks.output("out").to(group("acid_filtered"));
+
+let acid_stereo = voice("erica_acid_to_black_hole_stereo")
+    .synth("erica_techno_mono_to_stereo")
+    .group("acid_stereo")
+    .set_param("pan", -0.08)
+    .set_param("level", 0.86);
+acid_stereo.input("in").from(group("acid_filtered"));
+acid_stereo.output("out").to(group("acid_stereo"));
+
+let black_hole = voice("erica_black_hole_dub_delay")
+    .synth("erica_black_hole_dsp")
+    .group("acid_wet")
+    .set_param("program", 1.0)
+    .set_param("param1", 0.30)
+    .set_param("param2", 0.66)
+    .set_param("rate", 0.76)
+    .set_param("mix", 0.58)
+    .set_param("cv_assign", 2.0)
+    .set_param("cv_amt", 0.20);
+black_hole.input("in").from(acid_stereo);
+acid_env.output("env").to_param(black_hole, "cv").scale(0.65).offset(0.0);
+acid_env.outputs(["eoa", "eod", "eor"]).mute();
+black_hole.output("out").to(group("acid_wet"));
+
+let acid_return = voice("erica_acid_wet_return")
+    .synth("erica_techno_stereo_to_mono")
+    .group("acid_return")
+    .set_param("balance", 0.0)
+    .set_param("level", 0.82);
+acid_return.input("in").from(group("acid_wet"));
+acid_return.output("out").to(group("acid_return"));
+
+let stab_osc = voice("erica_black_vco2_sparse_stab")
+    .synth("erica_black_vco2")
+    .group("stab_raw")
+    .set_param("freq", 110.0)
+    .set_param("octave", 0.0)
+    .set_param("pw", 0.34)
+    .set_param("saw_shape", 0.48)
+    .set_param("mix_sine", 0.08)
+    .set_param("mix_tri", 0.20)
+    .set_param("mix_saw", 0.62)
+    .set_param("mix_pulse", 0.36)
+    .set_param("mix_sub", 0.18);
+trigger_matrix.output("stab_voct").to_param(stab_osc, "voct");
+stab_osc.outputs(["sine", "tri", "saw", "pulse", "sub"]).mute();
+stab_osc.output("mix").to(group("stab_raw"));
+
+let stab_amp = voice("erica_stab_clocked_vca")
+    .synth("erica_techno_gate_vca")
+    .group("stab_gate")
+    .set_param("attack", 0.006)
+    .set_param("decay", 0.22)
+    .set_param("level", 0.74);
+stab_amp.input("in").from(group("stab_raw"));
+trigger_matrix.output("stab_gate").to_param(stab_amp, "gate");
+stab_amp.output("out").to(group("stab_gate"));
+
+let stab_pan_env = voice("erica_vc_eg_stab_autopan")
+    .synth("erica_vc_eg")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("attack", 0.03)
+    .set_param("decay", 0.42)
+    .set_param("sustain", 0.0)
+    .set_param("release", 0.36)
+    .set_param("level", 1.0);
+trigger_matrix.output("stab_gate").to_param(stab_pan_env, "gate");
+trigger_matrix.output("stab_gate").to_param(stab_pan_env, "trigger");
+stab_pan_env.outputs(["eoa", "eod", "eor"]).mute();
+
+let bbd = voice("erica_black_bbd_stab_echo")
+    .synth("erica_black_bbd")
+    .group("stab_delay")
+    .set_param("time", 295.0)
+    .set_param("feedback", 0.48)
+    .set_param("mix", 0.58)
+    .set_param("line_blend", 0.70)
+    .set_param("color", 0.66)
+    .set_param("lfo_rate", 0.21)
+    .set_param("lfo_depth", 0.18)
+    .set_param("clock_noise", 0.08);
+bbd.input("in").from(group("stab_gate"));
+stab_pan_env.output("env").to_param(bbd, "mix_cv").scale(0.18).offset(0.0);
+bbd.output("out").to(group("stab_delay"));
+
+let output = voice("erica_black_output_final")
+    .synth("erica_black_output")
+    .group("main_out")
+    .set_param("level1", 0.92)
+    .set_param("level2", 0.68)
+    .set_param("level3", 0.58)
+    .set_param("pan1", 0.0)
+    .set_param("pan2", -0.16)
+    .set_param("pan3", 0.18)
+    .set_param("pan3_cv_amt", 1.0)
+    .set_param("master", 0.84)
+    .set_param("phones_level", 0.55)
+    .set_param("limit", 1.0);
+output.input("in1").from(group("drum_sum"));
+output.input("in2").from(group("acid_return"));
+output.input("in3").from(group("stab_delay"));
+output.param("pan3_cv").modulate_by(stab_pan_env, "env").scale(1.8).offset(-0.9);
+output.output("out").to_main();
+output.output("phones").mute();
+
+master_clock.run();
+trigger_matrix.run();
+kick.run();
+snare.run();
+hats.run();
+drum_vca.run();
+acid.run();
+acid_env.run();
+polivoks.run();
+acid_stereo.run();
+black_hole.run();
+acid_return.run();
+stab_osc.run();
+stab_amp.run();
+stab_pan_env.run();
+bbd.run();
+output.run();
