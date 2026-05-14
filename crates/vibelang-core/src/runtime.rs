@@ -1685,6 +1685,21 @@ impl<B: Backend> Runtime<B> {
         self.current_routes = merged_routes;
 
         // =========================================================================
+        // Phase 4.7b: Finalize named-input routes (source bus → voice input bus)
+        // =========================================================================
+        // Script-side `voice.input("name").from(...)` calls populate
+        // `new_state.input_routes`. Reconcile those against the last
+        // materialized `State::input_routes` snapshot and spawn/free
+        // `input_link_1` / `input_link_2` nodes as needed.
+        if !new_state.input_routes.is_empty()
+            || !self.state.read().await.input_routes.is_empty()
+        {
+            if let Err(e) = self.routes.finalize_input_routes(&new_state.input_routes).await {
+                tracing::error!("Reload: routes.finalize_input_routes failed: {}", e);
+            }
+        }
+
+        // =========================================================================
         // Phase 4.8: Create / update effects (after route mixers)
         // =========================================================================
         // Effects must be inserted into the SC tree *after* the route mixers

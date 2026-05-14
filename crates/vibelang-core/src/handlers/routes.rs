@@ -16,7 +16,7 @@ use crate::types::{BusId, ControlBusId, EffectId, GroupId, NodeId, ParamMap, Voi
 use crate::{Error, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use vibelang_dsp::{OutputPort, PortRate};
+use vibelang_dsp::{InputPort, OutputPort, PortRate};
 
 /// Target side of a CV-to-param route.
 ///
@@ -468,6 +468,16 @@ struct AdapterSpawn {
     out_bus: ControlBusId,
 }
 
+struct InputRouteSpawn {
+    synthdef: &'static str,
+    node: NodeId,
+    target_group: NodeId,
+    in_bus: BusId,
+    out_bus: BusId,
+    target_param: String,
+    target_nodes: Vec<NodeId>,
+}
+
 /// A single planned action against one `(target, target_param)` pair,
 /// produced by [`RoutesHandler::plan_param_actions`] and consumed by
 /// [`RoutesHandler::apply_param_action`].
@@ -836,6 +846,296 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
             }
         }
 
+        Ok(())
+    }
+
+    /// Reconcile named-input routes against [`State::input_routes`].
+    ///
+    /// This is the input-side counterpart to [`Self::finalize`]: it diffs the
+    /// last materialized input-route map against the desired map, frees stale
+    /// `input_link_*` nodes, then spawns one link node per newly added input
+    /// edge. Target input buses are allocated lazily and kept stable on the
+    /// owning [`crate::state::VoiceState`] for the voice lifetime.
+    pub async fn finalize_input_routes(&self, desired: &InputRouteMap) -> Result<()> {
+        let diff = {
+            let state = self.state.read().await;
+            compute_input_route_diff(&state.input_routes, desired)
+        };
+        if diff.is_empty() {
+            return Ok(());
+        }
+
+        let nodes_to_free: Vec<NodeId> = {
+            let mut state = self.state.write().await;
+            state.input_routes = desired.clone();
+            let mut nodes = Vec::new();
+            for r in &diff.removals {
+                let key = (r.voice_id, r.port_name.clone(), r.src.clone());
+                if let Some(node_id) = state.input_route_synths.remove(&key) {
+                    state.free_node_id(node_id);
+                    nodes.push(node_id);
+                } else {
+                    tracing::debug!(
+                        "RoutesHandler::finalize_input_routes: no live input link for torn-down route voice={:?} port={:?} src={:?}",
+                        r.voice_id,
+                        r.port_name,
+                        r.src,
+                    );
+                }
+            }
+            nodes
+        };
+        for node_id in nodes_to_free {
+            tracing::debug!(
+                "RoutesHandler::finalize_input_routes: freeing input route node {:?}",
+                node_id
+            );
+            let _ = self.backend.free_node(node_id).await;
+        }
+
+        for r in &diff.additions {
+            let spawn = match self.plan_input_route_spawn(r).await {
+                Ok(spawn) => spawn,
+                Err(e) => {
+                    tracing::warn!(
+                        "RoutesHandler::finalize_input_routes: failed to plan input link for addition {:?}/{:?}/{:?}: {}",
+                        r.voice_id,
+                        r.port_name,
+                        r.src,
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            let mut params = ParamMap::new();
+            params.insert("in_bus".to_string(), spawn.in_bus.raw() as f32);
+            params.insert("out_bus".to_string(), spawn.out_bus.raw() as f32);
+
+            self.backend
+                .create_synth(
+                    spawn.synthdef,
+                    spawn.node,
+                    spawn.target_group,
+                    AddAction::Tail,
+                    &params,
+                )
+                .await
+                .map_err(Error::backend)?;
+
+            for node in spawn.target_nodes {
+                self.backend
+                    .set_param(node, &spawn.target_param, spawn.out_bus.raw() as f32)
+                    .await
+                    .map_err(Error::backend)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn plan_input_route_spawn(&self, route: &InputRoute) -> Result<InputRouteSpawn> {
+        let mut state = self.state.write().await;
+
+        let (synthdef, target_group_id, target_nodes) = {
+            let voice = state
+                .voices
+                .get(&route.voice_id)
+                .ok_or(Error::VoiceNotFound(route.voice_id))?;
+            let mut nodes = voice.active_nodes.clone();
+            nodes.extend(voice.note_nodes.values().copied());
+            (voice.config.synthdef.clone(), voice.config.group, nodes)
+        };
+
+        let inputs = state.synthdef_inputs(&synthdef);
+        let (input_index, input_port) = inputs
+            .iter()
+            .enumerate()
+            .find(|(_, p)| p.name == route.port_name)
+            .ok_or_else(|| {
+                Error::SynthDefNotFound(format!(
+                    "input port {:?} on voice {:?}",
+                    route.port_name, route.voice_id
+                ))
+            })?;
+        Self::validate_input_port_for_link(input_port)?;
+
+        let target_group = state
+            .groups
+            .get(&target_group_id)
+            .ok_or(Error::GroupNotFound(target_group_id))?
+            .node_id;
+
+        let out_bus = if let Some(bus) = state.voices.get(&route.voice_id).and_then(|voice| {
+            voice
+                .input_buses
+                .iter()
+                .find(|(name, _)| name == &route.port_name)
+                .map(|(_, bus)| *bus)
+        }) {
+            bus
+        } else {
+            let bus = state.alloc_audio_bus(input_port.channels);
+            state
+                .voices
+                .get_mut(&route.voice_id)
+                .ok_or(Error::VoiceNotFound(route.voice_id))?
+                .input_buses
+                .push((route.port_name.clone(), bus));
+            bus
+        };
+
+        let in_bus = Self::resolve_input_route_source_bus(&mut state, input_port, &route.src)?;
+        let node = state.alloc_node_id();
+        state.input_route_synths.insert(
+            (route.voice_id, route.port_name.clone(), route.src.clone()),
+            node,
+        );
+
+        let synthdef = match input_port.channels {
+            1 => "input_link_1",
+            2 => "input_link_2",
+            n => {
+                return Err(Error::SynthDefNotFound(format!(
+                    "no input_link_<channels> built-in for {} channels",
+                    n
+                )));
+            }
+        };
+
+        Ok(InputRouteSpawn {
+            synthdef,
+            node,
+            target_group,
+            in_bus,
+            out_bus,
+            target_param: vibelang_dsp::builder::input_bus_param_name(input_index),
+            target_nodes,
+        })
+    }
+
+    fn validate_input_port_for_link(port: &InputPort) -> Result<()> {
+        if port.rate != PortRate::Ar {
+            return Err(Error::InvalidConfig(format!(
+                "Input port '{}' is {:?}-rate; input_link_* currently supports audio-rate inputs",
+                port.name, port.rate
+            )));
+        }
+        if !matches!(port.channels, 1 | 2) {
+            return Err(Error::SynthDefNotFound(format!(
+                "no input_link_<channels> built-in for {} channels",
+                port.channels
+            )));
+        }
+        Ok(())
+    }
+
+    fn resolve_input_route_source_bus(
+        state: &mut State,
+        target_port: &InputPort,
+        src: &InputRouteSrc,
+    ) -> Result<BusId> {
+        match src {
+            InputRouteSrc::Voice(source_voice, output_port) => {
+                let voice = state
+                    .voices
+                    .get(source_voice)
+                    .ok_or(Error::VoiceNotFound(*source_voice))?;
+                let bus = voice
+                    .output_buses
+                    .iter()
+                    .find(|(name, _)| name == output_port)
+                    .map(|(_, bus)| *bus)
+                    .ok_or_else(|| {
+                        Error::SynthDefNotFound(format!(
+                            "output port {:?} on voice {:?}",
+                            output_port, source_voice
+                        ))
+                    })?;
+                let ports = state.synthdef_outputs(&voice.config.synthdef);
+                let source_port = ports
+                    .iter()
+                    .find(|p| p.name == *output_port)
+                    .ok_or_else(|| {
+                        Error::SynthDefNotFound(format!(
+                            "output port {:?} on voice {:?}",
+                            output_port, source_voice
+                        ))
+                    })?;
+                Self::validate_input_source_width(target_port, source_port.channels)?;
+                if source_port.rate != PortRate::Ar {
+                    return Err(Error::InvalidConfig(format!(
+                        "Output port '{}' is {:?}-rate; named audio inputs require an audio-rate source",
+                        output_port, source_port.rate
+                    )));
+                }
+                Ok(bus)
+            }
+            InputRouteSrc::Group(group_id) => {
+                if target_port.channels > 2 {
+                    return Err(Error::InvalidConfig(format!(
+                        "Group sources expose a stereo audio bus, but input '{}' needs {} channels",
+                        target_port.name, target_port.channels
+                    )));
+                }
+                state
+                    .groups
+                    .get(group_id)
+                    .map(|g| g.audio_bus)
+                    .ok_or(Error::GroupNotFound(*group_id))
+            }
+            InputRouteSrc::HardwareInput(channels) => {
+                if channels.len() != usize::from(target_port.channels) {
+                    return Err(Error::InvalidConfig(format!(
+                        "Hardware input route for '{}' has {} channel(s), expected {}",
+                        target_port.name,
+                        channels.len(),
+                        target_port.channels
+                    )));
+                }
+                let first = channels.first().copied().ok_or_else(|| {
+                    Error::InvalidConfig(format!(
+                        "Hardware input route for '{}' must name at least one channel",
+                        target_port.name
+                    ))
+                })?;
+                for (offset, channel) in channels.iter().enumerate() {
+                    if *channel != first + offset as u32 {
+                        return Err(Error::InvalidConfig(format!(
+                            "Hardware input route for '{}' must use contiguous channels; got {:?}",
+                            target_port.name, channels
+                        )));
+                    }
+                }
+                Ok(BusId::new(state.hardware_input_offset + first))
+            }
+            InputRouteSrc::Silent => {
+                if target_port.channels > 2 {
+                    return Err(Error::InvalidConfig(format!(
+                        "Silent input source supports up to stereo, but input '{}' needs {} channels",
+                        target_port.name, target_port.channels
+                    )));
+                }
+                let bus = match state.silent_ar_bus {
+                    Some(bus) => bus,
+                    None => {
+                        let bus = state.alloc_audio_bus(2);
+                        state.silent_ar_bus = Some(bus);
+                        bus
+                    }
+                };
+                Ok(bus)
+            }
+        }
+    }
+
+    fn validate_input_source_width(target_port: &InputPort, source_channels: u8) -> Result<()> {
+        if source_channels != target_port.channels {
+            return Err(Error::InvalidConfig(format!(
+                "Input port '{}' expects {} channel(s), source provides {}",
+                target_port.name, target_port.channels, source_channels
+            )));
+        }
         Ok(())
     }
 
@@ -2085,6 +2385,7 @@ mod tests {
         last_creates: Mutex<Vec<CreateSynthCall>>,
         last_frees: Mutex<Vec<NodeId>>,
         last_maps: Mutex<Vec<MapCall>>,
+        last_sets: Mutex<Vec<(NodeId, String, f32)>>,
     }
 
     impl MockBackend {
@@ -2095,6 +2396,7 @@ mod tests {
                 last_creates: Mutex::new(Vec::new()),
                 last_frees: Mutex::new(Vec::new()),
                 last_maps: Mutex::new(Vec::new()),
+                last_sets: Mutex::new(Vec::new()),
             }
         }
         fn synths_created(&self) -> u32 {
@@ -2111,6 +2413,9 @@ mod tests {
         }
         fn maps(&self) -> Vec<MapCall> {
             self.last_maps.lock().unwrap().clone()
+        }
+        fn sets(&self) -> Vec<(NodeId, String, f32)> {
+            self.last_sets.lock().unwrap().clone()
         }
     }
 
@@ -2171,10 +2476,14 @@ mod tests {
 
         async fn set_param(
             &self,
-            _node: NodeId,
-            _param: &str,
-            _value: f32,
+            node: NodeId,
+            param: &str,
+            value: f32,
         ) -> std::result::Result<(), Self::Error> {
+            self.last_sets
+                .lock()
+                .unwrap()
+                .push((node, param.to_string(), value));
             Ok(())
         }
 
@@ -2641,6 +2950,256 @@ mod tests {
 
         assert_eq!(backend.synths_created(), 0);
         assert_eq!(backend.nodes_freed(), 0);
+    }
+
+    async fn setup_named_input_fixture(
+        input_channels: u8,
+        source_channels: u8,
+    ) -> (
+        RoutesHandler<MockBackend>,
+        Arc<MockBackend>,
+        Arc<RwLock<State>>,
+        VoiceId,
+        VoiceId,
+    ) {
+        let backend = Arc::new(MockBackend::new());
+        let state = Arc::new(RwLock::new(State::default()));
+        let handler = RoutesHandler::new(backend.clone(), state.clone());
+
+        let target_id = VoiceId::new(10);
+        let source_id = VoiceId::new(20);
+        let group_id = GroupId::new(1);
+
+        {
+            let mut s = state.write().await;
+            s.synthdefs.insert("target_synth".to_string());
+            s.synthdefs.insert("source_synth".to_string());
+            s.synthdef_inputs.insert(
+                "target_synth".to_string(),
+                vec![vibelang_dsp::InputPort::ar("carrier", input_channels)],
+            );
+            s.synthdef_outputs.insert(
+                "source_synth".to_string(),
+                vec![vibelang_dsp::OutputPort {
+                    name: "out".to_string(),
+                    channels: source_channels,
+                    rate: vibelang_dsp::PortRate::Ar,
+                }],
+            );
+
+            let group_node = s.alloc_node_id();
+            let group_bus = s.alloc_audio_bus(2);
+            s.groups.insert(
+                group_id,
+                GroupState {
+                    id: group_id,
+                    name: "main".to_string(),
+                    parent: None,
+                    node_id: group_node,
+                    audio_bus: group_bus,
+                    link_synth_node_id: None,
+                    muted: false,
+                    soloed: false,
+                    params: ParamMap::new(),
+                    output_bus: None,
+                    output_channels: None,
+                },
+            );
+
+            s.voices.insert(
+                target_id,
+                VoiceState {
+                    id: target_id,
+                    config: VoiceConfig::new("target", "target_synth", group_id),
+                    active_nodes: vec![NodeId::new(9001)],
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: Vec::new(),
+                    input_buses: Vec::new(),
+                },
+            );
+
+            let source_bus = s.alloc_audio_bus(source_channels);
+            s.voices.insert(
+                source_id,
+                VoiceState {
+                    id: source_id,
+                    config: VoiceConfig::new("source", "source_synth", group_id),
+                    active_nodes: Vec::new(),
+                    note_nodes: HashMap::new(),
+                    round_robin_position: 0,
+                    pending_params: HashMap::new(),
+                    output_buses: vec![("out".to_string(), source_bus)],
+                    input_buses: Vec::new(),
+                },
+            );
+        }
+
+        (handler, backend, state, target_id, source_id)
+    }
+
+    fn input_route_map(target: VoiceId, srcs: Vec<InputRouteSrc>) -> InputRouteMap {
+        InputRouteMap::from([((target, "carrier".to_string()), srcs)])
+    }
+
+    #[tokio::test]
+    async fn finalize_input_route_adds_mono_voice_source_link() {
+        let (handler, backend, state, target_id, source_id) =
+            setup_named_input_fixture(1, 1).await;
+        let desired = input_route_map(
+            target_id,
+            vec![InputRouteSrc::Voice(source_id, "out".to_string())],
+        );
+
+        handler.finalize_input_routes(&desired).await.unwrap();
+
+        let creates = backend.creates();
+        assert_eq!(creates.len(), 1);
+        assert_eq!(creates[0].def, "input_link_1");
+
+        let s = state.read().await;
+        let target_bus = s.voices.get(&target_id).unwrap().input_buses[0].1;
+        let source_bus = s.voices.get(&source_id).unwrap().output_buses[0].1;
+        assert_eq!(creates[0].in_bus, source_bus.raw() as f32);
+        assert_eq!(creates[0].out_bus, target_bus.raw() as f32);
+        assert!(s.input_route_synths.contains_key(&(
+            target_id,
+            "carrier".to_string(),
+            InputRouteSrc::Voice(source_id, "out".to_string())
+        )));
+        drop(s);
+
+        assert_eq!(
+            backend.sets(),
+            vec![(
+                NodeId::new(9001),
+                "__in0".to_string(),
+                target_bus.raw() as f32
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn finalize_input_route_adds_stereo_silent_link() {
+        let (handler, backend, state, target_id, _source_id) =
+            setup_named_input_fixture(2, 2).await;
+        let desired = input_route_map(target_id, vec![InputRouteSrc::Silent]);
+
+        handler.finalize_input_routes(&desired).await.unwrap();
+
+        let creates = backend.creates();
+        assert_eq!(creates.len(), 1);
+        assert_eq!(creates[0].def, "input_link_2");
+
+        let s = state.read().await;
+        let silent_bus = s.silent_ar_bus.expect("silent bus allocated");
+        let target_bus = s.voices.get(&target_id).unwrap().input_buses[0].1;
+        assert_eq!(creates[0].in_bus, silent_bus.raw() as f32);
+        assert_eq!(creates[0].out_bus, target_bus.raw() as f32);
+    }
+
+    #[tokio::test]
+    async fn finalize_input_route_replace_frees_old_link_and_spawns_new() {
+        let (handler, backend, state, target_id, source_id) =
+            setup_named_input_fixture(1, 1).await;
+        let voice_route = input_route_map(
+            target_id,
+            vec![InputRouteSrc::Voice(source_id, "out".to_string())],
+        );
+        handler.finalize_input_routes(&voice_route).await.unwrap();
+        let old_node = state
+            .read()
+            .await
+            .input_route_synths
+            .get(&(
+                target_id,
+                "carrier".to_string(),
+                InputRouteSrc::Voice(source_id, "out".to_string()),
+            ))
+            .copied()
+            .unwrap();
+
+        let silent_route = input_route_map(target_id, vec![InputRouteSrc::Silent]);
+        handler.finalize_input_routes(&silent_route).await.unwrap();
+
+        assert_eq!(backend.creates().len(), 2);
+        assert!(backend.frees().contains(&old_node));
+        let registry = state.read().await.input_route_synths.clone();
+        assert!(!registry.contains_key(&(
+            target_id,
+            "carrier".to_string(),
+            InputRouteSrc::Voice(source_id, "out".to_string()),
+        )));
+        assert!(registry.contains_key(&(
+            target_id,
+            "carrier".to_string(),
+            InputRouteSrc::Silent,
+        )));
+    }
+
+    #[tokio::test]
+    async fn finalize_input_route_remove_disconnects_link() {
+        let (handler, backend, state, target_id, source_id) =
+            setup_named_input_fixture(1, 1).await;
+        let desired = input_route_map(
+            target_id,
+            vec![InputRouteSrc::Voice(source_id, "out".to_string())],
+        );
+        handler.finalize_input_routes(&desired).await.unwrap();
+
+        let old_node = state
+            .read()
+            .await
+            .input_route_synths
+            .values()
+            .copied()
+            .next()
+            .unwrap();
+
+        handler
+            .finalize_input_routes(&InputRouteMap::new())
+            .await
+            .unwrap();
+
+        assert!(backend.frees().contains(&old_node));
+        assert!(state.read().await.input_route_synths.is_empty());
+        assert!(state.read().await.input_routes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn finalize_input_route_repeat_is_no_op() {
+        let (handler, backend, state, target_id, source_id) =
+            setup_named_input_fixture(1, 1).await;
+        let desired = input_route_map(
+            target_id,
+            vec![InputRouteSrc::Voice(source_id, "out".to_string())],
+        );
+
+        handler.finalize_input_routes(&desired).await.unwrap();
+        let first_bus = state
+            .read()
+            .await
+            .voices
+            .get(&target_id)
+            .unwrap()
+            .input_buses[0]
+            .1;
+        handler.finalize_input_routes(&desired).await.unwrap();
+
+        assert_eq!(backend.synths_created(), 1);
+        assert_eq!(backend.nodes_freed(), 0);
+        assert_eq!(
+            state
+                .read()
+                .await
+                .voices
+                .get(&target_id)
+                .unwrap()
+                .input_buses[0]
+                .1,
+            first_bus
+        );
     }
 
     // =========================================================================

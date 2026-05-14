@@ -1272,6 +1272,44 @@ impl State {
         nodes
     }
 
+    /// Drain every named-input router synth that mentions `voice_id`, either
+    /// as the target voice or as a `Voice(...)` source.
+    ///
+    /// Used by voice deletion/recreation so no `input_link_*` synth keeps
+    /// reading from or writing to buses owned by a removed voice.
+    pub fn take_voice_input_route_nodes(&mut self, voice_id: VoiceId) -> Vec<NodeId> {
+        use crate::handlers::InputRouteSrc;
+
+        let keys: Vec<(VoiceId, String, InputRouteSrc)> = self
+            .input_route_synths
+            .keys()
+            .filter(|(target, _, src)| {
+                *target == voice_id
+                    || matches!(src, InputRouteSrc::Voice(src_voice, _) if *src_voice == voice_id)
+            })
+            .cloned()
+            .collect();
+        let mut nodes = Vec::with_capacity(keys.len());
+        for key in keys {
+            if let Some(node_id) = self.input_route_synths.remove(&key) {
+                self.node_ids.free(node_id.raw());
+                nodes.push(node_id);
+            }
+        }
+
+        self.input_routes.retain(|(target, _), srcs| {
+            if *target == voice_id {
+                return false;
+            }
+            srcs.retain(
+                |src| !matches!(src, InputRouteSrc::Voice(src_voice, _) if *src_voice == voice_id),
+            );
+            !srcs.is_empty()
+        });
+
+        nodes
+    }
+
     /// Drain every default-route entry owned by `voice_id` from
     /// [`State::default_routes`].
     ///

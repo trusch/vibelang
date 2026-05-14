@@ -71,11 +71,167 @@ impl<B: Backend> SynthDefs for SynthDefsHandler<B> {
         // Track in state
         let mut state = self.state.write().await;
         state.synthdefs.insert(name.to_string());
+        if let Some(outputs) = vibelang_dsp::get_synthdef_outputs(name) {
+            state.synthdef_outputs.insert(name.to_string(), outputs);
+        }
+        if let Some(inputs) = vibelang_dsp::get_synthdef_inputs(name) {
+            state.synthdef_inputs.insert(name.to_string(), inputs);
+        }
 
         Ok(())
     }
 
     async fn is_loaded(&self, name: &str) -> bool {
         self.state.read().await.synthdefs.contains(name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::{AddAction, Backend, BufferInfo};
+    use crate::compat::Instant;
+    use crate::types::{BufferId, NodeId, ParamMap};
+    use std::path::Path;
+    use vibelang_dsp::{InputPort, OutputPort, PortRate};
+
+    #[derive(Debug)]
+    struct MockError;
+
+    impl std::fmt::Display for MockError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "mock error")
+        }
+    }
+
+    impl std::error::Error for MockError {}
+
+    struct MockBackend;
+
+    #[async_trait::async_trait]
+    impl Backend for MockBackend {
+        type Error = MockError;
+
+        async fn load_synthdef(
+            &self,
+            _name: &str,
+            _data: &[u8],
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_synth(
+            &self,
+            _def: &str,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+            _params: &ParamMap,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn create_group(
+            &self,
+            _node: NodeId,
+            _target: NodeId,
+            _action: AddAction,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_node(&self, _node: NodeId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn run_node(
+            &self,
+            _node: NodeId,
+            _running: bool,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn set_param(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _value: f32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn load_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames: 0,
+                channels: 0,
+                sample_rate: 0.0,
+            })
+        }
+
+        async fn alloc_buffer(
+            &self,
+            _id: BufferId,
+            frames: u32,
+            channels: u16,
+        ) -> std::result::Result<BufferInfo, Self::Error> {
+            Ok(BufferInfo {
+                frames,
+                channels,
+                sample_rate: 0.0,
+            })
+        }
+
+        async fn write_buffer(
+            &self,
+            _id: BufferId,
+            _path: &Path,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn free_buffer(&self, _id: BufferId) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn map_param_to_bus(
+            &self,
+            _node: NodeId,
+            _param: &str,
+            _bus: u32,
+        ) -> std::result::Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn current_time(&self) -> Instant {
+            Instant::now()
+        }
+    }
+
+    #[tokio::test]
+    async fn input_route_synthdef_load_registers_input_manifest() {
+        let backend = Arc::new(MockBackend);
+        let state = Arc::new(RwLock::new(State::default()));
+        let handler = SynthDefsHandler::new(backend, state.clone());
+
+        let name = "input_manifest_synth";
+        let outputs = vec![OutputPort {
+            name: "out".to_string(),
+            channels: 1,
+            rate: PortRate::Ar,
+        }];
+        let inputs = vec![InputPort::ar("carrier", 2)];
+        vibelang_dsp::register_synthdef_outputs(name.to_string(), outputs.clone());
+        vibelang_dsp::register_synthdef_inputs(name.to_string(), inputs.clone());
+
+        handler.load(name, b"fake").await.unwrap();
+
+        let state = state.read().await;
+        assert_eq!(state.synthdef_outputs(name), outputs);
+        assert_eq!(state.synthdef_inputs(name), inputs);
     }
 }

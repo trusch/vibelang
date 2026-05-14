@@ -345,6 +345,7 @@ impl<B: Backend> VoicesHandler<B> {
 
             // Set output bus to group's audio bus (for proper routing)
             params.insert("out".to_string(), group.audio_bus.0 as f32);
+            apply_voice_input_bus_params(&state, voice, &mut params);
 
             // Convert sample offset/length from seconds to synth params
             if let Some(sample_id) = voice.config.sample_id {
@@ -556,7 +557,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let mut state = self.state.write().await;
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
             free_voice_output_buses(&mut state, &voice);
-            let route_nodes = state.take_voice_route_nodes(id);
+            free_voice_input_buses(&mut state, &voice);
+            let mut route_nodes = state.take_voice_route_nodes(id);
+            route_nodes.extend(state.take_voice_input_route_nodes(id));
             // Story 5: drop the voice's default routes so the next reload's
             // merge step doesn't carry them forward against a deleted voice.
             state.take_voice_default_routes(id);
@@ -572,7 +575,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let mut state = self.state.write().await;
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
             free_voice_output_buses(&mut state, &voice);
-            let route_nodes = state.take_voice_route_nodes(id);
+            free_voice_input_buses(&mut state, &voice);
+            let mut route_nodes = state.take_voice_route_nodes(id);
+            route_nodes.extend(state.take_voice_input_route_nodes(id));
             state.take_voice_default_routes(id);
             let mut voice_nodes = voice.active_nodes;
             voice_nodes.extend(voice.note_nodes.into_values());
@@ -607,7 +612,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let mut state = self.state.write().await;
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
             free_voice_output_buses(&mut state, &voice);
-            let route_nodes = state.take_voice_route_nodes(id);
+            free_voice_input_buses(&mut state, &voice);
+            let mut route_nodes = state.take_voice_route_nodes(id);
+            route_nodes.extend(state.take_voice_input_route_nodes(id));
             state.take_voice_default_routes(id);
             let midi_channel = voice.config.midi_channel;
             let pool_events = midi_pool_clear(&mut state, id, midi_channel);
@@ -621,7 +628,9 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let mut state = self.state.write().await;
             let voice = state.voices.remove(&id).ok_or(Error::VoiceNotFound(id))?;
             free_voice_output_buses(&mut state, &voice);
-            let route_nodes = state.take_voice_route_nodes(id);
+            free_voice_input_buses(&mut state, &voice);
+            let mut route_nodes = state.take_voice_route_nodes(id);
+            route_nodes.extend(state.take_voice_input_route_nodes(id));
             state.take_voice_default_routes(id);
             let mut voice_nodes = voice.active_nodes;
             voice_nodes.extend(voice.note_nodes.into_values());
@@ -676,6 +685,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
             // Set output bus to group's audio bus (for proper routing)
             merged_params.insert("out".to_string(), group.audio_bus.0 as f32);
+            apply_voice_input_bus_params(&state, voice, &mut merged_params);
 
             // Convert sample offset/length from seconds to synth params
             if let Some(sample_id) = voice.config.sample_id {
@@ -915,6 +925,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
             // Set output bus to group's audio bus (for proper routing)
             params.insert("out".to_string(), group.audio_bus.0 as f32);
+            apply_voice_input_bus_params(&state, voice, &mut params);
 
             // Convert sample offset/length from seconds to synth params
             if let Some(sample_id) = voice.config.sample_id {
@@ -1443,6 +1454,43 @@ fn free_voice_output_buses(state: &mut State, voice: &VoiceState) {
             vibelang_dsp::PortRate::Kr | vibelang_dsp::PortRate::Tr => {
                 state.free_control_bus(ControlBusId::new(bus_id.raw()));
             }
+        }
+    }
+}
+
+fn free_voice_input_buses(state: &mut State, voice: &VoiceState) {
+    if voice.input_buses.is_empty() {
+        return;
+    }
+    let ports = state.synthdef_inputs(&voice.config.synthdef);
+    for (port_name, bus_id) in &voice.input_buses {
+        let channels = ports
+            .iter()
+            .find(|p| p.name == *port_name)
+            .map(|p| p.channels)
+            .unwrap_or(2);
+        state.free_audio_bus(*bus_id, channels);
+    }
+}
+
+fn apply_voice_input_bus_params(state: &State, voice: &VoiceState, params: &mut ParamMap) {
+    if voice.input_buses.is_empty() {
+        return;
+    }
+    for (index, input) in state
+        .synthdef_inputs(&voice.config.synthdef)
+        .iter()
+        .enumerate()
+    {
+        if let Some((_, bus)) = voice
+            .input_buses
+            .iter()
+            .find(|(name, _)| name == &input.name)
+        {
+            params.insert(
+                vibelang_dsp::builder::input_bus_param_name(index),
+                bus.raw() as f32,
+            );
         }
     }
 }
