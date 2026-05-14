@@ -1,0 +1,200 @@
+// Verbos Bark Filter Processor - fixed Bark-scale 12-band filter bank.
+//
+// Center table: LP 100 Hz, BP 300/510/770/1080/1480/2000/2700/3700/5300/7700 Hz,
+// HP 10500 Hz. The Verbos matrix flags a 12 vs 24 band ambiguity; this follows
+// the documented 12 filters and exposes their 12 follower CV outs separately.
+
+define_synthdef("bark_filter", |builder| {
+    builder
+        .input("in", 1)
+        .output("mix", 1)
+        .output("band1", 1)
+        .output("band2", 1)
+        .output("band3", 1)
+        .output("band4", 1)
+        .output("band5", 1)
+        .output("band6", 1)
+        .output("band7", 1)
+        .output("band8", 1)
+        .output("band9", 1)
+        .output("band10", 1)
+        .output("band11", 1)
+        .output("band12", 1)
+        .output_kr("follow1")
+        .output_kr("follow2")
+        .output_kr("follow3")
+        .output_kr("follow4")
+        .output_kr("follow5")
+        .output_kr("follow6")
+        .output_kr("follow7")
+        .output_kr("follow8")
+        .output_kr("follow9")
+        .output_kr("follow10")
+        .output_kr("follow11")
+        .output_kr("follow12")
+        .output_kr("follow_max")
+        .param("band1", 1.0)
+        .param("band2", 1.0)
+        .param("band3", 1.0)
+        .param("band4", 1.0)
+        .param("band5", 1.0)
+        .param("band6", 1.0)
+        .param("band7", 1.0)
+        .param("band8", 1.0)
+        .param("band9", 1.0)
+        .param("band10", 1.0)
+        .param("band11", 1.0)
+        .param("band12", 1.0)
+        .param("band1_cv", 0.0)
+        .param("band2_cv", 0.0)
+        .param("band3_cv", 0.0)
+        .param("band4_cv", 0.0)
+        .param("band5_cv", 0.0)
+        .param("band6_cv", 0.0)
+        .param("band7_cv", 0.0)
+        .param("band8_cv", 0.0)
+        .param("band9_cv", 0.0)
+        .param("band10_cv", 0.0)
+        .param("band11_cv", 0.0)
+        .param("band12_cv", 0.0)
+        .param("decay", 0.05)
+        .param("center", 6.0)
+        .param("width", 0.5)
+        .param("tilt", 0.0)
+        .param("odd_gain", 1.0)
+        .param("even_gain", 1.0)
+        .param("level", 1.0)
+        .body_map(|p| {
+            let dry = p.inputs["in"];
+            let decay = p.decay.max(0.001);
+            let center = clip(p.center, 1.0, 12.0);
+            let width = clip(p.width, 0.0, 1.0);
+            let tilt = clip(p.tilt, -1.0, 1.0);
+            let focus = (1.0 - width * 2.0).max(0.0);
+            let sharp = focus * focus * 1.25;
+            let rq = 1.0 / 6.0;
+
+            let raw1 = leak_dc_ar(lpf_ar(dry, 100.0), 0.995);
+            let raw2 = leak_dc_ar(bpf_ar(dry, 300.0, rq), 0.995);
+            let raw3 = leak_dc_ar(bpf_ar(dry, 510.0, rq), 0.995);
+            let raw4 = leak_dc_ar(bpf_ar(dry, 770.0, rq), 0.995);
+            let raw5 = leak_dc_ar(bpf_ar(dry, 1080.0, rq), 0.995);
+            let raw6 = leak_dc_ar(bpf_ar(dry, 1480.0, rq), 0.995);
+            let raw7 = leak_dc_ar(bpf_ar(dry, 2000.0, rq), 0.995);
+            let raw8 = leak_dc_ar(bpf_ar(dry, 2700.0, rq), 0.995);
+            let raw9 = leak_dc_ar(bpf_ar(dry, 3700.0, rq), 0.995);
+            let raw10 = leak_dc_ar(bpf_ar(dry, 5300.0, rq), 0.995);
+            let raw11 = leak_dc_ar(bpf_ar(dry, 7700.0, rq), 0.995);
+            let raw12 = leak_dc_ar(hpf_ar(dry, 10500.0), 0.995);
+
+            let dist1 = 1.0 - center;
+            let win1 = exp(0.0 - dist1 * dist1 * sharp) * pow(2.0, (1.0 - 6.5) * tilt / 5.5);
+            let gain1 = clip(p.band1 + p.band1_cv, 0.0, 4.0) * win1;
+            let band1 = raw1 * gain1;
+
+            let dist2 = 2.0 - center;
+            let win2 = exp(0.0 - dist2 * dist2 * sharp) * pow(2.0, (2.0 - 6.5) * tilt / 5.5);
+            let gain2 = clip(p.band2 + p.band2_cv, 0.0, 4.0) * win2;
+            let band2 = raw2 * gain2;
+
+            let dist3 = 3.0 - center;
+            let win3 = exp(0.0 - dist3 * dist3 * sharp) * pow(2.0, (3.0 - 6.5) * tilt / 5.5);
+            let gain3 = clip(p.band3 + p.band3_cv, 0.0, 4.0) * win3;
+            let band3 = raw3 * gain3;
+
+            let dist4 = 4.0 - center;
+            let win4 = exp(0.0 - dist4 * dist4 * sharp) * pow(2.0, (4.0 - 6.5) * tilt / 5.5);
+            let gain4 = clip(p.band4 + p.band4_cv, 0.0, 4.0) * win4;
+            let band4 = raw4 * gain4;
+
+            let dist5 = 5.0 - center;
+            let win5 = exp(0.0 - dist5 * dist5 * sharp) * pow(2.0, (5.0 - 6.5) * tilt / 5.5);
+            let gain5 = clip(p.band5 + p.band5_cv, 0.0, 4.0) * win5;
+            let band5 = raw5 * gain5;
+
+            let dist6 = 6.0 - center;
+            let win6 = exp(0.0 - dist6 * dist6 * sharp) * pow(2.0, (6.0 - 6.5) * tilt / 5.5);
+            let gain6 = clip(p.band6 + p.band6_cv, 0.0, 4.0) * win6;
+            let band6 = raw6 * gain6;
+
+            let dist7 = 7.0 - center;
+            let win7 = exp(0.0 - dist7 * dist7 * sharp) * pow(2.0, (7.0 - 6.5) * tilt / 5.5);
+            let gain7 = clip(p.band7 + p.band7_cv, 0.0, 4.0) * win7;
+            let band7 = raw7 * gain7;
+
+            let dist8 = 8.0 - center;
+            let win8 = exp(0.0 - dist8 * dist8 * sharp) * pow(2.0, (8.0 - 6.5) * tilt / 5.5);
+            let gain8 = clip(p.band8 + p.band8_cv, 0.0, 4.0) * win8;
+            let band8 = raw8 * gain8;
+
+            let dist9 = 9.0 - center;
+            let win9 = exp(0.0 - dist9 * dist9 * sharp) * pow(2.0, (9.0 - 6.5) * tilt / 5.5);
+            let gain9 = clip(p.band9 + p.band9_cv, 0.0, 4.0) * win9;
+            let band9 = raw9 * gain9;
+
+            let dist10 = 10.0 - center;
+            let win10 = exp(0.0 - dist10 * dist10 * sharp) * pow(2.0, (10.0 - 6.5) * tilt / 5.5);
+            let gain10 = clip(p.band10 + p.band10_cv, 0.0, 4.0) * win10;
+            let band10 = raw10 * gain10;
+
+            let dist11 = 11.0 - center;
+            let win11 = exp(0.0 - dist11 * dist11 * sharp) * pow(2.0, (11.0 - 6.5) * tilt / 5.5);
+            let gain11 = clip(p.band11 + p.band11_cv, 0.0, 4.0) * win11;
+            let band11 = raw11 * gain11;
+
+            let dist12 = 12.0 - center;
+            let win12 = exp(0.0 - dist12 * dist12 * sharp) * pow(2.0, (12.0 - 6.5) * tilt / 5.5);
+            let gain12 = clip(p.band12 + p.band12_cv, 0.0, 4.0) * win12;
+            let band12 = raw12 * gain12;
+
+            let follow1 = amplitude_kr(raw1, 0.01, decay);
+            let follow2 = amplitude_kr(raw2, 0.01, decay);
+            let follow3 = amplitude_kr(raw3, 0.01, decay);
+            let follow4 = amplitude_kr(raw4, 0.01, decay);
+            let follow5 = amplitude_kr(raw5, 0.01, decay);
+            let follow6 = amplitude_kr(raw6, 0.01, decay);
+            let follow7 = amplitude_kr(raw7, 0.01, decay);
+            let follow8 = amplitude_kr(raw8, 0.01, decay);
+            let follow9 = amplitude_kr(raw9, 0.01, decay);
+            let follow10 = amplitude_kr(raw10, 0.01, decay);
+            let follow11 = amplitude_kr(raw11, 0.01, decay);
+            let follow12 = amplitude_kr(raw12, 0.01, decay);
+            let follow_max_a = max(max(follow1, follow2), max(follow3, follow4));
+            let follow_max_b = max(max(follow5, follow6), max(follow7, follow8));
+            let follow_max_c = max(max(follow9, follow10), max(follow11, follow12));
+            let follow_max = max(max(follow_max_a, follow_max_b), follow_max_c);
+
+            let odd_sum = band1 + band3 + band5 + band7 + band9 + band11;
+            let even_sum = band2 + band4 + band6 + band8 + band10 + band12;
+            let mix = leak_dc_ar(odd_sum * p.odd_gain + even_sum * p.even_gain, 0.995) * p.level;
+
+            [
+                mix,
+                band1,
+                band2,
+                band3,
+                band4,
+                band5,
+                band6,
+                band7,
+                band8,
+                band9,
+                band10,
+                band11,
+                band12,
+                follow1,
+                follow2,
+                follow3,
+                follow4,
+                follow5,
+                follow6,
+                follow7,
+                follow8,
+                follow9,
+                follow10,
+                follow11,
+                follow12,
+                follow_max,
+            ]
+        })
+});
