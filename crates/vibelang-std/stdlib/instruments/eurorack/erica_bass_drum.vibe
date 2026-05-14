@@ -1,0 +1,75 @@
+// Erica Synths Black Bass Drum - patchable 909-style Eurorack kick voice.
+//
+// Approximation: sine body with exponential pitch sweep, shaped attack noise,
+// gate sustain mode, accent level/pitch boost, and voltage-style params for
+// pitch/decay/drive modulation.
+
+define_synthdef("erica_bass_drum", |builder| {
+    builder
+        .output("out")
+        .output("noise")
+        .param("trig", 0.0)
+        .param("gate", 0.0)
+        .param("accent", 0.0)
+        .param("pitch", 55.0)
+        .param("pitch_cv", 0.0)
+        .param("pitch_cv_amt", 0.0)
+        .param("tune_depth", 12.0)
+        .param("tune_decay", 0.05)
+        .param("attack", 0.55)
+        .param("decay", 0.5)
+        .param("decay_cv", 0.0)
+        .param("decay_cv_amt", 0.0)
+        .param("drive", 0.25)
+        .param("drive_cv", 0.0)
+        .param("drive_cv_amt", 0.0)
+        .body_map(|p| {
+            let accent = clip(p.accent, 0.0, 1.0);
+            let attack = clip(p.attack, 0.0, 1.0);
+
+            let pitch_cv = clip(p.pitch_cv, -1.0, 1.0) * clip(p.pitch_cv_amt, 0.0, 1.0);
+            let base_pitch = clip(p.pitch * pow(2.0, pitch_cv * 2.0 + accent * (2.0 / 12.0)), 20.0, 220.0);
+
+            let decay_cv = clip(p.decay_cv, -1.0, 1.0) * clip(p.decay_cv_amt, 0.0, 1.0);
+            let amp_decay = clip(p.decay * pow(2.0, decay_cv * 2.0), 0.04, 4.0);
+
+            let drive_cv = clip(p.drive_cv, -1.0, 1.0) * clip(p.drive_cv_amt, 0.0, 1.0);
+            let drive = clip(p.drive + drive_cv, 0.0, 1.0);
+
+            let trig_in = k2a_ar(clip(p.trig, 0.0, 1.0));
+            let gate_in = k2a_ar(clip(p.gate, 0.0, 1.0));
+            let trig_pulse = trig1_ar(trig_in, 0.001);
+            let gate_pulse = trig1_ar(gate_in, 0.001);
+            let fire = trig_pulse + gate_pulse;
+
+            let tune_decay = clip(p.tune_decay, 0.005, 0.5);
+            let sweep_semitones = clip(p.tune_depth + accent * 4.0, 0.0, 36.0);
+            let pitch_env = decay2_ar(fire, 0.001, tune_decay);
+            let freq = base_pitch * pow(2.0, (sweep_semitones * pitch_env) / 12.0);
+
+            let hit_env = decay2_ar(fire, 0.001, amp_decay);
+            let gate_hold = lag_ud_ar(gate_in, 0.001, amp_decay) * 0.7;
+            let amp_env = max(hit_env, gate_hold);
+
+            let body = sin_osc_ar(freq) * amp_env;
+            let low_weight = 0.08 + (1.0 - attack) * 0.12;
+            let low_body = sin_osc_ar(freq * 0.5) * amp_env * low_weight;
+
+            let click_time = 0.01 + attack * 0.02;
+            let click_env = decay2_ar(fire, 0.0005, click_time);
+            let click_filter = 1800.0 + attack * 6200.0;
+            let noise_burst = hpf_ar(white_noise_ar(), click_filter) * click_env * (0.08 + attack * 0.32);
+            let beater = sin_osc_ar(freq * (4.0 + attack * 6.0)) * click_env * attack * 0.08;
+
+            let raw = body + low_body + noise_burst + beater;
+            let drive_gain = 1.0 + drive * 6.0;
+            let saturated = (raw * drive_gain).tanh() / drive_gain.sqrt();
+            let driven = raw * (1.0 - drive) + saturated * drive;
+
+            let accent_gain = 1.0 + accent * 0.5;
+            let out = clip_ar(leak_dc_ar(driven * accent_gain * 0.9, 0.995), -1.0, 1.0);
+            let noise = clip_ar(noise_burst * accent_gain * (1.0 + drive), -1.0, 1.0);
+
+            [out, noise]
+        })
+});
