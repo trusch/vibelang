@@ -1,0 +1,60 @@
+// kind=processor | category=mixers | flavor=erica_quad_vca2 | inputs=in1:1,in2:1,in3:1,in4:1 | outputs=out1:1,out2:1,out3:1,out4:1,sum:1 | params=level_1,bias_1,cv_1,curve_1,level_2,bias_2,cv_2,curve_2,level_3,bias_3,cv_3,curve_3,level_4,bias_4,cv_4,curve_4
+//
+// Erica Synths Black Quad VCA2-inspired four-channel mono VCA/mixer.
+// The CV controls are normalized params: with cv_N at its default 0.0,
+// bias_N is the manual opening voltage; patched CV is represented by driving
+// cv_N from a kr source and is summed with the same bias_N.
+
+fn _erica_quad_vca2_gain(cv, bias, level, curve) {
+    let control = clip(cv + bias, 0.0, 1.0);
+    let linear = control;
+    let log_curve = control * control;
+    let shape = round(clip(curve, 0.0, 1.0));
+    select_ar(shape, [linear, log_curve]) * clip(level, 0.0, 1.0)
+}
+
+define_synthdef("erica_quad_vca2")
+    .input("in1", 1)
+    .input("in2", 1)
+    .input("in3", 1)
+    .input("in4", 1)
+    .output("out1", 1)
+    .output("out2", 1)
+    .output("out3", 1)
+    .output("out4", 1)
+    .output("sum", 1)
+    .param("level_1", 0.7)
+    .param("bias_1", 0.0)
+    .param("cv_1", 0.0)
+    .param("curve_1", 0.0)
+    .param("level_2", 0.7)
+    .param("bias_2", 0.0)
+    .param("cv_2", 0.0)
+    .param("curve_2", 0.0)
+    .param("level_3", 0.7)
+    .param("bias_3", 0.0)
+    .param("cv_3", 0.0)
+    .param("curve_3", 0.0)
+    .param("level_4", 0.7)
+    .param("bias_4", 0.0)
+    .param("cv_4", 0.0)
+    .param("curve_4", 0.0)
+    .body_map(|p| {
+        let gain_1 = _erica_quad_vca2_gain(p.cv_1, p.bias_1, p.level_1, p.curve_1);
+        let gain_2 = _erica_quad_vca2_gain(p.cv_2, p.bias_2, p.level_2, p.curve_2);
+        let gain_3 = _erica_quad_vca2_gain(p.cv_3, p.bias_3, p.level_3, p.curve_3);
+        let gain_4 = _erica_quad_vca2_gain(p.cv_4, p.bias_4, p.level_4, p.curve_4);
+
+        let out1 = p.inputs.in1 * gain_1;
+        let out2 = p.inputs.in2 * gain_2 + out1;
+        let out3 = p.inputs.in3 * gain_3 + out2;
+        let out4 = p.inputs.in4 * gain_4 + out3;
+
+        [
+            out1,
+            out2,
+            out3,
+            out4,
+            out4
+        ]
+    });
