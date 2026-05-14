@@ -1,0 +1,64 @@
+// Erica Synths Black Snare Drum - patchable 909-style Eurorack snare voice.
+//
+// Approximation: dual sine body oscillators, 4 kHz filtered noise, short snap
+// transient, trigger/gate firing, accent level/decay boost, and attenuated
+// tune/decay CV params.
+
+define_synthdef("erica_snare_drum", |builder| {
+    builder
+        .output("out", 1)
+        .param("trig", 0.0)
+        .param("gate", 0.0)
+        .param("accent", 0.0)
+        .param("tune", 180.0)
+        .param("tune_cv", 0.0)
+        .param("noise_tone", 0.5)
+        .param("snappy", 0.6)
+        .param("decay", 0.3)
+        .param("decay_cv", 0.0)
+        .param("tune_cv_amt", 0.0)
+        .param("decay_cv_amt", 0.0)
+        .body_map(|p| {
+            let accent = clip(p.accent, 0.0, 1.0);
+            let noise_tone = clip(p.noise_tone, 0.0, 1.0);
+            let snappy = clip(p.snappy, 0.0, 1.0);
+
+            let tune_cv = clip(p.tune_cv, -1.0, 1.0) * clip(p.tune_cv_amt, 0.0, 1.0);
+            let tune = clip(p.tune * pow(2.0, tune_cv * 2.0 + accent * (1.0 / 12.0)), 70.0, 700.0);
+
+            let decay_cv = clip(p.decay_cv, -1.0, 1.0) * clip(p.decay_cv_amt, 0.0, 1.0);
+            let decay_knob = clip(p.decay, 0.0, 1.0);
+            let decay_scale = pow(2.0, decay_cv * 2.0) * (1.0 + accent * 0.45);
+            let tone_decay = clip((0.055 + decay_knob * 0.22) * decay_scale, 0.025, 1.2);
+            let noise_decay = clip((0.08 + decay_knob * 0.42) * decay_scale, 0.035, 1.6);
+
+            let trig_in = k2a_ar(clip(p.trig, 0.0, 1.0));
+            let gate_in = k2a_ar(clip(p.gate, 0.0, 1.0));
+            let trig_pulse = trig1_ar(trig_in, 0.001);
+            let gate_pulse = trig1_ar(gate_in, 0.001);
+            let fire = trig_pulse + gate_pulse;
+
+            let tone_env = decay2_ar(fire, 0.001, tone_decay);
+            let noise_env = decay2_ar(fire, 0.0015, noise_decay);
+
+            let tone1 = sin_osc_ar(tune) * 0.34;
+            let tone2 = sin_osc_ar(tune * 1.5) * 0.24;
+            let tone = (tone1 + tone2) * tone_env;
+
+            let noise_src = bpf_ar(white_noise_ar(), 4000.0, 0.3);
+            let noise = noise_src * noise_env * (0.65 + snappy * 0.35);
+
+            let snap_time = 0.01 + snappy * 0.01;
+            let snap_up = decay2_ar(fire, 0.0002, snap_time * 0.45);
+            let snap_down = decay2_ar(t_delay_ar(fire, snap_time * 0.45), 0.0002, snap_time * 0.55);
+            let snap_env = clip_ar(snap_up - snap_down, 0.0, 1.0);
+            let snap_noise = hpf_ar(white_noise_ar(), 2500.0 + snappy * 4500.0);
+            let snap = snap_noise * snap_env * (0.12 + snappy * 0.28);
+
+            let blend = tone * (1.0 - noise_tone) + noise * noise_tone;
+            let accent_gain = 1.0 + accent * 0.65;
+            let out = clip_ar(leak_dc_ar((blend + snap) * accent_gain * 1.15, 0.995), -1.0, 1.0);
+
+            [out]
+        })
+});
