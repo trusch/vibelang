@@ -1,0 +1,302 @@
+// Intellijel Steppy - four-track kr gate sequencer.
+//
+// Four independent tracks share a tempo-derived sixteenth-note master phasor.
+// Track patterns are 16-bit masks, with bit 0 = step 0. Outputs are +5 V-style
+// gates scaled to the library's +/-1 CV range.
+
+define_synthdef("steppy", |builder| {
+    builder
+        .output_kr("gate_a")
+        .output_kr("gate_b")
+        .output_kr("gate_c")
+        .output_kr("gate_d")
+        .output_kr("clock")
+        .param("bpm", 120.0)
+        .param("reset", 0.0)
+        .param("run", 1.0)
+        .param("track_a_steps", 16.0)
+        .param("track_a_pattern", 4369.0)
+        .param("track_a_clock_div", 1.0)
+        .param("track_a_gate_len", 0.5)
+        .param("track_a_swing", 0.0)
+        .param("track_a_probability", 1.0)
+        .param("track_a_mute", 0.0)
+        .param("track_a_rotate", 0.0)
+        .param("track_b_steps", 16.0)
+        .param("track_b_pattern", 0.0)
+        .param("track_b_clock_div", 1.0)
+        .param("track_b_gate_len", 0.5)
+        .param("track_b_swing", 0.0)
+        .param("track_b_probability", 1.0)
+        .param("track_b_mute", 0.0)
+        .param("track_b_rotate", 0.0)
+        .param("track_c_steps", 16.0)
+        .param("track_c_pattern", 0.0)
+        .param("track_c_clock_div", 1.0)
+        .param("track_c_gate_len", 0.5)
+        .param("track_c_swing", 0.0)
+        .param("track_c_probability", 1.0)
+        .param("track_c_mute", 0.0)
+        .param("track_c_rotate", 0.0)
+        .param("track_d_steps", 16.0)
+        .param("track_d_pattern", 0.0)
+        .param("track_d_clock_div", 1.0)
+        .param("track_d_gate_len", 0.5)
+        .param("track_d_swing", 0.0)
+        .param("track_d_probability", 1.0)
+        .param("track_d_mute", 0.0)
+        .param("track_d_rotate", 0.0)
+        .body_map(|p| {
+            let run = clip_kr(p.run, 0.0, 1.0);
+            let base = (p.bpm.max(1.0) / 60.0) * 4.0 * run;
+            let phase = sweep_kr(p.reset, base);
+            let master_phase = wrap_kr(phase, 0.0, 1.0);
+            let clock_width = clip_kr(0.005 * base, 0.001, 0.95);
+            let clock = clip_kr(in_range_kr(master_phase, 0.0, clock_width) * 0.5 * run, -1.0, 1.0);
+
+            let steps_a = floor(clip_kr(p.track_a_steps + 0.5, 1.0, 16.0));
+            let steps_b = floor(clip_kr(p.track_b_steps + 0.5, 1.0, 16.0));
+            let steps_c = floor(clip_kr(p.track_c_steps + 0.5, 1.0, 16.0));
+            let steps_d = floor(clip_kr(p.track_d_steps + 0.5, 1.0, 16.0));
+
+            let div_a = clip_kr(round(p.track_a_clock_div), 1.0, 16.0);
+            let div_b = clip_kr(round(p.track_b_clock_div), 1.0, 16.0);
+            let div_c = clip_kr(round(p.track_c_clock_div), 1.0, 16.0);
+            let div_d = clip_kr(round(p.track_d_clock_div), 1.0, 16.0);
+
+            let pos_raw_a = wrap_kr(phase * steps_a * div_a / 16.0, 0.0, steps_a);
+            let pos_raw_b = wrap_kr(phase * steps_b * div_b / 16.0, 0.0, steps_b);
+            let pos_raw_c = wrap_kr(phase * steps_c * div_c / 16.0, 0.0, steps_c);
+            let pos_raw_d = wrap_kr(phase * steps_d * div_d / 16.0, 0.0, steps_d);
+
+            let step_raw_a = floor(pos_raw_a);
+            let step_raw_b = floor(pos_raw_b);
+            let step_raw_c = floor(pos_raw_c);
+            let step_raw_d = floor(pos_raw_d);
+
+            let swing_a = clip_kr(p.track_a_swing, 0.0, 0.5);
+            let swing_b = clip_kr(p.track_b_swing, 0.0, 0.5);
+            let swing_c = clip_kr(p.track_c_swing, 0.0, 0.5);
+            let swing_d = clip_kr(p.track_d_swing, 0.0, 0.5);
+
+            let even_a = 1.0 - clip_kr(step_raw_a.modulo(2.0), 0.0, 1.0);
+            let even_b = 1.0 - clip_kr(step_raw_b.modulo(2.0), 0.0, 1.0);
+            let even_c = 1.0 - clip_kr(step_raw_c.modulo(2.0), 0.0, 1.0);
+            let even_d = 1.0 - clip_kr(step_raw_d.modulo(2.0), 0.0, 1.0);
+
+            let pos_a = wrap_kr(pos_raw_a - even_a * swing_a, 0.0, steps_a);
+            let pos_b = wrap_kr(pos_raw_b - even_b * swing_b, 0.0, steps_b);
+            let pos_c = wrap_kr(pos_raw_c - even_c * swing_c, 0.0, steps_c);
+            let pos_d = wrap_kr(pos_raw_d - even_d * swing_d, 0.0, steps_d);
+
+            let step_a = floor(pos_a);
+            let step_b = floor(pos_b);
+            let step_c = floor(pos_c);
+            let step_d = floor(pos_d);
+
+            let rotate_a = floor(clip_kr(p.track_a_rotate + 0.5, -15.0, 15.0));
+            let rotate_b = floor(clip_kr(p.track_b_rotate + 0.5, -15.0, 15.0));
+            let rotate_c = floor(clip_kr(p.track_c_rotate + 0.5, -15.0, 15.0));
+            let rotate_d = floor(clip_kr(p.track_d_rotate + 0.5, -15.0, 15.0));
+
+            let pat_step_a = floor(wrap_kr(step_a + rotate_a, 0.0, steps_a));
+            let pat_step_b = floor(wrap_kr(step_b + rotate_b, 0.0, steps_b));
+            let pat_step_c = floor(wrap_kr(step_c + rotate_c, 0.0, steps_c));
+            let pat_step_d = floor(wrap_kr(step_d + rotate_d, 0.0, steps_d));
+
+            let step_phase_a = wrap_kr(pos_a, 0.0, 1.0);
+            let step_phase_b = wrap_kr(pos_b, 0.0, 1.0);
+            let step_phase_c = wrap_kr(pos_c, 0.0, 1.0);
+            let step_phase_d = wrap_kr(pos_d, 0.0, 1.0);
+
+            let len_a = clip_kr(p.track_a_gate_len, 0.05, 0.95);
+            let len_b = clip_kr(p.track_b_gate_len, 0.05, 0.95);
+            let len_c = clip_kr(p.track_c_gate_len, 0.05, 0.95);
+            let len_d = clip_kr(p.track_d_gate_len, 0.05, 0.95);
+
+            let width_a = in_range_kr(step_phase_a, 0.0, len_a);
+            let width_b = in_range_kr(step_phase_b, 0.0, len_b);
+            let width_c = in_range_kr(step_phase_c, 0.0, len_c);
+            let width_d = in_range_kr(step_phase_d, 0.0, len_d);
+
+            let pattern_a = floor(clip_kr(p.track_a_pattern, 0.0, 65535.0));
+            let pattern_b = floor(clip_kr(p.track_b_pattern, 0.0, 65535.0));
+            let pattern_c = floor(clip_kr(p.track_c_pattern, 0.0, 65535.0));
+            let pattern_d = floor(clip_kr(p.track_d_pattern, 0.0, 65535.0));
+
+            let a0 = floor(pattern_a / 1.0).modulo(2.0);
+            let a1 = floor(pattern_a / 2.0).modulo(2.0);
+            let a2 = floor(pattern_a / 4.0).modulo(2.0);
+            let a3 = floor(pattern_a / 8.0).modulo(2.0);
+            let a4 = floor(pattern_a / 16.0).modulo(2.0);
+            let a5 = floor(pattern_a / 32.0).modulo(2.0);
+            let a6 = floor(pattern_a / 64.0).modulo(2.0);
+            let a7 = floor(pattern_a / 128.0).modulo(2.0);
+            let a8 = floor(pattern_a / 256.0).modulo(2.0);
+            let a9 = floor(pattern_a / 512.0).modulo(2.0);
+            let a10 = floor(pattern_a / 1024.0).modulo(2.0);
+            let a11 = floor(pattern_a / 2048.0).modulo(2.0);
+            let a12 = floor(pattern_a / 4096.0).modulo(2.0);
+            let a13 = floor(pattern_a / 8192.0).modulo(2.0);
+            let a14 = floor(pattern_a / 16384.0).modulo(2.0);
+            let a15 = floor(pattern_a / 32768.0).modulo(2.0);
+
+            let b0 = floor(pattern_b / 1.0).modulo(2.0);
+            let b1 = floor(pattern_b / 2.0).modulo(2.0);
+            let b2 = floor(pattern_b / 4.0).modulo(2.0);
+            let b3 = floor(pattern_b / 8.0).modulo(2.0);
+            let b4 = floor(pattern_b / 16.0).modulo(2.0);
+            let b5 = floor(pattern_b / 32.0).modulo(2.0);
+            let b6 = floor(pattern_b / 64.0).modulo(2.0);
+            let b7 = floor(pattern_b / 128.0).modulo(2.0);
+            let b8 = floor(pattern_b / 256.0).modulo(2.0);
+            let b9 = floor(pattern_b / 512.0).modulo(2.0);
+            let b10 = floor(pattern_b / 1024.0).modulo(2.0);
+            let b11 = floor(pattern_b / 2048.0).modulo(2.0);
+            let b12 = floor(pattern_b / 4096.0).modulo(2.0);
+            let b13 = floor(pattern_b / 8192.0).modulo(2.0);
+            let b14 = floor(pattern_b / 16384.0).modulo(2.0);
+            let b15 = floor(pattern_b / 32768.0).modulo(2.0);
+
+            let c0 = floor(pattern_c / 1.0).modulo(2.0);
+            let c1 = floor(pattern_c / 2.0).modulo(2.0);
+            let c2 = floor(pattern_c / 4.0).modulo(2.0);
+            let c3 = floor(pattern_c / 8.0).modulo(2.0);
+            let c4 = floor(pattern_c / 16.0).modulo(2.0);
+            let c5 = floor(pattern_c / 32.0).modulo(2.0);
+            let c6 = floor(pattern_c / 64.0).modulo(2.0);
+            let c7 = floor(pattern_c / 128.0).modulo(2.0);
+            let c8 = floor(pattern_c / 256.0).modulo(2.0);
+            let c9 = floor(pattern_c / 512.0).modulo(2.0);
+            let c10 = floor(pattern_c / 1024.0).modulo(2.0);
+            let c11 = floor(pattern_c / 2048.0).modulo(2.0);
+            let c12 = floor(pattern_c / 4096.0).modulo(2.0);
+            let c13 = floor(pattern_c / 8192.0).modulo(2.0);
+            let c14 = floor(pattern_c / 16384.0).modulo(2.0);
+            let c15 = floor(pattern_c / 32768.0).modulo(2.0);
+
+            let d0 = floor(pattern_d / 1.0).modulo(2.0);
+            let d1 = floor(pattern_d / 2.0).modulo(2.0);
+            let d2 = floor(pattern_d / 4.0).modulo(2.0);
+            let d3 = floor(pattern_d / 8.0).modulo(2.0);
+            let d4 = floor(pattern_d / 16.0).modulo(2.0);
+            let d5 = floor(pattern_d / 32.0).modulo(2.0);
+            let d6 = floor(pattern_d / 64.0).modulo(2.0);
+            let d7 = floor(pattern_d / 128.0).modulo(2.0);
+            let d8 = floor(pattern_d / 256.0).modulo(2.0);
+            let d9 = floor(pattern_d / 512.0).modulo(2.0);
+            let d10 = floor(pattern_d / 1024.0).modulo(2.0);
+            let d11 = floor(pattern_d / 2048.0).modulo(2.0);
+            let d12 = floor(pattern_d / 4096.0).modulo(2.0);
+            let d13 = floor(pattern_d / 8192.0).modulo(2.0);
+            let d14 = floor(pattern_d / 16384.0).modulo(2.0);
+            let d15 = floor(pattern_d / 32768.0).modulo(2.0);
+
+            let sel_a0 = (1.0 - abs(pat_step_a - 0.0)).max(0.0);
+            let sel_a1 = (1.0 - abs(pat_step_a - 1.0)).max(0.0);
+            let sel_a2 = (1.0 - abs(pat_step_a - 2.0)).max(0.0);
+            let sel_a3 = (1.0 - abs(pat_step_a - 3.0)).max(0.0);
+            let sel_a4 = (1.0 - abs(pat_step_a - 4.0)).max(0.0);
+            let sel_a5 = (1.0 - abs(pat_step_a - 5.0)).max(0.0);
+            let sel_a6 = (1.0 - abs(pat_step_a - 6.0)).max(0.0);
+            let sel_a7 = (1.0 - abs(pat_step_a - 7.0)).max(0.0);
+            let sel_a8 = (1.0 - abs(pat_step_a - 8.0)).max(0.0);
+            let sel_a9 = (1.0 - abs(pat_step_a - 9.0)).max(0.0);
+            let sel_a10 = (1.0 - abs(pat_step_a - 10.0)).max(0.0);
+            let sel_a11 = (1.0 - abs(pat_step_a - 11.0)).max(0.0);
+            let sel_a12 = (1.0 - abs(pat_step_a - 12.0)).max(0.0);
+            let sel_a13 = (1.0 - abs(pat_step_a - 13.0)).max(0.0);
+            let sel_a14 = (1.0 - abs(pat_step_a - 14.0)).max(0.0);
+            let sel_a15 = (1.0 - abs(pat_step_a - 15.0)).max(0.0);
+
+            let sel_b0 = (1.0 - abs(pat_step_b - 0.0)).max(0.0);
+            let sel_b1 = (1.0 - abs(pat_step_b - 1.0)).max(0.0);
+            let sel_b2 = (1.0 - abs(pat_step_b - 2.0)).max(0.0);
+            let sel_b3 = (1.0 - abs(pat_step_b - 3.0)).max(0.0);
+            let sel_b4 = (1.0 - abs(pat_step_b - 4.0)).max(0.0);
+            let sel_b5 = (1.0 - abs(pat_step_b - 5.0)).max(0.0);
+            let sel_b6 = (1.0 - abs(pat_step_b - 6.0)).max(0.0);
+            let sel_b7 = (1.0 - abs(pat_step_b - 7.0)).max(0.0);
+            let sel_b8 = (1.0 - abs(pat_step_b - 8.0)).max(0.0);
+            let sel_b9 = (1.0 - abs(pat_step_b - 9.0)).max(0.0);
+            let sel_b10 = (1.0 - abs(pat_step_b - 10.0)).max(0.0);
+            let sel_b11 = (1.0 - abs(pat_step_b - 11.0)).max(0.0);
+            let sel_b12 = (1.0 - abs(pat_step_b - 12.0)).max(0.0);
+            let sel_b13 = (1.0 - abs(pat_step_b - 13.0)).max(0.0);
+            let sel_b14 = (1.0 - abs(pat_step_b - 14.0)).max(0.0);
+            let sel_b15 = (1.0 - abs(pat_step_b - 15.0)).max(0.0);
+
+            let sel_c0 = (1.0 - abs(pat_step_c - 0.0)).max(0.0);
+            let sel_c1 = (1.0 - abs(pat_step_c - 1.0)).max(0.0);
+            let sel_c2 = (1.0 - abs(pat_step_c - 2.0)).max(0.0);
+            let sel_c3 = (1.0 - abs(pat_step_c - 3.0)).max(0.0);
+            let sel_c4 = (1.0 - abs(pat_step_c - 4.0)).max(0.0);
+            let sel_c5 = (1.0 - abs(pat_step_c - 5.0)).max(0.0);
+            let sel_c6 = (1.0 - abs(pat_step_c - 6.0)).max(0.0);
+            let sel_c7 = (1.0 - abs(pat_step_c - 7.0)).max(0.0);
+            let sel_c8 = (1.0 - abs(pat_step_c - 8.0)).max(0.0);
+            let sel_c9 = (1.0 - abs(pat_step_c - 9.0)).max(0.0);
+            let sel_c10 = (1.0 - abs(pat_step_c - 10.0)).max(0.0);
+            let sel_c11 = (1.0 - abs(pat_step_c - 11.0)).max(0.0);
+            let sel_c12 = (1.0 - abs(pat_step_c - 12.0)).max(0.0);
+            let sel_c13 = (1.0 - abs(pat_step_c - 13.0)).max(0.0);
+            let sel_c14 = (1.0 - abs(pat_step_c - 14.0)).max(0.0);
+            let sel_c15 = (1.0 - abs(pat_step_c - 15.0)).max(0.0);
+
+            let sel_d0 = (1.0 - abs(pat_step_d - 0.0)).max(0.0);
+            let sel_d1 = (1.0 - abs(pat_step_d - 1.0)).max(0.0);
+            let sel_d2 = (1.0 - abs(pat_step_d - 2.0)).max(0.0);
+            let sel_d3 = (1.0 - abs(pat_step_d - 3.0)).max(0.0);
+            let sel_d4 = (1.0 - abs(pat_step_d - 4.0)).max(0.0);
+            let sel_d5 = (1.0 - abs(pat_step_d - 5.0)).max(0.0);
+            let sel_d6 = (1.0 - abs(pat_step_d - 6.0)).max(0.0);
+            let sel_d7 = (1.0 - abs(pat_step_d - 7.0)).max(0.0);
+            let sel_d8 = (1.0 - abs(pat_step_d - 8.0)).max(0.0);
+            let sel_d9 = (1.0 - abs(pat_step_d - 9.0)).max(0.0);
+            let sel_d10 = (1.0 - abs(pat_step_d - 10.0)).max(0.0);
+            let sel_d11 = (1.0 - abs(pat_step_d - 11.0)).max(0.0);
+            let sel_d12 = (1.0 - abs(pat_step_d - 12.0)).max(0.0);
+            let sel_d13 = (1.0 - abs(pat_step_d - 13.0)).max(0.0);
+            let sel_d14 = (1.0 - abs(pat_step_d - 14.0)).max(0.0);
+            let sel_d15 = (1.0 - abs(pat_step_d - 15.0)).max(0.0);
+
+            let on_a = sel_a0 * a0 + sel_a1 * a1 + sel_a2 * a2 + sel_a3 * a3
+                + sel_a4 * a4 + sel_a5 * a5 + sel_a6 * a6 + sel_a7 * a7
+                + sel_a8 * a8 + sel_a9 * a9 + sel_a10 * a10 + sel_a11 * a11
+                + sel_a12 * a12 + sel_a13 * a13 + sel_a14 * a14 + sel_a15 * a15;
+            let on_b = sel_b0 * b0 + sel_b1 * b1 + sel_b2 * b2 + sel_b3 * b3
+                + sel_b4 * b4 + sel_b5 * b5 + sel_b6 * b6 + sel_b7 * b7
+                + sel_b8 * b8 + sel_b9 * b9 + sel_b10 * b10 + sel_b11 * b11
+                + sel_b12 * b12 + sel_b13 * b13 + sel_b14 * b14 + sel_b15 * b15;
+            let on_c = sel_c0 * c0 + sel_c1 * c1 + sel_c2 * c2 + sel_c3 * c3
+                + sel_c4 * c4 + sel_c5 * c5 + sel_c6 * c6 + sel_c7 * c7
+                + sel_c8 * c8 + sel_c9 * c9 + sel_c10 * c10 + sel_c11 * c11
+                + sel_c12 * c12 + sel_c13 * c13 + sel_c14 * c14 + sel_c15 * c15;
+            let on_d = sel_d0 * d0 + sel_d1 * d1 + sel_d2 * d2 + sel_d3 * d3
+                + sel_d4 * d4 + sel_d5 * d5 + sel_d6 * d6 + sel_d7 * d7
+                + sel_d8 * d8 + sel_d9 * d9 + sel_d10 * d10 + sel_d11 * d11
+                + sel_d12 * d12 + sel_d13 * d13 + sel_d14 * d14 + sel_d15 * d15;
+
+            let roll_a = latch_kr((white_noise_kr() + 1.0) * 0.5, changed_kr(step_a, 0.0) + p.reset);
+            let roll_b = latch_kr((white_noise_kr() + 1.0) * 0.5, changed_kr(step_b, 0.0) + p.reset);
+            let roll_c = latch_kr((white_noise_kr() + 1.0) * 0.5, changed_kr(step_c, 0.0) + p.reset);
+            let roll_d = latch_kr((white_noise_kr() + 1.0) * 0.5, changed_kr(step_d, 0.0) + p.reset);
+
+            let prob_a = in_range_kr(roll_a, 0.0, clip_kr(p.track_a_probability, 0.0, 1.0));
+            let prob_b = in_range_kr(roll_b, 0.0, clip_kr(p.track_b_probability, 0.0, 1.0));
+            let prob_c = in_range_kr(roll_c, 0.0, clip_kr(p.track_c_probability, 0.0, 1.0));
+            let prob_d = in_range_kr(roll_d, 0.0, clip_kr(p.track_d_probability, 0.0, 1.0));
+
+            let mute_a = 1.0 - clip_kr(p.track_a_mute, 0.0, 1.0);
+            let mute_b = 1.0 - clip_kr(p.track_b_mute, 0.0, 1.0);
+            let mute_c = 1.0 - clip_kr(p.track_c_mute, 0.0, 1.0);
+            let mute_d = 1.0 - clip_kr(p.track_d_mute, 0.0, 1.0);
+
+            let gate_a = clip_kr(width_a * on_a * prob_a * mute_a * run * 0.5, -1.0, 1.0);
+            let gate_b = clip_kr(width_b * on_b * prob_b * mute_b * run * 0.5, -1.0, 1.0);
+            let gate_c = clip_kr(width_c * on_c * prob_c * mute_c * run * 0.5, -1.0, 1.0);
+            let gate_d = clip_kr(width_d * on_d * prob_d * mute_d * run * 0.5, -1.0, 1.0);
+
+            [gate_a, gate_b, gate_c, gate_d, clock]
+        })
+});
