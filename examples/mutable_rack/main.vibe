@@ -1,0 +1,311 @@
+// Mutable Instruments rack performance patch.
+//
+// Signal chain:
+//   Marbles clocks Plaits engine 2 and sends x1 pitch CV into Rings model 0.
+//   Plaits OUT excites Rings, whose odd/even banks feed Beads as a stereo pair.
+//   Beads left/right texture runs into a Clouds processor in spectral mode.
+//   Stages, Tides2, and Frames animate harmonics, grain position/density,
+//   Rings brightness, Beads density, and the Clouds dry/wet reverb tail.
+
+import "stdlib/instruments/eurorack/plaits.vibe";
+import "stdlib/instruments/eurorack/rings.vibe";
+import "stdlib/instruments/eurorack/beads.vibe";
+import "stdlib/effects/granular/clouds_processor.vibe";
+import "stdlib/instruments/eurorack/marbles.vibe";
+import "stdlib/instruments/eurorack/stages.vibe";
+import "stdlib/instruments/eurorack/tides2.vibe";
+import "stdlib/instruments/eurorack/frames.vibe";
+
+set_tempo(72);
+
+define_synthdef("mutable_dc", |builder| {
+    builder
+        .output("out")
+        .param("level", 1.0)
+        .body(|level| {
+            [dc_ar(level)]
+        })
+});
+
+define_synthdef("mutable_stereo_tap", |builder| {
+    builder
+        .input("in", 2)
+        .output("left")
+        .output("right")
+        .param("left_gain", 1.0)
+        .param("right_gain", 1.0)
+        .body_map(|p| {
+            [
+                p.inputs["in"][0] * p.left_gain,
+                p.inputs["in"][1] * p.right_gain,
+            ]
+        })
+});
+
+define_group("ctrl", || { });
+define_group("plaits_bus", || { });
+define_group("rings_bus", || { });
+define_group("beads_bus", || { });
+define_group("mutable_tail", || {
+    fx("clouds_spectral_tail")
+        .synth("clouds_processor")
+        .param("mode", 3.0)
+        .param("quality", 0.0)
+        .param("freeze", 0.0)
+        .param("position", 0.62)
+        .param("size", 0.74)
+        .param("pitch", -12.0)
+        .param("density", 0.78)
+        .param("texture", 0.66)
+        .param("dry_wet", 0.62)
+        .param("blend", 1.0)
+        .param("mix", 0.62)
+        .param("spread", 0.88)
+        .param("feedback", 0.38)
+        .param("reverb", 0.92)
+        .param("level", 0.82)
+        .apply();
+});
+
+group("ctrl").gain(0.0);
+group("plaits_bus").gain(0.0);
+group("rings_bus").gain(0.0);
+group("beads_bus").gain(0.0);
+group("mutable_tail").gain(db(-8));
+
+let clouds_tail = fx("clouds_spectral_tail").synth("clouds_processor");
+
+let marbles = voice("marbles_source")
+    .synth("marbles")
+    .group("ctrl")
+    .set_param("clock", 0.42)
+    .set_param("t_model", 1.0)
+    .set_param("t_rate", 0.78)
+    .set_param("bias_t", 0.62)
+    .set_param("spread_t", 0.52)
+    .set_param("t_bias", 0.64)
+    .set_param("t_jitter", 0.28)
+    .set_param("deja_vu_t", 0.72)
+    .set_param("length_t", 11.0)
+    .set_param("bias_x", 0.46)
+    .set_param("spread_x", 0.42)
+    .set_param("x_bias", 0.53)
+    .set_param("x_spread", 0.46)
+    .set_param("x_scale", 3.0)
+    .set_param("x_steps", 0.4)
+    .set_param("deja_vu_x", 0.58)
+    .set_param("length_x", 8.0)
+    .set_param("quant_steps", 12.0)
+    .gain(db(-18));
+
+let stages = voice("stages_harmonics")
+    .synth("stages")
+    .group("ctrl")
+    .set_param("scale", 1.0)
+    .set_param("seg_1_type", 0.0)
+    .set_param("seg_1_loop", 1.0)
+    .set_param("seg_1_primary", 0.74)
+    .set_param("seg_1_secondary", 0.18)
+    .set_param("seg_2_type", 1.0)
+    .set_param("seg_2_primary", 0.28)
+    .set_param("seg_2_secondary", 0.55)
+    .set_param("seg_2_group_with_prev", 1.0)
+    .set_param("seg_3_type", 0.0)
+    .set_param("seg_3_loop", 1.0)
+    .set_param("seg_3_primary", 0.38)
+    .set_param("seg_3_secondary", 0.82)
+    .set_param("seg_3_group_with_prev", 1.0)
+    .set_param("seg_4_type", 3.0)
+    .set_param("seg_4_loop", 1.0)
+    .set_param("seg_4_primary", 0.21)
+    .set_param("seg_4_secondary", 0.64)
+    .set_param("seg_4_group_with_prev", 0.0)
+    .set_param("seg_5_type", 2.0)
+    .set_param("seg_5_primary", 0.78)
+    .set_param("seg_5_secondary", 0.32)
+    .set_param("seg_5_gate", 1.0)
+    .set_param("seg_5_group_with_prev", 1.0)
+    .set_param("seg_6_type", 0.0)
+    .set_param("seg_6_loop", 1.0)
+    .set_param("seg_6_primary", 0.58)
+    .set_param("seg_6_secondary", 0.45)
+    .set_param("seg_6_group_with_prev", 0.0);
+
+let tides = voice("tides_grain_slopes")
+    .synth("tides2")
+    .group("ctrl")
+    .set_param("freq", 0.055)
+    .set_param("shape", 0.58)
+    .set_param("slope", 0.72)
+    .set_param("smoothness", 0.36)
+    .set_param("shift", 0.63)
+    .set_param("ramp_mode", 2.0)
+    .set_param("output_mode", 2.0)
+    .set_param("range", 1.0)
+    .gain(db(-18));
+
+let frame_dc_1 = voice("frames_level_1")
+    .synth("mutable_dc")
+    .group("ctrl")
+    .set_param("level", 1.0);
+let frame_dc_2 = voice("frames_level_2")
+    .synth("mutable_dc")
+    .group("ctrl")
+    .set_param("level", 1.0);
+let frame_dc_3 = voice("frames_level_3")
+    .synth("mutable_dc")
+    .group("ctrl")
+    .set_param("level", 1.0);
+let frame_dc_4 = voice("frames_level_4")
+    .synth("mutable_dc")
+    .group("ctrl")
+    .set_param("level", 1.0);
+
+let frames = voice("frames_morpher")
+    .synth("frames")
+    .group("ctrl")
+    .set_param("frame", 0.15)
+    .set_param("frame_cv_amt", 0.85)
+    .set_param("level_1", 1.0)
+    .set_param("easing_1", 1.0)
+    .set_param("kf_1_1", 0.0)
+    .set_param("kf_1_2", 0.0)
+    .set_param("kf_1_3", 0.2)
+    .set_param("kf_1_4", 0.2)
+    .set_param("kf_1_5", 0.4)
+    .set_param("kf_1_6", 0.4)
+    .set_param("kf_1_7", 0.6)
+    .set_param("kf_1_8", 0.0)
+    .set_param("level_2", 1.0)
+    .set_param("easing_2", 4.0)
+    .set_param("kf_2_1", 0.30)
+    .set_param("kf_2_2", 0.46)
+    .set_param("kf_2_3", 0.62)
+    .set_param("kf_2_4", 0.78)
+    .set_param("kf_2_5", 0.54)
+    .set_param("kf_2_6", 0.36)
+    .set_param("kf_2_7", 0.72)
+    .set_param("kf_2_8", 0.42)
+    .set_param("level_3", 1.0)
+    .set_param("easing_3", 1.0)
+    .set_param("kf_3_1", 0.18)
+    .set_param("kf_3_2", 0.34)
+    .set_param("kf_3_3", 0.62)
+    .set_param("kf_3_4", 0.88)
+    .set_param("kf_3_5", 0.48)
+    .set_param("kf_3_6", 0.70)
+    .set_param("kf_3_7", 0.38)
+    .set_param("kf_3_8", 0.56)
+    .set_param("level_4", 1.0)
+    .set_param("easing_4", 4.0)
+    .set_param("kf_4_1", 0.34)
+    .set_param("kf_4_2", 0.48)
+    .set_param("kf_4_3", 0.68)
+    .set_param("kf_4_4", 0.92)
+    .set_param("kf_4_5", 0.76)
+    .set_param("kf_4_6", 0.56)
+    .set_param("kf_4_7", 0.82)
+    .set_param("kf_4_8", 0.62);
+
+frames.input("in1").from(frame_dc_1);
+frames.input("in2").from(frame_dc_2);
+frames.input("in3").from(frame_dc_3);
+frames.input("in4").from(frame_dc_4);
+
+let plaits_voice = voice("plaits_string_voice")
+    .synth("plaits")
+    .group("plaits_bus")
+    .set_param("pitch", 48.0)
+    .set_param("engine", 2.0)
+    .set_param("harmonics", 0.42)
+    .set_param("timbre", 0.58)
+    .set_param("morph", 0.36)
+    .set_param("level", 0.82)
+    .set_param("decay", 0.72)
+    .set_param("lpg_colour", 0.38)
+    .gain(db(-9));
+
+let rings = voice("rings_modal_body")
+    .synth("rings")
+    .group("rings_bus")
+    .set_param("pit", 48.0)
+    .set_param("model", 0.0)
+    .set_param("structure", 0.58)
+    .set_param("brightness", 0.46)
+    .set_param("damping", 0.64)
+    .set_param("position", 0.35)
+    .set_param("polyphony", 3.0)
+    .set_param("internal_exciter", 0.0)
+    .set_param("gain", 0.72);
+rings.input("in").from(group("plaits_bus"));
+
+let beads = voice("beads_texture")
+    .synth("beads")
+    .group("beads_bus")
+    .set_param("time", 0.44)
+    .set_param("pitch", -5.0)
+    .set_param("size", 0.56)
+    .set_param("shape", 0.62)
+    .set_param("density", 0.48)
+    .set_param("seed_mode", 1.0)
+    .set_param("quality", 1.0)
+    .set_param("freeze", 0.0)
+    .set_param("feedback", 0.26)
+    .set_param("dry_wet", 0.78)
+    .set_param("space", 0.44)
+    .set_param("spread_time", 0.18)
+    .set_param("spread_pitch", 0.28)
+    .set_param("spread_size", 0.20)
+    .gain(db(-4));
+beads.input("in").from(group("rings_bus"));
+
+let beads_tap = voice("beads_to_clouds")
+    .synth("mutable_stereo_tap")
+    .group("mutable_tail")
+    .set_param("left_gain", 0.88)
+    .set_param("right_gain", 0.88);
+beads_tap.input("in").from(group("beads_bus"));
+beads_tap.outputs(["left", "right"]).to_current_group();
+
+marbles.output("t1").to_param_audio(plaits_voice, "trigger").scale(2.0).offset(0.0);
+marbles.output("t1").to_param_audio(rings, "trigger").scale(2.0).offset(0.0);
+marbles.output("t2").to_param_audio(stages, "clock").scale(2.0).offset(0.0);
+marbles.output("t3").to_param_audio(beads, "seed").scale(2.0).offset(0.0);
+marbles.output("x1").to_param_audio(rings, "pit").scale(18.0).offset(48.0);
+marbles.output("x2").to_param_audio(plaits_voice, "morph").scale(0.18).offset(0.34);
+marbles.output("x3").to_param_audio(tides, "trigger").scale(2.0).offset(0.0);
+
+stages.output("group1").to_param(plaits_voice, "harmonics").scale(0.34).offset(0.24);
+stages.output("seg4").to_param(plaits_voice, "timbre").scale(0.30).offset(0.42);
+stages.output("eor").to_param(rings, "position").scale(0.50).offset(0.22);
+
+tides.output("slope").to_param_audio(beads, "density").scale(0.42).offset(0.28);
+tides.output("shape").to_param_audio(beads, "time").scale(0.36).offset(0.32);
+tides.output("high").to_param_audio(frames, "frame_cv").scale(0.50).offset(0.50);
+tides.outputs(["low"]).mute();
+
+frames.output("out1").to_param(plaits_voice, "engine").scale(5.0).offset(2.0);
+frames.output("out2").to_param(rings, "brightness").scale(0.56).offset(0.18);
+frames.output("out3").to_param(beads, "density").scale(0.38).offset(0.24);
+frames.output("out4").to_param(clouds_tail, "dry_wet").scale(0.42).offset(0.36);
+frames.output("mix").to_param(clouds_tail, "reverb").scale(0.20).offset(0.72);
+
+plaits_voice.output("out").to(group("plaits_bus"));
+plaits_voice.output("aux").mute();
+rings.output("odd").to(group("rings_bus"));
+rings.output("even").to(group("rings_bus"));
+rings.output("sum").mute();
+beads.outputs(["left", "right"]).to(group("beads_bus"));
+
+marbles.run();
+stages.run();
+tides.run();
+frame_dc_1.run();
+frame_dc_2.run();
+frame_dc_3.run();
+frame_dc_4.run();
+frames.run();
+plaits_voice.run();
+rings.run();
+beads.run();
+beads_tap.run();
