@@ -781,7 +781,18 @@ impl<B: Backend> Runtime<B> {
                     if input.rate == vibelang_dsp::PortRate::Ar
                         && matches!(input.channels, 1 | 2)
                     {
-                        routes.insert((*voice_id, input.name), vec![InputRouteSrc::Silent]);
+                        let src = if input.name == "in" && input.channels == 2 {
+                            InputRouteSrc::Group(config.group)
+                        } else {
+                            if input.name == "in" && input.channels == 1 {
+                                tracing::warn!(
+                                    "Named input 'in' on voice {:?} is mono; parent-group autofeed requires stereo, leaving input silent",
+                                    voice_id
+                                );
+                            }
+                            InputRouteSrc::Silent
+                        };
+                        routes.insert((*voice_id, input.name), vec![src]);
                     }
                 }
             }
@@ -2356,9 +2367,12 @@ impl RuntimeHandle {
 mod tests {
     use super::*;
     use crate::backend::{AddAction, BufferInfo};
-    use crate::types::{BufferId, GroupId, NodeId, ParamMap};
+    use crate::state::GroupState;
+    use crate::types::{BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
     use std::collections::HashMap;
     use std::path::Path;
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::layer::SubscriberExt;
 
     /// A mock backend error.
     #[derive(Debug)]
@@ -2478,6 +2492,263 @@ mod tests {
         fn current_time(&self) -> Instant {
             Instant::now()
         }
+    }
+
+    #[derive(Clone, Default)]
+    struct CapturedEvents {
+        lines: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl CapturedEvents {
+        fn lines(&self) -> Vec<String> {
+            self.lines.lock().unwrap().clone()
+        }
+    }
+
+    struct CaptureLayer {
+        sink: CapturedEvents,
+    }
+
+    impl<S> tracing_subscriber::Layer<S> for CaptureLayer
+    where
+        S: tracing::Subscriber,
+    {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            struct Visitor<'a>(&'a mut String);
+
+            impl tracing::field::Visit for Visitor<'_> {
+                fn record_debug(
+                    &mut self,
+                    field: &tracing::field::Field,
+                    value: &dyn std::fmt::Debug,
+                ) {
+                    if field.name() == "message" {
+                        let _ = std::fmt::Write::write_fmt(self.0, format_args!("{:?}", value));
+                    }
+                }
+
+                fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                    if field.name() == "message" {
+                        self.0.push_str(value);
+                    }
+                }
+            }
+
+            let mut line = String::new();
+            event.record(&mut Visitor(&mut line));
+            self.sink.lines.lock().unwrap().push(line);
+        }
+    }
+
+    fn install_tracing_capture() -> (CapturedEvents, tracing::dispatcher::DefaultGuard) {
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(CaptureLayer {
+            sink: captured.clone(),
+        });
+        let guard = tracing::subscriber::set_default(subscriber);
+        (captured, guard)
+    }
+
+    async fn register_input_synthdef(
+        runtime: &Runtime<MockBackend>,
+        synthdef: &str,
+        inputs: Vec<vibelang_dsp::InputPort>,
+    ) {
+        let mut sd = vibelang_dsp::SynthDef::new(synthdef.to_string());
+        sd.inputs = inputs;
+
+        let mut state = runtime.state.write().await;
+        state.synthdefs.insert(sd.name.clone());
+        state.synthdef_inputs.insert(sd.name, sd.inputs);
+    }
+
+    async fn add_group(runtime: &Runtime<MockBackend>, group_id: GroupId) {
+        let mut state = runtime.state.write().await;
+        state.groups.insert(
+            group_id,
+            GroupState {
+                id: group_id,
+                name: format!("group_{}", group_id.raw()),
+                parent: None,
+                node_id: NodeId::new(group_id.raw()),
+                audio_bus: BusId::new(32 + group_id.raw() * 2),
+                link_synth_node_id: None,
+                muted: false,
+                soloed: false,
+                params: ParamMap::new(),
+                output_bus: None,
+                output_channels: None,
+            },
+        );
+    }
+
+    fn script_state_with_voice(
+        voice_id: VoiceId,
+        synthdef: &str,
+        group: GroupId,
+    ) -> reload::ScriptState {
+        let mut script_state = reload::ScriptState::new();
+        script_state.add_voice(
+            voice_id,
+            crate::traits::VoiceConfig::new("target", synthdef, group),
+        );
+        script_state
+    }
+
+    #[tokio::test]
+    async fn declared_in_autofeeds_from_parent_group_when_unrouted() {
+        let runtime = Runtime::new(MockBackend);
+        let voice_id = VoiceId::new(1);
+        let group_id = GroupId::new(7);
+        add_group(&runtime, group_id).await;
+        register_input_synthdef(
+            &runtime,
+            "stereo_fx",
+            vec![vibelang_dsp::InputPort::ar("in", 2)],
+        )
+        .await;
+
+        let routes = runtime
+            .effective_input_routes(&script_state_with_voice(voice_id, "stereo_fx", group_id))
+            .await;
+
+        assert_eq!(
+            routes.get(&(voice_id, "in".to_string())),
+            Some(&vec![InputRouteSrc::Group(group_id)])
+        );
+    }
+
+    #[tokio::test]
+    async fn declared_in_explicit_route_overrides_autofeed() {
+        let runtime = Runtime::new(MockBackend);
+        let target = VoiceId::new(1);
+        let source = VoiceId::new(2);
+        let group_id = GroupId::new(7);
+        let explicit_src = InputRouteSrc::Voice(source, "out".to_string());
+        add_group(&runtime, group_id).await;
+        register_input_synthdef(
+            &runtime,
+            "stereo_fx",
+            vec![vibelang_dsp::InputPort::ar("in", 2)],
+        )
+        .await;
+        let mut script_state = script_state_with_voice(target, "stereo_fx", group_id);
+        script_state.set_input_route(target, "in", explicit_src.clone());
+
+        let routes = runtime.effective_input_routes(&script_state).await;
+
+        assert_eq!(
+            routes.get(&(target, "in".to_string())),
+            Some(&vec![explicit_src])
+        );
+    }
+
+    #[tokio::test]
+    async fn declared_in_disconnect_clears_autofeed_and_input_is_silent() {
+        let runtime = Runtime::new(MockBackend);
+        let voice_id = VoiceId::new(1);
+        let group_id = GroupId::new(7);
+        add_group(&runtime, group_id).await;
+        register_input_synthdef(
+            &runtime,
+            "stereo_fx",
+            vec![vibelang_dsp::InputPort::ar("in", 2)],
+        )
+        .await;
+        let mut script_state = script_state_with_voice(voice_id, "stereo_fx", group_id);
+        script_state.set_input_route(voice_id, "in", InputRouteSrc::Silent);
+
+        let routes = runtime.effective_input_routes(&script_state).await;
+
+        assert_eq!(
+            routes.get(&(voice_id, "in".to_string())),
+            Some(&vec![InputRouteSrc::Silent])
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn declared_mono_in_does_not_autofeed_from_stereo_group_logs_warning() {
+        let (captured, _guard) = install_tracing_capture();
+        let runtime = Runtime::new(MockBackend);
+        let voice_id = VoiceId::new(1);
+        let group_id = GroupId::new(7);
+        add_group(&runtime, group_id).await;
+        register_input_synthdef(
+            &runtime,
+            "mono_fx",
+            vec![vibelang_dsp::InputPort::ar("in", 1)],
+        )
+        .await;
+
+        let routes = runtime
+            .effective_input_routes(&script_state_with_voice(voice_id, "mono_fx", group_id))
+            .await;
+
+        assert_eq!(
+            routes.get(&(voice_id, "in".to_string())),
+            Some(&vec![InputRouteSrc::Silent])
+        );
+        assert!(
+            captured.lines().iter().any(|line| {
+                line.contains("Named input 'in'")
+                    && line.contains("mono")
+                    && line.contains("leaving input silent")
+            }),
+            "expected mono autofeed warning, got {:?}",
+            captured.lines()
+        );
+    }
+
+    #[tokio::test]
+    async fn hot_reload_toggle_renaming_port_to_and_from_in_updates_autofeed() {
+        let runtime = Runtime::new(MockBackend);
+        let voice_id = VoiceId::new(1);
+        let group_id = GroupId::new(7);
+        add_group(&runtime, group_id).await;
+        register_input_synthdef(
+            &runtime,
+            "reload_fx",
+            vec![vibelang_dsp::InputPort::ar("other", 2)],
+        )
+        .await;
+        let script_state = script_state_with_voice(voice_id, "reload_fx", group_id);
+
+        let other_routes = runtime.effective_input_routes(&script_state).await;
+        assert_eq!(
+            other_routes.get(&(voice_id, "other".to_string())),
+            Some(&vec![InputRouteSrc::Silent])
+        );
+        assert!(!other_routes.contains_key(&(voice_id, "in".to_string())));
+
+        register_input_synthdef(
+            &runtime,
+            "reload_fx",
+            vec![vibelang_dsp::InputPort::ar("in", 2)],
+        )
+        .await;
+        let in_routes = runtime.effective_input_routes(&script_state).await;
+        assert_eq!(
+            in_routes.get(&(voice_id, "in".to_string())),
+            Some(&vec![InputRouteSrc::Group(group_id)])
+        );
+        assert!(!in_routes.contains_key(&(voice_id, "other".to_string())));
+
+        register_input_synthdef(
+            &runtime,
+            "reload_fx",
+            vec![vibelang_dsp::InputPort::ar("other", 2)],
+        )
+        .await;
+        let renamed_away_routes = runtime.effective_input_routes(&script_state).await;
+        assert_eq!(
+            renamed_away_routes.get(&(voice_id, "other".to_string())),
+            Some(&vec![InputRouteSrc::Silent])
+        );
+        assert!(!renamed_away_routes.contains_key(&(voice_id, "in".to_string())));
     }
 
     #[tokio::test]
