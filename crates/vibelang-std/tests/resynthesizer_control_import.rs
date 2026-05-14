@@ -88,6 +88,16 @@ fn resynthesizer_control_modules_import_and_register_kr_outputs() {
     assert_eq!(maths_params.get("fall4_cv"), Some(&0.0));
     assert_eq!(maths_params.get("fall4_cv_scale"), Some(&1.0));
 
+    let tempi_params = get_synthdef_param_defaults("tempi");
+    assert_eq!(tempi_params.get("scene"), Some(&0.0));
+    assert_eq!(tempi_params.get("mod"), Some(&1.0));
+    assert_eq!(tempi_params.get("reset"), Some(&0.0));
+    assert_eq!(tempi_params.get("reset_on_scene"), Some(&1.0));
+    assert_eq!(tempi_params.get("variation"), Some(&0.0));
+    assert_eq!(tempi_params.get("shift6"), Some(&0.0));
+    assert_eq!(tempi_params.get("mute6"), Some(&0.0));
+    assert_eq!(tempi_params.get("mult2"), Some(&2.0));
+
     let rene_params = get_synthdef_param_defaults("rene");
     assert_eq!(rene_params.get("note00"), Some(&60.0));
     assert_eq!(rene_params.get("note33"), Some(&72.0));

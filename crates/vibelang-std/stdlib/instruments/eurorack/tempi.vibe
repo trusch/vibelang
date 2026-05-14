@@ -1,7 +1,9 @@
-// Make Noise Tempi — six related kr clock outputs.
+// Make Noise Tempi — six phase-locked kr clock outputs.
 //
-// `multN` is a clock ratio against the base BPM quarter-note rate. Values below
-// 1 divide, values above 1 multiply. Outputs are 5 ms +5 V gates.
+// `scene` selects a six-channel multiplier table. Scene 0 preserves the old
+// default ratios and lets `multN` trim each channel around that table. `shiftN`
+// offsets a channel by eighth-period steps. Outputs are +5 V-style gates scaled
+// to the library's ±1 CV range.
 
 define_synthdef("tempi", |builder| {
     builder
@@ -13,6 +15,11 @@ define_synthdef("tempi", |builder| {
         .output_kr("ch6")
         .param("bpm", 120.0)
         .param("run", 1.0)
+        .param("reset", 0.0)
+        .param("reset_on_scene", 1.0)
+        .param("mod", 1.0)
+        .param("scene", 0.0)
+        .param("variation", 0.0)
         .param("width", 0.005)
         .param("mult1", 1.0)
         .param("mult2", 2.0)
@@ -20,17 +27,83 @@ define_synthdef("tempi", |builder| {
         .param("mult4", 4.0)
         .param("mult5", 0.25)
         .param("mult6", 3.0)
+        .param("shift1", 0.0)
+        .param("shift2", 0.0)
+        .param("shift3", 0.0)
+        .param("shift4", 0.0)
+        .param("shift5", 0.0)
+        .param("shift6", 0.0)
+        .param("mute1", 0.0)
+        .param("mute2", 0.0)
+        .param("mute3", 0.0)
+        .param("mute4", 0.0)
+        .param("mute5", 0.0)
+        .param("mute6", 0.0)
         .body_map(|p| {
-            let base = (p.bpm.max(1.0) / 60.0) * p.run.max(0.0);
+            let run = clip_kr(p.run, 0.0, 1.0);
+            let base = (p.bpm.max(1.0) / 60.0) * p.mod.max(0.0) * run;
             let width = p.width.max(0.001);
 
-            let c1 = clip_kr(trig1_kr(impulse_kr(base * p.mult1.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
-            let c2 = clip_kr(trig1_kr(impulse_kr(base * p.mult2.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
-            let c3 = clip_kr(trig1_kr(impulse_kr(base * p.mult3.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
-            let c4 = clip_kr(trig1_kr(impulse_kr(base * p.mult4.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
-            let c5 = clip_kr(trig1_kr(impulse_kr(base * p.mult5.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
-            let c6 = clip_kr(trig1_kr(impulse_kr(base * p.mult6.max(0.0), 0.0), width) * 0.5, -1.0, 1.0);
+            let scene = floor(clip_kr(p.scene + 0.5, 0.0, 3.0));
+            let s0 = (1.0 - abs(scene - 0.0)).max(0.0);
+            let s1 = (1.0 - abs(scene - 1.0)).max(0.0);
+            let s2 = (1.0 - abs(scene - 2.0)).max(0.0);
+            let s3 = (1.0 - abs(scene - 3.0)).max(0.0);
 
-            [c1, c2, c3, c4, c5, c6]
+            let reset = p.reset + changed_kr(scene, 0.0) * clip_kr(p.reset_on_scene, 0.0, 1.0);
+            let phase = sweep_kr(reset, base);
+
+            let scene0_trim1 = p.mult1.max(0.0) / 1.0;
+            let scene0_trim2 = p.mult2.max(0.0) / 2.0;
+            let scene0_trim3 = p.mult3.max(0.0) / 0.5;
+            let scene0_trim4 = p.mult4.max(0.0) / 4.0;
+            let scene0_trim5 = p.mult5.max(0.0) / 0.25;
+            let scene0_trim6 = p.mult6.max(0.0) / 3.0;
+
+            let m1 = (s0 * 1.0 + s1 * 1.0 + s2 * 0.25 + s3 * 1.0) * scene0_trim1;
+            let m2 = (s0 * 2.0 + s1 * 3.0 + s2 * 0.5 + s3 * 1.25) * scene0_trim2;
+            let m3 = (s0 * 0.5 + s1 * 5.0 + s2 * 1.0 + s3 * 1.5) * scene0_trim3;
+            let m4 = (s0 * 4.0 + s1 * 7.0 + s2 * 2.0 + s3 * 2.0) * scene0_trim4;
+            let m5 = (s0 * 0.25 + s1 * 0.5 + s2 * 4.0 + s3 * 2.5) * scene0_trim5;
+            let m6 = (s0 * 3.0 + s1 * 1.5 + s2 * 8.0 + s3 * 3.0) * scene0_trim6;
+
+            let variation = clip_kr(p.variation, -1.0, 1.0) / 8.0;
+
+            let sh1 = clip_kr(p.shift1, 0.0, 7.0) / 8.0;
+            let sh2 = clip_kr(p.shift2, 0.0, 7.0) / 8.0 + variation;
+            let sh3 = clip_kr(p.shift3, 0.0, 7.0) / 8.0 + variation * 2.0;
+            let sh4 = clip_kr(p.shift4, 0.0, 7.0) / 8.0 + variation * 3.0;
+            let sh5 = clip_kr(p.shift5, 0.0, 7.0) / 8.0 + variation * 4.0;
+            let sh6 = clip_kr(p.shift6, 0.0, 7.0) / 8.0 + variation * 5.0;
+
+            let p1 = wrap_kr(phase * m1 + sh1, 0.0, 1.0);
+            let p2 = wrap_kr(phase * m2 + sh2, 0.0, 1.0);
+            let p3 = wrap_kr(phase * m3 + sh3, 0.0, 1.0);
+            let p4 = wrap_kr(phase * m4 + sh4, 0.0, 1.0);
+            let p5 = wrap_kr(phase * m5 + sh5, 0.0, 1.0);
+            let p6 = wrap_kr(phase * m6 + sh6, 0.0, 1.0);
+
+            let w1 = clip_kr(width * base * m1.max(0.0), 0.001, 0.95);
+            let w2 = clip_kr(width * base * m2.max(0.0), 0.001, 0.95);
+            let w3 = clip_kr(width * base * m3.max(0.0), 0.001, 0.95);
+            let w4 = clip_kr(width * base * m4.max(0.0), 0.001, 0.95);
+            let w5 = clip_kr(width * base * m5.max(0.0), 0.001, 0.95);
+            let w6 = clip_kr(width * base * m6.max(0.0), 0.001, 0.95);
+
+            let a1 = clip_kr(m1 * 1000.0, 0.0, 1.0);
+            let a2 = clip_kr(m2 * 1000.0, 0.0, 1.0);
+            let a3 = clip_kr(m3 * 1000.0, 0.0, 1.0);
+            let a4 = clip_kr(m4 * 1000.0, 0.0, 1.0);
+            let a5 = clip_kr(m5 * 1000.0, 0.0, 1.0);
+            let a6 = clip_kr(m6 * 1000.0, 0.0, 1.0);
+
+            let g1 = in_range_kr(p1, 0.0, w1) * 0.5 * a1 * (1.0 - clip_kr(p.mute1, 0.0, 1.0));
+            let g2 = in_range_kr(p2, 0.0, w2) * 0.5 * a2 * (1.0 - clip_kr(p.mute2, 0.0, 1.0));
+            let g3 = in_range_kr(p3, 0.0, w3) * 0.5 * a3 * (1.0 - clip_kr(p.mute3, 0.0, 1.0));
+            let g4 = in_range_kr(p4, 0.0, w4) * 0.5 * a4 * (1.0 - clip_kr(p.mute4, 0.0, 1.0));
+            let g5 = in_range_kr(p5, 0.0, w5) * 0.5 * a5 * (1.0 - clip_kr(p.mute5, 0.0, 1.0));
+            let g6 = in_range_kr(p6, 0.0, w6) * 0.5 * a6 * (1.0 - clip_kr(p.mute6, 0.0, 1.0));
+
+            [g1, g2, g3, g4, g5, g6]
         })
 });
