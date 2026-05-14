@@ -34,6 +34,10 @@ tracing = "0.1"
 log = "0.4"
 thiserror = "1"
 
+[dev-dependencies]
+async-trait = "0.1"
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 midir = { version = "0.10", optional = true }
 
