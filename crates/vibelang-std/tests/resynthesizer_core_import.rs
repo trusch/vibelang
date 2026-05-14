@@ -40,6 +40,13 @@ fn resynthesizer_core_modules_import_and_register_outputs() {
         get_synthdef_outputs("spectraphon_dual"),
         Some(ar_ports(&["odd_a", "even_a", "odd_b", "even_b"]))
     );
+    let dual_params = get_synthdef_param_defaults("spectraphon_dual");
+    assert_eq!(dual_params.get("bufnum"), Some(&0.0));
+    assert_eq!(dual_params.get("sync"), Some(&0.0));
+    assert_eq!(dual_params.get("sam_capture_a"), Some(&0.0));
+    assert_eq!(dual_params.get("sam_capture_b"), Some(&0.0));
+    assert_eq!(dual_params.get("array_idx_a"), Some(&0.0));
+    assert_eq!(dual_params.get("array_idx_b"), Some(&0.0));
     assert_eq!(
         get_synthdef_outputs("morphagene"),
         Some(vec![
@@ -63,7 +70,9 @@ fn resynthesizer_core_modules_import_and_register_outputs() {
 
     let morph_params = get_synthdef_param_defaults("morphagene");
     assert_eq!(morph_params.get("amp"), Some(&0.5));
+    assert_eq!(morph_params.get("auto_level"), Some(&0.0));
     assert_eq!(morph_params.get("play_gate"), Some(&1.0));
+    assert_eq!(morph_params.get("splices_buf"), Some(&0.0));
 }
 
 fn ar_ports(names: &[&str]) -> Vec<OutputPort> {

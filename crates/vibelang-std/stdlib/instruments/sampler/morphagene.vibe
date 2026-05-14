@@ -24,12 +24,16 @@
 //   use `reel(...)` for SOS-safe Reels).
 //
 //   Splice metadata travels with the script as a Rhai array on the Reel
-//   object (`r.splices`) — no separate metadata buffer, no Rust-side
-//   Reel registry. The synthdef itself still divides the Reel evenly into
-//   `num_splices` regions; `splices.len()` is what the helper writes into
-//   `num_splices`. Custom splice positions (uneven spacing or `.wav` cue
-//   chunks) are deferred to a follow-up `vibelang-sfz` ticket that
-//   extends the wav loader.
+//   object (`r.splices`) for authoring/bookkeeping. For uneven Splices,
+//   allocate a one-channel metadata buffer with `num_splices + 1` frames,
+//   write normalized boundaries into it, sorted ascending with the final
+//   value exactly 1.0, and pass its bufnum to `splices_buf`:
+//     let sp = allocate_buffer("morph_splices", 5, 1);
+//     set_buffer_data(sp, [0.0, 0.11, 0.37, 0.72, 1.0]);
+//     voice("morph").synth("morphagene")
+//         .set_param("num_splices", 4.0)
+//         .set_param("splices_buf", sp.bufnum);
+//   Leaving `splices_buf` at 0 preserves the even `num_splices` division.
 //
 //   Default-array preset baking is the `morphagene_reel_fill` synthdef
 //   defined below: a one-shot fill that writes a generated waveform
@@ -39,12 +43,15 @@
 //   that calls `reel_fill_preset` — guard with a `let _bake = false`
 //   flag during normal use so SOS recordings aren't overwritten.
 //
-// Splice model (Story B):
-//   The Reel is logically divided into `num_splices` evenly-spaced splices.
-//   For splice index i: start = i · BufFrames / num_splices,
-//                       end   = (i+1) · BufFrames / num_splices.
-//   This matches the manual's "splices distributed evenly across Organize
-//   range" property literally.
+// Splice model (Story B + custom metadata):
+//   With `splices_buf == 0`, the Reel is logically divided into
+//   `num_splices` evenly-spaced splices. For splice index i:
+//     start = i · BufFrames / num_splices,
+//     end   = (i+1) · BufFrames / num_splices.
+//   With `splices_buf > 0`, the synthdef instead reads normalized start/end
+//   boundaries from `splices_buf[i]` and `splices_buf[i+1]`, then scales them
+//   by BufFrames. The buffer is expected to hold `num_splices + 1` sorted
+//   offsets in [0, 1], with the final entry = 1.0.
 //
 // Selection logic (Story B):
 //   pending_idx = floor(organize · num_splices), clamped. committed_idx is
@@ -132,6 +139,13 @@
 // numChannels=2 + per-grain pan; the whole-splice branch still surfaces
 // channel-0 of the stereo Reel through BufRd (mono→duplicated). The
 // branch crossfade therefore widens at the Gene-Size 0.02 threshold.
+//
+// Auto-Level:
+//   `auto_level > 0.5` enables final-output normalization. A stereo peak
+//   detector follows max(abs(left), abs(right)) with `peak_follower_ar(...,
+//   0.99)`: attacks are immediate on new peaks, release decays by 0.99 per
+//   sample, and gain is `1.0 / max(running_peak, 0.1)` so silence never
+//   produces more than 10× makeup gain. Values ≤ 0.5 leave level unchanged.
 
 define_synthdef("morphagene", |builder| {
     builder
@@ -141,6 +155,7 @@ define_synthdef("morphagene", |builder| {
         .output_kr("eosg")                 // 1ch kr — End-of-Splice/Gene gate
         .param("bufnum", 0.0)
         .param("num_splices", 1.0)        // 1..300, evenly-spaced division of Reel
+        .param("splices_buf", 0.0)        // optional `num_splices+1` normalized boundaries
         .param("organize", 0.0)           // 0..1 splice select knob+CV
         .param("sos", 0.0)                // 0..1 SOS mix; > 0 also gates recording
         .param("clk", 0.0)                // kr clock signal (rising edge ≈ +5 V pulse)
@@ -149,11 +164,13 @@ define_synthdef("morphagene", |builder| {
         .param("gene_size", 0.0)          // 0..1 grain duration (cubic; 0 = whole splice)
         .param("morph", 0.0)              // 0..1 spawn cadence + pan + pitch-up
         .param("amp", 0.5)                // output amplitude
+        .param("auto_level", 0.0)         // >0.5 normalizes final stereo peak
         .param("play_gate", 1.0)          // 0/1 audible gate, synth stays alive
         .param("gate", 1.0)               // synth-instance lifecycle
         .body_map(|p| {
             let bufnum = p.bufnum;
             let num_splices = p.num_splices;
+            let splices_buf = p.splices_buf;
             let organize = p.organize;
             let sos = p.sos;
             let clk = p.clk;
@@ -162,6 +179,7 @@ define_synthdef("morphagene", |builder| {
             let gene_size = p.gene_size;
             let morph = p.morph;
             let amp = p.amp;
+            let auto_level = p.auto_level;
             let play_gate = p.play_gate;
             let gate = p.gate;
 
@@ -198,9 +216,29 @@ define_synthdef("morphagene", |builder| {
             // --- Committed splice idx feedback (one-block latency) -------------
             let committed_idx = buf_rd_kr(1, committed_buf, 0.0, 0, 1);
 
-            // Splice bounds: even spacing, computed from the committed idx.
-            let splice_len_frames = buf_n / num_splices.max(1.0);
-            let splice_start_frame = committed_idx * splice_len_frames;
+            // Splice bounds: even spacing by default; optional splices_buf
+            // overrides with normalized boundary pairs [i], [i+1].
+            let num_splices_safe = num_splices.max(1.0);
+            let even_len_frames = buf_n / num_splices_safe;
+            let even_start_frame = committed_idx * even_len_frames;
+            let has_custom_splices = clip(splices_buf * 1000.0, 0.0, 1.0);
+            let custom_start_norm = clip_kr(
+                buf_rd_kr(1, splices_buf, committed_idx, 0, 1),
+                0.0,
+                1.0,
+            );
+            let custom_end_norm = clip_kr(
+                buf_rd_kr(1, splices_buf, committed_idx + 1.0, 0, 1),
+                0.0,
+                1.0,
+            );
+            let custom_len_frames = (custom_end_norm - custom_start_norm)
+                .max(0.000001) * buf_n;
+            let custom_start_frame = custom_start_norm * buf_n;
+            let splice_len_frames = even_len_frames * (1.0 - has_custom_splices)
+                                  + custom_len_frames * has_custom_splices;
+            let splice_start_frame = even_start_frame * (1.0 - has_custom_splices)
+                                   + custom_start_frame * has_custom_splices;
             let splice_offset = slide * splice_len_frames;
 
             // --- Whole-splice playback path (Story A — Phasor + BufRd) ---------
@@ -411,8 +449,15 @@ define_synthdef("morphagene", |builder| {
 
             let play_env = lag_ar(clip(play_gate, 0.0, 1.0), 0.005);
             let gain = env * play_env * amp;
-            let left  = leak_dc_ar(mix_l * gain, 0.995);
-            let right = leak_dc_ar(mix_r * gain, 0.995);
+            let pre_left  = leak_dc_ar(mix_l * gain, 0.995);
+            let pre_right = leak_dc_ar(mix_r * gain, 0.995);
+            let peak_src = max(pre_left.abs(), pre_right.abs());
+            let running_peak = peak_follower_ar(peak_src, 0.99);
+            let auto_on = clip((auto_level - 0.5) * 1000.0, 0.0, 1.0);
+            let auto_gain = (1.0 - auto_on)
+                          + auto_on * (1.0 / running_peak.max(0.1));
+            let left  = pre_left * auto_gain;
+            let right = pre_right * auto_gain;
 
             [left, right, eosg_out]
         })
@@ -428,10 +473,9 @@ define_synthdef("morphagene", |builder| {
 // SOS-recorded content stays intact.
 //
 // Splice metadata is stored as a Rhai array on the Reel object map.
-// `reel_attach(voice, reel)` wires `bufnum` and `num_splices` onto the
-// morphagene voice. The synthdef divides the Reel evenly into
-// `num_splices` regions today (see file header §3 + Splice model);
-// arbitrary splice positions are a follow-up extension.
+// `reel_attach(voice, reel)` wires `bufnum`, `num_splices`, and
+// `splices_buf` onto the morphagene voice. Leaving `splices_buf` at 0
+// keeps the even-spacing fallback.
 
 // One-shot fill synthdef. Writes a generated waveform (saw/square/sine/
 // noise/silence) into `bufnum` via `record_buf_ar` with `loop=0` so the
@@ -491,10 +535,12 @@ define_synthdef("morphagene_reel_fill", |builder| {
 //   .bufnum    — SC buffer number, feed to set_param("bufnum", r.bufnum)
 //   .frames    — buffer length in frames (float)
 //   .channels  — channel count (1 or 2)
+//   .splices_buf — optional metadata-buffer bufnum for uneven Splices.
 //   .splices   — Rhai array of normalized splice positions (0..1).
 //                Initially empty; set with `r.splices = [...]` or
 //                `r.splices.push(pos)`. Length is what gets written
-//                into the synthdef's `num_splices` param by reel_attach.
+//                into the synthdef's `num_splices` param by reel_attach;
+//                for `splices_buf`, allocate/write `len + 1` boundaries.
 //
 // 8.35M frames × 1 channel ≈ 8 MB at 32-bit float — large but within the
 // scsynth `-b 4096` script-buffer pool. For shorter loops, pick a smaller
@@ -506,15 +552,17 @@ fn reel(name, frames, channels) {
         bufnum: buf.bufnum,
         frames: frames.to_float(),
         channels: channels,
+        splices_buf: 0.0,
         splices: [],
     };
 }
 
 // `reel_attach(voice, reel)` — wire a Reel onto a morphagene voice.
 //
-// Sets `bufnum` from the Reel's allocate_buffer handle, and
-// `num_splices` from `reel.splices.len()` (clamped to ≥ 1 — a Reel
-// without explicit splices is a single-splice whole-Reel reader).
+// Sets `bufnum` from the Reel's allocate_buffer handle, `num_splices`
+// from `reel.splices.len()` (clamped to ≥ 1 — a Reel without explicit
+// splices is a single-splice whole-Reel reader), and `splices_buf` from
+// `reel.splices_buf` (0 means even spacing).
 // Returns the voice for chaining.
 fn reel_attach(voice, reel) {
     let n_splices = reel.splices.len();
@@ -523,7 +571,8 @@ fn reel_attach(voice, reel) {
     }
     return voice
         .set_param("bufnum", reel.bufnum)
-        .set_param("num_splices", n_splices.to_float());
+        .set_param("num_splices", n_splices.to_float())
+        .set_param("splices_buf", reel.splices_buf);
 }
 
 // `reel_fill_preset(reel, preset)` — bake a default waveform into the Reel.
