@@ -64,6 +64,29 @@ stdlib/
 └── ...
 ```
 
+## Processor Authoring
+
+Patchable audio processors live under
+`stdlib/processors/<category>/<name>.vibe`. They are regular
+`define_synthdef(...)` files that declare audio-rate named inputs with
+`.input(name)` or `.input(name, channels)` and expose their primary source
+output as `out`.
+
+Authoring conventions:
+
+- Use `body_map(|p| { ... })` whenever inputs are declared, and read inputs as
+  `p.inputs.<name>`.
+- Use primary input `in` for single-input passthroughs, filters, and similar
+  inline processors where parent-group autofeed is useful.
+- Use role names such as `carrier`, `modulator`, `sidechain`, `a`, or `b` for
+  multi-input processors so unpatched jacks stay explicit and silent.
+- Keep the primary output named `out`, because
+  `target.input("name").from(source_voice)` reads the source voice's default
+  output port `out`.
+- Follow the approved catalogue in
+  `design-named-input-stdlib-primitive-catalogue` for first-batch processor
+  paths, widths, jack names, and parameter names.
+
 ## Usage
 
 ```rhai

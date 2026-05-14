@@ -52,7 +52,7 @@ filter.input("audio").from_current_group();
 filter.input("audio").disconnect();
 ```
 
-Current safe code generation surface:
+Input route methods:
 
 - `.from(source_voice)` reads the source voice's default output port
   named `"out"`.
@@ -66,11 +66,28 @@ Current safe code generation surface:
   input-route state only after backend link creation succeeds, so a later
   no-change reload can retry a failed link.
 
+Width matching is strict:
+
+- The target input width comes from the synthdef declaration:
+  `.input("name")` is mono, `.input("name", 2)` is stereo.
+- A source voice contributes its default output port `"out"`; that port's
+  declared width must match the target input width.
+- A group source is stereo. Routing a group into a mono input is rejected as a
+  width mismatch; there is no implicit downmix.
+- `.disconnect()` leaves the declared input connected to silence, except that
+  disconnecting `input("in")` also suppresses the default parent-group
+  autofeed described below.
+
 Compatibility:
 
 - Synthdefs with no declared `.input(...)` ports keep the legacy effect
   behavior: the runtime wires their legacy `in` parameter to the parent
   group pre-fader bus.
+- Synthdefs that declare inputs use named-input behavior. A stereo audio-rate
+  input named exactly `"in"` autofeeds from the parent group when no explicit
+  route overrides it; mono `"in"` against a stereo group stays silent and logs
+  a warning. This runtime behavior is implemented in sibling Wave-1 ticket
+  `task-implement-parent-group-in-autofeed-for-declared-in-input`.
 - Synthdefs with no declared `.output(...)` ports keep the legacy implicit
   stereo output port named `"out"`.
 - Named-input behavior applies only when the target synthdef declares
@@ -78,10 +95,10 @@ Compatibility:
 
 Code generation constraints:
 
-- The stable synthdef declaration surface is currently Rust-side
-  `SynthDef::input(name, channels)`. Do not generate Rhai synthdef
-  `.input(...)` declarations until that authoring surface exists.
-- Declared audio/control named inputs may be left unpatched. They receive
+- Synthdef input declarations are authored on the Rhai synthdef builder with
+  `.input(name)` and `.input(name, channels)`. See
+  [`custom-synthdef-api`](../custom-synthdef-api/README.md).
+- Declared audio-rate mono/stereo named inputs may be left unpatched. They receive
   valid shared silent buses at the matching rate, so an unplugged jack is
   not an invalid or missing voice.
 - `.input(name).from(source)` is a patch cable. It does not mute or consume

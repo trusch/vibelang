@@ -1,7 +1,8 @@
-# Voice Multi-Output Routing — How-To
+# Voice Named-Port Routing — How-To
 
-> User manual for declaring named output ports on a synthdef and routing
-> them per-port from `.vibe` scripts. Pairs with the deeper proposals in
+> User manual for declaring named output ports on a synthdef, routing
+> them per-port from `.vibe` scripts, and using the companion named audio
+> input surface. Pairs with the deeper proposals in
 > `kb/voice-multi-output-cv-routing-plan.md` (v1) and
 > `kb/voice-multi-output-v2-plan.md` (v2).
 >
@@ -25,6 +26,11 @@ A vibelang voice can expose **N named output ports**. Each port is an
 independent signal that the script routes wherever it likes — to a group
 mix bus, straight to the main hardware output, or muted. One synthdef can
 fan out to several destinations without splitting it into sibling voices.
+
+The companion named-input surface lets synthdefs expose patchable audio
+input jacks. Declare inputs with `.input(...)`, read them in `body_map` as
+`p.inputs.<name>`, and patch them from scripts with
+`target.input("name").from(source)`.
 
 Worked example: `examples/spectraphon_multiout.vibe` (committed at
 `2f03112`) wires the four ports of `spectraphon_side` (`sine`, `sub`,
@@ -647,10 +653,85 @@ Indices break on synthdef edits that reorder ports. Names don't.
 
 ---
 
+## 5a. Named audio inputs companion
+
+Named inputs are target-side audio jacks on a synthdef. They are useful for
+processors, filters, mixers, ring modulators, sidechains, and other modules
+whose signal source should be patchable from the script.
+
+Declare them on the `define_synthdef` builder before `body_map`:
+
+```rhai
+define_synthdef("lowpass_mono")
+    .input("in")             // mono ar input
+    .output("out")           // mono ar output
+    .param("cutoff", 1200.0)
+    .param("resonance", 0.3)
+    .body_map(|p| {
+        rlpf_ar(p.inputs.in, p.cutoff, p.resonance)
+    });
+
+define_synthdef("passthrough_stereo")
+    .input("in", 2)          // stereo ar input
+    .output("out", 2)        // stereo ar output
+    .param("level", 1.0)
+    .body_map(|p| {
+        [
+            p.inputs.in[0] * p.level,
+            p.inputs.in[1] * p.level,
+        ]
+    });
+```
+
+Rules:
+
+* **Audio-rate only.** The public Rhai input builder has no kr/tr form.
+* **Mono/stereo only.** `.input(name)` defaults to one channel;
+  `.input(name, 2)` declares stereo. Wider inputs are not public yet.
+* **`body_map` required.** Declared inputs are exposed through
+  `p.inputs.<name>`, so positional `.body(...)` is not valid for
+  synthdefs with inputs.
+* **Strict width matching.** `target.input("name").from(source)` links the
+  source voice's default output port, `"out"`, into the target input. Source
+  width must equal target input width. Group sources are stereo; they do not
+  downmix into mono inputs.
+* **Unpatched jacks are silent.** Use
+  `target.input("name").disconnect()` to explicitly return a jack to silence.
+* **`in` autofeed.** A stereo audio input named exactly `in` autofeeds from
+  the parent group's pre-fader bus when no explicit route overrides it. Mono
+  `in` against the stereo parent group stays silent and logs a warning. This
+  is implemented in sibling Wave-1 ticket
+  `task-implement-parent-group-in-autofeed-for-declared-in-input`; the code
+  path is `runtime.rs::effective_input_routes`.
+
+Script-side patching is target-first:
+
+```rhai
+let src = voice("src").synth("mono_source"); // declares mono output "out"
+let lp = voice("lp").synth("lowpass_mono");
+
+lp.input("in").from(src);        // reads src output port "out"
+lp.input("in").disconnect();     // back to silence
+```
+
+API references:
+
+* `kb/tickets/api-reference/custom-synthdef-api/README.md` — declaring
+  `.input(name)` / `.input(name, channels)` and reading `p.inputs.<name>`.
+* `kb/tickets/api-reference/voice-api/README.md` — routing with
+  `target.input("name").from(source)` and `.disconnect()`.
+
+---
+
 ## 6. Reload semantics
 
-The reload reconciler matches ports **by name** across synthdef edits.
-Three categories of change to plan for:
+The reload reconciler matches named output ports and named input ports **by
+name** across synthdef edits. Input-port route reconciliation is implemented
+in sibling Wave-1 ticket `task-reconcile-synthdef-input-port-hot-reload-routes`;
+the user-visible rule mirrors outputs: rename is remove+add, and dependent
+routes are dropped with warnings instead of guessed.
+
+Output-port changes to plan for:
 
 | Change | Effect on existing routes |
 |---|---|
@@ -662,11 +743,23 @@ Three categories of change to plan for:
 
 > Source: `crates/vibelang-core/src/reload/port_diff.rs::reconcile_voice_port_set`.
 
+Input-port changes to plan for:
+
+| Change | Effect on existing input routes |
+|---|---|
+| Body changed, input set unchanged | Routes survive. The target synth node can be rebuilt while the declared input buses remain stable. |
+| Input added | New input bus allocated. The input defaults to silence unless it is a stereo input named `in`, in which case the Wave-1 autofeed rule applies when no explicit route overrides it. |
+| Input removed | Input bus freed. Routes targeting the removed input are dropped with a warning naming the target voice, synthdef, input, and reason. |
+| Input renamed | Surfaces as **remove + add**. The old input's bus is freed, routes referring to the old name are dropped with warning, and the new name gets a fresh default route. Renames break routes by design. |
+| Input width changed (mono ↔ stereo) | Surfaces as **remove + add**. Existing routes to that input are dropped with warning because width matching is strict and the old cable cannot be safely reinterpreted. |
+
 The "rename = remove+add" rule is worth internalising: if you're
 refactoring a synthdef and want to keep your script routes working,
-**don't rename ports** in the same edit. Either rename first and re-route
-the script in the same change, or keep the old name as an alias
-(declare both `.output("old")` and `.output("new")`) for a transition.
+**don't rename ports or inputs** in the same edit unless you also update the
+script routes. For outputs, you can keep the old name as an alias
+temporarily (declare both `.output("old")` and `.output("new")`). For inputs,
+prefer a two-step migration: add the new input, update scripts to route it,
+then remove the old input.
 
 ---
 
