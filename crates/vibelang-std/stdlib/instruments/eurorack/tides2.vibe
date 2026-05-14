@@ -1,0 +1,96 @@
+// kind=instrument | category=eurorack | flavor=mutable-tides2 | outputs=low:1,slope:1,shape:1,high:1 | params=freq,shape,slope,smoothness,shift,ramp_mode,output_mode,range,trigger,clock,ratio
+//
+// Mutable Instruments Tides 2018 / Tides2 - quad slope generator.
+//
+// Thin wrapper around the canonical mi-UGens `mi_tides_ar` port. Tides2
+// produces four related mono audio-rate outputs. Port names follow the default
+// shape-chain convention:
+//
+//   low   - smoothest / lowest-complexity member of the shape chain
+//   slope - slope-shaped member
+//   shape - shaped / folded member
+//   high  - brightest / highest-complexity member
+//
+// Ramp modes:
+//   0  AD       - trigger starts an attack/decay cycle
+//   1  AR       - trigger/gate controls attack/release behavior
+//   2  looping  - free-running oscillator/LFO cycle
+//
+// Output modes:
+//   0  gates       - the four ports carry gate outputs for the related slopes
+//   1  amplitude   - the ports carry the amplitude-distribution outputs
+//   2  slope-phase - the ports carry slope/phase/time-shifted waveforms
+//   3  frequency   - the ports carry frequency-ratio-related waveforms
+//
+// The port names remain `low`, `slope`, `shape`, and `high` in every output
+// mode so patches can keep stable routes while changing `output_mode`.
+//
+// Params:
+//   freq       : Hz in looping mode, envelope time reference otherwise.
+//   shape      : 0..1 waveform shape.
+//   slope      : 0..1 rise/fall slope balance.
+//   smoothness : 0..1 low-pass/folding smoothness.
+//   shift      : 0..1 shift/level/frequency spread depending on output mode.
+//   ramp_mode  : public enum above, default 2 (looping).
+//   output_mode: public enum above, default 1 (amplitude).
+//   range      : 0 = audio, 1 = control, default 1.
+//   trigger    : 0/1 trigger or gate input.
+//   clock      : 0/1 external clock input.
+//   ratio      : clock ratio table index.
+
+define_synthdef("tides2", |builder| {
+    builder
+        .output("low")       // 1ch - first Tides2 output
+        .output("slope")     // 1ch - second Tides2 output
+        .output("shape")     // 1ch - third Tides2 output
+        .output("high")      // 1ch - fourth Tides2 output
+        .param("freq", 1.0)
+        .param("shape", 0.5)
+        .param("slope", 0.5)
+        .param("smoothness", 0.5)
+        .param("shift", 0.5)
+        .param("ramp_mode", 2.0)
+        .param("output_mode", 1.0)
+        .param("range", 1.0)
+        .param("trigger", 0.0)
+        .param("clock", 0.0)
+        .param("ratio", 0.0)
+        .body_map(|p| {
+            // Public ramp_mode is 0=AD, 1=AR, 2=looping. The UGen enum is
+            // 0=AD, 1=looping, 2=AR, so swap public 1 and 2.
+            let public_ramp_mode = clip_kr(round(p.ramp_mode), 0.0, 2.0);
+            let ugen_ramp_mode = public_ramp_mode * (7.0 - public_ramp_mode * 3.0) * 0.5;
+
+            // Public range is 0=audio, 1=control. The UGen rate enum is
+            // 0=control, 1=audio.
+            let public_range = clip_kr(round(p.range), 0.0, 1.0);
+            let ugen_rate = 1.0 - public_range;
+
+            // mi_tides_ar args: freq, shape, slope, smooth, shift, trig,
+            // clock, output_mode, ramp_mode, ratio, rate, mul
+            let tides = channels(
+                mi_tides_ar(
+                    p.freq,
+                    p.shape,
+                    p.slope,
+                    p.smoothness,
+                    p.shift,
+                    p.trigger,
+                    p.clock,
+                    p.output_mode,
+                    ugen_ramp_mode,
+                    p.ratio,
+                    ugen_rate,
+                    1.0
+                ),
+                4
+            );
+
+            [
+                leak_dc_ar(tides[0], 0.995),
+                leak_dc_ar(tides[1], 0.995),
+                leak_dc_ar(tides[2], 0.995),
+                leak_dc_ar(tides[3], 0.995),
+            ]
+        })
+});
