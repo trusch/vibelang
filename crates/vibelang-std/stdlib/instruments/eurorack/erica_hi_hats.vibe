@@ -1,0 +1,74 @@
+// Erica Synths Black Hi-Hats A - patchable closed/open Eurorack hat voice.
+//
+// Approximation: seven related pulse oscillators plus filtered noise through a
+// resonant bandpass, separate closed/open envelopes, accent gain, attenuated
+// tone/decay CV params, and open-hat choking of the closed channel.
+
+define_synthdef("erica_hi_hats", |builder| {
+    builder
+        .output("ch", 1)
+        .output("oh", 1)
+        .param("ch_trig", 0.0)
+        .param("oh_trig", 0.0)
+        .param("accent", 0.0)
+        .param("tone", 0.5)
+        .param("tone_cv", 0.0)
+        .param("tone_cv_amt", 0.0)
+        .param("ch_decay", 0.05)
+        .param("ch_decay_cv", 0.0)
+        .param("ch_decay_cv_amt", 0.0)
+        .param("oh_decay", 0.4)
+        .param("oh_decay_cv", 0.0)
+        .param("oh_decay_cv_amt", 0.0)
+        .param("exclusive", 1.0)
+        .body_map(|p| {
+            let accent = clip(p.accent, 0.0, 1.0);
+            let exclusive = clip(p.exclusive, 0.0, 1.0);
+
+            let tone_cv = clip(p.tone_cv, -1.0, 1.0) * clip(p.tone_cv_amt, 0.0, 1.0);
+            let tone = clip(p.tone + tone_cv, 0.0, 1.0);
+            let center = 1500.0 + tone * 6000.0;
+
+            let ch_decay_cv = clip(p.ch_decay_cv, -1.0, 1.0) * clip(p.ch_decay_cv_amt, 0.0, 1.0);
+            let ch_decay = clip(p.ch_decay + ch_decay_cv, 0.0, 1.0);
+            let ch_time = clip(ch_decay * 0.3, 0.015, 0.3);
+
+            let oh_decay_cv = clip(p.oh_decay_cv, -1.0, 1.0) * clip(p.oh_decay_cv_amt, 0.0, 1.0);
+            let oh_decay = clip(p.oh_decay + oh_decay_cv, 0.0, 1.0);
+            let oh_time = clip(oh_decay * 1.5, 0.08, 1.5);
+
+            let ch_in = k2a_ar(clip(p.ch_trig, 0.0, 1.0));
+            let oh_in = k2a_ar(clip(p.oh_trig, 0.0, 1.0));
+            let ch_fire = trig1_ar(ch_in, 0.001);
+            let oh_fire = trig1_ar(oh_in, 0.001);
+
+            let ch_state = set_reset_ff_ar(ch_fire, oh_fire * exclusive);
+            let ch_env = decay2_ar(ch_fire, 0.006, ch_time) * ch_state;
+            let oh_env = decay2_ar(oh_fire, 0.008, oh_time);
+
+            let metal1 = pulse_ar(200.0, 0.5);
+            let metal2 = pulse_ar(295.12, 0.5);
+            let metal3 = pulse_ar(340.64, 0.5);
+            let metal4 = pulse_ar(402.04, 0.5);
+            let metal5 = pulse_ar(475.36, 0.5);
+            let metal6 = pulse_ar(530.32, 0.5);
+            let metal7 = pulse_ar(600.0, 0.5);
+            let metal_mix = (metal1 + metal2 + metal3 + metal4 + metal5 + metal6 + metal7) * 0.14;
+
+            let noise = white_noise_ar();
+            let bright_noise = hpf_ar(noise, 6500.0 + tone * 2500.0) * (0.16 + tone * 0.12);
+            let raw = metal_mix + bright_noise;
+            let resonant = bpf_ar(raw, center, 0.13);
+            let shimmer = bpf_ar(raw, center * 1.72, 0.22) * 0.45;
+            let hat_source = hpf_ar(resonant + shimmer, 4200.0);
+
+            let tick_env = decay2_ar(ch_fire + oh_fire, 0.0004, 0.012);
+            let tick = hpf_ar(white_noise_ar(), 10000.0) * tick_env * 0.08;
+
+            let accent_gain = 1.0 + accent * 0.65;
+            let ch = clip_ar(leak_dc_ar((hat_source * ch_env * 1.8 + tick) * accent_gain, 0.995), -1.0, 1.0);
+            let oh = clip_ar(leak_dc_ar((hat_source * oh_env * 1.25 + tick * 0.7) * accent_gain, 0.995), -1.0, 1.0);
+
+            [ch, oh]
+        })
+});
