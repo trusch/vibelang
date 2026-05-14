@@ -1,3 +1,5 @@
+// kind=processor | category=delays | flavor=verbos_mdp | inputs=in1:1,in2:1,in3:1 | outputs=mix:1,tap1..tap8:1,odd:1,even:1,rise:1,fall:1,env_in:kr,env1..env8:kr | params=delay_time,delay_cv,time_cv_amount,input1_gain,input2_gain,input3_gain,tap1_mix..tap8_mix,feedback,reverb_feedback,pitch_feedback,manual_mix,level,env_decay
+//
 // Verbos Multi-Delay Processor - eight serial voltage-controllable delay taps.
 //
 // Three mono inputs are gain-mixed into an eight-stage digital delay chain.
