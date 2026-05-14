@@ -31,7 +31,7 @@
 //! user data directory on Windows.
 
 use include_dir::{include_dir, Dir};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 /// Embedded stdlib directory (compiled into the binary)
@@ -85,7 +85,9 @@ fn ensure_stdlib_extracted(target_path: &PathBuf) {
         let current_version = env!("CARGO_PKG_VERSION");
 
         if let Ok(installed_version) = std::fs::read_to_string(&version_file) {
-            if installed_version.trim() == current_version {
+            if installed_version.trim() == current_version
+                && !stdlib_missing_embedded_files(target_path)
+            {
                 // Same version, no need to re-extract
                 return;
             }
@@ -106,6 +108,26 @@ fn ensure_stdlib_extracted(target_path: &PathBuf) {
         eprintln!("Warning: Failed to extract stdlib: {}", e);
         eprintln!("You may need to manually specify stdlib path with -I flag");
     }
+}
+
+fn stdlib_missing_embedded_files(target_path: &Path) -> bool {
+    embedded_dir_missing_files(&STDLIB_DIR, target_path)
+}
+
+fn embedded_dir_missing_files(dir: &Dir, target_path: &Path) -> bool {
+    for file in dir.files() {
+        if !target_path.join(file.path()).exists() {
+            return true;
+        }
+    }
+
+    for subdir in dir.dirs() {
+        if embedded_dir_missing_files(subdir, target_path) {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Extract the embedded stdlib to the target directory.

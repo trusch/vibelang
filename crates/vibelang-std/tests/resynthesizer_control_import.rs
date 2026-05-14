@@ -117,6 +117,30 @@ fn resynthesizer_control_modules_import_and_register_kr_outputs() {
     assert_eq!(rene_params.get("note33"), Some(&72.0));
 }
 
+#[test]
+fn resynthesizer_wogglebug_import_resolves_from_installed_stdlib_parent() {
+    clear_synthdef_registry();
+    clear_synthdef_inputs_registry();
+    clear_synthdef_outputs_registry();
+    set_deploy_callback(|_| Ok(()));
+
+    let script_path = write_import_script(&["stdlib/instruments/eurorack/wogglebug.vibe"]);
+    let stdlib_path = PathBuf::from(vibelang_std::stdlib_path());
+    let stdlib_parent = stdlib_path
+        .parent()
+        .expect("stdlib install path should have parent")
+        .to_path_buf();
+
+    let mut engine = ScriptEngine::new();
+    engine.add_import_path(stdlib_parent);
+    engine
+        .execute_file(&script_path)
+        .expect("installed stdlib parent should resolve Wogglebug import");
+    fs::remove_file(&script_path).ok();
+
+    assert!(synthdef_exists("wogglebug"));
+}
+
 fn kr_ports(names: &[&str]) -> Vec<OutputPort> {
     names
         .iter()
