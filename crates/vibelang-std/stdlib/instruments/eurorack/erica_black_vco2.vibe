@@ -1,0 +1,113 @@
+// Erica Synths Black VCO2 - analog-style multi-output Eurorack oscillator.
+//
+// Approximation: simultaneous sine, triangle, saw, pulse, sub, and expander
+// mix outputs with octave switching, pulse-width CV, saw wavefold shaping,
+// linear/exponential FM, trigger-reset hard sync, and two internal LFO bends.
+
+fn _erica_black_vco2_fold(x) {
+    1.0 - abs(wrap_ar(x + 1.0, 0.0, 4.0) - 2.0)
+}
+
+define_synthdef("erica_black_vco2", |builder| {
+    builder
+        .output("sine", 1)
+        .output("tri", 1)
+        .output("saw", 1)
+        .output("pulse", 1)
+        .output("sub", 1)
+        .output("mix", 1)
+        .param("freq", 110.0)
+        .param("voct", 0.0)
+        .param("octave", 0.0)
+        .param("pw", 0.5)
+        .param("saw_shape", 0.0)
+        .param("fm", 0.0)
+        .param("fm_mode", 1.0)
+        .param("fm_in", 0.0)
+        .param("sync", 0.0)
+        .param("sync_trig", 0.0)
+        .param("lfo1_rate", 4.0)
+        .param("lfo1_depth", 0.0)
+        .param("lfo2_rate", 0.5)
+        .param("lfo2_depth", 0.0)
+        .param("pw_cv_amt", 0.0)
+        .param("pw_cv", 0.0)
+        .param("mix_sine", 0.5)
+        .param("mix_tri", 0.5)
+        .param("mix_saw", 0.5)
+        .param("mix_pulse", 0.5)
+        .param("mix_sub", 0.5)
+        .body_map(|p| {
+            let freq_hz = clip(p.freq, 0.001, 20000.0);
+            let voct_on = clip(p.voct * 1000.0, 0.0, 1.0);
+            let voct_hz = 8.175799 * pow(2.0, clip(p.voct, 0.0, 144.0) / 12.0);
+            let base_freq = freq_hz * (1.0 - voct_on) + voct_hz * voct_on;
+
+            let octave = clip(round(p.octave), -2.0, 2.0);
+            let switched_freq = base_freq * pow(2.0, octave);
+
+            let fm = clip(p.fm, 0.0, 1.0);
+            let fm_in = clip(p.fm_in, -5.0, 5.0);
+            let linear_freq = switched_freq + fm * fm_in * 100.0;
+            let exp_freq = switched_freq * pow(2.0, fm * fm_in);
+            let exp_mode = clip(round(p.fm_mode), 0.0, 1.0);
+            let fm_freq = linear_freq * (1.0 - exp_mode) + exp_freq * exp_mode;
+
+            let lfo1 = sin_osc_kr(clip(p.lfo1_rate, 0.0, 100.0), 0.0) * clip(p.lfo1_depth, 0.0, 1.0);
+            let lfo2 = sin_osc_kr(clip(p.lfo2_rate, 0.0, 100.0), 1.5707963) * clip(p.lfo2_depth, 0.0, 1.0);
+            let lfo_factor = clip(1.0 + lfo1 + lfo2, 0.03125, 32.0);
+            let effective_freq = clip(fm_freq * lfo_factor, 0.001, 20000.0);
+
+            let pw = clip(p.pw + p.pw_cv * clip(p.pw_cv_amt, 0.0, 1.0), 0.05, 0.95);
+            let sync_mix = clip(round(p.sync), 0.0, 1.0);
+            let sync_trig = trig1_ar(k2a_ar(clip(p.sync_trig, 0.0, 1.0)), 0.001) * sync_mix;
+            let two_pi = 6.283185307179586;
+
+            let phase = phasor_ar(sync_trig, effective_freq / 44100.0, 0.0, 1.0, 0.0);
+            let sub_phase = phasor_ar(sync_trig, effective_freq * 0.5 / 44100.0, 0.0, 1.0, 0.0);
+
+            let free_sine = sin_osc_ar(effective_freq);
+            let sync_sine = sin_osc_ar(0.0, phase * two_pi);
+            let sine = free_sine * (1.0 - sync_mix) + sync_sine * sync_mix;
+
+            let free_tri = lf_tri_ar(effective_freq, 0.0);
+            let sync_tri = 1.0 - abs(phase * 4.0 - 2.0);
+            let tri = free_tri * (1.0 - sync_mix) + sync_tri * sync_mix;
+
+            let free_saw = lf_saw_ar(effective_freq, 0.0);
+            let sync_saw = phase * 2.0 - 1.0;
+            let raw_saw = free_saw * (1.0 - sync_mix) + sync_saw * sync_mix;
+            let saw_shape = clip(p.saw_shape, 0.0, 1.0);
+            let folded_saw = _erica_black_vco2_fold(raw_saw * (1.0 + saw_shape * 4.0));
+            let saw = raw_saw * (1.0 - saw_shape) + folded_saw * saw_shape;
+
+            let free_pulse = lf_pulse_ar(effective_freq, 0.0, pw) * 2.0 - 1.0;
+            let sync_pulse = clip((pw - phase) * 100000.0, 0.0, 1.0) * 2.0 - 1.0;
+            let pulse = free_pulse * (1.0 - sync_mix) + sync_pulse * sync_mix;
+
+            let free_sub = lf_pulse_ar(effective_freq * 0.5, 0.0, 0.5) * 2.0 - 1.0;
+            let sync_sub = clip((0.5 - sub_phase) * 100000.0, 0.0, 1.0) * 2.0 - 1.0;
+            let sub = free_sub * (1.0 - sync_mix) + sync_sub * sync_mix;
+
+            let mix_sine = clip(p.mix_sine, 0.0, 1.0);
+            let mix_tri = clip(p.mix_tri, 0.0, 1.0);
+            let mix_saw = clip(p.mix_saw, 0.0, 1.0);
+            let mix_pulse = clip(p.mix_pulse, 0.0, 1.0);
+            let mix_sub = clip(p.mix_sub, 0.0, 1.0);
+            let mix_norm = max(1.0, mix_sine + mix_tri + mix_saw + mix_pulse + mix_sub);
+            let mix = (sine * mix_sine
+                     + tri * mix_tri
+                     + saw * mix_saw
+                     + pulse * mix_pulse
+                     + sub * mix_sub) / mix_norm;
+
+            [
+                clip_ar(sine, -1.0, 1.0),
+                clip_ar(tri, -1.0, 1.0),
+                clip_ar(saw, -1.0, 1.0),
+                clip_ar(pulse, -1.0, 1.0),
+                clip_ar(sub, -1.0, 1.0),
+                clip_ar(mix, -1.0, 1.0)
+            ]
+        })
+});
