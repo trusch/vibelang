@@ -1,0 +1,251 @@
+// 4ms SMR8 - Spectral Multiband Resonator, 8-band VibeLang flavor.
+//
+// Fixed eight-band scale-rotating resonant filter bank with odd/even routing,
+// individual band taps, and kr envelope followers for spectral patching.
+
+fn _smr8_wrap_index(idx, len) {
+    let oct = floor(idx / len);
+    idx - oct * len
+}
+
+fn _smr8_degree(idx, scale) {
+    let sc = round(clip_kr(scale, 0.0, 5.0));
+
+    let k12 = _smr8_wrap_index(idx, 12.0);
+    let k13 = _smr8_wrap_index(idx, 13.0);
+    let k7 = _smr8_wrap_index(idx, 7.0);
+    let k5 = _smr8_wrap_index(idx, 5.0);
+
+    let m12_0 = (1.0 - abs(k12 - 0.0)).max(0.0);
+    let m12_1 = (1.0 - abs(k12 - 1.0)).max(0.0);
+    let m12_2 = (1.0 - abs(k12 - 2.0)).max(0.0);
+    let m12_3 = (1.0 - abs(k12 - 3.0)).max(0.0);
+    let m12_4 = (1.0 - abs(k12 - 4.0)).max(0.0);
+    let m12_5 = (1.0 - abs(k12 - 5.0)).max(0.0);
+    let m12_6 = (1.0 - abs(k12 - 6.0)).max(0.0);
+    let m12_7 = (1.0 - abs(k12 - 7.0)).max(0.0);
+    let m12_8 = (1.0 - abs(k12 - 8.0)).max(0.0);
+    let m12_9 = (1.0 - abs(k12 - 9.0)).max(0.0);
+    let m12_10 = (1.0 - abs(k12 - 10.0)).max(0.0);
+    let m12_11 = (1.0 - abs(k12 - 11.0)).max(0.0);
+
+    let m13_0 = (1.0 - abs(k13 - 0.0)).max(0.0);
+    let m13_1 = (1.0 - abs(k13 - 1.0)).max(0.0);
+    let m13_2 = (1.0 - abs(k13 - 2.0)).max(0.0);
+    let m13_3 = (1.0 - abs(k13 - 3.0)).max(0.0);
+    let m13_4 = (1.0 - abs(k13 - 4.0)).max(0.0);
+    let m13_5 = (1.0 - abs(k13 - 5.0)).max(0.0);
+    let m13_6 = (1.0 - abs(k13 - 6.0)).max(0.0);
+    let m13_7 = (1.0 - abs(k13 - 7.0)).max(0.0);
+    let m13_8 = (1.0 - abs(k13 - 8.0)).max(0.0);
+    let m13_9 = (1.0 - abs(k13 - 9.0)).max(0.0);
+    let m13_10 = (1.0 - abs(k13 - 10.0)).max(0.0);
+    let m13_11 = (1.0 - abs(k13 - 11.0)).max(0.0);
+    let m13_12 = (1.0 - abs(k13 - 12.0)).max(0.0);
+
+    let m7_0 = (1.0 - abs(k7 - 0.0)).max(0.0);
+    let m7_1 = (1.0 - abs(k7 - 1.0)).max(0.0);
+    let m7_2 = (1.0 - abs(k7 - 2.0)).max(0.0);
+    let m7_3 = (1.0 - abs(k7 - 3.0)).max(0.0);
+    let m7_4 = (1.0 - abs(k7 - 4.0)).max(0.0);
+    let m7_5 = (1.0 - abs(k7 - 5.0)).max(0.0);
+    let m7_6 = (1.0 - abs(k7 - 6.0)).max(0.0);
+
+    let m5_0 = (1.0 - abs(k5 - 0.0)).max(0.0);
+    let m5_1 = (1.0 - abs(k5 - 1.0)).max(0.0);
+    let m5_2 = (1.0 - abs(k5 - 2.0)).max(0.0);
+    let m5_3 = (1.0 - abs(k5 - 3.0)).max(0.0);
+    let m5_4 = (1.0 - abs(k5 - 4.0)).max(0.0);
+
+    let chromatic =
+        m12_0 * 1.0 + m12_1 * 2.0 + m12_2 * 3.0 + m12_3 * 4.0 +
+        m12_4 * 5.0 + m12_5 * 6.0 + m12_6 * 7.0 + m12_7 * 8.0 +
+        m12_8 * 9.0 + m12_9 * 10.0 + m12_10 * 11.0 + m12_11 * 12.0;
+    let major = m7_1 * 2.0 + m7_2 * 4.0 + m7_3 * 5.0 + m7_4 * 7.0 + m7_5 * 9.0 + m7_6 * 11.0;
+    let minor = m7_1 * 2.0 + m7_2 * 3.0 + m7_3 * 5.0 + m7_4 * 7.0 + m7_5 * 8.0 + m7_6 * 10.0;
+    let pentatonic = m5_1 * 2.0 + m5_2 * 4.0 + m5_3 * 7.0 + m5_4 * 9.0;
+    let pelog = m5_1 * 1.0 + m5_2 * 3.0 + m5_3 * 7.0 + m5_4 * 8.0;
+    let bohlen_pierce =
+        m13_1 * 1.585 + m13_2 * 3.169 + m13_3 * 4.755 +
+        m13_4 * 6.340 + m13_5 * 7.925 + m13_6 * 9.510 +
+        m13_7 * 11.095 + m13_8 * 12.680 + m13_9 * 14.265 +
+        m13_10 * 15.850 + m13_11 * 17.435 + m13_12 * 19.020;
+
+    let s0 = (1.0 - abs(sc - 0.0)).max(0.0);
+    let s1 = (1.0 - abs(sc - 1.0)).max(0.0);
+    let s2 = (1.0 - abs(sc - 2.0)).max(0.0);
+    let s3 = (1.0 - abs(sc - 3.0)).max(0.0);
+    let s4 = (1.0 - abs(sc - 4.0)).max(0.0);
+    let s5 = (1.0 - abs(sc - 5.0)).max(0.0);
+
+    s0 * chromatic + s1 * major + s2 * minor + s3 * pentatonic + s4 * pelog + s5 * bohlen_pierce
+}
+
+fn _smr8_freq(root, scale, rotate, spread, band_index, lock, transpose, fine, lag_t) {
+    let rot = floor(clip_kr(rotate + 0.5, 0.0, 7.0));
+    let step = floor(clip_kr(spread + 0.5, 1.0, 7.0));
+    let locked = clip_kr(round(lock), 0.0, 1.0);
+    let moving_idx = rot + step * band_index;
+    let fixed_idx = band_index;
+    let degree = _smr8_degree(moving_idx * (1.0 - locked) + fixed_idx * locked, scale);
+    let semi = degree + round(transpose) + clip_kr(fine, -1.0, 1.0) / 100.0;
+    clip_kr(lag_kr(root * pow(2.0, semi / 12.0), lag_t), 20.0, 18000.0)
+}
+
+fn _smr8_band(src, freq, q, two_pass, level) {
+    let one = bpf_ar(src, freq, q);
+    let two = bpf_ar(one, freq, q);
+    let tight = clip_kr(round(two_pass), 0.0, 1.0);
+    leak_dc_ar((one * (1.0 - tight) + two * tight) * level, 0.995)
+}
+
+define_synthdef("smr8", |builder| {
+    builder
+        .input("in", 2)
+        .input("odd", 1)
+        .input("even", 1)
+        .output("mix")
+        .output("odd")
+        .output("even")
+        .output("band1")
+        .output("band2")
+        .output("band3")
+        .output("band4")
+        .output("band5")
+        .output("band6")
+        .output("band7")
+        .output("band8")
+        .output_kr("env1")
+        .output_kr("env2")
+        .output_kr("env3")
+        .output_kr("env4")
+        .output_kr("env5")
+        .output_kr("env6")
+        .output_kr("env7")
+        .output_kr("env8")
+        .param("freq_root", 110.0)
+        .param("scale", 1.0)
+        .param("rotate", 0.0)
+        .param("spread", 2.0)
+        .param("morph", 0.3)
+        .param("q", 0.7)
+        .param("two_pass", 0.0)
+        .param("slew", 0.2)
+        .param("noise_norm", 0.0)
+        .param("amp", 1.0)
+        .param("level1", 1.0)
+        .param("level2", 1.0)
+        .param("level3", 1.0)
+        .param("level4", 1.0)
+        .param("level5", 1.0)
+        .param("level6", 1.0)
+        .param("level7", 1.0)
+        .param("level8", 1.0)
+        .param("lock1", 0.0)
+        .param("lock2", 0.0)
+        .param("lock3", 0.0)
+        .param("lock4", 0.0)
+        .param("lock5", 0.0)
+        .param("lock6", 0.0)
+        .param("lock7", 0.0)
+        .param("lock8", 0.0)
+        .param("fine1", 0.0)
+        .param("fine2", 0.0)
+        .param("fine3", 0.0)
+        .param("fine4", 0.0)
+        .param("fine5", 0.0)
+        .param("fine6", 0.0)
+        .param("fine7", 0.0)
+        .param("fine8", 0.0)
+        .param("transpose1", 0.0)
+        .param("transpose2", 0.0)
+        .param("transpose3", 0.0)
+        .param("transpose4", 0.0)
+        .param("transpose5", 0.0)
+        .param("transpose6", 0.0)
+        .param("transpose7", 0.0)
+        .param("transpose8", 0.0)
+        .body_map(|p| {
+            let in_l = p.inputs["in"][0];
+            let in_r = p.inputs["in"][1];
+            let mono = (in_l + in_r) * 0.5;
+            let odd_in = mono + p.inputs["odd"][0];
+            let even_in = mono + p.inputs["even"][0];
+
+            let in_env = amplitude_kr(mono + p.inputs["odd"][0] + p.inputs["even"][0], 0.01, 0.1);
+            let unpatched = in_range_kr(in_env, 0.0, 0.0001);
+            let norm_noise = pink_noise_ar() * 0.18 * clip_kr(round(p.noise_norm), 0.0, 1.0) * unpatched;
+            let odd_src = odd_in + norm_noise;
+            let even_src = even_in + norm_noise;
+
+            let root = clip_kr(p.freq_root, 20.0, 8000.0);
+            let lag_t = 0.005 + clip_kr(p.morph, 0.0, 1.0) * 0.25 + clip_kr(p.slew, 0.0, 1.0) * 0.15;
+            let q = clip_kr(lag_kr(p.q, lag_t), 0.1, 0.99);
+            let release = clip_kr(p.slew, 0.0, 1.0) * 0.5;
+
+            let f1 = _smr8_freq(root, p.scale, p.rotate, p.spread, 0.0, p.lock1, p.transpose1, p.fine1, lag_t);
+            let f2 = _smr8_freq(root, p.scale, p.rotate, p.spread, 1.0, p.lock2, p.transpose2, p.fine2, lag_t);
+            let f3 = _smr8_freq(root, p.scale, p.rotate, p.spread, 2.0, p.lock3, p.transpose3, p.fine3, lag_t);
+            let f4 = _smr8_freq(root, p.scale, p.rotate, p.spread, 3.0, p.lock4, p.transpose4, p.fine4, lag_t);
+            let f5 = _smr8_freq(root, p.scale, p.rotate, p.spread, 4.0, p.lock5, p.transpose5, p.fine5, lag_t);
+            let f6 = _smr8_freq(root, p.scale, p.rotate, p.spread, 5.0, p.lock6, p.transpose6, p.fine6, lag_t);
+            let f7 = _smr8_freq(root, p.scale, p.rotate, p.spread, 6.0, p.lock7, p.transpose7, p.fine7, lag_t);
+            let f8 = _smr8_freq(root, p.scale, p.rotate, p.spread, 7.0, p.lock8, p.transpose8, p.fine8, lag_t);
+
+            let l1 = lag_kr(clip_kr(p.level1, 0.0, 1.0), lag_t);
+            let l2 = lag_kr(clip_kr(p.level2, 0.0, 1.0), lag_t);
+            let l3 = lag_kr(clip_kr(p.level3, 0.0, 1.0), lag_t);
+            let l4 = lag_kr(clip_kr(p.level4, 0.0, 1.0), lag_t);
+            let l5 = lag_kr(clip_kr(p.level5, 0.0, 1.0), lag_t);
+            let l6 = lag_kr(clip_kr(p.level6, 0.0, 1.0), lag_t);
+            let l7 = lag_kr(clip_kr(p.level7, 0.0, 1.0), lag_t);
+            let l8 = lag_kr(clip_kr(p.level8, 0.0, 1.0), lag_t);
+
+            let band1 = _smr8_band(odd_src, f1, q, p.two_pass, l1);
+            let band2 = _smr8_band(even_src, f2, q, p.two_pass, l2);
+            let band3 = _smr8_band(odd_src, f3, q, p.two_pass, l3);
+            let band4 = _smr8_band(even_src, f4, q, p.two_pass, l4);
+            let band5 = _smr8_band(odd_src, f5, q, p.two_pass, l5);
+            let band6 = _smr8_band(even_src, f6, q, p.two_pass, l6);
+            let band7 = _smr8_band(odd_src, f7, q, p.two_pass, l7);
+            let band8 = _smr8_band(even_src, f8, q, p.two_pass, l8);
+
+            let odd_sum = (band1 + band3 + band5 + band7) * 0.5;
+            let even_sum = (band2 + band4 + band6 + band8) * 0.5;
+            let amp = clip_kr(p.amp, 0.0, 2.0);
+            let mix = softclip((odd_sum + even_sum) * 0.7 * amp);
+            let odd_out = softclip(odd_sum * amp);
+            let even_out = softclip(even_sum * amp);
+
+            let env1 = clip_kr(amplitude_kr(band1, 0.01, release), 0.0, 1.0);
+            let env2 = clip_kr(amplitude_kr(band2, 0.01, release), 0.0, 1.0);
+            let env3 = clip_kr(amplitude_kr(band3, 0.01, release), 0.0, 1.0);
+            let env4 = clip_kr(amplitude_kr(band4, 0.01, release), 0.0, 1.0);
+            let env5 = clip_kr(amplitude_kr(band5, 0.01, release), 0.0, 1.0);
+            let env6 = clip_kr(amplitude_kr(band6, 0.01, release), 0.0, 1.0);
+            let env7 = clip_kr(amplitude_kr(band7, 0.01, release), 0.0, 1.0);
+            let env8 = clip_kr(amplitude_kr(band8, 0.01, release), 0.0, 1.0);
+
+            [
+                mix,
+                odd_out,
+                even_out,
+                softclip(band1 * amp),
+                softclip(band2 * amp),
+                softclip(band3 * amp),
+                softclip(band4 * amp),
+                softclip(band5 * amp),
+                softclip(band6 * amp),
+                softclip(band7 * amp),
+                softclip(band8 * amp),
+                env1,
+                env2,
+                env3,
+                env4,
+                env5,
+                env6,
+                env7,
+                env8,
+            ]
+        })
+});
