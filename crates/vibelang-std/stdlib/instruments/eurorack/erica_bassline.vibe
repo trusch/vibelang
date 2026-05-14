@@ -1,0 +1,100 @@
+// Erica Synths Bassline - multi-output acid Eurorack voice.
+//
+// Approximation: AS3340-style triangle/square VCO, transistor suboscillator,
+// short BBD-detune delay thickening, Acidbox-inspired LP/BP filter, separate
+// VCF/VCA decay envelopes, accent, beef drive, and patchable CV-style params.
+
+define_synthdef("erica_bassline", |builder| {
+    builder
+        .output("main")
+        .output("tri")
+        .output("square")
+        .output("sub")
+        .param("gate", 0.0)
+        .param("accent", 0.0)
+        .param("voct", 36.0)
+        .param("freq", 0.0)
+        .param("wave", 1.0)
+        .param("sub_level", 0.3)
+        .param("detune", 0.1)
+        .param("cutoff", 400.0)
+        .param("cutoff_cv", 0.0)
+        .param("resonance", 0.6)
+        .param("filter_mode", 0.0)
+        .param("vcf_decay", 0.3)
+        .param("vcf_env_amt", 0.7)
+        .param("vca_decay", 0.4)
+        .param("level", 0.8)
+        .param("fm", 0.0)
+        .param("fm_cv", 0.0)
+        .param("cutoff_cv_amt", 0.0)
+        .param("beef", 0.3)
+        .body_map(|p| {
+            let gate = clip(p.gate, 0.0, 1.0);
+            let accent = clip(p.accent, 0.0, 1.0);
+            let gate_ar = k2a_ar(gate);
+            let fire = trig1_ar(gate_ar, 0.001);
+
+            let midi_hz = 440.0 * pow(2.0, (clip(p.voct, 0.0, 127.0) - 69.0) / 12.0);
+            let direct_hz = clip(p.freq, 0.0, 8000.0);
+            let direct_on = clip((direct_hz - 0.001) * 1000.0, 0.0, 1.0);
+            let base_freq = midi_hz * (1.0 - direct_on) + direct_hz * direct_on;
+            let fm_semitones = clip(p.fm_cv, -1.0, 1.0) * clip(p.fm, 0.0, 1.0) * 12.0;
+            let osc_freq = clip(base_freq * pow(2.0, fm_semitones / 12.0), 15.0, 8000.0);
+
+            let tri = lf_tri_ar(osc_freq, 0.0) * 0.85;
+            let square = (lf_pulse_ar(osc_freq, 0.0, 0.5) * 2.0 - 1.0) * 0.8;
+            let sub = (lf_pulse_ar(osc_freq * 0.5, 0.0, 0.5) * 2.0 - 1.0) * 0.7;
+
+            let wave = floor(clip(p.wave + 0.5, 0.0, 1.0));
+            let primary = tri * (1.0 - wave) + square * wave;
+
+            let detune = clip(p.detune, 0.0, 1.0);
+            let bbd_lfo = sin_osc_kr(0.35 + detune * 2.5) * detune;
+            let bbd_time = clip(0.005 + detune * 0.010 + bbd_lfo * 0.0025, 0.003, 0.02);
+            let bbd_tap = lpf_ar(delay_c_ar(primary, 0.03, bbd_time), 6500.0);
+
+            let sub_level = clip(p.sub_level, 0.0, 1.0);
+            let osc_mix = primary * 0.85 + bbd_tap * detune * 0.35 + sub * sub_level * 0.5;
+
+            let beef = clip(p.beef, 0.0, 1.0);
+            let drive_gain = 1.0 + beef * 7.0;
+            let driven = (osc_mix * drive_gain).tanh() / drive_gain.sqrt();
+
+            let vcf_decay = 0.025 + clip(p.vcf_decay, 0.0, 1.0) * clip(p.vcf_decay, 0.0, 1.0) * 1.25;
+            let vca_decay = 0.035 + clip(p.vca_decay, 0.0, 1.0) * clip(p.vca_decay, 0.0, 1.0) * 1.5;
+            let vcf_env = decay2_ar(fire, 0.0015, vcf_decay) * (24.0 + accent * 12.0);
+            let vca_env = decay2_ar(fire, 0.001, vca_decay);
+
+            let cutoff_cv = clip(p.cutoff_cv, -1.0, 1.0) * 24.0;
+            let cutoff_semitones =
+                clip(p.vcf_env_amt, 0.0, 1.0) * (1.0 + accent * 0.75) * vcf_env
+                + clip(p.cutoff_cv_amt, 0.0, 1.0) * cutoff_cv;
+            let cutoff = clip(
+                clip(p.cutoff, 20.0, 12000.0) * pow(2.0, cutoff_semitones / 12.0),
+                20.0,
+                18000.0
+            );
+            let rq = clip(1.0 - clip(p.resonance, 0.0, 0.99) * 0.94, 0.035, 1.0);
+
+            let low = rlpf_ar(driven, cutoff, rq);
+            let band_core = bpf_ar(driven, cutoff, rq);
+            let band = band_core * 0.72 + rhpf_ar(band_core, clip(cutoff * 0.45, 20.0, 12000.0), rq) * 0.28;
+            let mode = floor(clip(p.filter_mode + 0.5, 0.0, 1.0));
+            let filtered = leak_dc_ar(low * (1.0 - mode) + band * mode, 0.995);
+
+            let accent_gain = 1.0 + accent * 0.55;
+            let main = clip_ar(
+                (filtered * (0.85 + beef * 0.35)).tanh() * vca_env * accent_gain * clip(p.level, 0.0, 1.0),
+                -1.0,
+                1.0
+            );
+
+            [
+                main,
+                clip_ar(tri, -1.0, 1.0),
+                clip_ar(square, -1.0, 1.0),
+                clip_ar(sub, -1.0, 1.0)
+            ]
+        })
+});
