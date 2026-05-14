@@ -1,0 +1,226 @@
+// 4ms ambient rack performance patch.
+//
+// Signal chain:
+//   QCD at 60 BPM clocks two PEG envelopes and the DLD ping estimator.
+//   Stereo pink-noise grains feed SMR8 for scale-locked spectral resonance.
+//   SMR8 odd/even resonator banks drive the two DLD looping-delay channels.
+//   DLD time-locked echoes run through phaser_8stage as the Phaseur stand-in.
+//   JPverb adds the final long ambient tail, while PEGs rotate/morph/feedback.
+
+import "stdlib/instruments/eurorack/qcd.vibe";
+import "stdlib/instruments/eurorack/peg.vibe";
+import "stdlib/processors/filters/smr8.vibe";
+import "stdlib/processors/delays/dld.vibe";
+import "stdlib/effects/modulation/phaser_8stage.vibe";
+import "stdlib/effects/reverbs/reverb_jpverb.vibe";
+
+set_tempo(60);
+
+define_synthdef("fourms_pink_grains", |builder| {
+    builder
+        .output("out", 2)
+        .param("amp", 0.22)
+        .param("dust_rate", 2.2)
+        .param("tone", 1400.0)
+        .param("spread", 0.35)
+        .body_map(|p| {
+            let bed_l = pink_noise_ar();
+            let bed_r = delay_c_ar(pink_noise_ar(), 0.08, 0.031);
+            let grain_env = decay2_ar(dust_ar(p.dust_rate), 0.05, 1.8);
+            let grains = bpf_ar(pink_noise_ar() * grain_env, clip_kr(p.tone, 120.0, 9000.0), 0.18);
+            let width = clip_kr(p.spread, 0.0, 1.0);
+            let left = softclip((bed_l * 0.45 + grains * (1.0 - width * 0.35)) * p.amp);
+            let right = softclip((bed_r * 0.45 + delay_c_ar(grains, 0.12, 0.047) * (0.65 + width * 0.35)) * p.amp);
+            [[left, right]]
+        })
+});
+
+define_synthdef("fourms_bus_tap_mono", |builder| {
+    builder
+        .input("in", 2)
+        .output("out")
+        .param("balance", 0.0)
+        .param("level", 1.0)
+        .body_map(|p| {
+            let bal = clip(p.balance, -1.0, 1.0);
+            let left_gain = (1.0 - bal) * 0.5;
+            let right_gain = (1.0 + bal) * 0.5;
+            let mono = p.inputs["in"][0] * left_gain + p.inputs["in"][1] * right_gain;
+            [softclip(mono * p.level)]
+        })
+});
+
+define_synthdef("fourms_clock_rate_meter", |builder| {
+    builder
+        .output_kr("hz")
+        .param("ping", 0.0)
+        .param("fallback_hz", 1.0)
+        .body_map(|p| {
+            let measured = latch_kr(timer_kr(p.ping), p.ping);
+            let valid = in_range_kr(measured, 0.02, 120.0);
+            let period = measured * valid + p.fallback_hz.recip() * (1.0 - valid);
+            [clip_kr(1.0 / period.max(0.02), 0.05, 64.0)]
+        })
+});
+
+define_group("ctrl", || { });
+define_group("source_monitor", || { });
+define_group("smr_odd", || { });
+define_group("smr_even", || { });
+define_group("smr_taps", || { });
+define_group("phaseur_tail", || {
+    fx("phaseur_stand_in")
+        .synth("phaser_8stage")
+        .param("rate", 0.045)
+        .param("depth", 0.0011)
+        .param("feedback", 0.62)
+        .param("mix", 0.52)
+        .param("level", 0.92)
+        .apply();
+
+    fx("final_jpverb_tail")
+        .synth("reverb_jpverb")
+        .param("time", 12.0)
+        .param("damp", 0.38)
+        .param("size", 2.2)
+        .param("mix", 0.48)
+        .param("level", 0.86)
+        .apply();
+});
+
+group("ctrl").gain(0.0);
+group("source_monitor").gain(0.0);
+group("smr_odd").gain(0.0);
+group("smr_even").gain(0.0);
+group("smr_taps").gain(0.0);
+group("phaseur_tail").gain(db(-7));
+
+let qcd = voice("qcd_master")
+    .synth("qcd")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("bpm", 60.0)
+    .set_param("div_mult_1", -2.0)
+    .set_param("div_mult_2", -4.0)
+    .set_param("div_mult_3", -8.0)
+    .set_param("div_mult_4", -16.0)
+    .set_param("pulse_width", 0.14);
+
+let peg_a = voice("peg_a")
+    .synth("peg")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("div_mult_a", 2.0)
+    .set_param("skew_a", 0.32)
+    .set_param("curve_a", 0.55)
+    .set_param("scale_a", 1.0);
+
+let peg_b = voice("peg_b")
+    .synth("peg")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("div_mult_a", 3.0)
+    .set_param("skew_a", 0.68)
+    .set_param("curve_a", -0.35)
+    .set_param("scale_a", 0.86);
+
+let dld_ping = voice("dld_ping_from_qcd")
+    .synth("fourms_clock_rate_meter")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("fallback_hz", 1.0);
+
+qcd.output("ch1").to_param(peg_a, "ping_a");
+qcd.output("ch2").to_param(peg_b, "ping_a");
+qcd.output("tap").to_param(dld_ping, "ping");
+qcd.outputs(["ch3", "ch4"]).mute();
+
+let source = voice("pink_granular_source")
+    .synth("fourms_pink_grains")
+    .group("source_monitor")
+    .set_param("amp", 0.30)
+    .set_param("dust_rate", 1.7)
+    .set_param("tone", 1150.0)
+    .set_param("spread", 0.78);
+source.output("out").mute();
+
+let smr = voice("smr8_spectral_bank")
+    .synth("smr8")
+    .group("source_monitor")
+    .set_param("freq_root", 82.41)
+    .set_param("scale", 3.0)
+    .set_param("rotate", 1.0)
+    .set_param("spread", 2.0)
+    .set_param("morph", 0.42)
+    .set_param("q", 0.88)
+    .set_param("two_pass", 1.0)
+    .set_param("slew", 0.45)
+    .set_param("amp", 1.05)
+    .set_param("level1", 0.72)
+    .set_param("level2", 0.56)
+    .set_param("level3", 0.83)
+    .set_param("level4", 0.48)
+    .set_param("level5", 0.68)
+    .set_param("level6", 0.50)
+    .set_param("level7", 0.74)
+    .set_param("level8", 0.54);
+smr.input("in").from(source);
+smr.output("odd").to(group("smr_odd"));
+smr.output("even").to(group("smr_even"));
+smr.outputs(["mix", "band1", "band2", "band3", "band4", "band5", "band6", "band7", "band8"]).mute();
+smr.outputs(["env1", "env2", "env3", "env4", "env5", "env6", "env7", "env8"]).mute();
+
+let odd_tap = voice("smr_odd_to_dld_a")
+    .synth("fourms_bus_tap_mono")
+    .group("smr_taps")
+    .set_param("balance", -0.35)
+    .set_param("level", 0.95);
+odd_tap.input("in").from(group("smr_odd"));
+odd_tap.output("out").mute();
+
+let even_tap = voice("smr_even_to_dld_b")
+    .synth("fourms_bus_tap_mono")
+    .group("smr_taps")
+    .set_param("balance", 0.35)
+    .set_param("level", 0.95);
+even_tap.input("in").from(group("smr_even"));
+even_tap.output("out").mute();
+
+let dld = voice("dld_time_locked_echoes")
+    .synth("dld")
+    .group("phaseur_tail")
+    .set_param("ping_hz", 1.0)
+    .set_param("ping_lock", 1.0)
+    .set_param("cft_ms", 140.0)
+    .set_param("time_a", 4.0)
+    .set_param("time_b", 5.0)
+    .set_param("feedback_a", 0.58)
+    .set_param("feedback_b", 0.64)
+    .set_param("delay_feed_a", 0.28)
+    .set_param("delay_feed_b", 0.20)
+    .set_param("mix_a", 0.72)
+    .set_param("mix_b", 0.78);
+dld.input("in_a").from(odd_tap);
+dld.input("in_b").from(even_tap);
+dld.input("return_a").disconnect();
+dld.input("return_b").disconnect();
+dld.outputs(["out_a", "out_b"]).to_current_group();
+dld.outputs(["send_a", "send_b", "clock", "loop_a", "loop_b"]).mute();
+
+dld.param("ping_hz").modulate_by(dld_ping, "hz");
+peg_a.output("env_a").to_param(smr, "rotate").scale(7.0).offset(0.0);
+peg_b.output("env_a").to_param(smr, "morph").scale(0.62).offset(0.20);
+peg_a.output("env_a").to_param(dld, "feedback_a").scale(0.34).offset(0.46);
+peg_b.output("env_a").to_param(dld, "feedback_b").scale(0.28).offset(0.52);
+peg_a.outputs(["env_b", "env5_a", "env5_b", "or", "eor_a", "eof_a", "half_r_a", "eor_b", "eof_b", "half_r_b"]).mute();
+peg_b.outputs(["env_b", "env5_a", "env5_b", "or", "eor_a", "eof_a", "half_r_a", "eor_b", "eof_b", "half_r_b"]).mute();
+
+qcd.run();
+peg_a.run();
+peg_b.run();
+dld_ping.run();
+source.run();
+smr.run();
+odd_tap.run();
+even_tap.run();
+dld.run();
