@@ -1,0 +1,134 @@
+// Verbos Harmonic Oscillator - 8-partial additive VCO with named audio taps.
+
+define_synthdef("verbos_harmonic_osc", |builder| {
+    builder
+        .output("mix", 1)
+        .output("tri", 1)
+        .output("saw", 1)
+        .output("square", 1)
+        .output("partial1", 1)
+        .output("partial2", 1)
+        .output("partial3", 1)
+        .output("partial4", 1)
+        .output("partial5", 1)
+        .output("partial6", 1)
+        .output("partial7", 1)
+        .output("partial8", 1)
+        .param("freq", 110.0)
+        .param("amp", 0.5)
+        .param("gate", 1.0)
+        .param("fm_lin", 0.0)
+        .param("fm_lin_scale", 1.0)
+        .param("fm_exp", 0.0)
+        .param("fm_exp_scale", 1.0)
+        .param("harm1", 1.0)
+        .param("harm2", 0.0)
+        .param("harm3", 0.0)
+        .param("harm4", 0.0)
+        .param("harm5", 0.0)
+        .param("harm6", 0.0)
+        .param("harm7", 0.0)
+        .param("harm8", 0.0)
+        .param("harm1_cv", 0.0)
+        .param("harm2_cv", 0.0)
+        .param("harm3_cv", 0.0)
+        .param("harm4_cv", 0.0)
+        .param("harm5_cv", 0.0)
+        .param("harm6_cv", 0.0)
+        .param("harm7_cv", 0.0)
+        .param("harm8_cv", 0.0)
+        .param("harm1_cv_scale", 1.0)
+        .param("harm2_cv_scale", 1.0)
+        .param("harm3_cv_scale", 1.0)
+        .param("harm4_cv_scale", 1.0)
+        .param("harm5_cv_scale", 1.0)
+        .param("harm6_cv_scale", 1.0)
+        .param("harm7_cv_scale", 1.0)
+        .param("harm8_cv_scale", 1.0)
+        .param("center", 4.5)
+        .param("center_cv", 0.0)
+        .param("center_cv_scale", 1.0)
+        .param("width", 1.0)
+        .param("width_cv", 0.0)
+        .param("width_cv_scale", 1.0)
+        .param("tilt", 0.0)
+        .param("tilt_cv", 0.0)
+        .param("tilt_cv_scale", 1.0)
+        .body_map(|p| {
+            let env = envelope()
+                .asr(0.002, 1.0, 0.05)
+                .gate(p.gate)
+                .cleanup_on_finish()
+                .build();
+
+            let fm_exp = clip(p.fm_exp * p.fm_exp_scale, -5.0, 5.0);
+            let osc_freq = (p.freq * pow(2.0, fm_exp) + p.fm_lin * p.fm_lin_scale).max(0.001);
+
+            let center = clip(p.center + p.center_cv * p.center_cv_scale, 1.0, 8.0);
+            let width = clip(p.width + p.width_cv * p.width_cv_scale, 0.0, 1.0);
+            let tilt = clip(p.tilt + p.tilt_cv * p.tilt_cv_scale, -1.0, 1.0);
+            let sharp = (1.0 - width) * (1.0 - width) * 2.5;
+
+            let dist1 = 1.0 - center;
+            let win1 = exp(0.0 - dist1 * dist1 * sharp) * pow(2.0, (1.0 - 4.5) * tilt / 3.5);
+            let gain1 = clip(p.harm1 + p.harm1_cv * p.harm1_cv_scale, 0.0, 1.0) * win1;
+            let partial1 = sin_osc_ar(osc_freq * 1.0) * gain1;
+
+            let dist2 = 2.0 - center;
+            let win2 = exp(0.0 - dist2 * dist2 * sharp) * pow(2.0, (2.0 - 4.5) * tilt / 3.5);
+            let gain2 = clip(p.harm2 + p.harm2_cv * p.harm2_cv_scale, 0.0, 1.0) * win2;
+            let partial2 = sin_osc_ar(osc_freq * 2.0) * gain2;
+
+            let dist3 = 3.0 - center;
+            let win3 = exp(0.0 - dist3 * dist3 * sharp) * pow(2.0, (3.0 - 4.5) * tilt / 3.5);
+            let gain3 = clip(p.harm3 + p.harm3_cv * p.harm3_cv_scale, 0.0, 1.0) * win3;
+            let partial3 = sin_osc_ar(osc_freq * 3.0) * gain3;
+
+            let dist4 = 4.0 - center;
+            let win4 = exp(0.0 - dist4 * dist4 * sharp) * pow(2.0, (4.0 - 4.5) * tilt / 3.5);
+            let gain4 = clip(p.harm4 + p.harm4_cv * p.harm4_cv_scale, 0.0, 1.0) * win4;
+            let partial4 = sin_osc_ar(osc_freq * 4.0) * gain4;
+
+            let dist5 = 5.0 - center;
+            let win5 = exp(0.0 - dist5 * dist5 * sharp) * pow(2.0, (5.0 - 4.5) * tilt / 3.5);
+            let gain5 = clip(p.harm5 + p.harm5_cv * p.harm5_cv_scale, 0.0, 1.0) * win5;
+            let partial5 = sin_osc_ar(osc_freq * 5.0) * gain5;
+
+            let dist6 = 6.0 - center;
+            let win6 = exp(0.0 - dist6 * dist6 * sharp) * pow(2.0, (6.0 - 4.5) * tilt / 3.5);
+            let gain6 = clip(p.harm6 + p.harm6_cv * p.harm6_cv_scale, 0.0, 1.0) * win6;
+            let partial6 = sin_osc_ar(osc_freq * 6.0) * gain6;
+
+            let dist7 = 7.0 - center;
+            let win7 = exp(0.0 - dist7 * dist7 * sharp) * pow(2.0, (7.0 - 4.5) * tilt / 3.5);
+            let gain7 = clip(p.harm7 + p.harm7_cv * p.harm7_cv_scale, 0.0, 1.0) * win7;
+            let partial7 = sin_osc_ar(osc_freq * 7.0) * gain7;
+
+            let dist8 = 8.0 - center;
+            let win8 = exp(0.0 - dist8 * dist8 * sharp) * pow(2.0, (8.0 - 4.5) * tilt / 3.5);
+            let gain8 = clip(p.harm8 + p.harm8_cv * p.harm8_cv_scale, 0.0, 1.0) * win8;
+            let partial8 = sin_osc_ar(osc_freq * 8.0) * gain8;
+
+            let out_gain = env * p.amp;
+            let mix = partial1 + partial2 + partial3 + partial4
+                    + partial5 + partial6 + partial7 + partial8;
+            let tri = lf_tri_ar(osc_freq, 0.0);
+            let saw = lf_saw_ar(osc_freq, 0.0);
+            let square = lf_pulse_ar(osc_freq, 0.0, 0.5) * 2.0 - 1.0;
+
+            [
+                mix * out_gain,
+                tri * out_gain,
+                saw * out_gain,
+                square * out_gain,
+                partial1 * out_gain,
+                partial2 * out_gain,
+                partial3 * out_gain,
+                partial4 * out_gain,
+                partial5 * out_gain,
+                partial6 * out_gain,
+                partial7 * out_gain,
+                partial8 * out_gain,
+            ]
+        })
+});
