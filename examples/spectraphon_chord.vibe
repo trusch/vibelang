@@ -9,9 +9,9 @@
 //   2. The Follow-mode pitch ratio menu (`routing_mode`) — sets B's
 //      pitch as a fixed musical interval above A.
 //
-// The 4-channel output `[odd_a, even_a, odd_b, even_b]` is summed into
-// stereo by panning the A bank slightly left and the B bank slightly
-// right. With `routing_mode=2` (perfect fifth) and a touch of FM index,
+// The four named outputs (`odd_a`, `even_a`, `odd_b`, `even_b`) are routed
+// into the group together for a summed chord texture. With `routing_mode=2`
+// (perfect fifth) and a touch of FM index,
 // the sides produce the spectral chord families described in
 // `kb/spectraphon-synthdef-plan.md` §3.e.
 //
@@ -55,6 +55,7 @@ let chord = define_group("SpectraChord", || {
 
     // Breathing FM into A from B — target-first kr routing.
     v.param("b_fm_index").modulate_by(fm_lfo, "out");
+    v.outputs(["odd_a", "even_a", "odd_b", "even_b"]).to_current_group();
 
     // Hold the chord — the synthdef's envelope sustains while gate=1.
     melody("chord_hold").on(v).notes("A2").apply();

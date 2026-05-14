@@ -43,6 +43,9 @@
 //     the buffer using bilinear interpolation across the 4 cells around
 //     the current (slide, focus). 4 buf_rd_kr per partial × 64 partials =
 //     256 lookups per side at kr rate.
+//     If `bufnum` is left at its default 0, SAO reads a one-frame local
+//     fallback buffer and mixes in a built-in 1/k saw spectrum. Capture is
+//     disabled until a script-allocated Array buffer is wired in.
 //
 //   The Array buffer is a script-allocated, hot-reload-safe buffer wired
 //   in via the `bufnum` synthdef param. The script side calls
@@ -190,6 +193,10 @@ define_synthdef("spectraphon_side", |builder| {
             let sam_cap    = 1.0 - m_le_3;                       // mode≥4
             let sam_mix    = sam_only + sam_cap;                 // SAM is mode 1 OR 4
             let cap_active = sam_cap;                            // capture only at mode=4
+            let has_array  = clip((array_buf - 1.0) * 1000.0, 0.0, 1.0);
+            let fallback_array_buf = local_buf_ir(1.0, 1.0);
+            let array_mem = array_buf * has_array
+                          + fallback_array_buf * (1.0 - has_array);
 
             // === Story C: shared 16-Array buffer + bilinear lookup ===
             //
@@ -233,31 +240,33 @@ define_synthdef("spectraphon_side", |builder| {
             // When capture is inactive we offset the write phase by 1e9 — far
             // past the 65536-frame buffer with loop=0, BufWr drops the write.
             let cap_base = arr_base + slide_lo * 512.0 + focus_lo * 64.0;
-            let cap_offset = (1.0 - cap_active) * 1.0e9;
+            let cap_offset = (1.0 - cap_active * has_array) * 1.0e9;
 
             // --- Odd bank: k = 1, 3, 5, ..., 63 ---------------------------
             let k = 1.0;
-            let mag_sao = w00 * buf_rd_kr(1, array_buf, base00 + (k - 1.0), 0, 1)
-                        + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
-                        + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
-                        + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
+            let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
+                            + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
+                            + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
+                            + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
+            let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
             let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
             let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
             let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
-            buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
+            buf_wr_kr(mag_sam, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
             let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
             let odd_bank = sin_osc_ar(freq * k) * mag_k
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * i + 1).to_float();
-                let mag_sao = w00 * buf_rd_kr(1, array_buf, base00 + (k - 1.0), 0, 1)
-                            + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
-                            + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
-                            + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
+                let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
+                                + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
+                                + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
+                                + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
+                let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
                 let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
                 let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
                 let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
-                buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
+                buf_wr_kr(mag_sam, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
                 let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
                 odd_bank = odd_bank + sin_osc_ar(freq * k) * mag_k
                     * clip(scale - (k - 1.0), 0.0, 1.0);
@@ -265,27 +274,29 @@ define_synthdef("spectraphon_side", |builder| {
 
             // --- Even bank: k = 2, 4, 6, ..., 64 --------------------------
             let k = 2.0;
-            let mag_sao = w00 * buf_rd_kr(1, array_buf, base00 + (k - 1.0), 0, 1)
-                        + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
-                        + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
-                        + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
+            let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
+                            + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
+                            + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
+                            + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
+            let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
             let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
             let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
             let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
-            buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
+            buf_wr_kr(mag_sam, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
             let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
             let even_bank = sin_osc_ar(freq * k) * mag_k
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * (i + 1)).to_float();
-                let mag_sao = w00 * buf_rd_kr(1, array_buf, base00 + (k - 1.0), 0, 1)
-                            + w01 * buf_rd_kr(1, array_buf, base01 + (k - 1.0), 0, 1)
-                            + w10 * buf_rd_kr(1, array_buf, base10 + (k - 1.0), 0, 1)
-                            + w11 * buf_rd_kr(1, array_buf, base11 + (k - 1.0), 0, 1);
+                let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
+                                + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
+                                + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
+                                + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
+                let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
                 let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
                 let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
                 let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
-                buf_wr_kr(mag_sam, array_buf, cap_base + (k - 1.0) + cap_offset, 0);
+                buf_wr_kr(mag_sam, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
                 let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
                 even_bank = even_bank + sin_osc_ar(freq * k) * mag_k
                     * clip(scale - (k - 1.0), 0.0, 1.0);

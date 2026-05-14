@@ -35,7 +35,7 @@ let organize_seq = voice("organize_seq")
 
 let splices = define_group("Splices", || {
     // Single voice — Story B's single-voice splice-select supersedes the
-    // four-voice idiom that morphagene_micromontage.vibe uses for Story A.
+    // four-voice idiom that morphagene_micromontage.vibe uses for tape cuts.
     let v = voice("morph")
         .synth("morphagene")
         .set_param("bufnum", reel.bufnum)

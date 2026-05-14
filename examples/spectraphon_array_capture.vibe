@@ -28,9 +28,8 @@
 // captured Array stores `mag[k] ≈ 0`, and SAO playback is silent — that
 // is the correct "no input → no spectrum" behaviour, not a bug.
 //
-// Limitation: the Array buffer is `local_buf_ir`, scoped to the synth
-// instance. Captures do not survive a hot-reload of the synthdef. See
-// kb/spectraphon-howto.md §4b and §9 for the planned upgrade path.
+// Array memory uses a script-allocated buffer wired into `bufnum`, so captures
+// survive hot-reload as long as the `allocate_buffer` call stays in the script.
 //
 // References: kb/spectraphon-howto.md §3, §4, §8d.
 //             kb/spectraphon-synthdef-plan.md §3.b, §6.C.
@@ -39,6 +38,8 @@ import "stdlib/instruments/spectral/spectraphon_side.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
 set_tempo(80);
+
+let arr = allocate_buffer("array_capture_spec_arrays", 65536, 1);
 
 // One voice held for the entire 16-bar sequence. `freq = 110.0` puts the
 // playback fundamental at A2; the harmonic bank will play 64 partials
@@ -49,14 +50,16 @@ let capture_demo = define_group("ArrayCapture", || {
         .synth("spectraphon_side")
         .set_param("freq", 110.0)
         .set_param("partials", 0.85)
-        .set_param("merge_even", 1.0)        // Even folds into Odd → mono
-        .set_param("right_mode", 1.0)        // R = clean Sine for reference pitch
+        .set_param("bufnum", arr.bufnum)
         .set_param("array_idx", 0.0)         // capture into / play back from Array 0
         .set_param("sam_capture", 4.0)       // start in SAM-with-capture
         .set_param("slide", 0.0)
         .set_param("focus", 0.0)
         .set_param("amp", 0.25)
         .gain(db(-9));
+
+    v.outputs(["sine", "odd", "even"]).to_current_group();
+    v.output("sub").mute();
 
     melody("hold").on(v).notes("A2").apply();
 

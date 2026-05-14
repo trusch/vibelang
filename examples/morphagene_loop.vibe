@@ -1,4 +1,4 @@
-// Morphagene Story A example — load a stereo .wav as the Reel, loop it
+// Morphagene loop example — load a stereo .wav as the Reel, loop it
 // through the morphagene synthdef with mid-Slide and a slow Vari-Speed
 // modulation, send the result through a hall reverb.
 //

@@ -5,21 +5,17 @@
 // at unity feedback the loop persists indefinitely; below unity each
 // pass attenuates, producing the classic tape-style decay.
 //
-// SOS recording (`record_buf_ar` writing back into the Reel) is a Story B
-// feature — the Story A morphagene synthdef plays back only. To preview
-// the *audible* shape of SOS decay today, this example layers a
-// `dub_delay` feedback path onto the morphagene output. The feedback
-// value maps directly to the hardware SOS pot:
+// The current morphagene synthdef includes an SOS recorder, but this example
+// layers a `dub_delay` feedback path onto the output as a controllable,
+// non-destructive preview of the audible decay shape. The feedback value maps
+// directly to the hardware SOS pot:
 //
 //      feedback = 0.0   →  no repeats        (full CCW, "live only")
 //      feedback = 0.7   →  several decaying repeats
 //      feedback = 0.95  →  near-unity loop   (full CW)
 //
-// This is **not** SOS — there is no rerecording into the buffer, so the
-// "loop" will not capture new live input the way the hardware does.
-// Once Story B's `record_buf_ar` path lands, this example will be
-// rewritten to drive the actual SOS recording loop. Until then it is the
-// closest sonic stand-in available with Story A.
+// To use the actual SOS recorder instead, raise the synthdef's `sos` param
+// above 0.001 and feed audio into hardware input channel 0.
 //
 // Drop a stereo loop at `samples/loop.wav`. Short percussive material
 // (one-shots, hits) produces the most recognisable SOS-style decay.
@@ -38,8 +34,8 @@ let sos = define_group("SOS", || {
     let v = voice("sos_src")
         .synth("morphagene")
         .set_param("bufnum", reel.bufnum)
-        .set_param("splice_start_frame",     0.0)
-        .set_param("splice_end_frame",   96000.0)   // 2.0 s @ 48 kHz
+        .set_param("num_splices", 4.0)
+        .set_param("organize", 0.0)
         .set_param("vari_speed", 0.7937)
         .set_param("slide", 0.0)
         .set_param("amp", 0.5)

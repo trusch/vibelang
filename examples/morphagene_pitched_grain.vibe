@@ -1,11 +1,11 @@
 // Morphagene Vari-Speed-as-pitch — short splice played as a pitched chord.
 //
-// Hardware Morphagene under CLK + Morph ≥ 11:00 enters Time Stretch mode,
+// Hardware Morphagene under CLK + Morph >= 11:00 enters Time Stretch mode,
 // where the clock drives time and Vari-Speed becomes a pure pitch control,
-// decoupled from grain advance. That mode lands with Story D (granular
-// path + CLK modes); Story A has neither granular spawning nor CLK.
+// decoupled from grain advance. The current synthdef includes the granular
+// and clock modes; this example keeps the simpler varispeed-chord patch.
 //
-// What Story A *does* support cleanly is the underlying acoustic effect:
+// The synthdef also supports the underlying acoustic effect directly:
 // playing a short splice at a continuously variable rate transposes it.
 // This example layers four voices reading the same short splice at four
 // calibrated `vari_speed` values, producing a four-note chord whose tones
@@ -36,10 +36,8 @@ set_tempo(72);
 
 let reel = sample("reel", "samples/loop.wav").loop_mode(true);
 
-// One short splice — 0.5 s at 48 kHz. Short enough that the four voices
-// stay roughly aligned across one cycle.
-let splice_start = 0.0;
-let splice_end   = 24000.0;
+// Use the first region of an evenly divided Reel. Arbitrary splice markers are
+// not imported yet, so `num_splices` is the practical patching control.
 
 // Vari-Speed values calibrated to a major triad + octave above unity.
 // Approximate equal-tempered intervals; finite cubic precision means
@@ -53,8 +51,8 @@ let chord = define_group("PitchedChord", || {
     let v1 = voice("root")
         .synth("morphagene")
         .set_param("bufnum", reel.bufnum)
-        .set_param("splice_start_frame", splice_start)
-        .set_param("splice_end_frame",   splice_end)
+        .set_param("num_splices", 8.0)
+        .set_param("organize", 0.0)
         .set_param("vari_speed", v_unison)
         .set_param("amp", 0.4)
         .gain(db(-9));
@@ -62,8 +60,8 @@ let chord = define_group("PitchedChord", || {
     let v2 = voice("third")
         .synth("morphagene")
         .set_param("bufnum", reel.bufnum)
-        .set_param("splice_start_frame", splice_start)
-        .set_param("splice_end_frame",   splice_end)
+        .set_param("num_splices", 8.0)
+        .set_param("organize", 0.0)
         .set_param("vari_speed", v_major3)
         .set_param("amp", 0.35)
         .gain(db(-12));
@@ -71,8 +69,8 @@ let chord = define_group("PitchedChord", || {
     let v3 = voice("fifth")
         .synth("morphagene")
         .set_param("bufnum", reel.bufnum)
-        .set_param("splice_start_frame", splice_start)
-        .set_param("splice_end_frame",   splice_end)
+        .set_param("num_splices", 8.0)
+        .set_param("organize", 0.0)
         .set_param("vari_speed", v_perfect5)
         .set_param("amp", 0.35)
         .gain(db(-12));
@@ -80,8 +78,8 @@ let chord = define_group("PitchedChord", || {
     let v4 = voice("oct")
         .synth("morphagene")
         .set_param("bufnum", reel.bufnum)
-        .set_param("splice_start_frame", splice_start)
-        .set_param("splice_end_frame",   splice_end)
+        .set_param("num_splices", 8.0)
+        .set_param("organize", 0.0)
         .set_param("vari_speed", v_octave)
         .set_param("amp", 0.3)
         .gain(db(-15));

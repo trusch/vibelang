@@ -73,8 +73,9 @@
 //   partials_a, partials_b, slide_a, slide_b, focus_a, focus_b,
 //   mode_a, mode_b, array_idx_a, array_idx_b.
 //
-// Output: 4-channel array [odd_a, even_a, odd_b, even_b]. Users wanting a
-// stereo mix can sum or pan downstream.
+// Output ports: `odd_a`, `even_a`, `odd_b`, `even_b`. Route all four when
+// using both sides; the default multi-output route sends the first two ports
+// to the voice group and leaves the rest muted.
 //
 // References: kb/spectraphon-synthdef-plan.md §3.f, §4 (FM bus, Follow,
 // Sync rows), §6.D, §7. Bank construction pattern: spectraphon_side.vibe.
@@ -83,6 +84,10 @@
 
 define_synthdef("spectraphon_dual", |builder| {
     builder
+        .output("odd_a")            // 1ch — side A odd-bank summed
+        .output("even_a")           // 1ch — side A even-bank summed
+        .output("odd_b")            // 1ch — side B odd-bank summed
+        .output("even_b")           // 1ch — side B even-bank summed
         .param("freq_a", 220.0)
         .param("freq_b", 220.0)
         .param("amp", 0.3)

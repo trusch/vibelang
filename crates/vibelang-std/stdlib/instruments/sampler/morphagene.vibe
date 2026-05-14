@@ -101,10 +101,8 @@
 //   the accumulated offset.
 //
 //   EOSG (D1) is computed as `t_delay(spawn_trig, gene_dur_sec)` followed
-//   by a 5 ms `trig1` gate, scaled to 10 V. The result is held in a
-//   variable (`_eosg_out`) — voice synthdefs return [left, right] only
-//   today, so the EOSG is a documented internal signal. Exposing it as a
-//   sidecar CV output arrives with Story E (Reel registry / persistence).
+//   by a 5 ms `trig1` gate, scaled to 10 V, and exposed as a named kr output
+//   port (`eosg`) for CV-style routing.
 //
 //   Clock-rate clamping (D4): not enforced in DSP. The plan calls for
 //   warn/clip at [1/3.5 s, 18 Hz] for Time Stretch; rate measurement via
@@ -125,7 +123,8 @@
 //   of the playback Phasor so reverse Vari-Speed during SOS does not flip
 //   the commit direction.
 //
-// Param budget — Rhai closures cap at 10 args. Dropped across stories:
+// Param budget — this synthdef uses `body_map` so the old 10-arg closure cap
+// no longer forces controls to be folded away. Still deferred across stories:
 //   - Story B's `shift_trig` and `splice_trig` (no runtime marker drops).
 //   - Story D's `rec_active` (folded into `sos > 0`, see above).
 // Stereo: the granular path delivers true stereo via grain_buf_ar's
@@ -135,6 +134,9 @@
 
 define_synthdef("morphagene", |builder| {
     builder
+        .output("left")                    // 1ch — audio left
+        .output("right")                   // 1ch — audio right
+        .output_kr("eosg")                 // 1ch kr — End-of-Splice/Gene gate
         .param("bufnum", 0.0)
         .param("num_splices", 1.0)        // 1..300, evenly-spaced division of Reel
         .param("organize", 0.0)           // 0..1 splice select knob+CV
@@ -144,9 +146,22 @@ define_synthdef("morphagene", |builder| {
         .param("slide", 0.0)              // 0..1 start position within splice
         .param("gene_size", 0.0)          // 0..1 grain duration (cubic; 0 = whole splice)
         .param("morph", 0.0)              // 0..1 spawn cadence + pan + pitch-up
+        .param("amp", 0.5)                // output amplitude
+        .param("play_gate", 1.0)          // 0/1 audible gate, synth stays alive
         .param("gate", 1.0)               // synth-instance lifecycle
-        .body(|bufnum, num_splices, organize, sos, clk,
-               vari_speed, slide, gene_size, morph, gate| {
+        .body_map(|p| {
+            let bufnum = p.bufnum;
+            let num_splices = p.num_splices;
+            let organize = p.organize;
+            let sos = p.sos;
+            let clk = p.clk;
+            let vari_speed = p.vari_speed;
+            let slide = p.slide;
+            let gene_size = p.gene_size;
+            let morph = p.morph;
+            let amp = p.amp;
+            let play_gate = p.play_gate;
+            let gate = p.gate;
 
             // --- Reel buffer info ----------------------------------------------
             let buf_n = buf_frames_kr(bufnum);
@@ -358,10 +373,8 @@ define_synthdef("morphagene", |builder| {
             // Per kb plan §6.D D1: spawn_trig delayed by gene_dur, then a
             // 5 ms gate, scaled to 10 V. Steady under Vari-Speed because
             // gene_dur_sec is in time, not samples (manual §3c).
-            // Computed but not exposed — voice synthdefs return [left,right]
-            // only; CV-output infrastructure for voices arrives with Story E.
-            let _eosg_pulse = t_delay_ar(spawn_trig, gene_dur_sec);
-            let _eosg_out = trig1_ar(_eosg_pulse, 0.005) * 10.0;
+            let eosg_pulse = t_delay_ar(spawn_trig, gene_dur_sec);
+            let eosg_out = a2k_kr(trig1_ar(eosg_pulse, 0.005) * 10.0);
 
             // --- SOS RecordBuf (Story B, refactored) ---------------------------
             // Recording active iff sos > 0.001 (rec_active param dropped to
@@ -394,10 +407,12 @@ define_synthdef("morphagene", |builder| {
                 .cleanup_on_finish()
                 .build();
 
-            let left  = leak_dc_ar(mix_l * env, 0.995);
-            let right = leak_dc_ar(mix_r * env, 0.995);
+            let play_env = lag_ar(clip(play_gate, 0.0, 1.0), 0.005);
+            let gain = env * play_env * amp;
+            let left  = leak_dc_ar(mix_l * gain, 0.995);
+            let right = leak_dc_ar(mix_r * gain, 0.995);
 
-            [left, right]
+            [left, right, eosg_out]
         })
 });
 
