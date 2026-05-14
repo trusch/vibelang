@@ -77,6 +77,16 @@ fn resynthesizer_control_modules_import_and_register_kr_outputs() {
     let maths_params = get_synthdef_param_defaults("maths");
     assert_eq!(maths_params.get("cycle4"), Some(&0.0));
     assert_eq!(maths_params.get("ch2_scale"), Some(&0.5));
+    assert_eq!(maths_params.get("ch2_offset"), Some(&0.0));
+    assert_eq!(maths_params.get("ch3_offset"), Some(&0.0));
+    assert_eq!(maths_params.get("rise1_cv"), Some(&0.0));
+    assert_eq!(maths_params.get("rise1_cv_scale"), Some(&1.0));
+    assert_eq!(maths_params.get("fall1_cv"), Some(&0.0));
+    assert_eq!(maths_params.get("fall1_cv_scale"), Some(&1.0));
+    assert_eq!(maths_params.get("rise4_cv"), Some(&0.0));
+    assert_eq!(maths_params.get("rise4_cv_scale"), Some(&1.0));
+    assert_eq!(maths_params.get("fall4_cv"), Some(&0.0));
+    assert_eq!(maths_params.get("fall4_cv_scale"), Some(&1.0));
 
     let rene_params = get_synthdef_param_defaults("rene");
     assert_eq!(rene_params.get("note00"), Some(&60.0));

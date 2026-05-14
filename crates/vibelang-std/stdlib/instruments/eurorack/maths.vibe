@@ -2,11 +2,13 @@
 //
 // kr ports:
 //   ch1/ch4: triggered or cycling function channels.
-//   ch2/ch3: attenuverter/offset utility channels.
+//   ch2/ch3: attenuverter/offset utility channels. Patch kr CV to `ch2`/`ch3`
+//            via `.to_param`/`.modulate_by`; `chN_scale` is a bipolar knob.
 //   sum/or/inv: Maths-style combined outputs.
 //   eor1/eoc1/eor4/eoc4: 5 ms +5 V timing pulses.
 //
-// Params are intentionally direct CV patch points. `shape1`/`shape4` are a
+// Params are intentionally direct CV patch points. `riseN_cv`/`fallN_cv`
+// bend the base segment times exponentially, and `shape1`/`shape4` are a
 // practical runtime curve morph: 0 = squared/log-like, 0.5 = Decay2's native
 // exponential, 1 = sqrt/exp-like. This is not a segment-accurate Maths curve
 // circuit, but it makes the shape controls musically useful with current UGens.
@@ -25,24 +27,39 @@ define_synthdef("maths", |builder| {
         .output_kr("eor4")
         .output_kr("eoc4")
         .param("rise1", 0.05)
+        .param("rise1_cv", 0.0)
+        .param("rise1_cv_scale", 1.0)
         .param("fall1", 0.5)
+        .param("fall1_cv", 0.0)
+        .param("fall1_cv_scale", 1.0)
         .param("shape1", 0.5)
         .param("cycle1", 0.0)
         .param("trig1", 0.0)
         .param("rise4", 0.05)
+        .param("rise4_cv", 0.0)
+        .param("rise4_cv_scale", 1.0)
         .param("fall4", 0.5)
+        .param("fall4_cv", 0.0)
+        .param("fall4_cv_scale", 1.0)
         .param("shape4", 0.5)
         .param("cycle4", 0.0)
         .param("trig4", 0.0)
         .param("ch2", 0.0)
         .param("ch2_scale", 0.5)
+        .param("ch2_offset", 0.0)
         .param("ch3", 0.0)
         .param("ch3_scale", 0.5)
+        .param("ch3_offset", 0.0)
         .body_map(|p| {
-            let rise1 = p.rise1.max(0.001);
-            let fall1 = p.fall1.max(0.001);
-            let rise4 = p.rise4.max(0.001);
-            let fall4 = p.fall4.max(0.001);
+            let rise1_cv = clip(p.rise1_cv * p.rise1_cv_scale, -1.0, 1.0);
+            let fall1_cv = clip(p.fall1_cv * p.fall1_cv_scale, -1.0, 1.0);
+            let rise4_cv = clip(p.rise4_cv * p.rise4_cv_scale, -1.0, 1.0);
+            let fall4_cv = clip(p.fall4_cv * p.fall4_cv_scale, -1.0, 1.0);
+
+            let rise1 = (p.rise1 * pow(2.0, rise1_cv * 4.0)).max(0.001);
+            let fall1 = (p.fall1 * pow(2.0, fall1_cv * 4.0)).max(0.001);
+            let rise4 = (p.rise4 * pow(2.0, rise4_cv * 4.0)).max(0.001);
+            let fall4 = (p.fall4 * pow(2.0, fall4_cv * 4.0)).max(0.001);
 
             let cycle_rate1 = p.cycle1.max(0.0) / (rise1 + fall1 + 0.001);
             let cycle_rate4 = p.cycle4.max(0.0) / (rise4 + fall4 + 0.001);
@@ -68,12 +85,15 @@ define_synthdef("maths", |builder| {
             let env4_sqrt = sqrt(clip(env4_raw, 0.0, 1.0));
             let ch4_out = clip_kr(env4_sq * low4 + env4_raw * mid4 + env4_sqrt * high4, -1.0, 1.0);
 
-            let ch2_out = clip_kr(p.ch2 * p.ch2_scale, -1.0, 1.0);
-            let ch3_out = clip_kr(p.ch3 * p.ch3_scale, -1.0, 1.0);
+            let ch2_attenuverter = clip(p.ch2_scale * 2.0 - 1.0, -1.0, 1.0);
+            let ch3_attenuverter = clip(p.ch3_scale * 2.0 - 1.0, -1.0, 1.0);
+            let ch2_out = clip_kr(p.ch2 * ch2_attenuverter + p.ch2_offset, -1.0, 1.0);
+            let ch3_out = clip_kr(p.ch3 * ch3_attenuverter + p.ch3_offset, -1.0, 1.0);
 
-            let sum_out = clip_kr(ch1_out + ch2_out + ch3_out + ch4_out, -1.0, 1.0);
+            let sum_mix = ch1_out + ch2_out + ch3_out + ch4_out;
+            let sum_out = clip_kr(sum_mix, -1.0, 1.0);
             let or_out = max(max(ch1_out, ch2_out), max(ch3_out, ch4_out));
-            let inv_out = clip_kr(0.0 - ch1_out, -1.0, 1.0);
+            let inv_out = clip_kr(0.0 - sum_mix, -1.0, 1.0);
 
             let eor1 = clip_kr(trig1_kr(t_delay_kr(trig_src1, rise1), 0.005) * 0.5, -1.0, 1.0);
             let eoc1 = clip_kr(trig1_kr(t_delay_kr(trig_src1, rise1 + fall1), 0.005) * 0.5, -1.0, 1.0);
