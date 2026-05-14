@@ -264,6 +264,34 @@ impl SynthDefBuilderHandle {
         self
     }
 
+    /// Declare a named audio-rate input port (1 channel by default).
+    pub fn input(mut self, name: ImmutableString) -> Result<Self, Box<EvalAltResult>> {
+        self.synthdef
+            .input(name.into_owned(), 1)
+            .map_err(synthdef_error_to_eval)?;
+        Ok(self)
+    }
+
+    /// Declare a named audio-rate input port with explicit channel count.
+    pub fn input_with_channels(
+        mut self,
+        name: ImmutableString,
+        channels: i64,
+    ) -> Result<Self, Box<EvalAltResult>> {
+        if channels != 1 && channels != 2 {
+            return Err(synthdef_error_to_eval(SynthDefError::ValidationError(
+                format!(
+                    "Input port channels must be 1 (mono) or 2 (stereo), got {}; named-input routing currently supports audio-rate mono/stereo only",
+                    channels
+                ),
+            )));
+        }
+        self.synthdef
+            .input(name.into_owned(), channels as u8)
+            .map_err(synthdef_error_to_eval)?;
+        Ok(self)
+    }
+
     /// Declare a named audio-rate output port (1 channel by default).
     pub fn output(mut self, name: ImmutableString) -> Result<Self, Box<EvalAltResult>> {
         self.synthdef
@@ -697,6 +725,8 @@ pub fn register_synthdef_api(engine: &mut Engine) {
         .register_fn("param", SynthDefBuilderHandle::param)
         .register_fn("glide_ms", SynthDefBuilderHandle::glide_ms)
         .register_fn("out_bus", SynthDefBuilderHandle::out_bus)
+        .register_fn("input", SynthDefBuilderHandle::input)
+        .register_fn("input", SynthDefBuilderHandle::input_with_channels)
         .register_fn("output", SynthDefBuilderHandle::output)
         .register_fn("output", SynthDefBuilderHandle::output_with_channels)
         .register_fn("output_kr", SynthDefBuilderHandle::output_kr)
@@ -776,4 +806,171 @@ pub fn register_synthdef_api(engine: &mut Engine) {
                 .map(|_| ())
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{register_dsp_api, Input, Rate};
+
+    const INPUT_CHANNEL_ERROR: &str = "Input port channels must be 1 (mono) or 2 (stereo)";
+
+    fn test_engine() -> Engine {
+        let mut engine = Engine::new();
+        register_dsp_api(&mut engine);
+        engine
+    }
+
+    fn reset_registries() {
+        clear_synthdef_registry();
+        clear_synthdef_outputs_registry();
+        clear_synthdef_inputs_registry();
+        set_deploy_callback(|_| Ok(()));
+    }
+
+    fn eval_err(script: &str) -> String {
+        reset_registries();
+        test_engine()
+            .eval::<Dynamic>(script)
+            .expect_err("script should fail")
+            .to_string()
+    }
+
+    fn registered_ir(name: &str) -> GraphIR {
+        get_synthdef_registry()
+            .lock()
+            .unwrap()
+            .get(name)
+            .cloned()
+            .expect("registered synthdef")
+    }
+
+    #[test]
+    fn rhai_synthdef_input_mono_body_map_registers_input_manifest() {
+        reset_registries();
+        let _ = test_engine()
+            .eval::<Dynamic>(
+                r#"
+                define_synthdef("rhai_input_mono")
+                    .input("audio")
+                    .body_map(|p| p.inputs.audio);
+                "#,
+            )
+            .expect("define mono input synthdef");
+
+        assert_eq!(
+            get_synthdef_inputs("rhai_input_mono"),
+            Some(vec![InputPort {
+                name: "audio".to_string(),
+                channels: 1,
+                rate: PortRate::Ar,
+            }])
+        );
+
+        let ir = registered_ir("rhai_input_mono");
+        assert!(
+            ir.params.iter().any(|p| p.name == "__in0"),
+            "hidden input bus param not found: {:?}",
+            ir.params
+        );
+        let in_nodes: Vec<_> = ir.nodes.iter().filter(|n| n.name == "In").collect();
+        assert_eq!(in_nodes.len(), 1, "expected one input reader");
+        assert_eq!(in_nodes[0].rate, Rate::Audio);
+        assert_eq!(in_nodes[0].num_outputs, 1);
+    }
+
+    #[test]
+    fn rhai_synthdef_input_stereo_body_map_access() {
+        reset_registries();
+        let _ = test_engine()
+            .eval::<Dynamic>(
+                r#"
+                define_synthdef("rhai_input_stereo")
+                    .input("wide", 2)
+                    .body_map(|p| [p.inputs.wide[0], p.inputs.wide[1]]);
+                "#,
+            )
+            .expect("define stereo input synthdef");
+
+        assert_eq!(
+            get_synthdef_inputs("rhai_input_stereo"),
+            Some(vec![InputPort {
+                name: "wide".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }])
+        );
+
+        let ir = registered_ir("rhai_input_stereo");
+        let in_nodes: Vec<_> = ir.nodes.iter().filter(|n| n.name == "In").collect();
+        assert_eq!(in_nodes.len(), 1, "expected one stereo input reader");
+        assert_eq!(in_nodes[0].rate, Rate::Audio);
+        assert_eq!(in_nodes[0].num_outputs, 2);
+        assert!(matches!(
+            in_nodes[0].inputs.first(),
+            Some(Input::Node {
+                output_index: 0,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn rhai_synthdef_input_rejects_bad_width() {
+        for channels in [0, 3] {
+            let err = eval_err(&format!(
+                r#"
+                define_synthdef("rhai_input_bad_width_{channels}")
+                    .input("audio", {channels})
+                    .body_map(|p| p.inputs.audio);
+                "#
+            ));
+            assert!(err.contains(INPUT_CHANNEL_ERROR), "err = {}", err);
+            assert!(err.contains(&format!("got {}", channels)), "err = {}", err);
+        }
+    }
+
+    #[test]
+    fn rhai_synthdef_input_duplicate_name_errors() {
+        let err = eval_err(
+            r#"
+            define_synthdef("rhai_input_dup")
+                .input("audio")
+                .input("audio", 2)
+                .body_map(|p| p.inputs.audio);
+            "#,
+        );
+
+        assert!(err.contains("Duplicate input port name"), "err = {}", err);
+        assert!(err.contains("audio"), "err = {}", err);
+    }
+
+    #[test]
+    fn rhai_synthdef_input_reserved_inputs_param_errors() {
+        let err = eval_err(
+            r#"
+            define_synthdef("rhai_input_reserved_param")
+                .input("audio")
+                .param("inputs", 0.0)
+                .body_map(|p| p.inputs.audio);
+            "#,
+        );
+
+        assert!(err.contains("inputs"), "err = {}", err);
+        assert!(err.contains("reserved"), "err = {}", err);
+    }
+
+    #[test]
+    fn rhai_synthdef_input_requires_body_map() {
+        let err = eval_err(
+            r#"
+            define_synthdef("rhai_input_requires_body_map")
+                .input("audio")
+                .body(|| 0.0);
+            "#,
+        );
+
+        assert!(err.contains("body_map"), "err = {}", err);
+        assert!(err.contains("p.inputs"), "err = {}", err);
+    }
 }
