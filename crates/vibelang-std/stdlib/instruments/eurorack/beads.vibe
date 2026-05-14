@@ -23,6 +23,7 @@
 //   - `feedback` is a practical LocalIn/LocalOut loop around the Clouds output,
 //     not the exact Beads hardware feedback path.
 //   - `space` is a small FreeVerb send after the granular core.
+// Manual reference: https://pichenettes.github.io/mutable-instruments-documentation/modules/beads/manual/
 
 define_synthdef("beads", |builder| {
     builder
