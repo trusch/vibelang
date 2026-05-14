@@ -1110,12 +1110,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                 Ok(bus)
             }
             InputRouteSrc::Group(group_id) => {
-                if target_port.channels > 2 {
-                    return Err(Error::InvalidConfig(format!(
-                        "Group sources expose a stereo audio bus, but input '{}' needs {} channels",
-                        target_port.name, target_port.channels
-                    )));
-                }
+                Self::validate_input_source_width(target_port, 2)?;
                 state
                     .groups
                     .get(group_id)
@@ -3151,6 +3146,46 @@ mod tests {
         let target_bus = s.voices.get(&target_id).unwrap().input_buses[0].1;
         assert_eq!(creates[0].in_bus, silent_bus.raw() as f32);
         assert_eq!(creates[0].out_bus, target_bus.raw() as f32);
+    }
+
+    #[tokio::test]
+    async fn finalize_input_route_rejects_group_source_to_mono_input() {
+        let (handler, backend, state, target_id, _source_id) =
+            setup_named_input_fixture(1, 1).await;
+        let desired = input_route_map(target_id, vec![InputRouteSrc::Group(GroupId::new(1))]);
+
+        handler.finalize_input_routes(&desired).await.unwrap();
+
+        assert_eq!(backend.synths_created(), 0);
+        let s = state.read().await;
+        assert!(s.input_routes.is_empty());
+        assert!(s.input_route_synths.is_empty());
+        assert!(s.voices.get(&target_id).unwrap().input_buses.is_empty());
+    }
+
+    #[tokio::test]
+    async fn finalize_input_route_adds_stereo_group_source_link() {
+        let (handler, backend, state, target_id, _source_id) =
+            setup_named_input_fixture(2, 1).await;
+        let source_group = GroupId::new(1);
+        let desired = input_route_map(target_id, vec![InputRouteSrc::Group(source_group)]);
+
+        handler.finalize_input_routes(&desired).await.unwrap();
+
+        let creates = backend.creates();
+        assert_eq!(creates.len(), 1);
+        assert_eq!(creates[0].def, "input_link_2");
+
+        let s = state.read().await;
+        let group_bus = s.groups.get(&source_group).unwrap().audio_bus;
+        let target_bus = s.voices.get(&target_id).unwrap().input_buses[0].1;
+        assert_eq!(creates[0].in_bus, group_bus.raw() as f32);
+        assert_eq!(creates[0].out_bus, target_bus.raw() as f32);
+        assert!(s.input_route_synths.contains_key(&(
+            target_id,
+            "carrier".to_string(),
+            InputRouteSrc::Group(source_group)
+        )));
     }
 
     #[tokio::test]
