@@ -38,11 +38,10 @@
 //   0 = SAO — additive bank with the Story A 1/k saw default spectrum
 //       (per-partial reveal mask gated by `partials_X`).
 //   1 = SAM — additive bank with per-partial magnitudes driven by a live
-//       2048-frame FFT (Hann window, 50% hop) of `sound_in_ar(0)`. Each
-//       side picks its own analyser fundamental from `slide_X` (log-mapped
-//       50..800 Hz, kb plan §3.d), so the two sides can analyse different
-//       harmonic grids of the same input. The FFT chain is shared between
-//       sides — only the per-partial bin reads diverge.
+//       2048-frame FFT (Hann window, 50% hop) of the side's `analyze_X`
+//       named input. Each side picks its own analyser fundamental from
+//       `slide_X` (log-mapped 50..800 Hz, kb plan §3.d), so the two sides
+//       can analyse different input buses and harmonic grids.
 //
 // Modes 2 (Chaos) / 3 (Noise) and mode 4 (SAM-with-capture) live in
 // `spectraphon_side.vibe` and are deliberately omitted here. Wiring four
@@ -84,6 +83,8 @@
 
 define_synthdef("spectraphon_dual", |builder| {
     builder
+        .input("analyze_a", 1)      // 1ch — side A SAM analyzer source
+        .input("analyze_b", 1)      // 1ch — side B SAM analyzer source
         .output("odd_a")            // 1ch — side A odd-bank summed
         .output("even_a")           // 1ch — side A even-bank summed
         .output("odd_b")            // 1ch — side B odd-bank summed
@@ -207,15 +208,18 @@ define_synthdef("spectraphon_dual", |builder| {
             let sao_mix_b = m_le_0_b;
             let sam_mix_b = 1.0 - m_le_0_b;
 
-            // === SAM analyser (shared FFT chain) ===============================
+            // === SAM analyser ==================================================
             //
-            // Hardware audio input ch 0. The 2048-frame FFT (Hann window,
-            // 50% hop) writes magnitudes/phases into fft_buf; bin_data_kr
-            // reads (mag, freq) per bin out of the active chain. Per-side
-            // f0_analyze_X drives where each side samples the bin grid.
-            let analyze_in = sound_in_ar(0.0);
-            let fft_buf    = local_buf_ir(1.0, 2048.0);
-            let chain      = fft_kr(fft_buf, analyze_in, 0.5, 1.0, 1.0, 0.0);
+            // The 2048-frame FFTs (Hann window, 50% hop) write
+            // magnitudes/phases into per-side buffers; bin_data_kr reads
+            // (mag, freq) per bin out of each active chain. Per-side
+            // f0_analyze_X drives where each side samples its bin grid.
+            let analyze_in_a = p.inputs["analyze_a"];
+            let analyze_in_b = p.inputs["analyze_b"];
+            let fft_buf_a    = local_buf_ir(1.0, 2048.0);
+            let fft_buf_b    = local_buf_ir(1.0, 2048.0);
+            let chain_a      = fft_kr(fft_buf_a, analyze_in_a, 0.5, 1.0, 1.0, 0.0);
+            let chain_b      = fft_kr(fft_buf_b, analyze_in_b, 0.5, 1.0, 1.0, 0.0);
 
             let f0_analyze_a = 50.0 * pow(16.0, clip(slide_a, 0.0, 1.0));
             let f0_analyze_b = 50.0 * pow(16.0, clip(slide_b, 0.0, 1.0));
@@ -231,7 +235,7 @@ define_synthdef("spectraphon_dual", |builder| {
             let k = 1.0;
             let mag_sao = 1.0 / k;
             let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
-            let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+            let mag_sam = lag_kr(channels(bin_data_kr(chain_a, centre_bin, 0.5), 2)[0]
                                  * mag_scale, lag_t);
             let mag_k = mag_sao * sao_mix_a + mag_sam * sam_mix_a;
             let odd_a = sin_osc_ar(freq_a_fm * k) * mag_k
@@ -240,7 +244,7 @@ define_synthdef("spectraphon_dual", |builder| {
                 let k = (2 * i + 1).to_float();
                 let mag_sao = 1.0 / k;
                 let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
-                let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                let mag_sam = lag_kr(channels(bin_data_kr(chain_a, centre_bin, 0.5), 2)[0]
                                      * mag_scale, lag_t);
                 let mag_k = mag_sao * sao_mix_a + mag_sam * sam_mix_a;
                 odd_a = odd_a + sin_osc_ar(freq_a_fm * k) * mag_k
@@ -252,7 +256,7 @@ define_synthdef("spectraphon_dual", |builder| {
             let k = 2.0;
             let mag_sao = 1.0 / k;
             let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
-            let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+            let mag_sam = lag_kr(channels(bin_data_kr(chain_a, centre_bin, 0.5), 2)[0]
                                  * mag_scale, lag_t);
             let mag_k = mag_sao * sao_mix_a + mag_sam * sam_mix_a;
             let even_a = sin_osc_ar(freq_a_fm * k) * mag_k
@@ -261,7 +265,7 @@ define_synthdef("spectraphon_dual", |builder| {
                 let k = (2 * (i + 1)).to_float();
                 let mag_sao = 1.0 / k;
                 let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
-                let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                let mag_sam = lag_kr(channels(bin_data_kr(chain_a, centre_bin, 0.5), 2)[0]
                                      * mag_scale, lag_t);
                 let mag_k = mag_sao * sao_mix_a + mag_sam * sam_mix_a;
                 even_a = even_a + sin_osc_ar(freq_a_fm * k) * mag_k
@@ -273,7 +277,7 @@ define_synthdef("spectraphon_dual", |builder| {
             let k = 1.0;
             let mag_sao = 1.0 / k;
             let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
-            let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+            let mag_sam = lag_kr(channels(bin_data_kr(chain_b, centre_bin, 0.5), 2)[0]
                                  * mag_scale, lag_t);
             let mag_k = mag_sao * sao_mix_b + mag_sam * sam_mix_b;
             let odd_b = sin_osc_ar(freq_b_fm * k) * mag_k
@@ -282,7 +286,7 @@ define_synthdef("spectraphon_dual", |builder| {
                 let k = (2 * i + 1).to_float();
                 let mag_sao = 1.0 / k;
                 let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
-                let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                let mag_sam = lag_kr(channels(bin_data_kr(chain_b, centre_bin, 0.5), 2)[0]
                                      * mag_scale, lag_t);
                 let mag_k = mag_sao * sao_mix_b + mag_sam * sam_mix_b;
                 odd_b = odd_b + sin_osc_ar(freq_b_fm * k) * mag_k
@@ -294,7 +298,7 @@ define_synthdef("spectraphon_dual", |builder| {
             let k = 2.0;
             let mag_sao = 1.0 / k;
             let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
-            let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+            let mag_sam = lag_kr(channels(bin_data_kr(chain_b, centre_bin, 0.5), 2)[0]
                                  * mag_scale, lag_t);
             let mag_k = mag_sao * sao_mix_b + mag_sam * sam_mix_b;
             let even_b = sin_osc_ar(freq_b_fm * k) * mag_k
@@ -303,7 +307,7 @@ define_synthdef("spectraphon_dual", |builder| {
                 let k = (2 * (i + 1)).to_float();
                 let mag_sao = 1.0 / k;
                 let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
-                let mag_sam = lag_kr(channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0]
+                let mag_sam = lag_kr(channels(bin_data_kr(chain_b, centre_bin, 0.5), 2)[0]
                                      * mag_scale, lag_t);
                 let mag_k = mag_sao * sao_mix_b + mag_sam * sam_mix_b;
                 even_b = even_b + sin_osc_ar(freq_b_fm * k) * mag_k

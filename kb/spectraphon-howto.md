@@ -37,6 +37,12 @@ audio-rate output ports:
 | `odd` | Odd partial bank, or Chaos/Noise first voice. |
 | `even` | Even partial bank, or Chaos/Noise second voice. |
 
+Named inputs:
+
+| Input | Width | Meaning |
+|---|---:|---|
+| `analyze` | 1 | SAM analyzer source. Unpatched inputs are silent. |
+
 Parameters:
 
 | Param | Default | Meaning |
@@ -77,6 +83,12 @@ v.output("odd").to(group("dry"));
 v.output("even").to(group("wash"));
 ```
 
+Patch an analyzer source before using SAM modes:
+
+```vibe
+v.input("analyze").from(source_voice);
+```
+
 ## `spectraphon_dual`
 
 `spectraphon_dual` focuses on the two-side oscillator relationship: Follow
@@ -92,12 +104,21 @@ Output ports:
 | `odd_b` | Side B odd partial bank. |
 | `even_b` | Side B even partial bank. |
 
+Named inputs:
+
+| Input | Width | Meaning |
+|---|---:|---|
+| `analyze_a` | 1 | Side A SAM analyzer source. Unpatched inputs are silent. |
+| `analyze_b` | 1 | Side B SAM analyzer source. Unpatched inputs are silent. |
+
 The default VibeLang route for more than two ports sends only the first two
 ports to the voice group. Route all four explicitly when you want both sides:
 
 ```vibe
 let v = voice("dual").synth("spectraphon_dual");
 v.outputs(["odd_a", "even_a", "odd_b", "even_b"]).to_current_group();
+v.input("analyze_a").from(source_a);
+v.input("analyze_b").from(source_b);
 ```
 
 Parameters:
@@ -114,13 +135,13 @@ Parameters:
 | `partials_a`, `partials_b` | 1.0 | Per-side harmonic reveal. |
 | `slide_a`, `slide_b` | 0.5 | Per-side SAM analyzer f0 and odd/even tilt in SAO. |
 | `focus_a`, `focus_b` | 0.5 | Per-side reveal-density multiplier. |
-| `mode_a`, `mode_b` | 0.0 | `0` SAO built-in saw spectrum, `1` SAM from hardware input 0. |
+| `mode_a`, `mode_b` | 0.0 | `0` SAO built-in saw spectrum, `1` SAM from the named analyzer inputs. |
 | `array_idx_a`, `array_idx_b` | 0.0 | Reserved; accepted for future Array-backed dual mode. |
 
 ## Approximation Caveats
 
-* SAM analysis reads hardware input channel 0 via `sound_in_ar(0.0)`. Internal
-  bus analysis is not implemented in these synthdefs.
+* SAM analysis reads named input buses. Legacy scripts that relied on implicit
+  hardware input 0 must now patch the analyzer input explicitly.
 * SAM uses one FFT magnitude bin per partial. The hardware Focus behavior is
   broader and more interactive; this VibeLang version keeps Focus available
   for Array addressing and mode-specific timbre controls.

@@ -9,7 +9,7 @@
 //
 // Story B — SAM analyzer:
 //   When `sam_capture` selects a SAM mode, the per-partial magnitudes
-//   come from a real-time FFT of the hardware audio input. The 2048-frame
+//   come from a real-time FFT of the `analyze` named input. The 2048-frame
 //   FFT (Hann window, 50% hop) is read with `bin_data_kr` per partial,
 //   one bin per harmonic centred on `k · f0_analyze · binsPerHz`.
 //   Slide drives `f0_analyze` log-mapped to [50, 800] Hz (independent of
@@ -110,6 +110,7 @@
 
 define_synthdef("spectraphon_side", |builder| {
     builder
+        .input("analyze", 1)        // 1ch — SAM analyzer source (silent if unpatched)
         .output("sine")             // 1ch — clean fundamental
         .output("sub")              // 1ch — sub / CV (DC-coupled)
         .output("odd")              // 1ch — odd-bank summed
@@ -154,8 +155,7 @@ define_synthdef("spectraphon_side", |builder| {
             let scale = partials * n;
 
             // === Story B: SAM analyzer (FFT chain shared by all partials) ===
-            // Hardware audio input ch 0 — see file header for the rationale.
-            let analyze_in = sound_in_ar(0.0);
+            let analyze_in = p.inputs["analyze"];
             // 2048-frame FFT, 50% hop, Hann window. Bin spacing at 44.1 kHz
             // is 21.5 Hz; the FFT writes magnitudes/phases into fft_buf and
             // bin_data_kr reads (mag, freq) per bin out of the active chain.

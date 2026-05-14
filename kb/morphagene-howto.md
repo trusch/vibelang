@@ -33,6 +33,12 @@ and a named EOSG CV output.
 | `right` | ar | Right audio output. |
 | `eosg` | kr | 10 V-style End-of-Splice/Gene pulse. |
 
+## Inputs
+
+| Input | Width | Meaning |
+|---|---:|---|
+| `sos` | 1 | Mono Sound-On-Sound recording source. Unpatched inputs are silent. |
+
 With no explicit routes, VibeLang routes the first two audio ports to the
 voice group and leaves the `eosg` CV port muted. Route `eosg` to a param when
 you need patch-style control:
@@ -88,6 +94,7 @@ let v = voice("morph")
     .set_param("sos", 0.4);
 
 reel_attach(v, r);
+v.input("sos").from(source_voice);
 ```
 
 `reel_fill_preset(reel, preset)` can seed a Reel with a generated waveform:
@@ -140,7 +147,9 @@ Clocked behavior follows the hardware control idea:
 
 `sos > 0.001` enables the internal recorder. The recorder writes forward at
 unit rate with `recLevel = 1 - sos` and `preLevel = sos`, which gives practical
-overdub/decay behavior. A true separate hardware REC gate is not exposed yet.
+overdub/decay behavior. The recorder reads the mono `sos` named input; legacy
+scripts that relied on implicit hardware input 0 must patch a source explicitly.
+A true separate hardware REC gate is not exposed yet.
 
 ## Approximation Caveats
 

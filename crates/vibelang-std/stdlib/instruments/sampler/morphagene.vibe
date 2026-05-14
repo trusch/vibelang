@@ -114,6 +114,7 @@
 //   body cap). REC is now inferred from `sos > 0.001`:
 //     sos = 0      →  not recording (Reel plays back unchanged)
 //     sos > 0      →  SOS recording with that mix
+//   Recording writes the mono `sos` named input; an unpatched input is silent.
 //     recLevel = (1 - sos) · rec_active_internal
 //     preLevel =      sos  · rec_active_internal
 //   Trade-off: hardware "REC active, SOS = 0" overwrite mode requires a
@@ -134,6 +135,7 @@
 
 define_synthdef("morphagene", |builder| {
     builder
+        .input("sos", 1)                   // 1ch — Sound-On-Sound recording source
         .output("left")                    // 1ch — audio left
         .output("right")                   // 1ch — audio right
         .output_kr("eosg")                 // 1ch kr — End-of-Splice/Gene gate
@@ -384,7 +386,7 @@ define_synthdef("morphagene", |builder| {
             // flip the commit direction.
             let rec_active_internal = clip((sos - 0.001) * 10000.0, 0.0, 1.0);
             let rec_pos = phasor_ar(0.0, 1.0, 0.0, buf_n, 0.0);
-            let in_mono = sound_in_channel(0);
+            let in_mono = p.inputs["sos"];
             let sos_norm = clip(sos, 0.0, 1.0);
             let _rec = record_buf_ar(
                 in_mono,
