@@ -1,0 +1,73 @@
+// Erica Synths Black VC Clock - Eurorack master clock utility.
+//
+// Approximation: BPM-derived master phasor with run/reset, divided clock,
+// shuffled alternate pulses, random gated clock, and reset-chain pulse output.
+// Outputs are +5 V-style kr gates scaled to the library's +/-1 CV range.
+
+define_synthdef("erica_vc_clock", |builder| {
+    builder
+        .output_kr("clock")
+        .output_kr("div")
+        .output_kr("shuffle")
+        .output_kr("random")
+        .output_kr("reset")
+        .param("bpm", 120.0)
+        .param("run", 1.0)
+        .param("division", 1.0)
+        .param("shuffle", 0.0)
+        .param("duty", 0.5)
+        .param("random_rate", 1.0)
+        .param("reset_in", 0.0)
+        .param("reset_mode", 0.0)
+        .body_map(|p| {
+            let run = clip_kr(p.run, 0.0, 1.0);
+            let base = (clip_kr(p.bpm, 30.0, 300.0) / 60.0) * run;
+            let duty = clip_kr(p.duty, 0.05, 0.95);
+
+            let reset_gate = schmidt_kr(p.reset_in, 0.05, 0.25);
+            let reset_edge = trig1_kr(reset_gate, 0.001);
+            let reset_out = clip_kr(trig1_kr(reset_gate, 0.005) * 0.5, -1.0, 1.0);
+
+            let reset_mode = floor(clip_kr(p.reset_mode + 0.5, 0.0, 1.0));
+            let hard_mode = 1.0 - reset_mode;
+            let hard_reset = reset_edge * hard_mode;
+
+            let div_choice = floor(clip_kr(p.division + 0.5, 1.0, 8.0));
+            let div_1 = (1.0 - abs(div_choice - 1.0)).max(0.0);
+            let div_2 = (1.0 - abs(div_choice - 2.0)).max(0.0);
+            let div_4 = (1.0 - abs(div_choice - 4.0)).max(0.0);
+            let div_8 = (1.0 - abs(div_choice - 8.0)).max(0.0);
+            let div_fallback = clip_kr(1.0 - div_1 - div_2 - div_4 - div_8, 0.0, 1.0);
+            let div_factor = div_1 + div_2 * 2.0 + div_4 * 4.0 + div_8 * 8.0 + div_fallback;
+
+            let phase_pre = sweep_kr(hard_reset, base);
+            let measure_phase_pre = wrap_kr(phase_pre / div_factor, 0.0, 1.0);
+            let measure_edge = trig1_kr(in_range_kr(measure_phase_pre, 0.0, 0.001), 0.001);
+            let pending_soft = clip_kr(pulse_count_kr(reset_edge * reset_mode, t_delay_kr(measure_edge, 0.002)), 0.0, 1.0);
+            let soft_reset = measure_edge * pending_soft * reset_mode;
+
+            let phase = sweep_kr(hard_reset + soft_reset, base);
+            let master_phase = wrap_kr(phase, 0.0, 1.0);
+            let div_phase = wrap_kr(phase / div_factor, 0.0, 1.0);
+
+            let clock = clip_kr(in_range_kr(master_phase, 0.0, duty) * 0.5 * run, -1.0, 1.0);
+            let div = clip_kr(in_range_kr(div_phase, 0.0, duty) * 0.5 * run, -1.0, 1.0);
+
+            let pulse_index = floor(phase);
+            let lag_pulse = clip_kr(pulse_index.modulo(2.0), 0.0, 1.0);
+            let shuffle_amt = clip_kr(p.shuffle, 0.0, 0.5);
+            let shuffled_phase = wrap_kr(phase - lag_pulse * shuffle_amt, 0.0, 1.0);
+            let shuffled_duty = duty * (1.0 - lag_pulse)
+                + clip_kr(duty, 0.001, (1.0 - shuffle_amt).max(0.001)) * lag_pulse;
+            let shuffled = clip_kr(in_range_kr(shuffled_phase, 0.0, shuffled_duty) * 0.5 * run, -1.0, 1.0);
+
+            let random_rate = clip_kr(p.random_rate, 0.1, 20.0);
+            let random_imp = impulse_kr(random_rate * run, 0.0);
+            let random_roll = latch_kr((white_noise_kr() + 1.0) * 0.5, random_imp + reset_edge);
+            let random_fire = in_range_kr(random_roll, 0.0, 0.5);
+            let random_width = duty / random_rate;
+            let random = clip_kr(trig1_kr(random_imp * random_fire, random_width) * 0.5 * run, -1.0, 1.0);
+
+            [clock, div, shuffled, random, reset_out]
+        })
+});
