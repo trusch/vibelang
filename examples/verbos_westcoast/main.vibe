@@ -1,0 +1,287 @@
+// Verbos west-coast rack performance patch.
+//
+// Signal chain:
+//   Slow clock advances Voltage Multistage and clocks Random Sampling.
+//   Voltage Multistage cv_a and Random Sampling fluct_a pitch the Harmonic Oscillator.
+//   Random Sampling quant/asr taps animate the first five harmonic gains.
+//   Harmonic Oscillator mix -> Bark Filter -> Multi-Delay Processor -> Amp & Tone -> X-PAN -> main.
+
+import "stdlib/instruments/eurorack/verbos_harmonic_osc.vibe";
+import "stdlib/instruments/eurorack/verbos_random_sampling.vibe";
+import "stdlib/instruments/eurorack/verbos_multistage.vibe";
+import "stdlib/processors/filters/bark_filter.vibe";
+import "stdlib/processors/delays/verbos_mdp.vibe";
+import "stdlib/processors/utility/verbos_amp_tone.vibe";
+import "stdlib/processors/mixers/x_pan.vibe";
+
+set_tempo(48);
+
+define_synthdef("verbos_slow_clock", |builder| {
+    builder
+        .output_kr("tick")
+        .param("rate", 0.185)
+        .body_map(|p| {
+            [impulse_kr(p.rate, 0.0)]
+        })
+});
+
+define_group("ctrl", || { });
+define_group("osc_mix", || { });
+define_group("bark_mix", || { });
+define_group("delay_mix", || { });
+define_group("rack", || { });
+
+group("ctrl").gain(0.0);
+group("osc_mix").gain(0.0);
+group("bark_mix").gain(0.0);
+group("delay_mix").gain(0.0);
+group("rack").gain(db(-8));
+
+let clock = voice("verbos_clock")
+    .synth("verbos_slow_clock")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("rate", 0.185);
+
+let random = voice("verbos_random_sampling")
+    .synth("verbos_random_sampling")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("rate", 0.31)
+    .set_param("clock_in", 1.0)
+    .set_param("bits", 3.0)
+    .set_param("distribution", 0.38)
+    .set_param("depth_v", 7.2)
+    .set_param("bipolar", 1.0)
+    .set_param("noise_level", 0.0);
+
+let stages = voice("verbos_voltage_multistage")
+    .synth("verbos_multistage")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("clock_rate", 0.001)
+    .set_param("start", 1.0)
+    .set_param("stop", 8.0)
+    .set_param("time_cv_amt", 0.45)
+    .set_param("stage_a1", 0.00)
+    .set_param("stage_a2", 0.07)
+    .set_param("stage_a3", 0.19)
+    .set_param("stage_a4", 0.31)
+    .set_param("stage_a5", 0.43)
+    .set_param("stage_a6", 0.50)
+    .set_param("stage_a7", 0.62)
+    .set_param("stage_a8", 0.81)
+    .set_param("stage_b1", -0.45)
+    .set_param("stage_b2", -0.18)
+    .set_param("stage_b3", 0.26)
+    .set_param("stage_b4", 0.52)
+    .set_param("stage_b5", 0.10)
+    .set_param("stage_b6", -0.32)
+    .set_param("stage_b7", 0.68)
+    .set_param("stage_b8", -0.06)
+    .set_param("mode2", 2.0)
+    .set_param("mode5", 2.0)
+    .set_param("mode7", 2.0);
+
+clock.output("tick").to_param(random, "clock_trig");
+clock.output("tick").to_param(stages, "advance");
+random.output("fluct_b").to_param(stages, "time_cv").scale(0.55).offset(0.0);
+random.outputs(["white", "pink", "metallic", "quant_b", "gate", "asr4"]).mute();
+stages.outputs([
+    "gate",
+    "ref",
+    "stage1_gate",
+    "stage2_gate",
+    "stage3_gate",
+    "stage4_gate",
+    "stage5_gate",
+    "stage6_gate",
+    "stage7_gate",
+    "stage8_gate",
+]).mute();
+
+let osc = voice("verbos_harmonic_drone")
+    .synth("verbos_harmonic_osc")
+    .group("osc_mix")
+    .set_param("amp", 0.34)
+    .set_param("gate", 1.0)
+    .set_param("center", 4.4)
+    .set_param("width", 0.68)
+    .set_param("tilt", -0.10)
+    .set_param("harm6", 0.28)
+    .set_param("harm7", 0.18)
+    .set_param("harm8", 0.12);
+
+osc.param("freq")
+    .modulate_by(stages, "cv_a").scale(118.0).offset(82.41)
+    .modulate_by(random, "fluct_a").scale(18.0).offset(0.0);
+random.output("quant_a").to_param(osc, "harm1").scale(0.28).offset(0.48);
+random.output("asr1").to_param(osc, "harm2").scale(0.24).offset(0.32);
+random.output("asr2").to_param(osc, "harm3").scale(0.26).offset(0.26);
+random.output("asr3").to_param(osc, "harm4").scale(0.24).offset(0.22);
+random.output("asr4").to_param(osc, "harm5").scale(0.20).offset(0.18);
+random.output("fluct_b").to_param(osc, "center").scale(2.2).offset(4.7);
+stages.output("cv_b").to_param(osc, "tilt").scale(0.9).offset(-0.25);
+osc.output("mix").to(group("osc_mix"));
+osc.outputs([
+    "tri",
+    "saw",
+    "square",
+    "partial1",
+    "partial2",
+    "partial3",
+    "partial4",
+    "partial5",
+    "partial6",
+    "partial7",
+    "partial8",
+]).mute();
+
+let bark = voice("verbos_bark_filter")
+    .synth("bark_filter")
+    .group("bark_mix")
+    .set_param("decay", 0.18)
+    .set_param("center", 6.2)
+    .set_param("width", 0.56)
+    .set_param("tilt", 0.08)
+    .set_param("odd_gain", 0.88)
+    .set_param("even_gain", 0.76)
+    .set_param("level", 1.10)
+    .set_param("band1", 0.62)
+    .set_param("band2", 0.78)
+    .set_param("band3", 0.90)
+    .set_param("band4", 0.84)
+    .set_param("band5", 1.00)
+    .set_param("band6", 0.72)
+    .set_param("band7", 0.94)
+    .set_param("band8", 0.66)
+    .set_param("band9", 0.58)
+    .set_param("band10", 0.46)
+    .set_param("band11", 0.34)
+    .set_param("band12", 0.24);
+bark.input("in").from(group("osc_mix"));
+random.output("fluct_a").to_param(bark, "center").scale(3.0).offset(6.1);
+stages.output("cv_b").to_param(bark, "tilt").scale(0.55).offset(-0.10);
+bark.output("mix").to(group("bark_mix"));
+bark.outputs([
+    "band1",
+    "band2",
+    "band3",
+    "band4",
+    "band5",
+    "band6",
+    "band7",
+    "band8",
+    "band9",
+    "band10",
+    "band11",
+    "band12",
+    "follow1",
+    "follow2",
+    "follow3",
+    "follow4",
+    "follow5",
+    "follow6",
+    "follow7",
+    "follow8",
+    "follow9",
+    "follow10",
+    "follow11",
+    "follow12",
+]).mute();
+
+let delay = voice("verbos_multi_delay")
+    .synth("verbos_mdp")
+    .group("delay_mix")
+    .set_param("delay_time", 82.0)
+    .set_param("time_cv_amount", 0.70)
+    .set_param("input1_gain", 0.78)
+    .set_param("input2_gain", 0.0)
+    .set_param("input3_gain", 0.0)
+    .set_param("tap1_mix", 0.32)
+    .set_param("tap2_mix", 0.48)
+    .set_param("tap3_mix", 0.62)
+    .set_param("tap4_mix", 0.74)
+    .set_param("tap5_mix", 0.86)
+    .set_param("tap6_mix", 0.68)
+    .set_param("tap7_mix", 0.54)
+    .set_param("tap8_mix", 0.44)
+    .set_param("feedback", 0.36)
+    .set_param("reverb_feedback", 0.22)
+    .set_param("pitch_feedback", 7.0)
+    .set_param("manual_mix", 0.24)
+    .set_param("level", 0.78)
+    .set_param("env_decay", 0.16);
+delay.input("in1").from(group("bark_mix"));
+delay.input("in2").disconnect();
+delay.input("in3").disconnect();
+random.output("quant_b").to_param(delay, "delay_cv").scale(44.0).offset(0.0);
+bark.output("follow_max").to_param(delay, "feedback").scale(0.22).offset(0.30);
+delay.output("mix").to(group("delay_mix"));
+delay.outputs([
+    "tap1",
+    "tap2",
+    "tap3",
+    "tap4",
+    "tap5",
+    "tap6",
+    "tap7",
+    "tap8",
+    "odd",
+    "even",
+    "rise",
+    "fall",
+    "env1",
+    "env2",
+    "env3",
+    "env4",
+    "env5",
+    "env6",
+    "env7",
+    "env8",
+]).mute();
+
+let amp = voice("verbos_amp_tone")
+    .synth("verbos_amp_tone")
+    .group("rack")
+    .set_param("gain", 1.18)
+    .set_param("drive", 0.24)
+    .set_param("cutoff", 4200.0)
+    .set_param("resonance", 0.46)
+    .set_param("cutoff_cv_amt", 0.70)
+    .set_param("amp", 0.72)
+    .set_param("lin_cv_amt", 0.38)
+    .set_param("exp_cv_amt", 0.18)
+    .set_param("level", 0.82);
+amp.input("in").from(group("delay_mix"));
+bark.output("follow_max").to_param(amp, "cutoff_cv").scale(4.5).offset(0.0);
+delay.output("env_in").to_param(amp, "lin_cv").scale(0.42).offset(0.10);
+random.output("fluct_b").to_param(amp, "exp_cv").scale(0.30).offset(0.0);
+amp.output("out").mute();
+
+let xpan = voice("verbos_stereo_output")
+    .synth("x_pan")
+    .group("rack")
+    .set_param("ch1_fade", 0.0)
+    .set_param("ch1_pan", -0.32)
+    .set_param("ch1_gain", 0.78)
+    .set_param("ch2_fade", 0.0)
+    .set_param("ch2_pan", 0.34)
+    .set_param("ch2_gain", 0.58)
+    .set_param("aux_gain", 0.0)
+    .set_param("level", 0.84);
+xpan.input("ch1_a").from(amp);
+xpan.input("ch1_b").from(amp);
+xpan.input("ch2_a").from(amp);
+xpan.input("ch2_b").from(amp);
+xpan.input("aux").disconnect();
+xpan.output("out").to_main();
+
+clock.run();
+random.run();
+stages.run();
+osc.run();
+bark.run();
+delay.run();
+amp.run();
+xpan.run();
