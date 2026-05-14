@@ -1,0 +1,66 @@
+// Make Noise Rene — practical 4x4 cartesian kr sequencer.
+//
+// Ports: cv (V/oct), gate, x_gate, y_gate. X/Y can be stepped by clocks or
+// addressed by `x_cv`/`y_cv` when `cv_addr` is raised. Deferred hardware
+// features: touch programming, snake paths, quantizer pages, and access masks.
+
+define_synthdef("rene", |builder| {
+    builder
+        .output_kr("cv")
+        .output_kr("gate")
+        .output_kr("x_gate")
+        .output_kr("y_gate")
+        .param("clock_x", 0.0)
+        .param("clock_y", 0.0)
+        .param("reset", 0.0)
+        .param("x_cv", 0.0)
+        .param("y_cv", 0.0)
+        .param("cv_addr", 0.0)
+        .param("note00", 60.0)
+        .param("note01", 62.0)
+        .param("note02", 64.0)
+        .param("note03", 67.0)
+        .param("note10", 62.0)
+        .param("note11", 64.0)
+        .param("note12", 67.0)
+        .param("note13", 69.0)
+        .param("note20", 64.0)
+        .param("note21", 67.0)
+        .param("note22", 69.0)
+        .param("note23", 71.0)
+        .param("note30", 67.0)
+        .param("note31", 69.0)
+        .param("note32", 71.0)
+        .param("note33", 72.0)
+        .body_map(|p| {
+            let x_step = stepper_kr(p.clock_x, p.reset, 0.0, 3.0, 1.0, 0.0);
+            let y_step = stepper_kr(p.clock_y, p.reset, 0.0, 3.0, 1.0, 0.0);
+            let x_from_cv = floor(clip(p.x_cv, 0.0, 0.999) * 4.0);
+            let y_from_cv = floor(clip(p.y_cv, 0.0, 0.999) * 4.0);
+            let cv_addr = clip(p.cv_addr, 0.0, 1.0);
+            let x = x_step * (1.0 - cv_addr) + x_from_cv * cv_addr;
+            let y = y_step * (1.0 - cv_addr) + y_from_cv * cv_addr;
+
+            let x0 = (1.0 - abs(x - 0.0)).max(0.0);
+            let x1 = (1.0 - abs(x - 1.0)).max(0.0);
+            let x2 = (1.0 - abs(x - 2.0)).max(0.0);
+            let x3 = (1.0 - abs(x - 3.0)).max(0.0);
+            let y0 = (1.0 - abs(y - 0.0)).max(0.0);
+            let y1 = (1.0 - abs(y - 1.0)).max(0.0);
+            let y2 = (1.0 - abs(y - 2.0)).max(0.0);
+            let y3 = (1.0 - abs(y - 3.0)).max(0.0);
+
+            let row0 = x0 * p.note00 + x1 * p.note01 + x2 * p.note02 + x3 * p.note03;
+            let row1 = x0 * p.note10 + x1 * p.note11 + x2 * p.note12 + x3 * p.note13;
+            let row2 = x0 * p.note20 + x1 * p.note21 + x2 * p.note22 + x3 * p.note23;
+            let row3 = x0 * p.note30 + x1 * p.note31 + x2 * p.note32 + x3 * p.note33;
+            let midi = y0 * row0 + y1 * row1 + y2 * row2 + y3 * row3;
+            let cv = clip_kr((midi - 60.0) / 12.0, -1.0, 1.0);
+
+            let x_gate = clip_kr(trig1_kr(p.clock_x, 0.005) * 0.5, -1.0, 1.0);
+            let y_gate = clip_kr(trig1_kr(p.clock_y, 0.005) * 0.5, -1.0, 1.0);
+            let gate = clip_kr(x_gate + y_gate, -1.0, 1.0);
+
+            [cv, gate, x_gate, y_gate]
+        })
+});
