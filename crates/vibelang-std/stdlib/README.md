@@ -6,6 +6,53 @@ A comprehensive collection of **477 professional-quality sounds** (419 instrumen
 
 This standard library provides a complete set of sounds for getting started with vibelang. Each sound is carefully designed using sound synthesis principles and inspired by classic hardware and software synthesizers.
 
+## ReSynthesizer Recreation Catalogue
+
+These modules are practical VibeLang recreations of the Make Noise
+ReSynthesizer system roles. They are not firmware or analog-circuit clones. For
+the implementation decisions and caveats, see
+[`../../../kb/resynthesizer-module-behavior-matrix.md`](../../../kb/resynthesizer-module-behavior-matrix.md)
+and the concise status note in
+[`../../../kb/resynthesizer-implementation-status.md`](../../../kb/resynthesizer-implementation-status.md).
+Official manual sources are indexed in
+[`../../../kb/make-noise-resynthesizer-manual-sources.md`](../../../kb/make-noise-resynthesizer-manual-sources.md).
+
+### Module Surface
+
+| Module | Import path | Params | Named inputs | Named outputs | Summary |
+|---|---|---|---|---|---|
+| Spectraphon side | `stdlib/instruments/spectral/spectraphon_side.vibe` | `freq`, `partials`, `slide`, `focus`, `amp`, `gate`, `sam_capture`, `array_idx`, `bufnum` | none; SAM analyzes `sound_in_ar(0)` | `sine`, `sub`, `odd`, `even` | Single-side additive spectral oscillator/resynthesizer with SAO, SAM, Array capture/playback, Chaos, and Noise modes. |
+| Spectraphon dual | `stdlib/instruments/spectral/spectraphon_dual.vibe` | `freq_a`, `freq_b`, `amp`, `gate`, `a_fm_index`, `b_fm_index`, `routing_mode`, `partials_a`, `partials_b`, `slide_a`, `slide_b`, `focus_a`, `focus_b`, `mode_a`, `mode_b`, `array_idx_a`, `array_idx_b` | none; SAM analyzes `sound_in_ar(0)` | `odd_a`, `even_a`, `odd_b`, `even_b` | Two Spectraphon-style sides with per-side SAO/SAM, odd/even ports, FM bus, and follow intervals. |
+| Morphagene | `stdlib/instruments/sampler/morphagene.vibe` | `bufnum`, `num_splices`, `organize`, `sos`, `clk`, `vari_speed`, `slide`, `gene_size`, `morph`, `amp`, `play_gate`, `gate` | none | `left`, `right`, `eosg` (kr) | Reel/splice/gene sampler with granular playback, clocked Gene Shift/Time Stretch, SOS recording, and EOSG CV output. |
+| MATHS | `stdlib/instruments/eurorack/maths.vibe` | `rise1`, `fall1`, `shape1`, `cycle1`, `trig1`, `rise4`, `fall4`, `shape4`, `cycle4`, `trig4`, `ch2`, `ch2_scale`, `ch3`, `ch3_scale` | none | `ch1` (kr), `ch2` (kr), `ch3` (kr), `ch4` (kr), `sum` (kr), `or` (kr), `inv` (kr), `eor1` (kr), `eoc1` (kr), `eor4` (kr), `eoc4` (kr) | Control-rate function generator, attenuverter/offset pair, combined outputs, and timing pulses. |
+| Wogglebug | `stdlib/instruments/eurorack/wogglebug.vibe` | `rate`, `depth_v`, `bipolar`, `chaos` | none | `stepped` (kr), `smooth` (kr), `woggle` (kr), `clock` (kr) | Shared-chaos random CV fanout with stepped, smooth, woggle, and clock outputs. |
+| TEMPI | `stdlib/instruments/eurorack/tempi.vibe` | `bpm`, `run`, `width`, `mult1`, `mult2`, `mult3`, `mult4`, `mult5`, `mult6` | none | `ch1` (kr), `ch2` (kr), `ch3` (kr), `ch4` (kr), `ch5` (kr), `ch6` (kr) | Six related control-rate clock outputs from one BPM and per-channel ratios. |
+| Rene | `stdlib/instruments/eurorack/rene.vibe` | `clock_x`, `clock_y`, `reset`, `x_cv`, `y_cv`, `cv_addr`, `note00`..`note33` | none | `cv` (kr), `gate` (kr), `x_gate` (kr), `y_gate` (kr) | 4x4 Cartesian sequencer that emits one V/oct-style CV stream and gate streams. |
+| PrssPnt | `stdlib/instruments/eurorack/prss_pnt.vibe` | `press1`, `press2`, `press3`, `press4`, `threshold`, `slew` | none | `pressure1` (kr), `gate1` (kr), `pressure2` (kr), `gate2` (kr), `pressure3` (kr), `gate3` (kr), `pressure4` (kr), `gate4` (kr) | Four parameter-driven touch/pressure pads with slewed pressure CV and gate outputs. |
+| CV Bus | `stdlib/instruments/eurorack/cv_bus.vibe` | `in1`, `in2`, `in3`, `in4`, `atten1`, `atten2`, `atten3`, `atten4`, `offset1`, `offset2`, `offset3`, `offset4`, `norm12`, `norm23`, `norm34` | none | `bus1` (kr), `bus2` (kr), `bus3` (kr), `bus4` (kr), `sum` (kr) | Control-rate utility row for attenuating, offsetting, normaling, and summing routed CV. |
+| X-PAN | `stdlib/processors/mixers/x_pan.vibe` | `ch1_fade`, `ch1_pan`, `ch1_gain`, `ch2_fade`, `ch2_pan`, `ch2_gain`, `aux_gain`, `level` | `ch1_a` (1ch), `ch1_b` (1ch), `ch2_a` (1ch), `ch2_b` (1ch), `aux` (2ch) | `out` (2ch) | Patchable two-channel mono crossfader/panner plus stereo aux mixer. |
+| QPAS | `stdlib/processors/filters/qpas.vibe` | `cutoff`, `q`, `radiate`, `mode`, `input_gain`, `mix`, `level` | `in` (2ch) | `out` (2ch) | Stereo multi-peak filter approximation with low, band, high, and smile mode selection. |
+| DXG | `stdlib/processors/dynamics/dxg.vibe` | `ctrl1`, `ctrl2`, `strike_level`, `strike_decay`, `ch1_gain`, `ch2_gain`, `aux_gain`, `level` | `ch1` (2ch), `strike1` (1ch), `ch2` (2ch), `strike2` (1ch), `aux` (2ch) | `out` (2ch) | Dual stereo low-pass gate and mixer with strike-triggered envelopes. |
+| Mimeophon | `stdlib/processors/delays/mimeophon.vibe` | `time`, `zone`, `repeats`, `skew`, `color`, `halo`, `mix`, `level` | `in` (2ch) | `out` (2ch) | Stereo color-repeater delay with zone-scaled delay time, skew, feedback color, halo smear, and wet/dry mix. |
+
+### Approximation Caveats
+
+| Module | Current caveats |
+|---|---|
+| Spectraphon side | SAM is a practical FFT/bin analyzer, not the hardware firmware. `focus` addresses the Array Y axis rather than analyzer bandwidth, `bufnum` must be a script-allocated 65536-frame Array buffer for persistent capture, and exact hardware Array format/full Sync behavior is deferred. |
+| Spectraphon dual | Focuses on SAO/SAM, cross-FM, and follow intervals. It does not do Array-backed dual playback/capture, Chaos/Noise modes, or Sync; use two `spectraphon_side` voices when those per-side modes matter. |
+| Morphagene | Splices are evenly divided by `num_splices`; exact marker storage, microSD workflows, destructive Reel behavior, and undocumented Morph edge modes are deferred. Whole-splice playback reads channel 0 and duplicates it, while the granular branch is stereo. SOS recording is inferred from `sos > 0.001`. |
+| MATHS | Control-rate approximation only. The shape params are musical curve morphs around `decay2_kr`, not segment-accurate analog response. Audio-rate use and physical patch input behavior are not modeled. |
+| Wogglebug | Provides CV fanout from one shared chaos patch. Faithful PLL/two-VCO/ring-mod audio behavior, Disturb semantics, and high-rate audio noise behavior are deferred. |
+| TEMPI | Emits ratio-derived gates from BPM. Tap programming, phase/program pages, mute/mod gestures, state banks, and Select Bus behavior are not modeled. |
+| Rene | Models a compact 4x4 CV/gate sequencer. Touch programming, snake/MESH traversal, quantizer/access pages, state recall, glide flags, and Select Bus coordination are deferred. |
+| PrssPnt | Parameter-driven control surface, intended for MIDI/OSC/HID or script automation. It does not model capacitive sensing, plate response curves, or a hardware toggle output. |
+| CV Bus | Models CV math/normaling at kr. It does not model case power, physical multiples, LEDs, Select Bus, headphone/line output hardware, or zone isolation. |
+| X-PAN | Captures the practical mixer/crossfade/pan role. Analog VCA headroom, DC-coupled CV-router behavior, and panel gain staging are approximated by gain params and soft clipping. |
+| QPAS | Exposes one selected stereo filter output through `mode`; it does not provide simultaneous LP/BP/HP/Smile ports. Radiate and Smile are musical approximations, and the hidden strike/modulation circuit details are not modeled. |
+| DXG | Uses VCA plus one-pole lowpass envelopes without vactrol memory or analog saturation fidelity. It exposes the stereo sum only, not separate channel outputs. |
+| Mimeophon | Covers the broad delay/repeater role, but Hold, Flip, Tempo input, microRate input, and Rate Out are not exposed as ports. Color/Halo and zone morphing are filtered feedback/diffusion approximations, not Soundhack firmware clones. |
+
 ## Library Components
 
 ### 1. Music Theory Library (`theory/`)
@@ -381,4 +428,3 @@ This standard library is part of the vibelang project and follows the same licen
 ## Contributing
 
 Feel free to add your own sounds to this library following the established patterns and conventions.
-

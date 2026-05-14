@@ -30,6 +30,19 @@ Standard library of VibeLang sound design files.
 | **utility/** | 6 | Noise generators, click track, tuner, silence |
 | **theory/** | - | Scales, chords, progressions helpers |
 
+## ReSynthesizer Catalogue
+
+The Make Noise ReSynthesizer-inspired stdlib modules are documented in the
+stdlib catalogue:
+
+- [`stdlib/README.md`](stdlib/README.md#resynthesizer-recreation-catalogue)
+  lists import paths, parameters, named inputs, named outputs, and caveats for
+  Spectraphon, Morphagene, MATHS, Wogglebug, TEMPI, Rene, PrssPnt, CV Bus,
+  X-PAN, QPAS, DXG, and Mimeophon.
+- [`../../kb/resynthesizer-implementation-status.md`](../../kb/resynthesizer-implementation-status.md)
+  records the concise implementation status and links back to the behavior
+  matrix and manual-source notes.
+
 ## Directory Structure
 
 ```
