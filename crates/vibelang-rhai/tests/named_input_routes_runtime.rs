@@ -6,12 +6,13 @@
 //! and dispatcher in isolation; this pins the seam between them.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use async_trait::async_trait;
 use vibelang_core::compat::Instant;
 use vibelang_core::handlers::InputRouteSrc;
-use vibelang_core::message::{ReloadMessage, SynthDefMessage};
+use vibelang_core::message::{ReloadMessage, SynthDefMessage, VoiceMessage};
 use vibelang_core::{AddAction, Backend, BufferId, BufferInfo, NodeId, ParamMap, Runtime, VoiceId};
 use vibelang_dsp::{InputPort, OutputPort, PortRate};
 use vibelang_rhai::ScriptEngine;
@@ -37,6 +38,7 @@ struct SynthCreate {
 struct RecordingBackend {
     creates: Mutex<Vec<SynthCreate>>,
     frees: Mutex<Vec<NodeId>>,
+    fail_next_input_link_create: AtomicBool,
 }
 
 impl RecordingBackend {
@@ -46,6 +48,11 @@ impl RecordingBackend {
 
     fn freed_nodes(&self) -> Vec<NodeId> {
         self.frees.lock().unwrap().clone()
+    }
+
+    fn fail_next_input_link_create(&self) {
+        self.fail_next_input_link_create
+            .store(true, Ordering::Relaxed);
     }
 }
 
@@ -65,6 +72,13 @@ impl Backend for RecordingBackend {
         _action: AddAction,
         params: &ParamMap,
     ) -> Result<(), Self::Error> {
+        if def.starts_with("input_link_")
+            && self
+                .fail_next_input_link_create
+                .swap(false, Ordering::Relaxed)
+        {
+            return Err(MockError);
+        }
         self.creates.lock().unwrap().push(SynthCreate {
             def: def.to_string(),
             params: params.clone(),
@@ -379,5 +393,205 @@ async fn script_named_stereo_input_route_spawns_stereo_link() {
         stereo_links.len(),
         1,
         "stereo input port should route through input_link_2"
+    );
+}
+
+#[tokio::test]
+async fn script_declared_unpatched_input_defaults_to_silent_link() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+
+    load_registered_synthdef(
+        &mut runtime,
+        "named_input_unpatched_target",
+        Vec::new(),
+        vec![InputPort::ar("carrier", 1)],
+    )
+    .await;
+
+    let script = r#"
+        let _target = voice("named_input_unpatched_target_voice")
+            .synth("named_input_unpatched_target")
+            .group("named_input_unpatched_rt");
+    "#;
+    apply_script(&mut runtime, script).await;
+
+    let target = VoiceId::new(fnv1a_id("named_input_unpatched_target_voice"));
+    let key = (target, "carrier".to_string());
+
+    let (silent_bus, target_bus) = {
+        let state = runtime.state().read().await;
+        assert_eq!(
+            state.input_routes.get(&key),
+            Some(&vec![InputRouteSrc::Silent]),
+            "unpatched declared input should be materialized as a silent route"
+        );
+        assert!(state.input_route_synths.contains_key(&(
+            target,
+            "carrier".to_string(),
+            InputRouteSrc::Silent
+        )));
+
+        let silent_bus = state.silent_ar_bus.expect("silent ar bus allocated");
+        let target_bus = state.voices.get(&target).unwrap().input_buses[0].1;
+        (silent_bus, target_bus)
+    };
+
+    let input_links: Vec<_> = runtime
+        .backend()
+        .synth_creates()
+        .into_iter()
+        .filter(|create| create.def == "input_link_1")
+        .collect();
+    assert_eq!(input_links.len(), 1);
+    assert_eq!(
+        input_links[0].params.get("in_bus"),
+        Some(&(silent_bus.raw() as f32))
+    );
+    assert_eq!(
+        input_links[0].params.get("out_bus"),
+        Some(&(target_bus.raw() as f32))
+    );
+    runtime
+        .send(
+            VoiceMessage::Trigger {
+                id: target,
+                params: ParamMap::new(),
+            }
+            .into(),
+        )
+        .await
+        .unwrap();
+    runtime.tick().await;
+
+    let target_creates: Vec<_> = runtime
+        .backend()
+        .synth_creates()
+        .into_iter()
+        .filter(|create| create.def == "named_input_unpatched_target")
+        .collect();
+    assert_eq!(target_creates.len(), 1);
+    assert_eq!(
+        target_creates[0].params.get("__in0"),
+        Some(&(target_bus.raw() as f32)),
+        "triggered target synth should receive the allocated input bus, not the hidden -1 default"
+    );
+}
+
+#[tokio::test]
+async fn script_group_source_to_mono_named_input_is_rejected() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+
+    load_registered_synthdef(
+        &mut runtime,
+        "named_input_group_mono_target",
+        Vec::new(),
+        vec![InputPort::ar("carrier", 1)],
+    )
+    .await;
+
+    let script = r#"
+        let target = voice("named_input_group_mono_target_voice")
+            .synth("named_input_group_mono_target")
+            .group("named_input_group_rt");
+        target.input("carrier").from_current_group();
+    "#;
+    apply_script(&mut runtime, script).await;
+
+    let target = VoiceId::new(fnv1a_id("named_input_group_mono_target_voice"));
+    let key = (target, "carrier".to_string());
+
+    {
+        let state = runtime.state().read().await;
+        assert!(
+            state.input_routes.get(&key).is_none(),
+            "stereo group bus must not be materialized into a mono named input"
+        );
+        assert!(
+            state.input_route_synths.is_empty(),
+            "rejected group-to-mono route should not leave a live input link"
+        );
+    }
+
+    let input_links: Vec<_> = runtime
+        .backend()
+        .synth_creates()
+        .into_iter()
+        .filter(|create| create.def.starts_with("input_link_"))
+        .collect();
+    assert!(
+        input_links.is_empty(),
+        "group-to-mono rejection should not spawn input_link_*"
+    );
+}
+
+#[tokio::test]
+async fn script_named_input_route_create_failure_retries_on_no_change_reload() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+
+    load_registered_synthdef(
+        &mut runtime,
+        "named_input_retry_src",
+        mono_out(),
+        Vec::new(),
+    )
+    .await;
+    load_registered_synthdef(
+        &mut runtime,
+        "named_input_retry_target",
+        Vec::new(),
+        vec![InputPort::ar("carrier", 1)],
+    )
+    .await;
+
+    let script = r#"
+        let src = voice("named_input_retry_src_voice")
+            .synth("named_input_retry_src")
+            .group("named_input_retry_rt");
+        let target = voice("named_input_retry_target_voice")
+            .synth("named_input_retry_target")
+            .group("named_input_retry_rt");
+        target.input("carrier").from(src);
+    "#;
+
+    runtime.backend().fail_next_input_link_create();
+    apply_script(&mut runtime, script).await;
+
+    let source = VoiceId::new(fnv1a_id("named_input_retry_src_voice"));
+    let target = VoiceId::new(fnv1a_id("named_input_retry_target_voice"));
+    let route = InputRouteSrc::Voice(source, "out".to_string());
+    let key = (target, "carrier".to_string());
+
+    {
+        let state = runtime.state().read().await;
+        assert!(
+            state.input_routes.get(&key).is_none(),
+            "failed link creation should not advance the materialized input route map"
+        );
+        assert!(
+            state.input_route_synths.is_empty(),
+            "failed link creation should not leave a live route synth"
+        );
+    }
+
+    apply_script(&mut runtime, script).await;
+
+    {
+        let state = runtime.state().read().await;
+        assert_eq!(state.input_routes.get(&key), Some(&vec![route.clone()]));
+        assert!(state
+            .input_route_synths
+            .contains_key(&(target, "carrier".to_string(), route)));
+    }
+
+    let input_links: Vec<_> = runtime
+        .backend()
+        .synth_creates()
+        .into_iter()
+        .filter(|create| create.def == "input_link_1")
+        .collect();
+    assert_eq!(
+        input_links.len(),
+        1,
+        "no-change reload should retry and eventually create the missing input link"
     );
 }

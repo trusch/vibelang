@@ -33,8 +33,9 @@ use crate::compat::{timeout, Duration};
 use crate::handlers::RecordingsHandler;
 use crate::handlers::{
     merge_default_routes, suppress_modulation_only_defaults, EffectsHandler, FadesHandler,
-    GroupsHandler, MelodiesHandler, PatternsHandler, RouteMap, RoutesHandler, SamplesHandler,
-    SequencesHandler, SfzHandler, SynthDefsHandler, TransportHandler, VoicesHandler,
+    GroupsHandler, InputRouteMap, InputRouteSrc, MelodiesHandler, PatternsHandler, RouteMap,
+    RoutesHandler, SamplesHandler, SequencesHandler, SfzHandler, SynthDefsHandler,
+    TransportHandler, VoicesHandler,
 };
 #[cfg(feature = "midi")]
 use crate::message::MidiMessage;
@@ -771,6 +772,30 @@ impl<B: Backend> Runtime<B> {
         crate::types::Beat::from_f64(final_epsilon)
     }
 
+    async fn effective_input_routes(&self, new_state: &reload::ScriptState) -> InputRouteMap {
+        let mut routes = InputRouteMap::new();
+        {
+            let state = self.state.read().await;
+            for (voice_id, config) in &new_state.voices {
+                for input in state.synthdef_inputs(&config.synthdef) {
+                    if input.rate == vibelang_dsp::PortRate::Ar
+                        && matches!(input.channels, 1 | 2)
+                    {
+                        routes.insert((*voice_id, input.name), vec![InputRouteSrc::Silent]);
+                    }
+                }
+            }
+        }
+        for (key, srcs) in &new_state.input_routes {
+            routes.insert(key.clone(), srcs.clone());
+        }
+        routes
+    }
+
+    async fn input_routes_need_finalize(&self, desired: &InputRouteMap) -> bool {
+        self.state.read().await.input_routes != *desired
+    }
+
     /// Apply a live reload from a new script state.
     ///
     /// This calculates the minimal diff between current and new state,
@@ -788,10 +813,16 @@ impl<B: Backend> Runtime<B> {
             let current = self.state.read().await;
             reload::calculate_diff(&current, &new_state)
         };
+        let input_routes = self.effective_input_routes(&new_state).await;
 
         // If no changes, return early - patterns continue playing seamlessly
         // (Phase 6 only starts patterns that aren't already playing)
         if !diff.has_changes() {
+            if self.input_routes_need_finalize(&input_routes).await {
+                if let Err(e) = self.routes.finalize_input_routes(&input_routes).await {
+                    tracing::error!("Reload: routes.finalize_input_routes failed: {}", e);
+                }
+            }
             tracing::debug!("Reload: no changes detected, playback continues");
             return Ok(());
         }
@@ -1687,14 +1718,12 @@ impl<B: Backend> Runtime<B> {
         // =========================================================================
         // Phase 4.7b: Finalize named-input routes (source bus → voice input bus)
         // =========================================================================
-        // Script-side `voice.input("name").from(...)` calls populate
-        // `new_state.input_routes`. Reconcile those against the last
-        // materialized `State::input_routes` snapshot and spawn/free
-        // `input_link_1` / `input_link_2` nodes as needed.
-        if !new_state.input_routes.is_empty()
-            || !self.state.read().await.input_routes.is_empty()
-        {
-            if let Err(e) = self.routes.finalize_input_routes(&new_state.input_routes).await {
+        // Script-side `voice.input("name").from(...)` calls populate explicit
+        // entries, and every declared linkable input port defaults to the
+        // shared silent bus when left unpatched. Reconcile that effective map
+        // against the last materialized `State::input_routes` snapshot.
+        if !input_routes.is_empty() || !self.state.read().await.input_routes.is_empty() {
+            if let Err(e) = self.routes.finalize_input_routes(&input_routes).await {
                 tracing::error!("Reload: routes.finalize_input_routes failed: {}", e);
             }
         }
