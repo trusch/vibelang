@@ -1,66 +1,168 @@
-// kind=fx | category=granular | flavor=clouds | stereo=true | params=position,size,density,texture,blend,mix,level
+// kind=fx | category=granular | flavor=clouds | stereo=true | params=mode,freeze,position,size,pitch,density,texture,dry_wet,spread,feedback,reverb,trigger,quality,blend,mix,level
 //
-// Clouds Processor Effect
+// Clouds Processor Effect - Mutable Instruments Clouds wrapper
 //
 // Wraps the Mutable Instruments Clouds port (mi_clouds_ar) as a stereo
-// granular texture processor. Defaults to GRANULAR playback mode for a
-// classic one-knob shimmer pad — feed any sustained source and reach for
-// `density` + `texture` to bloom it into a cloud.
+// granular texture processor. Defaults to GRANULAR playback mode with the
+// original wrapper's old dry/wet behavior preserved through `blend` + `mix`.
 //
 // REQUIRES: mi-UGens plugin installed in your SuperCollider extensions.
 //
+// Playback modes:
+//   0  granular       - classic asynchronous grain cloud
+//   1  stretch        - WSOLA-style time stretch
+//   2  looping_delay  - looping delay / buffer repeat
+//   3  spectral       - phase-vocoder spectral smear/freeze
+//
+// Quality variants:
+//   0  high stereo    - separate left/right Clouds cores, normal buffer
+//   1  high mono      - folded mono Clouds core, normal buffer
+//   2  lo-fi stereo   - separate left/right Clouds cores, 4s lo-fi buffer
+//   3  lo-fi mono     - folded mono Clouds core, 4s lo-fi buffer
+//
 // Usage:
 //   group.add_effect("clouds", "clouds_processor", #{
+//     mode: 0,
+//     freeze: 0,
 //     position: 0.5,
 //     size: 0.5,
+//     pitch: 0.0,
 //     density: 0.5,
 //     texture: 0.5,
-//     blend: 1.0,
-//     mix: 0.5,
+//     dry_wet: 0.5,
+//     spread: 0.3,
+//     feedback: 0.0,
+//     reverb: 0.0,
+//     trigger: 0,
+//     quality: 0,
 //     level: 1.0,
 //   });
 //
 // Parameters:
+//   mode: Playback mode (0=granular, 1=stretch, 2=looping_delay, 3=spectral)
+//   freeze: Freeze the recording buffer (0/1)
 //   position: Playback position in the internal 8s buffer (0 to 1)
 //   size: Grain size (0 to 1)
+//   pitch: Pitch shift in semitones (-24 to +24)
 //   density: Grain density (0..0.5 = periodic, 0.5..1 = random; 0.5 ≈ silent)
 //   texture: Grain texture / window shape (0 to 1)
-//   blend: Internal Clouds dry/wet — the "Blend" knob on the hardware (0 to 1)
-//   mix: Outer dry/wet mix (0.0 = dry, 1.0 = wet)
+//   dry_wet: Processor dry/wet mix (0.0 = dry, 1.0 = wet)
+//   spread: Clouds stereo spread (0 to 1)
+//   feedback: Clouds feedback amount (0 to 0.9)
+//   reverb: Clouds internal reverb amount (0 to 1)
+//   trigger: Single grain trigger input (0/1 or pulse)
+//   quality: 0=high stereo, 1=high mono, 2=lo-fi stereo, 3=lo-fi mono
+//   blend: Legacy internal Clouds dry/wet alias; kept for old patches (0 to 1)
+//   mix: Legacy outer dry/wet alias; kept for old patches (0 to 1)
 //   level: Output trim applied after the dry/wet mix
 
 define_fx("clouds_processor", |builder| {
     builder
+        .param("mode", 0.0)
+        .param("freeze", 0.0)
         .param("position", 0.5)
         .param("size", 0.5)
+        .param("pitch", 0.0)
         .param("density", 0.5)
         .param("texture", 0.5)
+        .param("dry_wet", 0.5)
+        .param("spread", 0.3)
+        .param("feedback", 0.0)
+        .param("reverb", 0.0)
+        .param("trigger", 0.0)
+        .param("quality", 0.0)
         .param("blend", 1.0)
         .param("mix", 0.5)
         .param("level", 1.0)
-        .body(|input, position, size, density, texture, blend, mix, level| {
-            // Clouds takes a single audio input; sum to mono and let the
-            // UGen's internal `spread=1.0` re-spatialise the wet output.
+        .body_map(|p| {
+            let input = p.input;
             let mono = (input[0] + input[1]) * 0.5;
+
+            let mode_i = clip(round(p.mode), 0.0, 3.0);
+            let freeze_i = clip(round(p.freeze), 0.0, 1.0);
+            let quality_i = clip(round(p.quality), 0.0, 3.0);
+            let trigger_sig = trig1_kr(clip(p.trigger, 0.0, 1.0), 0.001);
+
+            let pos = clip(p.position, 0.0, 1.0);
+            let grain_size = clip(p.size, 0.0, 1.0);
+            let pit = clip(p.pitch, -24.0, 24.0);
+            let dens = clip(p.density, 0.0, 1.0);
+            let tex = clip(p.texture, 0.0, 1.0);
+            let clouds_dry_wet = clip(p.blend, 0.0, 1.0);
+            let clouds_spread = clip(p.spread, 0.0, 1.0);
+            let clouds_reverb = clip(p.reverb, 0.0, 1.0);
+            let clouds_feedback = clip(p.feedback, 0.0, 0.9);
+            let out_mix = clip(p.dry_wet + p.mix - 0.5, 0.0, 1.0);
 
             // mi_clouds_ar args: in, pit, pos, size, dens, tex, drywet,
             //   in_gain, spread, rvb, fb, freeze, mode, lofi, trig
-            // Fixed: pit=0 (no pitch shift), in_gain=1, spread=1 (full),
-            //        rvb=0, fb=0, freeze=0, mode=0 (GRANULAR), lofi=0, trig=0
-            let cl = channels(
+            // `blend` remains the legacy name for Clouds' internal drywet.
+            // `dry_wet` is the processor-level mix and `mix` is its old alias.
+            let high_l = channels(
                 mi_clouds_ar(
-                    mono, 0.0, position, size, density, texture, blend,
-                    1.0, 1.0, 0.0, 0.0, 0, 0, 0, 0
+                    input[0], pit, pos, grain_size, dens, tex, clouds_dry_wet,
+                    1.0, clouds_spread, clouds_reverb, clouds_feedback,
+                    freeze_i, mode_i, 0, trigger_sig
+                ),
+                2
+            );
+            let high_r = channels(
+                mi_clouds_ar(
+                    input[1], pit, pos, grain_size, dens, tex, clouds_dry_wet,
+                    1.0, clouds_spread, clouds_reverb, clouds_feedback,
+                    freeze_i, mode_i, 0, trigger_sig
+                ),
+                2
+            );
+            let high_mono = channels(
+                mi_clouds_ar(
+                    mono, pit, pos, grain_size, dens, tex, clouds_dry_wet,
+                    1.0, clouds_spread, clouds_reverb, clouds_feedback,
+                    freeze_i, mode_i, 0, trigger_sig
+                ),
+                2
+            );
+            let lofi_l = channels(
+                mi_clouds_ar(
+                    input[0], pit, pos, grain_size, dens, tex, clouds_dry_wet,
+                    1.0, clouds_spread, clouds_reverb, clouds_feedback,
+                    freeze_i, mode_i, 1, trigger_sig
+                ),
+                2
+            );
+            let lofi_r = channels(
+                mi_clouds_ar(
+                    input[1], pit, pos, grain_size, dens, tex, clouds_dry_wet,
+                    1.0, clouds_spread, clouds_reverb, clouds_feedback,
+                    freeze_i, mode_i, 1, trigger_sig
+                ),
+                2
+            );
+            let lofi_mono = channels(
+                mi_clouds_ar(
+                    mono, pit, pos, grain_size, dens, tex, clouds_dry_wet,
+                    1.0, clouds_spread, clouds_reverb, clouds_feedback,
+                    freeze_i, mode_i, 1, trigger_sig
                 ),
                 2
             );
 
-            let wet_l = leak_dc_ar(cl[0], 0.995);
-            let wet_r = leak_dc_ar(cl[1], 0.995);
+            let wet_l = leak_dc_ar(select_ar(quality_i, [
+                high_l[0],
+                high_mono[0],
+                lofi_l[0],
+                lofi_mono[0],
+            ]), 0.995);
+            let wet_r = leak_dc_ar(select_ar(quality_i, [
+                high_r[1],
+                high_mono[1],
+                lofi_r[1],
+                lofi_mono[1],
+            ]), 0.995);
 
             [
-                ((1.0 - mix) * input[0] + mix * wet_l) * level,
-                ((1.0 - mix) * input[1] + mix * wet_r) * level,
+                ((1.0 - out_mix) * input[0] + out_mix * wet_l) * p.level,
+                ((1.0 - out_mix) * input[1] + out_mix * wet_r) * p.level,
             ]
         })
 });
