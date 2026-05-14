@@ -1,0 +1,355 @@
+// kind=cv | category=eurorack | flavor=mutable-stages | outputs=seg1:kr,seg2:kr,seg3:kr,seg4:kr,seg5:kr,seg6:kr,group1:kr,group2:kr,group3:kr,eor:kr,eoc:kr | params=clock,reset,scale,seg_1_type..seg_6_group_with_prev
+//
+// Mutable Instruments Stages - six-segment generator approximation.
+//
+// Segment types (`seg_N_type`, rounded and clipped to 0..3):
+//   0 ramp - `primary` is ramp time over 0..2 seconds, `secondary` curves it.
+//   1 step - `primary` is the level, `secondary` slews the step edge.
+//   2 hold - `primary` is the held level while gate is high; gate fall releases.
+//   3 alt  - free oscillator at `primary * 10` Hz, `secondary` morphs shape.
+//
+// `seg_N_group_with_prev` encodes the jack-sensed chaining that the hardware
+// derives from patch state. Segment 1 always starts group 1; segments 2..6
+// default to chaining. A break starts the next group, capped at group3.
+// `group1..group3` output the segment value selected by that group's current
+// stage counter. EOR/EOC are +5 V-style kr pulses scaled to 0.5 in the stdlib
+// CV convention.
+
+fn _stages_gate(x) {
+    clip_kr(round(x), 0.0, 1.0)
+}
+
+fn _stages_mask(value, target) {
+    1.0 - clip_kr(abs(value - target), 0.0, 1.0)
+}
+
+fn _stages_curve(phase, shape) {
+    let shaped = clip_kr(shape, 0.0, 1.0);
+    let low = (1.0 - shaped * 2.0).max(0.0);
+    let high = (shaped * 2.0 - 1.0).max(0.0);
+    let mid = (1.0 - low - high).max(0.0);
+    let p = clip_kr(phase, 0.0, 1.0);
+    p * p * low + p * mid + sqrt(p) * high
+}
+
+fn _stages_segment_value(kind_raw, loop_raw, primary_raw, secondary_raw, gate_raw, trigger_raw, clock_raw, reset_raw, chain_trig, scale_raw) {
+    let kind = clip_kr(round(kind_raw), 0.0, 3.0);
+    let is_ramp = _stages_mask(kind, 0.0);
+    let is_step = _stages_mask(kind, 1.0);
+    let is_hold = _stages_mask(kind, 2.0);
+    let is_alt = _stages_mask(kind, 3.0);
+
+    let primary = clip_kr(primary_raw, 0.0, 1.0);
+    let secondary = clip_kr(secondary_raw, 0.0, 1.0);
+    let gate = _stages_gate(gate_raw);
+    let trigger = _stages_gate(trigger_raw);
+    let clock = _stages_gate(clock_raw);
+    let reset = _stages_gate(reset_raw);
+    let loop_seg = _stages_gate(loop_raw);
+    let scale = clip_kr(scale_raw, 0.0, 2.0);
+
+    let ramp_time = (primary * 2.0).max(0.001);
+    let ramp_rate = 1.0 / ramp_time;
+    let start = clip_kr(trigger + clock + chain_trig + reset + impulse_kr(ramp_rate, 0.0) * loop_seg, 0.0, 1.0);
+    let phase = wrap_kr(sweep_kr(start, ramp_rate), 0.0, 1.0);
+    let ramp = _stages_curve(phase, secondary);
+
+    let step_slew = 0.001 + secondary * 0.25;
+    let step = lag_kr(primary, step_slew);
+
+    let held_level = latch_kr(primary, trigger + clock + gate + reset);
+    let hold = lag_ud_kr(held_level * gate, 0.001 + secondary * 0.25, 0.001 + (1.0 - secondary) * 0.5);
+
+    let alt_rate = (primary * 10.0).max(0.001);
+    let alt_phase = wrap_kr(sweep_kr(reset, alt_rate), 0.0, 1.0);
+    let alt_saw = alt_phase;
+    let alt_tri = 1.0 - abs(alt_phase * 2.0 - 1.0);
+    let alt_pulse = lf_pulse_kr(alt_rate, 0.0, clip_kr(secondary, 0.05, 0.95));
+    let alt_low = (1.0 - secondary * 2.0).max(0.0);
+    let alt_high = (secondary * 2.0 - 1.0).max(0.0);
+    let alt_mid = (1.0 - alt_low - alt_high).max(0.0);
+    let alt = alt_saw * alt_low + alt_tri * alt_mid + alt_pulse * alt_high;
+
+    clip_kr((ramp * is_ramp + step * is_step + hold * is_hold + alt * is_alt) * scale, 0.0, 2.0)
+}
+
+fn _stages_segment_eor(kind_raw, loop_raw, primary_raw, gate_raw, trigger_raw, clock_raw, reset_raw, chain_trig) {
+    let kind = clip_kr(round(kind_raw), 0.0, 3.0);
+    let is_ramp = _stages_mask(kind, 0.0);
+    let is_step = _stages_mask(kind, 1.0);
+    let is_hold = _stages_mask(kind, 2.0);
+    let is_alt = _stages_mask(kind, 3.0);
+
+    let primary = clip_kr(primary_raw, 0.0, 1.0);
+    let gate = _stages_gate(gate_raw);
+    let prev_gate = delay1_kr(gate);
+    let gate_fall = in_range_kr(prev_gate, 0.5, 1.0) * in_range_kr(gate, 0.0, 0.499);
+    let trigger = _stages_gate(trigger_raw);
+    let clock = _stages_gate(clock_raw);
+    let reset = _stages_gate(reset_raw);
+    let loop_seg = _stages_gate(loop_raw);
+
+    let ramp_time = (primary * 2.0).max(0.001);
+    let ramp_rate = 1.0 / ramp_time;
+    let ramp_start = clip_kr(trigger + clock + chain_trig + reset + impulse_kr(ramp_rate, 0.0) * loop_seg, 0.0, 1.0);
+    let ramp_eor = trig1_kr(t_delay_kr(ramp_start, ramp_time), 0.005);
+
+    let step_eor = trig1_kr(trigger + clock + chain_trig + reset, 0.005);
+    let hold_eor = trig1_kr(gate_fall + reset, 0.005);
+
+    let alt_rate = (primary * 10.0).max(0.001);
+    let alt_eor = trig1_kr(impulse_kr(alt_rate, 0.0) + reset, 0.005);
+
+    clip_kr(ramp_eor * is_ramp + step_eor * is_step + hold_eor * is_hold + alt_eor * is_alt, 0.0, 1.0)
+}
+
+define_synthdef("stages", |builder| {
+    builder
+        .output_kr("seg1")
+        .output_kr("seg2")
+        .output_kr("seg3")
+        .output_kr("seg4")
+        .output_kr("seg5")
+        .output_kr("seg6")
+        .output_kr("group1")
+        .output_kr("group2")
+        .output_kr("group3")
+        .output_kr("eor")
+        .output_kr("eoc")
+        .param("clock", 0.0)
+        .param("reset", 0.0)
+        .param("scale", 1.0)
+        .param("seg_1_type", 0.0)
+        .param("seg_1_loop", 0.0)
+        .param("seg_1_primary", 0.5)
+        .param("seg_1_secondary", 0.5)
+        .param("seg_1_gate", 0.0)
+        .param("seg_1_trigger", 0.0)
+        .param("seg_1_group_with_prev", 0.0)
+        .param("seg_2_type", 0.0)
+        .param("seg_2_loop", 0.0)
+        .param("seg_2_primary", 0.5)
+        .param("seg_2_secondary", 0.5)
+        .param("seg_2_gate", 0.0)
+        .param("seg_2_trigger", 0.0)
+        .param("seg_2_group_with_prev", 1.0)
+        .param("seg_3_type", 0.0)
+        .param("seg_3_loop", 0.0)
+        .param("seg_3_primary", 0.5)
+        .param("seg_3_secondary", 0.5)
+        .param("seg_3_gate", 0.0)
+        .param("seg_3_trigger", 0.0)
+        .param("seg_3_group_with_prev", 1.0)
+        .param("seg_4_type", 0.0)
+        .param("seg_4_loop", 0.0)
+        .param("seg_4_primary", 0.5)
+        .param("seg_4_secondary", 0.5)
+        .param("seg_4_gate", 0.0)
+        .param("seg_4_trigger", 0.0)
+        .param("seg_4_group_with_prev", 1.0)
+        .param("seg_5_type", 0.0)
+        .param("seg_5_loop", 0.0)
+        .param("seg_5_primary", 0.5)
+        .param("seg_5_secondary", 0.5)
+        .param("seg_5_gate", 0.0)
+        .param("seg_5_trigger", 0.0)
+        .param("seg_5_group_with_prev", 1.0)
+        .param("seg_6_type", 0.0)
+        .param("seg_6_loop", 0.0)
+        .param("seg_6_primary", 0.5)
+        .param("seg_6_secondary", 0.5)
+        .param("seg_6_gate", 0.0)
+        .param("seg_6_trigger", 0.0)
+        .param("seg_6_group_with_prev", 1.0)
+        .body_map(|p| {
+            let join2 = _stages_gate(p.seg_2_group_with_prev);
+            let join3 = _stages_gate(p.seg_3_group_with_prev);
+            let join4 = _stages_gate(p.seg_4_group_with_prev);
+            let join5 = _stages_gate(p.seg_5_group_with_prev);
+            let join6 = _stages_gate(p.seg_6_group_with_prev);
+
+            let group_id1 = 1.0;
+            let group_id2 = (group_id1 + (1.0 - join2)).min(3.0);
+            let group_id3 = (group_id2 + (1.0 - join3)).min(3.0);
+            let group_id4 = (group_id3 + (1.0 - join4)).min(3.0);
+            let group_id5 = (group_id4 + (1.0 - join5)).min(3.0);
+            let group_id6 = (group_id5 + (1.0 - join6)).min(3.0);
+
+            let seg1_eor = _stages_segment_eor(
+                p.seg_1_type, p.seg_1_loop, p.seg_1_primary,
+                p.seg_1_gate, p.seg_1_trigger, p.clock, p.reset, 0.0
+            );
+            let seg2_eor = _stages_segment_eor(
+                p.seg_2_type, p.seg_2_loop, p.seg_2_primary,
+                p.seg_2_gate, p.seg_2_trigger, p.clock, p.reset, seg1_eor * join2
+            );
+            let seg3_eor = _stages_segment_eor(
+                p.seg_3_type, p.seg_3_loop, p.seg_3_primary,
+                p.seg_3_gate, p.seg_3_trigger, p.clock, p.reset, seg2_eor * join3
+            );
+            let seg4_eor = _stages_segment_eor(
+                p.seg_4_type, p.seg_4_loop, p.seg_4_primary,
+                p.seg_4_gate, p.seg_4_trigger, p.clock, p.reset, seg3_eor * join4
+            );
+            let seg5_eor = _stages_segment_eor(
+                p.seg_5_type, p.seg_5_loop, p.seg_5_primary,
+                p.seg_5_gate, p.seg_5_trigger, p.clock, p.reset, seg4_eor * join5
+            );
+            let seg6_eor = _stages_segment_eor(
+                p.seg_6_type, p.seg_6_loop, p.seg_6_primary,
+                p.seg_6_gate, p.seg_6_trigger, p.clock, p.reset, seg5_eor * join6
+            );
+
+            let seg1 = _stages_segment_value(
+                p.seg_1_type, p.seg_1_loop, p.seg_1_primary, p.seg_1_secondary,
+                p.seg_1_gate, p.seg_1_trigger, p.clock, p.reset, 0.0, p.scale
+            );
+            let seg2 = _stages_segment_value(
+                p.seg_2_type, p.seg_2_loop, p.seg_2_primary, p.seg_2_secondary,
+                p.seg_2_gate, p.seg_2_trigger, p.clock, p.reset, seg1_eor * join2, p.scale
+            );
+            let seg3 = _stages_segment_value(
+                p.seg_3_type, p.seg_3_loop, p.seg_3_primary, p.seg_3_secondary,
+                p.seg_3_gate, p.seg_3_trigger, p.clock, p.reset, seg2_eor * join3, p.scale
+            );
+            let seg4 = _stages_segment_value(
+                p.seg_4_type, p.seg_4_loop, p.seg_4_primary, p.seg_4_secondary,
+                p.seg_4_gate, p.seg_4_trigger, p.clock, p.reset, seg3_eor * join4, p.scale
+            );
+            let seg5 = _stages_segment_value(
+                p.seg_5_type, p.seg_5_loop, p.seg_5_primary, p.seg_5_secondary,
+                p.seg_5_gate, p.seg_5_trigger, p.clock, p.reset, seg4_eor * join5, p.scale
+            );
+            let seg6 = _stages_segment_value(
+                p.seg_6_type, p.seg_6_loop, p.seg_6_primary, p.seg_6_secondary,
+                p.seg_6_gate, p.seg_6_trigger, p.clock, p.reset, seg5_eor * join6, p.scale
+            );
+
+            let g1s1 = _stages_mask(group_id1, 1.0);
+            let g1s2 = _stages_mask(group_id2, 1.0);
+            let g1s3 = _stages_mask(group_id3, 1.0);
+            let g1s4 = _stages_mask(group_id4, 1.0);
+            let g1s5 = _stages_mask(group_id5, 1.0);
+            let g1s6 = _stages_mask(group_id6, 1.0);
+            let g2s1 = _stages_mask(group_id1, 2.0);
+            let g2s2 = _stages_mask(group_id2, 2.0);
+            let g2s3 = _stages_mask(group_id3, 2.0);
+            let g2s4 = _stages_mask(group_id4, 2.0);
+            let g2s5 = _stages_mask(group_id5, 2.0);
+            let g2s6 = _stages_mask(group_id6, 2.0);
+            let g3s1 = _stages_mask(group_id1, 3.0);
+            let g3s2 = _stages_mask(group_id2, 3.0);
+            let g3s3 = _stages_mask(group_id3, 3.0);
+            let g3s4 = _stages_mask(group_id4, 3.0);
+            let g3s5 = _stages_mask(group_id5, 3.0);
+            let g3s6 = _stages_mask(group_id6, 3.0);
+
+            let rank1 = 0.0;
+            let rank2 = _stages_mask(group_id2, group_id1);
+            let rank3 = _stages_mask(group_id3, group_id1) + _stages_mask(group_id3, group_id2);
+            let rank4 = _stages_mask(group_id4, group_id1) + _stages_mask(group_id4, group_id2) + _stages_mask(group_id4, group_id3);
+            let rank5 = _stages_mask(group_id5, group_id1) + _stages_mask(group_id5, group_id2) + _stages_mask(group_id5, group_id3) + _stages_mask(group_id5, group_id4);
+            let rank6 = _stages_mask(group_id6, group_id1) + _stages_mask(group_id6, group_id2) + _stages_mask(group_id6, group_id3) + _stages_mask(group_id6, group_id4) + _stages_mask(group_id6, group_id5);
+
+            let len1 = (g1s1 + g1s2 + g1s3 + g1s4 + g1s5 + g1s6).max(1.0);
+            let len2 = (g2s1 + g2s2 + g2s3 + g2s4 + g2s5 + g2s6).max(1.0);
+            let len3 = (g3s1 + g3s2 + g3s3 + g3s4 + g3s5 + g3s6).max(1.0);
+
+            let advance1 = clip_kr(
+                p.clock
+                    + p.seg_1_trigger * g1s1 + p.seg_2_trigger * g1s2 + p.seg_3_trigger * g1s3
+                    + p.seg_4_trigger * g1s4 + p.seg_5_trigger * g1s5 + p.seg_6_trigger * g1s6
+                    + seg1_eor * g1s1 + seg2_eor * g1s2 + seg3_eor * g1s3
+                    + seg4_eor * g1s4 + seg5_eor * g1s5 + seg6_eor * g1s6,
+                0.0,
+                1.0
+            );
+            let advance2 = clip_kr(
+                p.clock
+                    + p.seg_1_trigger * g2s1 + p.seg_2_trigger * g2s2 + p.seg_3_trigger * g2s3
+                    + p.seg_4_trigger * g2s4 + p.seg_5_trigger * g2s5 + p.seg_6_trigger * g2s6
+                    + seg1_eor * g2s1 + seg2_eor * g2s2 + seg3_eor * g2s3
+                    + seg4_eor * g2s4 + seg5_eor * g2s5 + seg6_eor * g2s6,
+                0.0,
+                1.0
+            );
+            let advance3 = clip_kr(
+                p.clock
+                    + p.seg_1_trigger * g3s1 + p.seg_2_trigger * g3s2 + p.seg_3_trigger * g3s3
+                    + p.seg_4_trigger * g3s4 + p.seg_5_trigger * g3s5 + p.seg_6_trigger * g3s6
+                    + seg1_eor * g3s1 + seg2_eor * g3s2 + seg3_eor * g3s3
+                    + seg4_eor * g3s4 + seg5_eor * g3s5 + seg6_eor * g3s6,
+                0.0,
+                1.0
+            );
+
+            let step1 = stepper_kr(advance1, p.reset, 0.0, len1 - 1.0, 1.0, 0.0);
+            let step2 = stepper_kr(advance2, p.reset, 0.0, len2 - 1.0, 1.0, 0.0);
+            let step3 = stepper_kr(advance3, p.reset, 0.0, len3 - 1.0, 1.0, 0.0);
+
+            let a1g1 = g1s1 * _stages_mask(rank1, step1);
+            let a2g1 = g1s2 * _stages_mask(rank2, step1);
+            let a3g1 = g1s3 * _stages_mask(rank3, step1);
+            let a4g1 = g1s4 * _stages_mask(rank4, step1);
+            let a5g1 = g1s5 * _stages_mask(rank5, step1);
+            let a6g1 = g1s6 * _stages_mask(rank6, step1);
+            let a1g2 = g2s1 * _stages_mask(rank1, step2);
+            let a2g2 = g2s2 * _stages_mask(rank2, step2);
+            let a3g2 = g2s3 * _stages_mask(rank3, step2);
+            let a4g2 = g2s4 * _stages_mask(rank4, step2);
+            let a5g2 = g2s5 * _stages_mask(rank5, step2);
+            let a6g2 = g2s6 * _stages_mask(rank6, step2);
+            let a1g3 = g3s1 * _stages_mask(rank1, step3);
+            let a2g3 = g3s2 * _stages_mask(rank2, step3);
+            let a3g3 = g3s3 * _stages_mask(rank3, step3);
+            let a4g3 = g3s4 * _stages_mask(rank4, step3);
+            let a5g3 = g3s5 * _stages_mask(rank5, step3);
+            let a6g3 = g3s6 * _stages_mask(rank6, step3);
+
+            let group1 = clip_kr(seg1 * a1g1 + seg2 * a2g1 + seg3 * a3g1 + seg4 * a4g1 + seg5 * a5g1 + seg6 * a6g1, 0.0, 2.0);
+            let group2 = clip_kr(seg1 * a1g2 + seg2 * a2g2 + seg3 * a3g2 + seg4 * a4g2 + seg5 * a5g2 + seg6 * a6g2, 0.0, 2.0);
+            let group3 = clip_kr(seg1 * a1g3 + seg2 * a2g3 + seg3 * a3g3 + seg4 * a4g3 + seg5 * a5g3 + seg6 * a6g3, 0.0, 2.0);
+
+            let active1 = a1g1 + a1g2 + a1g3;
+            let active2 = a2g1 + a2g2 + a2g3;
+            let active3 = a3g1 + a3g2 + a3g3;
+            let active4 = a4g1 + a4g2 + a4g3;
+            let active5 = a5g1 + a5g2 + a5g3;
+            let active6 = a6g1 + a6g2 + a6g3;
+            let eor = clip_kr(trig1_kr(
+                seg1_eor * active1 + seg2_eor * active2 + seg3_eor * active3
+                    + seg4_eor * active4 + seg5_eor * active5 + seg6_eor * active6,
+                0.005
+            ) * 0.5, 0.0, 0.5);
+
+            let last1 = g1s1 * _stages_mask(rank1, len1 - 1.0) + g2s1 * _stages_mask(rank1, len2 - 1.0) + g3s1 * _stages_mask(rank1, len3 - 1.0);
+            let last2 = g1s2 * _stages_mask(rank2, len1 - 1.0) + g2s2 * _stages_mask(rank2, len2 - 1.0) + g3s2 * _stages_mask(rank2, len3 - 1.0);
+            let last3 = g1s3 * _stages_mask(rank3, len1 - 1.0) + g2s3 * _stages_mask(rank3, len2 - 1.0) + g3s3 * _stages_mask(rank3, len3 - 1.0);
+            let last4 = g1s4 * _stages_mask(rank4, len1 - 1.0) + g2s4 * _stages_mask(rank4, len2 - 1.0) + g3s4 * _stages_mask(rank4, len3 - 1.0);
+            let last5 = g1s5 * _stages_mask(rank5, len1 - 1.0) + g2s5 * _stages_mask(rank5, len2 - 1.0) + g3s5 * _stages_mask(rank5, len3 - 1.0);
+            let last6 = g1s6 * _stages_mask(rank6, len1 - 1.0) + g2s6 * _stages_mask(rank6, len2 - 1.0) + g3s6 * _stages_mask(rank6, len3 - 1.0);
+            let eoc = clip_kr(trig1_kr(
+                seg1_eor * active1 * last1 * _stages_gate(p.seg_1_loop)
+                    + seg2_eor * active2 * last2 * _stages_gate(p.seg_2_loop)
+                    + seg3_eor * active3 * last3 * _stages_gate(p.seg_3_loop)
+                    + seg4_eor * active4 * last4 * _stages_gate(p.seg_4_loop)
+                    + seg5_eor * active5 * last5 * _stages_gate(p.seg_5_loop)
+                    + seg6_eor * active6 * last6 * _stages_gate(p.seg_6_loop),
+                0.005
+            ) * 0.5, 0.0, 0.5);
+
+            [
+                seg1,
+                seg2,
+                seg3,
+                seg4,
+                seg5,
+                seg6,
+                group1,
+                group2,
+                group3,
+                eor,
+                eoc,
+            ]
+        })
+});
