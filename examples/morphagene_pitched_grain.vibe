@@ -21,10 +21,10 @@
 //     -7 ST         (rate 0.667) →  v ≈ 0.6934
 //     -12 ST        (rate 0.500) →  v ≈ 0.6300
 // The four voices below stack a major triad + octave (root, M3, P5, +1 oct)
-// off a unity reference of v ≈ 0.7937. With true Time Stretch (Story D)
-// these would all read at the same time-rate but be independently pitched;
-// today they advance through the splice at different speeds, so a longer
-// splice will phase out of unison.
+// off a unity reference of v ≈ 0.7937. With clocked Time Stretch enabled,
+// these could all read at the same time-rate while being independently
+// pitched; this simpler varispeed patch advances each voice at a different
+// speed, so a longer splice will phase out of unison.
 //
 // Drop a stereo loop at `samples/loop.wav`. A pitched, sustained source
 // (vocal pad, sustained note, drone) makes the chord shape audible.
