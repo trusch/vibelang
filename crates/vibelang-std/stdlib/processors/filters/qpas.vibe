@@ -1,13 +1,22 @@
-// kind=processor | category=filters | flavor=qpas | inputs=in:2 | outputs=out:2 | params=cutoff,q,radiate,mode,input_gain,mix,level
+// kind=processor | category=filters | flavor=qpas | inputs=in:2 | outputs=out:2 | params=cutoff,q,radiate,smile,frown,q_plus,q_minus,mode,input_gain,mix,level
 //
 // Make Noise QPAS-inspired stereo multi-peak filter approximation.
 // Source reference: https://www.makenoisemusic.com/modules/qpas/
+//
+// mode: 0=ALL, 1=LP, 2=HP, 3=BP, 4=NOTCH (LP+HP), 5=BP+HP.
 
+// Stereo peak output ports need nested per-port channel returns, which the
+// current .vibe-only multi-output path does not support. Use mode 1/2/3 on
+// parallel QPAS voices as LP/HP/BP peak taps until the builder supports that.
 define_synthdef("qpas")
     .input("in", 2)
     .param("cutoff", 1200.0)
     .param("q", 0.35)
     .param("radiate", 0.25)
+    .param("smile", 0.5)
+    .param("frown", 0.5)
+    .param("q_plus", 0.0)
+    .param("q_minus", 0.0)
     .param("mode", 0.0)
     .param("input_gain", 0.8)
     .param("mix", 1.0)
@@ -17,13 +26,29 @@ define_synthdef("qpas")
         let dry_r = p.inputs["in"][1] * p.input_gain;
         let cutoff = clip(p.cutoff, 30.0, 16000.0);
         let q = clip(p.q, 0.05, 1.0);
+        let q_plus = clip(p.q_plus, -1.0, 1.0);
+        let q_minus = clip(p.q_minus, -1.0, 1.0);
+        let q_low = clip(q + q_minus * 0.35, 0.05, 1.0);
+        let q_high = clip(q + q_plus * 0.35, 0.05, 1.0);
         let radiate = clip(p.radiate, 0.0, 1.0);
+        let smile = clip(p.smile, -1.0, 1.0);
+        let frown = clip(p.frown, -1.0, 1.0);
         let spread = radiate * 0.35;
 
-        let low_l_a = rlpf_ar(dry_l, cutoff * (1.0 - spread * 0.5), q);
-        let low_l_b = rlpf_ar(dry_l, cutoff * (1.0 + spread), q);
-        let low_r_a = rlpf_ar(dry_r, cutoff * (1.0 + spread * 0.5), q);
-        let low_r_b = rlpf_ar(dry_r, cutoff * (1.0 - spread), q);
+        let low_base = cutoff * (1.0 - spread * 0.5);
+        let low_offset = low_base * spread * smile;
+        let low_cut_a = clip(low_base - low_offset, 20.0, 18000.0);
+        let low_cut_b = clip(low_base + low_offset, 20.0, 18000.0);
+
+        let high_base = cutoff * (1.0 + spread * 0.5);
+        let high_offset = high_base * spread * frown;
+        let high_cut_a = clip(high_base - high_offset, 20.0, 18000.0);
+        let high_cut_b = clip(high_base + high_offset, 20.0, 18000.0);
+
+        let low_l_a = rlpf_ar(dry_l, low_cut_a, q_low);
+        let low_l_b = rlpf_ar(dry_l, low_cut_b, q_low);
+        let low_r_a = rlpf_ar(dry_r, low_cut_b, q_low);
+        let low_r_b = rlpf_ar(dry_r, low_cut_a, q_low);
         let low_l = (low_l_a + low_l_b) * 0.5;
         let low_r = (low_r_a + low_r_b) * 0.5;
 
@@ -36,29 +61,52 @@ define_synthdef("qpas")
             bpf_ar(dry_r, cutoff * (1.0 - spread * 1.5), q)
         ) * 0.5;
 
-        let high_l = rhpf_ar(dry_l, cutoff * (1.0 + spread * 0.5), q);
-        let high_r = rhpf_ar(dry_r, cutoff * (1.0 - spread * 0.5), q);
-        let smile_l = low_l * 0.45 + high_l * 0.45 + band_l * radiate * 0.35;
-        let smile_r = low_r * 0.45 + high_r * 0.45 + band_r * radiate * 0.35;
+        let high_l_a = rhpf_ar(dry_l, high_cut_a, q_high);
+        let high_l_b = rhpf_ar(dry_l, high_cut_b, q_high);
+        let high_r_a = rhpf_ar(dry_r, high_cut_b, q_high);
+        let high_r_b = rhpf_ar(dry_r, high_cut_a, q_high);
+        let high_l = (high_l_a + high_l_b) * 0.5;
+        let high_r = (high_r_a + high_r_b) * 0.5;
 
-        let mode = clip(p.mode, 0.0, 3.0);
-        let low_w = clip(1.0 - abs(mode - 0.0), 0.0, 1.0);
-        let band_w = clip(1.0 - abs(mode - 1.0), 0.0, 1.0);
+        let all_l = low_l * 0.38 + band_l * 0.32 + high_l * 0.38;
+        let all_r = low_r * 0.38 + band_r * 0.32 + high_r * 0.38;
+        let notch_l = (low_l + high_l) * 0.5;
+        let notch_r = (low_r + high_r) * 0.5;
+        let bp_hp_l = (band_l + high_l) * 0.5;
+        let bp_hp_r = (band_r + high_r) * 0.5;
+
+        let mode = round(clip(p.mode, 0.0, 5.0));
+        let all_w = clip(1.0 - abs(mode - 0.0), 0.0, 1.0);
+        let low_w = clip(1.0 - abs(mode - 1.0), 0.0, 1.0);
         let high_w = clip(1.0 - abs(mode - 2.0), 0.0, 1.0);
-        let smile_w = clip(1.0 - abs(mode - 3.0), 0.0, 1.0);
+        let band_w = clip(1.0 - abs(mode - 3.0), 0.0, 1.0);
+        let notch_w = clip(1.0 - abs(mode - 4.0), 0.0, 1.0);
+        let bp_hp_w = clip(1.0 - abs(mode - 5.0), 0.0, 1.0);
 
         let wet_l = leak_dc_ar(
-            low_l * low_w + band_l * band_w + high_l * high_w + smile_l * smile_w,
+            all_l * all_w +
+            low_l * low_w +
+            high_l * high_w +
+            band_l * band_w +
+            notch_l * notch_w +
+            bp_hp_l * bp_hp_w,
             0.995
         );
         let wet_r = leak_dc_ar(
-            low_r * low_w + band_r * band_w + high_r * high_w + smile_r * smile_w,
+            all_r * all_w +
+            low_r * low_w +
+            high_r * high_w +
+            band_r * band_w +
+            notch_r * notch_w +
+            bp_hp_r * bp_hp_w,
             0.995
         );
         let mix = clip(p.mix, 0.0, 1.0);
+        let out_l = softclip(((1.0 - mix) * dry_l + mix * wet_l) * p.level);
+        let out_r = softclip(((1.0 - mix) * dry_r + mix * wet_r) * p.level);
 
         [
-            softclip(((1.0 - mix) * dry_l + mix * wet_l) * p.level),
-            softclip(((1.0 - mix) * dry_r + mix * wet_r) * p.level)
+            out_l,
+            out_r
         ]
     });
