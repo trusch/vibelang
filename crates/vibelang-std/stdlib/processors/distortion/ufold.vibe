@@ -1,0 +1,44 @@
+// kind=processor | category=distortion | flavor=ufold | inputs=in:1 | outputs=out:1 | params=folds,folds_cv,folds_cv_amt,symmetry,symmetry_cv,symmetry_cv_amt,stages,level
+//
+// Intellijel uFold-inspired DC-coupled mono wavefolder.
+// The fold stage wraps peaks back into the -1..1 window instead of clipping.
+
+fn _ufold_stage(x) {
+    1.0 - abs(wrap_ar(x + 1.0, 0.0, 4.0) - 2.0)
+}
+
+define_synthdef("ufold")
+    .input("in", 1)
+    .output("out", 1)
+    .param("folds", 0.3)
+    .param("folds_cv", 0.0)
+    .param("folds_cv_amt", 0.0)
+    .param("symmetry", 0.0)
+    .param("symmetry_cv", 0.0)
+    .param("symmetry_cv_amt", 0.0)
+    .param("stages", 4.0)
+    .param("level", 1.0)
+    .body_map(|p| {
+        let symmetry = clip(p.symmetry, -1.0, 1.0);
+        let symmetry_cv_amt = clip(p.symmetry_cv_amt, 0.0, 1.0);
+        let fold_amt = clip(p.folds, 0.0, 1.0);
+        let folds_cv_amt = clip(p.folds_cv_amt, 0.0, 1.0);
+        let level = clip(p.level, 0.0, 2.0);
+
+        let biased = p.inputs["in"] + symmetry + p.symmetry_cv * symmetry_cv_amt;
+        let fold_gain = max(0.0, 1.0 + fold_amt * 4.0 + p.folds_cv * folds_cv_amt * 4.0);
+        let driven = biased * fold_gain;
+
+        let folded_1 = _ufold_stage(driven);
+        let folded_2 = _ufold_stage(folded_1 * fold_gain);
+        let folded_3 = _ufold_stage(folded_2 * fold_gain);
+        let folded_4 = _ufold_stage(folded_3 * fold_gain);
+        let folded_5 = _ufold_stage(folded_4 * fold_gain);
+        let folded_6 = _ufold_stage(folded_5 * fold_gain);
+
+        let stage_count = clip(round(p.stages), 2.0, 6.0);
+        let idx = clip(round((stage_count - 2.0) * 0.5), 0.0, 2.0);
+        let selected = select_ar(idx, [folded_2, folded_4, folded_6]);
+
+        [selected * level]
+    });
