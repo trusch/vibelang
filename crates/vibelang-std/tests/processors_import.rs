@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use vibelang_dsp::{
     clear_synthdef_inputs_registry, clear_synthdef_outputs_registry, clear_synthdef_registry,
-    get_synthdef_inputs, get_synthdef_outputs, set_deploy_callback, synthdef_exists, InputPort,
-    OutputPort, PortRate,
+    get_synthdef_inputs, get_synthdef_outputs, get_synthdef_param_defaults, set_deploy_callback,
+    synthdef_exists, InputPort, OutputPort, PortRate,
 };
 use vibelang_rhai::ScriptEngine;
 
@@ -178,6 +178,25 @@ fn stdlib_processors_index_imports_catalogue() {
             case.synthdef
         );
     }
+}
+
+#[test]
+fn mimeophon_import_registers_halftime_default() {
+    clear_synthdef_registry();
+    clear_synthdef_inputs_registry();
+    clear_synthdef_outputs_registry();
+    set_deploy_callback(|_| Ok(()));
+
+    let script_path = write_import_paths(&["stdlib/processors/delays/mimeophon.vibe"]);
+    let mut engine = ScriptEngine::new();
+    engine.add_import_path(env!("CARGO_MANIFEST_DIR"));
+    engine
+        .execute_file(&script_path)
+        .expect("mimeophon import should execute");
+    fs::remove_file(&script_path).ok();
+
+    let params = get_synthdef_param_defaults("mimeophon");
+    assert_eq!(params.get("halftime"), Some(&0.0));
 }
 
 fn write_import_script(cases: &[ProcessorCase]) -> PathBuf {

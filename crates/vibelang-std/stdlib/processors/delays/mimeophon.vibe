@@ -1,6 +1,15 @@
-// kind=processor | category=delays | flavor=mimeophon | inputs=in:2 | outputs=out:2 | params=time,zone,repeats,skew,color,halo,mix,level
+// kind=processor | category=delays | flavor=mimeophon | inputs=in:2 | outputs=out:2 | params=time,zone,repeats,skew,color,halo,halftime,mix,level
 //
 // Make Noise Mimeophon-inspired stereo color repeater approximation.
+// Color is a feedback-path tilt network: negative values darken repeats with
+// a lowpass-heavy shelf, zero keeps a mostly flat path with mild asymmetric
+// saturation, and positive values add high-shelf emphasis before stronger
+// soft saturation. Since this network feeds LocalOut, each repeat ages through
+// it again.
+// Halftime is a practical Rate approximation: above the midpoint it doubles
+// the delay tap and crossfades in a -12 semitone PitchShift on the wet loop.
+// Halo is no longer a parallel wash; it smears the wet feedback through four
+// allpass taps whose times scale from the current zone/time/skew delay.
 // Source reference: https://www.makenoisemusic.com/modules/mimeophon/
 
 define_synthdef("mimeophon")
@@ -11,6 +20,7 @@ define_synthdef("mimeophon")
     .param("skew", 0.15)
     .param("color", 0.0)
     .param("halo", 0.25)
+    .param("halftime", 0.0)
     .param("mix", 0.35)
     .param("level", 0.9)
     .body_map(|p| {
@@ -18,30 +28,65 @@ define_synthdef("mimeophon")
         let dry_r = p.inputs["in"][1];
         let zone = clip(p.zone, -2.0, 4.0);
         let base_time = clip(p.time * pow(2.0, zone), 0.002, 8.0);
+        let halftime = clip((clip(p.halftime, 0.0, 1.0) - 0.49) * 100.0, 0.0, 1.0);
+        let rate_scale = 1.0 + halftime;
         let skew = clip(p.skew, -1.0, 1.0);
-        let time_l = clip(base_time * (1.0 - skew * 0.45), 0.002, 8.0);
-        let time_r = clip(base_time * (1.0 + skew * 0.45), 0.002, 8.0);
+        let time_l = clip(base_time * rate_scale * (1.0 - skew * 0.45), 0.002, 16.0);
+        let time_r = clip(base_time * rate_scale * (1.0 + skew * 0.45), 0.002, 16.0);
 
         let repeats = clip(p.repeats, 0.0, 0.95);
-        let decay = 0.08 + repeats * 12.0;
-        let repeat_l = comb_l_ar(dry_l, 8.0, time_l, decay) - dry_l;
-        let repeat_r = comb_l_ar(dry_r, 8.0, time_r, decay) - dry_r;
+        let feedback = repeats * (0.55 + repeats * 0.38);
+        let fb = local_in_ar(1.0);
+        let halo = clip(p.halo, 0.0, 1.0);
+        let delay_in_l = dry_l + fb * (1.0 + halo * 0.12);
+        let delay_in_r = dry_r + fb * (1.0 - halo * 0.12);
+        let tap_l = delay_c_ar(delay_in_l, 16.0, time_l);
+        let tap_r = delay_c_ar(delay_in_r, 16.0, time_r);
+
+        let pitch_ratio = 1.0 - halftime * 0.5;
+        let repeat_l = tap_l * (1.0 - halftime) + pitch_shift_ar(tap_l, 0.18, pitch_ratio, 0.0, 0.0) * halftime;
+        let repeat_r = tap_r * (1.0 - halftime) + pitch_shift_ar(tap_r, 0.18, pitch_ratio, 0.0, 0.0) * halftime;
 
         let color = clip(p.color, -1.0, 1.0);
-        let cutoff = 700.0 + (color + 1.0) * 5200.0;
+        let dark = clip(0.0 - color, 0.0, 1.0);
         let bright = clip(color, 0.0, 1.0);
-        let color_l = lpf_ar(repeat_l, cutoff) + hpf_ar(repeat_l, cutoff) * bright * 0.25;
-        let color_r = lpf_ar(repeat_r, cutoff) + hpf_ar(repeat_r, cutoff) * bright * 0.25;
+        let body_l = lpf_ar(hpf_ar(repeat_l, 45.0), 14000.0);
+        let body_r = lpf_ar(hpf_ar(repeat_r, 45.0), 14000.0);
+        let dark_cutoff = 650.0 + (1.0 - dark) * 7200.0;
+        let bright_corner = 900.0 + (1.0 - bright) * 2700.0;
+        let tilted_l = body_l * (1.0 - dark * 0.55 - bright * 0.12)
+            + lpf_ar(body_l, dark_cutoff) * dark * 0.85
+            + hpf_ar(body_l, bright_corner) * bright * 0.42;
+        let tilted_r = body_r * (1.0 - dark * 0.55 - bright * 0.12)
+            + lpf_ar(body_r, dark_cutoff) * dark * 0.85
+            + hpf_ar(body_r, bright_corner) * bright * 0.42;
+        let drive = 1.08 + repeats * 0.75 + bright * 0.85 + dark * 0.2;
+        let bias = 0.035 + bright * 0.035 - dark * 0.015;
+        let color_l = ((tilted_l * drive + bias).tanh() - bias.tanh()) / drive.sqrt();
+        let color_r = ((tilted_r * drive + bias).tanh() - bias.tanh()) / drive.sqrt();
 
-        let halo = clip(p.halo, 0.0, 1.0);
-        let halo_time_l = 0.017 + halo * 0.071;
-        let halo_time_r = 0.023 + halo * 0.083;
-        let smear_l = allpass_l_ar(color_l + color_r * halo * 0.35, 0.25, halo_time_l, 0.4 + halo * 3.0);
-        let smear_r = allpass_l_ar(color_r + color_l * halo * 0.35, 0.25, halo_time_r, 0.4 + halo * 3.0);
+        let halo_depth = halo * (0.35 + repeats * 0.45);
+        let halo_base_l = clip(time_l * (0.018 + halo * 0.16), 0.002, 1.8);
+        let halo_base_r = clip(time_r * (0.021 + halo * 0.17), 0.002, 1.8);
+        let halo_decay = clip(base_time * (0.22 + halo * 0.9), 0.04, 4.0);
+        let smear_in_l = color_l + color_r * halo_depth * 0.22;
+        let smear_in_r = color_r + color_l * halo_depth * 0.22;
+        let smear_l_1 = allpass_l_ar(smear_in_l, 2.0, halo_base_l, halo_decay);
+        let smear_l_2 = allpass_l_ar(smear_l_1, 2.0, clip(halo_base_l * 1.37, 0.002, 1.8), halo_decay * 0.83);
+        let smear_l_3 = allpass_l_ar(smear_l_2, 2.0, clip(halo_base_l * 1.91, 0.002, 1.8), halo_decay * 0.67);
+        let smear_l = allpass_l_ar(smear_l_3, 2.0, clip(halo_base_l * 2.53, 0.002, 1.8), halo_decay * 0.51);
+        let smear_r_1 = allpass_l_ar(smear_in_r, 2.0, halo_base_r, halo_decay);
+        let smear_r_2 = allpass_l_ar(smear_r_1, 2.0, clip(halo_base_r * 1.31, 0.002, 1.8), halo_decay * 0.87);
+        let smear_r_3 = allpass_l_ar(smear_r_2, 2.0, clip(halo_base_r * 1.83, 0.002, 1.8), halo_decay * 0.69);
+        let smear_r = allpass_l_ar(smear_r_3, 2.0, clip(halo_base_r * 2.41, 0.002, 1.8), halo_decay * 0.53);
+        let wet_l = color_l * (1.0 - halo_depth) + smear_l * halo_depth;
+        let wet_r = color_r * (1.0 - halo_depth) + smear_r * halo_depth;
+        local_out_ar(leak_dc_ar((wet_l + wet_r) * 0.5, 0.995) * feedback);
+
         let mix = clip(p.mix, 0.0, 1.0);
 
         [
-            softclip(((1.0 - mix) * dry_l + mix * leak_dc_ar(smear_l, 0.995)) * p.level),
-            softclip(((1.0 - mix) * dry_r + mix * leak_dc_ar(smear_r, 0.995)) * p.level)
+            softclip(((1.0 - mix) * dry_l + mix * leak_dc_ar(wet_l, 0.995)) * p.level),
+            softclip(((1.0 - mix) * dry_r + mix * leak_dc_ar(wet_r, 0.995)) * p.level)
         ]
     });
