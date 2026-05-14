@@ -4,6 +4,7 @@
 //! without runtime-specific IDs (node IDs, buffer IDs, etc.).
 
 use crate::handlers::{InputRouteMap, InputRouteSrc, ParamRouteMap, ParamRouteTarget, RouteMap};
+use crate::state::State;
 #[cfg(feature = "midi")]
 use crate::traits::FadeTarget;
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,6 +22,7 @@ use crate::types::{
     SfzId, TimeSignature, VoiceId,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
+use vibelang_dsp::{InputPort, PortRate};
 
 /// Ordered contribution from one evaluated `group(...).body(...)` call.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1392,6 +1394,172 @@ fn route_map_contains_target(map: &ParamRouteMap, pair: &(ParamRouteTarget, Stri
         .any(|targets| targets.iter().any(|t| t == pair))
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InputPortDropReason {
+    Removed,
+    WidthChanged {
+        old_channels: u8,
+        new_channels: u8,
+    },
+    RateChanged {
+        old_rate: PortRate,
+        new_rate: PortRate,
+    },
+}
+
+impl InputPortDropReason {
+    fn from_ports(old: &InputPort, new: Option<&InputPort>) -> Option<Self> {
+        match new {
+            None => Some(Self::Removed),
+            Some(new) if old.rate != new.rate => Some(Self::RateChanged {
+                old_rate: old.rate,
+                new_rate: new.rate,
+            }),
+            Some(new) if old.channels != new.channels => Some(Self::WidthChanged {
+                old_channels: old.channels,
+                new_channels: new.channels,
+            }),
+            Some(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for InputPortDropReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Removed => write!(f, "input removed"),
+            Self::WidthChanged {
+                old_channels,
+                new_channels,
+            } => write!(f, "input width changed {}->{}", old_channels, new_channels),
+            Self::RateChanged { old_rate, new_rate } => {
+                write!(f, "input rate changed {:?}->{:?}", old_rate, new_rate)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct InputPortReconcile {
+    pub added: Vec<InputPort>,
+    pub kept: Vec<InputPort>,
+    pub removed: Vec<(InputPort, InputPortDropReason)>,
+    pub dropped_routes: Vec<(VoiceId, String, InputPortDropReason)>,
+    pub freed_route_nodes: Vec<crate::types::NodeId>,
+    pub freed_input_buses: Vec<(String, crate::types::BusId)>,
+}
+
+pub fn reconcile_voice_input_ports(
+    state: &mut State,
+    voice_id: VoiceId,
+    new_inputs: &[InputPort],
+    input_routes: &mut InputRouteMap,
+) -> InputPortReconcile {
+    let synthdef = match state.voices.get(&voice_id) {
+        Some(voice) => voice.config.synthdef.clone(),
+        None => {
+            tracing::warn!(
+                "reconcile_voice_input_ports: voice {:?} not found, skipping",
+                voice_id
+            );
+            return InputPortReconcile::default();
+        }
+    };
+
+    let old_inputs = state.synthdef_inputs(&synthdef);
+    let new_by_name: HashMap<&str, &InputPort> =
+        new_inputs.iter().map(|p| (p.name.as_str(), p)).collect();
+    let old_by_name: HashMap<&str, &InputPort> =
+        old_inputs.iter().map(|p| (p.name.as_str(), p)).collect();
+
+    let mut added = Vec::new();
+    let mut kept = Vec::new();
+    for input in new_inputs {
+        match old_by_name.get(input.name.as_str()) {
+            Some(old) if old.rate == input.rate && old.channels == input.channels => {
+                kept.push(input.clone());
+            }
+            _ => added.push(input.clone()),
+        }
+    }
+
+    let mut removed = Vec::new();
+    for input in &old_inputs {
+        if let Some(reason) =
+            InputPortDropReason::from_ports(input, new_by_name.get(input.name.as_str()).copied())
+        {
+            removed.push((input.clone(), reason));
+        }
+    }
+
+    if added.is_empty() && removed.is_empty() {
+        state.synthdef_inputs.insert(synthdef, new_inputs.to_vec());
+        return InputPortReconcile {
+            kept,
+            ..Default::default()
+        };
+    }
+
+    let mut dropped_routes = Vec::new();
+    let mut freed_route_nodes = Vec::new();
+    let mut freed_input_buses = Vec::new();
+
+    for (old_input, reason) in &removed {
+        let key = (voice_id, old_input.name.clone());
+        if input_routes.remove(&key).is_some() {
+            tracing::warn!(
+                "Reload: dropped input route for voice {:?} synthdef '{}' input '{}' ({})",
+                voice_id,
+                synthdef,
+                old_input.name,
+                reason
+            );
+            dropped_routes.push((voice_id, old_input.name.clone(), reason.clone()));
+        }
+
+        let route_keys: Vec<_> = state
+            .input_route_synths
+            .keys()
+            .filter(|(target, input_name, _)| *target == voice_id && input_name == &old_input.name)
+            .cloned()
+            .collect();
+        for route_key in route_keys {
+            if let Some(node_id) = state.input_route_synths.remove(&route_key) {
+                state.free_node_id(node_id);
+                freed_route_nodes.push(node_id);
+            }
+        }
+
+        if let Some(voice) = state.voices.get_mut(&voice_id) {
+            if let Some(index) = voice
+                .input_buses
+                .iter()
+                .position(|(name, _)| name == &old_input.name)
+            {
+                let (_, bus) = voice.input_buses.remove(index);
+                freed_input_buses.push((old_input.name.clone(), bus));
+                match old_input.rate {
+                    PortRate::Ar => state.free_audio_bus(bus, old_input.channels),
+                    PortRate::Kr | PortRate::Tr => {
+                        state.free_control_bus(crate::types::ControlBusId::new(bus.raw()));
+                    }
+                }
+            }
+        }
+    }
+
+    state.synthdef_inputs.insert(synthdef, new_inputs.to_vec());
+
+    InputPortReconcile {
+        added,
+        kept,
+        removed,
+        dropped_routes,
+        freed_route_nodes,
+        freed_input_buses,
+    }
+}
+
 /// Reasons a `add_param_route_set` / `add_param_route_bend` /
 /// `add_param_route_trigger` call may fail.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1477,6 +1645,137 @@ impl std::error::Error for ParamRouteConflict {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::{GroupState, VoiceState};
+    use crate::types::{BusId, NodeId};
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::layer::SubscriberExt;
+
+    struct CaptureLayer {
+        logs: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl<S> tracing_subscriber::Layer<S> for CaptureLayer
+    where
+        S: tracing::Subscriber,
+    {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut visitor = LogVisitor::default();
+            event.record(&mut visitor);
+            self.logs.lock().unwrap().push(visitor.message);
+        }
+    }
+
+    #[derive(Default)]
+    struct LogVisitor {
+        message: String,
+    }
+
+    impl tracing::field::Visit for LogVisitor {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            if !self.message.is_empty() {
+                self.message.push(' ');
+            }
+            if field.name() == "message" {
+                use std::fmt::Write;
+                let _ = write!(&mut self.message, "{:?}", value);
+            } else {
+                use std::fmt::Write;
+                let _ = write!(&mut self.message, "{}={:?}", field.name(), value);
+            }
+        }
+    }
+
+    fn with_captured_logs<R>(f: impl FnOnce() -> R) -> (R, Vec<String>) {
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::registry().with(CaptureLayer {
+            logs: Arc::clone(&logs),
+        });
+        let result = tracing::subscriber::with_default(subscriber, f);
+        let logs = logs.lock().unwrap().clone();
+        (result, logs)
+    }
+
+    fn input_port(name: &str, channels: u8) -> InputPort {
+        InputPort::ar(name, channels)
+    }
+
+    fn input_reconcile_fixture(
+        old_inputs: &[InputPort],
+        routed_input: Option<&str>,
+    ) -> (State, ScriptState, VoiceId, String) {
+        let mut state = State::default();
+        let synthdef = "named_input_synth".to_string();
+        let voice_id = VoiceId::new(42);
+        let group_id = GroupId::new(7);
+
+        state.synthdefs.insert(synthdef.clone());
+        state
+            .synthdef_inputs
+            .insert(synthdef.clone(), old_inputs.to_vec());
+        state.groups.insert(
+            group_id,
+            GroupState {
+                id: group_id,
+                name: "g".to_string(),
+                parent: None,
+                node_id: NodeId::new(700),
+                audio_bus: BusId::new(70),
+                link_synth_node_id: None,
+                muted: false,
+                soloed: false,
+                params: ParamMap::new(),
+                output_bus: None,
+                output_channels: None,
+            },
+        );
+
+        let mut input_buses = Vec::new();
+        for input in old_inputs {
+            input_buses.push((input.name.clone(), state.alloc_audio_bus(input.channels)));
+        }
+        state.voices.insert(
+            voice_id,
+            VoiceState {
+                id: voice_id,
+                config: VoiceConfig::new("target", &synthdef, group_id),
+                active_nodes: Vec::new(),
+                note_nodes: HashMap::new(),
+                round_robin_position: 0,
+                pending_params: HashMap::new(),
+                output_buses: Vec::new(),
+                input_buses,
+            },
+        );
+
+        let mut script = ScriptState::new();
+        script.add_voice(voice_id, VoiceConfig::new("target", &synthdef, group_id));
+        if let Some(input) = routed_input {
+            script.set_input_route(voice_id, input, InputRouteSrc::Silent);
+            state
+                .input_routes
+                .insert((voice_id, input.to_string()), vec![InputRouteSrc::Silent]);
+            let route_node = state.alloc_node_id();
+            state.input_route_synths.insert(
+                (voice_id, input.to_string(), InputRouteSrc::Silent),
+                route_node,
+            );
+        }
+
+        (state, script, voice_id, synthdef)
+    }
+
+    fn logs_contain_drop(logs: &[String], synthdef: &str, input: &str, reason: &str) -> bool {
+        logs.iter().any(|line| {
+            line.contains("dropped input route")
+                && line.contains(synthdef)
+                && line.contains(input)
+                && line.contains(reason)
+        })
+    }
 
     #[test]
     fn test_script_state_new() {
@@ -1550,6 +1849,159 @@ mod tests {
         assert!(state.voices.contains_key(&VoiceId::new(1)));
         assert_eq!(state.voice_order, vec![VoiceId::new(1)]);
         assert_eq!(state.voices[&VoiceId::new(1)].synthdef, "saw");
+    }
+
+    #[test]
+    fn input_port_removed_drops_route_and_warns() {
+        let old = vec![input_port("carrier", 1), input_port("side", 1)];
+        let (mut state, script, voice_id, synthdef) =
+            input_reconcile_fixture(&old, Some("carrier"));
+        let mut routes = script.input_routes.clone();
+
+        let (outcome, logs) = with_captured_logs(|| {
+            reconcile_voice_input_ports(&mut state, voice_id, &[input_port("side", 1)], &mut routes)
+        });
+
+        assert_eq!(
+            outcome.dropped_routes,
+            vec![(
+                voice_id,
+                "carrier".to_string(),
+                InputPortDropReason::Removed
+            )]
+        );
+        assert!(!routes.contains_key(&(voice_id, "carrier".to_string())));
+        assert!(!state.voices[&voice_id]
+            .input_buses
+            .iter()
+            .any(|(name, _)| name == "carrier"));
+        assert!(state.input_route_synths.is_empty());
+        assert!(logs_contain_drop(
+            &logs,
+            &synthdef,
+            "carrier",
+            "input removed"
+        ));
+    }
+
+    #[test]
+    fn input_port_renamed_is_remove_add_and_drops_route_with_warning() {
+        let (mut state, script, voice_id, synthdef) =
+            input_reconcile_fixture(&[input_port("old", 1)], Some("old"));
+        let mut routes = script.input_routes.clone();
+
+        let (outcome, logs) = with_captured_logs(|| {
+            reconcile_voice_input_ports(&mut state, voice_id, &[input_port("new", 1)], &mut routes)
+        });
+
+        assert_eq!(outcome.added, vec![input_port("new", 1)]);
+        assert_eq!(
+            outcome.removed,
+            vec![(input_port("old", 1), InputPortDropReason::Removed)]
+        );
+        assert!(routes.is_empty());
+        assert_eq!(state.synthdef_inputs(&synthdef), vec![input_port("new", 1)]);
+        assert!(logs_contain_drop(&logs, &synthdef, "old", "input removed"));
+    }
+
+    #[test]
+    fn input_port_width_change_drops_route_and_warns() {
+        let (mut state, script, voice_id, synthdef) =
+            input_reconcile_fixture(&[input_port("carrier", 1)], Some("carrier"));
+        let old_bus = state.voices[&voice_id].input_buses[0].1;
+        let mut routes = script.input_routes.clone();
+
+        let (outcome, logs) = with_captured_logs(|| {
+            reconcile_voice_input_ports(
+                &mut state,
+                voice_id,
+                &[input_port("carrier", 2)],
+                &mut routes,
+            )
+        });
+
+        assert_eq!(
+            outcome.dropped_routes,
+            vec![(
+                voice_id,
+                "carrier".to_string(),
+                InputPortDropReason::WidthChanged {
+                    old_channels: 1,
+                    new_channels: 2
+                }
+            )]
+        );
+        assert!(routes.is_empty());
+        assert_eq!(
+            outcome.freed_input_buses,
+            vec![("carrier".to_string(), old_bus)]
+        );
+        assert!(!state.voices[&voice_id]
+            .input_buses
+            .iter()
+            .any(|(name, _)| name == "carrier"));
+        assert!(logs_contain_drop(
+            &logs,
+            &synthdef,
+            "carrier",
+            "input width changed 1->2"
+        ));
+    }
+
+    #[test]
+    fn adding_new_input_preserves_routes_and_does_not_allocate_bus() {
+        let (mut state, script, voice_id, synthdef) =
+            input_reconcile_fixture(&[input_port("carrier", 1)], Some("carrier"));
+        let input_buses_before = state.voices[&voice_id].input_buses.clone();
+        let mut routes = script.input_routes.clone();
+
+        let (outcome, logs) = with_captured_logs(|| {
+            reconcile_voice_input_ports(
+                &mut state,
+                voice_id,
+                &[input_port("carrier", 1), input_port("aux", 1)],
+                &mut routes,
+            )
+        });
+
+        assert_eq!(outcome.added, vec![input_port("aux", 1)]);
+        assert!(outcome.dropped_routes.is_empty());
+        assert_eq!(
+            routes.get(&(voice_id, "carrier".to_string())),
+            Some(&vec![InputRouteSrc::Silent])
+        );
+        assert_eq!(state.voices[&voice_id].input_buses, input_buses_before);
+        assert_eq!(
+            state.synthdef_inputs(&synthdef),
+            vec![input_port("carrier", 1), input_port("aux", 1)]
+        );
+        assert!(logs.is_empty());
+    }
+
+    #[test]
+    fn no_op_input_reload_preserves_routes_and_logs_nothing() {
+        let old = vec![input_port("carrier", 1), input_port("side", 2)];
+        let (mut state, script, voice_id, synthdef) =
+            input_reconcile_fixture(&old, Some("carrier"));
+        let input_buses_before = state.voices[&voice_id].input_buses.clone();
+        let route_synths_before = state.input_route_synths.clone();
+        let mut routes = script.input_routes.clone();
+
+        let (outcome, logs) = with_captured_logs(|| {
+            reconcile_voice_input_ports(&mut state, voice_id, &old, &mut routes)
+        });
+
+        assert!(outcome.added.is_empty());
+        assert!(outcome.removed.is_empty());
+        assert!(outcome.dropped_routes.is_empty());
+        assert_eq!(
+            routes.get(&(voice_id, "carrier".to_string())),
+            Some(&vec![InputRouteSrc::Silent])
+        );
+        assert_eq!(state.voices[&voice_id].input_buses, input_buses_before);
+        assert_eq!(state.input_route_synths, route_synths_before);
+        assert_eq!(state.synthdef_inputs(&synthdef), old);
+        assert!(logs.is_empty());
     }
 
     #[test]

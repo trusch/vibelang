@@ -68,14 +68,44 @@ impl<B: Backend> SynthDefs for SynthDefsHandler<B> {
             name
         );
 
-        // Track in state
-        let mut state = self.state.write().await;
-        state.synthdefs.insert(name.to_string());
-        if let Some(outputs) = vibelang_dsp::get_synthdef_outputs(name) {
-            state.synthdef_outputs.insert(name.to_string(), outputs);
-        }
-        if let Some(inputs) = vibelang_dsp::get_synthdef_inputs(name) {
-            state.synthdef_inputs.insert(name.to_string(), inputs);
+        let outputs = vibelang_dsp::get_synthdef_outputs(name);
+        let inputs = vibelang_dsp::get_synthdef_inputs(name).unwrap_or_default();
+
+        let input_route_nodes_to_free = {
+            let mut state = self.state.write().await;
+            state.synthdefs.insert(name.to_string());
+            if let Some(outputs) = outputs {
+                state.synthdef_outputs.insert(name.to_string(), outputs);
+            }
+
+            let voice_ids: Vec<_> = state
+                .voices
+                .iter()
+                .filter_map(|(voice_id, voice)| {
+                    (voice.config.synthdef == name).then_some(*voice_id)
+                })
+                .collect();
+            if voice_ids.is_empty() {
+                state.synthdef_inputs.insert(name.to_string(), inputs);
+                Vec::new()
+            } else {
+                let mut current_input_routes = std::mem::take(&mut state.input_routes);
+                let mut nodes = Vec::new();
+                for voice_id in voice_ids {
+                    let reconcile = crate::reload::reconcile_voice_input_ports(
+                        &mut state,
+                        voice_id,
+                        &inputs,
+                        &mut current_input_routes,
+                    );
+                    nodes.extend(reconcile.freed_route_nodes);
+                }
+                state.input_routes = current_input_routes;
+                nodes
+            }
+        };
+        for node_id in input_route_nodes_to_free {
+            let _ = self.backend.free_node(node_id).await;
         }
 
         Ok(())
