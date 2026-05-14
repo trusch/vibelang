@@ -1,0 +1,4 @@
+// Filter Processors Index
+
+import "stdlib/processors/filters/lowpass_mono.vibe";
+import "stdlib/processors/filters/lowpass_stereo.vibe";

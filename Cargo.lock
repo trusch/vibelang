@@ -3919,6 +3919,8 @@ version = "0.4.0"
 dependencies = [
  "dirs",
  "include_dir",
+ "vibelang-dsp",
+ "vibelang-rhai",
 ]
 
 [[package]]

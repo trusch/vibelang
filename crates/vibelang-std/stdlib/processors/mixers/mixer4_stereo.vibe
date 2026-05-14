@@ -1,0 +1,29 @@
+// kind=processor | category=mixers | flavor=mixer4_stereo | inputs=ch1:2,ch2:2,ch3:2,ch4:2 | outputs=out:2 | params=ch1_gain,ch2_gain,ch3_gain,ch4_gain,level
+
+define_synthdef("mixer4_stereo")
+    .input("ch1", 2)
+    .input("ch2", 2)
+    .input("ch3", 2)
+    .input("ch4", 2)
+    .param("ch1_gain", 1.0)
+    .param("ch2_gain", 1.0)
+    .param("ch3_gain", 1.0)
+    .param("ch4_gain", 1.0)
+    .param("level", 1.0)
+    .body_map(|p| {
+        let left =
+            p.inputs.ch1[0] * p.ch1_gain +
+            p.inputs.ch2[0] * p.ch2_gain +
+            p.inputs.ch3[0] * p.ch3_gain +
+            p.inputs.ch4[0] * p.ch4_gain;
+        let right =
+            p.inputs.ch1[1] * p.ch1_gain +
+            p.inputs.ch2[1] * p.ch2_gain +
+            p.inputs.ch3[1] * p.ch3_gain +
+            p.inputs.ch4[1] * p.ch4_gain;
+
+        [
+            left * p.level,
+            right * p.level
+        ]
+    });

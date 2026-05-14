@@ -1,0 +1,16 @@
+// kind=processor | category=modulation | flavor=ring_mod_mono | inputs=carrier:1,modulator:1 | outputs=out:1 | params=mix,level
+
+define_synthdef("ring_mod_mono")
+    .input("carrier", 1)
+    .input("modulator", 1)
+    .output("out", 1)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body_map(|p| {
+        let carrier = p.inputs.carrier;
+        let modulator = p.inputs.modulator;
+        let wet = carrier * modulator;
+        let mix = clip(p.mix, 0.0, 1.0);
+
+        [((1.0 - mix) * carrier + mix * wet) * p.level]
+    });

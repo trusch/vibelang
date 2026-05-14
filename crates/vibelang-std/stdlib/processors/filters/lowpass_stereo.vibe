@@ -1,0 +1,20 @@
+// kind=processor | category=filters | flavor=lowpass_stereo | inputs=in:2 | outputs=out:2 | params=cutoff,resonance,mix,level
+
+define_synthdef("lowpass_stereo")
+    .input("in", 2)
+    .param("cutoff", 2000.0)
+    .param("resonance", 0.5)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body_map(|p| {
+        let dry_l = p.inputs["in"][0];
+        let dry_r = p.inputs["in"][1];
+        let wet_l = leak_dc_ar(rlpf_ar(dry_l, p.cutoff, p.resonance), 0.995);
+        let wet_r = leak_dc_ar(rlpf_ar(dry_r, p.cutoff, p.resonance), 0.995);
+        let mix = clip(p.mix, 0.0, 1.0);
+
+        [
+            ((1.0 - mix) * dry_l + mix * wet_l) * p.level,
+            ((1.0 - mix) * dry_r + mix * wet_r) * p.level
+        ]
+    });

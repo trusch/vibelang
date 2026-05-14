@@ -39,6 +39,9 @@ import "stdlib/fx/index.vibe";
 // Audio effects
 import "stdlib/effects/index.vibe";
 
+// Patchable named-input processors
+import "stdlib/processors/index.vibe";
+
 // Utility
 import "stdlib/utility/index.vibe";
 

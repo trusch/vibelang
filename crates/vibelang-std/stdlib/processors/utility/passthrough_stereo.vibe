@@ -1,0 +1,11 @@
+// kind=processor | category=utility | flavor=passthrough_stereo | inputs=in:2 | outputs=out:2 | params=level
+
+define_synthdef("passthrough_stereo")
+    .input("in", 2)
+    .param("level", 1.0)
+    .body_map(|p| {
+        [
+            p.inputs["in"][0] * p.level,
+            p.inputs["in"][1] * p.level
+        ]
+    });

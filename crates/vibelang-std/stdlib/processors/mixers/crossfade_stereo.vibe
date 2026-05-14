@@ -1,0 +1,17 @@
+// kind=processor | category=mixers | flavor=crossfade_stereo | inputs=a:2,b:2 | outputs=out:2 | params=fade,level
+
+define_synthdef("crossfade_stereo")
+    .input("a", 2)
+    .input("b", 2)
+    .param("fade", 0.5)
+    .param("level", 1.0)
+    .body_map(|p| {
+        let fade = clip(p.fade, 0.0, 1.0);
+        let a_gain = 1.0 - fade;
+        let b_gain = fade;
+
+        [
+            (p.inputs.a[0] * a_gain + p.inputs.b[0] * b_gain) * p.level,
+            (p.inputs.a[1] * a_gain + p.inputs.b[1] * b_gain) * p.level
+        ]
+    });

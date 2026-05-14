@@ -1,0 +1,21 @@
+// kind=processor | category=modulation | flavor=ring_mod_stereo | inputs=carrier:2,modulator:2 | outputs=out:2 | params=mix,level
+
+define_synthdef("ring_mod_stereo")
+    .input("carrier", 2)
+    .input("modulator", 2)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body_map(|p| {
+        let carrier_l = p.inputs.carrier[0];
+        let carrier_r = p.inputs.carrier[1];
+        let modulator_l = p.inputs.modulator[0];
+        let modulator_r = p.inputs.modulator[1];
+        let wet_l = carrier_l * modulator_l;
+        let wet_r = carrier_r * modulator_r;
+        let mix = clip(p.mix, 0.0, 1.0);
+
+        [
+            ((1.0 - mix) * carrier_l + mix * wet_l) * p.level,
+            ((1.0 - mix) * carrier_r + mix * wet_r) * p.level
+        ]
+    });

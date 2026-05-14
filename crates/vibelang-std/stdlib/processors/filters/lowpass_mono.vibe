@@ -1,0 +1,16 @@
+// kind=processor | category=filters | flavor=lowpass_mono | inputs=in:1 | outputs=out:1 | params=cutoff,resonance,mix,level
+
+define_synthdef("lowpass_mono")
+    .input("in", 1)
+    .output("out", 1)
+    .param("cutoff", 2000.0)
+    .param("resonance", 0.5)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body_map(|p| {
+        let dry = p.inputs["in"];
+        let wet = leak_dc_ar(rlpf_ar(dry, p.cutoff, p.resonance), 0.995);
+        let mix = clip(p.mix, 0.0, 1.0);
+
+        [((1.0 - mix) * dry + mix * wet) * p.level]
+    });

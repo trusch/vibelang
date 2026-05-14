@@ -1,0 +1,4 @@
+// Utility Processors Index
+
+import "stdlib/processors/utility/passthrough_mono.vibe";
+import "stdlib/processors/utility/passthrough_stereo.vibe";

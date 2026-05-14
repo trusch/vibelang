@@ -20,6 +20,7 @@
 //! - `stdlib/pads/` - Pad textures (ambient, lush)
 //! - `stdlib/textures/` - Ambient textures (ambient, drone)
 //! - `stdlib/effects/` - Audio effects (delay, reverb, distortion, filters, etc.)
+//! - `stdlib/processors/` - Patchable named-input processors
 //! - `stdlib/fx/` - Sound design elements (impacts, risers, subdrops, sweeps)
 //! - `stdlib/theory/` - Music theory tools (scales, chords, progressions, etc.)
 //!
@@ -153,6 +154,7 @@ pub const CATEGORIES: &[&str] = &[
     "pads",
     "textures",
     "effects",
+    "processors",
     "fx",
     "theory",
     "modulators",

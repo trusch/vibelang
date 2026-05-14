@@ -1,0 +1,4 @@
+// Mixer Processors Index
+
+import "stdlib/processors/mixers/crossfade_stereo.vibe";
+import "stdlib/processors/mixers/mixer4_stereo.vibe";

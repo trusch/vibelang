@@ -1,0 +1,4 @@
+// Modulation Processors Index
+
+import "stdlib/processors/modulation/ring_mod_mono.vibe";
+import "stdlib/processors/modulation/ring_mod_stereo.vibe";

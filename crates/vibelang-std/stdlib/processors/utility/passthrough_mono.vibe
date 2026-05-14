@@ -1,0 +1,9 @@
+// kind=processor | category=utility | flavor=passthrough_mono | inputs=in:1 | outputs=out:1 | params=level
+
+define_synthdef("passthrough_mono")
+    .input("in", 1)
+    .output("out", 1)
+    .param("level", 1.0)
+    .body_map(|p| {
+        [p.inputs["in"] * p.level]
+    });
