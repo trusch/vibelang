@@ -1,0 +1,156 @@
+// Verbos Voltage Multistage - 8-stage dual-row CV sequencer/function generator.
+
+define_synthdef("verbos_multistage", |builder| {
+    builder
+        .output_kr("cv_a")
+        .output_kr("cv_b")
+        .output_kr("gate")
+        .output_kr("ref")
+        .output_kr("stage1_gate")
+        .output_kr("stage2_gate")
+        .output_kr("stage3_gate")
+        .output_kr("stage4_gate")
+        .output_kr("stage5_gate")
+        .output_kr("stage6_gate")
+        .output_kr("stage7_gate")
+        .output_kr("stage8_gate")
+        .param("advance", 0.0)
+        .param("strobe", 0.0)
+        .param("analog", 0.0)
+        .param("enable", 1.0)
+        .param("sustain", 0.0)
+        .param("time_cv", 0.0)
+        .param("clock_rate", 4.0)
+        .param("time_cv_amt", 0.0)
+        .param("start", 1.0)
+        .param("stop", 8.0)
+        .param("stage_a1", 0.0)
+        .param("stage_a2", 0.1666667)
+        .param("stage_a3", 0.3333333)
+        .param("stage_a4", 0.4166667)
+        .param("stage_a5", 0.5833333)
+        .param("stage_a6", 0.75)
+        .param("stage_a7", 0.9166667)
+        .param("stage_a8", 1.0)
+        .param("stage_b1", 0.0)
+        .param("stage_b2", 0.1666667)
+        .param("stage_b3", 0.3333333)
+        .param("stage_b4", 0.4166667)
+        .param("stage_b5", 0.5833333)
+        .param("stage_b6", 0.75)
+        .param("stage_b7", 0.9166667)
+        .param("stage_b8", 1.0)
+        .param("mode1", 0.0)
+        .param("mode2", 0.0)
+        .param("mode3", 0.0)
+        .param("mode4", 0.0)
+        .param("mode5", 0.0)
+        .param("mode6", 0.0)
+        .param("mode7", 0.0)
+        .param("mode8", 0.0)
+        .body_map(|p| {
+            let enabled = clip_kr(p.enable, 0.0, 1.0);
+            let sustain = clip_kr(p.sustain, 0.0, 1.0);
+            let run = enabled * (1.0 - sustain);
+
+            let time_cv_amt = clip_kr(p.time_cv_amt, 0.0, 1.0);
+            let rate_scale = (1.0 + p.time_cv * time_cv_amt).max(0.001);
+            let rate = (p.clock_rate * rate_scale).max(0.001);
+            let clock = impulse_kr(rate, 0.0);
+            let advance = clip_kr(p.advance, 0.0, 1.0);
+            let step_trig = clip_kr(clock + advance, 0.0, 1.0) * run;
+
+            let start_raw = clip_kr(round(p.start), 1.0, 8.0);
+            let stop_raw = clip_kr(round(p.stop), 1.0, 8.0);
+            let start = start_raw.min(stop_raw);
+            let stop = start_raw.max(stop_raw);
+            let length = (stop - start + 1.0).max(1.0);
+
+            let counter = stepper_kr(step_trig, 0.0, 0.0, 1048575.0, 1.0, 0.0);
+            let seq_step = counter.modulo(length) + start;
+            let analog_step = floor(clip_kr(p.analog, 0.0, 0.999) * 8.0) + 1.0;
+            let strobe = clip_kr(p.strobe, 0.0, 1.0) * run;
+            let step = seq_step * (1.0 - strobe) + analog_step * strobe;
+
+            let m1 = (1.0 - abs(step - 1.0)).max(0.0);
+            let m2 = (1.0 - abs(step - 2.0)).max(0.0);
+            let m3 = (1.0 - abs(step - 3.0)).max(0.0);
+            let m4 = (1.0 - abs(step - 4.0)).max(0.0);
+            let m5 = (1.0 - abs(step - 5.0)).max(0.0);
+            let m6 = (1.0 - abs(step - 6.0)).max(0.0);
+            let m7 = (1.0 - abs(step - 7.0)).max(0.0);
+            let m8 = (1.0 - abs(step - 8.0)).max(0.0);
+
+            let a1 = clip_kr(p.stage_a1, -5.0, 5.0);
+            let a2 = clip_kr(p.stage_a2, -5.0, 5.0);
+            let a3 = clip_kr(p.stage_a3, -5.0, 5.0);
+            let a4 = clip_kr(p.stage_a4, -5.0, 5.0);
+            let a5 = clip_kr(p.stage_a5, -5.0, 5.0);
+            let a6 = clip_kr(p.stage_a6, -5.0, 5.0);
+            let a7 = clip_kr(p.stage_a7, -5.0, 5.0);
+            let a8 = clip_kr(p.stage_a8, -5.0, 5.0);
+            let b1 = clip_kr(p.stage_b1, -5.0, 5.0);
+            let b2 = clip_kr(p.stage_b2, -5.0, 5.0);
+            let b3 = clip_kr(p.stage_b3, -5.0, 5.0);
+            let b4 = clip_kr(p.stage_b4, -5.0, 5.0);
+            let b5 = clip_kr(p.stage_b5, -5.0, 5.0);
+            let b6 = clip_kr(p.stage_b6, -5.0, 5.0);
+            let b7 = clip_kr(p.stage_b7, -5.0, 5.0);
+            let b8 = clip_kr(p.stage_b8, -5.0, 5.0);
+
+            let cv_a_raw = m1 * a1 + m2 * a2 + m3 * a3 + m4 * a4
+                         + m5 * a5 + m6 * a6 + m7 * a7 + m8 * a8;
+            let cv_b_raw = m1 * b1 + m2 * b2 + m3 * b3 + m4 * b4
+                         + m5 * b5 + m6 * b6 + m7 * b7 + m8 * b8;
+
+            let mode1 = clip_kr(round(p.mode1), 0.0, 2.0);
+            let mode2 = clip_kr(round(p.mode2), 0.0, 2.0);
+            let mode3 = clip_kr(round(p.mode3), 0.0, 2.0);
+            let mode4 = clip_kr(round(p.mode4), 0.0, 2.0);
+            let mode5 = clip_kr(round(p.mode5), 0.0, 2.0);
+            let mode6 = clip_kr(round(p.mode6), 0.0, 2.0);
+            let mode7 = clip_kr(round(p.mode7), 0.0, 2.0);
+            let mode8 = clip_kr(round(p.mode8), 0.0, 2.0);
+            let mode = m1 * mode1 + m2 * mode2 + m3 * mode3 + m4 * mode4
+                     + m5 * mode5 + m6 * mode6 + m7 * mode7 + m8 * mode8;
+            let off = (1.0 - abs(mode - 1.0)).max(0.0);
+            let slide = (1.0 - abs(mode - 2.0)).max(0.0);
+            let active = (1.0 - off) * enabled;
+
+            let slide_time = clip_kr(0.5 / rate, 0.005, 1.0);
+            let cv_a_slide = lag_kr(cv_a_raw, slide_time);
+            let cv_b_slide = lag_kr(cv_b_raw, slide_time);
+            let cv_a = clip_kr(cv_a_raw * (1.0 - slide) + cv_a_slide * slide, -5.0, 5.0);
+            let cv_b = clip_kr(cv_b_raw * (1.0 - slide) + cv_b_slide * slide, -5.0, 5.0);
+
+            let stage_event = clip_kr(step_trig + strobe, 0.0, 1.0);
+            let gate_pulse = trig1_kr(stage_event, 0.005) * 0.5 * active;
+            let stage1_gate = gate_pulse * m1;
+            let stage2_gate = gate_pulse * m2;
+            let stage3_gate = gate_pulse * m3;
+            let stage4_gate = gate_pulse * m4;
+            let stage5_gate = gate_pulse * m5;
+            let stage6_gate = gate_pulse * m6;
+            let stage7_gate = gate_pulse * m7;
+            let stage8_gate = gate_pulse * m8;
+            let gate = clip_kr(gate_pulse, 0.0, 0.5);
+
+            let ref_phase = wrap_kr(sweep_kr(stage_event, rate), 0.0, 1.0);
+            let ref = clip_kr((1.0 - ref_phase) * enabled, 0.0, 1.0);
+
+            [
+                cv_a,
+                cv_b,
+                gate,
+                ref,
+                stage1_gate,
+                stage2_gate,
+                stage3_gate,
+                stage4_gate,
+                stage5_gate,
+                stage6_gate,
+                stage7_gate,
+                stage8_gate,
+            ]
+        })
+});
