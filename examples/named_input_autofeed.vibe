@@ -1,0 +1,38 @@
+// Named input autofeed - processors with a stereo input named "in" can read
+// their own group mix automatically when no explicit input route is set.
+
+set_tempo(120);
+
+import "stdlib/processors/index.vibe";
+
+define_synthdef("autofeed_demo_source")
+    .param("freq", 220.0)
+    .param("amp", 0.14)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .adsr(0.01, 0.12, 0.6, 0.2)
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let tone = saw_ar(freq) * env * amp;
+        [tone, tone]
+    });
+
+define_group("AutoFeed", || {
+    let bass = voice("bass").synth("autofeed_demo_source").gain(db(-12));
+    let accent = voice("accent").synth("autofeed_demo_source").gain(db(-16));
+
+    // No .input("in").from(...) call here: lowpass_stereo.in autofeeds
+    // from this group's stereo mix bus because the input is named "in".
+    voice("group_lowpass")
+        .synth("lowpass_stereo")
+        .set_param("cutoff", 900.0)
+        .set_param("resonance", 0.45)
+        .set_param("mix", 0.6)
+        .set_param("level", 0.7)
+        .gain(db(-8));
+
+    melody("bass_line").on(bass).notes("C2 C2 G1 C2").gate(0.7).start();
+    melody("accents").on(accent).notes("- Eb3 - G3").gate(0.25).start();
+});

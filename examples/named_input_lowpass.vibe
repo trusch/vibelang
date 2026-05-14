@@ -1,0 +1,50 @@
+// Named input lowpass - audio patching plus kr parameter modulation.
+// The source feeds lowpass_stereo.in while a control-rate LFO sweeps cutoff.
+
+set_tempo(124);
+
+import "stdlib/processors/index.vibe";
+
+define_synthdef("lowpass_demo_source")
+    .param("freq", 110.0)
+    .param("amp", 0.2)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .adsr(0.01, 0.2, 0.7, 0.2)
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let tone = saw_ar(freq) + pulse_ar(freq * 2.0, 0.35) * 0.35;
+        [tone * env * amp, tone * env * amp]
+    });
+
+define_synthdef("cutoff_lfo_kr")
+    .output_kr("out")
+    .param("rate", 0.25)
+    .param("lo", 500.0)
+    .param("hi", 3500.0)
+    .body(|rate, lo, hi| {
+        let sweep = sin_osc_kr(rate) * 0.5 + 0.5;
+        [sweep * (hi - lo) + lo]
+    });
+
+define_group("Filtered", || {
+    let source = voice("source").synth("lowpass_demo_source").gain(db(-10));
+    let lfo = voice("cutoff_lfo").synth("cutoff_lfo_kr");
+    let filter = voice("lowpass")
+        .synth("lowpass_stereo")
+        .set_param("cutoff", 1200.0)
+        .set_param("resonance", 0.35)
+        .set_param("mix", 1.0)
+        .gain(db(-5));
+
+    filter.input("in").from(source);
+    filter.param("cutoff").modulate_by(lfo, "out");
+
+    melody("riff")
+        .on(source)
+        .notes("E2 E2 G2 E2 | D2 E2 - B1")
+        .gate(0.55)
+        .start();
+});

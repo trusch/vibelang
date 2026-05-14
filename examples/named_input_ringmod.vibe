@@ -1,0 +1,44 @@
+// Named input ring modulator - role names make multi-input patches readable.
+// ring_mod_stereo has separate carrier and modulator inputs; any unpatched
+// input is silent, so the processor only sounds after both roles are wired.
+
+set_tempo(96);
+
+import "stdlib/processors/index.vibe";
+
+define_synthdef("ringmod_carrier_source")
+    .param("freq", 220.0)
+    .param("amp", 0.18)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope().adsr(0.01, 0.1, 0.8, 0.25).gate(gate).cleanup_on_finish().build();
+        let tone = saw_ar(freq) * env * amp;
+        [tone, tone]
+    });
+
+define_synthdef("ringmod_modulator_source")
+    .param("freq", 82.0)
+    .param("amp", 0.9)
+    .body(|freq, amp| {
+        let tone = sin_osc_ar(freq) * amp;
+        [tone, tone]
+    });
+
+define_group("RingPatch", || {
+    let carrier = voice("carrier").synth("ringmod_carrier_source").gain(db(-10));
+    let modulator = voice("modulator").synth("ringmod_modulator_source");
+    let ring = voice("ringmod")
+        .synth("ring_mod_stereo")
+        .set_param("mix", 0.85)
+        .gain(db(-5));
+
+    // With either line removed, the missing named input receives silence.
+    ring.input("carrier").from(carrier);
+    ring.input("modulator").from(modulator);
+
+    melody("carrier_notes")
+        .on(carrier)
+        .notes("A2 - C3 - | E3 - G3 -")
+        .gate(0.7)
+        .start();
+});

@@ -1,0 +1,42 @@
+// Named input mixer - four sources patched into role-named mixer channels.
+// mixer4_stereo sums ch1..ch4 and exposes per-channel gain params.
+
+set_tempo(118);
+
+import "stdlib/processors/index.vibe";
+
+define_synthdef("mixer_demo_voice")
+    .param("freq", 220.0)
+    .param("amp", 0.16)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope().adsr(0.005, 0.08, 0.5, 0.2).gate(gate).cleanup_on_finish().build();
+        let tone = pulse_ar(freq, 0.4) * env * amp;
+        [tone, tone]
+    });
+
+define_group("MixerPatch", || {
+    let ch1 = voice("ch1").synth("mixer_demo_voice").gain(db(-12));
+    let ch2 = voice("ch2").synth("mixer_demo_voice").gain(db(-13));
+    let ch3 = voice("ch3").synth("mixer_demo_voice").gain(db(-14));
+    let ch4 = voice("ch4").synth("mixer_demo_voice").gain(db(-15));
+
+    let mix = voice("mixer")
+        .synth("mixer4_stereo")
+        .set_param("ch1_gain", 1.0)
+        .set_param("ch2_gain", 0.75)
+        .set_param("ch3_gain", 0.55)
+        .set_param("ch4_gain", 0.35)
+        .set_param("level", 0.8)
+        .gain(db(-4));
+
+    mix.input("ch1").from(ch1);
+    mix.input("ch2").from(ch2);
+    mix.input("ch3").from(ch3);
+    mix.input("ch4").from(ch4);
+
+    melody("bass").on(ch1).notes("C2 - C2 G1").gate(0.7).start();
+    melody("stab_a").on(ch2).notes("- Eb3 - G3").gate(0.35).start();
+    melody("stab_b").on(ch3).notes("G2 - Bb2 -").gate(0.45).start();
+    melody("top").on(ch4).notes("- - C4 -").gate(0.25).start();
+});

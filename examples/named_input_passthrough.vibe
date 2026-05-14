@@ -1,0 +1,42 @@
+// Named input passthrough - the smallest useful patch.
+// A stereo source voice feeds passthrough_stereo.in, then the processor
+// output uses the normal voice -> group -> main route.
+
+set_tempo(110);
+
+import "stdlib/processors/index.vibe";
+
+define_synthdef("passthrough_demo_source")
+    .param("freq", 220.0)
+    .param("amp", 0.18)
+    .param("gate", 1.0)
+    .body(|freq, amp, gate| {
+        let env = envelope()
+            .adsr(0.01, 0.1, 0.8, 0.2)
+            .gate(gate)
+            .cleanup_on_finish()
+            .build();
+        let left = saw_ar(freq);
+        let right = saw_ar(freq * 1.005);
+        [left * env * amp, right * env * amp]
+    });
+
+define_group("Patch", || {
+    let source = voice("source")
+        .synth("passthrough_demo_source")
+        .gain(db(-8));
+
+    let pass = voice("passthrough")
+        .synth("passthrough_stereo")
+        .set_param("level", 0.8)
+        .gain(db(-6));
+
+    // Patch source.out into the named stereo input jack.
+    pass.input("in").from(source);
+
+    melody("source_notes")
+        .on(source)
+        .notes("C3 - G3 - | Bb2 - F3 -")
+        .gate(0.65)
+        .start();
+});
