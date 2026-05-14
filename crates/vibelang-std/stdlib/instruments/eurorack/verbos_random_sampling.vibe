@@ -1,0 +1,122 @@
+// Verbos Random Sampling - Buchla 266-style uncertainty source.
+
+define_synthdef("verbos_random_sampling", |builder| {
+    builder
+        .output("white", 1)
+        .output("pink", 1)
+        .output("metallic", 1)
+        .output_kr("fluct_a")
+        .output_kr("fluct_b")
+        .output_kr("quant_a")
+        .output_kr("quant_b")
+        .output_kr("gate")
+        .output_kr("asr1")
+        .output_kr("asr2")
+        .output_kr("asr3")
+        .output_kr("asr4")
+        .param("rate", 4.0)
+        .param("rate_cv", 0.0)
+        .param("rate_cv_amt", 0.0)
+        .param("bits", 4.0)
+        .param("distribution", 0.0)
+        .param("clock_in", 0.0)
+        .param("clock_trig", 0.0)
+        .param("sample_in", 0.0)
+        .param("depth_v", 5.0)
+        .param("bipolar", 1.0)
+        .param("noise_level", 1.0)
+        .body_map(|p| {
+            let rate_cv_amt = clip(p.rate_cv_amt, 0.0, 1.0);
+            let rate = (p.rate + p.rate_cv * rate_cv_amt).max(0.001);
+            let bits = clip(round(p.bits), 1.0, 8.0);
+            let levels = pow(2.0, bits);
+            let distribution = clip(p.distribution, 0.0, 1.0);
+            let clock_sel = clip(p.clock_in, 0.0, 1.0);
+            let depth = clip(p.depth_v / 10.0, 0.0, 1.0);
+            let bipolar = clip(p.bipolar, 0.0, 1.0);
+            let noise_level = clip(p.noise_level, 0.0, 1.0);
+
+            let internal_clock = impulse_kr(rate, 0.0);
+            let clock = internal_clock * (1.0 - clock_sel) + p.clock_trig * clock_sel;
+
+            let fluct_rate_a = clip(rate, 1.0, 20.0);
+            let fluct_rate_b = clip(rate * 0.73 + 0.19, 1.0, 20.0);
+            let fluct_a_core = clip_kr(lag_kr(lf_noise2_kr(fluct_rate_a), 0.035), -1.0, 1.0);
+            let fluct_b_core = clip_kr(lag_kr(lf_noise2_kr(fluct_rate_b), 0.055), -1.0, 1.0);
+
+            let fluct_a_shaped = fluct_a_core * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+            let fluct_b_shaped = fluct_b_core * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+            let fluct_a = clip_kr(fluct_a_shaped * depth, -1.0, 1.0);
+            let fluct_b = clip_kr(fluct_b_shaped * depth, -1.0, 1.0);
+
+            let qa_uniform = white_noise_kr();
+            let qa_gauss = (white_noise_kr() + white_noise_kr() + white_noise_kr()) / 3.0;
+            let qa_src = qa_uniform * (1.0 - distribution) + qa_gauss * distribution;
+
+            let qb_uniform = white_noise_kr();
+            let qb_gauss = (white_noise_kr() + white_noise_kr() + white_noise_kr()) / 3.0;
+            let qb_src = qb_uniform * (1.0 - distribution) + qb_gauss * distribution;
+
+            let qa_held = latch_kr(qa_src, clock);
+            let qb_held = latch_kr(qb_src, clock);
+
+            let qa_uni = qa_held * 0.5 + 0.5;
+            let qb_uni = qb_held * 0.5 + 0.5;
+            let qa_round = qa_uni * levels + 0.5;
+            let qb_round = qb_uni * levels + 0.5;
+            let qa_q_uni = (qa_round - wrap_kr(qa_round, 0.0, 1.0)) / levels;
+            let qb_q_uni = (qb_round - wrap_kr(qb_round, 0.0, 1.0)) / levels;
+            let qa_q_bi = qa_q_uni * 2.0 - 1.0;
+            let qb_q_bi = qb_q_uni * 2.0 - 1.0;
+            let quant_a_core = qa_q_bi * bipolar + qa_q_uni * (1.0 - bipolar);
+            let quant_b_core = qb_q_bi * bipolar + qb_q_uni * (1.0 - bipolar);
+            let quant_a = clip_kr(quant_a_core * depth, -1.0, 1.0);
+            let quant_b = clip_kr(quant_b_core * depth, -1.0, 1.0);
+
+            let gate_draw = latch_kr(white_noise_kr(), clock);
+            let gate_density = clip(rate / 20.0, 0.05, 0.95);
+            let gate_threshold = 1.0 - gate_density * 2.0;
+            let gate_hit = in_range_kr(gate_draw, gate_threshold, 1.0);
+            let gate = clip_kr(trig1_kr(clock * gate_hit, 0.005) * 0.5, 0.0, 0.5);
+
+            let sample_present = clip(abs(p.sample_in) * 1000.0, 0.0, 1.0);
+            let sample_src = fluct_a_core * (1.0 - sample_present) + clip(p.sample_in, -1.0, 1.0) * sample_present;
+            let asr1_raw = latch_kr(sample_src, clock);
+            let asr2_raw = latch_kr(asr1_raw, clock);
+            let asr3_raw = latch_kr(asr2_raw, clock);
+            let asr4_raw = latch_kr(asr3_raw, clock);
+            let asr1_shaped = asr1_raw * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+            let asr2_shaped = asr2_raw * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+            let asr3_shaped = asr3_raw * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+            let asr4_shaped = asr4_raw * (0.5 + 0.5 * bipolar) + (0.5 - 0.5 * bipolar);
+            let asr1 = clip_kr(asr1_shaped * depth, -1.0, 1.0);
+            let asr2 = clip_kr(asr2_shaped * depth, -1.0, 1.0);
+            let asr3 = clip_kr(asr3_shaped * depth, -1.0, 1.0);
+            let asr4 = clip_kr(asr4_shaped * depth, -1.0, 1.0);
+
+            let white = clip_ar(white_noise_ar() * noise_level, -1.0, 1.0);
+            let pink = clip_ar(pink_noise_ar() * noise_level, -1.0, 1.0);
+            let metallic_raw =
+                pulse_ar(211.0, 0.5)
+              + pulse_ar(317.3, 0.5)
+              + pulse_ar(421.7, 0.5)
+              + pulse_ar(547.1, 0.5)
+              + pulse_ar(809.9, 0.5);
+            let metallic = clip_ar(hpf_ar(metallic_raw * 0.2, 180.0) * noise_level, -1.0, 1.0);
+
+            [
+                white,
+                pink,
+                metallic,
+                fluct_a,
+                fluct_b,
+                quant_a,
+                quant_b,
+                gate,
+                asr1,
+                asr2,
+                asr3,
+                asr4,
+            ]
+        })
+});
