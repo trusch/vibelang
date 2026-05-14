@@ -1,99 +1,54 @@
-// Mutable Instruments Marbles — multi-output recreation.
+// Mutable Instruments Marbles - multi-output random sampler approximation.
 //
-// Hardware Marbles fans out two sections — the T (trigger) section with three
-// gate streams (T1/T2/T3) and the X (pitch CV) section with three quantized
-// V/oct streams (X1/X2/X3) — totalling six independent outputs. That shape
-// maps cleanly onto the multi-output v1 routing surface (see
-// `kb/voice-multioutput-howto.md`), so this synthdef declares all six ports
-// and lets the script wire each one to its own destination.
+// Hardware shape:
+//   T section: t1/t2/t3 trigger streams.
+//   X section: x1/x2/x3 quantized random voltages.
 //
-// Output ports (one signal per port, audio-rate, 0.5 audio = +5V for triggers,
-// ±1.0 audio = ±1 octave V/oct for pitches):
+// Trigger model table (`t_model`, rounded and clipped to 0..5):
+//   0 Bernoulli    - T1 follows `t_bias`; T2/T3 are complementary/related
+//                    Bernoulli streams shaped by `spread_t`.
+//   1 Clusters     - a primary hit opens short delayed sibling bursts, so T2
+//                    and T3 bunch around T1.
+//   2 Drums        - 16-step kick/snare/hat-like streams with probability
+//                    variation from `t_bias` and `spread_t`.
+//   3 Divider      - deterministic clock divisions, with bias selecting denser
+//                    or sparser divisors.
+//   4 Three-states - each tick is routed mainly to one of T1/T2/T3.
+//   5 Markov       - slowly correlated gates derived from the loop memory
+//                    source, for repeated-but-mutating rhythmic states.
 //
-//   t1 — primary clocked trigger stream. Master clock at `1 / clock` Hz with
-//        `bias_t`-thresholded firing decision. With bias_t=1 every clock fires
-//        (steady pulse train); bias_t=0.5 fires ~50%; bias_t=0 stays silent.
-//   t2 — sibling stream sharing the master clock but using a decorrelated
-//        `lf_noise2_kr` source whose rate is shifted by `+spread_t`. Tends
-//        toward syncopated subdivisions when `spread_t` is high.
-//   t3 — second sibling stream with rate shifted by `-spread_t`. Combined with
-//        T2 this gives a three-voice rhythmic complex around a shared clock.
-//   x1 — primary quantized pitch CV. Gaussian random walk seeded by T1's clock
-//        edge (so X1 advances whenever T1 evaluates a fire decision, regardless
-//        of whether the gate fires). Centre = `bias_x`, width = `spread_x`.
-//   x2 — sibling pitch with an independent gaussian seed but shared Markov
-//        memory (the same `length`-driven LF source blend), so X1/X2 wander
-//        around correlated patterns rather than being statistically independent.
-//   x3 — third pitch sibling, same construction.
+// X scale table (`x_scale`, rounded and clipped to 0..5):
+//   0 chromatic / legacy `quant_steps`
+//   1 major-like 7 degrees per octave
+//   2 minor-like 7 degrees per octave
+//   3 pentatonic-like 5 degrees per octave
+//   4 whole-tone 6 degrees per octave
+//   5 octave/root only
 //
-// Params (7, comfortably within the 10-arg `body_map` limit):
-//   clock        : base trigger period in seconds, 0.05..2.0 (20Hz down to
-//                  0.5Hz). Internally inverted to drive `impulse_kr(1/clock)`.
-//   bias_t       : 0..1 firing probability per clock tick. The threshold is
-//                  `(1 - 2*bias_t)` so bias_t=0 → threshold=+1 (no fires),
-//                  bias_t=1 → threshold=−1 (every fire). Sample-and-hold of an
-//                  `lf_noise2_kr` stream is compared against this threshold
-//                  per master-clock edge.
-//   spread_t     : 0..1 rhythmic-spread amount. Decorrelates the T2/T3 noise
-//                  rates from T1's master rate (T2 = master*(1 + 0.5*spread_t),
-//                  T3 = master*(1 - 0.3*spread_t)) and adds a small white-noise
-//                  jitter onto the firing threshold so adjacent ticks don't all
-//                  resolve identically.
-//   bias_x       : 0..1 mean of the X-section gaussian walk, mapped to V/oct
-//                  via `(bias_x - 0.5) * 2.0` so 0.5 sits at 0V (C4-equivalent).
-//   spread_x     : 0..1 standard-deviation of the gaussian walk, in V/oct
-//                  units. spread_x=1.0 sweeps roughly ±1 octave around bias_x.
-//   length       : 1..16 Markov "deja vu" memory length. The fresh draw is
-//                  blended with a periodic `lf_noise1_kr` shape whose period
-//                  is `length` clocks (rate = 1/length); blend weight grows
-//                  with length so length=1 is mostly fresh-random and
-//                  length=16 strongly recalls a slowly-evolving pattern.
-//                  Approximation matches `cv_marbles.vibe`'s memory model
-//                  rather than implementing a true N-step shift register —
-//                  vibelang's kr-domain UGens do not yet expose a clean
-//                  variable-length delay line at synthdef-load time.
-//   quant_steps  : 1..36 pitch-quantization resolution per octave. Default 12
-//                  is the standard chromatic grid; 7 gives a diatonic feel
-//                  without specifying the key (hand quantize downstream with
-//                  `cv_quantizer` for proper key snapping); larger values
-//                  approach unquantized smooth pitch.
+// Deja Vu:
+//   `deja_vu_t` and `deja_vu_x` act as loop switches. Below 0.5 the relevant
+//   section keeps capturing fresh random values into a 32-cell shift register.
+//   Above 0.5 capture stops and the section replays the latest captured
+//   `length_t`/`length_x` cells as a repeating pattern. This is a firmware-
+//   grounded buffer-loop hint rather than an exact Marbles shift-register port:
+//   the .vibe UGen surface has fixed graph structure, so the loop is modeled
+//   with static latch cells plus a dynamic step selector.
 //
-// DSP outline:
-//   1. Master clock = `impulse_kr(1/clock)`.
-//   2. Per-stream decisions: latch `lf_noise2_kr` on the master clock;
-//      compute a per-stream threshold `(1 - 2*bias_t) + small jitter`;
-//      `in_range_kr(latched, threshold, 1.0)` is the fire decision.
-//   3. Multiply the audio-rate clock impulses by the kr fire-decision
-//      (converted to ar) and stretch with `trig1_ar` for a ~5 ms gate.
-//   4. X-section: triangular-distribution walk (mean of three white noises)
-//      offset by `bias_x` and scaled by `spread_x`; blended with a periodic
-//      `lf_noise1_kr` memory source whose rate is `1/length`. Latched on the
-//      T1 fire decision so X advances only on accepted T1 ticks.
-//   5. Quantize each X via `floor(x * quant_steps + 0.5) / quant_steps`,
-//      where `floor(y) = y - wrap_kr(y, 0.0, 1.0)` (vibelang has no Floor
-//      UGen — same trick as `spectraphon_side` uses for its grid lookup).
-//   6. Convert each kr signal to ar via `k2a_ar` and clip to ±1.0 to honour
-//      the CV contract documented in `kb/stdlib-cv-spec.md`.
-//
-// Routing notes: in v1 (audio-domain only) the X-port outputs cannot be
-// wired to a destination voice's `freq` param directly — that capability is
-// scheduled for the v2 CV-to-param routing work (see
-// `kb/voice-multi-output-cv-routing-plan.md` Phase 2). Today the most useful
-// patterns are: route each port to a dedicated group for monitoring, send
-// T-ports to ES-3 jacks via group output pinning (`group("t1").output([0,1])`
-// in the cv_calibration style), or pair this synthdef with the existing
-// `Modulator` API for parameter modulation. The sibling file
-// `crates/vibelang-std/stdlib/cv/eurorack/cv_marbles.vibe` keeps its
-// single-output V/oct shape for users on the legacy single-port path.
+// Legacy compatibility:
+//   The original `clock`, `bias_t`, `spread_t`, `bias_x`, `spread_x`, `length`,
+//   and `quant_steps` params remain. New params are additive. `t_bias` offsets
+//   the old `bias_t` around its 0.5 default; `x_bias`/`x_spread` do the same
+//   for the old X controls. `length` continues to feed the non-Deja-Vu X memory
+//   blend used by the earlier stdlib implementation.
 
 define_synthdef("marbles", |builder| {
     builder
-        .output("t1")        // 1ch — clocked trigger (5ms gates)
-        .output("t2")        // 1ch — decorrelated trigger sibling
-        .output("t3")        // 1ch — decorrelated trigger sibling
-        .output("x1")        // 1ch — quantized V/oct pitch
-        .output("x2")        // 1ch — quantized V/oct pitch
-        .output("x3")        // 1ch — quantized V/oct pitch
+        .output("t1")
+        .output("t2")
+        .output("t3")
+        .output("x1")
+        .output("x2")
+        .output("x3")
         .param("clock", 0.25)
         .param("bias_t", 0.5)
         .param("spread_t", 0.3)
@@ -101,128 +56,538 @@ define_synthdef("marbles", |builder| {
         .param("spread_x", 0.5)
         .param("length", 4.0)
         .param("quant_steps", 12.0)
+        .param("t_model", 0.0)
+        .param("t_rate", 0.5)
+        .param("t_bias", 0.5)
+        .param("t_jitter", 0.1)
+        .param("deja_vu_t", 0.0)
+        .param("length_t", 8.0)
+        .param("x_mode", 1.0)
+        .param("x_scale", 0.0)
+        .param("x_spread", 0.5)
+        .param("x_bias", 0.5)
+        .param("x_steps", 0.0)
+        .param("deja_vu_x", 0.0)
+        .param("length_x", 8.0)
         .body_map(|p| {
-
-            // Unpack params into local bindings for readability.
-            let clock = p.clock;
-            let bias_t = p.bias_t;
-            let spread_t = p.spread_t;
-            let bias_x = p.bias_x;
-            let spread_x = p.spread_x;
-            let length = p.length;
-            let quant_steps = p.quant_steps;
-
-            // === Master clock =============================================
-            // `clock` is in seconds; invert (with epsilon) for impulse rate.
-            let clock_hz = 1.0 / (clock + 0.001);
+            let clock_hz = (1.0 / (p.clock + 0.001)) * clip(p.t_rate * 2.0, 0.05, 4.0);
             let master_kr = impulse_kr(clock_hz, 0.0);
             let master_ar = impulse_ar(clock_hz, 0.0);
 
-            // === T section ================================================
-            // Three lf_noise2_kr streams at slightly different rates so that
-            // their sample-and-held values on the shared master clock are
-            // statistically decorrelated. spread_t skews T2/T3 outward from
-            // the master rate to give the "natural rhythm" feel.
-            let n1 = lf_noise2_kr(clock_hz);
-            let n2 = lf_noise2_kr(clock_hz * (1.0 + spread_t * 0.5));
-            let n3 = lf_noise2_kr(clock_hz * (1.0 - spread_t * 0.3 + 0.0001));
+            let t_bias = clip(p.bias_t + (p.t_bias - 0.5), 0.0, 1.0);
+            let spread_t = clip(p.spread_t, 0.0, 1.0);
+            let t_jitter = clip(p.t_jitter, 0.0, 1.0);
+            let t_model = floor(clip(p.t_model + 0.5, 0.0, 5.0));
+            let length_t = floor(clip(p.length_t + 0.5, 1.0, 32.0));
+            let deja_t_on = in_range_kr(clip(p.deja_vu_t, 0.0, 1.0), 0.5, 1.0);
+            let deja_t_off = 1.0 - deja_t_on;
 
-            // Sample-and-hold each noise stream on master_kr.
-            let l1 = latch_kr(n1, master_kr);
-            let l2 = latch_kr(n2, master_kr);
-            let l3 = latch_kr(n3, master_kr);
+            let m0 = (1.0 - abs(t_model - 0.0)).max(0.0);
+            let m1 = (1.0 - abs(t_model - 1.0)).max(0.0);
+            let m2 = (1.0 - abs(t_model - 2.0)).max(0.0);
+            let m3 = (1.0 - abs(t_model - 3.0)).max(0.0);
+            let m4 = (1.0 - abs(t_model - 4.0)).max(0.0);
+            let m5 = (1.0 - abs(t_model - 5.0)).max(0.0);
 
-            // bias_t ∈ [0,1] → threshold ∈ [+1, -1].
-            // jitter via white_noise * spread_t * 0.3 makes adjacent ticks
-            // diverge slightly even at the same bias.
-            let base_thresh = 1.0 - 2.0 * bias_t;
-            let jitter1 = latch_kr(white_noise_kr(), master_kr) * spread_t * 0.3;
-            let jitter2 = latch_kr(white_noise_kr(), master_kr) * spread_t * 0.3;
-            let jitter3 = latch_kr(white_noise_kr(), master_kr) * spread_t * 0.3;
-            let thresh1 = clip(base_thresh + jitter1, -1.0, 1.0);
-            let thresh2 = clip(base_thresh + jitter2, -1.0, 1.0);
-            let thresh3 = clip(base_thresh + jitter3, -1.0, 1.0);
+            // === Deja Vu T random cells ==================================
+            let capture_t = master_kr * deja_t_off;
+            let step_t = stepper_kr(master_kr, 0.0, 0.0, length_t - 1.0, 1.0, 0.0);
+            let s00 = (1.0 - abs(step_t - 0.0)).max(0.0);
+            let s01 = (1.0 - abs(step_t - 1.0)).max(0.0);
+            let s02 = (1.0 - abs(step_t - 2.0)).max(0.0);
+            let s03 = (1.0 - abs(step_t - 3.0)).max(0.0);
+            let s04 = (1.0 - abs(step_t - 4.0)).max(0.0);
+            let s05 = (1.0 - abs(step_t - 5.0)).max(0.0);
+            let s06 = (1.0 - abs(step_t - 6.0)).max(0.0);
+            let s07 = (1.0 - abs(step_t - 7.0)).max(0.0);
+            let s08 = (1.0 - abs(step_t - 8.0)).max(0.0);
+            let s09 = (1.0 - abs(step_t - 9.0)).max(0.0);
+            let s10 = (1.0 - abs(step_t - 10.0)).max(0.0);
+            let s11 = (1.0 - abs(step_t - 11.0)).max(0.0);
+            let s12 = (1.0 - abs(step_t - 12.0)).max(0.0);
+            let s13 = (1.0 - abs(step_t - 13.0)).max(0.0);
+            let s14 = (1.0 - abs(step_t - 14.0)).max(0.0);
+            let s15 = (1.0 - abs(step_t - 15.0)).max(0.0);
+            let s16 = (1.0 - abs(step_t - 16.0)).max(0.0);
+            let s17 = (1.0 - abs(step_t - 17.0)).max(0.0);
+            let s18 = (1.0 - abs(step_t - 18.0)).max(0.0);
+            let s19 = (1.0 - abs(step_t - 19.0)).max(0.0);
+            let s20 = (1.0 - abs(step_t - 20.0)).max(0.0);
+            let s21 = (1.0 - abs(step_t - 21.0)).max(0.0);
+            let s22 = (1.0 - abs(step_t - 22.0)).max(0.0);
+            let s23 = (1.0 - abs(step_t - 23.0)).max(0.0);
+            let s24 = (1.0 - abs(step_t - 24.0)).max(0.0);
+            let s25 = (1.0 - abs(step_t - 25.0)).max(0.0);
+            let s26 = (1.0 - abs(step_t - 26.0)).max(0.0);
+            let s27 = (1.0 - abs(step_t - 27.0)).max(0.0);
+            let s28 = (1.0 - abs(step_t - 28.0)).max(0.0);
+            let s29 = (1.0 - abs(step_t - 29.0)).max(0.0);
+            let s30 = (1.0 - abs(step_t - 30.0)).max(0.0);
+            let s31 = (1.0 - abs(step_t - 31.0)).max(0.0);
 
-            // Fire decision per stream — 1 if latched noise ≥ threshold.
-            let fire1 = in_range_kr(l1, thresh1, 1.0);
-            let fire2 = in_range_kr(l2, thresh2, 1.0);
-            let fire3 = in_range_kr(l3, thresh3, 1.0);
+            let r1_fresh = latch_kr(white_noise_kr(), master_kr);
+            let r2_fresh = latch_kr(white_noise_kr(), master_kr);
+            let r3_fresh = latch_kr(white_noise_kr(), master_kr);
+            let rs_fresh = latch_kr(white_noise_kr(), master_kr);
 
-            // Gate the audio-rate master with each kr fire decision and
-            // stretch to a 5 ms +5V pulse (matches cv_clock convention).
-            let t1_imp = master_ar * k2a_ar(fire1);
-            let t2_imp = master_ar * k2a_ar(fire2);
-            let t3_imp = master_ar * k2a_ar(fire3);
+            let r1_00 = latch_kr(r1_fresh, capture_t);
+            let r1_01 = latch_kr(r1_00, capture_t);
+            let r1_02 = latch_kr(r1_01, capture_t);
+            let r1_03 = latch_kr(r1_02, capture_t);
+            let r1_04 = latch_kr(r1_03, capture_t);
+            let r1_05 = latch_kr(r1_04, capture_t);
+            let r1_06 = latch_kr(r1_05, capture_t);
+            let r1_07 = latch_kr(r1_06, capture_t);
+            let r1_08 = latch_kr(r1_07, capture_t);
+            let r1_09 = latch_kr(r1_08, capture_t);
+            let r1_10 = latch_kr(r1_09, capture_t);
+            let r1_11 = latch_kr(r1_10, capture_t);
+            let r1_12 = latch_kr(r1_11, capture_t);
+            let r1_13 = latch_kr(r1_12, capture_t);
+            let r1_14 = latch_kr(r1_13, capture_t);
+            let r1_15 = latch_kr(r1_14, capture_t);
+            let r1_16 = latch_kr(r1_15, capture_t);
+            let r1_17 = latch_kr(r1_16, capture_t);
+            let r1_18 = latch_kr(r1_17, capture_t);
+            let r1_19 = latch_kr(r1_18, capture_t);
+            let r1_20 = latch_kr(r1_19, capture_t);
+            let r1_21 = latch_kr(r1_20, capture_t);
+            let r1_22 = latch_kr(r1_21, capture_t);
+            let r1_23 = latch_kr(r1_22, capture_t);
+            let r1_24 = latch_kr(r1_23, capture_t);
+            let r1_25 = latch_kr(r1_24, capture_t);
+            let r1_26 = latch_kr(r1_25, capture_t);
+            let r1_27 = latch_kr(r1_26, capture_t);
+            let r1_28 = latch_kr(r1_27, capture_t);
+            let r1_29 = latch_kr(r1_28, capture_t);
+            let r1_30 = latch_kr(r1_29, capture_t);
+            let r1_31 = latch_kr(r1_30, capture_t);
+
+            let r2_00 = latch_kr(r2_fresh, capture_t);
+            let r2_01 = latch_kr(r2_00, capture_t);
+            let r2_02 = latch_kr(r2_01, capture_t);
+            let r2_03 = latch_kr(r2_02, capture_t);
+            let r2_04 = latch_kr(r2_03, capture_t);
+            let r2_05 = latch_kr(r2_04, capture_t);
+            let r2_06 = latch_kr(r2_05, capture_t);
+            let r2_07 = latch_kr(r2_06, capture_t);
+            let r2_08 = latch_kr(r2_07, capture_t);
+            let r2_09 = latch_kr(r2_08, capture_t);
+            let r2_10 = latch_kr(r2_09, capture_t);
+            let r2_11 = latch_kr(r2_10, capture_t);
+            let r2_12 = latch_kr(r2_11, capture_t);
+            let r2_13 = latch_kr(r2_12, capture_t);
+            let r2_14 = latch_kr(r2_13, capture_t);
+            let r2_15 = latch_kr(r2_14, capture_t);
+            let r2_16 = latch_kr(r2_15, capture_t);
+            let r2_17 = latch_kr(r2_16, capture_t);
+            let r2_18 = latch_kr(r2_17, capture_t);
+            let r2_19 = latch_kr(r2_18, capture_t);
+            let r2_20 = latch_kr(r2_19, capture_t);
+            let r2_21 = latch_kr(r2_20, capture_t);
+            let r2_22 = latch_kr(r2_21, capture_t);
+            let r2_23 = latch_kr(r2_22, capture_t);
+            let r2_24 = latch_kr(r2_23, capture_t);
+            let r2_25 = latch_kr(r2_24, capture_t);
+            let r2_26 = latch_kr(r2_25, capture_t);
+            let r2_27 = latch_kr(r2_26, capture_t);
+            let r2_28 = latch_kr(r2_27, capture_t);
+            let r2_29 = latch_kr(r2_28, capture_t);
+            let r2_30 = latch_kr(r2_29, capture_t);
+            let r2_31 = latch_kr(r2_30, capture_t);
+
+            let r3_00 = latch_kr(r3_fresh, capture_t);
+            let r3_01 = latch_kr(r3_00, capture_t);
+            let r3_02 = latch_kr(r3_01, capture_t);
+            let r3_03 = latch_kr(r3_02, capture_t);
+            let r3_04 = latch_kr(r3_03, capture_t);
+            let r3_05 = latch_kr(r3_04, capture_t);
+            let r3_06 = latch_kr(r3_05, capture_t);
+            let r3_07 = latch_kr(r3_06, capture_t);
+            let r3_08 = latch_kr(r3_07, capture_t);
+            let r3_09 = latch_kr(r3_08, capture_t);
+            let r3_10 = latch_kr(r3_09, capture_t);
+            let r3_11 = latch_kr(r3_10, capture_t);
+            let r3_12 = latch_kr(r3_11, capture_t);
+            let r3_13 = latch_kr(r3_12, capture_t);
+            let r3_14 = latch_kr(r3_13, capture_t);
+            let r3_15 = latch_kr(r3_14, capture_t);
+            let r3_16 = latch_kr(r3_15, capture_t);
+            let r3_17 = latch_kr(r3_16, capture_t);
+            let r3_18 = latch_kr(r3_17, capture_t);
+            let r3_19 = latch_kr(r3_18, capture_t);
+            let r3_20 = latch_kr(r3_19, capture_t);
+            let r3_21 = latch_kr(r3_20, capture_t);
+            let r3_22 = latch_kr(r3_21, capture_t);
+            let r3_23 = latch_kr(r3_22, capture_t);
+            let r3_24 = latch_kr(r3_23, capture_t);
+            let r3_25 = latch_kr(r3_24, capture_t);
+            let r3_26 = latch_kr(r3_25, capture_t);
+            let r3_27 = latch_kr(r3_26, capture_t);
+            let r3_28 = latch_kr(r3_27, capture_t);
+            let r3_29 = latch_kr(r3_28, capture_t);
+            let r3_30 = latch_kr(r3_29, capture_t);
+            let r3_31 = latch_kr(r3_30, capture_t);
+
+            let rs_00 = latch_kr(rs_fresh, capture_t);
+            let rs_01 = latch_kr(rs_00, capture_t);
+            let rs_02 = latch_kr(rs_01, capture_t);
+            let rs_03 = latch_kr(rs_02, capture_t);
+            let rs_04 = latch_kr(rs_03, capture_t);
+            let rs_05 = latch_kr(rs_04, capture_t);
+            let rs_06 = latch_kr(rs_05, capture_t);
+            let rs_07 = latch_kr(rs_06, capture_t);
+            let rs_08 = latch_kr(rs_07, capture_t);
+            let rs_09 = latch_kr(rs_08, capture_t);
+            let rs_10 = latch_kr(rs_09, capture_t);
+            let rs_11 = latch_kr(rs_10, capture_t);
+            let rs_12 = latch_kr(rs_11, capture_t);
+            let rs_13 = latch_kr(rs_12, capture_t);
+            let rs_14 = latch_kr(rs_13, capture_t);
+            let rs_15 = latch_kr(rs_14, capture_t);
+            let rs_16 = latch_kr(rs_15, capture_t);
+            let rs_17 = latch_kr(rs_16, capture_t);
+            let rs_18 = latch_kr(rs_17, capture_t);
+            let rs_19 = latch_kr(rs_18, capture_t);
+            let rs_20 = latch_kr(rs_19, capture_t);
+            let rs_21 = latch_kr(rs_20, capture_t);
+            let rs_22 = latch_kr(rs_21, capture_t);
+            let rs_23 = latch_kr(rs_22, capture_t);
+            let rs_24 = latch_kr(rs_23, capture_t);
+            let rs_25 = latch_kr(rs_24, capture_t);
+            let rs_26 = latch_kr(rs_25, capture_t);
+            let rs_27 = latch_kr(rs_26, capture_t);
+            let rs_28 = latch_kr(rs_27, capture_t);
+            let rs_29 = latch_kr(rs_28, capture_t);
+            let rs_30 = latch_kr(rs_29, capture_t);
+            let rs_31 = latch_kr(rs_30, capture_t);
+
+            let r1_loop =
+                r1_00 * s00 + r1_01 * s01 + r1_02 * s02 + r1_03 * s03
+              + r1_04 * s04 + r1_05 * s05 + r1_06 * s06 + r1_07 * s07
+              + r1_08 * s08 + r1_09 * s09 + r1_10 * s10 + r1_11 * s11
+              + r1_12 * s12 + r1_13 * s13 + r1_14 * s14 + r1_15 * s15
+              + r1_16 * s16 + r1_17 * s17 + r1_18 * s18 + r1_19 * s19
+              + r1_20 * s20 + r1_21 * s21 + r1_22 * s22 + r1_23 * s23
+              + r1_24 * s24 + r1_25 * s25 + r1_26 * s26 + r1_27 * s27
+              + r1_28 * s28 + r1_29 * s29 + r1_30 * s30 + r1_31 * s31;
+            let r2_loop =
+                r2_00 * s00 + r2_01 * s01 + r2_02 * s02 + r2_03 * s03
+              + r2_04 * s04 + r2_05 * s05 + r2_06 * s06 + r2_07 * s07
+              + r2_08 * s08 + r2_09 * s09 + r2_10 * s10 + r2_11 * s11
+              + r2_12 * s12 + r2_13 * s13 + r2_14 * s14 + r2_15 * s15
+              + r2_16 * s16 + r2_17 * s17 + r2_18 * s18 + r2_19 * s19
+              + r2_20 * s20 + r2_21 * s21 + r2_22 * s22 + r2_23 * s23
+              + r2_24 * s24 + r2_25 * s25 + r2_26 * s26 + r2_27 * s27
+              + r2_28 * s28 + r2_29 * s29 + r2_30 * s30 + r2_31 * s31;
+            let r3_loop =
+                r3_00 * s00 + r3_01 * s01 + r3_02 * s02 + r3_03 * s03
+              + r3_04 * s04 + r3_05 * s05 + r3_06 * s06 + r3_07 * s07
+              + r3_08 * s08 + r3_09 * s09 + r3_10 * s10 + r3_11 * s11
+              + r3_12 * s12 + r3_13 * s13 + r3_14 * s14 + r3_15 * s15
+              + r3_16 * s16 + r3_17 * s17 + r3_18 * s18 + r3_19 * s19
+              + r3_20 * s20 + r3_21 * s21 + r3_22 * s22 + r3_23 * s23
+              + r3_24 * s24 + r3_25 * s25 + r3_26 * s26 + r3_27 * s27
+              + r3_28 * s28 + r3_29 * s29 + r3_30 * s30 + r3_31 * s31;
+            let rs_loop =
+                rs_00 * s00 + rs_01 * s01 + rs_02 * s02 + rs_03 * s03
+              + rs_04 * s04 + rs_05 * s05 + rs_06 * s06 + rs_07 * s07
+              + rs_08 * s08 + rs_09 * s09 + rs_10 * s10 + rs_11 * s11
+              + rs_12 * s12 + rs_13 * s13 + rs_14 * s14 + rs_15 * s15
+              + rs_16 * s16 + rs_17 * s17 + rs_18 * s18 + rs_19 * s19
+              + rs_20 * s20 + rs_21 * s21 + rs_22 * s22 + rs_23 * s23
+              + rs_24 * s24 + rs_25 * s25 + rs_26 * s26 + rs_27 * s27
+              + rs_28 * s28 + rs_29 * s29 + rs_30 * s30 + rs_31 * s31;
+
+            let r1 = r1_fresh * deja_t_off + r1_loop * deja_t_on;
+            let r2 = r2_fresh * deja_t_off + r2_loop * deja_t_on;
+            let r3 = r3_fresh * deja_t_off + r3_loop * deja_t_on;
+            let rs = rs_fresh * deja_t_off + rs_loop * deja_t_on;
+            let u1 = (r1 + 1.0) * 0.5;
+            let u2 = (r2 + 1.0) * 0.5;
+            let u3 = (r3 + 1.0) * 0.5;
+            let us = (rs + 1.0) * 0.5;
+
+            let jitter1 = latch_kr(white_noise_kr(), master_kr) * t_jitter * 0.15;
+            let jitter2 = latch_kr(white_noise_kr(), master_kr) * t_jitter * 0.15;
+            let jitter3 = latch_kr(white_noise_kr(), master_kr) * t_jitter * 0.15;
+            let p1 = clip(t_bias + jitter1, 0.0, 1.0);
+            let p2 = clip((1.0 - t_bias) * (1.0 - spread_t) + t_bias * spread_t + jitter2, 0.0, 1.0);
+            let p3 = clip(0.5 + (t_bias - 0.5) * (1.0 - spread_t) + jitter3, 0.0, 1.0);
+
+            let bern1 = in_range_kr(u1, 0.0, p1);
+            let bern2 = in_range_kr(u2, 0.0, p2);
+            let bern3 = in_range_kr(u3, 0.0, p3);
+
+            let cluster_seed = in_range_kr(u1, 0.0, clip(0.15 + t_bias * 0.75, 0.0, 1.0));
+            let cluster2 = cluster_seed * in_range_kr(u2, 0.0, clip(0.25 + spread_t * 0.65, 0.0, 1.0));
+            let cluster3 = cluster_seed * in_range_kr(u3, 0.0, clip(0.15 + spread_t * 0.45, 0.0, 1.0));
+
+            let bar_step = stepper_kr(master_kr, 0.0, 0.0, 15.0, 1.0, 0.0);
+            let d00 = (1.0 - abs(bar_step - 0.0)).max(0.0);
+            let d01 = (1.0 - abs(bar_step - 1.0)).max(0.0);
+            let d02 = (1.0 - abs(bar_step - 2.0)).max(0.0);
+            let d03 = (1.0 - abs(bar_step - 3.0)).max(0.0);
+            let d04 = (1.0 - abs(bar_step - 4.0)).max(0.0);
+            let d05 = (1.0 - abs(bar_step - 5.0)).max(0.0);
+            let d06 = (1.0 - abs(bar_step - 6.0)).max(0.0);
+            let d07 = (1.0 - abs(bar_step - 7.0)).max(0.0);
+            let d08 = (1.0 - abs(bar_step - 8.0)).max(0.0);
+            let d09 = (1.0 - abs(bar_step - 9.0)).max(0.0);
+            let d10 = (1.0 - abs(bar_step - 10.0)).max(0.0);
+            let d11 = (1.0 - abs(bar_step - 11.0)).max(0.0);
+            let d12 = (1.0 - abs(bar_step - 12.0)).max(0.0);
+            let d13 = (1.0 - abs(bar_step - 13.0)).max(0.0);
+            let d14 = (1.0 - abs(bar_step - 14.0)).max(0.0);
+            let d15 = (1.0 - abs(bar_step - 15.0)).max(0.0);
+            let drum_kick = d00 + d08 + (d14 * in_range_kr(u1, 0.0, spread_t * 0.8));
+            let drum_snare = (d04 + d12) * in_range_kr(u2, 0.0, clip(0.35 + t_bias * 0.6, 0.0, 1.0));
+            let drum_hat_grid = d00 + d02 + d04 + d06 + d08 + d10 + d12 + d14;
+            let drum_hat_fill = d01 + d03 + d05 + d07 + d09 + d11 + d13 + d15;
+            let drum_hat = (drum_hat_grid + drum_hat_fill * spread_t) * in_range_kr(u3, 0.0, clip(0.45 + t_bias * 0.5, 0.0, 1.0));
+
+            let div_dense = in_range_kr(t_bias, 0.5, 1.0);
+            let div1 = d00 + d04 + d08 + d12 + (d02 + d06 + d10 + d14) * div_dense;
+            let div2 = d00 + d06 + d12;
+            let div3 = d00 + d05 + d10 + d15 * spread_t;
+
+            let state_raw = floor(clip(us * 3.0, 0.0, 2.0));
+            let state1 = (1.0 - abs(state_raw - 0.0)).max(0.0);
+            let state2 = (1.0 - abs(state_raw - 1.0)).max(0.0);
+            let state3 = (1.0 - abs(state_raw - 2.0)).max(0.0);
+
+            let markov = (lf_noise1_kr(clock_hz / (length_t + 0.001)) + 1.0) * 0.5;
+            let mark1 = in_range_kr(markov + u1 * 0.25, 0.0, clip(0.25 + t_bias * 0.75, 0.0, 1.0));
+            let mark2 = in_range_kr(abs(markov - u2), 0.0, clip(0.2 + spread_t * 0.65, 0.0, 1.0));
+            let mark3 = in_range_kr(1.0 - markov + u3 * 0.15, 0.0, clip(0.35 + (1.0 - t_bias) * 0.5, 0.0, 1.0));
+
+            let t1_imp =
+                master_ar * k2a_ar(bern1 * m0)
+              + master_ar * k2a_ar(cluster_seed * m1)
+              + master_ar * k2a_ar(drum_kick * m2)
+              + master_ar * k2a_ar(div1 * m3)
+              + master_ar * k2a_ar(state1 * m4)
+              + master_ar * k2a_ar(mark1 * m5);
+            let t2_imp =
+                master_ar * k2a_ar(bern2 * m0)
+              + t_delay_ar(master_ar * k2a_ar(cluster2), 0.018 + spread_t * 0.04) * k2a_ar(m1)
+              + master_ar * k2a_ar(drum_snare * m2)
+              + master_ar * k2a_ar(div2 * m3)
+              + master_ar * k2a_ar(state2 * m4)
+              + master_ar * k2a_ar(mark2 * m5);
+            let t3_imp =
+                master_ar * k2a_ar(bern3 * m0)
+              + t_delay_ar(master_ar * k2a_ar(cluster3), 0.035 + spread_t * 0.06) * k2a_ar(m1)
+              + master_ar * k2a_ar(drum_hat * m2)
+              + master_ar * k2a_ar(div3 * m3)
+              + master_ar * k2a_ar(state3 * m4)
+              + master_ar * k2a_ar(mark3 * m5);
+
             let t1_out = clip_ar(trig1_ar(t1_imp, 0.005) * 0.5, -1.0, 1.0);
             let t2_out = clip_ar(trig1_ar(t2_imp, 0.005) * 0.5, -1.0, 1.0);
             let t3_out = clip_ar(trig1_ar(t3_imp, 0.005) * 0.5, -1.0, 1.0);
 
             // === X section ================================================
-            // Triangular-distribution gaussian walk via mean of three uniform
-            // draws — peaked at 0, narrower than uniform (matches cv_marbles).
-            // Per-stream independent draws so the three Xs are decorrelated
-            // when length=1 (no memory).
-            let g1a = white_noise_kr();
-            let g1b = white_noise_kr();
-            let g1c = white_noise_kr();
-            let gauss1 = (g1a + g1b + g1c) / 3.0;
+            let x_mode = in_range_kr(clip(p.x_mode, 0.0, 1.0), 0.5, 1.0);
+            let x_clock = master_kr * x_mode + (master_kr * bern1) * (1.0 - x_mode);
+            let x_bias = clip(p.bias_x + (p.x_bias - 0.5), 0.0, 1.0);
+            let x_spread = clip(p.spread_x + (p.x_spread - 0.5), 0.0, 1.0);
+            let centre = (x_bias - 0.5) * 2.0;
+            let deja_x_on = in_range_kr(clip(p.deja_vu_x, 0.0, 1.0), 0.5, 1.0);
+            let deja_x_off = 1.0 - deja_x_on;
+            let length_x = floor(clip(p.length_x + 0.5, 1.0, 32.0));
 
-            let g2a = white_noise_kr();
-            let g2b = white_noise_kr();
-            let g2c = white_noise_kr();
-            let gauss2 = (g2a + g2b + g2c) / 3.0;
+            let gx1 = centre + ((white_noise_kr() + white_noise_kr() + white_noise_kr()) / 3.0) * x_spread;
+            let gx2 = centre + ((white_noise_kr() + white_noise_kr() + white_noise_kr()) / 3.0) * x_spread;
+            let gx3 = centre + ((white_noise_kr() + white_noise_kr() + white_noise_kr()) / 3.0) * x_spread;
+            let mem_rate = 1.0 / (p.length + 0.001);
+            let mem_mix = p.length / (p.length + 1.0);
+            let x1_fresh = latch_kr(gx1 * (1.0 - mem_mix) + (centre + lf_noise1_kr(mem_rate) * x_spread) * mem_mix, x_clock);
+            let x2_fresh = latch_kr(gx2 * (1.0 - mem_mix) + (centre + lf_noise1_kr(mem_rate * 1.21) * x_spread) * mem_mix, x_clock);
+            let x3_fresh = latch_kr(gx3 * (1.0 - mem_mix) + (centre + lf_noise1_kr(mem_rate * 0.83 + 0.0001) * x_spread) * mem_mix, x_clock);
 
-            let g3a = white_noise_kr();
-            let g3b = white_noise_kr();
-            let g3c = white_noise_kr();
-            let gauss3 = (g3a + g3b + g3c) / 3.0;
+            let capture_x = x_clock * deja_x_off;
+            let step_x = stepper_kr(x_clock, 0.0, 0.0, length_x - 1.0, 1.0, 0.0);
+            let xs00 = (1.0 - abs(step_x - 0.0)).max(0.0);
+            let xs01 = (1.0 - abs(step_x - 1.0)).max(0.0);
+            let xs02 = (1.0 - abs(step_x - 2.0)).max(0.0);
+            let xs03 = (1.0 - abs(step_x - 3.0)).max(0.0);
+            let xs04 = (1.0 - abs(step_x - 4.0)).max(0.0);
+            let xs05 = (1.0 - abs(step_x - 5.0)).max(0.0);
+            let xs06 = (1.0 - abs(step_x - 6.0)).max(0.0);
+            let xs07 = (1.0 - abs(step_x - 7.0)).max(0.0);
+            let xs08 = (1.0 - abs(step_x - 8.0)).max(0.0);
+            let xs09 = (1.0 - abs(step_x - 9.0)).max(0.0);
+            let xs10 = (1.0 - abs(step_x - 10.0)).max(0.0);
+            let xs11 = (1.0 - abs(step_x - 11.0)).max(0.0);
+            let xs12 = (1.0 - abs(step_x - 12.0)).max(0.0);
+            let xs13 = (1.0 - abs(step_x - 13.0)).max(0.0);
+            let xs14 = (1.0 - abs(step_x - 14.0)).max(0.0);
+            let xs15 = (1.0 - abs(step_x - 15.0)).max(0.0);
+            let xs16 = (1.0 - abs(step_x - 16.0)).max(0.0);
+            let xs17 = (1.0 - abs(step_x - 17.0)).max(0.0);
+            let xs18 = (1.0 - abs(step_x - 18.0)).max(0.0);
+            let xs19 = (1.0 - abs(step_x - 19.0)).max(0.0);
+            let xs20 = (1.0 - abs(step_x - 20.0)).max(0.0);
+            let xs21 = (1.0 - abs(step_x - 21.0)).max(0.0);
+            let xs22 = (1.0 - abs(step_x - 22.0)).max(0.0);
+            let xs23 = (1.0 - abs(step_x - 23.0)).max(0.0);
+            let xs24 = (1.0 - abs(step_x - 24.0)).max(0.0);
+            let xs25 = (1.0 - abs(step_x - 25.0)).max(0.0);
+            let xs26 = (1.0 - abs(step_x - 26.0)).max(0.0);
+            let xs27 = (1.0 - abs(step_x - 27.0)).max(0.0);
+            let xs28 = (1.0 - abs(step_x - 28.0)).max(0.0);
+            let xs29 = (1.0 - abs(step_x - 29.0)).max(0.0);
+            let xs30 = (1.0 - abs(step_x - 30.0)).max(0.0);
+            let xs31 = (1.0 - abs(step_x - 31.0)).max(0.0);
 
-            // Map bias_x ∈ [0,1] to a centred V/oct offset in [-1,+1].
-            let centre = (bias_x - 0.5) * 2.0;
-            let walk1 = centre + gauss1 * spread_x;
-            let walk2 = centre + gauss2 * spread_x;
-            let walk3 = centre + gauss3 * spread_x;
+            let x1_00 = latch_kr(x1_fresh, capture_x);
+            let x1_01 = latch_kr(x1_00, capture_x);
+            let x1_02 = latch_kr(x1_01, capture_x);
+            let x1_03 = latch_kr(x1_02, capture_x);
+            let x1_04 = latch_kr(x1_03, capture_x);
+            let x1_05 = latch_kr(x1_04, capture_x);
+            let x1_06 = latch_kr(x1_05, capture_x);
+            let x1_07 = latch_kr(x1_06, capture_x);
+            let x1_08 = latch_kr(x1_07, capture_x);
+            let x1_09 = latch_kr(x1_08, capture_x);
+            let x1_10 = latch_kr(x1_09, capture_x);
+            let x1_11 = latch_kr(x1_10, capture_x);
+            let x1_12 = latch_kr(x1_11, capture_x);
+            let x1_13 = latch_kr(x1_12, capture_x);
+            let x1_14 = latch_kr(x1_13, capture_x);
+            let x1_15 = latch_kr(x1_14, capture_x);
+            let x1_16 = latch_kr(x1_15, capture_x);
+            let x1_17 = latch_kr(x1_16, capture_x);
+            let x1_18 = latch_kr(x1_17, capture_x);
+            let x1_19 = latch_kr(x1_18, capture_x);
+            let x1_20 = latch_kr(x1_19, capture_x);
+            let x1_21 = latch_kr(x1_20, capture_x);
+            let x1_22 = latch_kr(x1_21, capture_x);
+            let x1_23 = latch_kr(x1_22, capture_x);
+            let x1_24 = latch_kr(x1_23, capture_x);
+            let x1_25 = latch_kr(x1_24, capture_x);
+            let x1_26 = latch_kr(x1_25, capture_x);
+            let x1_27 = latch_kr(x1_26, capture_x);
+            let x1_28 = latch_kr(x1_27, capture_x);
+            let x1_29 = latch_kr(x1_28, capture_x);
+            let x1_30 = latch_kr(x1_29, capture_x);
+            let x1_31 = latch_kr(x1_30, capture_x);
 
-            // Markov memory: lf_noise1_kr cycles its waveform once per second
-            // at rate=1.0, so rate = 1/length gives a period of `length`
-            // seconds. Three independently-phased copies for X1/X2/X3 so the
-            // memory shape is correlated but not identical across streams.
-            let mem_rate = 1.0 / (length + 0.001);
-            let mem1 = centre + lf_noise1_kr(mem_rate) * spread_x;
-            let mem2 = centre + lf_noise1_kr(mem_rate * 1.21) * spread_x;
-            let mem3 = centre + lf_noise1_kr(mem_rate * 0.83 + 0.0001) * spread_x;
+            let x2_00 = latch_kr(x2_fresh, capture_x);
+            let x2_01 = latch_kr(x2_00, capture_x);
+            let x2_02 = latch_kr(x2_01, capture_x);
+            let x2_03 = latch_kr(x2_02, capture_x);
+            let x2_04 = latch_kr(x2_03, capture_x);
+            let x2_05 = latch_kr(x2_04, capture_x);
+            let x2_06 = latch_kr(x2_05, capture_x);
+            let x2_07 = latch_kr(x2_06, capture_x);
+            let x2_08 = latch_kr(x2_07, capture_x);
+            let x2_09 = latch_kr(x2_08, capture_x);
+            let x2_10 = latch_kr(x2_09, capture_x);
+            let x2_11 = latch_kr(x2_10, capture_x);
+            let x2_12 = latch_kr(x2_11, capture_x);
+            let x2_13 = latch_kr(x2_12, capture_x);
+            let x2_14 = latch_kr(x2_13, capture_x);
+            let x2_15 = latch_kr(x2_14, capture_x);
+            let x2_16 = latch_kr(x2_15, capture_x);
+            let x2_17 = latch_kr(x2_16, capture_x);
+            let x2_18 = latch_kr(x2_17, capture_x);
+            let x2_19 = latch_kr(x2_18, capture_x);
+            let x2_20 = latch_kr(x2_19, capture_x);
+            let x2_21 = latch_kr(x2_20, capture_x);
+            let x2_22 = latch_kr(x2_21, capture_x);
+            let x2_23 = latch_kr(x2_22, capture_x);
+            let x2_24 = latch_kr(x2_23, capture_x);
+            let x2_25 = latch_kr(x2_24, capture_x);
+            let x2_26 = latch_kr(x2_25, capture_x);
+            let x2_27 = latch_kr(x2_26, capture_x);
+            let x2_28 = latch_kr(x2_27, capture_x);
+            let x2_29 = latch_kr(x2_28, capture_x);
+            let x2_30 = latch_kr(x2_29, capture_x);
+            let x2_31 = latch_kr(x2_30, capture_x);
 
-            // Memory blend weight: 0 at length=0, ~0.5 at length=1, ~0.94 at
-            // length=16 (saturating). Matches cv_marbles.vibe's blend curve.
-            let mem_mix = length / (length + 1.0);
-            let x1_src = walk1 * (1.0 - mem_mix) + mem1 * mem_mix;
-            let x2_src = walk2 * (1.0 - mem_mix) + mem2 * mem_mix;
-            let x3_src = walk3 * (1.0 - mem_mix) + mem3 * mem_mix;
+            let x3_00 = latch_kr(x3_fresh, capture_x);
+            let x3_01 = latch_kr(x3_00, capture_x);
+            let x3_02 = latch_kr(x3_01, capture_x);
+            let x3_03 = latch_kr(x3_02, capture_x);
+            let x3_04 = latch_kr(x3_03, capture_x);
+            let x3_05 = latch_kr(x3_04, capture_x);
+            let x3_06 = latch_kr(x3_05, capture_x);
+            let x3_07 = latch_kr(x3_06, capture_x);
+            let x3_08 = latch_kr(x3_07, capture_x);
+            let x3_09 = latch_kr(x3_08, capture_x);
+            let x3_10 = latch_kr(x3_09, capture_x);
+            let x3_11 = latch_kr(x3_10, capture_x);
+            let x3_12 = latch_kr(x3_11, capture_x);
+            let x3_13 = latch_kr(x3_12, capture_x);
+            let x3_14 = latch_kr(x3_13, capture_x);
+            let x3_15 = latch_kr(x3_14, capture_x);
+            let x3_16 = latch_kr(x3_15, capture_x);
+            let x3_17 = latch_kr(x3_16, capture_x);
+            let x3_18 = latch_kr(x3_17, capture_x);
+            let x3_19 = latch_kr(x3_18, capture_x);
+            let x3_20 = latch_kr(x3_19, capture_x);
+            let x3_21 = latch_kr(x3_20, capture_x);
+            let x3_22 = latch_kr(x3_21, capture_x);
+            let x3_23 = latch_kr(x3_22, capture_x);
+            let x3_24 = latch_kr(x3_23, capture_x);
+            let x3_25 = latch_kr(x3_24, capture_x);
+            let x3_26 = latch_kr(x3_25, capture_x);
+            let x3_27 = latch_kr(x3_26, capture_x);
+            let x3_28 = latch_kr(x3_27, capture_x);
+            let x3_29 = latch_kr(x3_28, capture_x);
+            let x3_30 = latch_kr(x3_29, capture_x);
+            let x3_31 = latch_kr(x3_30, capture_x);
 
-            // T1's sample-instant — used as the X-section seed clock per the
-            // ticket spec ("gaussian random walk seeded by T1"). Latching on
-            // master_kr * fire1 (rather than just master_kr) means X only
-            // advances on T1's accepted ticks; X stays flat between fires so
-            // missed T1 beats hold the previous pitch — the natural Marbles
-            // behaviour where a quiet T section freezes the pitch grid.
-            let x_clock = master_kr * fire1;
-            let x1_held = latch_kr(x1_src, x_clock);
-            let x2_held = latch_kr(x2_src, x_clock);
-            let x3_held = latch_kr(x3_src, x_clock);
+            let x1_loop =
+                x1_00 * xs00 + x1_01 * xs01 + x1_02 * xs02 + x1_03 * xs03
+              + x1_04 * xs04 + x1_05 * xs05 + x1_06 * xs06 + x1_07 * xs07
+              + x1_08 * xs08 + x1_09 * xs09 + x1_10 * xs10 + x1_11 * xs11
+              + x1_12 * xs12 + x1_13 * xs13 + x1_14 * xs14 + x1_15 * xs15
+              + x1_16 * xs16 + x1_17 * xs17 + x1_18 * xs18 + x1_19 * xs19
+              + x1_20 * xs20 + x1_21 * xs21 + x1_22 * xs22 + x1_23 * xs23
+              + x1_24 * xs24 + x1_25 * xs25 + x1_26 * xs26 + x1_27 * xs27
+              + x1_28 * xs28 + x1_29 * xs29 + x1_30 * xs30 + x1_31 * xs31;
+            let x2_loop =
+                x2_00 * xs00 + x2_01 * xs01 + x2_02 * xs02 + x2_03 * xs03
+              + x2_04 * xs04 + x2_05 * xs05 + x2_06 * xs06 + x2_07 * xs07
+              + x2_08 * xs08 + x2_09 * xs09 + x2_10 * xs10 + x2_11 * xs11
+              + x2_12 * xs12 + x2_13 * xs13 + x2_14 * xs14 + x2_15 * xs15
+              + x2_16 * xs16 + x2_17 * xs17 + x2_18 * xs18 + x2_19 * xs19
+              + x2_20 * xs20 + x2_21 * xs21 + x2_22 * xs22 + x2_23 * xs23
+              + x2_24 * xs24 + x2_25 * xs25 + x2_26 * xs26 + x2_27 * xs27
+              + x2_28 * xs28 + x2_29 * xs29 + x2_30 * xs30 + x2_31 * xs31;
+            let x3_loop =
+                x3_00 * xs00 + x3_01 * xs01 + x3_02 * xs02 + x3_03 * xs03
+              + x3_04 * xs04 + x3_05 * xs05 + x3_06 * xs06 + x3_07 * xs07
+              + x3_08 * xs08 + x3_09 * xs09 + x3_10 * xs10 + x3_11 * xs11
+              + x3_12 * xs12 + x3_13 * xs13 + x3_14 * xs14 + x3_15 * xs15
+              + x3_16 * xs16 + x3_17 * xs17 + x3_18 * xs18 + x3_19 * xs19
+              + x3_20 * xs20 + x3_21 * xs21 + x3_22 * xs22 + x3_23 * xs23
+              + x3_24 * xs24 + x3_25 * xs25 + x3_26 * xs26 + x3_27 * xs27
+              + x3_28 * xs28 + x3_29 * xs29 + x3_30 * xs30 + x3_31 * xs31;
 
-            // Quantize to `quant_steps` per octave (default 12).
-            // round(y) = floor(y + 0.5); floor(z) = z - wrap_kr(z, 0, 1).
-            // Same wrap-trick `spectraphon_side` uses since vibelang has no
-            // Floor UGen.
-            let qs = quant_steps + 0.0001;
-            let q1_in = x1_held * qs + 0.5;
-            let q2_in = x2_held * qs + 0.5;
-            let q3_in = x3_held * qs + 0.5;
+            let x1_src = x1_fresh * deja_x_off + x1_loop * deja_x_on;
+            let x2_src = x2_fresh * deja_x_off + x2_loop * deja_x_on;
+            let x3_src = x3_fresh * deja_x_off + x3_loop * deja_x_on;
+
+            let scale_idx = floor(clip(p.x_scale + 0.5, 0.0, 5.0));
+            let sc0 = (1.0 - abs(scale_idx - 0.0)).max(0.0);
+            let sc1 = (1.0 - abs(scale_idx - 1.0)).max(0.0);
+            let sc2 = (1.0 - abs(scale_idx - 2.0)).max(0.0);
+            let sc3 = (1.0 - abs(scale_idx - 3.0)).max(0.0);
+            let sc4 = (1.0 - abs(scale_idx - 4.0)).max(0.0);
+            let sc5 = (1.0 - abs(scale_idx - 5.0)).max(0.0);
+            let scale_steps = p.quant_steps * sc0 + 7.0 * sc1 + 7.0 * sc2 + 5.0 * sc3 + 6.0 * sc4 + 1.0 * sc5;
+            let qs = (scale_steps * (1.0 + clip(p.x_steps, 0.0, 1.0) * 2.0)).max(1.0) + 0.0001;
+            let q1_in = x1_src * qs + 0.5;
+            let q2_in = x2_src * qs + 0.5;
+            let q3_in = x3_src * qs + 0.5;
             let x1_q = (q1_in - wrap_kr(q1_in, 0.0, 1.0)) / qs;
             let x2_q = (q2_in - wrap_kr(q2_in, 0.0, 1.0)) / qs;
             let x3_q = (q3_in - wrap_kr(q3_in, 0.0, 1.0)) / qs;
 
-            // Convert kr to ar and clip to the ±1.0 CV contract envelope.
             let x1_out = clip_ar(k2a_ar(x1_q), -1.0, 1.0);
             let x2_out = clip_ar(k2a_ar(x2_q), -1.0, 1.0);
             let x3_out = clip_ar(k2a_ar(x3_q), -1.0, 1.0);
