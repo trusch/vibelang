@@ -1,0 +1,207 @@
+// kind=processor | category=fx | flavor=erica_black_hole_dsp | inputs=in:2 | outputs=out:2 | params=program,param1,param2,rate,mix,cv_assign,cv,cv_amt
+//
+// Erica Black Hole DSP-inspired stereo multi-FX processor approximation.
+// The hardware is an FV-1 style 16-program effect module with four editable
+// controls per program and one assignable CV input. This VibeLang model keeps
+// the performance surface: program selects a wet algorithm, param1/param2/rate
+// are generic program controls, mix is the global dry/wet, and cv_assign maps
+// the normalized signed cv input to program, param1, param2, or rate.
+//
+// Program map:
+//   0 reverb, 1 delay, 2 granular delay, 3 pitch shift, 4 lo-fi,
+//   5 phaser/chorus, 6 shimmer verb, 7 dub delay, 8 bit crush trem,
+//   9 reverse-ish delay, 10 comb resonator, 11 flanger, 12 freeze wash,
+//   13 filter drive, 14 ring mod, 15 reserved stereo widener.
+
+fn _erica_bh_cv_weight(assign, target) {
+    1.0 - clip(abs(assign - target), 0.0, 1.0)
+}
+
+fn _erica_bh_soft(sig, drive) {
+    let drive = clip(drive, 0.5, 12.0);
+    tanh_ar(sig * drive) / drive.sqrt()
+}
+
+define_synthdef("erica_black_hole_dsp")
+    .input("in", 2)
+    .output("out", 2)
+    .param("program", 0.0)
+    .param("param1", 0.5)
+    .param("param2", 0.5)
+    .param("rate", 0.5)
+    .param("mix", 0.5)
+    .param("cv_assign", 1.0)
+    .param("cv", 0.0)
+    .param("cv_amt", 0.0)
+    .body_map(|p| {
+        let dry_l = p.inputs["in"][0];
+        let dry_r = p.inputs["in"][1];
+        let dry_m = (dry_l + dry_r) * 0.5;
+
+        let cv_assign = round(clip(p.cv_assign, 0.0, 3.0));
+        let cv_mod = clip(p.cv, -1.0, 1.0) * clip(p.cv_amt, 0.0, 1.0);
+        let program = clip(round(p.program + cv_mod * 15.0 * _erica_bh_cv_weight(cv_assign, 0.0)), 0.0, 15.0);
+        let param1 = clip(p.param1 + cv_mod * _erica_bh_cv_weight(cv_assign, 1.0), 0.0, 1.0);
+        let param2 = clip(p.param2 + cv_mod * _erica_bh_cv_weight(cv_assign, 2.0), 0.0, 1.0);
+        let rate = clip(p.rate + cv_mod * _erica_bh_cv_weight(cv_assign, 3.0), 0.0, 1.0);
+        let mix = clip(p.mix, 0.0, 1.0);
+
+        let verb_time = 0.4 + param1 * 11.0;
+        let verb_damp = param2;
+        let verb_size = 0.45 + rate * 4.0;
+        let verb_node = j_pverb_ar(
+            dry_m, verb_time, verb_damp, verb_size,
+            0.707, 0.08 + rate * 0.16, 0.35 + rate * 2.4,
+            1.0, 1.0, 1.0,
+            120.0 + param2 * 900.0, 2200.0 + (1.0 - param2) * 7600.0
+        );
+        let prog0_l = leak_dc_ar(channel(verb_node, 0), 0.995);
+        let prog0_r = leak_dc_ar(channel(verb_node, 1), 0.995);
+
+        let delay_time = 0.035 + param1 * 0.965;
+        let delay_fb = clip(param2 * 0.88, 0.0, 0.88);
+        let pingpong = rate;
+        let delay_l_1 = delay_c_ar(dry_l + dry_r * pingpong * 0.45, 2.0, delay_time);
+        let delay_r_1 = delay_c_ar(dry_r + dry_l * pingpong * 0.45, 2.0, delay_time * (1.0 + pingpong * 0.5));
+        let delay_l_2 = delay_c_ar(delay_l_1 * delay_fb, 2.0, delay_time * 1.5);
+        let delay_r_2 = delay_c_ar(delay_r_1 * delay_fb, 2.0, delay_time * (1.25 + pingpong * 0.55));
+        let prog1_l = leak_dc_ar(lpf_ar(delay_l_1 + delay_l_2, 11000.0 - delay_fb * 6500.0), 0.995);
+        let prog1_r = leak_dc_ar(lpf_ar(delay_r_1 + delay_r_2, 11000.0 - delay_fb * 6500.0), 0.995);
+
+        let grain_time = 0.02 + param1 * 0.78;
+        let grain_density = param2;
+        let grain_pos = rate;
+        let grain_pitch = 0.5 + grain_pos * 1.5;
+        let grain_mod = sin_osc_ar(0.15 + grain_density * 3.0, 0.0) * (0.002 + param1 * 0.018);
+        let grain_l = (
+            delay_c_ar(dry_l, 1.5, grain_time + grain_mod.abs()) * 0.45 +
+            pitch_shift_ar(delay_c_ar(dry_r, 1.5, grain_time * 1.33), 0.06 + param1 * 0.18, grain_pitch, 0.0, 0.0) * 0.35 +
+            delay_c_ar(dry_m, 1.5, grain_time * (0.5 + grain_pos)) * 0.20
+        ) * (0.55 + grain_density * 0.65);
+        let grain_r = (
+            delay_c_ar(dry_r, 1.5, grain_time * 1.1 + grain_mod.abs()) * 0.45 +
+            pitch_shift_ar(delay_c_ar(dry_l, 1.5, grain_time * 0.83), 0.06 + param1 * 0.18, 2.0 - grain_pitch * 0.5, 0.0, 0.0) * 0.35 +
+            delay_c_ar(dry_m, 1.5, grain_time * (1.4 - grain_pos * 0.7)) * 0.20
+        ) * (0.55 + grain_density * 0.65);
+        let prog2_l = leak_dc_ar(lpf_ar(grain_l, 12000.0 - grain_density * 5000.0), 0.995);
+        let prog2_r = leak_dc_ar(lpf_ar(grain_r, 12000.0 - grain_density * 5000.0), 0.995);
+
+        let semis = param1 * 24.0 - 12.0;
+        let shift_ratio = pow(2.0, (semis + (rate - 0.5) * 2.0) / 12.0);
+        let pitch_fb = clip(param2 * 0.72, 0.0, 0.72);
+        let pitch_l = pitch_shift_ar(dry_l, 0.05 + rate * 0.30, shift_ratio, 0.0, rate * 0.008);
+        let pitch_r = pitch_shift_ar(dry_r, 0.05 + rate * 0.30, shift_ratio, 0.0, rate * 0.008);
+        let prog3_l = leak_dc_ar(pitch_l + delay_c_ar(pitch_l, 1.2, 0.08 + rate * 0.30) * pitch_fb, 0.995);
+        let prog3_r = leak_dc_ar(pitch_r + delay_c_ar(pitch_r, 1.2, 0.09 + rate * 0.33) * pitch_fb, 0.995);
+
+        let bit_depth = 4.0 + param1 * 12.0;
+        let sample_rate = 800.0 + param2 * 43100.0;
+        let crush_drive = 1.2 + (16.0 - bit_depth) * 0.22;
+        let lofi_noise = pink_noise_ar() * rate * 0.055;
+        let hold_l = latch_ar(dry_l + lofi_noise, impulse_ar(sample_rate, 0.0));
+        let hold_r = latch_ar(dry_r + lofi_noise, impulse_ar(sample_rate * (0.98 + rate * 0.04), 0.0));
+        let prog4_l = leak_dc_ar(lpf_ar(_erica_bh_soft(hold_l, crush_drive), 900.0 + param2 * 11100.0), 0.995);
+        let prog4_r = leak_dc_ar(lpf_ar(_erica_bh_soft(hold_r, crush_drive), 900.0 + param2 * 11100.0), 0.995);
+
+        let mod_rate = 0.05 + param1 * 8.0;
+        let mod_depth = 0.001 + param2 * 0.026;
+        let mod_fb = rate * 0.68;
+        let ch_time_l = clip(0.014 + sin_osc_ar(mod_rate, 0.0) * mod_depth, 0.001, 0.07);
+        let ch_time_r = clip(0.014 + sin_osc_ar(mod_rate * 1.07, 1.57) * mod_depth, 0.001, 0.07);
+        let ch_l = delay_c_ar(dry_l + dry_r * mod_fb * 0.12, 0.08, ch_time_l);
+        let ch_r = delay_c_ar(dry_r + dry_l * mod_fb * 0.12, 0.08, ch_time_r);
+        let ph_freq_l = clip(250.0 + 3600.0 * (0.5 + sin_osc_ar(mod_rate * 0.37, 0.0) * 0.5) * param2, 80.0, 7000.0);
+        let ph_freq_r = clip(250.0 + 3600.0 * (0.5 + sin_osc_ar(mod_rate * 0.41, 1.57) * 0.5) * param2, 80.0, 7000.0);
+        let prog5_l = leak_dc_ar(allpass_n_ar(ch_l, 0.03, 1.0 / ph_freq_l, 0.0) + ch_l * mod_fb * 0.35, 0.995);
+        let prog5_r = leak_dc_ar(allpass_n_ar(ch_r, 0.03, 1.0 / ph_freq_r, 0.0) + ch_r * mod_fb * 0.35, 0.995);
+
+        let shimmer_ratio = pow(2.0, (7.0 + param1 * 17.0) / 12.0);
+        let shimmer_in = dry_m + pitch_shift_ar(dry_m, 0.18, shimmer_ratio, 0.0, rate * 0.006) * (0.25 + param2 * 0.75);
+        let shimmer_node = j_pverb_ar(shimmer_in, 1.2 + param2 * 14.0, 0.35 + rate * 0.55, 0.9 + param1 * 3.0, 0.707, 0.14, 0.8, 1.0, 1.0, 1.0, 180.0, 7200.0);
+        let prog6_l = leak_dc_ar(channel(shimmer_node, 0), 0.995);
+        let prog6_r = leak_dc_ar(channel(shimmer_node, 1), 0.995);
+
+        let dub_time = 0.06 + param1 * 0.72;
+        let dub_fb = clip(0.15 + param2 * 0.78, 0.0, 0.92);
+        let dub_cut = 500.0 + (1.0 - rate) * 6200.0;
+        let dub_l = comb_c_ar(lpf_ar(dry_l + dry_r * 0.25, dub_cut), 1.5, dub_time, dub_fb * 3.0);
+        let dub_r = comb_c_ar(lpf_ar(dry_r + dry_l * 0.25, dub_cut), 1.5, dub_time * 1.17, dub_fb * 3.0);
+        let prog7_l = leak_dc_ar(_erica_bh_soft(dub_l, 1.2 + dub_fb * 2.0), 0.995);
+        let prog7_r = leak_dc_ar(_erica_bh_soft(dub_r, 1.2 + dub_fb * 2.0), 0.995);
+
+        let trem_rate = 0.5 + rate * 14.0;
+        let trem = 0.55 + sin_osc_ar(trem_rate, 0.0) * 0.45;
+        let crush_rate = 1200.0 + (1.0 - param2) * 18000.0;
+        let prog8_l = leak_dc_ar(_erica_bh_soft(latch_ar(dry_l, impulse_ar(crush_rate, 0.0)) * trem, 2.0 + (1.0 - param1) * 5.0), 0.995);
+        let prog8_r = leak_dc_ar(_erica_bh_soft(latch_ar(dry_r, impulse_ar(crush_rate * 1.03, 0.0)) * (1.0 - trem * 0.45), 2.0 + (1.0 - param1) * 5.0), 0.995);
+
+        let rev_time = 0.07 + param1 * 0.9;
+        let rev_env = 0.5 + sin_osc_ar(0.08 + rate * 1.8, 0.0) * 0.5;
+        let rev_tap_l = delay_c_ar(dry_l, 1.2, rev_time * (1.5 - rev_env * 0.8));
+        let rev_tap_r = delay_c_ar(dry_r, 1.2, rev_time * (0.8 + rev_env * 0.9));
+        let prog9_l = leak_dc_ar(lpf_ar(rev_tap_l * rev_env + rev_tap_r * param2 * 0.35, 9500.0), 0.995);
+        let prog9_r = leak_dc_ar(lpf_ar(rev_tap_r * (1.0 - rev_env * 0.45) + rev_tap_l * param2 * 0.35, 9500.0), 0.995);
+
+        let comb_freq = 45.0 + param1 * 1550.0;
+        let comb_decay = 0.05 + param2 * 3.5;
+        let comb_time = clip(1.0 / comb_freq, 0.0006, 0.05);
+        let comb_l = comb_l_ar(dry_l + dry_m * rate * 0.3, 0.08, comb_time, comb_decay);
+        let comb_r = comb_l_ar(dry_r + dry_m * rate * 0.3, 0.08, comb_time * (1.0 + rate * 0.08), comb_decay);
+        let prog10_l = leak_dc_ar(lpf_ar(_erica_bh_soft(comb_l, 1.0 + param2 * 3.0), 9000.0), 0.995);
+        let prog10_r = leak_dc_ar(lpf_ar(_erica_bh_soft(comb_r, 1.0 + param2 * 3.0), 9000.0), 0.995);
+
+        let flange_rate = 0.05 + rate * 6.0;
+        let flange_depth = 0.0004 + param1 * 0.006;
+        let flange_fb = param2 * 0.75;
+        let flange_l = delay_c_ar(dry_l, 0.03, 0.002 + sin_osc_ar(flange_rate, 0.0).abs() * flange_depth);
+        let flange_r = delay_c_ar(dry_r, 0.03, 0.002 + sin_osc_ar(flange_rate * 1.11, 1.57).abs() * flange_depth);
+        let prog11_l = leak_dc_ar(_erica_bh_soft(flange_l + delay_c_ar(flange_l, 0.03, 0.004) * flange_fb, 1.0 + flange_fb * 2.0), 0.995);
+        let prog11_r = leak_dc_ar(_erica_bh_soft(flange_r + delay_c_ar(flange_r, 0.03, 0.005) * flange_fb, 1.0 + flange_fb * 2.0), 0.995);
+
+        let wash_time = 0.08 + param1 * 0.42;
+        let wash_fb = 0.45 + param2 * 0.5;
+        let wash_l = allpass_l_ar(delay_c_ar(dry_l, 0.8, wash_time), 0.9, 0.023 + rate * 0.06, 0.5 + wash_fb * 4.0);
+        let wash_r = allpass_l_ar(delay_c_ar(dry_r, 0.8, wash_time * 1.21), 0.9, 0.029 + rate * 0.05, 0.5 + wash_fb * 4.0);
+        let prog12_l = leak_dc_ar(lpf_ar(wash_l + wash_r * 0.28, 8000.0 - wash_fb * 4000.0), 0.995);
+        let prog12_r = leak_dc_ar(lpf_ar(wash_r + wash_l * 0.28, 8000.0 - wash_fb * 4000.0), 0.995);
+
+        let filter_cut = 100.0 + param1 * 13000.0;
+        let filter_q = 0.15 + param2 * 0.82;
+        let filter_drive = 1.0 + rate * 8.0;
+        let filt_l = rlpf_ar(dry_l, filter_cut, filter_q) + bpf_ar(dry_l, filter_cut * 0.6, filter_q) * rate;
+        let filt_r = rlpf_ar(dry_r, filter_cut * (1.0 + rate * 0.05), filter_q) + bpf_ar(dry_r, filter_cut * 0.63, filter_q) * rate;
+        let prog13_l = leak_dc_ar(_erica_bh_soft(filt_l, filter_drive), 0.995);
+        let prog13_r = leak_dc_ar(_erica_bh_soft(filt_r, filter_drive), 0.995);
+
+        let ring_freq = 20.0 + pow(param1, 2.0) * 2980.0;
+        let ring_depth = param2;
+        let ring_l = dry_l * ((1.0 - ring_depth) + sin_osc_ar(ring_freq, 0.0) * ring_depth);
+        let ring_r = dry_r * ((1.0 - ring_depth) + sin_osc_ar(ring_freq * (1.0 + rate * 0.08), 1.57) * ring_depth);
+        let prog14_l = leak_dc_ar(lpf_ar(_erica_bh_soft(ring_l, 1.0 + rate * 4.0), 12000.0), 0.995);
+        let prog14_r = leak_dc_ar(lpf_ar(_erica_bh_soft(ring_r, 1.0 + rate * 4.0), 12000.0), 0.995);
+
+        let widen_delay = 0.002 + param1 * 0.028;
+        let width = param2 * 0.9;
+        let wide_l = delay_c_ar(dry_l - dry_r * width, 0.05, widen_delay);
+        let wide_r = delay_c_ar(dry_r - dry_l * width, 0.05, widen_delay * (1.0 + rate * 0.5));
+        let prog15_l = leak_dc_ar(wide_l * (0.75 + rate * 0.25), 0.995);
+        let prog15_r = leak_dc_ar(wide_r * (0.75 + rate * 0.25), 0.995);
+
+        let wet_l = select_ar(program, [
+            prog0_l, prog1_l, prog2_l, prog3_l,
+            prog4_l, prog5_l, prog6_l, prog7_l,
+            prog8_l, prog9_l, prog10_l, prog11_l,
+            prog12_l, prog13_l, prog14_l, prog15_l
+        ]);
+        let wet_r = select_ar(program, [
+            prog0_r, prog1_r, prog2_r, prog3_r,
+            prog4_r, prog5_r, prog6_r, prog7_r,
+            prog8_r, prog9_r, prog10_r, prog11_r,
+            prog12_r, prog13_r, prog14_r, prog15_r
+        ]);
+
+        [
+            softclip((1.0 - mix) * dry_l + mix * wet_l),
+            softclip((1.0 - mix) * dry_r + mix * wet_r)
+        ]
+    });
