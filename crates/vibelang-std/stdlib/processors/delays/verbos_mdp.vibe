@@ -1,0 +1,146 @@
+// Verbos Multi-Delay Processor - eight serial voltage-controllable delay taps.
+//
+// Three mono inputs are gain-mixed into an eight-stage digital delay chain.
+// The final tap is normalled through a pitch-shifted feedback loop, with an
+// optional reverb return in the same feedback path.
+
+define_synthdef("verbos_mdp", |builder| {
+    builder
+        .input("in1", 1)
+        .input("in2", 1)
+        .input("in3", 1)
+        .output("mix", 1)
+        .output("tap1", 1)
+        .output("tap2", 1)
+        .output("tap3", 1)
+        .output("tap4", 1)
+        .output("tap5", 1)
+        .output("tap6", 1)
+        .output("tap7", 1)
+        .output("tap8", 1)
+        .output("odd", 1)
+        .output("even", 1)
+        .output("rise", 1)
+        .output("fall", 1)
+        .output_kr("env_in")
+        .output_kr("env1")
+        .output_kr("env2")
+        .output_kr("env3")
+        .output_kr("env4")
+        .output_kr("env5")
+        .output_kr("env6")
+        .output_kr("env7")
+        .output_kr("env8")
+        .param("delay_time", 80.0)
+        .param("delay_cv", 0.0)
+        .param("time_cv_amount", 0.0)
+        .param("input1_gain", 1.0)
+        .param("input2_gain", 0.5)
+        .param("input3_gain", 0.5)
+        .param("tap1_mix", 1.0)
+        .param("tap2_mix", 0.9)
+        .param("tap3_mix", 0.8)
+        .param("tap4_mix", 0.7)
+        .param("tap5_mix", 0.6)
+        .param("tap6_mix", 0.5)
+        .param("tap7_mix", 0.4)
+        .param("tap8_mix", 0.3)
+        .param("feedback", 0.3)
+        .param("reverb_feedback", 0.0)
+        .param("pitch_feedback", 12.0)
+        .param("manual_mix", 0.5)
+        .param("level", 1.0)
+        .param("env_decay", 0.05)
+        .body_map(|p| {
+            let in1 = p.inputs["in1"] * clip(p.input1_gain, 0.0, 1.0);
+            let in2 = p.inputs["in2"] * clip(p.input2_gain, 0.0, 1.0);
+            let in3 = p.inputs["in3"] * clip(p.input3_gain, 0.0, 1.0);
+            let input_sum = in1 + in2 + in3;
+
+            let time_cv_amount = clip(p.time_cv_amount, 0.0, 1.0);
+            let delay_ms = clip(p.delay_time + p.delay_cv * time_cv_amount, 10.0, 150.0);
+            let delay_sec = lag_kr(delay_ms * 0.001, 0.01);
+            let max_delay_sec = 0.2;
+
+            let fb = local_in_ar(1.0);
+            let chain_in = input_sum + fb;
+            let tap1 = leak_dc_ar(delay_c_ar(chain_in, max_delay_sec, delay_sec), 0.995);
+            let tap2 = leak_dc_ar(delay_c_ar(tap1, max_delay_sec, delay_sec), 0.995);
+            let tap3 = leak_dc_ar(delay_c_ar(tap2, max_delay_sec, delay_sec), 0.995);
+            let tap4 = leak_dc_ar(delay_c_ar(tap3, max_delay_sec, delay_sec), 0.995);
+            let tap5 = leak_dc_ar(delay_c_ar(tap4, max_delay_sec, delay_sec), 0.995);
+            let tap6 = leak_dc_ar(delay_c_ar(tap5, max_delay_sec, delay_sec), 0.995);
+            let tap7 = leak_dc_ar(delay_c_ar(tap6, max_delay_sec, delay_sec), 0.995);
+            let tap8 = leak_dc_ar(delay_c_ar(tap7, max_delay_sec, delay_sec), 0.995);
+
+            let feedback = clip(p.feedback, 0.0, 0.95);
+            let reverb_feedback = clip(p.reverb_feedback, 0.0, 0.7);
+            let pitch_ratio = pow(2.0, clip(p.pitch_feedback, -24.0, 24.0) / 12.0);
+            let pitched_fb = pitch_shift_ar(tap8, 0.12, pitch_ratio, 0.0, 0.004);
+            let verb_fb = free_verb_ar(pitched_fb, 1.0, 0.58 + reverb_feedback * 0.35, 0.45) * reverb_feedback;
+            local_out_ar(leak_dc_ar((pitched_fb + verb_fb) * feedback, 0.995));
+
+            let t1 = clip(p.tap1_mix, 0.0, 1.0);
+            let t2 = clip(p.tap2_mix, 0.0, 1.0);
+            let t3 = clip(p.tap3_mix, 0.0, 1.0);
+            let t4 = clip(p.tap4_mix, 0.0, 1.0);
+            let t5 = clip(p.tap5_mix, 0.0, 1.0);
+            let t6 = clip(p.tap6_mix, 0.0, 1.0);
+            let t7 = clip(p.tap7_mix, 0.0, 1.0);
+            let t8 = clip(p.tap8_mix, 0.0, 1.0);
+
+            let manual_mix = clip(p.manual_mix, 0.0, 1.0);
+            let level = clip(p.level, 0.0, 2.0);
+            let tap_mix =
+                tap1 * t1 + tap2 * t2 + tap3 * t3 + tap4 * t4 +
+                tap5 * t5 + tap6 * t6 + tap7 * t7 + tap8 * t8;
+            let mix = softclip((input_sum * manual_mix + tap_mix) * level);
+
+            let odd = softclip((tap1 + tap3 + tap5 + tap7) * level);
+            let even = softclip((tap2 + tap4 + tap6 + tap8) * level);
+            let rise = softclip((
+                tap1 * 0.125 + tap2 * 0.25 + tap3 * 0.375 + tap4 * 0.5 +
+                tap5 * 0.625 + tap6 * 0.75 + tap7 * 0.875 + tap8
+            ) * level);
+            let fall = softclip((
+                tap1 + tap2 * 0.875 + tap3 * 0.75 + tap4 * 0.625 +
+                tap5 * 0.5 + tap6 * 0.375 + tap7 * 0.25 + tap8 * 0.125
+            ) * level);
+
+            let env_decay = clip(p.env_decay, 0.01, 0.5);
+            let env_in = amplitude_kr(input_sum, 0.01, env_decay);
+            let env1 = amplitude_kr(tap1, 0.01, env_decay);
+            let env2 = amplitude_kr(tap2, 0.01, env_decay);
+            let env3 = amplitude_kr(tap3, 0.01, env_decay);
+            let env4 = amplitude_kr(tap4, 0.01, env_decay);
+            let env5 = amplitude_kr(tap5, 0.01, env_decay);
+            let env6 = amplitude_kr(tap6, 0.01, env_decay);
+            let env7 = amplitude_kr(tap7, 0.01, env_decay);
+            let env8 = amplitude_kr(tap8, 0.01, env_decay);
+
+            [
+                mix,
+                softclip(tap1 * level),
+                softclip(tap2 * level),
+                softclip(tap3 * level),
+                softclip(tap4 * level),
+                softclip(tap5 * level),
+                softclip(tap6 * level),
+                softclip(tap7 * level),
+                softclip(tap8 * level),
+                odd,
+                even,
+                rise,
+                fall,
+                env_in,
+                env1,
+                env2,
+                env3,
+                env4,
+                env5,
+                env6,
+                env7,
+                env8,
+            ]
+        })
+});

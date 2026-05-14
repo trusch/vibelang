@@ -1,0 +1,113 @@
+// kind=processor | category=eurorack | flavor=mutable-beads | inputs=in:2 | outputs=left:1,right:1 | params=time,pitch,size,shape,density,seed_mode,seed,quality,freeze,feedback,dry_wet,space,spread_time,spread_pitch,spread_size
+//
+// Mutable Instruments Beads - manual-grounded granular texture processor.
+//
+// Beads has no official firmware directory in `pichenettes/eurorack`, so this
+// is an honest approximation built around the closest available mi-UGens core:
+// `mi_clouds_ar`. The stereo input is folded to the Clouds core, then the core's
+// stereo output is shaped back into named `left` and `right` ports.
+//
+// Quality modes:
+//   0  cold digital        - clean 16-bit-style path
+//   1  sunny tape          - mild bandwidth loss and soft 12-bit-style grain
+//   2  scorched cassette   - darker, heavier 8-bit/sample-rate reduction
+//
+// Seed modes:
+//   0  latched             - no Clouds trigger, params drift continuously
+//   1  clocked             - `seed` pulses retrigger the Clouds grain cycle
+//   2  gated/triggered     - `seed` pulses also retrigger the Clouds grain cycle
+//
+// Fidelity notes:
+//   - `time`, `size`, and `pitch` spread are continuous `lf_noise2_kr`
+//     modulations, not true Beads per-grain attenurandomizer latching.
+//   - `feedback` is a practical LocalIn/LocalOut loop around the Clouds output,
+//     not the exact Beads hardware feedback path.
+//   - `space` is a small FreeVerb send after the granular core.
+
+define_synthdef("beads", |builder| {
+    builder
+        .input("in", 2)
+        .output("left", 1)
+        .output("right", 1)
+        .param("time", 0.5)
+        .param("pitch", 0.0)
+        .param("size", 0.5)
+        .param("shape", 0.5)
+        .param("density", 0.5)
+        .param("seed_mode", 0.0)
+        .param("seed", 0.0)
+        .param("quality", 0.0)
+        .param("freeze", 0.0)
+        .param("feedback", 0.0)
+        .param("dry_wet", 0.5)
+        .param("space", 0.2)
+        .param("spread_time", 0.1)
+        .param("spread_pitch", 0.0)
+        .param("spread_size", 0.0)
+        .body_map(|p| {
+            let dry_l = p.inputs["in"][0];
+            let dry_r = p.inputs["in"][1];
+
+            let feedback = clip(p.feedback, 0.0, 0.9);
+            let fb = local_in_ar(1.0);
+            let mono = ((dry_l + dry_r) * 0.5) + fb * feedback;
+
+            let spread_rate = 2.0 + clip(p.density, 0.0, 1.0) * 18.0;
+            let time_mod = lf_noise2_kr(spread_rate) * clip(p.spread_time, 0.0, 1.0) * 0.35;
+            let pitch_mod = lf_noise2_kr(spread_rate * 0.73) * clip(p.spread_pitch, 0.0, 1.0) * 12.0;
+            let size_mod = lf_noise2_kr(spread_rate * 1.41) * clip(p.spread_size, 0.0, 1.0) * 0.35;
+
+            let position = clip(p.time + time_mod, 0.0, 1.0);
+            let pitch = clip(p.pitch + pitch_mod, -24.0, 24.0);
+            let size = clip(p.size + size_mod, 0.0, 1.0);
+            let texture = clip(p.shape, 0.0, 1.0);
+            let density = clip(p.density, 0.0, 1.0);
+            let dry_wet = clip(p.dry_wet, 0.0, 1.0);
+            let freeze = clip(round(p.freeze), 0.0, 1.0);
+
+            let seed_mode = clip(round(p.seed_mode), 0.0, 2.0);
+            let seed_enabled = clip(seed_mode, 0.0, 1.0);
+            let seed_trig = trig1_kr(clip(p.seed, 0.0, 1.0), 0.001) * seed_enabled;
+
+            // mi_clouds_ar args: in, pit, pos, size, dens, tex, drywet,
+            //   in_gain, spread, rvb, fb, freeze, mode, lofi, trig
+            // Fixed: in_gain=1, spread=1, rvb=0, fb=0, mode=0 (GRANULAR),
+            //        lofi=0. Quality, feedback, and space are modeled outside.
+            let clouds = channels(
+                mi_clouds_ar(
+                    mono, pitch, position, size, density, texture, dry_wet,
+                    1.0, 1.0, 0.0, 0.0, freeze, 0, 0, seed_trig
+                ),
+                2
+            );
+
+            let core_l = leak_dc_ar(clouds[0], 0.995);
+            let core_r = leak_dc_ar(clouds[1], 0.995);
+
+            let sunny_l = lpf_ar((latch_ar(core_l, impulse_ar(24000.0, 0.0)) * 1.12).tanh(), 10500.0);
+            let sunny_r = lpf_ar((latch_ar(core_r, impulse_ar(24000.0, 0.0)) * 1.12).tanh(), 10500.0);
+            let scorched_l = lpf_ar((latch_ar(core_l, impulse_ar(11025.0, 0.0)) * 1.75).tanh(), 4200.0);
+            let scorched_r = lpf_ar((latch_ar(core_r, impulse_ar(11025.0, 0.0)) * 1.75).tanh(), 4200.0);
+
+            let quality = clip(round(p.quality), 0.0, 2.0);
+            let cold_w = clip(1.0 - abs(quality - 0.0), 0.0, 1.0);
+            let sunny_w = clip(1.0 - abs(quality - 1.0), 0.0, 1.0);
+            let scorched_w = clip(1.0 - abs(quality - 2.0), 0.0, 1.0);
+
+            let quality_l = core_l * cold_w + sunny_l * sunny_w + scorched_l * scorched_w;
+            let quality_r = core_r * cold_w + sunny_r * sunny_w + scorched_r * scorched_w;
+
+            let space = clip(p.space, 0.0, 1.0);
+            let verb_src = (quality_l + quality_r) * 0.5;
+            let verb = free_verb_ar(verb_src, 1.0, 0.22 + space * 0.35, 0.55);
+            let spacious_l = quality_l + verb * space * 0.55;
+            let spacious_r = quality_r + delay_c_ar(verb, 0.08, 0.011 + space * 0.013) * space * 0.55;
+
+            local_out_ar(leak_dc_ar((spacious_l + spacious_r) * 0.5, 0.995));
+
+            [
+                softclip(leak_dc_ar(spacious_l, 0.995)),
+                softclip(leak_dc_ar(spacious_r, 0.995)),
+            ]
+        })
+});
