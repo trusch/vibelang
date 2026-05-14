@@ -1,0 +1,333 @@
+// ReSynthesizer-style rack patch.
+//
+// Signal flow:
+//   Morphagene reel + Spectraphon dual partial banks
+//     (Morphagene stereo bus feeds Spectraphon analyze_a/analyze_b)
+//     -> X-PAN spectral/granular crossfade and stereo blend
+//     -> QPAS animated filter
+//     -> DXG low-pass gate
+//     -> Mimeophon stereo delay
+//     -> main bus
+
+import "stdlib/instruments/sampler/morphagene.vibe";
+import "stdlib/instruments/spectral/spectraphon_dual.vibe";
+import "stdlib/instruments/eurorack/maths.vibe";
+import "stdlib/instruments/eurorack/wogglebug.vibe";
+import "stdlib/instruments/eurorack/tempi.vibe";
+import "stdlib/instruments/eurorack/rene.vibe";
+import "stdlib/instruments/eurorack/prss_pnt.vibe";
+import "stdlib/instruments/eurorack/cv_bus.vibe";
+import "stdlib/processors/mixers/x_pan.vibe";
+import "stdlib/processors/filters/qpas.vibe";
+import "stdlib/processors/dynamics/dxg.vibe";
+import "stdlib/processors/delays/mimeophon.vibe";
+
+set_tempo(84);
+
+// Local glue: named inputs can read a whole stereo group bus, while X-PAN's
+// crossfade channels expect mono voice outputs. These taps convert raw stereo
+// source groups into mono control points without changing stdlib modules.
+define_synthdef("resynth_bus_tap_mono", |builder| {
+    builder
+        .input("in", 2)
+        .output("out")
+        .param("balance", 0.0)
+        .param("level", 1.0)
+        .body_map(|p| {
+            let bal = clip(p.balance, -1.0, 1.0);
+            let left_gain = (1.0 - bal) * 0.5;
+            let right_gain = (1.0 + bal) * 0.5;
+            let mono = p.inputs["in"][0] * left_gain + p.inputs["in"][1] * right_gain;
+            [softclip(mono * p.level)]
+        })
+});
+
+define_group("ctrl", || { });
+define_group("raw_morphagene", || { });
+define_group("raw_spectral_odd", || { });
+define_group("raw_spectral_even", || { });
+define_group("taps", || { });
+define_group("rack", || { });
+
+group("ctrl").gain(0.0);
+group("raw_morphagene").gain(0.0);
+group("raw_spectral_odd").gain(0.0);
+group("raw_spectral_even").gain(0.0);
+group("taps").gain(0.0);
+group("rack").gain(db(-6));
+
+let reel = allocate_buffer("resynthesizer_reel", 384000, 2);
+
+let bake_reel = true;
+if bake_reel {
+    voice("resynthesizer_reel_fill")
+        .synth("morphagene_reel_fill")
+        .set_param("bufnum", reel.bufnum)
+        .set_param("preset", 3.0)
+        .set_param("freq", 92.5)
+        .set_param("amp", 0.55)
+        .run();
+}
+
+let tempi = voice("tempi_master")
+    .synth("tempi")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("bpm", 84.0)
+    .set_param("mult1", 1.0)
+    .set_param("mult2", 0.5)
+    .set_param("mult3", 2.0)
+    .set_param("mult4", 3.0)
+    .set_param("mult5", 0.25)
+    .set_param("mult6", 1.5);
+
+let rene = voice("rene_cartesian")
+    .synth("rene")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("note00", 48.0)
+    .set_param("note01", 50.0)
+    .set_param("note02", 55.0)
+    .set_param("note03", 57.0)
+    .set_param("note10", 52.0)
+    .set_param("note11", 55.0)
+    .set_param("note12", 59.0)
+    .set_param("note13", 62.0)
+    .set_param("note20", 43.0)
+    .set_param("note21", 48.0)
+    .set_param("note22", 55.0)
+    .set_param("note23", 60.0)
+    .set_param("note30", 50.0)
+    .set_param("note31", 53.0)
+    .set_param("note32", 57.0)
+    .set_param("note33", 65.0);
+
+let woggle = voice("woggle_motion")
+    .synth("wogglebug")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("rate", 1.75)
+    .set_param("depth_v", 6.5)
+    .set_param("chaos", 0.72)
+    .set_param("bipolar", 1.0);
+
+let maths = voice("maths_functions")
+    .synth("maths")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("rise1", 0.18)
+    .set_param("fall1", 1.10)
+    .set_param("shape1", 0.85)
+    .set_param("cycle1", 0.65)
+    .set_param("rise4", 0.04)
+    .set_param("fall4", 2.80)
+    .set_param("shape4", 0.25)
+    .set_param("cycle4", 0.35)
+    .set_param("ch2", 0.35)
+    .set_param("ch2_scale", 0.6)
+    .set_param("ch3", -0.25)
+    .set_param("ch3_scale", 0.45);
+
+let press = voice("touch_macro")
+    .synth("prss_pnt")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("press1", 0.62)
+    .set_param("press2", 0.38)
+    .set_param("press3", 0.25)
+    .set_param("press4", 0.72)
+    .set_param("threshold", 0.08)
+    .set_param("slew", 0.16);
+
+let cvbus = voice("cv_bus_mix")
+    .synth("cv_bus")
+    .group("ctrl")
+    .modulator_only()
+    .set_param("atten1", 0.85)
+    .set_param("atten2", 0.65)
+    .set_param("atten3", 0.45)
+    .set_param("atten4", 0.35)
+    .set_param("offset1", 0.10)
+    .set_param("offset2", 0.20)
+    .set_param("offset3", 0.05)
+    .set_param("offset4", 0.0)
+    .set_param("norm12", 0.45)
+    .set_param("norm23", 0.25)
+    .set_param("norm34", 0.15);
+
+tempi.output("ch1").to_param(rene, "clock_x");
+tempi.output("ch2").to_param(rene, "clock_y");
+maths.param("trig1").modulate_by(tempi, "ch3");
+tempi.output("ch4").to_param(maths, "trig4");
+
+woggle.output("smooth").to_param(cvbus, "in1").scale(0.8).offset(0.0);
+maths.output("sum").to_param(cvbus, "in2").scale(0.7).offset(0.0);
+press.output("pressure1").to_param(cvbus, "in3").scale(0.8).offset(0.0);
+rene.output("cv").to_param(cvbus, "in4").scale(0.65).offset(0.0);
+
+let morph = voice("morphagene_reel")
+    .synth("morphagene")
+    .group("raw_morphagene")
+    .set_param("bufnum", reel.bufnum)
+    .set_param("num_splices", 8.0)
+    .set_param("organize", 0.25)
+    .set_param("sos", 0.0)
+    .set_param("vari_speed", 0.7937)
+    .set_param("slide", 0.10)
+    .set_param("gene_size", 0.24)
+    .set_param("morph", 0.50)
+    .set_param("amp", 0.42)
+    .gain(db(-8));
+
+let spec = voice("spectraphon_resynth")
+    .synth("spectraphon_dual")
+    .group("raw_spectral_odd")
+    .set_param("freq_a", 146.8)
+    .set_param("freq_b", 220.0)
+    .set_param("amp", 0.21)
+    .set_param("routing_mode", 2.0)
+    .set_param("mode_a", 1.0)
+    .set_param("mode_b", 1.0)
+    .set_param("partials_a", 0.72)
+    .set_param("partials_b", 0.58)
+    .set_param("slide_a", 0.44)
+    .set_param("slide_b", 0.63)
+    .set_param("focus_a", 0.52)
+    .set_param("focus_b", 0.38)
+    .set_param("a_fm_index", 0.04)
+    .set_param("b_fm_index", 0.02)
+    .gain(db(-11));
+
+spec.output("odd_a").to(group("raw_spectral_odd"));
+spec.output("odd_b").to(group("raw_spectral_odd"));
+spec.output("even_a").to(group("raw_spectral_even"));
+spec.output("even_b").to(group("raw_spectral_even"));
+
+rene.output("cv").to_param(spec, "freq_a").scale(170.0).offset(130.0);
+cvbus.output("bus4").to_param(spec, "freq_b").scale(120.0).offset(180.0);
+woggle.output("stepped").to_param(spec, "partials_a").scale(0.30).offset(0.48);
+woggle.output("woggle").to_param(spec, "partials_b").scale(0.28).offset(0.42);
+cvbus.output("bus1").to_param(spec, "slide_a").scale(0.38).offset(0.38);
+cvbus.output("bus2").to_param(spec, "focus_b").scale(0.42).offset(0.30);
+maths.output("ch4").to_param(spec, "a_fm_index").scale(0.08).offset(0.02);
+woggle.output("smooth").to_param(spec, "b_fm_index").scale(0.05).offset(0.01);
+
+tempi.output("ch5").to_param(morph, "clk");
+rene.output("cv").to_param(morph, "organize").scale(0.42).offset(0.42);
+maths.output("ch1").to_param(morph, "gene_size").scale(0.30).offset(0.06);
+maths.output("ch4").to_param(morph, "morph").scale(0.30).offset(0.35);
+woggle.output("stepped").to_param(morph, "slide").scale(0.35).offset(0.18);
+maths.param("trig1").modulate_by(morph, "eosg").scale(0.05).offset(0.0);
+
+let odd_tap = voice("tap_spectral_odd")
+    .synth("resynth_bus_tap_mono")
+    .group("taps")
+    .set_param("balance", -0.2)
+    .set_param("level", 0.9);
+odd_tap.input("in").from(group("raw_spectral_odd"));
+
+let even_tap = voice("tap_spectral_even")
+    .synth("resynth_bus_tap_mono")
+    .group("taps")
+    .set_param("balance", 0.2)
+    .set_param("level", 0.9);
+even_tap.input("in").from(group("raw_spectral_even"));
+
+let morph_tap = voice("tap_morphagene")
+    .synth("resynth_bus_tap_mono")
+    .group("taps")
+    .set_param("balance", 0.0)
+    .set_param("level", 0.75);
+morph_tap.input("in").from(group("raw_morphagene"));
+
+spec.input("analyze_a").from(morph_tap);
+spec.input("analyze_b").from(morph_tap);
+
+let xpan = voice("xpan_motion")
+    .synth("x_pan")
+    .group("rack")
+    .set_param("ch1_gain", 0.72)
+    .set_param("ch2_gain", 0.56)
+    .set_param("aux_gain", 0.40)
+    .set_param("level", 0.72);
+xpan.input("ch1_a").from(odd_tap);
+xpan.input("ch1_b").from(even_tap);
+xpan.input("ch2_a").from(morph_tap);
+xpan.input("ch2_b").from(odd_tap);
+xpan.input("aux").from(group("raw_morphagene"));
+xpan.output("out").mute();
+
+let qpas = voice("qpas_filter")
+    .synth("qpas")
+    .group("rack")
+    .set_param("cutoff", 1600.0)
+    .set_param("q", 0.42)
+    .set_param("radiate", 0.35)
+    .set_param("mode", 3.0)
+    .set_param("input_gain", 0.72)
+    .set_param("mix", 0.92)
+    .set_param("level", 0.86);
+qpas.input("in").from(xpan);
+qpas.output("out").mute();
+
+let dxg = voice("dxg_gate")
+    .synth("dxg")
+    .group("rack")
+    .set_param("ctrl1", 0.48)
+    .set_param("ctrl2", 0.30)
+    .set_param("strike_level", 0.65)
+    .set_param("strike_decay", 0.65)
+    .set_param("ch1_gain", 0.84)
+    .set_param("ch2_gain", 0.32)
+    .set_param("aux_gain", 0.10)
+    .set_param("level", 0.82);
+dxg.input("ch1").from(qpas);
+dxg.input("ch2").from(group("raw_morphagene"));
+dxg.output("out").mute();
+
+let echo = voice("mimeophon_space")
+    .synth("mimeophon")
+    .group("rack")
+    .set_param("time", 0.34)
+    .set_param("zone", 1.0)
+    .set_param("repeats", 0.48)
+    .set_param("skew", 0.18)
+    .set_param("color", -0.15)
+    .set_param("halo", 0.42)
+    .set_param("mix", 0.34)
+    .set_param("level", 0.78)
+    .gain(db(-3));
+echo.input("in").from(dxg);
+
+cvbus.output("bus3").to_param(xpan, "ch1_fade").scale(0.48).offset(0.50);
+maths.output("inv").to_param(xpan, "ch1_pan").scale(0.70).offset(-0.12);
+woggle.output("smooth").to_param(xpan, "ch2_pan").scale(0.80).offset(0.10);
+press.output("pressure2").to_param(xpan, "aux_gain").scale(0.42).offset(0.24);
+
+cvbus.output("sum").to_param(qpas, "cutoff").scale(4600.0).offset(520.0);
+woggle.output("woggle").to_param(qpas, "radiate").scale(0.48).offset(0.20);
+maths.output("eor4").to_param(qpas, "q").scale(0.65).offset(0.18);
+
+maths.output("or").to_param(dxg, "ctrl1").scale(0.55).offset(0.22);
+press.output("pressure4").to_param(dxg, "ctrl2").scale(0.55).offset(0.18);
+
+woggle.output("smooth").to_param(echo, "skew").scale(0.72).offset(0.0);
+cvbus.output("bus2").to_param(echo, "zone").scale(2.2).offset(0.4);
+press.output("pressure3").to_param(echo, "mix").scale(0.30).offset(0.22);
+tempi.output("ch6").to_param(echo, "repeats").scale(0.18).offset(0.42);
+
+tempi.run();
+rene.run();
+woggle.run();
+maths.run();
+press.run();
+cvbus.run();
+morph.run();
+spec.run();
+odd_tap.run();
+even_tap.run();
+morph_tap.run();
+xpan.run();
+qpas.run();
+dxg.run();
+echo.run();
