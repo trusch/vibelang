@@ -1,0 +1,81 @@
+// Verbos Touchplate Keyboard - pressure keyboard and tunable CV row.
+
+define_synthdef("verbos_touchplate", |builder| {
+    builder
+        .output_kr("pitch")
+        .output_kr("gate")
+        .output_kr("trigger")
+        .output_kr("pressure")
+        .output_kr("bend")
+        .output_kr("tune_cv")
+        .output_kr("tune_gate")
+        .output_kr("tune_pressure")
+        .param("key", 0.0)
+        .param("octave", 1.0)
+        .param("pressure", 0.0)
+        .param("bend", 0.0)
+        .param("tune_key", 0.0)
+        .param("tune_pressure", 0.0)
+        .param("tune1", 0.0)
+        .param("tune2", 0.1666667)
+        .param("tune3", 0.3333333)
+        .param("tune4", 0.4166667)
+        .param("tune5", 0.5833333)
+        .param("tune6", 0.75)
+        .param("tune7", 0.9166667)
+        .param("tune8", 1.0)
+        .param("threshold", 0.05)
+        .param("slew", 0.1)
+        .body_map(|p| {
+            let key = clip_kr(round(p.key), 0.0, 31.0);
+            let octave = clip_kr(round(p.octave), 0.0, 3.0);
+            let pressure_raw = clip_kr(p.pressure, 0.0, 1.0);
+            let bend = clip_kr(p.bend, -1.0, 1.0);
+            let tune_key = clip_kr(round(p.tune_key), 0.0, 7.0);
+            let tune_pressure_raw = clip_kr(p.tune_pressure, 0.0, 1.0);
+            let threshold = clip_kr(p.threshold, 0.0, 1.0);
+            let slew = clip_kr(p.slew, 0.0, 1.0);
+            let pitch_slew = slew * 0.01;
+            let pressure_slew = slew * 0.05;
+
+            let pitch_raw = key / 12.0 + octave;
+            let pitch = lag_ud_kr(pitch_raw, pitch_slew, pitch_slew);
+            let gate = clip_kr(in_range_kr(pressure_raw, threshold, 1.0), 0.0, 1.0);
+            let trigger = clip_kr(trig1_kr(gate, 0.01), 0.0, 1.0);
+            let pressure = clip_kr(
+                lag_ud_kr(pressure_raw, pressure_slew, pressure_slew),
+                0.0,
+                1.0
+            );
+
+            let m1 = (1.0 - abs(tune_key - 0.0)).max(0.0);
+            let m2 = (1.0 - abs(tune_key - 1.0)).max(0.0);
+            let m3 = (1.0 - abs(tune_key - 2.0)).max(0.0);
+            let m4 = (1.0 - abs(tune_key - 3.0)).max(0.0);
+            let m5 = (1.0 - abs(tune_key - 4.0)).max(0.0);
+            let m6 = (1.0 - abs(tune_key - 5.0)).max(0.0);
+            let m7 = (1.0 - abs(tune_key - 6.0)).max(0.0);
+            let m8 = (1.0 - abs(tune_key - 7.0)).max(0.0);
+            let tune_cv = m1 * clip_kr(p.tune1, -2.0, 2.0)
+                + m2 * clip_kr(p.tune2, -2.0, 2.0)
+                + m3 * clip_kr(p.tune3, -2.0, 2.0)
+                + m4 * clip_kr(p.tune4, -2.0, 2.0)
+                + m5 * clip_kr(p.tune5, -2.0, 2.0)
+                + m6 * clip_kr(p.tune6, -2.0, 2.0)
+                + m7 * clip_kr(p.tune7, -2.0, 2.0)
+                + m8 * clip_kr(p.tune8, -2.0, 2.0);
+
+            let tune_gate = clip_kr(
+                in_range_kr(tune_pressure_raw, threshold, 1.0),
+                0.0,
+                1.0
+            );
+            let tune_pressure = clip_kr(
+                lag_ud_kr(tune_pressure_raw, pressure_slew, pressure_slew),
+                0.0,
+                1.0
+            );
+
+            [pitch, gate, trigger, pressure, bend, tune_cv, tune_gate, tune_pressure]
+        })
+});
