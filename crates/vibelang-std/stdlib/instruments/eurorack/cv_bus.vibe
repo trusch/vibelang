@@ -1,0 +1,38 @@
+// Make Noise CV Bus — passive-style kr router / normaliser.
+//
+// Patch CV into `in1..in4` via `.to_param` or `.modulate_by`. Each channel has
+// attenuate/offset controls. `norm12`, `norm23`, and `norm34` add the previous
+// bus into the next bus, approximating a normalled utility row.
+
+define_synthdef("cv_bus", |builder| {
+    builder
+        .output_kr("bus1")
+        .output_kr("bus2")
+        .output_kr("bus3")
+        .output_kr("bus4")
+        .output_kr("sum")
+        .param("in1", 0.0)
+        .param("in2", 0.0)
+        .param("in3", 0.0)
+        .param("in4", 0.0)
+        .param("atten1", 1.0)
+        .param("atten2", 1.0)
+        .param("atten3", 1.0)
+        .param("atten4", 1.0)
+        .param("offset1", 0.0)
+        .param("offset2", 0.0)
+        .param("offset3", 0.0)
+        .param("offset4", 0.0)
+        .param("norm12", 1.0)
+        .param("norm23", 1.0)
+        .param("norm34", 1.0)
+        .body_map(|p| {
+            let bus1 = clip_kr(p.in1 * p.atten1 + p.offset1, -1.0, 1.0);
+            let bus2 = clip_kr(p.in2 * p.atten2 + p.offset2 + bus1 * p.norm12, -1.0, 1.0);
+            let bus3 = clip_kr(p.in3 * p.atten3 + p.offset3 + bus2 * p.norm23, -1.0, 1.0);
+            let bus4 = clip_kr(p.in4 * p.atten4 + p.offset4 + bus3 * p.norm34, -1.0, 1.0);
+            let sum_out = clip_kr(bus1 + bus2 + bus3 + bus4, -1.0, 1.0);
+
+            [bus1, bus2, bus3, bus4, sum_out]
+        })
+});

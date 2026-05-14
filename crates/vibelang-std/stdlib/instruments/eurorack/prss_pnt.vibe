@@ -1,0 +1,37 @@
+// Make Noise PrssPnt — four pressable touch CV pads.
+//
+// `pressN` params are patchable pressure values in 0..1. Each pad emits a
+// slewed pressure CV and a held +5 V gate when pressure crosses `threshold`.
+
+define_synthdef("prss_pnt", |builder| {
+    builder
+        .output_kr("pressure1")
+        .output_kr("gate1")
+        .output_kr("pressure2")
+        .output_kr("gate2")
+        .output_kr("pressure3")
+        .output_kr("gate3")
+        .output_kr("pressure4")
+        .output_kr("gate4")
+        .param("press1", 0.0)
+        .param("press2", 0.0)
+        .param("press3", 0.0)
+        .param("press4", 0.0)
+        .param("threshold", 0.05)
+        .param("slew", 0.01)
+        .body_map(|p| {
+            let slew = p.slew.max(0.0);
+            let threshold = clip(p.threshold, 0.0, 1.0);
+            let p1 = clip_kr(lag_ud_kr(clip(p.press1, 0.0, 1.0), slew, slew), 0.0, 1.0);
+            let p2 = clip_kr(lag_ud_kr(clip(p.press2, 0.0, 1.0), slew, slew), 0.0, 1.0);
+            let p3 = clip_kr(lag_ud_kr(clip(p.press3, 0.0, 1.0), slew, slew), 0.0, 1.0);
+            let p4 = clip_kr(lag_ud_kr(clip(p.press4, 0.0, 1.0), slew, slew), 0.0, 1.0);
+
+            let g1 = clip_kr(in_range_kr(p1, threshold, 1.0) * 0.5, -1.0, 1.0);
+            let g2 = clip_kr(in_range_kr(p2, threshold, 1.0) * 0.5, -1.0, 1.0);
+            let g3 = clip_kr(in_range_kr(p3, threshold, 1.0) * 0.5, -1.0, 1.0);
+            let g4 = clip_kr(in_range_kr(p4, threshold, 1.0) * 0.5, -1.0, 1.0);
+
+            [p1, g1, p2, g2, p3, g3, p4, g4]
+        })
+});
