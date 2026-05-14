@@ -41,6 +41,30 @@ const CASES: &[ProcessorCase] = &[
         out_channels: 2,
     },
     ProcessorCase {
+        import_path: "stdlib/processors/filters/qpas.vibe",
+        synthdef: "qpas",
+        inputs: &[("in", 2)],
+        out_channels: 2,
+    },
+    ProcessorCase {
+        import_path: "stdlib/processors/delays/mimeophon.vibe",
+        synthdef: "mimeophon",
+        inputs: &[("in", 2)],
+        out_channels: 2,
+    },
+    ProcessorCase {
+        import_path: "stdlib/processors/dynamics/dxg.vibe",
+        synthdef: "dxg",
+        inputs: &[
+            ("ch1", 2),
+            ("strike1", 1),
+            ("ch2", 2),
+            ("strike2", 1),
+            ("aux", 2),
+        ],
+        out_channels: 2,
+    },
+    ProcessorCase {
         import_path: "stdlib/processors/modulation/ring_mod_mono.vibe",
         synthdef: "ring_mod_mono",
         inputs: &[("carrier", 1), ("modulator", 1)],
@@ -62,6 +86,18 @@ const CASES: &[ProcessorCase] = &[
         import_path: "stdlib/processors/mixers/mixer4_stereo.vibe",
         synthdef: "mixer4_stereo",
         inputs: &[("ch1", 2), ("ch2", 2), ("ch3", 2), ("ch4", 2)],
+        out_channels: 2,
+    },
+    ProcessorCase {
+        import_path: "stdlib/processors/mixers/x_pan.vibe",
+        synthdef: "x_pan",
+        inputs: &[
+            ("ch1_a", 1),
+            ("ch1_b", 1),
+            ("ch2_a", 1),
+            ("ch2_b", 1),
+            ("aux", 2),
+        ],
         out_channels: 2,
     },
 ];
@@ -120,10 +156,42 @@ fn stdlib_processors_import_and_register_manifests() {
     }
 }
 
+#[test]
+fn stdlib_processors_index_imports_catalogue() {
+    clear_synthdef_registry();
+    clear_synthdef_inputs_registry();
+    clear_synthdef_outputs_registry();
+    set_deploy_callback(|_| Ok(()));
+
+    let script_path = write_import_paths(&["stdlib/processors/index.vibe"]);
+    let mut engine = ScriptEngine::new();
+    engine.add_import_path(env!("CARGO_MANIFEST_DIR"));
+    engine
+        .execute_file(&script_path)
+        .expect("processor index import should execute");
+    fs::remove_file(&script_path).ok();
+
+    for case in CASES {
+        assert!(
+            synthdef_exists(case.synthdef),
+            "index should import {}",
+            case.synthdef
+        );
+    }
+}
+
 fn write_import_script(cases: &[ProcessorCase]) -> PathBuf {
+    let imports = cases
+        .iter()
+        .map(|case| case.import_path)
+        .collect::<Vec<_>>();
+    write_import_paths(&imports)
+}
+
+fn write_import_paths(imports: &[&str]) -> PathBuf {
     let mut script = String::new();
-    for case in cases {
-        script.push_str(&format!("import \"{}\";\n", case.import_path));
+    for import in imports {
+        script.push_str(&format!("import \"{}\";\n", import));
     }
 
     let path = temp_script_path();

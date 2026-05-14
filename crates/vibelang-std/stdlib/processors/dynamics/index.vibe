@@ -1,0 +1,3 @@
+// Dynamics Processors Index
+
+import "stdlib/processors/dynamics/dxg.vibe";

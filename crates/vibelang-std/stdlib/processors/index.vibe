@@ -4,6 +4,8 @@
 // Usage: import "stdlib/processors/index.vibe"
 
 import "stdlib/processors/filters/index.vibe";
+import "stdlib/processors/delays/index.vibe";
+import "stdlib/processors/dynamics/index.vibe";
 import "stdlib/processors/mixers/index.vibe";
 import "stdlib/processors/modulation/index.vibe";
 import "stdlib/processors/utility/index.vibe";

@@ -2,3 +2,4 @@
 
 import "stdlib/processors/filters/lowpass_mono.vibe";
 import "stdlib/processors/filters/lowpass_stereo.vibe";
+import "stdlib/processors/filters/qpas.vibe";

@@ -1,0 +1,64 @@
+// kind=processor | category=filters | flavor=qpas | inputs=in:2 | outputs=out:2 | params=cutoff,q,radiate,mode,input_gain,mix,level
+//
+// Make Noise QPAS-inspired stereo multi-peak filter approximation.
+// Source reference: https://www.makenoisemusic.com/modules/qpas/
+
+define_synthdef("qpas")
+    .input("in", 2)
+    .param("cutoff", 1200.0)
+    .param("q", 0.35)
+    .param("radiate", 0.25)
+    .param("mode", 0.0)
+    .param("input_gain", 0.8)
+    .param("mix", 1.0)
+    .param("level", 1.0)
+    .body_map(|p| {
+        let dry_l = p.inputs["in"][0] * p.input_gain;
+        let dry_r = p.inputs["in"][1] * p.input_gain;
+        let cutoff = clip(p.cutoff, 30.0, 16000.0);
+        let q = clip(p.q, 0.05, 1.0);
+        let radiate = clip(p.radiate, 0.0, 1.0);
+        let spread = radiate * 0.35;
+
+        let low_l_a = rlpf_ar(dry_l, cutoff * (1.0 - spread * 0.5), q);
+        let low_l_b = rlpf_ar(dry_l, cutoff * (1.0 + spread), q);
+        let low_r_a = rlpf_ar(dry_r, cutoff * (1.0 + spread * 0.5), q);
+        let low_r_b = rlpf_ar(dry_r, cutoff * (1.0 - spread), q);
+        let low_l = (low_l_a + low_l_b) * 0.5;
+        let low_r = (low_r_a + low_r_b) * 0.5;
+
+        let band_l = (
+            bpf_ar(dry_l, cutoff * (1.0 - spread), q) +
+            bpf_ar(dry_l, cutoff * (1.0 + spread * 1.5), q)
+        ) * 0.5;
+        let band_r = (
+            bpf_ar(dry_r, cutoff * (1.0 + spread), q) +
+            bpf_ar(dry_r, cutoff * (1.0 - spread * 1.5), q)
+        ) * 0.5;
+
+        let high_l = rhpf_ar(dry_l, cutoff * (1.0 + spread * 0.5), q);
+        let high_r = rhpf_ar(dry_r, cutoff * (1.0 - spread * 0.5), q);
+        let smile_l = low_l * 0.45 + high_l * 0.45 + band_l * radiate * 0.35;
+        let smile_r = low_r * 0.45 + high_r * 0.45 + band_r * radiate * 0.35;
+
+        let mode = clip(p.mode, 0.0, 3.0);
+        let low_w = clip(1.0 - abs(mode - 0.0), 0.0, 1.0);
+        let band_w = clip(1.0 - abs(mode - 1.0), 0.0, 1.0);
+        let high_w = clip(1.0 - abs(mode - 2.0), 0.0, 1.0);
+        let smile_w = clip(1.0 - abs(mode - 3.0), 0.0, 1.0);
+
+        let wet_l = leak_dc_ar(
+            low_l * low_w + band_l * band_w + high_l * high_w + smile_l * smile_w,
+            0.995
+        );
+        let wet_r = leak_dc_ar(
+            low_r * low_w + band_r * band_w + high_r * high_w + smile_r * smile_w,
+            0.995
+        );
+        let mix = clip(p.mix, 0.0, 1.0);
+
+        [
+            softclip(((1.0 - mix) * dry_l + mix * wet_l) * p.level),
+            softclip(((1.0 - mix) * dry_r + mix * wet_r) * p.level)
+        ]
+    });

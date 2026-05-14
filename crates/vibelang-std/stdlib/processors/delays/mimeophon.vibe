@@ -1,0 +1,47 @@
+// kind=processor | category=delays | flavor=mimeophon | inputs=in:2 | outputs=out:2 | params=time,zone,repeats,skew,color,halo,mix,level
+//
+// Make Noise Mimeophon-inspired stereo color repeater approximation.
+// Source reference: https://www.makenoisemusic.com/modules/mimeophon/
+
+define_synthdef("mimeophon")
+    .input("in", 2)
+    .param("time", 0.25)
+    .param("zone", 0.0)
+    .param("repeats", 0.45)
+    .param("skew", 0.15)
+    .param("color", 0.0)
+    .param("halo", 0.25)
+    .param("mix", 0.35)
+    .param("level", 0.9)
+    .body_map(|p| {
+        let dry_l = p.inputs["in"][0];
+        let dry_r = p.inputs["in"][1];
+        let zone = clip(p.zone, -2.0, 4.0);
+        let base_time = clip(p.time * pow(2.0, zone), 0.002, 8.0);
+        let skew = clip(p.skew, -1.0, 1.0);
+        let time_l = clip(base_time * (1.0 - skew * 0.45), 0.002, 8.0);
+        let time_r = clip(base_time * (1.0 + skew * 0.45), 0.002, 8.0);
+
+        let repeats = clip(p.repeats, 0.0, 0.95);
+        let decay = 0.08 + repeats * 12.0;
+        let repeat_l = comb_l_ar(dry_l, 8.0, time_l, decay) - dry_l;
+        let repeat_r = comb_l_ar(dry_r, 8.0, time_r, decay) - dry_r;
+
+        let color = clip(p.color, -1.0, 1.0);
+        let cutoff = 700.0 + (color + 1.0) * 5200.0;
+        let bright = clip(color, 0.0, 1.0);
+        let color_l = lpf_ar(repeat_l, cutoff) + hpf_ar(repeat_l, cutoff) * bright * 0.25;
+        let color_r = lpf_ar(repeat_r, cutoff) + hpf_ar(repeat_r, cutoff) * bright * 0.25;
+
+        let halo = clip(p.halo, 0.0, 1.0);
+        let halo_time_l = 0.017 + halo * 0.071;
+        let halo_time_r = 0.023 + halo * 0.083;
+        let smear_l = allpass_l_ar(color_l + color_r * halo * 0.35, 0.25, halo_time_l, 0.4 + halo * 3.0);
+        let smear_r = allpass_l_ar(color_r + color_l * halo * 0.35, 0.25, halo_time_r, 0.4 + halo * 3.0);
+        let mix = clip(p.mix, 0.0, 1.0);
+
+        [
+            softclip(((1.0 - mix) * dry_l + mix * leak_dc_ar(smear_l, 0.995)) * p.level),
+            softclip(((1.0 - mix) * dry_r + mix * leak_dc_ar(smear_r, 0.995)) * p.level)
+        ]
+    });
