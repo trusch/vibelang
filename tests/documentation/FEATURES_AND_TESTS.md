@@ -80,6 +80,8 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 - `.solo()` / `.unsolo()` - Solo/unsolo voice
 - `.choke_group(name)` - Set choke group (exclusive triggering)
 - `.round_robin(count)` - Set round-robin count for samples
+- `.input(name).from(source)` - Route a source voice or group into a declared named input
+- `.input(name).from_current_group()` / `.disconnect()` - Patch from the voice group or silence
 - `.apply()` - Apply configuration (required)
 
 **Unit Tests**: `crates/vibelang-core2/src/handlers/voices.rs`
@@ -92,6 +94,12 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 - Voice creation with polyphony
 - Multiple voices in group
 - Mute/solo states
+
+**Named Input Runtime Tests**: `crates/vibelang-rhai/tests/named_input_routes_runtime.rs`
+- Script-authored input routes to declared synthdef inputs
+- Unpatched declared inputs route to valid shared silent buses
+- Atomic/retryable route materialization after backend failures
+- Width mismatch rejection for group/stereo sources routed to mono inputs
 
 ---
 
@@ -302,6 +310,7 @@ This document catalogs all features in VibeLang (vibelang-core2) and tracks test
 **API Functions**:
 - `define_synthdef(name)` - Create synthdef builder
 - `.param(name, default)` - Add parameter
+- Rust-side `SynthDef::input(name, channels)` - Declare a named input port for script patching
 - `.body(closure)` - Define signal graph
 
 **UGen Functions** (via vibelang-dsp):

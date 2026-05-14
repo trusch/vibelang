@@ -22,6 +22,14 @@ updated: 2026-03-11T08:36:07.077596029+01:00
 - `.param("name", default_value)` → self — declare parameter
 - `.body(|params...| { ... })` → registers the synthdef
 
+## Named Inputs
+
+Synthdefs can expose declared named input ports for script-side patching with
+`voice("target").input("name").from(source)`, but the stable declaration
+surface is currently Rust-side `SynthDef::input(name, channels)`. Do not use
+Rhai `define_synthdef(...).input(...)` examples until that authoring surface
+exists.
+
 ## Structure
 
 ```rhai

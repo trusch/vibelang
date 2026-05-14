@@ -47,6 +47,13 @@ define_synthdef("my_bass")
 
 Every synthdef should define: `freq` (Hz), `amp` (0.0–1.0), `gate` (1.0=on, 0.0=off).
 
+## Named Inputs
+
+Some runtime-provided or Rust-registered synthdefs declare named input ports.
+Scripts patch those ports from voices or groups with `voice("target").input("name")`.
+Unpatched declared inputs receive shared silent buses, and stereo/group sources
+are not implicitly downmixed into mono inputs.
+
 ## Naming Convention
 
 snake_case: `"kick_808"`, `"acid_303_classic"`, `"my_bass"`

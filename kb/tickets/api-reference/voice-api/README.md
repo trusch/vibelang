@@ -62,6 +62,9 @@ Current safe code generation surface:
 - `.disconnect()` replaces the route with silence.
 - Repeating `.from(...)` on the same `(target voice, input name)` replaces
   the prior cable. It does not add fan-in.
+- Routes are materialized atomically: the runtime advances the materialized
+  input-route state only after backend link creation succeeds, so a later
+  no-change reload can retry a failed link.
 
 Compatibility:
 
@@ -78,16 +81,15 @@ Code generation constraints:
 - The stable synthdef declaration surface is currently Rust-side
   `SynthDef::input(name, channels)`. Do not generate Rhai synthdef
   `.input(...)` declarations until that authoring surface exists.
-- Declared audio-rate named inputs may be left unpatched. They receive a
-  valid silent bus, so an unplugged jack is not an invalid or missing
-  voice.
+- Declared audio/control named inputs may be left unpatched. They receive
+  valid shared silent buses at the matching rate, so an unplugged jack is
+  not an invalid or missing voice.
 - `.input(name).from(source)` is a patch cable. It does not mute or consume
   the source; the source can still route to its own outputs/groups.
 - Current input-link synthdefs support audio-rate mono or stereo inputs.
-  Avoid routing a stereo/group source into a mono named input; model that
-  as an explicit downmix synth/module before the mono input.
-- Failed route materialization does not advance the materialized route
-  state, so a later no-change reload can safely retry the route.
+  Routing a group bus or stereo source into a mono named input is rejected
+  as a width mismatch. There is no implicit downmix; model downmixing as an
+  explicit synth/module before the mono input.
 
 Source anchors:
 

@@ -78,6 +78,19 @@ voice("keys").on(piano);`
 voice("snare").synth("snare_909").group("drums");`
     },
     {
+      name: '.input',
+      signature: '.input(name) -> InputHandle',
+      description: 'Target a declared named input on this voice\'s synthdef. Chain .from(source), .from(group), .from_current_group(), or .disconnect() to patch the input. Unpatched declared inputs receive silent buses; stereo/group sources are rejected for mono inputs rather than implicitly downmixed.',
+      params: [{ name: 'name', type: 'String', description: 'Declared input port name on the target synthdef' }],
+      example: `let osc = voice("osc").synth("oscillator");
+let filter = voice("filter").synth("filter_module");
+
+filter.input("audio").from(osc);
+filter.input("audio").from(group("submix"));
+filter.input("audio").from_current_group();
+filter.input("audio").disconnect();`
+    },
+    {
       name: '.poly',
       signature: '.poly(count)',
       description: 'Set the polyphony (number of simultaneous notes) for this voice.',
@@ -620,6 +633,18 @@ define_synthdef("my_lfo")
     });`
     },
     {
+      name: 'named inputs',
+      signature: 'SynthDef::input(name, channels)',
+      description: 'Declared named inputs expose patchable audio/control jacks that scripts route with voice.input(name). The stable declaration surface is currently Rust-side; Rhai define_synthdef(...).input(...) declarations are not part of the public authoring surface yet.',
+      params: [
+        { name: 'name', type: 'String', description: 'Input port name' },
+        { name: 'channels', type: 'u8', description: 'Declared width, typically 1 for mono or 2 for stereo' }
+      ],
+      example: `// Script-side routing into a synthdef that already declares "audio".
+filter.input("audio").from(osc);
+filter.input("audio").disconnect();`
+    },
+    {
       name: 'envelope',
       signature: 'envelope() -> EnvelopeBuilder',
       description: 'Create an envelope using the fluent builder API. Supports perc (percussive), asr (attack-sustain-release), and adsr shapes. Defaults to a constant gate if none specified.',
@@ -1137,7 +1162,7 @@ const apiCategories = Object.keys(apiPrimitives);
 const categoryDescriptions = {
   'Global': `Global functions control the fundamental properties of your VibeLang session. Set the tempo and time signature to establish the rhythmic foundation, and query the current transport position for dynamic behaviors. These settings affect all patterns, melodies, and sequences.`,
 
-  'Voice': `Voices are the fundamental building blocks for making sound in VibeLang. A voice connects a sound source (synthesizer, sample, or SFZ instrument) to the audio output. Voices can be assigned to groups for collective mixing, set to polyphonic mode for chords, and triggered either directly or from patterns and melodies. The fluent builder API makes it easy to configure voices in a readable, chainable style.`,
+  'Voice': `Voices are the fundamental building blocks for making sound in VibeLang. A voice connects a sound source (synthesizer, sample, or SFZ instrument) to the audio output. Voices can be assigned to groups for collective mixing, set to polyphonic mode for chords, patched into declared named inputs on synthdefs, and triggered either directly or from patterns and melodies. The fluent builder API makes it easy to configure voices in a readable, chainable style.`,
 
   'Pattern': `Patterns are rhythmic sequencers that trigger voices at specified steps. They're perfect for drums, percussion, and any repetitive rhythmic elements. Define patterns using intuitive step strings where "x" triggers and "." rests, or generate Euclidean rhythms automatically. Patterns loop continuously and can be started, stopped, and modified on the fly.`,
 
@@ -1153,7 +1178,7 @@ const categoryDescriptions = {
 
   'Modulator': `Modulators provide real-time continuous parameter control using LFOs, envelope followers, and other control-rate signals. A modulator is just a regular voice whose synthdef declares a kr output port (.output_kr("out")); wire it into a target voice's parameter using .param(name).modulate_by(source, port) (target-first) or source.output(port).to_param(target, name) (source-first). Multiple sources can be summed into a single param via chained .modulate_by calls. The standard library includes sine, triangle, saw, square, and random LFOs, plus an envelope follower for dynamics-based modulation.`,
 
-  'SynthDef': `SynthDefs let you create custom synthesizers and effects at the DSP level. Using VibeLang's UGen library (oscillators, filters, envelopes, and more), you can build anything from simple sine waves to complex FM synthesizers. Effects process input signals and can be added to groups. The standard library includes many ready-to-use synthdefs, but defining your own unlocks unlimited sonic possibilities.`,
+  'SynthDef': `SynthDefs let you create custom synthesizers and effects at the DSP level. Using VibeLang's UGen library (oscillators, filters, envelopes, and more), you can build anything from simple sine waves to complex FM synthesizers. Synthdefs can declare named input ports that voices patch from scripts, while effects process input signals and can be added to groups. The standard library includes many ready-to-use synthdefs, but defining your own unlocks unlimited sonic possibilities.`,
 
   'Helpers': `Helper functions provide convenient utilities for common tasks. Convert decibels to linear amplitude, parse note names to MIDI numbers, calculate bar durations, load SFZ instruments, and control script timing. These functions make your code more readable and handle the math and conversions that would otherwise clutter your musical logic.`,
 

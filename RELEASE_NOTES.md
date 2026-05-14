@@ -1,3 +1,18 @@
+# Unreleased
+
+## Added
+
+- **Named input routing for declared synthdef inputs** — scripts can patch
+  declared named inputs with `voice.input("name").from(...)`, including voice,
+  group, current-group, and silent sources.
+
+## Fixed
+
+- **Named input route stabilization** — unpatched declared audio/control inputs
+  receive valid shared silent buses, route materialization is atomic and
+  retryable after backend failures, and group/stereo sources routed to mono
+  inputs are rejected as width mismatches instead of being implicitly downmixed.
+
 # VibeLang v0.4.0
 
 A stability and correctness release. v0.4 focuses on fixing bugs found during a thorough code review, improving hot-reload reliability, and bringing SFZ instruments into the diff/reload system.
