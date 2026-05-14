@@ -1,0 +1,53 @@
+// kind=processor | category=filters | flavor=erica_polivoks_vcf | inputs=in:1 | outputs=out:1 | params=cutoff,resonance,mode,input_gain,cv1_amt,cv2_amt,cv1,cv2,drive,level
+//
+// Erica Black Polivoks VCF V2-inspired mono filter approximation.
+// This is a practical Polivoks-colored model, not a clone of the original
+// K140UD12 IC behavior.
+//
+// mode: 0=LP12, 1=BP6.
+
+define_synthdef("erica_polivoks_vcf")
+    .input("in", 1)
+    .output("out", 1)
+    .param("cutoff", 1000.0)
+    .param("resonance", 0.5)
+    .param("mode", 0.0)
+    .param("input_gain", 1.0)
+    .param("cv1_amt", 0.0)
+    .param("cv2_amt", 0.0)
+    .param("cv1", 0.0)
+    .param("cv2", 0.0)
+    .param("drive", 0.2)
+    .param("level", 1.0)
+    .body_map(|p| {
+        let dry = p.inputs["in"];
+        let input_gain = clip(p.input_gain, 0.0, 2.0);
+        let preamp = dry * input_gain;
+        let preclip = clip((input_gain - 1.0) * 100.0, 0.0, 1.0);
+        let pre = preamp * (1.0 - preclip) + tanh_ar(preamp) * preclip;
+
+        let cv1_amt = clip(p.cv1_amt, 0.0, 1.0);
+        let cv2_amt = clip(p.cv2_amt, 0.0, 1.0);
+        let cutoff = clip(p.cutoff * pow(2.0, (cv1_amt * p.cv1 + cv2_amt * p.cv2) / 12.0), 20.0, 20000.0);
+        let resonance = clip(p.resonance, 0.0, 0.99);
+        let rq = clip(1.0 - resonance * 0.94, 0.035, 1.0);
+        let drive = clip(p.drive, 0.0, 1.0);
+
+        let self = clip((resonance - 0.82) * 5.8823, 0.0, 1.0);
+        let osc = sin_osc_ar(cutoff) * self * (0.12 + resonance * 0.24);
+        let driven = tanh_ar((pre + osc) * (1.0 + drive * 4.0));
+
+        let lp1 = rlpf_ar(driven, cutoff, rq);
+        let lp2 = rlpf_ar(lp1, cutoff, rq);
+        let lp_dirty = tanh_ar(lp2 * (1.0 + resonance * 1.6));
+        let bp = bpf_ar(driven, cutoff, rq);
+        let bp_dirty = tanh_ar(bp * (1.0 + resonance * 1.25));
+
+        let mode = round(clip(p.mode, 0.0, 1.0));
+        let lp_w = clip(1.0 - abs(mode - 0.0), 0.0, 1.0);
+        let bp_w = clip(1.0 - abs(mode - 1.0), 0.0, 1.0);
+        let comp = 1.0 - resonance * 0.34;
+        let wet = leak_dc_ar((lp_dirty * lp_w + bp_dirty * bp_w) * comp, 0.995);
+
+        [softclip(wet * clip(p.level, 0.0, 2.0))]
+    });
