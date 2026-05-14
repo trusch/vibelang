@@ -1,0 +1,302 @@
+// kind=cv | category=eurorack | flavor=intellijel-tetrapad | outputs=pad1_a:kr,pad1_b:kr,pad2_a:kr,pad2_b:kr,pad3_a:kr,pad3_b:kr,pad4_a:kr,pad4_b:kr | params=pressure_1..pressure_4,position_1..position_4,encoder_1..encoder_4,mode_1..mode_4,slew_1..slew_4,voltage_1..voltage_4,chord_mode,keyboard_scale,threshold
+//
+// Intellijel Tetrapad-inspired four-pad touch CV controller.
+//
+// Per-pad modes (`mode_N`, rounded and clipped to 0..6):
+//   0 keyboard       pad_a = V/oct pitch, pad_b = touch gate
+//   1 chord          pad_a = root/voicing CV, pad_b = chord-tone CV
+//   2 voltage memory pad_a = stored voltage while pressed, then held, pad_b = gate
+//   3 fader          pad_a = pressure CV, pad_b = position CV
+//   4 drum           pad_a = press trigger, pad_b = pressure*position velocity
+//   5 switch         pad_a = latched gate, pad_b = inverted latched gate
+//   6 LFO            pad_a = gated encoder-rate LFO, pad_b = touch gate
+
+fn _tetrapad_mask(value, target) {
+    1.0 - clip_kr(abs(value - target), 0.0, 1.0)
+}
+
+fn _tetrapad_gate(x, threshold) {
+    in_range_kr(x, threshold, 1.0)
+}
+
+fn _tetrapad_scale_bit(scale, degree) {
+    let s = clip_kr(round(scale), 0.0, 5.0);
+
+    let chromatic = 1.0;
+    let major = (
+        _tetrapad_mask(degree, 0.0) +
+            _tetrapad_mask(degree, 2.0) +
+            _tetrapad_mask(degree, 4.0) +
+            _tetrapad_mask(degree, 5.0) +
+            _tetrapad_mask(degree, 7.0) +
+            _tetrapad_mask(degree, 9.0) +
+            _tetrapad_mask(degree, 11.0)
+    ).min(1.0);
+    let minor = (
+        _tetrapad_mask(degree, 0.0) +
+            _tetrapad_mask(degree, 2.0) +
+            _tetrapad_mask(degree, 3.0) +
+            _tetrapad_mask(degree, 5.0) +
+            _tetrapad_mask(degree, 7.0) +
+            _tetrapad_mask(degree, 8.0) +
+            _tetrapad_mask(degree, 10.0)
+    ).min(1.0);
+    let major_pent = (
+        _tetrapad_mask(degree, 0.0) +
+            _tetrapad_mask(degree, 2.0) +
+            _tetrapad_mask(degree, 4.0) +
+            _tetrapad_mask(degree, 7.0) +
+            _tetrapad_mask(degree, 9.0)
+    ).min(1.0);
+    let minor_pent = (
+        _tetrapad_mask(degree, 0.0) +
+            _tetrapad_mask(degree, 3.0) +
+            _tetrapad_mask(degree, 5.0) +
+            _tetrapad_mask(degree, 7.0) +
+            _tetrapad_mask(degree, 10.0)
+    ).min(1.0);
+    let whole = (
+        _tetrapad_mask(degree, 0.0) +
+            _tetrapad_mask(degree, 2.0) +
+            _tetrapad_mask(degree, 4.0) +
+            _tetrapad_mask(degree, 6.0) +
+            _tetrapad_mask(degree, 8.0) +
+            _tetrapad_mask(degree, 10.0)
+    ).min(1.0);
+
+    chromatic * _tetrapad_mask(s, 0.0) +
+        major * _tetrapad_mask(s, 1.0) +
+        minor * _tetrapad_mask(s, 2.0) +
+        major_pent * _tetrapad_mask(s, 3.0) +
+        minor_pent * _tetrapad_mask(s, 4.0) +
+        whole * _tetrapad_mask(s, 5.0)
+}
+
+fn _tetrapad_quantize(semitone, scale) {
+    let raw = round(semitone);
+    let degree = raw.modulo(12.0);
+    let bit0 = _tetrapad_scale_bit(scale, 0.0);
+    let bit1 = _tetrapad_scale_bit(scale, 1.0);
+    let bit2 = _tetrapad_scale_bit(scale, 2.0);
+    let bit3 = _tetrapad_scale_bit(scale, 3.0);
+    let bit4 = _tetrapad_scale_bit(scale, 4.0);
+    let bit5 = _tetrapad_scale_bit(scale, 5.0);
+    let bit6 = _tetrapad_scale_bit(scale, 6.0);
+    let bit7 = _tetrapad_scale_bit(scale, 7.0);
+    let bit8 = _tetrapad_scale_bit(scale, 8.0);
+    let bit9 = _tetrapad_scale_bit(scale, 9.0);
+    let bit10 = _tetrapad_scale_bit(scale, 10.0);
+    let bit11 = _tetrapad_scale_bit(scale, 11.0);
+
+    let delta0 = (0.0 - degree + 6.0).modulo(12.0) - 6.0;
+    let delta1 = (1.0 - degree + 6.0).modulo(12.0) - 6.0;
+    let delta2 = (2.0 - degree + 6.0).modulo(12.0) - 6.0;
+    let delta3 = (3.0 - degree + 6.0).modulo(12.0) - 6.0;
+    let delta4 = (4.0 - degree + 6.0).modulo(12.0) - 6.0;
+    let delta5 = (5.0 - degree + 6.0).modulo(12.0) - 6.0;
+    let delta6 = (6.0 - degree + 6.0).modulo(12.0) - 6.0;
+    let delta7 = (7.0 - degree + 6.0).modulo(12.0) - 6.0;
+    let delta8 = (8.0 - degree + 6.0).modulo(12.0) - 6.0;
+    let delta9 = (9.0 - degree + 6.0).modulo(12.0) - 6.0;
+    let delta10 = (10.0 - degree + 6.0).modulo(12.0) - 6.0;
+    let delta11 = (11.0 - degree + 6.0).modulo(12.0) - 6.0;
+
+    let dist0 = abs(delta0) + (1.0 - bit0) * 24.0;
+    let dist1 = abs(delta1) + (1.0 - bit1) * 24.0;
+    let dist2 = abs(delta2) + (1.0 - bit2) * 24.0;
+    let dist3 = abs(delta3) + (1.0 - bit3) * 24.0;
+    let dist4 = abs(delta4) + (1.0 - bit4) * 24.0;
+    let dist5 = abs(delta5) + (1.0 - bit5) * 24.0;
+    let dist6 = abs(delta6) + (1.0 - bit6) * 24.0;
+    let dist7 = abs(delta7) + (1.0 - bit7) * 24.0;
+    let dist8 = abs(delta8) + (1.0 - bit8) * 24.0;
+    let dist9 = abs(delta9) + (1.0 - bit9) * 24.0;
+    let dist10 = abs(delta10) + (1.0 - bit10) * 24.0;
+    let dist11 = abs(delta11) + (1.0 - bit11) * 24.0;
+    let min_dist = dist0.min(dist1).min(dist2).min(dist3).min(dist4).min(dist5)
+        .min(dist6).min(dist7).min(dist8).min(dist9).min(dist10).min(dist11);
+
+    let q0 = _tetrapad_mask(dist0, min_dist) * bit0;
+    let q1 = _tetrapad_mask(dist1, min_dist) * bit1;
+    let q2 = _tetrapad_mask(dist2, min_dist) * bit2;
+    let q3 = _tetrapad_mask(dist3, min_dist) * bit3;
+    let q4 = _tetrapad_mask(dist4, min_dist) * bit4;
+    let q5 = _tetrapad_mask(dist5, min_dist) * bit5;
+    let q6 = _tetrapad_mask(dist6, min_dist) * bit6;
+    let q7 = _tetrapad_mask(dist7, min_dist) * bit7;
+    let q8 = _tetrapad_mask(dist8, min_dist) * bit8;
+    let q9 = _tetrapad_mask(dist9, min_dist) * bit9;
+    let q10 = _tetrapad_mask(dist10, min_dist) * bit10;
+    let q11 = _tetrapad_mask(dist11, min_dist) * bit11;
+    let q_sum = (q0 + q1 + q2 + q3 + q4 + q5 + q6 + q7 + q8 + q9 + q10 + q11).max(1.0);
+
+    (
+        (raw + delta0) * q0 +
+            (raw + delta1) * q1 +
+            (raw + delta2) * q2 +
+            (raw + delta3) * q3 +
+            (raw + delta4) * q4 +
+            (raw + delta5) * q5 +
+            (raw + delta6) * q6 +
+            (raw + delta7) * q7 +
+            (raw + delta8) * q8 +
+            (raw + delta9) * q9 +
+            (raw + delta10) * q10 +
+            (raw + delta11) * q11
+    ) / q_sum
+}
+
+fn _tetrapad_chord_interval(chord_mode, pad_index, voicing) {
+    let chord = clip_kr(round(chord_mode), 0.0, 4.0);
+    let pick = floor(clip_kr(voicing, 0.0, 0.999) * 4.0);
+    let third = 4.0 * _tetrapad_mask(chord, 0.0) +
+        3.0 * _tetrapad_mask(chord, 1.0) +
+        5.0 * _tetrapad_mask(chord, 2.0) +
+        3.0 * _tetrapad_mask(chord, 3.0) +
+        4.0 * _tetrapad_mask(chord, 4.0);
+    let fifth = 7.0 * _tetrapad_mask(chord, 0.0) +
+        7.0 * _tetrapad_mask(chord, 1.0) +
+        7.0 * _tetrapad_mask(chord, 2.0) +
+        6.0 * _tetrapad_mask(chord, 3.0) +
+        8.0 * _tetrapad_mask(chord, 4.0);
+    let octave = 12.0 + (pad_index - 1.0) * 2.0;
+
+    0.0 * _tetrapad_mask(pick, 0.0) +
+        third * _tetrapad_mask(pick, 1.0) +
+        fifth * _tetrapad_mask(pick, 2.0) +
+        octave * _tetrapad_mask(pick, 3.0)
+}
+
+fn _tetrapad_pad(pressure_raw, position_raw, encoder_raw, mode_raw, slew_raw, voltage_raw, threshold_raw, pad_index, chord_mode_raw, keyboard_scale_raw) {
+    let slew = clip_kr(slew_raw, 0.0, 1.0);
+    let pressure = clip_kr(lag_ud_kr(clip_kr(pressure_raw, 0.0, 1.0), slew, slew), 0.0, 1.0);
+    let position = clip_kr(lag_kr(clip_kr(position_raw, 0.0, 1.0), slew), 0.0, 1.0);
+    let encoder = clip_kr(lag_kr(clip_kr(encoder_raw, 0.0, 1.0), slew), 0.0, 1.0);
+    let mode = clip_kr(round(mode_raw), 0.0, 6.0);
+    let threshold = clip_kr(threshold_raw, 0.0, 1.0);
+    let gate_unscaled = _tetrapad_gate(pressure, threshold);
+    let gate = gate_unscaled * 0.5;
+    let press = trig1_kr(gate_unscaled, 0.005);
+    let trig = press * 0.5;
+
+    let transpose = floor(encoder * 5.0) * 12.0;
+    let key_raw = (pad_index - 1.0) * 12.0 + floor(position * 12.0) + transpose;
+    let key_pitch = clip_kr(_tetrapad_quantize(key_raw, keyboard_scale_raw) / 12.0, -5.0, 5.0);
+
+    let chord_root_raw = (pad_index - 1.0) * 3.0 + floor(encoder * 12.0);
+    let chord_root = clip_kr(_tetrapad_quantize(chord_root_raw, keyboard_scale_raw) / 12.0, -5.0, 5.0);
+    let chord_interval = _tetrapad_chord_interval(chord_mode_raw, pad_index, position);
+    let chord_voice = clip_kr(chord_root + chord_interval / 12.0, -5.0, 5.0);
+
+    let voltage = clip_kr(voltage_raw, -1.0, 1.0);
+    let held_voltage = latch_kr(voltage, press);
+    let memory = clip_kr(voltage * gate_unscaled + held_voltage * (1.0 - gate_unscaled), -1.0, 1.0);
+
+    let fader_pressure = pressure;
+    let fader_position = position * 2.0 - 1.0;
+
+    let velocity = clip_kr(pressure * position, 0.0, 1.0);
+    let switch_state = pulse_count_kr(press, 0.0).modulo(2.0);
+    let switch_gate = switch_state * 0.5;
+    let switch_inverse = (1.0 - switch_state) * 0.5;
+
+    let lfo_rate = 0.05 + encoder * encoder * 12.0;
+    let lfo = sin_osc_kr(lfo_rate, 0.0) * gate_unscaled;
+
+    let key_w = _tetrapad_mask(mode, 0.0);
+    let chord_w = _tetrapad_mask(mode, 1.0);
+    let memory_w = _tetrapad_mask(mode, 2.0);
+    let fader_w = _tetrapad_mask(mode, 3.0);
+    let drum_w = _tetrapad_mask(mode, 4.0);
+    let switch_w = _tetrapad_mask(mode, 5.0);
+    let lfo_w = _tetrapad_mask(mode, 6.0);
+
+    let out_a = clip_kr(
+        key_pitch * key_w +
+            chord_root * chord_w +
+            memory * memory_w +
+            fader_pressure * fader_w +
+            trig * drum_w +
+            switch_gate * switch_w +
+            lfo * lfo_w,
+        -5.0,
+        5.0
+    );
+    let out_b = clip_kr(
+        gate * key_w +
+            chord_voice * chord_w +
+            gate * memory_w +
+            fader_position * fader_w +
+            velocity * drum_w +
+            switch_inverse * switch_w +
+            gate * lfo_w,
+        -5.0,
+        5.0
+    );
+
+    [out_a, out_b]
+}
+
+define_synthdef("tetrapad", |builder| {
+    builder
+        .output_kr("pad1_a")
+        .output_kr("pad1_b")
+        .output_kr("pad2_a")
+        .output_kr("pad2_b")
+        .output_kr("pad3_a")
+        .output_kr("pad3_b")
+        .output_kr("pad4_a")
+        .output_kr("pad4_b")
+        .param("pressure_1", 0.0)
+        .param("position_1", 0.5)
+        .param("encoder_1", 0.5)
+        .param("mode_1", 0.0)
+        .param("slew_1", 0.1)
+        .param("voltage_1", 0.0)
+        .param("pressure_2", 0.0)
+        .param("position_2", 0.5)
+        .param("encoder_2", 0.5)
+        .param("mode_2", 0.0)
+        .param("slew_2", 0.1)
+        .param("voltage_2", 0.0)
+        .param("pressure_3", 0.0)
+        .param("position_3", 0.5)
+        .param("encoder_3", 0.5)
+        .param("mode_3", 0.0)
+        .param("slew_3", 0.1)
+        .param("voltage_3", 0.0)
+        .param("pressure_4", 0.0)
+        .param("position_4", 0.5)
+        .param("encoder_4", 0.5)
+        .param("mode_4", 0.0)
+        .param("slew_4", 0.1)
+        .param("voltage_4", 0.0)
+        .param("chord_mode", 0.0)
+        .param("keyboard_scale", 0.0)
+        .param("threshold", 0.05)
+        .body_map(|p| {
+            let pad1 = _tetrapad_pad(
+                p.pressure_1, p.position_1, p.encoder_1, p.mode_1, p.slew_1,
+                p.voltage_1, p.threshold, 1.0, p.chord_mode, p.keyboard_scale
+            );
+            let pad2 = _tetrapad_pad(
+                p.pressure_2, p.position_2, p.encoder_2, p.mode_2, p.slew_2,
+                p.voltage_2, p.threshold, 2.0, p.chord_mode, p.keyboard_scale
+            );
+            let pad3 = _tetrapad_pad(
+                p.pressure_3, p.position_3, p.encoder_3, p.mode_3, p.slew_3,
+                p.voltage_3, p.threshold, 3.0, p.chord_mode, p.keyboard_scale
+            );
+            let pad4 = _tetrapad_pad(
+                p.pressure_4, p.position_4, p.encoder_4, p.mode_4, p.slew_4,
+                p.voltage_4, p.threshold, 4.0, p.chord_mode, p.keyboard_scale
+            );
+
+            [
+                pad1[0], pad1[1],
+                pad2[0], pad2[1],
+                pad3[0], pad3[1],
+                pad4[0], pad4[1],
+            ]
+        })
+});
