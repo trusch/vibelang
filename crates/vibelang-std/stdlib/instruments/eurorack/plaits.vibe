@@ -1,0 +1,74 @@
+// kind=instrument | category=eurorack | flavor=mutable-plaits | params=pitch,engine,harmonics,timbre,morph,trigger,level,fm_mod,timbre_mod,morph_mod,decay,lpg_colour
+//
+// Mutable Instruments Plaits - macro-oscillator voice.
+//
+// Thin wrapper around the canonical mi-UGens `mi_plaits_ar` port. Plaits
+// exposes two independent mono audio outputs: `out` is the main model output,
+// and `aux` is the model-specific alternate output.
+//
+// Engines use the source-current 24-engine enum:
+//
+//   Original 16 panel engines:
+//     0  virtual_analog       1  waveshaping
+//     2  fm                   3  grain
+//     4  additive             5  wavetable
+//     6  chord                7  speech
+//     8  swarm                9  noise
+//     10 particle             11 string
+//     12 modal                13 bass_drum
+//     14 snare_drum           15 hi_hat
+//
+//   v1.2 additions:
+//     16 virtual_analog_vcf   17 phase_distortion
+//     18 6op_bank1            19 6op_bank2
+//     20 6op_bank3            21 wave_terrain
+//     22 string_machine       23 chiptune
+//
+// `trigger` defaults to 0 for sustained/manual control. A positive trigger
+// fires Plaits' internal envelope/LPG; `level`, `decay`, and `lpg_colour`
+// shape the internal low-pass gate.
+
+define_synthdef("plaits", |builder| {
+    builder
+        .output("out")       // 1ch - main Plaits OUT jack
+        .output("aux")       // 1ch - model-specific AUX jack
+        .param("pitch", 60.0)
+        .param("engine", 0.0)
+        .param("harmonics", 0.5)
+        .param("timbre", 0.5)
+        .param("morph", 0.5)
+        .param("trigger", 0.0)
+        .param("level", 0.7)
+        .param("fm_mod", 0.0)
+        .param("timbre_mod", 0.0)
+        .param("morph_mod", 0.0)
+        .param("decay", 0.5)
+        .param("lpg_colour", 0.5)
+        .body_map(|p| {
+            // mi_plaits_ar args: pitch, engine, harm, timbre, morph, trigger,
+            // level, fm_mod, timb_mod, morph_mod, decay, lpg_colour, mul
+            let plaits = channels(
+                mi_plaits_ar(
+                    p.pitch,
+                    p.engine,
+                    p.harmonics,
+                    p.timbre,
+                    p.morph,
+                    p.trigger,
+                    p.level,
+                    p.fm_mod,
+                    p.timbre_mod,
+                    p.morph_mod,
+                    p.decay,
+                    p.lpg_colour,
+                    1.0
+                ),
+                2
+            );
+
+            [
+                leak_dc_ar(plaits[0], 0.995),
+                leak_dc_ar(plaits[1], 0.995),
+            ]
+        })
+});
