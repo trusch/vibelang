@@ -867,7 +867,6 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
 
         let nodes_to_free: Vec<NodeId> = {
             let mut state = self.state.write().await;
-            state.input_routes = desired.clone();
             let mut nodes = Vec::new();
             for r in &diff.removals {
                 let key = (r.voice_id, r.port_name.clone(), r.src.clone());
@@ -883,6 +882,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                     );
                 }
             }
+            Self::sync_input_routes_to_live_synths(&mut state, desired);
             nodes
         };
         for node_id in nodes_to_free {
@@ -912,7 +912,8 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
             params.insert("in_bus".to_string(), spawn.in_bus.raw() as f32);
             params.insert("out_bus".to_string(), spawn.out_bus.raw() as f32);
 
-            self.backend
+            if let Err(e) = self
+                .backend
                 .create_synth(
                     spawn.synthdef,
                     spawn.node,
@@ -921,17 +922,57 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                     &params,
                 )
                 .await
-                .map_err(Error::backend)?;
+            {
+                self.recycle_planned_input_route_node(spawn.node).await;
+                return Err(Error::backend(e));
+            }
 
             for node in spawn.target_nodes {
-                self.backend
+                if let Err(e) = self
+                    .backend
                     .set_param(node, &spawn.target_param, spawn.out_bus.raw() as f32)
                     .await
-                    .map_err(Error::backend)?;
+                {
+                    let _ = self.backend.free_node(spawn.node).await;
+                    self.recycle_planned_input_route_node(spawn.node).await;
+                    return Err(Error::backend(e));
+                }
+            }
+
+            {
+                let mut state = self.state.write().await;
+                state
+                    .input_route_synths
+                    .insert((r.voice_id, r.port_name.clone(), r.src.clone()), spawn.node);
+                Self::sync_input_routes_to_live_synths(&mut state, desired);
             }
         }
 
         Ok(())
+    }
+
+    fn sync_input_routes_to_live_synths(state: &mut State, desired: &InputRouteMap) {
+        let live: HashSet<(VoiceId, String, InputRouteSrc)> =
+            state.input_route_synths.keys().cloned().collect();
+        let mut materialized = InputRouteMap::new();
+
+        for ((voice_id, port_name), srcs) in desired {
+            let live_srcs: Vec<InputRouteSrc> = srcs
+                .iter()
+                .filter(|src| live.contains(&(*voice_id, port_name.clone(), (*src).clone())))
+                .cloned()
+                .collect();
+            if !live_srcs.is_empty() {
+                materialized.insert((*voice_id, port_name.clone()), live_srcs);
+            }
+        }
+
+        state.input_routes = materialized;
+    }
+
+    async fn recycle_planned_input_route_node(&self, node: NodeId) {
+        let mut state = self.state.write().await;
+        state.free_node_id(node);
     }
 
     async fn plan_input_route_spawn(&self, route: &InputRoute) -> Result<InputRouteSpawn> {
@@ -960,6 +1001,8 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
             })?;
         Self::validate_input_port_for_link(input_port)?;
 
+        let in_bus = Self::resolve_input_route_source_bus(&mut state, input_port, &route.src)?;
+
         let target_group = state
             .groups
             .get(&target_group_id)
@@ -985,12 +1028,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
             bus
         };
 
-        let in_bus = Self::resolve_input_route_source_bus(&mut state, input_port, &route.src)?;
         let node = state.alloc_node_id();
-        state.input_route_synths.insert(
-            (route.voice_id, route.port_name.clone(), route.src.clone()),
-            node,
-        );
 
         let synthdef = match input_port.channels {
             1 => "input_link_1",
@@ -1897,7 +1935,7 @@ mod tests {
     use crate::types::{BufferId, ParamMap};
     use std::collections::HashMap;
     use std::path::Path;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::Mutex;
 
     // =========================================================================
@@ -2386,6 +2424,8 @@ mod tests {
         last_frees: Mutex<Vec<NodeId>>,
         last_maps: Mutex<Vec<MapCall>>,
         last_sets: Mutex<Vec<(NodeId, String, f32)>>,
+        fail_next_create: AtomicBool,
+        fail_next_set: AtomicBool,
     }
 
     impl MockBackend {
@@ -2397,6 +2437,8 @@ mod tests {
                 last_frees: Mutex::new(Vec::new()),
                 last_maps: Mutex::new(Vec::new()),
                 last_sets: Mutex::new(Vec::new()),
+                fail_next_create: AtomicBool::new(false),
+                fail_next_set: AtomicBool::new(false),
             }
         }
         fn synths_created(&self) -> u32 {
@@ -2416,6 +2458,12 @@ mod tests {
         }
         fn sets(&self) -> Vec<(NodeId, String, f32)> {
             self.last_sets.lock().unwrap().clone()
+        }
+        fn fail_next_create(&self) {
+            self.fail_next_create.store(true, Ordering::Relaxed);
+        }
+        fn fail_next_set(&self) {
+            self.fail_next_set.store(true, Ordering::Relaxed);
         }
     }
 
@@ -2439,6 +2487,9 @@ mod tests {
             _action: AddAction,
             params: &ParamMap,
         ) -> std::result::Result<(), Self::Error> {
+            if self.fail_next_create.swap(false, Ordering::Relaxed) {
+                return Err(MockError);
+            }
             self.synths_created.fetch_add(1, Ordering::Relaxed);
             self.last_creates.lock().unwrap().push(CreateSynthCall {
                 def: def.to_string(),
@@ -2480,6 +2531,9 @@ mod tests {
             param: &str,
             value: f32,
         ) -> std::result::Result<(), Self::Error> {
+            if self.fail_next_set.swap(false, Ordering::Relaxed) {
+                return Err(MockError);
+            }
             self.last_sets
                 .lock()
                 .unwrap()
@@ -3200,6 +3254,120 @@ mod tests {
                 .1,
             first_bus
         );
+    }
+
+    #[tokio::test]
+    async fn finalize_input_route_planning_failure_does_not_advance_state_and_retries() {
+        let (handler, backend, state, target_id, source_id) =
+            setup_named_input_fixture(1, 1).await;
+        let desired = input_route_map(
+            target_id,
+            vec![InputRouteSrc::Voice(source_id, "missing".to_string())],
+        );
+
+        handler.finalize_input_routes(&desired).await.unwrap();
+
+        {
+            let s = state.read().await;
+            assert!(s.input_routes.is_empty());
+            assert!(s.input_route_synths.is_empty());
+            assert!(s.voices.get(&target_id).unwrap().input_buses.is_empty());
+        }
+        assert_eq!(backend.synths_created(), 0);
+
+        {
+            let mut s = state.write().await;
+            let source_bus = s.voices.get(&source_id).unwrap().output_buses[0].1;
+            s.voices
+                .get_mut(&source_id)
+                .unwrap()
+                .output_buses
+                .push(("missing".to_string(), source_bus));
+            s.synthdef_outputs
+                .get_mut("source_synth")
+                .unwrap()
+                .push(vibelang_dsp::OutputPort {
+                    name: "missing".to_string(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                });
+        }
+
+        handler.finalize_input_routes(&desired).await.unwrap();
+
+        let s = state.read().await;
+        assert_eq!(s.input_routes, desired);
+        assert!(s.input_route_synths.contains_key(&(
+            target_id,
+            "carrier".to_string(),
+            InputRouteSrc::Voice(source_id, "missing".to_string())
+        )));
+        assert_eq!(backend.synths_created(), 1);
+    }
+
+    #[tokio::test]
+    async fn finalize_input_route_create_failure_does_not_advance_state_and_retries() {
+        let (handler, backend, state, target_id, source_id) =
+            setup_named_input_fixture(1, 1).await;
+        let desired = input_route_map(
+            target_id,
+            vec![InputRouteSrc::Voice(source_id, "out".to_string())],
+        );
+
+        backend.fail_next_create();
+        let result = handler.finalize_input_routes(&desired).await;
+
+        assert!(result.is_err());
+        {
+            let s = state.read().await;
+            assert!(s.input_routes.is_empty());
+            assert!(s.input_route_synths.is_empty());
+        }
+        assert_eq!(backend.synths_created(), 0);
+
+        handler.finalize_input_routes(&desired).await.unwrap();
+
+        let s = state.read().await;
+        assert_eq!(s.input_routes, desired);
+        assert!(s.input_route_synths.contains_key(&(
+            target_id,
+            "carrier".to_string(),
+            InputRouteSrc::Voice(source_id, "out".to_string())
+        )));
+        assert_eq!(backend.synths_created(), 1);
+    }
+
+    #[tokio::test]
+    async fn finalize_input_route_set_param_failure_cleans_created_node_and_retries() {
+        let (handler, backend, state, target_id, source_id) =
+            setup_named_input_fixture(1, 1).await;
+        let desired = input_route_map(
+            target_id,
+            vec![InputRouteSrc::Voice(source_id, "out".to_string())],
+        );
+
+        backend.fail_next_set();
+        let result = handler.finalize_input_routes(&desired).await;
+
+        assert!(result.is_err());
+        let failed_node = backend.creates()[0].node;
+        assert!(backend.frees().contains(&failed_node));
+        {
+            let s = state.read().await;
+            assert!(s.input_routes.is_empty());
+            assert!(s.input_route_synths.is_empty());
+        }
+
+        handler.finalize_input_routes(&desired).await.unwrap();
+
+        let s = state.read().await;
+        assert_eq!(s.input_routes, desired);
+        assert!(s.input_route_synths.contains_key(&(
+            target_id,
+            "carrier".to_string(),
+            InputRouteSrc::Voice(source_id, "out".to_string())
+        )));
+        assert_eq!(backend.synths_created(), 2);
     }
 
     // =========================================================================
