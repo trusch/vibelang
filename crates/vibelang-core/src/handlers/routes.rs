@@ -303,6 +303,150 @@ impl ParamRouteDiff {
     }
 }
 
+/// Where a voice's named input port should read its signal from.
+///
+/// Structurally symmetric to [`RouteDest`] for outputs, but the variants
+/// describe the *source* side of an input edge:
+///
+/// - `Voice(vid, port_name)` reads from another voice's output port bus.
+/// - `Group(gid)` reads from a group's mix bus (the same audio bus that
+///   `RouteDest::Group` writes into on the output side).
+/// - `HardwareInput(channels)` reads from one or more hardware input
+///   channels. Encoded as a `Vec<u32>` so a stereo or multichannel input
+///   is one source rather than N fan-in edges. The interpretation of the
+///   channel list is left to the P3.3 dispatcher; this type is pure data.
+/// - `Silent` is an explicit "no source" source; the dispatcher resolves it
+///   to the shared silent audio/control bus from P1.4 (see the named-inputs
+///   design notes, decision #2: every declared input port has a valid bus
+///   even when the script does not route anything into it).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum InputRouteSrc {
+    Voice(VoiceId, String),
+    Group(GroupId),
+    HardwareInput(Vec<u32>),
+    Silent,
+}
+
+/// A single concrete input route: one voice's named input port ← one source.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct InputRoute {
+    pub voice_id: VoiceId,
+    pub port_name: String,
+    pub src: InputRouteSrc,
+}
+
+/// Per-voice input-route registry, keyed by `(target_voice_id, input_port_name)`.
+///
+/// The value is the list of sources feeding a single input port. Per the
+/// named-inputs design notes (decision #1), the script API surface keeps
+/// source ownership explicit: `voice.input("name").from(x)` replaces (Vec
+/// length 1), and `voice.input("name").from_all([…])` /
+/// `voice.input("name").add_from(x)` are the only routes that produce a Vec
+/// with length > 1 (fan-in). The Vec also retains insertion order from the
+/// script side so the eventual mixer-synth arity matches the source list.
+///
+/// Stored on [`crate::state::State::input_routes`] (the runtime side; the
+/// script-side mirror lives on `ScriptState` once P2 lands).
+pub type InputRouteMap = HashMap<(VoiceId, String), Vec<InputRouteSrc>>;
+
+/// Difference between two [`InputRouteMap`]s, computed at
+/// `(target_voice, input_port, source)`-edge granularity.
+///
+/// Mirrors [`RouteDiff`] for outputs: dropping one of N sources on a fan-in
+/// port surfaces as a single removal, growing a Vec from length 1→2 is a
+/// single addition. Re-pointing a single-source input from `Voice(a, "out")`
+/// to `Group(g)` is removal of the old edge plus addition of the new edge.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct InputRouteDiff {
+    pub additions: Vec<InputRoute>,
+    pub removals: Vec<InputRoute>,
+}
+
+impl InputRouteDiff {
+    /// True when there is nothing to apply.
+    pub fn is_empty(&self) -> bool {
+        self.additions.is_empty() && self.removals.is_empty()
+    }
+}
+
+/// Stable sort key for an [`InputRouteSrc`]. Tags fix variant order
+/// (`Voice < Group < HardwareInput < Silent`); within each variant the
+/// inner data orders lexicographically.
+fn input_src_sort_key(src: &InputRouteSrc) -> (u8, u32, String, Vec<u32>) {
+    match src {
+        InputRouteSrc::Voice(vid, port) => (0, vid.raw(), port.clone(), Vec::new()),
+        InputRouteSrc::Group(gid) => (1, gid.raw(), String::new(), Vec::new()),
+        InputRouteSrc::HardwareInput(channels) => {
+            (2, 0, String::new(), channels.clone())
+        }
+        InputRouteSrc::Silent => (3, 0, String::new(), Vec::new()),
+    }
+}
+
+/// Compute the additions and removals between two [`InputRouteMap`]s at
+/// `(target_voice, input_port, source)`-edge granularity.
+///
+/// Symmetric to [`RoutesHandler::diff`] on the output side: per-edge so a
+/// fan-in delta (Vec length 1→2) surfaces as one addition and a fan-in drop
+/// (2→1) as one removal. The output is sorted by
+/// `(target_voice_id, input_port_name, source_sort_key)` so callers get a
+/// deterministic order regardless of `HashMap` iteration order.
+///
+/// Pure function with no scsynth interaction — bus resolution and mixer-synth
+/// allocation live in P3.3.
+pub fn compute_input_route_diff(
+    old: &InputRouteMap,
+    new: &InputRouteMap,
+) -> InputRouteDiff {
+    let mut diff = InputRouteDiff::default();
+
+    for ((voice_id, port_name), new_srcs) in new {
+        let old_srcs = old.get(&(*voice_id, port_name.clone()));
+        for s in new_srcs {
+            let in_old = old_srcs
+                .map(|v| v.iter().any(|x| x == s))
+                .unwrap_or(false);
+            if !in_old {
+                diff.additions.push(InputRoute {
+                    voice_id: *voice_id,
+                    port_name: port_name.clone(),
+                    src: s.clone(),
+                });
+            }
+        }
+    }
+
+    for ((voice_id, port_name), old_srcs) in old {
+        let new_srcs = new.get(&(*voice_id, port_name.clone()));
+        for s in old_srcs {
+            let in_new = new_srcs
+                .map(|v| v.iter().any(|x| x == s))
+                .unwrap_or(false);
+            if !in_new {
+                diff.removals.push(InputRoute {
+                    voice_id: *voice_id,
+                    port_name: port_name.clone(),
+                    src: s.clone(),
+                });
+            }
+        }
+    }
+
+    let sort_edges = |edges: &mut Vec<InputRoute>| {
+        edges.sort_by(|a, b| {
+            a.voice_id
+                .raw()
+                .cmp(&b.voice_id.raw())
+                .then_with(|| a.port_name.cmp(&b.port_name))
+                .then_with(|| input_src_sort_key(&a.src).cmp(&input_src_sort_key(&b.src)))
+        });
+    };
+    sort_edges(&mut diff.additions);
+    sort_edges(&mut diff.removals);
+
+    diff
+}
+
 /// Computes and applies per-voice routing changes.
 ///
 /// The handler holds the backend and shared state; [`Self::diff`] is a pure
@@ -1714,6 +1858,193 @@ mod tests {
         assert_eq!(diff.removals[0].dest, RouteDest::Main);
         assert_eq!(diff.additions.len(), 1);
         assert_eq!(diff.additions[0].dest, RouteDest::Muted);
+    }
+
+    // =========================================================================
+    // Input-route diff tests (P3.2)
+    // =========================================================================
+
+    fn make_input_map(
+        entries: &[((u32, &str), Vec<InputRouteSrc>)],
+    ) -> InputRouteMap {
+        entries
+            .iter()
+            .map(|((vid, port), srcs)| {
+                ((VoiceId::new(*vid), (*port).to_string()), srcs.clone())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn input_diff_add_only() {
+        let old = InputRouteMap::new();
+        let new = make_input_map(&[(
+            (10, "in"),
+            vec![InputRouteSrc::Voice(VoiceId::new(2), "out".to_string())],
+        )]);
+
+        let diff = compute_input_route_diff(&old, &new);
+
+        assert_eq!(diff.additions.len(), 1);
+        assert!(diff.removals.is_empty());
+        assert_eq!(diff.additions[0].voice_id, VoiceId::new(10));
+        assert_eq!(diff.additions[0].port_name, "in");
+        assert_eq!(
+            diff.additions[0].src,
+            InputRouteSrc::Voice(VoiceId::new(2), "out".to_string())
+        );
+    }
+
+    #[test]
+    fn input_diff_remove_only() {
+        let old = make_input_map(&[((10, "in"), vec![InputRouteSrc::Group(GroupId::new(5))])]);
+        let new = InputRouteMap::new();
+
+        let diff = compute_input_route_diff(&old, &new);
+
+        assert!(diff.additions.is_empty());
+        assert_eq!(diff.removals.len(), 1);
+        assert_eq!(diff.removals[0].src, InputRouteSrc::Group(GroupId::new(5)));
+    }
+
+    #[test]
+    fn input_diff_replace_is_remove_plus_add() {
+        let old = make_input_map(&[(
+            (10, "in"),
+            vec![InputRouteSrc::Voice(VoiceId::new(2), "out".to_string())],
+        )]);
+        let new = make_input_map(&[((10, "in"), vec![InputRouteSrc::Group(GroupId::new(5))])]);
+
+        let diff = compute_input_route_diff(&old, &new);
+
+        assert_eq!(diff.removals.len(), 1);
+        assert_eq!(
+            diff.removals[0].src,
+            InputRouteSrc::Voice(VoiceId::new(2), "out".to_string())
+        );
+        assert_eq!(diff.additions.len(), 1);
+        assert_eq!(
+            diff.additions[0].src,
+            InputRouteSrc::Group(GroupId::new(5))
+        );
+    }
+
+    #[test]
+    fn input_diff_fan_in_grow_emits_one_addition() {
+        let a = InputRouteSrc::Voice(VoiceId::new(2), "out".to_string());
+        let b = InputRouteSrc::Group(GroupId::new(5));
+        let old = make_input_map(&[((10, "in"), vec![a.clone()])]);
+        let new = make_input_map(&[((10, "in"), vec![a.clone(), b.clone()])]);
+
+        let diff = compute_input_route_diff(&old, &new);
+
+        assert!(diff.removals.is_empty());
+        assert_eq!(diff.additions.len(), 1);
+        assert_eq!(diff.additions[0].src, b);
+    }
+
+    #[test]
+    fn input_diff_fan_in_shrink_emits_one_removal() {
+        let a = InputRouteSrc::Voice(VoiceId::new(2), "out".to_string());
+        let b = InputRouteSrc::Group(GroupId::new(5));
+        let old = make_input_map(&[((10, "in"), vec![a.clone(), b.clone()])]);
+        let new = make_input_map(&[((10, "in"), vec![a.clone()])]);
+
+        let diff = compute_input_route_diff(&old, &new);
+
+        assert!(diff.additions.is_empty());
+        assert_eq!(diff.removals.len(), 1);
+        assert_eq!(diff.removals[0].src, b);
+    }
+
+    #[test]
+    fn input_diff_identical_is_empty() {
+        let map = make_input_map(&[
+            (
+                (10, "in"),
+                vec![InputRouteSrc::Voice(VoiceId::new(2), "out".to_string())],
+            ),
+            ((11, "side"), vec![InputRouteSrc::HardwareInput(vec![1, 2])]),
+            ((12, "fb"), vec![InputRouteSrc::Silent]),
+        ]);
+
+        let diff = compute_input_route_diff(&map, &map);
+        assert!(diff.is_empty());
+    }
+
+    #[test]
+    fn input_diff_hardware_channel_set_change_is_remove_plus_add() {
+        let old = make_input_map(&[((10, "in"), vec![InputRouteSrc::HardwareInput(vec![1, 2])])]);
+        let new = make_input_map(&[((10, "in"), vec![InputRouteSrc::HardwareInput(vec![3, 4])])]);
+
+        let diff = compute_input_route_diff(&old, &new);
+
+        assert_eq!(diff.removals.len(), 1);
+        assert_eq!(
+            diff.removals[0].src,
+            InputRouteSrc::HardwareInput(vec![1, 2])
+        );
+        assert_eq!(diff.additions.len(), 1);
+        assert_eq!(
+            diff.additions[0].src,
+            InputRouteSrc::HardwareInput(vec![3, 4])
+        );
+    }
+
+    #[test]
+    fn input_diff_emits_in_deterministic_order() {
+        let old = InputRouteMap::new();
+        let new = make_input_map(&[
+            ((20, "in"), vec![InputRouteSrc::Group(GroupId::new(2))]),
+            (
+                (10, "side"),
+                vec![InputRouteSrc::Silent, InputRouteSrc::HardwareInput(vec![3])],
+            ),
+            (
+                (10, "in"),
+                vec![
+                    InputRouteSrc::Group(GroupId::new(7)),
+                    InputRouteSrc::Voice(VoiceId::new(3), "out".to_string()),
+                ],
+            ),
+        ]);
+
+        let first = compute_input_route_diff(&old, &new);
+        let second = compute_input_route_diff(&old, &new);
+        assert_eq!(first, second);
+
+        let order: Vec<(u32, &str)> = first
+            .additions
+            .iter()
+            .map(|r| (r.voice_id.raw(), r.port_name.as_str()))
+            .collect();
+        assert_eq!(
+            order,
+            vec![
+                (10, "in"),
+                (10, "in"),
+                (10, "side"),
+                (10, "side"),
+                (20, "in"),
+            ]
+        );
+        assert_eq!(
+            first.additions[0].src,
+            InputRouteSrc::Voice(VoiceId::new(3), "out".to_string())
+        );
+        assert_eq!(
+            first.additions[1].src,
+            InputRouteSrc::Group(GroupId::new(7))
+        );
+        assert_eq!(
+            first.additions[2].src,
+            InputRouteSrc::HardwareInput(vec![3])
+        );
+        assert_eq!(first.additions[3].src, InputRouteSrc::Silent);
+        assert_eq!(
+            first.additions[4].src,
+            InputRouteSrc::Group(GroupId::new(2))
+        );
     }
 
     // =========================================================================
