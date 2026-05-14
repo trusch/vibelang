@@ -1,0 +1,134 @@
+// 4ms PEG - Pingable Envelope Generator.
+//
+// Dual ping-locked envelopes with skewed rise/fall timing, curve morphing,
+// unipolar/bipolar scaling, OR mix, and per-channel timing trigger taps.
+
+define_synthdef("peg", |builder| {
+    builder
+        .output_kr("env_a")
+        .output_kr("env_b")
+        .output_kr("env5_a")
+        .output_kr("env5_b")
+        .output_kr("or")
+        .output_kr("eor_a")
+        .output_kr("eof_a")
+        .output_kr("half_r_a")
+        .output_kr("eor_b")
+        .output_kr("eof_b")
+        .output_kr("half_r_b")
+        .param("ping_a", 0.0)
+        .param("ping_b", 0.0)
+        .param("div_mult_a", 0.0)
+        .param("div_mult_b", 0.0)
+        .param("skew_a", 0.5)
+        .param("skew_b", 0.5)
+        .param("curve_a", 0.0)
+        .param("curve_b", 0.0)
+        .param("scale_a", 1.0)
+        .param("scale_b", 1.0)
+        .param("bipolar_a", 0.0)
+        .param("bipolar_b", 0.0)
+        .param("cycle_a", 0.0)
+        .param("cycle_b", 0.0)
+        .body_map(|p| {
+            let cycle_a = clip_kr(p.cycle_a, 0.0, 1.0);
+            let cycle_b = clip_kr(p.cycle_b, 0.0, 1.0);
+
+            let count_a = pulse_count_kr(p.ping_a, 0.0);
+            let count_b = pulse_count_kr(p.ping_b, 0.0);
+            let seen_a = clip_kr(count_a, 0.0, 1.0);
+            let seen_b = clip_kr(count_b, 0.0, 1.0);
+
+            let measured_a = latch_kr(timer_kr(p.ping_a), p.ping_a);
+            let measured_b = latch_kr(timer_kr(p.ping_b), p.ping_b);
+            let valid_a = in_range_kr(measured_a, 0.001, 120.0);
+            let valid_b = in_range_kr(measured_b, 0.001, 120.0);
+            let ping_period_a = clip_kr(measured_a * valid_a + 1.0 * (1.0 - valid_a), 0.02, 120.0);
+            let ping_period_b = clip_kr(measured_b * valid_b + 1.0 * (1.0 - valid_b), 0.02, 120.0);
+
+            let dm_a = clip_kr(p.div_mult_a, -3.0, 3.0);
+            let dm_b = clip_kr(p.div_mult_b, -3.0, 3.0);
+            let mult_a = in_range_kr(dm_a, 0.001, 3.0);
+            let mult_b = in_range_kr(dm_b, 0.001, 3.0);
+            let div_a = in_range_kr(dm_a, -3.0, -0.001);
+            let div_b = in_range_kr(dm_b, -3.0, -0.001);
+            let factor_a = mult_a * dm_a.max(1.0) + div_a * (1.0 / abs(dm_a).max(1.0)) + (1.0 - mult_a - div_a) * 1.0;
+            let factor_b = mult_b * dm_b.max(1.0) + div_b * (1.0 / abs(dm_b).max(1.0)) + (1.0 - mult_b - div_b) * 1.0;
+
+            let env_time_a = (ping_period_a * factor_a).max(0.01);
+            let env_time_b = (ping_period_b * factor_b).max(0.01);
+            let rate_a = 1.0 / env_time_a;
+            let rate_b = 1.0 / env_time_b;
+
+            let raw_a = sweep_kr(p.ping_a, rate_a);
+            let raw_b = sweep_kr(p.ping_b, rate_b);
+            let phase_a = wrap_kr(raw_a, 0.0, 1.0);
+            let phase_b = wrap_kr(raw_b, 0.0, 1.0);
+            let prev_raw_a = delay1_kr(raw_a);
+            let prev_raw_b = delay1_kr(raw_b);
+            let prev_phase_a = delay1_kr(phase_a);
+            let prev_phase_b = delay1_kr(phase_b);
+
+            let skew_a = clip_kr(p.skew_a, 0.001, 0.999);
+            let skew_b = clip_kr(p.skew_b, 0.001, 0.999);
+            let curve_exp_a = exp(clip_kr(p.curve_a, -1.0, 1.0) * 3.0);
+            let curve_exp_b = exp(clip_kr(p.curve_b, -1.0, 1.0) * 3.0);
+
+            let active_a = clip_kr(cycle_a + (1.0 - cycle_a) * seen_a * in_range_kr(raw_a, 0.0, 1.0), 0.0, 1.0);
+            let active_b = clip_kr(cycle_b + (1.0 - cycle_b) * seen_b * in_range_kr(raw_b, 0.0, 1.0), 0.0, 1.0);
+
+            let rise_pos_a = clip_kr(phase_a / skew_a, 0.0, 1.0);
+            let rise_pos_b = clip_kr(phase_b / skew_b, 0.0, 1.0);
+            let fall_pos_a = clip_kr((phase_a - skew_a) / (1.0 - skew_a), 0.0, 1.0);
+            let fall_pos_b = clip_kr((phase_b - skew_b) / (1.0 - skew_b), 0.0, 1.0);
+
+            let rise_shape_a = exp(ln(rise_pos_a.max(0.00001)) * curve_exp_a);
+            let rise_shape_b = exp(ln(rise_pos_b.max(0.00001)) * curve_exp_b);
+            let fall_shape_a = 1.0 - exp(ln(fall_pos_a.max(0.00001)) * curve_exp_a);
+            let fall_shape_b = 1.0 - exp(ln(fall_pos_b.max(0.00001)) * curve_exp_b);
+
+            let rise_mask_a = in_range_kr(phase_a, 0.0, skew_a);
+            let rise_mask_b = in_range_kr(phase_b, 0.0, skew_b);
+            let uni_a = (rise_shape_a * rise_mask_a + fall_shape_a * (1.0 - rise_mask_a)) * active_a;
+            let uni_b = (rise_shape_b * rise_mask_b + fall_shape_b * (1.0 - rise_mask_b)) * active_b;
+
+            let bipolar_a = clip_kr(p.bipolar_a, 0.0, 1.0);
+            let bipolar_b = clip_kr(p.bipolar_b, 0.0, 1.0);
+            let scale_a = clip_kr(p.scale_a, 0.0, 1.0);
+            let scale_b = clip_kr(p.scale_b, 0.0, 1.0);
+            let env_a = clip_kr((uni_a * (1.0 - bipolar_a) + (uni_a * 2.0 - 1.0) * bipolar_a) * scale_a, -1.0, 1.0);
+            let env_b = clip_kr((uni_b * (1.0 - bipolar_b) + (uni_b * 2.0 - 1.0) * bipolar_b) * scale_b, -1.0, 1.0);
+            let env5_a = clip_kr(env_a * 0.5, -1.0, 1.0);
+            let env5_b = clip_kr(env_b * 0.5, -1.0, 1.0);
+            let or_out = clip_kr(max(env_a, env_b), -1.0, 1.0);
+
+            let half_a = skew_a * 0.5;
+            let half_b = skew_b * 0.5;
+            let eor_edge_a = in_range_kr(prev_phase_a, 0.0, skew_a) * in_range_kr(phase_a, skew_a, 1.0) * active_a;
+            let eor_edge_b = in_range_kr(prev_phase_b, 0.0, skew_b) * in_range_kr(phase_b, skew_b, 1.0) * active_b;
+            let half_edge_a = in_range_kr(prev_phase_a, 0.0, half_a) * in_range_kr(phase_a, half_a, 1.0) * active_a;
+            let half_edge_b = in_range_kr(prev_phase_b, 0.0, half_b) * in_range_kr(phase_b, half_b, 1.0) * active_b;
+
+            let eof_once_a = in_range_kr(prev_raw_a, 0.0, 1.0) * in_range_kr(raw_a, 1.0, 100000.0) * seen_a;
+            let eof_once_b = in_range_kr(prev_raw_b, 0.0, 1.0) * in_range_kr(raw_b, 1.0, 100000.0) * seen_b;
+            let ping_mask_a = 1.0 - clip_kr(trig1_kr(p.ping_a, 0.005), 0.0, 1.0);
+            let ping_mask_b = 1.0 - clip_kr(trig1_kr(p.ping_b, 0.005), 0.0, 1.0);
+            let eof_cycle_a = in_range_kr(prev_phase_a - phase_a, 0.001, 2.0) * ping_mask_a;
+            let eof_cycle_b = in_range_kr(prev_phase_b - phase_b, 0.001, 2.0) * ping_mask_b;
+            let eof_edge_a = eof_once_a * (1.0 - cycle_a) + eof_cycle_a * cycle_a;
+            let eof_edge_b = eof_once_b * (1.0 - cycle_b) + eof_cycle_b * cycle_b;
+
+            let eor_a = clip_kr(trig1_kr(eor_edge_a, 0.005) * 0.5, -1.0, 1.0);
+            let eor_b = clip_kr(trig1_kr(eor_edge_b, 0.005) * 0.5, -1.0, 1.0);
+            let eof_a = clip_kr(trig1_kr(eof_edge_a, 0.005) * 0.5, -1.0, 1.0);
+            let eof_b = clip_kr(trig1_kr(eof_edge_b, 0.005) * 0.5, -1.0, 1.0);
+            let half_r_a = clip_kr(trig1_kr(half_edge_a, 0.005) * 0.5, -1.0, 1.0);
+            let half_r_b = clip_kr(trig1_kr(half_edge_b, 0.005) * 0.5, -1.0, 1.0);
+
+            [
+                env_a, env_b, env5_a, env5_b, or_out,
+                eor_a, eof_a, half_r_a,
+                eor_b, eof_b, half_r_b,
+            ]
+        })
+});
