@@ -1,0 +1,129 @@
+// kind=instrument | category=eurorack | flavor=intellijel-plonk | outputs=out:1 | params=trig,vel,pitch,freq,x,y,exciter_mode,exciter_decay,object_mode,saturation,bitcrush,pitch_cv,x_cv,y_cv,mod_cv,pitch_cv_amt,x_cv_amt,y_cv_amt,mod_cv_amt
+//
+// Intellijel Plonk - mono physical-modeling percussion voice.
+//
+// Approximation: shaped exciter into a six-mode modal bank plus a short
+// Karplus-style feedback loop. Object modal ratios:
+//   0 string    1.00, 2.00, 3.00, 4.00, 5.01, 6.02
+//   1 beam      1.00, 2.76, 5.40, 8.93, 13.34, 18.64
+//   2 marimba   1.00, 3.99, 10.65, 18.94, 30.00, 44.00
+//   3 drumhead  1.00, 1.59, 2.14, 2.30, 2.65, 2.92
+//   4 membrane  1.00, 1.36, 1.71, 2.08, 2.30, 2.65
+//   5 plate     1.00, 2.08, 3.41, 5.00, 7.15, 9.50
+
+define_synthdef("plonk", |builder| {
+    builder
+        .output("out")
+        .param("trig", 0.0)
+        .param("vel", 0.8)
+        .param("pitch", 60.0)
+        .param("freq", 0.0)
+        .param("x", 0.5)
+        .param("y", 0.5)
+        .param("exciter_mode", 0.0)
+        .param("exciter_decay", 0.015)
+        .param("object_mode", 3.0)
+        .param("saturation", 0.1)
+        .param("bitcrush", 0.0)
+        .param("pitch_cv", 0.0)
+        .param("x_cv", 0.0)
+        .param("y_cv", 0.0)
+        .param("mod_cv", 0.0)
+        .param("pitch_cv_amt", 0.0)
+        .param("x_cv_amt", 0.0)
+        .param("y_cv_amt", 0.0)
+        .param("mod_cv_amt", 0.0)
+        .body_map(|p| {
+            let vel = clip(p.vel, 0.0, 1.0);
+            let pitch_cv = clip(p.pitch_cv, -1.0, 1.0) * clip(p.pitch_cv_amt, 0.0, 1.0);
+            let pitch = clip(p.pitch + pitch_cv * 24.0, 12.0, 120.0);
+            let pitch_hz = 440.0 * pow(2.0, (pitch - 69.0) / 12.0);
+            let freq_override = clip((p.freq - 0.001) * 1000.0, 0.0, 1.0);
+            let base_freq = clip(p.freq, 20.0, 6000.0) * freq_override
+                + pitch_hz * (1.0 - freq_override);
+
+            let mod_cv = clip(p.mod_cv, -1.0, 1.0) * clip(p.mod_cv_amt, 0.0, 1.0);
+            let x = clip(p.x + clip(p.x_cv, -1.0, 1.0) * clip(p.x_cv_amt, 0.0, 1.0) + mod_cv * 0.5, 0.0, 1.0);
+            let y = clip(p.y + clip(p.y_cv, -1.0, 1.0) * clip(p.y_cv_amt, 0.0, 1.0) + mod_cv * 0.5, 0.0, 1.0);
+
+            let trig_in = k2a_ar(clip(p.trig, 0.0, 1.0));
+            let fire = trig1_ar(trig_in, 0.001);
+            let exc_decay = clip(p.exciter_decay, 0.005, 0.05);
+            let exc_env = decay2_ar(fire, 0.0004, exc_decay);
+            let stick_env = decay2_ar(fire, 0.0001, exc_decay * 0.45);
+
+            let exc_mode = round(clip(p.exciter_mode, 0.0, 2.0));
+            let mallet_m = clip(1.0 - abs(exc_mode - 0.0), 0.0, 1.0);
+            let noise_m = clip(1.0 - abs(exc_mode - 1.0), 0.0, 1.0);
+            let stick_m = clip(1.0 - abs(exc_mode - 2.0), 0.0, 1.0);
+
+            let mallet = lpf_ar(white_noise_ar() * exc_env, 900.0 + y * 2600.0)
+                + sin_osc_ar(base_freq * (2.0 + y * 4.0), 0.0) * exc_env * 0.35;
+            let noise = bpf_ar(white_noise_ar() * exc_env, 1200.0 + y * 9000.0, 0.6 - y * 0.4);
+            let stick = hpf_ar(white_noise_ar() * stick_env, 2500.0 + y * 7500.0)
+                + fire * (0.7 + y * 0.5);
+            let exciter = (mallet * mallet_m + noise * noise_m + stick * stick_m) * vel;
+
+            let obj = round(clip(p.object_mode, 0.0, 5.0));
+            let obj0 = clip(1.0 - abs(obj - 0.0), 0.0, 1.0);
+            let obj1 = clip(1.0 - abs(obj - 1.0), 0.0, 1.0);
+            let obj2 = clip(1.0 - abs(obj - 2.0), 0.0, 1.0);
+            let obj3 = clip(1.0 - abs(obj - 3.0), 0.0, 1.0);
+            let obj4 = clip(1.0 - abs(obj - 4.0), 0.0, 1.0);
+            let obj5 = clip(1.0 - abs(obj - 5.0), 0.0, 1.0);
+
+            let r1 = 1.0;
+            let r2 = obj0 * 2.00 + obj1 * 2.76 + obj2 * 3.99 + obj3 * 1.59 + obj4 * 1.36 + obj5 * 2.08;
+            let r3 = obj0 * 3.00 + obj1 * 5.40 + obj2 * 10.65 + obj3 * 2.14 + obj4 * 1.71 + obj5 * 3.41;
+            let r4 = obj0 * 4.00 + obj1 * 8.93 + obj2 * 18.94 + obj3 * 2.30 + obj4 * 2.08 + obj5 * 5.00;
+            let r5 = obj0 * 5.01 + obj1 * 13.34 + obj2 * 30.00 + obj3 * 2.65 + obj4 * 2.30 + obj5 * 7.15;
+            let r6 = obj0 * 6.02 + obj1 * 18.64 + obj2 * 44.00 + obj3 * 2.92 + obj4 * 2.65 + obj5 * 9.50;
+
+            let stiffness = 1.0 + y * 0.035;
+            let f1 = clip(base_freq * r1, 20.0, 18000.0);
+            let f2 = clip(base_freq * r2 * stiffness, 20.0, 18000.0);
+            let f3 = clip(base_freq * r3 * (1.0 + y * 0.07), 20.0, 18000.0);
+            let f4 = clip(base_freq * r4 * (1.0 + y * 0.105), 20.0, 18000.0);
+            let f5 = clip(base_freq * r5 * (1.0 + y * 0.14), 20.0, 18000.0);
+            let f6 = clip(base_freq * r6 * (1.0 + y * 0.175), 20.0, 18000.0);
+
+            let object_decay = obj0 * 1.20 + obj1 * 0.80 + obj2 * 0.55 + obj3 * 0.42 + obj4 * 0.75 + obj5 * 1.00;
+            let body_decay = clip((0.09 + (1.0 - x) * 1.6) * object_decay, 0.04, 2.5);
+            let body_env = decay2_ar(fire, 0.001, body_decay);
+            let rq = clip(0.035 + x * 0.22 + (1.0 - y) * 0.08, 0.02, 0.6);
+            let edge = abs(x - 0.5) * 2.0;
+            let high_gain = 0.25 + y * 0.65 + edge * 0.25;
+
+            let fb = local_in_ar(1.0);
+            let fb_filtered = lpf_ar(leak_dc_ar(fb, 0.995), 1200.0 + y * 7000.0);
+            let feedback_amt = clip((1.0 - x) * 0.38 + obj0 * 0.18 + obj5 * 0.10, 0.0, 0.65);
+            let modal_in = exciter + fb_filtered * feedback_amt;
+
+            let m1 = bpf_ar(modal_in, f1, rq) * (1.00 - edge * 0.18);
+            let m2 = bpf_ar(modal_in, f2, rq * 1.10) * (0.62 + edge * 0.20);
+            let m3 = bpf_ar(modal_in, f3, rq * 1.22) * (0.42 + high_gain * 0.18);
+            let m4 = bpf_ar(modal_in, f4, rq * 1.36) * (0.28 + high_gain * 0.24);
+            let m5 = bpf_ar(modal_in, f5, rq * 1.54) * (0.18 + high_gain * 0.20);
+            let m6 = bpf_ar(modal_in, f6, rq * 1.75) * (0.12 + high_gain * 0.16);
+
+            let body = (m1 + m2 + m3 + m4 + m5 + m6) * body_env;
+            let body_tone = lpf_ar(body, 1400.0 + y * 12000.0);
+            let continuation = leak_dc_ar(comb_c_ar(body_tone, 0.05, clip(1.0 / base_freq, 0.00005, 0.05), body_decay), 0.995);
+            local_out_ar(clip_ar((body_tone + continuation * 0.35) * feedback_amt, -1.0, 1.0));
+
+            let raw = (body_tone + continuation * (0.25 + (1.0 - x) * 0.35)) * 2.4;
+            let sat = clip(p.saturation, 0.0, 1.0);
+            let drive = 1.0 + sat * 8.0;
+            let saturated = (raw * drive).tanh() / drive.sqrt();
+            let shaped = raw * (1.0 - sat) + saturated * sat;
+
+            let crush = clip(p.bitcrush, 0.0, 1.0);
+            let crush_rate = clip(44100.0 - crush * 42000.0, 1200.0, 44100.0);
+            let crush_bits = 16.0 - crush * 12.0;
+            let quantized = decimator_ar(shaped, crush_rate, crush_bits);
+            let crushed = shaped * (1.0 - crush) + quantized * crush;
+
+            let out = clip_ar(leak_dc_ar(crushed * 0.75, 0.995), -1.0, 1.0);
+            [out]
+        })
+});
