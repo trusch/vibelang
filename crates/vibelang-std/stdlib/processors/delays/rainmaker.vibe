@@ -1,0 +1,308 @@
+// kind=processor | category=delays | flavor=rainmaker | inputs=in:2 | outputs=out:2
+//
+// Intellijel/Cylonix Rainmaker-inspired stereo rhythm delay and comb resonator.
+// This is a performance-rack processor model: sixteen editable rhythm taps
+// feed a stereo wet bus, with pitch-shifted/tone-shaped feedback and a separate
+// comb-resonator layer.
+
+fn _rainmaker_filter(sig, cutoff, q, filter_type) {
+    let cutoff = clip(cutoff, 20.0, 18000.0);
+    let q = clip(q, 0.1, 1.0);
+    let mode = round(clip(filter_type, 0.0, 2.0));
+    let low_w = clip(1.0 - abs(mode - 0.0), 0.0, 1.0);
+    let band_w = clip(1.0 - abs(mode - 1.0), 0.0, 1.0);
+    let high_w = clip(1.0 - abs(mode - 2.0), 0.0, 1.0);
+
+    rlpf_ar(sig, cutoff, q) * low_w +
+        bpf_ar(sig, cutoff, q) * band_w +
+        rhpf_ar(sig, cutoff, q) * high_w
+}
+
+fn _rainmaker_tap(src, base_time, grid, tap_index, level, pan, cutoff, q, filter_type, pitch, detune, mute, reverse) {
+    let reverse = clip(round(reverse), 0.0, 1.0);
+    let step = tap_index * (1.0 - reverse) + (17.0 - tap_index) * reverse;
+    let tap_time = clip(base_time * step / grid, 0.001, 16.0);
+    let raw = delay_c_ar(src, 16.0, tap_time);
+    let filtered = _rainmaker_filter(raw, cutoff, q, filter_type);
+    let ratio = pow(2.0, (clip(pitch, -24.0, 24.0) + clip(detune, -1.0, 1.0)) / 12.0);
+    let shifted = pitch_shift_ar(filtered, 0.12, ratio, 0.0, 0.0);
+    let active = 1.0 - clip(round(mute), 0.0, 1.0);
+    let pan = clip(pan, -1.0, 1.0);
+    let gain = clip(level, 0.0, 1.5) * active;
+
+    [
+        shifted * gain * (1.0 - pan) * 0.5,
+        shifted * gain * (1.0 + pan) * 0.5
+    ]
+}
+
+fn _rainmaker_comb_weight(taps, threshold) {
+    clip((taps - threshold + 1.0) / 8.0, 0.0, 1.0)
+}
+
+define_synthdef("rainmaker")
+    .input("in", 2)
+    .output("out", 2)
+    .param("time", 500.0)
+    .param("grid", 16.0)
+    .param("feedback", 0.4)
+    .param("feedback_pitch", 0.0)
+    .param("feedback_tone", 0.5)
+    .param("reverse", 0.0)
+    .param("wet_dry", 0.5)
+    .param("tap_level_1", 0.50)
+    .param("tap_level_2", 0.48)
+    .param("tap_level_3", 0.46)
+    .param("tap_level_4", 0.44)
+    .param("tap_level_5", 0.42)
+    .param("tap_level_6", 0.40)
+    .param("tap_level_7", 0.38)
+    .param("tap_level_8", 0.36)
+    .param("tap_level_9", 0.34)
+    .param("tap_level_10", 0.32)
+    .param("tap_level_11", 0.30)
+    .param("tap_level_12", 0.28)
+    .param("tap_level_13", 0.26)
+    .param("tap_level_14", 0.24)
+    .param("tap_level_15", 0.22)
+    .param("tap_level_16", 0.20)
+    .param("tap_pan_1", -1.0)
+    .param("tap_pan_2", 1.0)
+    .param("tap_pan_3", -1.0)
+    .param("tap_pan_4", 1.0)
+    .param("tap_pan_5", -1.0)
+    .param("tap_pan_6", 1.0)
+    .param("tap_pan_7", -1.0)
+    .param("tap_pan_8", 1.0)
+    .param("tap_pan_9", -1.0)
+    .param("tap_pan_10", 1.0)
+    .param("tap_pan_11", -1.0)
+    .param("tap_pan_12", 1.0)
+    .param("tap_pan_13", -1.0)
+    .param("tap_pan_14", 1.0)
+    .param("tap_pan_15", -1.0)
+    .param("tap_pan_16", 1.0)
+    .param("tap_filter_cutoff_1", 5000.0)
+    .param("tap_filter_cutoff_2", 5000.0)
+    .param("tap_filter_cutoff_3", 5000.0)
+    .param("tap_filter_cutoff_4", 5000.0)
+    .param("tap_filter_cutoff_5", 5000.0)
+    .param("tap_filter_cutoff_6", 5000.0)
+    .param("tap_filter_cutoff_7", 5000.0)
+    .param("tap_filter_cutoff_8", 5000.0)
+    .param("tap_filter_cutoff_9", 5000.0)
+    .param("tap_filter_cutoff_10", 5000.0)
+    .param("tap_filter_cutoff_11", 5000.0)
+    .param("tap_filter_cutoff_12", 5000.0)
+    .param("tap_filter_cutoff_13", 5000.0)
+    .param("tap_filter_cutoff_14", 5000.0)
+    .param("tap_filter_cutoff_15", 5000.0)
+    .param("tap_filter_cutoff_16", 5000.0)
+    .param("tap_filter_q_1", 0.5)
+    .param("tap_filter_q_2", 0.5)
+    .param("tap_filter_q_3", 0.5)
+    .param("tap_filter_q_4", 0.5)
+    .param("tap_filter_q_5", 0.5)
+    .param("tap_filter_q_6", 0.5)
+    .param("tap_filter_q_7", 0.5)
+    .param("tap_filter_q_8", 0.5)
+    .param("tap_filter_q_9", 0.5)
+    .param("tap_filter_q_10", 0.5)
+    .param("tap_filter_q_11", 0.5)
+    .param("tap_filter_q_12", 0.5)
+    .param("tap_filter_q_13", 0.5)
+    .param("tap_filter_q_14", 0.5)
+    .param("tap_filter_q_15", 0.5)
+    .param("tap_filter_q_16", 0.5)
+    .param("tap_filter_type_1", 0.0)
+    .param("tap_filter_type_2", 0.0)
+    .param("tap_filter_type_3", 0.0)
+    .param("tap_filter_type_4", 0.0)
+    .param("tap_filter_type_5", 0.0)
+    .param("tap_filter_type_6", 0.0)
+    .param("tap_filter_type_7", 0.0)
+    .param("tap_filter_type_8", 0.0)
+    .param("tap_filter_type_9", 0.0)
+    .param("tap_filter_type_10", 0.0)
+    .param("tap_filter_type_11", 0.0)
+    .param("tap_filter_type_12", 0.0)
+    .param("tap_filter_type_13", 0.0)
+    .param("tap_filter_type_14", 0.0)
+    .param("tap_filter_type_15", 0.0)
+    .param("tap_filter_type_16", 0.0)
+    .param("tap_pitch_1", 0.0)
+    .param("tap_pitch_2", 0.0)
+    .param("tap_pitch_3", 0.0)
+    .param("tap_pitch_4", 0.0)
+    .param("tap_pitch_5", 0.0)
+    .param("tap_pitch_6", 0.0)
+    .param("tap_pitch_7", 0.0)
+    .param("tap_pitch_8", 0.0)
+    .param("tap_pitch_9", 0.0)
+    .param("tap_pitch_10", 0.0)
+    .param("tap_pitch_11", 0.0)
+    .param("tap_pitch_12", 0.0)
+    .param("tap_pitch_13", 0.0)
+    .param("tap_pitch_14", 0.0)
+    .param("tap_pitch_15", 0.0)
+    .param("tap_pitch_16", 0.0)
+    .param("tap_detune_1", 0.0)
+    .param("tap_detune_2", 0.0)
+    .param("tap_detune_3", 0.0)
+    .param("tap_detune_4", 0.0)
+    .param("tap_detune_5", 0.0)
+    .param("tap_detune_6", 0.0)
+    .param("tap_detune_7", 0.0)
+    .param("tap_detune_8", 0.0)
+    .param("tap_detune_9", 0.0)
+    .param("tap_detune_10", 0.0)
+    .param("tap_detune_11", 0.0)
+    .param("tap_detune_12", 0.0)
+    .param("tap_detune_13", 0.0)
+    .param("tap_detune_14", 0.0)
+    .param("tap_detune_15", 0.0)
+    .param("tap_detune_16", 0.0)
+    .param("tap_mute_1", 0.0)
+    .param("tap_mute_2", 0.0)
+    .param("tap_mute_3", 0.0)
+    .param("tap_mute_4", 0.0)
+    .param("tap_mute_5", 0.0)
+    .param("tap_mute_6", 0.0)
+    .param("tap_mute_7", 0.0)
+    .param("tap_mute_8", 0.0)
+    .param("tap_mute_9", 0.0)
+    .param("tap_mute_10", 0.0)
+    .param("tap_mute_11", 0.0)
+    .param("tap_mute_12", 0.0)
+    .param("tap_mute_13", 0.0)
+    .param("tap_mute_14", 0.0)
+    .param("tap_mute_15", 0.0)
+    .param("tap_mute_16", 0.0)
+    .param("comb_size", 100.0)
+    .param("comb_feedback", 0.5)
+    .param("comb_taps", 8.0)
+    .param("comb_density", 0.5)
+    .param("comb_nonlinear", 0.2)
+    .param("comb_mix", 0.3)
+    .body_map(|p| {
+        let dry_l = p.inputs["in"][0];
+        let dry_r = p.inputs["in"][1];
+        let fb = local_in_ar(4.0);
+        let delay_fb_l = fb[0];
+        let delay_fb_r = fb[1];
+        let comb_fb_l = fb[2];
+        let comb_fb_r = fb[3];
+
+        let base_time = clip(p.time, 1.0, 16000.0) * 0.001;
+        let grid = clip(round(p.grid), 1.0, 32.0);
+        let reverse = clip(round(p.reverse), 0.0, 1.0);
+        let delay_src = (dry_l + dry_r + delay_fb_l + delay_fb_r) * 0.5;
+
+        let tap_1 = _rainmaker_tap(delay_src, base_time, grid, 1.0, p.tap_level_1, p.tap_pan_1, p.tap_filter_cutoff_1, p.tap_filter_q_1, p.tap_filter_type_1, p.tap_pitch_1, p.tap_detune_1, p.tap_mute_1, reverse);
+        let tap_2 = _rainmaker_tap(delay_src, base_time, grid, 2.0, p.tap_level_2, p.tap_pan_2, p.tap_filter_cutoff_2, p.tap_filter_q_2, p.tap_filter_type_2, p.tap_pitch_2, p.tap_detune_2, p.tap_mute_2, reverse);
+        let tap_3 = _rainmaker_tap(delay_src, base_time, grid, 3.0, p.tap_level_3, p.tap_pan_3, p.tap_filter_cutoff_3, p.tap_filter_q_3, p.tap_filter_type_3, p.tap_pitch_3, p.tap_detune_3, p.tap_mute_3, reverse);
+        let tap_4 = _rainmaker_tap(delay_src, base_time, grid, 4.0, p.tap_level_4, p.tap_pan_4, p.tap_filter_cutoff_4, p.tap_filter_q_4, p.tap_filter_type_4, p.tap_pitch_4, p.tap_detune_4, p.tap_mute_4, reverse);
+        let tap_5 = _rainmaker_tap(delay_src, base_time, grid, 5.0, p.tap_level_5, p.tap_pan_5, p.tap_filter_cutoff_5, p.tap_filter_q_5, p.tap_filter_type_5, p.tap_pitch_5, p.tap_detune_5, p.tap_mute_5, reverse);
+        let tap_6 = _rainmaker_tap(delay_src, base_time, grid, 6.0, p.tap_level_6, p.tap_pan_6, p.tap_filter_cutoff_6, p.tap_filter_q_6, p.tap_filter_type_6, p.tap_pitch_6, p.tap_detune_6, p.tap_mute_6, reverse);
+        let tap_7 = _rainmaker_tap(delay_src, base_time, grid, 7.0, p.tap_level_7, p.tap_pan_7, p.tap_filter_cutoff_7, p.tap_filter_q_7, p.tap_filter_type_7, p.tap_pitch_7, p.tap_detune_7, p.tap_mute_7, reverse);
+        let tap_8 = _rainmaker_tap(delay_src, base_time, grid, 8.0, p.tap_level_8, p.tap_pan_8, p.tap_filter_cutoff_8, p.tap_filter_q_8, p.tap_filter_type_8, p.tap_pitch_8, p.tap_detune_8, p.tap_mute_8, reverse);
+        let tap_9 = _rainmaker_tap(delay_src, base_time, grid, 9.0, p.tap_level_9, p.tap_pan_9, p.tap_filter_cutoff_9, p.tap_filter_q_9, p.tap_filter_type_9, p.tap_pitch_9, p.tap_detune_9, p.tap_mute_9, reverse);
+        let tap_10 = _rainmaker_tap(delay_src, base_time, grid, 10.0, p.tap_level_10, p.tap_pan_10, p.tap_filter_cutoff_10, p.tap_filter_q_10, p.tap_filter_type_10, p.tap_pitch_10, p.tap_detune_10, p.tap_mute_10, reverse);
+        let tap_11 = _rainmaker_tap(delay_src, base_time, grid, 11.0, p.tap_level_11, p.tap_pan_11, p.tap_filter_cutoff_11, p.tap_filter_q_11, p.tap_filter_type_11, p.tap_pitch_11, p.tap_detune_11, p.tap_mute_11, reverse);
+        let tap_12 = _rainmaker_tap(delay_src, base_time, grid, 12.0, p.tap_level_12, p.tap_pan_12, p.tap_filter_cutoff_12, p.tap_filter_q_12, p.tap_filter_type_12, p.tap_pitch_12, p.tap_detune_12, p.tap_mute_12, reverse);
+        let tap_13 = _rainmaker_tap(delay_src, base_time, grid, 13.0, p.tap_level_13, p.tap_pan_13, p.tap_filter_cutoff_13, p.tap_filter_q_13, p.tap_filter_type_13, p.tap_pitch_13, p.tap_detune_13, p.tap_mute_13, reverse);
+        let tap_14 = _rainmaker_tap(delay_src, base_time, grid, 14.0, p.tap_level_14, p.tap_pan_14, p.tap_filter_cutoff_14, p.tap_filter_q_14, p.tap_filter_type_14, p.tap_pitch_14, p.tap_detune_14, p.tap_mute_14, reverse);
+        let tap_15 = _rainmaker_tap(delay_src, base_time, grid, 15.0, p.tap_level_15, p.tap_pan_15, p.tap_filter_cutoff_15, p.tap_filter_q_15, p.tap_filter_type_15, p.tap_pitch_15, p.tap_detune_15, p.tap_mute_15, reverse);
+        let tap_16 = _rainmaker_tap(delay_src, base_time, grid, 16.0, p.tap_level_16, p.tap_pan_16, p.tap_filter_cutoff_16, p.tap_filter_q_16, p.tap_filter_type_16, p.tap_pitch_16, p.tap_detune_16, p.tap_mute_16, reverse);
+
+        let taps_l = (
+            tap_1[0] + tap_2[0] + tap_3[0] + tap_4[0] +
+            tap_5[0] + tap_6[0] + tap_7[0] + tap_8[0] +
+            tap_9[0] + tap_10[0] + tap_11[0] + tap_12[0] +
+            tap_13[0] + tap_14[0] + tap_15[0] + tap_16[0]
+        ) * 0.5;
+        let taps_r = (
+            tap_1[1] + tap_2[1] + tap_3[1] + tap_4[1] +
+            tap_5[1] + tap_6[1] + tap_7[1] + tap_8[1] +
+            tap_9[1] + tap_10[1] + tap_11[1] + tap_12[1] +
+            tap_13[1] + tap_14[1] + tap_15[1] + tap_16[1]
+        ) * 0.5;
+
+        let comb_freq = clip(p.comb_size, 20.0, 4000.0);
+        let comb_time = clip(1.0 / comb_freq, 0.00025, 0.25);
+        let comb_taps = clip(round(p.comb_taps), 1.0, 64.0);
+        let comb_density = clip(p.comb_density, 0.0, 1.0);
+        let comb_feedback = clip(p.comb_feedback, 0.0, 0.99);
+        let comb_nonlinear = clip(p.comb_nonlinear, 0.0, 1.0);
+        let comb_drive = 1.0 + comb_nonlinear * 6.0;
+        let slope = 0.45 + comb_density * 2.2;
+        let comb_src_l = dry_l * 0.65 + taps_l * 0.35 + comb_fb_l * comb_feedback;
+        let comb_src_r = dry_r * 0.65 + taps_r * 0.35 + comb_fb_r * comb_feedback;
+        let comb_in_l = (comb_src_l * comb_drive).tanh() / comb_drive.sqrt();
+        let comb_in_r = (comb_src_r * comb_drive).tanh() / comb_drive.sqrt();
+
+        let c1_w = 1.0;
+        let c2_w = _rainmaker_comb_weight(comb_taps, 2.0);
+        let c3_w = _rainmaker_comb_weight(comb_taps, 4.0);
+        let c4_w = _rainmaker_comb_weight(comb_taps, 8.0);
+        let c5_w = _rainmaker_comb_weight(comb_taps, 16.0);
+        let c6_w = _rainmaker_comb_weight(comb_taps, 24.0);
+        let c7_w = _rainmaker_comb_weight(comb_taps, 32.0);
+        let c8_w = _rainmaker_comb_weight(comb_taps, 48.0);
+        let comb_norm = 1.0 / (c1_w + c2_w + c3_w + c4_w + c5_w + c6_w + c7_w + c8_w);
+
+        let c1_t = comb_time;
+        let c2_t = clip(comb_time * (1.0 + pow(1.0 / 7.0, slope) * 4.0), 0.00025, 0.25);
+        let c3_t = clip(comb_time * (1.0 + pow(2.0 / 7.0, slope) * 4.0), 0.00025, 0.25);
+        let c4_t = clip(comb_time * (1.0 + pow(3.0 / 7.0, slope) * 4.0), 0.00025, 0.25);
+        let c5_t = clip(comb_time * (1.0 + pow(4.0 / 7.0, slope) * 4.0), 0.00025, 0.25);
+        let c6_t = clip(comb_time * (1.0 + pow(5.0 / 7.0, slope) * 4.0), 0.00025, 0.25);
+        let c7_t = clip(comb_time * (1.0 + pow(6.0 / 7.0, slope) * 4.0), 0.00025, 0.25);
+        let c8_t = clip(comb_time * (1.0 + pow(7.0 / 7.0, slope) * 4.0), 0.00025, 0.25);
+
+        let comb_l = (
+            delay_c_ar(comb_in_l, 0.25, c1_t) * c1_w +
+            delay_c_ar(comb_in_l, 0.25, c2_t) * c2_w +
+            delay_c_ar(comb_in_l, 0.25, c3_t) * c3_w +
+            delay_c_ar(comb_in_l, 0.25, c4_t) * c4_w +
+            delay_c_ar(comb_in_l, 0.25, c5_t) * c5_w +
+            delay_c_ar(comb_in_l, 0.25, c6_t) * c6_w +
+            delay_c_ar(comb_in_l, 0.25, c7_t) * c7_w +
+            delay_c_ar(comb_in_l, 0.25, c8_t) * c8_w
+        ) * comb_norm;
+        let comb_r = (
+            delay_c_ar(comb_in_r, 0.25, c1_t) * c1_w +
+            delay_c_ar(comb_in_r, 0.25, c2_t) * c2_w +
+            delay_c_ar(comb_in_r, 0.25, c3_t) * c3_w +
+            delay_c_ar(comb_in_r, 0.25, c4_t) * c4_w +
+            delay_c_ar(comb_in_r, 0.25, c5_t) * c5_w +
+            delay_c_ar(comb_in_r, 0.25, c6_t) * c6_w +
+            delay_c_ar(comb_in_r, 0.25, c7_t) * c7_w +
+            delay_c_ar(comb_in_r, 0.25, c8_t) * c8_w
+        ) * comb_norm;
+
+        let comb_tone = clip(comb_freq * 12.0, 200.0, 16000.0);
+        let comb_wet_l = leak_dc_ar(lpf_ar(comb_l, comb_tone), 0.995);
+        let comb_wet_r = leak_dc_ar(lpf_ar(comb_r, comb_tone), 0.995);
+        let comb_mix = clip(p.comb_mix, 0.0, 1.0);
+        let wet_l = taps_l + comb_wet_l * comb_mix;
+        let wet_r = taps_r + comb_wet_r * comb_mix;
+
+        let feedback = clip(p.feedback, 0.0, 0.95);
+        let feedback_cutoff = clip(clip(p.feedback_tone, 0.0, 1.0) * 10000.0, 20.0, 10000.0);
+        let feedback_ratio = pow(2.0, clip(p.feedback_pitch, -24.0, 24.0) / 12.0);
+        let feedback_l = pitch_shift_ar(lpf_ar(dry_l + wet_l, feedback_cutoff), 0.16, feedback_ratio, 0.0, 0.0) * feedback;
+        let feedback_r = pitch_shift_ar(lpf_ar(dry_r + wet_r, feedback_cutoff), 0.16, feedback_ratio, 0.0, 0.0) * feedback;
+        local_out_ar([
+            leak_dc_ar(feedback_l, 0.995),
+            leak_dc_ar(feedback_r, 0.995),
+            leak_dc_ar(comb_wet_l, 0.995),
+            leak_dc_ar(comb_wet_r, 0.995)
+        ]);
+
+        let wet_dry = clip(p.wet_dry, 0.0, 1.0);
+        [
+            softclip((1.0 - wet_dry) * dry_l + wet_dry * leak_dc_ar(wet_l, 0.995)),
+            softclip((1.0 - wet_dry) * dry_r + wet_dry * leak_dc_ar(wet_r, 0.995))
+        ]
+    });
