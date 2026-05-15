@@ -213,9 +213,7 @@ pub fn reconcile_voice_ports(
     if diff.is_unchanged() {
         // Body-only edit: keep the registry fresh in case channel widths or
         // metadata shifted on a kept port, but do not touch buses or routes.
-        state
-            .synthdef_outputs
-            .insert(synthdef, new_ports.to_vec());
+        state.synthdef_outputs.insert(synthdef, new_ports.to_vec());
         return PortReconcile {
             diff,
             ..Default::default()
@@ -236,15 +234,12 @@ pub fn reconcile_voice_ports(
     let mut dropped_routes = Vec::new();
     let mut dropped_param_routes = Vec::new();
     for port in &diff.removed {
-        let bus = state
-            .voices
-            .get(&voice_id)
-            .and_then(|v| {
-                v.output_buses
-                    .iter()
-                    .find(|(n, _)| n == &port.name)
-                    .map(|(_, b)| *b)
-            });
+        let bus = state.voices.get(&voice_id).and_then(|v| {
+            v.output_buses
+                .iter()
+                .find(|(n, _)| n == &port.name)
+                .map(|(_, b)| *b)
+        });
         if let Some(bus) = bus {
             match port.rate {
                 PortRate::Ar => state.free_audio_bus(bus, port.channels),
@@ -303,7 +298,9 @@ pub fn reconcile_voice_ports(
             let key = (voice_id, port.name.clone());
             // Only inject the silent default if the script hasn't already
             // declared a route for the new port — preserves user intent.
-            routes.entry(key.clone()).or_insert_with(|| vec![RouteDest::Muted]);
+            routes
+                .entry(key.clone())
+                .or_insert_with(|| vec![RouteDest::Muted]);
             default_muted.push(key);
         }
     }
@@ -390,7 +387,12 @@ mod tests {
 
     #[test]
     fn diff_unchanged_when_names_match() {
-        let old = vec![port("out", 2), port("cv1", 1), port("cv2", 1), port("cv3", 1)];
+        let old = vec![
+            port("out", 2),
+            port("cv1", 1),
+            port("cv2", 1),
+            port("cv3", 1),
+        ];
         let new = old.clone();
         let d = diff_port_set(&old, &new);
         assert!(d.is_unchanged());
@@ -507,18 +509,14 @@ mod tests {
         // recreate.
         let mut state = State::default();
         let ports = vec![port("out", 2), port("a", 1), port("b", 1), port("c", 1)];
-        let (voice_id, group_id, _) =
-            setup_voice_with_ports(&mut state, "voice_synth", &ports);
+        let (voice_id, group_id, _) = setup_voice_with_ports(&mut state, "voice_synth", &ports);
 
         let buses_before: Vec<_> = state.voices[&voice_id].output_buses.clone();
         let bus_count_before = state.audio_buses.allocated_count();
 
         let mut routes: RouteMap = HashMap::new();
         for p in &ports {
-            routes.insert(
-                (voice_id, p.name.clone()),
-                vec![RouteDest::Group(group_id)],
-            );
+            routes.insert((voice_id, p.name.clone()), vec![RouteDest::Group(group_id)]);
         }
         let routes_before = routes.clone();
 
@@ -543,10 +541,7 @@ mod tests {
 
         let mut routes: RouteMap = HashMap::new();
         for p in &old {
-            routes.insert(
-                (voice_id, p.name.clone()),
-                vec![RouteDest::Group(group_id)],
-            );
+            routes.insert((voice_id, p.name.clone()), vec![RouteDest::Group(group_id)]);
         }
 
         let new = vec![
@@ -635,10 +630,7 @@ mod tests {
         let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
 
         assert_eq!(outcome.diff.removed, vec![port("send", 1)]);
-        assert_eq!(
-            outcome.dropped_routes,
-            vec![(voice_id, "send".to_string())]
-        );
+        assert_eq!(outcome.dropped_routes, vec![(voice_id, "send".to_string())]);
 
         // Route gone — Story 6b's finalize will treat this as a removal.
         assert!(!routes.contains_key(&(voice_id, "send".to_string())));
@@ -672,7 +664,10 @@ mod tests {
         let (voice_id, group_id, _) = setup_voice_with_ports(&mut state, "vs", &old);
 
         let mut routes: RouteMap = HashMap::new();
-        routes.insert((voice_id, "cv_old".into()), vec![RouteDest::Group(group_id)]);
+        routes.insert(
+            (voice_id, "cv_old".into()),
+            vec![RouteDest::Group(group_id)],
+        );
 
         let new = vec![port("cv_new", 1)];
         let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
@@ -766,12 +761,7 @@ mod tests {
         // returns to the audio-bus free list and a fresh control bus is
         // allocated for the kr "env".
         let mut state = State::default();
-        let old = vec![
-            port("out", 2),
-            port("env", 1),
-            port("a", 1),
-            port("b", 1),
-        ];
+        let old = vec![port("out", 2), port("env", 1), port("a", 1), port("b", 1)];
         let (voice_id, group_id, _) = setup_voice_with_ports(&mut state, "vs", &old);
 
         let env_old_bus = state.voices[&voice_id]
@@ -783,10 +773,7 @@ mod tests {
 
         let mut routes: RouteMap = HashMap::new();
         for p in &old {
-            routes.insert(
-                (voice_id, p.name.clone()),
-                vec![RouteDest::Group(group_id)],
-            );
+            routes.insert((voice_id, p.name.clone()), vec![RouteDest::Group(group_id)]);
         }
 
         let new = vec![
@@ -806,10 +793,7 @@ mod tests {
         );
 
         // The old Group route on env got dropped; sibling routes intact.
-        assert_eq!(
-            outcome.dropped_routes,
-            vec![(voice_id, "env".to_string())]
-        );
+        assert_eq!(outcome.dropped_routes, vec![(voice_id, "env".to_string())]);
         assert!(!routes.contains_key(&(voice_id, "env".to_string())));
         for sibling in &["out", "a", "b"] {
             assert_eq!(
@@ -881,10 +865,7 @@ mod tests {
         let mut routes: RouteMap = HashMap::new();
         for p in &old {
             if matches!(p.rate, PortRate::Ar) {
-                routes.insert(
-                    (voice_id, p.name.clone()),
-                    vec![RouteDest::Group(group_id)],
-                );
+                routes.insert((voice_id, p.name.clone()), vec![RouteDest::Group(group_id)]);
             }
         }
         // env is kr, so its route lives in state.param_routes_set — pretend
@@ -895,12 +876,7 @@ mod tests {
             vec![(ParamRouteTarget::Voice(target_voice), "cutoff".to_string())],
         );
 
-        let new = vec![
-            port("out", 2),
-            port("env", 1),
-            port("a", 1),
-            port("b", 1),
-        ];
+        let new = vec![port("out", 2), port("env", 1), port("a", 1), port("b", 1)];
         let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
 
         // Diff: env appears in both removed (kr) and added (ar).
@@ -1050,10 +1026,7 @@ mod tests {
         // port_tr_to_param_link_1 once the user wires `.to_trigger`), and
         // the source bus gets a fresh control-bus id.
         let mut state = State::default();
-        let old = vec![
-            port("out", 2),
-            kr_port("env", 1),
-        ];
+        let old = vec![port("out", 2), kr_port("env", 1)];
         let (voice_id, group_id, _) = setup_voice_with_ports(&mut state, "vs", &old);
 
         let env_old_bus = state.voices[&voice_id]
@@ -1072,10 +1045,7 @@ mod tests {
             vec![(ParamRouteTarget::Voice(target_voice), "cutoff".to_string())],
         );
 
-        let new = vec![
-            port("out", 2),
-            tr_port("env", 1),
-        ];
+        let new = vec![port("out", 2), tr_port("env", 1)];
         let outcome = reconcile_voice_ports(&mut state, voice_id, &new, &mut routes);
 
         assert_eq!(outcome.diff.removed, vec![kr_port("env", 1)]);
@@ -1170,10 +1140,7 @@ mod tests {
         );
 
         // The ar Group route on env got dropped; sibling out route survives.
-        assert_eq!(
-            outcome.dropped_routes,
-            vec![(voice_id, "env".to_string())]
-        );
+        assert_eq!(outcome.dropped_routes, vec![(voice_id, "env".to_string())]);
         assert!(!routes.contains_key(&(voice_id, "env".to_string())));
         assert_eq!(
             routes.get(&(voice_id, "out".to_string())),
@@ -1250,23 +1217,22 @@ mod tests {
             kr_port("env", 1),
             kr_port("lfo", 1),
         ];
-        let (voice_id, group_id, _) =
-            setup_voice_with_ports(&mut state, "vs", &ports);
+        let (voice_id, group_id, _) = setup_voice_with_ports(&mut state, "vs", &ports);
 
         let buses_before = state.voices[&voice_id].output_buses.clone();
         let mut routes: RouteMap = HashMap::new();
         for p in &ports {
             if matches!(p.rate, PortRate::Ar) {
-                routes.insert(
-                    (voice_id, p.name.clone()),
-                    vec![RouteDest::Group(group_id)],
-                );
+                routes.insert((voice_id, p.name.clone()), vec![RouteDest::Group(group_id)]);
             }
         }
         let routes_before = routes.clone();
         state.param_routes_set.insert(
             (voice_id, "env".to_string()),
-            vec![(ParamRouteTarget::Voice(VoiceId::new(99)), "cutoff".to_string())],
+            vec![(
+                ParamRouteTarget::Voice(VoiceId::new(99)),
+                "cutoff".to_string(),
+            )],
         );
 
         let outcome = reconcile_voice_ports(&mut state, voice_id, &ports, &mut routes);

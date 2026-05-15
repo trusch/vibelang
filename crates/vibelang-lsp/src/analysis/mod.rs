@@ -765,8 +765,14 @@ fn lint_melody_content(
                 if !found_close {
                     diagnostics.push(Diagnostic {
                         range: Range {
-                            start: Position { line, character: start_col + idx as u32 },
-                            end: Position { line, character: start_col + content.len() as u32 },
+                            start: Position {
+                                line,
+                                character: start_col + idx as u32,
+                            },
+                            end: Position {
+                                line,
+                                character: start_col + content.len() as u32,
+                            },
                         },
                         severity: Some(DiagnosticSeverity::ERROR),
                         code: Some(NumberOrString::String("invalid-melody-token".to_string())),
@@ -790,7 +796,11 @@ fn lint_melody_content(
             '1'..='7' => {
                 token_count += 1;
                 // Consume octave modifiers
-                while chars.peek().map(|(_, ch)| *ch == '\'' || *ch == ',').unwrap_or(false) {
+                while chars
+                    .peek()
+                    .map(|(_, ch)| *ch == '\'' || *ch == ',')
+                    .unwrap_or(false)
+                {
                     chars.next();
                 }
                 // Optional per-note params
@@ -804,12 +814,21 @@ fn lint_melody_content(
             }
 
             // Accidentals before scale degrees: #4, b7
-            '#' | 'b' if chars.peek().map(|(_, ch)| ('1'..='7').contains(ch)).unwrap_or(false) => {
+            '#' | 'b'
+                if chars
+                    .peek()
+                    .map(|(_, ch)| ('1'..='7').contains(ch))
+                    .unwrap_or(false) =>
+            {
                 // Check that next char is actually a digit (already peeked)
                 if let Some((_, _degree)) = chars.next() {
                     token_count += 1;
                     // Consume octave modifiers
-                    while chars.peek().map(|(_, ch)| *ch == '\'' || *ch == ',').unwrap_or(false) {
+                    while chars
+                        .peek()
+                        .map(|(_, ch)| *ch == '\'' || *ch == ',')
+                        .unwrap_or(false)
+                    {
                         chars.next();
                     }
                     // Optional per-note params
@@ -829,7 +848,10 @@ fn lint_melody_content(
                 // Consume accidentals and octave digits
                 while chars
                     .peek()
-                    .map(|(_, ch)| matches!(ch, '#' | '♯' | '♭' | '0'..='9') || (*ch == 'b' && !('a'..='g').contains(ch)))
+                    .map(|(_, ch)| {
+                        matches!(ch, '#' | '♯' | '♭' | '0'..='9')
+                            || (*ch == 'b' && !('a'..='g').contains(ch))
+                    })
                     .unwrap_or(false)
                 {
                     // Special case: 'b' is ambiguous (note B vs flat). If we just parsed
@@ -847,7 +869,11 @@ fn lint_melody_content(
                 // Optional chord suffix :maj7, :m7, etc.
                 if chars.peek().map(|(_, ch)| *ch) == Some(':') {
                     chars.next(); // consume ':'
-                    while chars.peek().map(|(_, ch)| ch.is_alphanumeric()).unwrap_or(false) {
+                    while chars
+                        .peek()
+                        .map(|(_, ch)| ch.is_alphanumeric())
+                        .unwrap_or(false)
+                    {
                         chars.next();
                     }
                 }

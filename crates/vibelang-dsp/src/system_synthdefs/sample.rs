@@ -438,7 +438,10 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
         Rate::Control,
         vec![
             Input::Constant(one),
-            Input::Node { node_id: max_node.0, output_index: 0 },
+            Input::Node {
+                node_id: max_node.0,
+                output_index: 0,
+            },
         ],
         1,
         1, // subtract
@@ -457,7 +460,10 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
         Rate::Control,
         vec![
             Input::Constant(one),
-            Input::Node { node_id: min_node.0, output_index: 0 },
+            Input::Node {
+                node_id: min_node.0,
+                output_index: 0,
+            },
         ],
         1,
         0, // add
@@ -476,8 +482,14 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
         "BinaryOpUGen".to_string(),
         Rate::Audio,
         vec![
-            Input::Node { node_id: left_sig_id, output_index: 0 },
-            Input::Node { node_id: left_gain.0, output_index: 0 },
+            Input::Node {
+                node_id: left_sig_id,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: left_gain.0,
+                output_index: 0,
+            },
         ],
         1,
         2, // multiply
@@ -487,8 +499,14 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
         "BinaryOpUGen".to_string(),
         Rate::Audio,
         vec![
-            Input::Node { node_id: right_sig_id, output_index: 0 },
-            Input::Node { node_id: right_gain.0, output_index: 0 },
+            Input::Node {
+                node_id: right_sig_id,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: right_gain.0,
+                output_index: 0,
+            },
         ],
         1,
         2, // multiply
@@ -497,8 +515,14 @@ fn generate_sample_voice_synthdef(name: &str, num_channels: i32) -> Option<(Stri
     // Always output stereo
     let out_inputs = vec![
         param(0), // bus
-        Input::Node { node_id: left_out.0, output_index: 0 },
-        Input::Node { node_id: right_out.0, output_index: 0 },
+        Input::Node {
+            node_id: left_out.0,
+            output_index: 0,
+        },
+        Input::Node {
+            node_id: right_out.0,
+            output_index: 0,
+        },
     ];
     builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
 
@@ -962,7 +986,10 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         Rate::Control,
         vec![
             Input::Constant(one),
-            Input::Node { node_id: max_node.0, output_index: 0 },
+            Input::Node {
+                node_id: max_node.0,
+                output_index: 0,
+            },
         ],
         1,
         1, // subtract
@@ -981,7 +1008,10 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         Rate::Control,
         vec![
             Input::Constant(one),
-            Input::Node { node_id: min_node.0, output_index: 0 },
+            Input::Node {
+                node_id: min_node.0,
+                output_index: 0,
+            },
         ],
         1,
         0, // add
@@ -998,8 +1028,14 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         "BinaryOpUGen".to_string(),
         Rate::Audio,
         vec![
-            Input::Node { node_id: left_sig_id, output_index: 0 },
-            Input::Node { node_id: left_gain.0, output_index: 0 },
+            Input::Node {
+                node_id: left_sig_id,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: left_gain.0,
+                output_index: 0,
+            },
         ],
         1,
         2, // multiply
@@ -1009,8 +1045,14 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
         "BinaryOpUGen".to_string(),
         Rate::Audio,
         vec![
-            Input::Node { node_id: right_sig_id, output_index: 0 },
-            Input::Node { node_id: right_gain.0, output_index: 0 },
+            Input::Node {
+                node_id: right_sig_id,
+                output_index: 0,
+            },
+            Input::Node {
+                node_id: right_gain.0,
+                output_index: 0,
+            },
         ],
         1,
         2, // multiply
@@ -1019,8 +1061,14 @@ fn generate_warp_voice_synthdef(name: &str, num_channels: i32) -> Option<(String
     // Always output stereo
     let out_inputs = vec![
         param(0), // bus
-        Input::Node { node_id: left_out.0, output_index: 0 },
-        Input::Node { node_id: right_out.0, output_index: 0 },
+        Input::Node {
+            node_id: left_out.0,
+            output_index: 0,
+        },
+        Input::Node {
+            node_id: right_out.0,
+            output_index: 0,
+        },
     ];
     builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
 

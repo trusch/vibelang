@@ -21,9 +21,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use tokio::sync::RwLock;
-use vibelang_core::handlers::{
-    ParamRoute, ParamRouteDiff, ParamRouteTarget, RoutesHandler,
-};
+use vibelang_core::handlers::{ParamRoute, ParamRouteDiff, ParamRouteTarget, RoutesHandler};
 use vibelang_core::{
     AddAction, Backend, BufferId, BufferInfo, BusId, EffectId, EffectState, GroupId, GroupState,
     NodeId, ParamMap, State, VoiceConfig, VoiceId, VoiceState,
@@ -114,12 +112,7 @@ impl Backend for MockBackend {
     async fn run_node(&self, _node: NodeId, _running: bool) -> Result<(), Self::Error> {
         Ok(())
     }
-    async fn set_param(
-        &self,
-        _node: NodeId,
-        _param: &str,
-        _value: f32,
-    ) -> Result<(), Self::Error> {
+    async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> Result<(), Self::Error> {
         Ok(())
     }
     async fn map_param_to_bus(
@@ -135,11 +128,7 @@ impl Backend for MockBackend {
         });
         Ok(())
     }
-    async fn load_buffer(
-        &self,
-        _id: BufferId,
-        _path: &Path,
-    ) -> Result<BufferInfo, Self::Error> {
+    async fn load_buffer(&self, _id: BufferId, _path: &Path) -> Result<BufferInfo, Self::Error> {
         Ok(BufferInfo {
             frames: 0,
             channels: 0,
@@ -314,7 +303,11 @@ async fn lfo_to_fx_pan_via_to_param_audio() {
     });
 
     handler
-        .finalize_params(&diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
+        .finalize_params(
+            &diff,
+            &ParamRouteDiff::default(),
+            &ParamRouteDiff::default(),
+        )
         .await
         .unwrap();
 
@@ -366,8 +359,7 @@ async fn lfo_to_fx_pan_via_to_param_audio() {
         "exactly one a2k adapter spawned per (source, port) pair",
     );
     assert!(
-        s.ar_to_kr_adapters
-            .contains_key(&(lfo, "out".to_string())),
+        s.ar_to_kr_adapters.contains_key(&(lfo, "out".to_string())),
         "adapter recorded in state",
     );
 }
@@ -420,9 +412,9 @@ async fn lfo_to_fx_via_modulate_by() {
 
     // /n_map points at the summer's intermediate bus on the fx node.
     let maps = backend.maps();
-    assert!(maps.iter().any(|m| m.node == fx_node
-        && m.param == "pan"
-        && m.bus == summer.bus.raw()));
+    assert!(maps
+        .iter()
+        .any(|m| m.node == fx_node && m.param == "pan" && m.bus == summer.bus.raw()));
 
     // BEND route entry recorded; SET map untouched.
     let bend_entries = s
@@ -434,10 +426,7 @@ async fn lfo_to_fx_via_modulate_by() {
         bend_entries[0],
         (ParamRouteTarget::Effect(fx), "pan".to_string()),
     );
-    assert!(s
-        .param_routes_set
-        .get(&(lfo, "out".to_string()))
-        .is_none());
+    assert!(s.param_routes_set.get(&(lfo, "out".to_string())).is_none());
 }
 
 // =========================================================================
@@ -497,14 +486,11 @@ async fn take_effect_param_routes_drains_target_entries() {
     assert!(set_entries
         .iter()
         .all(|(t, _)| *t != ParamRouteTarget::Effect(fx_a)));
-    assert!(set_entries
-        .contains(&(ParamRouteTarget::Effect(fx_b), "pan".to_string())));
+    assert!(set_entries.contains(&(ParamRouteTarget::Effect(fx_b), "pan".to_string())));
 
     // BEND map: fx_a was the only target, so the source key drops entirely.
     assert!(
-        s.param_routes_bend
-            .get(&(src, "out".to_string()))
-            .is_none(),
+        s.param_routes_bend.get(&(src, "out".to_string())).is_none(),
         "bend source key pruned when its only target was fx_a",
     );
 }

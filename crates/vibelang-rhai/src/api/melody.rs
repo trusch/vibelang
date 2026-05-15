@@ -20,9 +20,9 @@ use std::collections::HashMap;
 use vibelang_core::traits::{MelodyConfig, NoteEvent};
 use vibelang_core::types::Beat;
 
-use vibelang_core::midi::parse_note_name;
 use super::voice::Voice;
 use crate::context;
+use vibelang_core::midi::parse_note_name;
 
 // Global registry for melodies - allows looking up melodies by name
 thread_local! {

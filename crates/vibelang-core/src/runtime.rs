@@ -177,11 +177,7 @@ impl<B: Backend> Runtime<B> {
     /// input_channels`, the first private bus index in scsynth's contiguous
     /// `[outputs | inputs | private]` layout. This is the constructor every
     /// CLI / driver path should use.
-    pub fn new_with_audio_config(
-        backend: B,
-        output_channels: u32,
-        input_channels: u32,
-    ) -> Self {
+    pub fn new_with_audio_config(backend: B, output_channels: u32, input_channels: u32) -> Self {
         Self::new_with_state(
             backend,
             State::with_audio_config(output_channels, input_channels),
@@ -778,9 +774,7 @@ impl<B: Backend> Runtime<B> {
             let state = self.state.read().await;
             for (voice_id, config) in &new_state.voices {
                 for input in state.synthdef_inputs(&config.synthdef) {
-                    if input.rate == vibelang_dsp::PortRate::Ar
-                        && matches!(input.channels, 1 | 2)
-                    {
+                    if input.rate == vibelang_dsp::PortRate::Ar && matches!(input.channels, 1 | 2) {
                         let src = if input.name == "in" && input.channels == 2 {
                             InputRouteSrc::Group(config.group)
                         } else {
@@ -1203,7 +1197,12 @@ impl<B: Backend> Runtime<B> {
             let mut sample_ids: Vec<_> = diff.samples.created.keys().copied().collect();
             sample_ids.sort_by_key(|id| id.raw());
             let loads = sample_ids.into_iter().map(|id| {
-                let config = diff.samples.created.get(&id).expect("just collected").clone();
+                let config = diff
+                    .samples
+                    .created
+                    .get(&id)
+                    .expect("just collected")
+                    .clone();
                 tracing::debug!("Reload: loading sample {:?}", id);
                 self.samples.load(id, config)
             });
@@ -1233,11 +1232,7 @@ impl<B: Backend> Runtime<B> {
                 .await
             {
                 Ok(_info) => {
-                    self.state
-                        .write()
-                        .await
-                        .buffers
-                        .insert(*id, config.clone());
+                    self.state.write().await.buffers.insert(*id, config.clone());
                 }
                 Err(e) => {
                     tracing::error!(
@@ -1467,8 +1462,7 @@ impl<B: Backend> Runtime<B> {
                 let mut state = self.state.write().await;
                 if let Some(group) = state.groups.get_mut(id) {
                     let bus_changed = group.output_bus != new_config.output_bus;
-                    let channels_changed =
-                        group.output_channels != new_config.output_channels;
+                    let channels_changed = group.output_channels != new_config.output_channels;
                     if bus_changed || channels_changed {
                         let old_bus = group.output_bus;
                         let old_channels = group.output_channels;
@@ -3524,7 +3518,11 @@ mod tests {
             let mut latest: HashMap<NodeId, (String, Option<f32>)> = HashMap::new();
             for ev in events.iter() {
                 match ev {
-                    BackendEvent::Create { def, node, link_outbus } => {
+                    BackendEvent::Create {
+                        def,
+                        node,
+                        link_outbus,
+                    } => {
                         if def.starts_with("system_link_audio") {
                             latest.insert(*node, (def.clone(), *link_outbus));
                         }
@@ -3615,7 +3613,10 @@ mod tests {
 
         async fn free_node(&self, node: NodeId) -> std::result::Result<(), Self::Error> {
             self.free_node_log.lock().unwrap().push(node);
-            self.events.lock().unwrap().push(BackendEvent::Free { node });
+            self.events
+                .lock()
+                .unwrap()
+                .push(BackendEvent::Free { node });
             Ok(())
         }
 
@@ -3701,7 +3702,12 @@ mod tests {
 
     /// Pre-register an effect synthdef name (no port descriptors needed).
     async fn register_effect_synthdef(runtime: &Runtime<RecordingBackend>, name: &str) {
-        runtime.state.write().await.synthdefs.insert(name.to_string());
+        runtime
+            .state
+            .write()
+            .await
+            .synthdefs
+            .insert(name.to_string());
     }
 
     fn add_body_contribution(
@@ -3769,10 +3775,7 @@ mod tests {
 
         let mut new_state = ScriptState::new();
         new_state.add_group(group_id, GroupConfig::default());
-        new_state.add_voice(
-            voice_id,
-            VoiceConfig::new("v", synthdef_name, group_id),
-        );
+        new_state.add_voice(voice_id, VoiceConfig::new("v", synthdef_name, group_id));
         new_state.add_effect(
             effect_id,
             EffectConfig {
@@ -3862,7 +3865,9 @@ mod tests {
             // And reads from one of the voice's port buses.
             let in_bus = m.in_bus.expect("mixer has in_bus param");
             assert!(
-                port_buses.values().any(|&b| (b - in_bus).abs() < f32::EPSILON),
+                port_buses
+                    .values()
+                    .any(|&b| (b - in_bus).abs() < f32::EPSILON),
                 "mixer in_bus {} did not match any voice port bus {:?}",
                 in_bus,
                 port_buses,
@@ -3951,10 +3956,7 @@ mod tests {
         let mut new_state = ScriptState::new();
         new_state.add_group(main_id, GroupConfig::default());
         new_state.add_group(fx_evens_id, GroupConfig::default());
-        new_state.add_voice(
-            voice_id,
-            VoiceConfig::new("v", synthdef_name, main_id),
-        );
+        new_state.add_voice(voice_id, VoiceConfig::new("v", synthdef_name, main_id));
         new_state.add_effect(
             effect_id,
             EffectConfig {

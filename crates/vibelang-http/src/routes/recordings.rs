@@ -48,7 +48,9 @@ fn recording_to_api(info: &CoreRecordingInfo, tempo: f64) -> Recording {
         None
     };
     let path = if matches!(info.status, RecordingStatus::Completed) {
-        info.file_path.as_ref().map(|p| p.to_string_lossy().into_owned())
+        info.file_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned())
     } else {
         None
     };
@@ -85,7 +87,9 @@ pub async fn get_recording(
     let recording = state
         .with_state(|s| {
             let tempo = s.tempo;
-            s.recordings.get(&rec_id).map(|info| recording_to_api(info, tempo))
+            s.recordings
+                .get(&rec_id)
+                .map(|info| recording_to_api(info, tempo))
         })
         .await;
 

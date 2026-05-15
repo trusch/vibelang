@@ -3447,8 +3447,15 @@ mod tests {
         assert_eq!(state.advanced_cc_routes.len(), 1, "Should have 1 CC route");
         let route = &state.advanced_cc_routes[0];
         assert_eq!(route.cc, 17, "CC number should be 17");
-        assert_eq!(route.channel, Some(0), "Channel 1 (user-facing) stored as 0 (internal)");
-        assert_eq!(route.curve, "logarithmic", "\"log\" maps to \"logarithmic\"");
+        assert_eq!(
+            route.channel,
+            Some(0),
+            "Channel 1 (user-facing) stored as 0 (internal)"
+        );
+        assert_eq!(
+            route.curve, "logarithmic",
+            "\"log\" maps to \"logarithmic\""
+        );
         assert_eq!(route.param, "cutoff", "Param should be cutoff");
     }
 
@@ -3474,7 +3481,10 @@ mod tests {
         let route = &state.advanced_keyboard_routes[0];
         assert_eq!(route.note_min, 36, "C2 = MIDI note 36");
         assert_eq!(route.note_max, 84, "C6 = MIDI note 84");
-        assert_eq!(route.velocity_curve, "soft", "Velocity curve should be soft");
+        assert_eq!(
+            route.velocity_curve, "soft",
+            "Velocity curve should be soft"
+        );
     }
 
     #[cfg(feature = "midi")]
@@ -3522,7 +3532,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(state.advanced_note_routes.len(), 1);
-        assert_eq!(state.voices.len(), 1, "Bare voice() in .to() must not clobber .synth()");
+        assert_eq!(
+            state.voices.len(),
+            1,
+            "Bare voice() in .to() must not clobber .synth()"
+        );
         let cfg = state.voices.values().next().unwrap();
         assert_eq!(cfg.synthdef, "sample_voice");
     }
@@ -3544,6 +3558,9 @@ mod tests {
 
         assert_eq!(state.advanced_note_routes.len(), 1);
         assert_eq!(state.voices.len(), 1);
-        assert_eq!(state.voices.values().next().unwrap().synthdef, "sample_voice");
+        assert_eq!(
+            state.voices.values().next().unwrap().synthdef,
+            "sample_voice"
+        );
     }
 }

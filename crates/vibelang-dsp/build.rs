@@ -138,10 +138,7 @@ fn load_and_validate() -> Vec<UGenManifest> {
     let entries = match fs::read_dir(manifests_dir) {
         Ok(e) => e,
         Err(e) => {
-            println!(
-                "cargo:warning=failed to read ugen_manifests dir: {}",
-                e
-            );
+            println!("cargo:warning=failed to read ugen_manifests dir: {}", e);
             panic!("failed to read ugen_manifests dir: {}", e);
         }
     };
@@ -180,11 +177,7 @@ fn load_and_validate() -> Vec<UGenManifest> {
         for ugen in parsed {
             if let Err(msg) = validate(&path, &ugen) {
                 println!("cargo:warning={}: {}", path.display(), msg);
-                panic!(
-                    "manifest validation failed in {}: {}",
-                    path.display(),
-                    msg
-                );
+                panic!("manifest validation failed in {}: {}", path.display(), msg);
             }
             if !seen_names.insert(ugen.name.clone()) {
                 let msg = format!(
@@ -410,16 +403,8 @@ fn main() {
                 let arity = inputs.len();
                 writeln!(f, "    engine.register_raw_fn(").unwrap();
                 writeln!(f, "        \"{}\",", func_name).unwrap();
-                writeln!(
-                    f,
-                    "        &[std::any::TypeId::of::<rhai::Array>()],"
-                )
-                .unwrap();
-                writeln!(
-                    f,
-                    "        |_ctx, args: &mut [&mut Dynamic]| {{"
-                )
-                .unwrap();
+                writeln!(f, "        &[std::any::TypeId::of::<rhai::Array>()],").unwrap();
+                writeln!(f, "        |_ctx, args: &mut [&mut Dynamic]| {{").unwrap();
                 writeln!(
                     f,
                     "            let array: rhai::Array = std::mem::take(args[0]).cast();"
@@ -433,8 +418,7 @@ fn main() {
                 )
                 .unwrap();
                 writeln!(f, "            }}").unwrap();
-                let call_args: Vec<String> =
-                    (0..arity).map(|i| format!("&array[{}]", i)).collect();
+                let call_args: Vec<String> = (0..arity).map(|i| format!("&array[{}]", i)).collect();
                 writeln!(
                     f,
                     "            Ok({}({}).unwrap())",
@@ -491,4 +475,3 @@ fn escape_keyword(s: &str) -> String {
         _ => s.to_string(),
     }
 }
-

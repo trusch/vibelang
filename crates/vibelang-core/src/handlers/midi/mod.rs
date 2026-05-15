@@ -65,9 +65,9 @@ use crate::transport_snapshot::TransportSnapshot;
 
 use crate::compat::SenderExt;
 use crate::message::{Message, PatternMessage, VoiceMessage};
+use crate::midi::PerNoteStateManager;
 use crate::midi::{LooperAction, LooperManager};
 use crate::reload::LooperConfig;
-use crate::midi::PerNoteStateManager;
 use crate::state::State;
 use crate::traits::{FadeTarget, MidiOutputCapability};
 use crate::types::ids::MidiDeviceId;
@@ -633,7 +633,10 @@ impl<B: Backend> MidiHandler<B> {
             (state.current_beat.to_f64(), state.time_sig.numerator)
         };
         let looper_actions = {
-            let mut mgr = self.looper_manager.lock().unwrap_or_else(|e| e.into_inner());
+            let mut mgr = self
+                .looper_manager
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             mgr.tick(current_beat, time_sig_num)
         };
         self.dispatch_looper_actions(looper_actions).await;
@@ -648,7 +651,10 @@ impl<B: Backend> MidiHandler<B> {
     /// Called on script reload. Stops patterns from removed loopers.
     pub async fn reconcile_loopers(&self, configs: &[LooperConfig]) {
         let actions = {
-            let mut mgr = self.looper_manager.lock().unwrap_or_else(|e| e.into_inner());
+            let mut mgr = self
+                .looper_manager
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             mgr.reconcile(configs)
         };
         self.dispatch_looper_actions(actions).await;
@@ -844,19 +850,35 @@ impl<B: Backend> MidiHandler<B> {
                 note,
                 channel
             );
-            self.handle_note_off(routing, device_id, channel, note).await;
+            self.handle_note_off(routing, device_id, channel, note)
+                .await;
             return;
         }
 
         // If a looper is configured for this device, route exclusively through it.
-        if self.looper_manager.lock().unwrap_or_else(|e| e.into_inner()).has_device(device_id) {
+        if self
+            .looper_manager
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_device(device_id)
+        {
             let (current_beat, time_sig_num) = {
                 let state = self.state.read().await;
                 (state.current_beat.to_f64(), state.time_sig.numerator)
             };
             let actions = {
-                let mut mgr = self.looper_manager.lock().unwrap_or_else(|e| e.into_inner());
-                mgr.handle_note_on(device_id, channel, note, velocity, current_beat, time_sig_num)
+                let mut mgr = self
+                    .looper_manager
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                mgr.handle_note_on(
+                    device_id,
+                    channel,
+                    note,
+                    velocity,
+                    current_beat,
+                    time_sig_num,
+                )
             };
             self.dispatch_looper_actions(actions).await;
             return;
@@ -986,13 +1008,21 @@ impl<B: Backend> MidiHandler<B> {
         note: u8,
     ) {
         // If a looper is configured for this device, route exclusively through it.
-        if self.looper_manager.lock().unwrap_or_else(|e| e.into_inner()).has_device(device_id) {
+        if self
+            .looper_manager
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_device(device_id)
+        {
             let current_beat = {
                 let state = self.state.read().await;
                 state.current_beat.to_f64()
             };
             let actions = {
-                let mut mgr = self.looper_manager.lock().unwrap_or_else(|e| e.into_inner());
+                let mut mgr = self
+                    .looper_manager
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 mgr.handle_note_off(device_id, channel, note, current_beat)
             };
             self.dispatch_looper_actions(actions).await;

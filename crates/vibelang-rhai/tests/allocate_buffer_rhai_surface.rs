@@ -121,5 +121,9 @@ fn allocate_buffer_distinct_names_distinct_bufnums() {
 
     assert_eq!(state.buffers.len(), 3);
     let ids: std::collections::HashSet<_> = state.buffers.keys().copied().collect();
-    assert_eq!(ids.len(), 3, "three distinct names → three distinct BufferIds");
+    assert_eq!(
+        ids.len(),
+        3,
+        "three distinct names → three distinct BufferIds"
+    );
 }

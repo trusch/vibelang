@@ -1556,8 +1556,7 @@ mod tests {
         //     pstr "pan"    + i32  = 1 + 3 + 4                          = 8
         //   num_ugens (4)                                               = 4
         let mut off = 10 + 23 + 32 + 20 + 4 + 10 + 11 + 8 + 8 + 4;
-        let num_ugens =
-            i32::from_be_bytes(bytes[off - 4..off].try_into().unwrap());
+        let num_ugens = i32::from_be_bytes(bytes[off - 4..off].try_into().unwrap());
         assert_eq!(num_ugens, 21, "expected 21 UGens in mono variant");
 
         // Walk UGens and find the one named "Out" — should be exactly one,
@@ -1570,11 +1569,9 @@ mod tests {
             off += name_len;
             // rate (1 byte)
             off += 1;
-            let num_inputs =
-                i32::from_be_bytes(bytes[off..off + 4].try_into().unwrap());
+            let num_inputs = i32::from_be_bytes(bytes[off..off + 4].try_into().unwrap());
             off += 4;
-            let num_outputs =
-                i32::from_be_bytes(bytes[off..off + 4].try_into().unwrap());
+            let num_outputs = i32::from_be_bytes(bytes[off..off + 4].try_into().unwrap());
             off += 4;
             // special index (2 bytes)
             off += 2;
@@ -1717,8 +1714,7 @@ mod tests {
                     letters[i] as char,
                     n,
                 );
-                let offset_name =
-                    [b'o', b'f', b'f', b's', b'e', b't', b'_', letters[i]];
+                let offset_name = [b'o', b'f', b'f', b's', b'e', b't', b'_', letters[i]];
                 assert!(
                     bytes.windows(offset_name.len()).any(|w| w == offset_name),
                     "param offset_{} not found in {}-arity",
@@ -1751,9 +1747,7 @@ mod tests {
             let mut defaults = Vec::with_capacity(num_params);
             for i in 0..num_params {
                 let off = prefix_len + 4 * i;
-                let v = f32::from_be_bytes(
-                    bytes[off..off + 4].try_into().unwrap(),
-                );
+                let v = f32::from_be_bytes(bytes[off..off + 4].try_into().unwrap());
                 defaults.push(v);
             }
             assert_eq!(defaults[0], 0.0, "baseline default 0.0 (n={})", n);

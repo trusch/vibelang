@@ -47,9 +47,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use vibelang_core::handlers::ParamRouteTarget;
-use vibelang_core::handlers::{
-    ParamRoute, ParamRouteDiff, RouteMap, RoutesHandler,
-};
+use vibelang_core::handlers::{ParamRoute, ParamRouteDiff, RouteMap, RoutesHandler};
 use vibelang_core::reload::reconcile_voice_ports;
 use vibelang_core::{
     AddAction, Backend, BufferId, BufferInfo, BusId, GroupId, GroupState, NodeId, ParamMap, State,
@@ -162,12 +160,7 @@ impl Backend for MockBackend {
         Ok(())
     }
 
-    async fn set_param(
-        &self,
-        _node: NodeId,
-        _param: &str,
-        _value: f32,
-    ) -> Result<(), Self::Error> {
+    async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -185,11 +178,7 @@ impl Backend for MockBackend {
         Ok(())
     }
 
-    async fn load_buffer(
-        &self,
-        _id: BufferId,
-        _path: &Path,
-    ) -> Result<BufferInfo, Self::Error> {
+    async fn load_buffer(&self, _id: BufferId, _path: &Path) -> Result<BufferInfo, Self::Error> {
         Ok(BufferInfo {
             frames: 0,
             channels: 0,
@@ -273,11 +262,7 @@ async fn insert_voice(
 }
 
 /// Insert a group with a freshly-allocated stereo audio bus and node id.
-async fn insert_group(
-    state: &Arc<RwLock<State>>,
-    group_id: GroupId,
-    name: &str,
-) -> u32 {
+async fn insert_group(state: &Arc<RwLock<State>>, group_id: GroupId, name: &str) -> u32 {
     let mut s = state.write().await;
     let node = s.alloc_node_id();
     let bus = s.alloc_audio_bus(2);
@@ -353,7 +338,15 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
     let src = VoiceId::new(10);
     let tgt = VoiceId::new(11);
 
-    insert_voice(&state, src, voice_group, SRC_SYNTH, &[kr_port("env")], vec![]).await;
+    insert_voice(
+        &state,
+        src,
+        voice_group,
+        SRC_SYNTH,
+        &[kr_port("env")],
+        vec![],
+    )
+    .await;
 
     // Two active nodes on the target — `finalize_params` must map the param
     // on each.
@@ -384,7 +377,11 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
     });
 
     handler
-        .finalize_params(&diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
+        .finalize_params(
+            &diff,
+            &ParamRouteDiff::default(),
+            &ParamRouteDiff::default(),
+        )
         .await
         .unwrap();
 
@@ -430,7 +427,10 @@ async fn cv_to_param_kr_drives_target_param_via_n_map() {
     let entries = baseline
         .get(&(src, "env".to_string()))
         .expect("source key recorded");
-    assert_eq!(entries.as_slice(), &[(ParamRouteTarget::Voice(tgt), "cutoff".to_string())]);
+    assert_eq!(
+        entries.as_slice(),
+        &[(ParamRouteTarget::Voice(tgt), "cutoff".to_string())]
+    );
 
     // Post-A1.a: SET routes spawn one `param_kr_modulate_1` summer per
     // (target, param) pair so `.scale/.offset` modifiers can apply
@@ -460,7 +460,15 @@ async fn multiple_to_param_routes_from_one_source() {
     let tgt_a = VoiceId::new(21);
     let tgt_b = VoiceId::new(22);
 
-    insert_voice(&state, src, voice_group, SRC_SYNTH, &[kr_port("env")], vec![]).await;
+    insert_voice(
+        &state,
+        src,
+        voice_group,
+        SRC_SYNTH,
+        &[kr_port("env")],
+        vec![],
+    )
+    .await;
 
     let (node_a, node_b) = {
         let mut s = state.write().await;
@@ -502,7 +510,11 @@ async fn multiple_to_param_routes_from_one_source() {
     });
 
     handler
-        .finalize_params(&diff, &ParamRouteDiff::default(), &ParamRouteDiff::default())
+        .finalize_params(
+            &diff,
+            &ParamRouteDiff::default(),
+            &ParamRouteDiff::default(),
+        )
         .await
         .unwrap();
 
@@ -571,15 +583,7 @@ async fn reload_preserves_kr_param_routes_when_port_rates_unchanged() {
     let tgt = VoiceId::new(71);
 
     let ports = vec![kr_port("env")];
-    insert_voice(
-        &state,
-        src,
-        voice_group,
-        SRC_SYNTH,
-        &ports,
-        vec![],
-    )
-    .await;
+    insert_voice(&state, src, voice_group, SRC_SYNTH, &ports, vec![]).await;
     insert_voice(
         &state,
         tgt,
@@ -613,10 +617,7 @@ async fn reload_preserves_kr_param_routes_when_port_rates_unchanged() {
         outcome.diff.is_unchanged(),
         "identical port set → diff unchanged",
     );
-    assert!(
-        outcome.dropped_routes.is_empty(),
-        "no ar routes to drop",
-    );
+    assert!(outcome.dropped_routes.is_empty(), "no ar routes to drop",);
     assert!(
         outcome.dropped_param_routes.is_empty(),
         "kr port unchanged — its Param route must not drop",
@@ -631,7 +632,10 @@ async fn reload_preserves_kr_param_routes_when_port_rates_unchanged() {
         .get(&(src, "env".to_string()))
         .cloned()
         .expect("param route preserved across body-only reload");
-    assert_eq!(entries, vec![(ParamRouteTarget::Voice(tgt), "cutoff".to_string())]);
+    assert_eq!(
+        entries,
+        vec![(ParamRouteTarget::Voice(tgt), "cutoff".to_string())]
+    );
 
     // RouteMap stays empty — kr ports do not populate it.
     assert!(routes.is_empty());

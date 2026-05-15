@@ -104,7 +104,10 @@ fn order_group_creations_preserves_parent_before_child_with_sorted_ties() {
     let mut configs = HashMap::new();
     configs.insert(GroupId::new(100), root_config("alpha"));
     configs.insert(GroupId::new(5), root_config("beta"));
-    configs.insert(GroupId::new(200), child_config("alpha-1", GroupId::new(100)));
+    configs.insert(
+        GroupId::new(200),
+        child_config("alpha-1", GroupId::new(100)),
+    );
     configs.insert(GroupId::new(50), child_config("alpha-2", GroupId::new(100)));
     configs.insert(GroupId::new(7), child_config("beta-1", GroupId::new(5)));
 

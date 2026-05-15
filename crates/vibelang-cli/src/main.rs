@@ -514,7 +514,12 @@ async fn run_simple_mode(
         info!("Script requested exit with code {}", exit_code);
         // Apply state before exiting (for any cleanup)
         let _ = handle
-            .send(ReloadMessage::Apply { state: output.state }.into())
+            .send(
+                ReloadMessage::Apply {
+                    state: output.state,
+                }
+                .into(),
+            )
             .await;
         // Stop the running flag so the runtime task exits
         running.store(false, Ordering::SeqCst);
@@ -535,7 +540,12 @@ async fn run_simple_mode(
     }
 
     handle
-        .send(ReloadMessage::Apply { state: output.state }.into())
+        .send(
+            ReloadMessage::Apply {
+                state: output.state,
+            }
+            .into(),
+        )
         .await?;
 
     // Wait for state to be fully applied before starting transport
@@ -602,7 +612,12 @@ async fn run_simple_mode(
                                     .await;
                             }
                             if let Err(e) = handle_clone
-                                .send(ReloadMessage::Apply { state: output.state }.into())
+                                .send(
+                                    ReloadMessage::Apply {
+                                        state: output.state,
+                                    }
+                                    .into(),
+                                )
                                 .await
                             {
                                 error!("Failed to apply reload: {}", e);
@@ -778,8 +793,7 @@ async fn run_tui_mode(
     // Create runtime — thread the actual scsynth -i/-o channel counts in so
     // the audio bus allocator starts past the hardware I/O block instead of
     // colliding with hardware input buses on setups with >16 hardware buses.
-    let mut runtime =
-        Runtime::new_with_audio_config(osc_backend, output_channels, input_channels);
+    let mut runtime = Runtime::new_with_audio_config(osc_backend, output_channels, input_channels);
     let handle = runtime.handle();
 
     // Set up metering callback to receive SendTrig messages from link synths
@@ -887,7 +901,12 @@ async fn run_tui_mode(
                     .await;
             }
             if let Err(e) = handle
-                .send(ReloadMessage::Apply { state: output.state }.into())
+                .send(
+                    ReloadMessage::Apply {
+                        state: output.state,
+                    }
+                    .into(),
+                )
                 .await
             {
                 log::error!("Failed to apply script: {}", e);
@@ -966,7 +985,12 @@ async fn run_tui_mode(
                                 .await;
                         }
                         if let Err(e) = reload_handle
-                            .send(ReloadMessage::Apply { state: output.state }.into())
+                            .send(
+                                ReloadMessage::Apply {
+                                    state: output.state,
+                                }
+                                .into(),
+                            )
                             .await
                         {
                             log::error!("Failed to apply reload: {}", e);

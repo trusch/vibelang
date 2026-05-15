@@ -3,9 +3,9 @@
 use crate::backend::{AddAction, Backend};
 use crate::compat::{Instant, RwLock};
 use crate::handlers::default_routes_for_voice;
-use crate::state::{State, VoiceState};
 #[cfg(feature = "midi")]
 use crate::state::MidiVoicePool;
+use crate::state::{State, VoiceState};
 use crate::traits::{VoiceConfig, Voices};
 use crate::types::{BusId, ControlBusId, NodeId, ParamMap, VoiceId};
 use crate::validation::Validate;
@@ -501,10 +501,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         );
 
         for (port_name, dests) in defaults {
-            state
-                .default_routes
-                .entry((id, port_name))
-                .or_insert(dests);
+            state.default_routes.entry((id, port_name)).or_insert(dests);
         }
 
         // Reload can reuse a voice id without an intervening delete; drop any
@@ -1337,7 +1334,11 @@ fn midi_pool_note_off(
             tracing::debug!(
                 "MIDI pool: note_off voice={:?} note={} → slot {} freed, NoteOff emitted; \
                  overflow {} held, slots={:?}",
-                id, note, slot, pool.overflow.len(), pool.slots,
+                id,
+                note,
+                slot,
+                pool.overflow.len(),
+                pool.slots,
             );
             events.push(QueuedMidiEvent::NoteOff { channel, note });
         }
@@ -1348,7 +1349,10 @@ fn midi_pool_note_off(
         tracing::debug!(
             "MIDI pool: note_off voice={:?} note={} → was held-but-stolen, dropped from overflow; \
              overflow now {} held, slots={:?}",
-            id, note, pool.overflow.len(), pool.slots,
+            id,
+            note,
+            pool.overflow.len(),
+            pool.slots,
         );
     } else {
         // Untracked note released. We have no record of it sounding, but the
@@ -1357,7 +1361,10 @@ fn midi_pool_note_off(
         tracing::debug!(
             "MIDI pool: note_off voice={:?} note={} → UNTRACKED (pool desync?); \
              emitting defensive NoteOff; overflow {} held, slots={:?}",
-            id, note, pool.overflow.len(), pool.slots,
+            id,
+            note,
+            pool.overflow.len(),
+            pool.slots,
         );
         events.push(QueuedMidiEvent::NoteOff { channel, note });
     }
@@ -1389,12 +1396,7 @@ fn midi_pool_clear(state: &mut State, id: VoiceId, channel: u8) -> Vec<QueuedMid
 /// `n` most-recently-allocated sounding notes and `NoteOff`s the rest; the
 /// overflow stack of held-but-stolen notes is preserved untouched.
 #[cfg(feature = "midi")]
-fn midi_pool_resize(
-    state: &mut State,
-    id: VoiceId,
-    channel: u8,
-    n: usize,
-) -> Vec<QueuedMidiEvent> {
+fn midi_pool_resize(state: &mut State, id: VoiceId, channel: u8, n: usize) -> Vec<QueuedMidiEvent> {
     let n = n.max(1);
     let Some(pool) = state.midi_voice_pool.get_mut(&id) else {
         return Vec::new();
@@ -2344,7 +2346,9 @@ mod tests {
         }
 
         /// Drain the sink into a comparable `(kind, channel, note, velocity)` list.
-        fn drained(rx: &crossbeam_channel::Receiver<ScheduledMidiEvent>) -> Vec<(&'static str, u8, u8, u8)> {
+        fn drained(
+            rx: &crossbeam_channel::Receiver<ScheduledMidiEvent>,
+        ) -> Vec<(&'static str, u8, u8, u8)> {
             let mut out = Vec::new();
             while let Ok(scheduled) = rx.try_recv() {
                 out.push(match scheduled.event {
@@ -3017,9 +3021,7 @@ mod tests {
     ) {
         let mut state_write = state.write().await;
         state_write.synthdefs.insert(name.to_string());
-        state_write
-            .synthdef_outputs
-            .insert(name.to_string(), ports);
+        state_write.synthdef_outputs.insert(name.to_string(), ports);
     }
 
     #[tokio::test]
@@ -3055,10 +3057,26 @@ mod tests {
             &state,
             "quad_synth",
             vec![
-                OutputPort { name: "a".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
-                OutputPort { name: "b".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
-                OutputPort { name: "c".into(), channels: 2, rate: vibelang_dsp::PortRate::Ar },
-                OutputPort { name: "d".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort {
+                    name: "a".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "b".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "c".into(),
+                    channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "d".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
             ],
         )
         .await;
@@ -3072,11 +3090,7 @@ mod tests {
 
         // 4 ports → 4 entries, in declared order.
         assert_eq!(voice.output_buses.len(), 4);
-        let names: Vec<&str> = voice
-            .output_buses
-            .iter()
-            .map(|(n, _)| n.as_str())
-            .collect();
+        let names: Vec<&str> = voice.output_buses.iter().map(|(n, _)| n.as_str()).collect();
         assert_eq!(names, vec!["a", "b", "c", "d"]);
 
         // Each port owns a distinct starting bus id.
@@ -3108,10 +3122,26 @@ mod tests {
             &state,
             "quad_synth",
             vec![
-                OutputPort { name: "a".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
-                OutputPort { name: "b".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
-                OutputPort { name: "c".into(), channels: 2, rate: vibelang_dsp::PortRate::Ar },
-                OutputPort { name: "d".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
+                OutputPort {
+                    name: "a".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "b".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "c".into(),
+                    channels: 2,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "d".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
             ],
         )
         .await;
@@ -3208,10 +3238,26 @@ mod tests {
             &state,
             "mixed_synth",
             vec![
-                OutputPort { name: "l".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
-                OutputPort { name: "r".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
-                OutputPort { name: "env".into(), channels: 1, rate: vibelang_dsp::PortRate::Kr },
-                OutputPort { name: "lfo".into(), channels: 1, rate: vibelang_dsp::PortRate::Kr },
+                OutputPort {
+                    name: "l".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "r".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "env".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Kr,
+                },
+                OutputPort {
+                    name: "lfo".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Kr,
+                },
             ],
         )
         .await;
@@ -3223,11 +3269,7 @@ mod tests {
         let state_read = state.read().await;
         let voice = state_read.voices.get(&voice_id).unwrap();
         assert_eq!(voice.output_buses.len(), 4);
-        let names: Vec<&str> = voice
-            .output_buses
-            .iter()
-            .map(|(n, _)| n.as_str())
-            .collect();
+        let names: Vec<&str> = voice.output_buses.iter().map(|(n, _)| n.as_str()).collect();
         assert_eq!(names, vec!["l", "r", "env", "lfo"]);
 
         // 2 Ar ports of width 1 → 2 audio bus IDs carved from the audio pool.
@@ -3264,10 +3306,26 @@ mod tests {
             &state,
             "mixed_synth",
             vec![
-                OutputPort { name: "l".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
-                OutputPort { name: "r".into(), channels: 1, rate: vibelang_dsp::PortRate::Ar },
-                OutputPort { name: "env".into(), channels: 1, rate: vibelang_dsp::PortRate::Kr },
-                OutputPort { name: "lfo".into(), channels: 1, rate: vibelang_dsp::PortRate::Kr },
+                OutputPort {
+                    name: "l".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "r".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "env".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Kr,
+                },
+                OutputPort {
+                    name: "lfo".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Kr,
+                },
             ],
         )
         .await;
@@ -3350,11 +3408,7 @@ mod tests {
         assert_eq!(voice.output_buses[0].0, "trig");
 
         let bus = voice.output_buses[0].1.raw();
-        assert!(
-            bus >= 1000,
-            "tr port owns a control-bus id (got {})",
-            bus
-        );
+        assert!(bus >= 1000, "tr port owns a control-bus id (got {})", bus);
         assert_eq!(
             state_read.control_buses.allocated_count(),
             1,
@@ -3443,7 +3497,6 @@ mod tests {
         assert!(c2.raw() >= 1000);
     }
 }
-
 
 #[cfg(all(test, feature = "midi"))]
 mod midi_pool_tests {
@@ -3536,10 +3589,21 @@ mod midi_pool_tests {
         // then revive A, release A → NoteOff A. Every note that got a NoteOn gets
         // a matching NoteOff — a mono synth's note-priority stack must not be left
         // thinking B is still held (otherwise releasing A sticks B's gate open).
-        let emitted = drive(1, false, &[(true, 60), (true, 64), (false, 64), (false, 60)]);
+        let emitted = drive(
+            1,
+            false,
+            &[(true, 60), (true, 64), (false, 64), (false, 60)],
+        );
         assert_eq!(
             emitted,
-            vec![(true, 60), (false, 60), (true, 64), (false, 64), (true, 60), (false, 60)],
+            vec![
+                (true, 60),
+                (false, 60),
+                (true, 64),
+                (false, 64),
+                (true, 60),
+                (false, 60)
+            ],
         );
         assert_nothing_sounding(1, &emitted);
         assert!(net_per_note(&emitted).values().all(|&c| c == 0));
@@ -3549,7 +3613,11 @@ mod midi_pool_tests {
     fn mono_release_stolen_note_out_of_order() {
         // Press A, press B (steal A), release A first (the stolen one — must not
         // resurrect or leak), release B → NoteOff B.
-        let emitted = drive(1, false, &[(true, 60), (true, 64), (false, 60), (false, 64)]);
+        let emitted = drive(
+            1,
+            false,
+            &[(true, 60), (true, 64), (false, 60), (false, 64)],
+        );
         assert_nothing_sounding(1, &emitted);
         assert!(net_per_note(&emitted).values().all(|&c| c == 0));
     }
@@ -3660,11 +3728,20 @@ mod midi_pool_tests {
         let mut state = State::default();
         let id = VoiceId::new(1);
         let on = midi_pool_note_on(&mut state, id, 0, 60, 64, 1, false);
-        assert!(matches!(on.as_slice(), [QueuedMidiEvent::NoteOn { note: 60, .. }]));
+        assert!(matches!(
+            on.as_slice(),
+            [QueuedMidiEvent::NoteOn { note: 60, .. }]
+        ));
         let cleared = midi_pool_clear(&mut state, id, 0);
-        assert!(matches!(cleared.as_slice(), [QueuedMidiEvent::NoteOff { note: 60, .. }]));
+        assert!(matches!(
+            cleared.as_slice(),
+            [QueuedMidiEvent::NoteOff { note: 60, .. }]
+        ));
         let off = midi_pool_note_off(&mut state, id, 0, 60, 1);
-        assert!(matches!(off.as_slice(), [QueuedMidiEvent::NoteOff { note: 60, .. }]));
+        assert!(matches!(
+            off.as_slice(),
+            [QueuedMidiEvent::NoteOff { note: 60, .. }]
+        ));
         assert!(!state.midi_voice_pool.contains_key(&id));
     }
 

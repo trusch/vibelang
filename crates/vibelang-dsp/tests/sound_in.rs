@@ -9,8 +9,8 @@
 
 use rhai::{Dynamic, Engine};
 use vibelang_dsp::{
-    clear_active_builder, encode_synthdef, register_dsp_api, set_active_builder,
-    GraphBuilderInner, GraphIR,
+    clear_active_builder, encode_synthdef, register_dsp_api, set_active_builder, GraphBuilderInner,
+    GraphIR,
 };
 
 fn build_via_rhai(script: &str) -> GraphIR {

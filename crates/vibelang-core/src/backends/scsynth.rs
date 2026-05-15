@@ -1290,9 +1290,7 @@ mod tests {
         let g_free_pos = log
             .iter()
             .position(|s| s == "/g_freeAll(0)")
-            .unwrap_or_else(|| {
-                panic!("connect must send /g_freeAll [0] — got: {:?}", log)
-            });
+            .unwrap_or_else(|| panic!("connect must send /g_freeAll [0] — got: {:?}", log));
         let clear_sched_pos = log
             .iter()
             .position(|s| s == "/clearSched")
@@ -1328,14 +1326,13 @@ mod tests {
             OscPacket::Message(msg) => {
                 let summary = match msg.addr.as_str() {
                     "/g_freeAll" => {
-                        let arg =
-                            msg.args.first().and_then(|v| {
-                                if let OscType::Int(i) = v {
-                                    Some(*i)
-                                } else {
-                                    None
-                                }
-                            });
+                        let arg = msg.args.first().and_then(|v| {
+                            if let OscType::Int(i) = v {
+                                Some(*i)
+                            } else {
+                                None
+                            }
+                        });
                         format!("/g_freeAll({})", arg.unwrap_or(i32::MIN))
                     }
                     "/sync" => {

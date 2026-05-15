@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 use rhai::{Dynamic, Engine};
 use serde::Deserialize;
 use vibelang_dsp::{
-    clear_active_builder, encode_synthdef, register_dsp_api, set_active_builder,
-    GraphBuilderInner, GraphIR,
+    clear_active_builder, encode_synthdef, register_dsp_api, set_active_builder, GraphBuilderInner,
+    GraphIR,
 };
 
 const MANIFESTS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/ugen_manifests");
@@ -39,8 +39,8 @@ fn load_manifests() -> Vec<UGenManifest> {
 
     let mut all = Vec::new();
     for path in paths {
-        let body = fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+        let body =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
         let parsed: Vec<UGenManifest> = serde_json::from_str(&body)
             .unwrap_or_else(|e| panic!("parse {}: {}", path.display(), e));
         all.extend(parsed);
@@ -88,7 +88,10 @@ fn pick_one_per_category(manifests: &[UGenManifest]) -> Vec<&UGenManifest> {
 }
 
 fn first_concrete_rate(ugen: &UGenManifest) -> Option<&str> {
-    ugen.rates.iter().map(String::as_str).find(|r| *r != "builder")
+    ugen.rates
+        .iter()
+        .map(String::as_str)
+        .find(|r| *r != "builder")
 }
 
 /// Validate header magic and version. The full scsyndef format is large
@@ -221,7 +224,10 @@ fn ugen_manifest_round_trip_all_entries() {
         let builder = clear_active_builder().expect("active builder vanished");
 
         if let Err(e) = eval_result {
-            failures.push(format!("{} ({}): rhai eval failed: {}", func_name, ugen.name, e));
+            failures.push(format!(
+                "{} ({}): rhai eval failed: {}",
+                func_name, ugen.name, e
+            ));
             continue;
         }
 
@@ -237,7 +243,10 @@ fn ugen_manifest_round_trip_all_entries() {
                 }
             }
             Err(e) => {
-                failures.push(format!("{} ({}): encode failed: {}", func_name, ugen.name, e));
+                failures.push(format!(
+                    "{} ({}): encode failed: {}",
+                    func_name, ugen.name, e
+                ));
                 continue;
             }
         }

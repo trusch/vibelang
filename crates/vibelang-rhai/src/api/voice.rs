@@ -5,12 +5,12 @@
 use rhai::{CustomType, Dynamic, Engine, EvalAltResult, NativeCallContext, Position, TypeBuilder};
 use std::collections::HashMap;
 use vibelang_core::traits::VoiceConfig;
-use vibelang_dsp::OutputPort;
 #[cfg(feature = "midi")]
 use vibelang_core::types::MidiDeviceId;
+use vibelang_core::types::SampleId;
 #[cfg(not(target_arch = "wasm32"))]
 use vibelang_core::types::SfzId;
-use vibelang_core::types::SampleId;
+use vibelang_dsp::OutputPort;
 
 #[cfg(feature = "midi")]
 use super::midi::MidiDevice;
@@ -477,10 +477,7 @@ impl Voice {
     ///
     /// Errors if the synthdef has not declared a port with this name —
     /// the message cites the available port names so users can fix the typo.
-    pub fn output_by_name(
-        &mut self,
-        name: &str,
-    ) -> Result<RouteHandle, Box<EvalAltResult>> {
+    pub fn output_by_name(&mut self, name: &str) -> Result<RouteHandle, Box<EvalAltResult>> {
         self.resolve_name();
         let ports = self.declared_output_ports();
         if ports.iter().any(|p| p.name == name) {
@@ -496,10 +493,7 @@ impl Voice {
     /// Index resolution uses the synthdef's declared
     /// [`OutputPort`] order. Out-of-range indices error with the
     /// available port count and names.
-    pub fn output_by_idx(
-        &mut self,
-        idx: i64,
-    ) -> Result<RouteHandle, Box<EvalAltResult>> {
+    pub fn output_by_idx(&mut self, idx: i64) -> Result<RouteHandle, Box<EvalAltResult>> {
         self.resolve_name();
         let ports = self.declared_output_ports();
         let len = ports.len() as i64;
@@ -1128,9 +1122,7 @@ mod tests {
         // `.run()` alone (no `.apply()` chained before it) must register
         // the voice in state AND insert its id into running_voices.
         with_test_context(|| {
-            let _ = test_voice("run_only")
-                .synth("test_synth".to_string())
-                .run();
+            let _ = test_voice("run_only").synth("test_synth".to_string()).run();
 
             let voice_id = context::get_or_create_voice_id("run_only");
             context::with_state(|state| {
@@ -1271,9 +1263,7 @@ mod tests {
             declare_synth_with_ports(synth, &["sine", "even"]);
 
             let mut v = test_voice("vox_oor").synth(synth.to_string());
-            let err = v
-                .output_by_idx(5)
-                .expect_err("idx out of range must error");
+            let err = v.output_by_idx(5).expect_err("idx out of range must error");
             let msg = err.to_string();
             assert!(msg.contains("5"), "msg = {}", msg);
             assert!(msg.contains("2"), "msg = {}", msg); // ports count
@@ -1281,9 +1271,7 @@ mod tests {
             assert!(msg.contains("'even'"), "msg = {}", msg);
 
             // Negative index also errors.
-            let err_neg = v
-                .output_by_idx(-1)
-                .expect_err("negative idx must error");
+            let err_neg = v.output_by_idx(-1).expect_err("negative idx must error");
             assert!(err_neg.to_string().contains("-1"));
         });
     }
@@ -1482,9 +1470,7 @@ mod tests {
 
             // Add a second group dest — both edges should remain.
             let other = super::super::group::GroupHandle::new(other_path);
-            v.output_by_name("even")
-                .expect("port resolves")
-                .to(other);
+            v.output_by_name("even").expect("port resolves").to(other);
 
             context::with_state(|state| {
                 let dests = state
@@ -1534,10 +1520,7 @@ mod tests {
                     Some(&vec![RouteDest::Group(g_id)])
                 );
                 // No route for the unlisted port.
-                assert!(state
-                    .routes
-                    .get(&(voice_id, "even".to_string()))
-                    .is_none());
+                assert!(state.routes.get(&(voice_id, "even".to_string())).is_none());
             });
         });
     }
@@ -1563,10 +1546,7 @@ mod tests {
                     state.routes.get(&(voice_id, "odd".to_string())),
                     Some(&vec![RouteDest::Main])
                 );
-                assert!(state
-                    .routes
-                    .get(&(voice_id, "sine".to_string()))
-                    .is_none());
+                assert!(state.routes.get(&(voice_id, "sine".to_string())).is_none());
             });
         });
     }
@@ -1652,10 +1632,7 @@ mod tests {
             // No partial routes were committed — the handle wasn't built.
             let voice_id = context::get_or_create_voice_id("vox_outs_unk");
             context::with_state(|state| {
-                assert!(state
-                    .routes
-                    .get(&(voice_id, "sine".to_string()))
-                    .is_none());
+                assert!(state.routes.get(&(voice_id, "sine".to_string())).is_none());
             });
         });
     }

@@ -136,12 +136,7 @@ impl Backend for MockBackend {
         Ok(())
     }
 
-    async fn set_param(
-        &self,
-        _node: NodeId,
-        _param: &str,
-        _value: f32,
-    ) -> Result<(), Self::Error> {
+    async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -154,11 +149,7 @@ impl Backend for MockBackend {
         Ok(())
     }
 
-    async fn load_buffer(
-        &self,
-        _id: BufferId,
-        _path: &Path,
-    ) -> Result<BufferInfo, Self::Error> {
+    async fn load_buffer(&self, _id: BufferId, _path: &Path) -> Result<BufferInfo, Self::Error> {
         Ok(BufferInfo {
             frames: 0,
             channels: 0,
@@ -238,8 +229,7 @@ async fn setup(ports: &[OutputPort]) -> Harness {
         let mut s = state.write().await;
 
         s.synthdefs.insert(SYNTH.to_string());
-        s.synthdef_outputs
-            .insert(SYNTH.to_string(), ports.to_vec());
+        s.synthdef_outputs.insert(SYNTH.to_string(), ports.to_vec());
 
         let voice_group_node = s.alloc_node_id();
         let voice_group_bus = s.alloc_audio_bus(2);
@@ -366,7 +356,11 @@ async fn port_set_unchanged_across_body_edit_keeps_routes_intact() {
         0,
         "no mixer respawn for body-only edit"
     );
-    assert_eq!(h.backend.frees(), 0, "no mixer torn down for body-only edit");
+    assert_eq!(
+        h.backend.frees(),
+        0,
+        "no mixer torn down for body-only edit"
+    );
 
     // Live mixer node-ids unchanged — the running synths are still bound
     // to the same buses, so audio keeps flowing without interruption.
@@ -423,10 +417,7 @@ async fn port_removed_drops_route_warns_and_finalize_frees_orphan_mixer() {
     // what gets surfaced as a "route on removed port `send` dropped"
     // warning to the user.
     assert_eq!(outcome.diff.removed, vec![port("send", 1)]);
-    assert!(
-        outcome.diff.added.is_empty(),
-        "no new ports — pure removal"
-    );
+    assert!(outcome.diff.added.is_empty(), "no new ports — pure removal");
     assert_eq!(
         outcome.dropped_routes,
         vec![(h.voice, "send".to_string())],
@@ -471,11 +462,7 @@ async fn port_removed_drops_route_warns_and_finalize_frees_orphan_mixer() {
         RouteDest::Group(h.dest_group)
     )));
     assert_eq!(
-        route_synths.get(&(
-            h.voice,
-            "out".to_string(),
-            RouteDest::Group(h.dest_group)
-        )),
+        route_synths.get(&(h.voice, "out".to_string(), RouteDest::Group(h.dest_group))),
         Some(&out_mixer_node),
     );
 }
@@ -574,9 +561,5 @@ async fn port_renamed_drops_old_warns_and_new_name_is_silent() {
         "cv_old".to_string(),
         RouteDest::Group(h.dest_group)
     )));
-    assert!(!route_synths.contains_key(&(
-        h.voice,
-        "cv_new".to_string(),
-        RouteDest::Muted
-    )));
+    assert!(!route_synths.contains_key(&(h.voice, "cv_new".to_string(), RouteDest::Muted)));
 }

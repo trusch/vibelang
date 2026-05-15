@@ -818,8 +818,7 @@ pub fn envelope() -> EnvelopeBuilder {
 pub fn sound_in(num_channels: f64) -> Result<Array> {
     let num_ch = num_channels as u32;
     let in_node = with_builder(|builder| {
-        let num_outs =
-            builder.add_node("NumOutputBuses".to_string(), Rate::Scalar, vec![], 1, 0);
+        let num_outs = builder.add_node("NumOutputBuses".to_string(), Rate::Scalar, vec![], 1, 0);
         builder.add_node(
             "In".to_string(),
             Rate::Audio,
@@ -845,8 +844,7 @@ pub fn sound_in(num_channels: f64) -> Result<Array> {
 /// per-instance selection via `set_param` at instantiation.
 pub fn sound_in_channel(channel: f64) -> Result<NodeRef> {
     with_builder(|builder| {
-        let num_outs =
-            builder.add_node("NumOutputBuses".to_string(), Rate::Scalar, vec![], 1, 0);
+        let num_outs = builder.add_node("NumOutputBuses".to_string(), Rate::Scalar, vec![], 1, 0);
         builder.add_constant(channel as f32);
         let bus = builder.add_node(
             "BinaryOpUGen".to_string(),
@@ -867,8 +865,7 @@ pub fn sound_in_channel(channel: f64) -> Result<NodeRef> {
 /// scsynth's `-o` value.
 pub fn sound_in_channel_n(channel: NodeRef) -> Result<NodeRef> {
     with_builder(|builder| {
-        let num_outs =
-            builder.add_node("NumOutputBuses".to_string(), Rate::Scalar, vec![], 1, 0);
+        let num_outs = builder.add_node("NumOutputBuses".to_string(), Rate::Scalar, vec![], 1, 0);
         let inputs = vec![num_outs.to_input(), channel.to_input()];
         let rate = builder.max_rate_from_inputs(&inputs);
         let bus = builder.add_node("BinaryOpUGen".to_string(), rate, inputs, 1, 0);

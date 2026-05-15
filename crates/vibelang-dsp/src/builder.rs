@@ -147,12 +147,7 @@ impl SynthDef {
         self.input_with_rate(name, channels, PortRate::Ar)
     }
 
-    fn input_with_rate(
-        &mut self,
-        name: String,
-        channels: u8,
-        rate: PortRate,
-    ) -> Result<&mut Self> {
+    fn input_with_rate(&mut self, name: String, channels: u8, rate: PortRate) -> Result<&mut Self> {
         if name.is_empty() {
             return Err(SynthDefError::ValidationError(
                 "Input port name cannot be empty".to_string(),
@@ -381,131 +376,131 @@ impl SynthDef {
                 closure.call(&engine, &empty_ast, (rhai::Dynamic::from(map),))
             }
             BodyDispatch::Positional => match args.len() {
-            1 => closure.call(&engine, &empty_ast, (args[0].clone(),)),
-            2 => closure.call(&engine, &empty_ast, (args[0].clone(), args[1].clone())),
-            3 => closure.call(
-                &engine,
-                &empty_ast,
-                (args[0].clone(), args[1].clone(), args[2].clone()),
-            ),
-            4 => closure.call(
-                &engine,
-                &empty_ast,
-                (
-                    args[0].clone(),
-                    args[1].clone(),
-                    args[2].clone(),
-                    args[3].clone(),
+                1 => closure.call(&engine, &empty_ast, (args[0].clone(),)),
+                2 => closure.call(&engine, &empty_ast, (args[0].clone(), args[1].clone())),
+                3 => closure.call(
+                    &engine,
+                    &empty_ast,
+                    (args[0].clone(), args[1].clone(), args[2].clone()),
                 ),
-            ),
-            5 => closure.call(
-                &engine,
-                &empty_ast,
-                (
-                    args[0].clone(),
-                    args[1].clone(),
-                    args[2].clone(),
-                    args[3].clone(),
-                    args[4].clone(),
+                4 => closure.call(
+                    &engine,
+                    &empty_ast,
+                    (
+                        args[0].clone(),
+                        args[1].clone(),
+                        args[2].clone(),
+                        args[3].clone(),
+                    ),
                 ),
-            ),
-            6 => closure.call(
-                &engine,
-                &empty_ast,
-                (
-                    args[0].clone(),
-                    args[1].clone(),
-                    args[2].clone(),
-                    args[3].clone(),
-                    args[4].clone(),
-                    args[5].clone(),
+                5 => closure.call(
+                    &engine,
+                    &empty_ast,
+                    (
+                        args[0].clone(),
+                        args[1].clone(),
+                        args[2].clone(),
+                        args[3].clone(),
+                        args[4].clone(),
+                    ),
                 ),
-            ),
-            7 => closure.call(
-                &engine,
-                &empty_ast,
-                (
-                    args[0].clone(),
-                    args[1].clone(),
-                    args[2].clone(),
-                    args[3].clone(),
-                    args[4].clone(),
-                    args[5].clone(),
-                    args[6].clone(),
+                6 => closure.call(
+                    &engine,
+                    &empty_ast,
+                    (
+                        args[0].clone(),
+                        args[1].clone(),
+                        args[2].clone(),
+                        args[3].clone(),
+                        args[4].clone(),
+                        args[5].clone(),
+                    ),
                 ),
-            ),
-            8 => closure.call(
-                &engine,
-                &empty_ast,
-                (
-                    args[0].clone(),
-                    args[1].clone(),
-                    args[2].clone(),
-                    args[3].clone(),
-                    args[4].clone(),
-                    args[5].clone(),
-                    args[6].clone(),
-                    args[7].clone(),
+                7 => closure.call(
+                    &engine,
+                    &empty_ast,
+                    (
+                        args[0].clone(),
+                        args[1].clone(),
+                        args[2].clone(),
+                        args[3].clone(),
+                        args[4].clone(),
+                        args[5].clone(),
+                        args[6].clone(),
+                    ),
                 ),
-            ),
-            9 => closure.call(
-                &engine,
-                &empty_ast,
-                (
-                    args[0].clone(),
-                    args[1].clone(),
-                    args[2].clone(),
-                    args[3].clone(),
-                    args[4].clone(),
-                    args[5].clone(),
-                    args[6].clone(),
-                    args[7].clone(),
-                    args[8].clone(),
+                8 => closure.call(
+                    &engine,
+                    &empty_ast,
+                    (
+                        args[0].clone(),
+                        args[1].clone(),
+                        args[2].clone(),
+                        args[3].clone(),
+                        args[4].clone(),
+                        args[5].clone(),
+                        args[6].clone(),
+                        args[7].clone(),
+                    ),
                 ),
-            ),
-            10 => closure.call(
-                &engine,
-                &empty_ast,
-                (
-                    args[0].clone(),
-                    args[1].clone(),
-                    args[2].clone(),
-                    args[3].clone(),
-                    args[4].clone(),
-                    args[5].clone(),
-                    args[6].clone(),
-                    args[7].clone(),
-                    args[8].clone(),
-                    args[9].clone(),
+                9 => closure.call(
+                    &engine,
+                    &empty_ast,
+                    (
+                        args[0].clone(),
+                        args[1].clone(),
+                        args[2].clone(),
+                        args[3].clone(),
+                        args[4].clone(),
+                        args[5].clone(),
+                        args[6].clone(),
+                        args[7].clone(),
+                        args[8].clone(),
+                    ),
                 ),
-            ),
-            11 => closure.call(
-                &engine,
-                &empty_ast,
-                (
-                    args[0].clone(),
-                    args[1].clone(),
-                    args[2].clone(),
-                    args[3].clone(),
-                    args[4].clone(),
-                    args[5].clone(),
-                    args[6].clone(),
-                    args[7].clone(),
-                    args[8].clone(),
-                    args[9].clone(),
-                    args[10].clone(),
+                10 => closure.call(
+                    &engine,
+                    &empty_ast,
+                    (
+                        args[0].clone(),
+                        args[1].clone(),
+                        args[2].clone(),
+                        args[3].clone(),
+                        args[4].clone(),
+                        args[5].clone(),
+                        args[6].clone(),
+                        args[7].clone(),
+                        args[8].clone(),
+                        args[9].clone(),
+                    ),
                 ),
-            ),
-            _ => {
-                clear_active_builder();
-                return Err(SynthDefError::RhaiError(format!(
+                11 => closure.call(
+                    &engine,
+                    &empty_ast,
+                    (
+                        args[0].clone(),
+                        args[1].clone(),
+                        args[2].clone(),
+                        args[3].clone(),
+                        args[4].clone(),
+                        args[5].clone(),
+                        args[6].clone(),
+                        args[7].clone(),
+                        args[8].clone(),
+                        args[9].clone(),
+                        args[10].clone(),
+                    ),
+                ),
+                _ => {
+                    clear_active_builder();
+                    return Err(SynthDefError::RhaiError(format!(
                     "FX synthdef `{}` declares {} user parameter(s); positional `.body(|input, a, b, ...|)` is capped at 10 user params (Rhai's tuple-arg limit). \
                      Switch to `.body_map(|p| ...)` and read inputs as `p.input` / params as `p.<name>` (e.g. `p.cutoff`). \
                      See kb/synthdef-authoring-conventions.md.",
                     self.name,
                     params.len(),
                 )));
-            }
+                }
             },
         };
 
@@ -916,12 +911,12 @@ impl SynthDef {
                     BodyResult::Mono(result_node) => {
                         // Check if result is mono (1 output) or already stereo (2+ outputs)
                         let result_node_id = result_node.id();
-                        let result_num_outputs =
-                            if (result_node_id as usize) < builder.nodes.len() {
-                                builder.nodes[result_node_id as usize].num_outputs
-                            } else {
-                                1 // Default to mono if we can't determine
-                            };
+                        let result_num_outputs = if (result_node_id as usize) < builder.nodes.len()
+                        {
+                            builder.nodes[result_node_id as usize].num_outputs
+                        } else {
+                            1 // Default to mono if we can't determine
+                        };
 
                         if result_num_outputs == 1 {
                             // Mono signal - use Pan2 to convert to stereo (centered)
@@ -958,13 +953,7 @@ impl SynthDef {
                                     output_index: 1,
                                 },
                             ];
-                            builder.add_node(
-                                "Out".to_string(),
-                                Rate::Audio,
-                                out_inputs,
-                                0,
-                                0,
-                            );
+                            builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
                         } else {
                             // Already stereo (or more) from a multi-output UGen - output directly
                             let mut out_inputs = vec![Input::Node {
@@ -977,13 +966,7 @@ impl SynthDef {
                                     output_index: i,
                                 });
                             }
-                            builder.add_node(
-                                "Out".to_string(),
-                                Rate::Audio,
-                                out_inputs,
-                                0,
-                                0,
-                            );
+                            builder.add_node("Out".to_string(), Rate::Audio, out_inputs, 0, 0);
                         }
                     }
                     BodyResult::MultiChannel(channels) => {
@@ -1506,9 +1489,7 @@ mod body_map_tests {
             sd_pos.arg_f(format!("p{}", i), (i + 1) as f64);
         }
         let pos_closure: FnPtr = parser_engine()
-            .eval(
-                "|p0, p1, p2, p3, p4| sin_osc_ar(p0 + p1 + p2 + p3 + p4, 0.0)",
-            )
+            .eval("|p0, p1, p2, p3, p4| sin_osc_ar(p0 + p1 + p2 + p3 + p4, 0.0)")
             .expect("parse positional closure");
         let pos_ir = sd_pos
             .build_body_closure_with_options(pos_closure, true)
@@ -1521,15 +1502,8 @@ mod body_map_tests {
             assert_eq!(a.name, b.name, "param name mismatch");
             assert_eq!(a.default, b.default, "param default mismatch");
         }
-        assert_eq!(
-            pos_ir.nodes.len(),
-            map_ir.nodes.len(),
-            "node count differs"
-        );
-        assert_eq!(
-            pos_ir.constants, map_ir.constants,
-            "constants differ"
-        );
+        assert_eq!(pos_ir.nodes.len(), map_ir.nodes.len(), "node count differs");
+        assert_eq!(pos_ir.constants, map_ir.constants, "constants differ");
     }
 
     // ---------- Multi-output codegen (Story 4) ----------
@@ -1596,7 +1570,10 @@ mod body_map_tests {
         // we did not double-emit, and the legacy path emits a single Out).
         let needle = b"\x03Out";
         let count = bytes.windows(needle.len()).filter(|w| *w == needle).count();
-        assert_eq!(count, 1, "legacy synthdef must contain exactly one Out UGen");
+        assert_eq!(
+            count, 1,
+            "legacy synthdef must contain exactly one Out UGen"
+        );
     }
 
     #[test]
@@ -1707,11 +1684,7 @@ mod body_map_tests {
                     "msg should mention legacy stereo migration: {}",
                     msg
                 );
-                assert!(
-                    msg.contains("port"),
-                    "msg should mention ports: {}",
-                    msg
-                );
+                assert!(msg.contains("port"), "msg should mention ports: {}", msg);
             }
             other => panic!("expected ValidationError, got {:?}", other),
         }
@@ -1731,11 +1704,7 @@ mod body_map_tests {
             .expect_err("single signal on multi-port must error");
         match err {
             SynthDefError::ValidationError(msg) => {
-                assert!(
-                    msg.contains("port"),
-                    "msg should mention ports: {}",
-                    msg
-                );
+                assert!(msg.contains("port"), "msg should mention ports: {}", msg);
             }
             other => panic!("expected ValidationError, got {:?}", other),
         }

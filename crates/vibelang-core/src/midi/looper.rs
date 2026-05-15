@@ -31,8 +31,8 @@ pub enum LooperPhase {
 pub struct LooperInstance {
     pub config: LooperConfig,
     pub phase: LooperPhase,
-    pub recording: MidiRecording,    // Active or last completed recording
-    pub loop_count: u64,             // Increments on each new capture (for unique pattern names)
+    pub recording: MidiRecording, // Active or last completed recording
+    pub loop_count: u64,          // Increments on each new capture (for unique pattern names)
 }
 
 impl LooperInstance {
@@ -162,8 +162,7 @@ impl LooperManager {
         match inst.phase.clone() {
             LooperPhase::Idle => {
                 // Start a fresh recording.
-                let mut rec =
-                    MidiRecording::new(device_id, beat);
+                let mut rec = MidiRecording::new(device_id, beat);
                 if let Some(ch) = inst.config.channel {
                     rec = rec.with_channel_filter(ch);
                 }
@@ -172,11 +171,19 @@ impl LooperManager {
                 inst.phase = LooperPhase::Capturing {
                     last_note_off_beat: None,
                 };
-                actions.push(LooperAction::NoteOn { voice_id, note, velocity });
+                actions.push(LooperAction::NoteOn {
+                    voice_id,
+                    note,
+                    velocity,
+                });
             }
             LooperPhase::Capturing { .. } => {
                 inst.recording.record_note_on(note, velocity, channel, beat);
-                actions.push(LooperAction::NoteOn { voice_id, note, velocity });
+                actions.push(LooperAction::NoteOn {
+                    voice_id,
+                    note,
+                    velocity,
+                });
             }
             LooperPhase::Playing { pattern_id, .. } => {
                 // Stop the current loop and start recording the next one.
@@ -192,7 +199,11 @@ impl LooperManager {
                 inst.phase = LooperPhase::Capturing {
                     last_note_off_beat: None,
                 };
-                actions.push(LooperAction::NoteOn { voice_id, note, velocity });
+                actions.push(LooperAction::NoteOn {
+                    voice_id,
+                    note,
+                    velocity,
+                });
             }
         }
 
@@ -347,8 +358,13 @@ mod tests {
 
         let actions = manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
 
-        assert!(actions.iter().any(|a| matches!(a, LooperAction::NoteOn { .. })));
-        assert!(matches!(phase(&manager, device_id), LooperPhase::Capturing { .. }));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::NoteOn { .. })));
+        assert!(matches!(
+            phase(&manager, device_id),
+            LooperPhase::Capturing { .. }
+        ));
     }
 
     #[test]
@@ -358,8 +374,13 @@ mod tests {
         manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
         let actions = manager.handle_note_on(device_id, 0, 64, 100, 1.0, 4);
 
-        assert!(actions.iter().any(|a| matches!(a, LooperAction::NoteOn { .. })));
-        assert!(matches!(phase(&manager, device_id), LooperPhase::Capturing { .. }));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::NoteOn { .. })));
+        assert!(matches!(
+            phase(&manager, device_id),
+            LooperPhase::Capturing { .. }
+        ));
     }
 
     #[test]
@@ -369,8 +390,13 @@ mod tests {
         manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
         let actions = manager.handle_note_off(device_id, 0, 60, 2.0);
 
-        assert!(actions.iter().any(|a| matches!(a, LooperAction::NoteOff { .. })));
-        if let LooperPhase::Capturing { last_note_off_beat: Some(beat) } = phase(&manager, device_id) {
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::NoteOff { .. })));
+        if let LooperPhase::Capturing {
+            last_note_off_beat: Some(beat),
+        } = phase(&manager, device_id)
+        {
             assert!((beat.to_f64() - 2.0).abs() < 0.001);
         } else {
             panic!("expected Capturing with last_note_off_beat set");
@@ -387,7 +413,9 @@ mod tests {
 
         // silence = 7.9 - 4.0 = 3.9 < 4.0 — must not trigger
         let actions = manager.tick(7.9, 4);
-        assert!(!actions.iter().any(|a| matches!(a, LooperAction::StartPattern { .. })));
+        assert!(!actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::StartPattern { .. })));
     }
 
     #[test]
@@ -400,8 +428,13 @@ mod tests {
 
         // silence = 8.1 - 4.0 = 4.1 >= 4.0 — must trigger
         let actions = manager.tick(8.1, 4);
-        assert!(actions.iter().any(|a| matches!(a, LooperAction::StartPattern { .. })));
-        assert!(matches!(phase(&manager, device_id), LooperPhase::Playing { .. }));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::StartPattern { .. })));
+        assert!(matches!(
+            phase(&manager, device_id),
+            LooperPhase::Playing { .. }
+        ));
     }
 
     #[test]
@@ -411,13 +444,23 @@ mod tests {
         manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
         manager.handle_note_off(device_id, 0, 60, 4.0);
         manager.tick(8.1, 4);
-        assert!(matches!(phase(&manager, device_id), LooperPhase::Playing { .. }));
+        assert!(matches!(
+            phase(&manager, device_id),
+            LooperPhase::Playing { .. }
+        ));
 
         let actions = manager.handle_note_on(device_id, 0, 62, 100, 9.0, 4);
 
-        assert!(actions.iter().any(|a| matches!(a, LooperAction::StopPattern { .. })));
-        assert!(actions.iter().any(|a| matches!(a, LooperAction::NoteOn { .. })));
-        assert!(matches!(phase(&manager, device_id), LooperPhase::Capturing { .. }));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::StopPattern { .. })));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::NoteOn { .. })));
+        assert!(matches!(
+            phase(&manager, device_id),
+            LooperPhase::Capturing { .. }
+        ));
     }
 
     #[test]
@@ -427,10 +470,15 @@ mod tests {
         manager.handle_note_on(device_id, 0, 60, 100, 0.0, 4);
         manager.handle_note_off(device_id, 0, 60, 4.0);
         manager.tick(8.1, 4);
-        assert!(matches!(phase(&manager, device_id), LooperPhase::Playing { .. }));
+        assert!(matches!(
+            phase(&manager, device_id),
+            LooperPhase::Playing { .. }
+        ));
 
         let actions = manager.reconcile(&[]);
-        assert!(actions.iter().any(|a| matches!(a, LooperAction::StopPattern { .. })));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::StopPattern { .. })));
         assert!(!manager.has_device(device_id));
     }
 
@@ -452,9 +500,17 @@ mod tests {
 
         // Tick at 4.6: silence = 1.1 >= 1.0; raw_duration = 4.6; bars = round(1.15) = 1; loop = 4.0
         let actions = manager.tick(4.6, 4);
-        assert!(actions.iter().any(|a| matches!(a, LooperAction::StartPattern { .. })));
-        if let LooperPhase::Playing { loop_length_beats, .. } = phase(&manager, device_id) {
-            assert!((loop_length_beats - 4.0).abs() < 0.001, "expected 4.0, got {loop_length_beats}");
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::StartPattern { .. })));
+        if let LooperPhase::Playing {
+            loop_length_beats, ..
+        } = phase(&manager, device_id)
+        {
+            assert!(
+                (loop_length_beats - 4.0).abs() < 0.001,
+                "expected 4.0, got {loop_length_beats}"
+            );
         } else {
             panic!("expected Playing phase");
         }
@@ -466,8 +522,13 @@ mod tests {
 
         // note on channel 3 — must still be handled
         let actions = manager.handle_note_on(device_id, 3, 60, 100, 0.0, 4);
-        assert!(actions.iter().any(|a| matches!(a, LooperAction::NoteOn { .. })));
-        assert!(matches!(phase(&manager, device_id), LooperPhase::Capturing { .. }));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::NoteOn { .. })));
+        assert!(matches!(
+            phase(&manager, device_id),
+            LooperPhase::Capturing { .. }
+        ));
     }
 
     #[test]
@@ -483,7 +544,9 @@ mod tests {
 
         // note on channel 1 — must be blocked
         let actions = manager.handle_note_on(device_id, 1, 60, 100, 0.0, 4);
-        assert!(!actions.iter().any(|a| matches!(a, LooperAction::NoteOn { .. })));
+        assert!(!actions
+            .iter()
+            .any(|a| matches!(a, LooperAction::NoteOn { .. })));
         assert!(matches!(phase(&manager, device_id), LooperPhase::Idle));
     }
 }

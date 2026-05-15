@@ -71,10 +71,10 @@ pub use script_state::{
 
 #[cfg(feature = "midi")]
 pub use script_state::{
-    AdvancedMidiCcRoute, AdvancedMidiKeyboardRoute, AdvancedMidiNoteRoute, Midi2CcRoute,
-    Midi2KeyboardRoute, Midi2PerNoteControllerType, Midi2PerNoteRoute, MidiCallbackConfig,
-    MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute, MidiOutputMessage,
-    MidiRecordingRequest, LooperConfig,
+    AdvancedMidiCcRoute, AdvancedMidiKeyboardRoute, AdvancedMidiNoteRoute, LooperConfig,
+    Midi2CcRoute, Midi2KeyboardRoute, Midi2PerNoteControllerType, Midi2PerNoteRoute,
+    MidiCallbackConfig, MidiCcRoute, MidiClockOutputRequest, MidiKeyboardRoute, MidiOutputMessage,
+    MidiRecordingRequest,
 };
 
 // Types available on all platforms (for order_group_creations)
@@ -549,5 +549,4 @@ mod tests {
         assert!(pos_1 < pos_2);
         assert!(pos_2 < pos_3);
     }
-
 }

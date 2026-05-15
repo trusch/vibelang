@@ -107,8 +107,7 @@ pub fn allocate_buffer(name: String, frames: i64, channels: i64) -> BufferHandle
                 Some(existing) if existing.name == name => break candidate,
                 Some(_) => {
                     // Collision with a different name — probe forward.
-                    raw = SCRIPT_BUFFER_MIN
-                        + ((raw - SCRIPT_BUFFER_MIN + 1) % SCRIPT_BUFFER_RANGE);
+                    raw = SCRIPT_BUFFER_MIN + ((raw - SCRIPT_BUFFER_MIN + 1) % SCRIPT_BUFFER_RANGE);
                     if raw == start_raw {
                         panic!(
                             "allocate_buffer: script buffer ID space exhausted \

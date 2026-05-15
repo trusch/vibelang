@@ -53,14 +53,9 @@ pub fn spawn(
                     let Some(args) = build_args(&notification.message) else {
                         continue;
                     };
-                    let result: Result<Dynamic, _> =
-                        fnptr.call(engine.as_ref(), &state.ast, args);
+                    let result: Result<Dynamic, _> = fnptr.call(engine.as_ref(), &state.ast, args);
                     if let Err(e) = result {
-                        tracing::warn!(
-                            "MIDI callback {} failed: {}",
-                            notification.callback_id,
-                            e
-                        );
+                        tracing::warn!("MIDI callback {} failed: {}", notification.callback_id, e);
                     }
                 }
             }
@@ -72,9 +67,7 @@ pub fn spawn(
     state_tx
 }
 
-fn drain(
-    rx: &Arc<StdMutex<mpsc::Receiver<MidiEventNotification>>>,
-) -> Vec<MidiEventNotification> {
+fn drain(rx: &Arc<StdMutex<mpsc::Receiver<MidiEventNotification>>>) -> Vec<MidiEventNotification> {
     let Ok(mut guard) = rx.lock() else {
         tracing::warn!("MIDI dispatcher: callback receiver mutex poisoned");
         return Vec::new();
@@ -95,9 +88,7 @@ fn drain(
 /// - `on_midi(|kind|)` for now passes the same tag string
 fn build_args(msg: &MidiMessage) -> Option<Vec<Dynamic>> {
     match msg {
-        MidiMessage::NoteOn {
-            note, velocity, ..
-        } => Some(vec![
+        MidiMessage::NoteOn { note, velocity, .. } => Some(vec![
             Dynamic::from(*note as i64),
             Dynamic::from(*velocity as i64),
             Dynamic::from(true),

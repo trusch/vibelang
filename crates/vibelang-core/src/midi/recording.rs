@@ -304,7 +304,6 @@ impl MidiRecording {
         voice: VoiceId,
         length: Beat,
     ) -> PatternConfig {
-
         let mut config = PatternConfig::new(name, voice, length);
 
         for note in &self.notes {

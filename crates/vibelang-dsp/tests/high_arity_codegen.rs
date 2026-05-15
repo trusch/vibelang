@@ -6,9 +6,7 @@
 //! `kb/synthdef-arity-limits-plan.md` §3.1, §4.1 Phase 4.
 
 use rhai::{Dynamic, Engine};
-use vibelang_dsp::{
-    clear_active_builder, register_dsp_api, set_active_builder, GraphBuilderInner,
-};
+use vibelang_dsp::{clear_active_builder, register_dsp_api, set_active_builder, GraphBuilderInner};
 
 #[test]
 fn big_arity24_register_raw_fn_full_arity_round_trip() {

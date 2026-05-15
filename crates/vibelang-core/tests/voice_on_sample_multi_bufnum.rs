@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use tokio::sync::RwLock;
 use vibelang_core::{
     AddAction, Backend, BufferId, BufferInfo, GroupId, GroupState, NodeId, ParamMap, SampleId,
-    SampleInfo, State, VoiceConfig, VoiceId, Voices, VoiceState,
+    SampleInfo, State, VoiceConfig, VoiceId, VoiceState, Voices,
 };
 
 #[derive(Debug)]
@@ -100,12 +100,7 @@ impl Backend for MockBackend {
         Ok(())
     }
 
-    async fn set_param(
-        &self,
-        _node: NodeId,
-        _param: &str,
-        _value: f32,
-    ) -> Result<(), Self::Error> {
+    async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -118,11 +113,7 @@ impl Backend for MockBackend {
         Ok(())
     }
 
-    async fn load_buffer(
-        &self,
-        _id: BufferId,
-        _path: &Path,
-    ) -> Result<BufferInfo, Self::Error> {
+    async fn load_buffer(&self, _id: BufferId, _path: &Path) -> Result<BufferInfo, Self::Error> {
         Ok(BufferInfo {
             frames: 0,
             channels: 0,

@@ -94,13 +94,13 @@ mod hotplug;
 mod input_task;
 mod jitter;
 mod learn;
+pub mod looper;
 mod mpe;
 mod nrpn;
 mod parser;
 mod per_note_state;
 mod queue;
 mod recording;
-pub mod looper;
 mod ump;
 mod voice_output;
 

@@ -143,12 +143,7 @@ impl Backend for MockBackend {
         Ok(())
     }
 
-    async fn set_param(
-        &self,
-        _node: NodeId,
-        _param: &str,
-        _value: f32,
-    ) -> Result<(), Self::Error> {
+    async fn set_param(&self, _node: NodeId, _param: &str, _value: f32) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -161,11 +156,7 @@ impl Backend for MockBackend {
         Ok(())
     }
 
-    async fn load_buffer(
-        &self,
-        _id: BufferId,
-        _path: &Path,
-    ) -> Result<BufferInfo, Self::Error> {
+    async fn load_buffer(&self, _id: BufferId, _path: &Path) -> Result<BufferInfo, Self::Error> {
         Ok(BufferInfo {
             frames: 0,
             channels: 0,
@@ -429,8 +420,16 @@ async fn create_voice_two_mono_ports_default_routes_both_to_group() {
     got.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
     let mut want = vec![
-        ("port_to_group_link_1".to_string(), l_in, h.voice_group_bus_id as f32),
-        ("port_to_group_link_1".to_string(), r_in, h.voice_group_bus_id as f32),
+        (
+            "port_to_group_link_1".to_string(),
+            l_in,
+            h.voice_group_bus_id as f32,
+        ),
+        (
+            "port_to_group_link_1".to_string(),
+            r_in,
+            h.voice_group_bus_id as f32,
+        ),
     ];
     want.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
