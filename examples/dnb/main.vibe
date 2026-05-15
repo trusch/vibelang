@@ -16,10 +16,10 @@ import "stdlib/effects/distortion/distortion.vibe";
 
 // === DRUMS ===
 let drums = define_group("Drums", ||{
-    let kick = voice("kick").synth("kick_acoustic").gain(db(-6));
-    let snare = voice("snare").synth("snare_acoustic").gain(db(-8));
-    let hat = voice("hat").synth("hihat_808_closed").gain(db(-14));
-    let crash = voice("crash").synth("crash_bright").gain(db(-16));
+    let kick = voice("kick").synth("kick_acoustic").gain(db(-2));
+    let snare = voice("snare").synth("snare_acoustic").gain(db(-3));
+    let hat = voice("hat").synth("hihat_808_closed").gain(db(-10));
+    let crash = voice("crash").synth("crash_bright").gain(db(-12));
 
     // Classic two-step kick pattern (1 bar)
     let kick_main = pattern("kick_main")
@@ -86,8 +86,8 @@ let drums = define_group("Drums", ||{
 
 // === BASS ===
 let bass = define_group("Bass", ||{
-    let reese = voice("reese").synth("reese_classic").gain(db(-10)).poly(1);
-    let sub = voice("sub").synth("sub_deep").gain(db(-12)).poly(1);
+    let reese = voice("reese").synth("reese_classic").gain(db(-5)).poly(1);
+    let sub = voice("sub").synth("sub_deep").gain(db(-7)).poly(1);
 
     // Reese bass - growling mid
     let reese_main = melody("reese_main")
@@ -123,7 +123,7 @@ let bass = define_group("Bass", ||{
 
 // === ATMOSPHERE ===
 let atmos = define_group("Atmos", ||{
-    let pad = voice("pad").synth("pad_space").gain(db(-18)).poly(4);
+    let pad = voice("pad").synth("pad_space").gain(db(-15)).poly(4);
 
     // Ethereal pad for contrast
     let pad_main = melody("pad_main")
@@ -161,7 +161,7 @@ let lead = define_group("Lead", ||{
             filt * env * amp
         });
 
-    let stab = voice("stab").synth("dnb_stab").gain(db(-10)).poly(4);
+    let stab = voice("stab").synth("dnb_stab").gain(db(-6)).poly(4);
 
     // Energetic stab pattern
     let stab_main = melody("stab_main")
