@@ -540,6 +540,35 @@ cd tests/integration
 ./run_tests.sh --api        # Enable HTTP API verification
 ```
 
+### Rack Example Smoke and Audio Audit
+
+Run all rack examples under `examples/*/main.vibe` with one command:
+
+```bash
+python3 scripts/rack_smoke_audio_audit.py
+```
+
+The command reports parse, runtime, and audio status per rack. Runtime status
+uses a bounded `vibe run --no-watch --no-api --no-jack-connect` smoke run and
+fails on known scsynth/runtime regression strings or missing `Transport started`.
+Logs and WAVs are kept under `target/rack-audit/run-*` by default. Use
+`--force-build` when the release CLI may be stale.
+Audio capture is optional because it depends on the host audio graph. To enable
+it, provide a command that records a WAV file and accepts `{wav}`, `{seconds}`,
+`{rack}`, and `{example}` placeholders:
+
+```bash
+python3 scripts/rack_smoke_audio_audit.py \
+  --capture-command 'timeout {seconds}s pw-record --format s16 --rate 48000 --channels 2 {wav}'
+```
+
+Captured audio is analyzed with Python's `wave` module and integer PCM decoding
+instead of `audioop`, which keeps the analyzer compatible with Python 3.13. The
+default non-silence thresholds are explicit in the command output:
+`min_active_rms=0.0005`, `min_active_peak=0.002`, `min_rms_ratio=3.0`, and
+`min_peak_ratio=1.5`. A rack with captured audio must clear the absolute active
+RMS/peak thresholds and the active-vs-baseline ratios; silence does not pass.
+
 ### Writing Integration Tests
 
 ```rhai
