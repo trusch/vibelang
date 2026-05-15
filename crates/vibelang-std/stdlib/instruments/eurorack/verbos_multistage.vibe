@@ -67,7 +67,7 @@ define_synthdef("verbos_multistage", |builder| {
             let length = (stop - start + 1.0).max(1.0);
 
             let counter = stepper_kr(step_trig, 0.0, 0.0, 1048575.0, 1.0, 0.0);
-            let seq_step = counter.modulo(length) + start;
+            let seq_step = counter - floor(counter / length) * length + start;
             let analog_step = floor(clip_kr(p.analog, 0.0, 0.999) * 8.0) + 1.0;
             let strobe = clip_kr(p.strobe, 0.0, 1.0) * run;
             let step = seq_step * (1.0 - strobe) + analog_step * strobe;
