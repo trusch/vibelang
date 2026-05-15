@@ -73,8 +73,8 @@ define_group("phaseur_tail", || {
         .param("rate", 0.045)
         .param("depth", 0.0011)
         .param("feedback", 0.62)
-        .param("mix", 0.52)
-        .param("level", 0.92)
+        .param("mix", 0.46)
+        .param("level", 1.04)
         .apply();
 
     fx("final_jpverb_tail")
@@ -82,8 +82,8 @@ define_group("phaseur_tail", || {
         .param("time", 12.0)
         .param("damp", 0.38)
         .param("size", 2.2)
-        .param("mix", 0.48)
-        .param("level", 0.86)
+        .param("mix", 0.42)
+        .param("level", 1.02)
         .apply();
 });
 
@@ -92,7 +92,7 @@ group("source_monitor").gain(0.0);
 group("smr_odd").gain(0.0);
 group("smr_even").gain(0.0);
 group("smr_taps").gain(0.0);
-group("phaseur_tail").gain(db(-7));
+group("phaseur_tail").gain(db(-4));
 
 let qcd = voice("qcd_master")
     .synth("qcd")
@@ -137,11 +137,11 @@ qcd.outputs(["ch3", "ch4"]).mute();
 let source = voice("pink_granular_source")
     .synth("fourms_pink_grains")
     .group("source_monitor")
-    .set_param("amp", 0.30)
+    .set_param("amp", 0.40)
     .set_param("dust_rate", 1.7)
     .set_param("tone", 1150.0)
     .set_param("spread", 0.78);
-source.output("out").mute();
+source.output("out").to(group("phaseur_tail"));
 
 let smr = voice("smr8_spectral_bank")
     .synth("smr8")
@@ -154,15 +154,15 @@ let smr = voice("smr8_spectral_bank")
     .set_param("q", 0.88)
     .set_param("two_pass", 1.0)
     .set_param("slew", 0.45)
-    .set_param("amp", 1.05)
-    .set_param("level1", 0.72)
-    .set_param("level2", 0.56)
-    .set_param("level3", 0.83)
-    .set_param("level4", 0.48)
-    .set_param("level5", 0.68)
-    .set_param("level6", 0.50)
-    .set_param("level7", 0.74)
-    .set_param("level8", 0.54);
+    .set_param("amp", 1.28)
+    .set_param("level1", 0.90)
+    .set_param("level2", 0.70)
+    .set_param("level3", 1.0)
+    .set_param("level4", 0.62)
+    .set_param("level5", 0.86)
+    .set_param("level6", 0.64)
+    .set_param("level7", 0.94)
+    .set_param("level8", 0.68);
 smr.input("in").from(source);
 smr.output("odd").to(group("smr_odd"));
 smr.output("even").to(group("smr_even"));
@@ -173,7 +173,7 @@ let odd_tap = voice("smr_odd_to_dld_a")
     .synth("fourms_bus_tap_mono")
     .group("smr_taps")
     .set_param("balance", -0.35)
-    .set_param("level", 0.95);
+    .set_param("level", 1.18);
 odd_tap.input("in").from(group("smr_odd"));
 odd_tap.output("out").mute();
 
@@ -181,7 +181,7 @@ let even_tap = voice("smr_even_to_dld_b")
     .synth("fourms_bus_tap_mono")
     .group("smr_taps")
     .set_param("balance", 0.35)
-    .set_param("level", 0.95);
+    .set_param("level", 1.18);
 even_tap.input("in").from(group("smr_even"));
 even_tap.output("out").mute();
 
@@ -193,12 +193,12 @@ let dld = voice("dld_time_locked_echoes")
     .set_param("cft_ms", 140.0)
     .set_param("time_a", 4.0)
     .set_param("time_b", 5.0)
-    .set_param("feedback_a", 0.58)
-    .set_param("feedback_b", 0.64)
-    .set_param("delay_feed_a", 0.28)
-    .set_param("delay_feed_b", 0.20)
-    .set_param("mix_a", 0.72)
-    .set_param("mix_b", 0.78);
+    .set_param("feedback_a", 0.62)
+    .set_param("feedback_b", 0.68)
+    .set_param("delay_feed_a", 0.34)
+    .set_param("delay_feed_b", 0.28)
+    .set_param("mix_a", 0.58)
+    .set_param("mix_b", 0.62);
 dld.input("in_a").from(odd_tap);
 dld.input("in_b").from(even_tap);
 dld.input("return_a").disconnect();
