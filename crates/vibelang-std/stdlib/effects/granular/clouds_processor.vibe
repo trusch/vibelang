@@ -147,18 +147,25 @@ define_fx("clouds_processor", |builder| {
                 2
             );
 
-            let wet_l = leak_dc_ar(select_ar(quality_i, [
-                high_l[0],
-                high_mono[0],
-                lofi_l[0],
-                lofi_mono[0],
-            ]), 0.995);
-            let wet_r = leak_dc_ar(select_ar(quality_i, [
-                high_r[1],
-                high_mono[1],
-                lofi_r[1],
-                lofi_mono[1],
-            ]), 0.995);
+            let high_stereo_w = clip(1.0 - abs(quality_i - 0.0), 0.0, 1.0);
+            let high_mono_w = clip(1.0 - abs(quality_i - 1.0), 0.0, 1.0);
+            let lofi_stereo_w = clip(1.0 - abs(quality_i - 2.0), 0.0, 1.0);
+            let lofi_mono_w = clip(1.0 - abs(quality_i - 3.0), 0.0, 1.0);
+
+            let wet_l = leak_dc_ar(
+                high_l[0] * high_stereo_w
+                    + high_mono[0] * high_mono_w
+                    + lofi_l[0] * lofi_stereo_w
+                    + lofi_mono[0] * lofi_mono_w,
+                0.995
+            );
+            let wet_r = leak_dc_ar(
+                high_r[1] * high_stereo_w
+                    + high_mono[1] * high_mono_w
+                    + lofi_r[1] * lofi_stereo_w
+                    + lofi_mono[1] * lofi_mono_w,
+                0.995
+            );
 
             [
                 ((1.0 - out_mix) * input[0] + out_mix * wet_l) * p.level,

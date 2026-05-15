@@ -5,7 +5,7 @@
 //   Plaits OUT excites Rings, whose odd/even banks feed Beads as a stereo pair.
 //   Beads left/right texture runs into a Clouds processor in spectral mode.
 //   Stages, Tides2, and Frames animate harmonics, grain position/density,
-//   Rings brightness, Beads density, and the Clouds dry/wet reverb tail.
+//   Rings brightness, and Beads density/size while Clouds provides the tail.
 
 import "stdlib/instruments/eurorack/plaits.vibe";
 import "stdlib/instruments/eurorack/rings.vibe";
@@ -211,6 +211,11 @@ frames.input("in1").from(frame_dc_1);
 frames.input("in2").from(frame_dc_2);
 frames.input("in3").from(frame_dc_3);
 frames.input("in4").from(frame_dc_4);
+frame_dc_1.output("out").mute();
+frame_dc_2.output("out").mute();
+frame_dc_3.output("out").mute();
+frame_dc_4.output("out").mute();
+frames.outputs(["out1", "out2", "out3", "out4", "mix"]).mute();
 
 let plaits_voice = voice("plaits_string_voice")
     .synth("plaits")
@@ -237,7 +242,7 @@ let rings = voice("rings_modal_body")
     .set_param("polyphony", 3.0)
     .set_param("internal_exciter", 0.0)
     .set_param("gain", 0.72);
-rings.input("in").from(group("plaits_bus"));
+rings.input("in").from(plaits_voice);
 
 let beads = voice("beads_texture")
     .synth("beads")
@@ -279,7 +284,7 @@ stages.output("group1").to_param(plaits_voice, "harmonics").scale(0.34).offset(0
 stages.output("seg4").to_param(plaits_voice, "timbre").scale(0.30).offset(0.42);
 stages.output("eor").to_param(rings, "position").scale(0.50).offset(0.22);
 
-tides.output("slope").to_param_audio(beads, "density").scale(0.42).offset(0.28);
+tides.output("slope").to_param_audio(beads, "size").scale(0.30).offset(0.42);
 tides.output("shape").to_param_audio(beads, "time").scale(0.36).offset(0.32);
 tides.output("high").to_param_audio(frames, "frame_cv").scale(0.50).offset(0.50);
 tides.outputs(["low"]).mute();
@@ -287,10 +292,10 @@ tides.outputs(["low"]).mute();
 frames.output("out1").to_param(plaits_voice, "engine").scale(5.0).offset(2.0);
 frames.output("out2").to_param(rings, "brightness").scale(0.56).offset(0.18);
 frames.output("out3").to_param(beads, "density").scale(0.38).offset(0.24);
-frames.output("out4").to_param(clouds_tail, "dry_wet").scale(0.42).offset(0.36);
-frames.output("mix").to_param(clouds_tail, "reverb").scale(0.20).offset(0.72);
+frames.output("out4").mute();
+frames.output("mix").mute();
 
-plaits_voice.output("out").to(group("plaits_bus"));
+plaits_voice.output("out").mute();
 plaits_voice.output("aux").mute();
 rings.output("odd").to(group("rings_bus"));
 rings.output("even").to(group("rings_bus"));
