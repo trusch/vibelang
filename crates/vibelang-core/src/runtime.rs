@@ -33,8 +33,8 @@ use crate::compat::{timeout, Duration};
 use crate::handlers::RecordingsHandler;
 use crate::handlers::{
     merge_default_routes, suppress_modulation_only_defaults, EffectsHandler, FadesHandler,
-    GroupsHandler, InputRouteMap, InputRouteSrc, MelodiesHandler, ParamRouteMap, PatternsHandler,
-    RouteMap, RoutesHandler, SamplesHandler, SequencesHandler, SfzHandler, SynthDefsHandler,
+    GroupsHandler, InputRouteMap, InputRouteSrc, MelodiesHandler, PatternsHandler, RouteMap,
+    RoutesHandler, SamplesHandler, SequencesHandler, SfzHandler, SynthDefsHandler,
     TransportHandler, VoicesHandler,
 };
 #[cfg(feature = "midi")]
@@ -120,9 +120,6 @@ pub struct Runtime<B: Backend> {
     /// `ScriptState::routes` shape; populated only when the Rhai surface
     /// (Story 8) starts emitting routes.
     current_routes: RouteMap,
-    current_param_routes_set: ParamRouteMap,
-    current_param_routes_bend: ParamRouteMap,
-    current_param_routes_trigger: ParamRouteMap,
 
     /// Whether the MIDI clock thread has been started (for tick() users).
     #[cfg(feature = "midi")]
@@ -230,9 +227,6 @@ impl<B: Backend> Runtime<B> {
             #[cfg(feature = "midi")]
             clock_thread_started: false,
             current_routes: RouteMap::new(),
-            current_param_routes_set: ParamRouteMap::new(),
-            current_param_routes_bend: ParamRouteMap::new(),
-            current_param_routes_trigger: ParamRouteMap::new(),
         }
     }
 
@@ -1676,44 +1670,6 @@ impl<B: Backend> Runtime<B> {
         // NOTE: Effect updates are deferred to Phase 4.8 (after routes finalize),
         // alongside effect creation, so freshly-(re)spawned effect synths sit
         // *after* the route mixers in SC tree order. See Phase 4.8 below.
-
-        // =========================================================================
-        // Phase 4.6: Finalize parameter routes (kr/tr/ar source → target param)
-        // =========================================================================
-        let set_param_diff =
-            RoutesHandler::<B>::diff_params(&self.current_param_routes_set, &new_state.param_routes_set);
-        let bend_param_diff = RoutesHandler::<B>::diff_params(
-            &self.current_param_routes_bend,
-            &new_state.param_routes_bend,
-        );
-        let trigger_param_diff = RoutesHandler::<B>::diff_params(
-            &self.current_param_routes_trigger,
-            &new_state.param_routes_trigger,
-        );
-        if !set_param_diff.is_empty()
-            || !bend_param_diff.is_empty()
-            || !trigger_param_diff.is_empty()
-        {
-            tracing::debug!(
-                "Reload: finalizing param routes (set +{}/-{}, bend +{}/-{}, trigger +{}/-{})",
-                set_param_diff.additions.len(),
-                set_param_diff.removals.len(),
-                bend_param_diff.additions.len(),
-                bend_param_diff.removals.len(),
-                trigger_param_diff.additions.len(),
-                trigger_param_diff.removals.len(),
-            );
-            if let Err(e) = self
-                .routes
-                .finalize_params(&set_param_diff, &bend_param_diff, &trigger_param_diff)
-                .await
-            {
-                tracing::error!("Reload: routes.finalize_params failed: {}", e);
-            }
-        }
-        self.current_param_routes_set = new_state.param_routes_set.clone();
-        self.current_param_routes_bend = new_state.param_routes_bend.clone();
-        self.current_param_routes_trigger = new_state.param_routes_trigger.clone();
 
         // =========================================================================
         // Phase 4.7: Finalize routes (per-voice port → group mixer synths)
