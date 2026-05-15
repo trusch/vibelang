@@ -394,6 +394,26 @@
     "category": "Math"
   },
   {
+    "name": "Tanh",
+    "description": "Hyperbolic tangent waveshaper. UnaryOpUGen wrapper (special-index 28).",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "inputs": [
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      }
+    ],
+    "outputs": 1,
+    "category": "Math",
+    "ugen_class": "UnaryOpUGen",
+    "special_index": 28
+  },
+  {
     "name": "Ring1",
     "description": "Ring modulator variant 1: a * (b + 1) == a*b + a. BinaryOpUGen wrapper (special-index 30).",
     "rates": [
