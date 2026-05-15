@@ -29,13 +29,13 @@ define_synthdef("lofi_bass")
 });
 
 // Vinyl crackle texture
-define_fx("vinyl")
+define_synthdef("lofi_crackle")
     .param("amp", 0.04)
     .param("gate", 1.0)
-    .body(|input, amp, gate| {
+    .body(|amp, gate| {
     let noise = white_noise_ar();
     let crackle = dust_ar(12.0) * 0.5;
     let filtered = hpf_ar(noise * 0.1 + crackle, 2000.0);
     filtered = lpf_ar(filtered, 8000.0) * amp;
-    [input[0] + filtered, input[1] + filtered]
+    filtered
 });

@@ -95,6 +95,12 @@ test result: FAILED
         self.assertIn("Module not found", summary)
         self.assertNotIn("multiple fields", summary)
 
+    def test_runtime_rust_log_keeps_transport_marker_visible_under_scoped_filter(self) -> None:
+        self.assertEqual(audit.rust_log_with_info("ewa=info"), "ewa=info,info")
+
+    def test_runtime_rust_log_preserves_broad_debug_filter(self) -> None:
+        self.assertEqual(audit.rust_log_with_info("debug"), "debug")
+
 
 if __name__ == "__main__":
     unittest.main()

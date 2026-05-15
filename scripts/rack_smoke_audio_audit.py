@@ -100,6 +100,15 @@ def run_command(
     )
 
 
+def rust_log_with_info(existing: str | None) -> str:
+    if not existing:
+        return "info"
+    directives = [directive.strip() for directive in existing.split(",")]
+    if any(directive in {"trace", "debug", "info"} for directive in directives):
+        return existing
+    return f"{existing},info"
+
+
 def ensure_vibe_binary(vibe_bin: pathlib.Path, project_root: pathlib.Path, build: bool, force_build: bool) -> None:
     if not force_build and vibe_bin.is_file() and os.access(vibe_bin, os.X_OK):
         return
@@ -185,7 +194,7 @@ def start_runtime(
     data_home: pathlib.Path,
 ) -> subprocess.Popen[str]:
     env = os.environ.copy()
-    env.setdefault("RUST_LOG", "info")
+    env["RUST_LOG"] = rust_log_with_info(env.get("RUST_LOG"))
     env["XDG_DATA_HOME"] = str(data_home)
     log_handle = log_file.open("w", encoding="utf-8")
     return subprocess.Popen(
