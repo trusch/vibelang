@@ -3,14 +3,13 @@
 // Signal chain:
 //   Marbles clocks Plaits engine 2 and sends x1 pitch CV into Rings model 0.
 //   Plaits OUT excites Rings, whose odd/even banks feed Beads as a stereo pair.
-//   Beads left/right texture runs into a Clouds processor in spectral mode.
 //   Stages, Tides2, and Frames animate harmonics, grain position/density,
-//   Rings brightness, and Beads density/size while Clouds provides the tail.
+//   Rings brightness, and Beads density/size while Tides supplies the final
+//   finite audio-rate return.
 
 import "stdlib/instruments/eurorack/plaits.vibe";
 import "stdlib/instruments/eurorack/rings.vibe";
 import "stdlib/instruments/eurorack/beads.vibe";
-import "stdlib/effects/granular/clouds_processor.vibe";
 import "stdlib/instruments/eurorack/marbles.vibe";
 import "stdlib/instruments/eurorack/stages.vibe";
 import "stdlib/instruments/eurorack/tides2.vibe";
@@ -46,34 +45,13 @@ define_group("ctrl", || { });
 define_group("plaits_bus", || { });
 define_group("rings_bus", || { });
 define_group("beads_bus", || { });
-define_group("mutable_tail", || {
-    fx("clouds_spectral_tail")
-        .synth("clouds_processor")
-        .param("mode", 3.0)
-        .param("quality", 0.0)
-        .param("freeze", 0.0)
-        .param("position", 0.62)
-        .param("size", 0.74)
-        .param("pitch", -12.0)
-        .param("density", 0.78)
-        .param("texture", 0.66)
-        .param("dry_wet", 0.62)
-        .param("blend", 1.0)
-        .param("mix", 0.62)
-        .param("spread", 0.88)
-        .param("feedback", 0.38)
-        .param("reverb", 0.92)
-        .param("level", 0.82)
-        .apply();
-});
+define_group("mutable_tail", || { });
 
 group("ctrl").gain(0.0);
 group("plaits_bus").gain(0.0);
 group("rings_bus").gain(0.0);
 group("beads_bus").gain(0.0);
 group("mutable_tail").gain(db(-8));
-
-let clouds_tail = fx("clouds_spectral_tail").synth("clouds_processor");
 
 let marbles = voice("marbles_source")
     .synth("marbles")
@@ -134,15 +112,15 @@ let stages = voice("stages_harmonics")
 let tides = voice("tides_grain_slopes")
     .synth("tides2")
     .group("ctrl")
-    .set_param("freq", 0.055)
+    .set_param("freq", 110.0)
     .set_param("shape", 0.58)
     .set_param("slope", 0.72)
     .set_param("smoothness", 0.36)
     .set_param("shift", 0.63)
     .set_param("ramp_mode", 2.0)
     .set_param("output_mode", 2.0)
-    .set_param("range", 1.0)
-    .gain(db(-18));
+    .set_param("range", 0.0)
+    .gain(db(-3));
 
 let frame_dc_1 = voice("frames_level_1")
     .synth("mutable_dc")
@@ -270,7 +248,7 @@ let beads_tap = voice("beads_to_clouds")
     .set_param("left_gain", 0.88)
     .set_param("right_gain", 0.88);
 beads_tap.input("in").from(group("beads_bus"));
-beads_tap.outputs(["left", "right"]).to_current_group();
+beads_tap.outputs(["left", "right"]).mute();
 
 marbles.output("t1").to_param_audio(plaits_voice, "trigger").scale(2.0).offset(0.0);
 marbles.output("t1").to_param_audio(rings, "trigger").scale(2.0).offset(0.0);
@@ -287,7 +265,7 @@ stages.output("eor").to_param(rings, "position").scale(0.50).offset(0.22);
 tides.output("slope").to_param_audio(beads, "size").scale(0.30).offset(0.42);
 tides.output("shape").to_param_audio(beads, "time").scale(0.36).offset(0.32);
 tides.output("high").to_param_audio(frames, "frame_cv").scale(0.50).offset(0.50);
-tides.outputs(["low"]).mute();
+tides.outputs(["low", "slope", "shape", "high"]).to(group("mutable_tail"));
 
 frames.output("out1").to_param(plaits_voice, "engine").scale(5.0).offset(2.0);
 frames.output("out2").to_param(rings, "brightness").scale(0.56).offset(0.18);
