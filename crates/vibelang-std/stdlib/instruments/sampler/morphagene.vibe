@@ -196,7 +196,6 @@ define_synthdef("morphagene", |builder| {
             // at synth init so the first block starts at splice 0.
             let committed_buf = local_buf_ir(1, 1.0);
             let _z2 = clear_buf_ir(committed_buf);
-
             // --- Vari-Speed → rate ---------------------------------------------
             // Asymmetric cubic per the manual's "12 up / 26 down" spec; smooth
             // through zero, finer-near-center, no dead-zone needed.
@@ -217,31 +216,14 @@ define_synthdef("morphagene", |builder| {
             let pending_idx = clip_kr(organize_idx, 0.0, max_idx);
 
             // --- Committed splice idx feedback (one-block latency) -------------
-            let committed_idx = buf_rd_kr(1, committed_buf, 0.0, 0, 1);
+            let committed_idx = buf_rd_kr(committed_buf, 0.0, 0.0, 1.0, 0.0);
 
-            // Splice bounds: even spacing by default; optional splices_buf
-            // overrides with normalized boundary pairs [i], [i+1].
+            // Splice bounds: even spacing by default.
             let num_splices_safe = num_splices.max(1.0);
             let even_len_frames = buf_n / num_splices_safe;
             let even_start_frame = committed_idx * even_len_frames;
-            let has_custom_splices = clip(splices_buf * 1000.0, 0.0, 1.0);
-            let custom_start_norm = clip_kr(
-                buf_rd_kr(1, splices_buf, committed_idx, 0, 1),
-                0.0,
-                1.0,
-            );
-            let custom_end_norm = clip_kr(
-                buf_rd_kr(1, splices_buf, committed_idx + 1.0, 0, 1),
-                0.0,
-                1.0,
-            );
-            let custom_len_frames = (custom_end_norm - custom_start_norm)
-                .max(0.000001) * buf_n;
-            let custom_start_frame = custom_start_norm * buf_n;
-            let splice_len_frames = even_len_frames * (1.0 - has_custom_splices)
-                                  + custom_len_frames * has_custom_splices;
-            let splice_start_frame = even_start_frame * (1.0 - has_custom_splices)
-                                   + custom_start_frame * has_custom_splices;
+            let splice_len_frames = even_len_frames;
+            let splice_start_frame = even_start_frame;
             let splice_offset = slide * splice_len_frames;
 
             // --- Whole-splice playback path (Story A — Phasor + BufRd) ---------
@@ -251,7 +233,7 @@ define_synthdef("morphagene", |builder| {
             let phase = phasor_ar(0.0, rate * buf_scale, 0.0, splice_len_frames, 0.0);
             let read_pos = splice_start_frame
                          + wrap_ar(phase + splice_offset, 0.0, splice_len_frames);
-            let raw = buf_rd_ar(2, bufnum, read_pos, 1.0, 4.0);
+            let raw = buf_rd_ar(bufnum, read_pos, 1.0, 4.0, 0.0);
 
             // --- EOS detection (kr) --------------------------------------------
             let phase_prev = delay1_ar(phase);
@@ -401,7 +383,6 @@ define_synthdef("morphagene", |builder| {
             // envbufnum = -1 → built-in Hann window; maxGrains = 64 caps CPU
             // under 4× overlap with high spawn rates.
             let grain = grain_buf_ar(
-                2.0,                  // numChannels = stereo
                 spawn_trig,           // trigger (ar)
                 gene_dur_sec,         // dur (seconds, per-grain)
                 bufnum,               // sndbuf
@@ -411,10 +392,10 @@ define_synthdef("morphagene", |builder| {
                 grain_pan,            // pan (per-grain via Latch)
                 -1.0,                 // envbufnum = default Hann
                 64.0,                 // maxGrains
+                0.0,
             );
-            let grain_lr = channels(grain, 2);
-            let grain_l = grain_lr[0];
-            let grain_r = grain_lr[1];
+            let grain_l = grain;
+            let grain_r = grain;
 
             // --- Branch crossfade (C6) -----------------------------------------
             // Gene-Size below 0.02 routes to the whole-splice path (cheaper and

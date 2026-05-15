@@ -19,10 +19,12 @@ use crate::types::{BufferId, NodeId, ParamMap};
 use async_trait::async_trait;
 use rosc::{decoder, encoder, OscMessage, OscPacket, OscType};
 use std::collections::HashMap;
+use std::fs;
 use std::io;
 use std::net::UdpSocket;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -89,9 +91,12 @@ impl From<rosc::OscError> for ScsynthError {
 }
 
 const SYNTHDEF_LOAD_TIMEOUT: Duration = Duration::from_secs(5);
+const D_RECV_MAX_BYTES: usize = 32 * 1024;
+static TEMP_SYNTHDEF_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 struct PendingSynthDefLoad {
     name: String,
+    command: &'static str,
     tx: oneshot::Sender<SynthDefLoadReply>,
 }
 
@@ -181,6 +186,8 @@ pub struct ScsynthBackend {
     pending_sync: Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
     /// Pending control bus read requests (bus_index -> oneshot sender).
     pending_control_bus: Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
+    /// Pending command completion requests (command path -> oneshot sender).
+    pending_done: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     /// Pending /d_recv synthdef load request.
     pending_synthdef_load: Arc<Mutex<Option<PendingSynthDefLoad>>>,
     /// Next sync ID for /sync messages.
@@ -228,6 +235,7 @@ impl ScsynthBackend {
         let pending_buffer_info = Arc::new(Mutex::new(HashMap::new()));
         let pending_sync = Arc::new(Mutex::new(HashMap::new()));
         let pending_control_bus = Arc::new(Mutex::new(HashMap::new()));
+        let pending_done = Arc::new(Mutex::new(HashMap::new()));
         let pending_synthdef_load = Arc::new(Mutex::new(None));
         let next_sync_id = Arc::new(std::sync::atomic::AtomicI32::new(1));
         let callbacks = Arc::new(Mutex::new(Vec::new()));
@@ -243,6 +251,7 @@ impl ScsynthBackend {
             pending_buffer_info: pending_buffer_info.clone(),
             pending_sync: pending_sync.clone(),
             pending_control_bus: pending_control_bus.clone(),
+            pending_done: pending_done.clone(),
             pending_synthdef_load: pending_synthdef_load.clone(),
             next_sync_id,
             callbacks: callbacks.clone(),
@@ -256,6 +265,7 @@ impl ScsynthBackend {
             pending_buffer_info.clone(),
             pending_sync.clone(),
             pending_control_bus.clone(),
+            pending_done.clone(),
             pending_synthdef_load.clone(),
             callbacks.clone(),
             server_ready.clone(),
@@ -318,6 +328,7 @@ impl ScsynthBackend {
         pending_buffer_info: Arc<Mutex<HashMap<u32, oneshot::Sender<BufferInfo>>>>,
         pending_sync: Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
         pending_control_bus: Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
+        pending_done: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
         pending_synthdef_load: Arc<Mutex<Option<PendingSynthDefLoad>>>,
         callbacks: Arc<Mutex<Vec<OscCallback>>>,
         server_ready: Arc<AtomicBool>,
@@ -339,6 +350,7 @@ impl ScsynthBackend {
                                 &pending_buffer_info,
                                 &pending_sync,
                                 &pending_control_bus,
+                                &pending_done,
                                 &pending_synthdef_load,
                                 &callbacks,
                                 &server_ready,
@@ -369,6 +381,7 @@ impl ScsynthBackend {
         pending_buffer_info: &Arc<Mutex<HashMap<u32, oneshot::Sender<BufferInfo>>>>,
         pending_sync: &Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
         pending_control_bus: &Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
+        pending_done: &Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
         pending_synthdef_load: &Arc<Mutex<Option<PendingSynthDefLoad>>>,
         callbacks: &Arc<Mutex<Vec<OscCallback>>>,
         server_ready: &Arc<AtomicBool>,
@@ -380,6 +393,7 @@ impl ScsynthBackend {
                     pending_buffer_info,
                     pending_sync,
                     pending_control_bus,
+                    pending_done,
                     pending_synthdef_load,
                     callbacks,
                     server_ready,
@@ -392,6 +406,7 @@ impl ScsynthBackend {
                         pending_buffer_info,
                         pending_sync,
                         pending_control_bus,
+                        pending_done,
                         pending_synthdef_load,
                         callbacks,
                         server_ready,
@@ -407,6 +422,7 @@ impl ScsynthBackend {
         pending_buffer_info: &Arc<Mutex<HashMap<u32, oneshot::Sender<BufferInfo>>>>,
         pending_sync: &Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
         pending_control_bus: &Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
+        pending_done: &Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
         pending_synthdef_load: &Arc<Mutex<Option<PendingSynthDefLoad>>>,
         callbacks: &Arc<Mutex<Vec<OscCallback>>>,
         server_ready: &Arc<AtomicBool>,
@@ -512,12 +528,22 @@ impl ScsynthBackend {
                 // Command completed
                 let command = Self::get_string(&msg.args, 0).unwrap_or_default();
                 tracing::debug!("Done: {}", command);
-                if command == "/d_recv" {
+                if Self::is_pending_synthdef_command(&command) {
                     if let Ok(mut pending) = pending_synthdef_load.lock() {
-                        if let Some(pending) = pending.take() {
+                        if pending
+                            .as_ref()
+                            .map(|pending| pending.command == command)
+                            .unwrap_or(false)
+                        {
+                            let pending = pending.take().expect("pending synthdef load checked");
                             tracing::debug!("SynthDef '{}' accepted by scsynth", pending.name);
                             let _ = pending.tx.send(SynthDefLoadReply::Done);
                         }
+                    }
+                }
+                if let Ok(mut pending) = pending_done.lock() {
+                    if let Some(sender) = pending.remove(&command) {
+                        let _ = sender.send(());
                     }
                 }
                 Some(OscResponse::Done { command })
@@ -541,9 +567,14 @@ impl ScsynthBackend {
                 } else {
                     tracing::warn!("Fail: {} - {}", command, reason);
                 }
-                if command == "/d_recv" {
+                if Self::is_pending_synthdef_command(&command) {
                     if let Ok(mut pending) = pending_synthdef_load.lock() {
-                        if let Some(pending) = pending.take() {
+                        if pending
+                            .as_ref()
+                            .map(|pending| pending.command == command)
+                            .unwrap_or(false)
+                        {
+                            let pending = pending.take().expect("pending synthdef load checked");
                             tracing::warn!(
                                 "SynthDef '{}' rejected by scsynth: {}",
                                 pending.name,
@@ -684,6 +715,59 @@ impl ScsynthBackend {
         rest.contains("not installed").then(|| ugen.to_string())
     }
 
+    fn is_pending_synthdef_command(command: &str) -> bool {
+        command == "/d_recv" || command == "/d_load"
+    }
+
+    fn temp_synthdef_path(name: &str) -> PathBuf {
+        let mut safe_name = String::with_capacity(name.len());
+        for ch in name.chars() {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                safe_name.push(ch);
+            } else {
+                safe_name.push('_');
+            }
+        }
+        if safe_name.is_empty() {
+            safe_name.push_str("synthdef");
+        }
+
+        let counter = TEMP_SYNTHDEF_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "vibelang-{}-{}-{}.scsyndef",
+            std::process::id(),
+            counter,
+            safe_name
+        ))
+    }
+
+    async fn await_synthdef_load(
+        &self,
+        name: &str,
+        rx: oneshot::Receiver<SynthDefLoadReply>,
+    ) -> Result<(), ScsynthError> {
+        match tokio::time::timeout(SYNTHDEF_LOAD_TIMEOUT, rx).await {
+            Ok(Ok(SynthDefLoadReply::Done)) => Ok(()),
+            Ok(Ok(SynthDefLoadReply::Fail { reason })) => Err(ScsynthError::SynthDefRejected {
+                name: name.to_string(),
+                missing_ugen: Self::parse_missing_ugen(&reason),
+                reason,
+            }),
+            Ok(Err(_)) => Err(ScsynthError::ConnectionFailed(
+                "synthdef load response channel closed".to_string(),
+            )),
+            Err(_) => {
+                self.clear_pending_synthdef_load(name);
+                tracing::warn!(
+                    "SynthDef '{}' load timed out after {:?}",
+                    name,
+                    SYNTHDEF_LOAD_TIMEOUT
+                );
+                Err(ScsynthError::Timeout)
+            }
+        }
+    }
+
     /// Send an OSC message to scsynth.
     fn send_msg(&self, path: &str, args: Vec<OscType>) -> Result<(), ScsynthError> {
         let msg = OscMessage {
@@ -694,6 +778,48 @@ impl ScsynthBackend {
         let buf = encoder::encode(&packet)?;
         self.socket.send(&buf)?;
         Ok(())
+    }
+
+    async fn send_msg_and_await_done(
+        &self,
+        path: &str,
+        args: Vec<OscType>,
+    ) -> Result<(), ScsynthError> {
+        let (tx, rx) = oneshot::channel();
+
+        {
+            let mut pending = self
+                .pending_done
+                .lock()
+                .map_err(|_| ScsynthError::LockPoisoned)?;
+            if pending.insert(path.to_string(), tx).is_some() {
+                return Err(ScsynthError::ConnectionFailed(format!(
+                    "command already pending: {}",
+                    path
+                )));
+            }
+        }
+
+        if let Err(err) = self.send_msg(path, args) {
+            if let Ok(mut pending) = self.pending_done.lock() {
+                pending.remove(path);
+            }
+            return Err(err);
+        }
+
+        match tokio::time::timeout(Duration::from_secs(5), rx).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(_)) => Err(ScsynthError::ConnectionFailed(format!(
+                "{} completion response channel closed",
+                path
+            ))),
+            Err(_) => {
+                if let Ok(mut pending) = self.pending_done.lock() {
+                    pending.remove(path);
+                }
+                Err(ScsynthError::Timeout)
+            }
+        }
     }
 
     /// Get the server address.
@@ -795,6 +921,8 @@ impl Backend for ScsynthBackend {
     type Error = ScsynthError;
 
     async fn load_synthdef(&self, name: &str, data: &[u8]) -> Result<(), Self::Error> {
+        let use_disk_load = data.len() > D_RECV_MAX_BYTES;
+        let command = if use_disk_load { "/d_load" } else { "/d_recv" };
         let (tx, rx) = oneshot::channel();
 
         {
@@ -809,35 +937,56 @@ impl Backend for ScsynthBackend {
             }
             *pending = Some(PendingSynthDefLoad {
                 name: name.to_string(),
+                command,
                 tx,
             });
         }
 
-        if let Err(err) = self.send_msg("/d_recv", vec![OscType::Blob(data.to_vec())]) {
+        let temp_path = if use_disk_load {
+            let path = Self::temp_synthdef_path(name);
+            if let Err(err) = fs::write(&path, data) {
+                self.clear_pending_synthdef_load(name);
+                return Err(ScsynthError::Io(err));
+            }
+            tracing::debug!(
+                "SynthDef '{}' is {} bytes; loading via /d_load from {}",
+                name,
+                data.len(),
+                path.display()
+            );
+            Some(path)
+        } else {
+            None
+        };
+
+        let send_result = if let Some(path) = &temp_path {
+            self.send_msg(
+                "/d_load",
+                vec![OscType::String(path.to_string_lossy().into_owned())],
+            )
+        } else {
+            self.send_msg("/d_recv", vec![OscType::Blob(data.to_vec())])
+        };
+
+        if let Err(err) = send_result {
             self.clear_pending_synthdef_load(name);
+            if let Some(path) = &temp_path {
+                let _ = fs::remove_file(path);
+            }
             return Err(err);
         }
 
-        match tokio::time::timeout(SYNTHDEF_LOAD_TIMEOUT, rx).await {
-            Ok(Ok(SynthDefLoadReply::Done)) => Ok(()),
-            Ok(Ok(SynthDefLoadReply::Fail { reason })) => Err(ScsynthError::SynthDefRejected {
-                name: name.to_string(),
-                missing_ugen: Self::parse_missing_ugen(&reason),
-                reason,
-            }),
-            Ok(Err(_)) => Err(ScsynthError::ConnectionFailed(
-                "synthdef load response channel closed".to_string(),
-            )),
-            Err(_) => {
-                self.clear_pending_synthdef_load(name);
-                tracing::warn!(
-                    "SynthDef '{}' load timed out after {:?}",
-                    name,
-                    SYNTHDEF_LOAD_TIMEOUT
+        let result = self.await_synthdef_load(name, rx).await;
+        if let Some(path) = &temp_path {
+            if let Err(err) = fs::remove_file(path) {
+                tracing::debug!(
+                    "Failed to remove temporary SynthDef file {}: {}",
+                    path.display(),
+                    err
                 );
-                Err(ScsynthError::Timeout)
             }
         }
+        result
     }
 
     async fn create_synth(
@@ -1088,31 +1237,28 @@ impl Backend for ScsynthBackend {
         frames: u32,
         channels: u16,
     ) -> Result<BufferInfo, Self::Error> {
-        // Create oneshot channel for buffer info response
-        let (tx, rx) = oneshot::channel();
-
-        // Register pending request
-        {
-            let mut pending = self
-                .pending_buffer_info
-                .lock()
-                .map_err(|_| ScsynthError::LockPoisoned)?;
-            pending.insert(id.0, tx);
-        }
-
-        // Send alloc command
-        self.send_msg(
+        self.send_msg_and_await_done(
             "/b_alloc",
             vec![
                 OscType::Int(id.0 as i32),
                 OscType::Int(frames as i32),
                 OscType::Int(channels as i32),
             ],
-        )?;
+        )
+        .await?;
 
-        // Wait for buffer info response with timeout
-        match tokio::time::timeout(Duration::from_secs(5), rx).await {
-            Ok(Ok(info)) => {
+        // /b_alloc and /b_zero are asynchronous. Wait for their /done replies
+        // before querying metadata; /sync alone can race the allocation.
+        let query_result = match self
+            .send_msg_and_await_done("/b_zero", vec![OscType::Int(id.0 as i32)])
+            .await
+        {
+            Ok(()) => self.query_buffer_info(id).await,
+            Err(err) => Err(err),
+        };
+
+        match query_result {
+            Ok(info) => {
                 tracing::debug!(
                     "Allocated buffer {} ({} frames, {} channels)",
                     id.0,
@@ -1121,21 +1267,12 @@ impl Backend for ScsynthBackend {
                 );
                 Ok(info)
             }
-            Ok(Err(_)) => {
-                // Channel closed, return placeholder
+            Err(err) => {
                 tracing::warn!(
-                    "Buffer info channel closed for {}, using allocated values",
-                    id.0
+                    "Buffer {} alloc metadata query failed after allocation: {}, using allocated values",
+                    id.0,
+                    err
                 );
-                Ok(BufferInfo {
-                    frames,
-                    channels,
-                    sample_rate: 44100.0,
-                })
-            }
-            Err(_) => {
-                // Timeout - return the allocated values
-                tracing::warn!("Buffer {} alloc timeout, using allocated values", id.0);
                 Ok(BufferInfo {
                     frames,
                     channels,
@@ -1357,6 +1494,7 @@ mod tests {
         let pending_buffer_info = Arc::new(Mutex::new(HashMap::new()));
         let pending_sync = Arc::new(Mutex::new(HashMap::new()));
         let pending_control_bus = Arc::new(Mutex::new(HashMap::new()));
+        let pending_done = Arc::new(Mutex::new(HashMap::new()));
         let pending_synthdef_load = Arc::new(Mutex::new(None));
         let callbacks = Arc::new(Mutex::new(Vec::new()));
         let server_ready = Arc::new(AtomicBool::new(false));
@@ -1364,6 +1502,7 @@ mod tests {
 
         *pending_synthdef_load.lock().unwrap() = Some(PendingSynthDefLoad {
             name: "accepted".to_string(),
+            command: "/d_recv",
             tx,
         });
 
@@ -1375,6 +1514,7 @@ mod tests {
             &pending_buffer_info,
             &pending_sync,
             &pending_control_bus,
+            &pending_done,
             &pending_synthdef_load,
             &callbacks,
             &server_ready,
@@ -1389,6 +1529,7 @@ mod tests {
         let pending_buffer_info = Arc::new(Mutex::new(HashMap::new()));
         let pending_sync = Arc::new(Mutex::new(HashMap::new()));
         let pending_control_bus = Arc::new(Mutex::new(HashMap::new()));
+        let pending_done = Arc::new(Mutex::new(HashMap::new()));
         let pending_synthdef_load = Arc::new(Mutex::new(None));
         let callbacks = Arc::new(Mutex::new(Vec::new()));
         let server_ready = Arc::new(AtomicBool::new(false));
@@ -1396,6 +1537,7 @@ mod tests {
 
         *pending_synthdef_load.lock().unwrap() = Some(PendingSynthDefLoad {
             name: "rejected".to_string(),
+            command: "/d_recv",
             tx,
         });
 
@@ -1412,6 +1554,7 @@ mod tests {
             &pending_buffer_info,
             &pending_sync,
             &pending_control_bus,
+            &pending_done,
             &pending_synthdef_load,
             &callbacks,
             &server_ready,
@@ -1422,6 +1565,136 @@ mod tests {
         };
         assert!(reason.contains("Changed"));
         assert!(pending_synthdef_load.lock().unwrap().is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn large_synthdefs_are_loaded_with_d_load() {
+        use std::sync::atomic::AtomicBool;
+
+        let server = UdpSocket::bind("127.0.0.1:0").expect("bind fake scsynth");
+        server
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .expect("set timeout");
+        let server_addr = server.local_addr().expect("server addr").to_string();
+
+        let recorded: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+
+        let recorded_clone = Arc::clone(&recorded);
+        let stop_clone = Arc::clone(&stop);
+        let server_thread = thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            while !stop_clone.load(Ordering::Relaxed) {
+                let (size, peer) = match server.recv_from(&mut buf) {
+                    Ok(x) => x,
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => continue,
+                    Err(_) => break,
+                };
+                let Ok((_, packet)) = decoder::decode_udp(&buf[..size]) else {
+                    continue;
+                };
+                fake_scsynth_handle(packet, &server, peer, &recorded_clone);
+            }
+        });
+
+        let backend = ScsynthBackend::connect(&server_addr)
+            .await
+            .expect("connect should succeed against fake scsynth");
+
+        let data = vec![42u8; D_RECV_MAX_BYTES + 1];
+        backend
+            .load_synthdef("large_test", &data)
+            .await
+            .expect("large synthdef should load via /d_load");
+
+        drop(backend);
+        stop.store(true, Ordering::Relaxed);
+        server_thread.join().expect("server thread join");
+
+        let log = recorded.lock().expect("recorded lock").clone();
+        assert!(
+            log.iter()
+                .any(|entry| entry == &format!("/d_load(bytes={})", data.len())),
+            "large SynthDefs must be sent through /d_load; got: {:?}",
+            log
+        );
+        assert!(
+            !log.iter().any(|entry| entry == "/d_recv"),
+            "large SynthDefs must not be sent through /d_recv; got: {:?}",
+            log
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn alloc_buffer_queries_allocated_buffer_info() {
+        use std::sync::atomic::AtomicBool;
+
+        let server = UdpSocket::bind("127.0.0.1:0").expect("bind fake scsynth");
+        server
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .expect("set timeout");
+        let server_addr = server.local_addr().expect("server addr").to_string();
+
+        let recorded: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+
+        let recorded_clone = Arc::clone(&recorded);
+        let stop_clone = Arc::clone(&stop);
+        let server_thread = thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            while !stop_clone.load(Ordering::Relaxed) {
+                let (size, peer) = match server.recv_from(&mut buf) {
+                    Ok(x) => x,
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => continue,
+                    Err(_) => break,
+                };
+                let Ok((_, packet)) = decoder::decode_udp(&buf[..size]) else {
+                    continue;
+                };
+                fake_scsynth_handle(packet, &server, peer, &recorded_clone);
+            }
+        });
+
+        let backend = ScsynthBackend::connect(&server_addr)
+            .await
+            .expect("connect should succeed against fake scsynth");
+
+        let info = backend
+            .alloc_buffer(BufferId::new(3019), 384000, 2)
+            .await
+            .expect("buffer allocation should query metadata");
+
+        drop(backend);
+        stop.store(true, Ordering::Relaxed);
+        server_thread.join().expect("server thread join");
+
+        assert_eq!(info.frames, 384000);
+        assert_eq!(info.channels, 2);
+
+        let log = recorded.lock().expect("recorded lock").clone();
+        let alloc_pos = log
+            .iter()
+            .position(|entry| entry == "/b_alloc(3019,384000,2)")
+            .unwrap_or_else(|| panic!("expected /b_alloc record; got: {:?}", log));
+        let zero_pos = log
+            .iter()
+            .position(|entry| entry == "/b_zero(3019)")
+            .unwrap_or_else(|| {
+                panic!("expected /b_zero after /b_alloc completion; got: {:?}", log)
+            });
+        let query_pos = log
+            .iter()
+            .position(|entry| entry == "/b_query(3019)")
+            .unwrap_or_else(|| {
+                panic!("expected /b_query after /b_zero completion; got: {:?}", log)
+            });
+        assert!(
+            alloc_pos < zero_pos && zero_pos < query_pos,
+            "/b_query must be sent after /b_alloc and /b_zero complete; got: {:?}",
+            log
+        );
     }
 
     /// Regression test for the scsynth-zombie-on-reconnect bug.
@@ -1570,6 +1843,104 @@ mod tests {
                             let _ = server.send_to(&buf, peer);
                         }
                         "/status".to_string()
+                    }
+                    "/d_load" => {
+                        let path = msg.args.first().and_then(|v| {
+                            if let OscType::String(path) = v {
+                                Some(path)
+                            } else {
+                                None
+                            }
+                        });
+                        let bytes = path
+                            .and_then(|path| fs::read(path).ok())
+                            .map(|bytes| bytes.len())
+                            .unwrap_or(0);
+                        let reply = OscPacket::Message(OscMessage {
+                            addr: "/done".to_string(),
+                            args: vec![OscType::String("/d_load".to_string())],
+                        });
+                        if let Ok(buf) = encoder::encode(&reply) {
+                            let _ = server.send_to(&buf, peer);
+                        }
+                        format!("/d_load(bytes={})", bytes)
+                    }
+                    "/b_alloc" => {
+                        let id = msg.args.first().and_then(|v| {
+                            if let OscType::Int(id) = v {
+                                Some(*id)
+                            } else {
+                                None
+                            }
+                        });
+                        let frames = msg.args.get(1).and_then(|v| {
+                            if let OscType::Int(frames) = v {
+                                Some(*frames)
+                            } else {
+                                None
+                            }
+                        });
+                        let channels = msg.args.get(2).and_then(|v| {
+                            if let OscType::Int(channels) = v {
+                                Some(*channels)
+                            } else {
+                                None
+                            }
+                        });
+                        let reply = OscPacket::Message(OscMessage {
+                            addr: "/done".to_string(),
+                            args: vec![OscType::String("/b_alloc".to_string())],
+                        });
+                        if let Ok(buf) = encoder::encode(&reply) {
+                            let _ = server.send_to(&buf, peer);
+                        }
+                        format!(
+                            "/b_alloc({},{},{})",
+                            id.unwrap_or(i32::MIN),
+                            frames.unwrap_or(i32::MIN),
+                            channels.unwrap_or(i32::MIN)
+                        )
+                    }
+                    "/b_zero" => {
+                        let id = msg.args.first().and_then(|v| {
+                            if let OscType::Int(id) = v {
+                                Some(*id)
+                            } else {
+                                None
+                            }
+                        });
+                        let reply = OscPacket::Message(OscMessage {
+                            addr: "/done".to_string(),
+                            args: vec![OscType::String("/b_zero".to_string())],
+                        });
+                        if let Ok(buf) = encoder::encode(&reply) {
+                            let _ = server.send_to(&buf, peer);
+                        }
+                        format!("/b_zero({})", id.unwrap_or(i32::MIN))
+                    }
+                    "/b_query" => {
+                        let id = msg.args.first().and_then(|v| {
+                            if let OscType::Int(id) = v {
+                                Some(*id)
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(id) = id {
+                            let reply = OscPacket::Message(OscMessage {
+                                addr: "/b_info".to_string(),
+                                args: vec![
+                                    OscType::Int(id),
+                                    OscType::Int(384000),
+                                    OscType::Int(2),
+                                    OscType::Float(48000.0),
+                                ],
+                            });
+                            if let Ok(buf) = encoder::encode(&reply) {
+                                let _ = server.send_to(&buf, peer);
+                            }
+                        }
+                        format!("/b_query({})", id.unwrap_or(i32::MIN))
                     }
                     other => other.to_string(),
                 };

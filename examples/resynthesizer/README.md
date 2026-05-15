@@ -9,13 +9,47 @@ not a hardware, firmware, panel, or analog-circuit clone.
 Build the CLI first if needed, then run the patch from this example directory:
 
 ```bash
-bash -c "cd examples/resynthesizer && ../../target/release/vibelang run -w -I ../.. main.vibe"
+bash -c "cd examples/resynthesizer && ../../target/release/vibe main.vibe"
 ```
 
 For a source-tree smoke run without watch mode:
 
 ```bash
 bash -c "cargo run -q -p vibelang-cli -- run --no-watch --no-api --no-jack-connect -I crates/vibelang-std examples/resynthesizer/main.vibe"
+```
+
+## Smoke Verification
+
+Build the release CLI, then run the bounded host smoke harness from the project
+root:
+
+```bash
+cargo build --release -p vibelang-cli
+bash examples/resynthesizer/smoke.sh
+```
+
+The harness runs the release CLI against scsynth in deterministic no-watch mode:
+
+```bash
+RUST_LOG=info ./target/release/vibe run --no-watch --no-api --no-jack-connect examples/resynthesizer/main.vibe
+```
+
+It runs with a temporary `XDG_DATA_HOME` so the release binary extracts the
+current embedded stdlib instead of reusing a stale user-local stdlib cache. It
+sends `SIGINT` after 20 seconds by default
+(`VIBE_RESYNTH_SMOKE_SECONDS=N` overrides the duration). Expected clean output
+reaches the `Transport started` log line and does not contain any of these
+regression strings:
+
+- `UGen not installed`
+- `SynthDef not found`
+- `LocalBuf tried to allocate too many local buffers`
+- `Too many grains`
+
+For the full live command with watching/API/default JACK behavior, run:
+
+```bash
+RUST_LOG=info ./target/release/vibe examples/resynthesizer/main.vibe
 ```
 
 ## Topology

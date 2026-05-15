@@ -57,6 +57,7 @@ group("taps").gain(0.0);
 group("rack").gain(db(-6));
 
 let reel = allocate_buffer("resynthesizer_reel", 384000, 2);
+let spectraphon_arrays = allocate_buffer("resynthesizer_spectraphon_arrays", 131072, 1);
 
 let bake_reel = true;
 if bake_reel {
@@ -188,6 +189,7 @@ let spec = voice("spectraphon_resynth")
     .set_param("routing_mode", 2.0)
     .set_param("mode_a", 1.0)
     .set_param("mode_b", 1.0)
+    .set_param("bufnum", spectraphon_arrays.bufnum)
     .set_param("partials_a", 0.72)
     .set_param("partials_b", 0.58)
     .set_param("slide_a", 0.44)

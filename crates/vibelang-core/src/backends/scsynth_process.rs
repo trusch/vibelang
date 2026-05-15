@@ -63,7 +63,7 @@ pub struct ScsynthConfig {
     /// without colliding with the sample/recording allocator (low IDs).
     pub num_buffers: u32,
 
-    /// Real-time memory size in bytes.
+    /// Real-time memory size in kilobytes.
     pub realtime_memory: u32,
 
     /// Whether to run in verbose mode.
@@ -104,7 +104,7 @@ impl Default for ScsynthConfig {
             max_nodes: 1024,
             max_synthdefs: 1024,
             num_buffers: 4096,
-            realtime_memory: 8192,
+            realtime_memory: 65536,
             verbose: false,
             device: None,
             auto_connect_jack: true, // Auto-connect by default for best UX
@@ -918,6 +918,7 @@ mod tests {
         assert_eq!(config.port, 57110);
         assert_eq!(config.output_channels, 2);
         assert_eq!(config.input_channels, 2);
+        assert_eq!(config.realtime_memory, 65536);
     }
 
     #[test]
@@ -943,6 +944,8 @@ mod tests {
         assert!(args.contains(&"57111".to_string()));
         assert!(args.contains(&"-S".to_string()));
         assert!(args.contains(&"48000".to_string()));
+        assert!(args.contains(&"-m".to_string()));
+        assert!(args.contains(&"65536".to_string()));
     }
 
     #[test]

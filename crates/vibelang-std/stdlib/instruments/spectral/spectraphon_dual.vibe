@@ -178,9 +178,7 @@ define_synthdef("spectraphon_dual", |builder| {
             let cap_active_b = sam_cap_b;
 
             let has_array  = clip((array_buf - 1.0) * 1000.0, 0.0, 1.0);
-            let fallback_array_buf = local_buf_ir(1.0, 1.0);
-            let array_mem = array_buf * has_array
-                          + fallback_array_buf * (1.0 - has_array);
+            let array_mem = array_buf;
 
             // === SAM analyser =============================================
             let analyze_in_a = p.inputs["analyze_a"];
@@ -246,11 +244,7 @@ define_synthdef("spectraphon_dual", |builder| {
 
             // === Side A - Odd bank ========================================
             let k = 1.0;
-            let mag_sao_buf = w00_a * buf_rd_kr(1, array_mem, base00_a + (k - 1.0), 0, 1)
-                            + w01_a * buf_rd_kr(1, array_mem, base01_a + (k - 1.0), 0, 1)
-                            + w10_a * buf_rd_kr(1, array_mem, base10_a + (k - 1.0), 0, 1)
-                            + w11_a * buf_rd_kr(1, array_mem, base11_a + (k - 1.0), 0, 1);
-            let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+            let mag_sao = 1.0 / k;
             let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
             let mag_sam = lag_kr(channels(bin_data_kr(chain_a, centre_bin, 0.5), 2)[0]
                                  * mag_scale, lag_t);
@@ -260,11 +254,7 @@ define_synthdef("spectraphon_dual", |builder| {
                 * clip(scale_a - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * i + 1).to_float();
-                let mag_sao_buf = w00_a * buf_rd_kr(1, array_mem, base00_a + (k - 1.0), 0, 1)
-                                + w01_a * buf_rd_kr(1, array_mem, base01_a + (k - 1.0), 0, 1)
-                                + w10_a * buf_rd_kr(1, array_mem, base10_a + (k - 1.0), 0, 1)
-                                + w11_a * buf_rd_kr(1, array_mem, base11_a + (k - 1.0), 0, 1);
-                let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+                let mag_sao = 1.0 / k;
                 let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
                 let mag_sam = lag_kr(channels(bin_data_kr(chain_a, centre_bin, 0.5), 2)[0]
                                      * mag_scale, lag_t);
@@ -276,11 +266,7 @@ define_synthdef("spectraphon_dual", |builder| {
 
             // === Side A - Even bank =======================================
             let k = 2.0;
-            let mag_sao_buf = w00_a * buf_rd_kr(1, array_mem, base00_a + (k - 1.0), 0, 1)
-                            + w01_a * buf_rd_kr(1, array_mem, base01_a + (k - 1.0), 0, 1)
-                            + w10_a * buf_rd_kr(1, array_mem, base10_a + (k - 1.0), 0, 1)
-                            + w11_a * buf_rd_kr(1, array_mem, base11_a + (k - 1.0), 0, 1);
-            let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+            let mag_sao = 1.0 / k;
             let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
             let mag_sam = lag_kr(channels(bin_data_kr(chain_a, centre_bin, 0.5), 2)[0]
                                  * mag_scale, lag_t);
@@ -290,11 +276,7 @@ define_synthdef("spectraphon_dual", |builder| {
                 * clip(scale_a - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * (i + 1)).to_float();
-                let mag_sao_buf = w00_a * buf_rd_kr(1, array_mem, base00_a + (k - 1.0), 0, 1)
-                                + w01_a * buf_rd_kr(1, array_mem, base01_a + (k - 1.0), 0, 1)
-                                + w10_a * buf_rd_kr(1, array_mem, base10_a + (k - 1.0), 0, 1)
-                                + w11_a * buf_rd_kr(1, array_mem, base11_a + (k - 1.0), 0, 1);
-                let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+                let mag_sao = 1.0 / k;
                 let centre_bin = clip(k * f0_analyze_a * bin_per_hz, 1.0, bin_max);
                 let mag_sam = lag_kr(channels(bin_data_kr(chain_a, centre_bin, 0.5), 2)[0]
                                      * mag_scale, lag_t);
@@ -306,11 +288,7 @@ define_synthdef("spectraphon_dual", |builder| {
 
             // === Side B - Odd bank ========================================
             let k = 1.0;
-            let mag_sao_buf = w00_b * buf_rd_kr(1, array_mem, base00_b + (k - 1.0), 0, 1)
-                            + w01_b * buf_rd_kr(1, array_mem, base01_b + (k - 1.0), 0, 1)
-                            + w10_b * buf_rd_kr(1, array_mem, base10_b + (k - 1.0), 0, 1)
-                            + w11_b * buf_rd_kr(1, array_mem, base11_b + (k - 1.0), 0, 1);
-            let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+            let mag_sao = 1.0 / k;
             let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
             let mag_sam = lag_kr(channels(bin_data_kr(chain_b, centre_bin, 0.5), 2)[0]
                                  * mag_scale, lag_t);
@@ -324,11 +302,7 @@ define_synthdef("spectraphon_dual", |builder| {
                 * clip(scale_b - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * i + 1).to_float();
-                let mag_sao_buf = w00_b * buf_rd_kr(1, array_mem, base00_b + (k - 1.0), 0, 1)
-                                + w01_b * buf_rd_kr(1, array_mem, base01_b + (k - 1.0), 0, 1)
-                                + w10_b * buf_rd_kr(1, array_mem, base10_b + (k - 1.0), 0, 1)
-                                + w11_b * buf_rd_kr(1, array_mem, base11_b + (k - 1.0), 0, 1);
-                let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+                let mag_sao = 1.0 / k;
                 let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
                 let mag_sam = lag_kr(channels(bin_data_kr(chain_b, centre_bin, 0.5), 2)[0]
                                      * mag_scale, lag_t);
@@ -344,11 +318,7 @@ define_synthdef("spectraphon_dual", |builder| {
 
             // === Side B - Even bank =======================================
             let k = 2.0;
-            let mag_sao_buf = w00_b * buf_rd_kr(1, array_mem, base00_b + (k - 1.0), 0, 1)
-                            + w01_b * buf_rd_kr(1, array_mem, base01_b + (k - 1.0), 0, 1)
-                            + w10_b * buf_rd_kr(1, array_mem, base10_b + (k - 1.0), 0, 1)
-                            + w11_b * buf_rd_kr(1, array_mem, base11_b + (k - 1.0), 0, 1);
-            let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+            let mag_sao = 1.0 / k;
             let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
             let mag_sam = lag_kr(channels(bin_data_kr(chain_b, centre_bin, 0.5), 2)[0]
                                  * mag_scale, lag_t);
@@ -362,11 +332,7 @@ define_synthdef("spectraphon_dual", |builder| {
                 * clip(scale_b - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * (i + 1)).to_float();
-                let mag_sao_buf = w00_b * buf_rd_kr(1, array_mem, base00_b + (k - 1.0), 0, 1)
-                                + w01_b * buf_rd_kr(1, array_mem, base01_b + (k - 1.0), 0, 1)
-                                + w10_b * buf_rd_kr(1, array_mem, base10_b + (k - 1.0), 0, 1)
-                                + w11_b * buf_rd_kr(1, array_mem, base11_b + (k - 1.0), 0, 1);
-                let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
+                let mag_sao = 1.0 / k;
                 let centre_bin = clip(k * f0_analyze_b * bin_per_hz, 1.0, bin_max);
                 let mag_sam = lag_kr(channels(bin_data_kr(chain_b, centre_bin, 0.5), 2)[0]
                                      * mag_scale, lag_t);
