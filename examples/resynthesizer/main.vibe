@@ -1,16 +1,14 @@
 // ReSynthesizer-style rack patch.
 //
 // Signal flow:
-//   Morphagene reel + Spectraphon dual partial banks
-//     (Morphagene stereo bus feeds Spectraphon analyze_a/analyze_b)
+//   Generated reel source + spectral partial banks
+//     (reel stereo bus feeds Spectraphon analyze_a/analyze_b)
 //     -> X-PAN spectral/granular crossfade and stereo blend
 //     -> QPAS animated filter
 //     -> DXG low-pass gate
 //     -> Mimeophon stereo delay
 //     -> main bus
 
-import "stdlib/instruments/sampler/morphagene.vibe";
-import "stdlib/instruments/spectral/spectraphon_dual.vibe";
 import "stdlib/instruments/eurorack/maths.vibe";
 import "stdlib/instruments/eurorack/wogglebug.vibe";
 import "stdlib/instruments/eurorack/tempi.vibe";
@@ -42,6 +40,102 @@ define_synthdef("resynth_bus_tap_mono", |builder| {
         })
 });
 
+define_synthdef("resynth_reel_source", |builder| {
+    builder
+        .output("left")
+        .output("right")
+        .param("organize", 0.0)
+        .param("clk", 0.0)
+        .param("vari_speed", 0.0)
+        .param("slide", 0.0)
+        .param("gene_size", 0.0)
+        .param("morph", 0.0)
+        .param("amp", 0.6)
+        .body_map(|p| {
+            let organize = clip(p.organize, 0.0, 1.0);
+            let slide = clip(p.slide, 0.0, 1.0);
+            let gene_size = clip(p.gene_size, 0.0, 1.0);
+            let morph = clip(p.morph, 0.0, 1.0);
+            let speed = clip(p.vari_speed, -1.0, 1.0);
+            let amp = clip(p.amp, 0.0, 2.0);
+
+            let scan = clip(organize * 0.65 + slide * 0.35, 0.0, 1.0);
+            let base = 58.0 + scan * 148.0 + speed * 38.0;
+            let fold = 1.0 + morph * 2.4;
+            let smear = 0.18 + gene_size * 0.42;
+
+            let core_l = saw_ar(base) * (1.0 - morph)
+                       + pulse_ar(base * fold, 0.42) * morph;
+            let core_r = saw_ar(base * 1.007) * (1.0 - morph)
+                       + pulse_ar(base * fold * 0.997, 0.58) * morph;
+            let air = pink_noise_ar() * smear;
+            let tone_l = lpf_ar(core_l + air, 900.0 + scan * 3600.0);
+            let tone_r = lpf_ar(core_r + air * 0.85, 1100.0 + slide * 3300.0);
+            [softclip(tone_l * amp), softclip(tone_r * amp)]
+        })
+});
+
+define_synthdef("resynth_spectral_bank", |builder| {
+    builder
+        .input("analyze_a", 1)
+        .input("analyze_b", 1)
+        .output("odd_a")
+        .output("even_a")
+        .output("odd_b")
+        .output("even_b")
+        .param("freq_a", 220.0)
+        .param("freq_b", 220.0)
+        .param("amp", 0.3)
+        .param("routing_mode", 0.0)
+        .param("mode_a", 0.0)
+        .param("mode_b", 0.0)
+        .param("partials_a", 1.0)
+        .param("partials_b", 1.0)
+        .param("slide_a", 0.5)
+        .param("slide_b", 0.5)
+        .param("focus_a", 0.5)
+        .param("focus_b", 0.5)
+        .param("a_fm_index", 0.0)
+        .param("b_fm_index", 0.0)
+        .body_map(|p| {
+            let amp = clip(p.amp, 0.0, 2.0);
+            let partials_a = clip(p.partials_a, 0.0, 1.0);
+            let partials_b = clip(p.partials_b, 0.0, 1.0);
+            let slide_a = clip(p.slide_a, 0.0, 1.0);
+            let slide_b = clip(p.slide_b, 0.0, 1.0);
+            let focus_a = clip(p.focus_a, 0.0, 1.0);
+            let focus_b = clip(p.focus_b, 0.0, 1.0);
+            let follow = clip((p.routing_mode - 1.0) * 0.5, 0.0, 1.0);
+            let freq_a = p.freq_a.max(20.0);
+            let freq_b = (p.freq_b * (1.0 - follow) + p.freq_a * 1.4983 * follow).max(20.0);
+            let analyze_a = 0.35 + clip(amplitude_kr(p.inputs["analyze_a"], 0.01, 0.20) * 8.0, 0.0, 0.65);
+            let analyze_b = 0.35 + clip(amplitude_kr(p.inputs["analyze_b"], 0.01, 0.20) * 8.0, 0.0, 0.65);
+
+            let fm_a = sin_osc_ar(freq_b) * p.b_fm_index * freq_a;
+            let fm_b = sin_osc_ar(freq_a) * p.a_fm_index * freq_b;
+            let fa = (freq_a + fm_a).max(20.0);
+            let fb = (freq_b + fm_b).max(20.0);
+
+            let odd_a = sin_osc_ar(fa) * 0.78
+                      + sin_osc_ar(fa * 3.0) * partials_a * 0.32
+                      + sin_osc_ar(fa * 5.0) * slide_a * 0.18;
+            let even_a = sin_osc_ar(fa * 2.0) * partials_a * 0.42
+                       + sin_osc_ar(fa * 4.0) * focus_a * 0.22;
+            let odd_b = sin_osc_ar(fb) * 0.70
+                      + sin_osc_ar(fb * 3.0) * partials_b * 0.30
+                      + sin_osc_ar(fb * 5.0) * slide_b * 0.16;
+            let even_b = sin_osc_ar(fb * 2.0) * partials_b * 0.38
+                       + sin_osc_ar(fb * 4.0) * focus_b * 0.20;
+
+            [
+                softclip(odd_a * analyze_a * amp),
+                softclip(even_a * analyze_a * amp),
+                softclip(odd_b * analyze_b * amp),
+                softclip(even_b * analyze_b * amp),
+            ]
+        })
+});
+
 define_group("ctrl", || { });
 define_group("raw_morphagene", || { });
 define_group("raw_spectral_odd", || { });
@@ -54,21 +148,7 @@ group("raw_morphagene").gain(0.0);
 group("raw_spectral_odd").gain(0.0);
 group("raw_spectral_even").gain(0.0);
 group("taps").gain(0.0);
-group("rack").gain(db(-6));
-
-let reel = allocate_buffer("resynthesizer_reel", 384000, 2);
-let spectraphon_arrays = allocate_buffer("resynthesizer_spectraphon_arrays", 131072, 1);
-
-let bake_reel = true;
-if bake_reel {
-    voice("resynthesizer_reel_fill")
-        .synth("morphagene_reel_fill")
-        .set_param("bufnum", reel.bufnum)
-        .set_param("preset", 3.0)
-        .set_param("freq", 92.5)
-        .set_param("amp", 0.55)
-        .run();
-}
+group("rack").gain(db(2));
 
 let tempi = voice("tempi_master")
     .synth("tempi")
@@ -167,29 +247,26 @@ press.output("pressure1").to_param(cvbus, "in3").scale(0.8).offset(0.0);
 rene.output("cv").to_param(cvbus, "in4").scale(0.65).offset(0.0);
 
 let morph = voice("morphagene_reel")
-    .synth("morphagene")
+    .synth("resynth_reel_source")
     .group("raw_morphagene")
-    .set_param("bufnum", reel.bufnum)
-    .set_param("num_splices", 8.0)
     .set_param("organize", 0.25)
-    .set_param("sos", 0.0)
     .set_param("vari_speed", 0.7937)
     .set_param("slide", 0.10)
     .set_param("gene_size", 0.24)
     .set_param("morph", 0.50)
-    .set_param("amp", 0.42)
-    .gain(db(-8));
+    .set_param("amp", 0.46)
+    .gain(db(0));
+morph.outputs(["left", "right"]).to(group("raw_morphagene"));
 
 let spec = voice("spectraphon_resynth")
-    .synth("spectraphon_dual")
+    .synth("resynth_spectral_bank")
     .group("raw_spectral_odd")
     .set_param("freq_a", 146.8)
     .set_param("freq_b", 220.0)
-    .set_param("amp", 0.21)
+    .set_param("amp", 0.17)
     .set_param("routing_mode", 2.0)
     .set_param("mode_a", 1.0)
     .set_param("mode_b", 1.0)
-    .set_param("bufnum", spectraphon_arrays.bufnum)
     .set_param("partials_a", 0.72)
     .set_param("partials_b", 0.58)
     .set_param("slide_a", 0.44)
@@ -198,7 +275,7 @@ let spec = voice("spectraphon_resynth")
     .set_param("focus_b", 0.38)
     .set_param("a_fm_index", 0.04)
     .set_param("b_fm_index", 0.02)
-    .gain(db(-11));
+    .gain(db(-5));
 
 spec.output("odd_a").to(group("raw_spectral_odd"));
 spec.output("odd_b").to(group("raw_spectral_odd"));
@@ -219,7 +296,6 @@ rene.output("cv").to_param(morph, "organize").scale(0.42).offset(0.42);
 maths.output("ch1").to_param(morph, "gene_size").scale(0.30).offset(0.06);
 maths.output("ch4").to_param(morph, "morph").scale(0.30).offset(0.35);
 woggle.output("stepped").to_param(morph, "slide").scale(0.35).offset(0.18);
-maths.param("trig1").modulate_by(morph, "eosg").scale(0.05).offset(0.0);
 
 let odd_tap = voice("tap_spectral_odd")
     .synth("resynth_bus_tap_mono")
@@ -298,7 +374,7 @@ let echo = voice("mimeophon_space")
     .set_param("halo", 0.42)
     .set_param("mix", 0.34)
     .set_param("level", 0.78)
-    .gain(db(-3));
+    .gain(db(-8));
 echo.input("in").from(dxg);
 
 cvbus.output("bus3").to_param(xpan, "ch1_fade").scale(0.48).offset(0.50);
