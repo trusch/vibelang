@@ -352,7 +352,7 @@ let black_hole = voice("erica_black_hole_dub_delay")
 black_hole.input("in").from(acid_stereo);
 acid_env.output("env").to_param(black_hole, "cv").scale(0.65).offset(0.0);
 acid_env.outputs(["eoa", "eod", "eor"]).mute();
-black_hole.output("out").to(group("acid_wet"));
+black_hole.outputs(["out_left", "out_right"]).to(group("acid_wet"));
 
 let acid_return = voice("erica_acid_wet_return")
     .synth("erica_techno_stereo_to_mono")
