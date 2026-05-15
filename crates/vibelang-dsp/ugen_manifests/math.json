@@ -190,9 +190,7 @@
     "name": "ExpLin",
     "description": "Map exponential range to linear range. Inverse of LinExp.",
     "rates": [
-      "ar",
-      "kr",
-      "ir"
+      "builder"
     ],
     "inputs": [
       {
@@ -231,7 +229,9 @@
     "functions": [
       "exp_lin_ar",
       "exp_lin_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "LinLin",
@@ -278,15 +278,14 @@
     "functions": [
       "lin_lin_ar",
       "lin_lin_kr"
-    ]
+    ],
+    "pseudo": true
   },
   {
     "name": "ExpExp",
     "description": "Map exponential range to exponential range. Double exponential mapping.",
     "rates": [
-      "ar",
-      "kr",
-      "ir"
+      "builder"
     ],
     "inputs": [
       {
@@ -325,7 +324,9 @@
     "functions": [
       "exp_exp_ar",
       "exp_exp_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "Sum3",
@@ -437,7 +438,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 30
+    "special_index": 30,
+    "pseudo": true
   },
   {
     "name": "Ring2",
@@ -463,7 +465,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 31
+    "special_index": 31,
+    "pseudo": true
   },
   {
     "name": "Ring3",
@@ -489,7 +492,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 32
+    "special_index": 32,
+    "pseudo": true
   },
   {
     "name": "Ring4",
@@ -515,7 +519,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 33
+    "special_index": 33,
+    "pseudo": true
   },
   {
     "name": "Hypot",
@@ -541,7 +546,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 23
+    "special_index": 23,
+    "pseudo": true
   },
   {
     "name": "HypotApx",
@@ -567,7 +573,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 24
+    "special_index": 24,
+    "pseudo": true
   },
   {
     "name": "Atan2",
@@ -593,7 +600,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 22
+    "special_index": 22,
+    "pseudo": true
   },
   {
     "name": "SumSqr",
@@ -619,7 +627,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 35
+    "special_index": 35,
+    "pseudo": true
   },
   {
     "name": "DifSqr",
@@ -645,7 +654,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 34
+    "special_index": 34,
+    "pseudo": true
   },
   {
     "name": "SqrSum",
@@ -671,7 +681,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 36
+    "special_index": 36,
+    "pseudo": true
   },
   {
     "name": "SqrDif",
@@ -697,7 +708,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 37
+    "special_index": 37,
+    "pseudo": true
   },
   {
     "name": "AbsDif",
@@ -723,7 +735,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 38
+    "special_index": 38,
+    "pseudo": true
   },
   {
     "name": "Thresh",
@@ -749,7 +762,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 39
+    "special_index": 39,
+    "pseudo": true
   },
   {
     "name": "AMClip",
@@ -775,7 +789,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 40
+    "special_index": 40,
+    "pseudo": true
   },
   {
     "name": "ScaleNeg",
@@ -801,7 +816,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 41
+    "special_index": 41,
+    "pseudo": true
   },
   {
     "name": "Clip2",
@@ -827,7 +843,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 42
+    "special_index": 42,
+    "pseudo": true
   },
   {
     "name": "Wrap2",
@@ -853,7 +870,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 45
+    "special_index": 45,
+    "pseudo": true
   },
   {
     "name": "Fold2",
@@ -879,7 +897,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 44
+    "special_index": 44,
+    "pseudo": true
   },
   {
     "name": "Excess",
@@ -905,7 +924,8 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 43
+    "special_index": 43,
+    "pseudo": true
   },
   {
     "name": "FirstArg",
@@ -931,6 +951,7 @@
     "outputs": 1,
     "category": "Math",
     "ugen_class": "BinaryOpUGen",
-    "special_index": 46
+    "special_index": 46,
+    "pseudo": true
   }
 ]

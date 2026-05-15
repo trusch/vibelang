@@ -233,6 +233,8 @@
       "sound_in_ar",
       "sound_in_channel",
       "sound_in"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Sclang input helper; VibeLang provides manual lowering through sound_in_ar/sound_in_channel."
   }
 ]

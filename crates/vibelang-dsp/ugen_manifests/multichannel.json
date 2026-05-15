@@ -19,7 +19,8 @@
     "functions": [
       "mix_ar",
       "mix_kr"
-    ]
+    ],
+    "pseudo": true
   },
   {
     "name": "Splay",
@@ -65,6 +66,7 @@
     "functions": [
       "splay_ar",
       "splay_kr"
-    ]
+    ],
+    "pseudo": true
   }
 ]

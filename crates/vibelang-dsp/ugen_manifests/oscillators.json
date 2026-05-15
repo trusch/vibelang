@@ -289,8 +289,7 @@
     "name": "PMOsc",
     "description": "Phase modulation oscillator. Implements phase modulation synthesis with a carrier and modulator.",
     "rates": [
-      "ar",
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -323,7 +322,9 @@
     "functions": [
       "pm_osc_ar",
       "pm_osc_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "FSinOsc",
@@ -1359,7 +1360,7 @@
       {
         "name": "rootAmp",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Amplitude at the root frequency. Non-modulatable"
       }
     ],

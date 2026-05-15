@@ -101,7 +101,8 @@
     "category": "Envelopes",
     "functions": [
       "envelope"
-    ]
+    ],
+    "unavailable_reason": "VibeLang fluent envelope builder; no literal server UGen named envelope is emitted."
   },
   {
     "name": "EnvGen",

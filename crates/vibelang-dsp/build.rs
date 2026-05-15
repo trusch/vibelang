@@ -29,6 +29,16 @@ struct UGenManifest {
     /// BinaryOpUGen / UnaryOpUGen). Defaults to 0.
     #[serde(default)]
     special_index: Option<i16>,
+    /// True when the manifest name is an sclang-side helper, alias, or wrapper
+    /// that must not be emitted as a literal server UGen name.
+    #[serde(default)]
+    pseudo: bool,
+    /// SuperCollider plugin package required for this literal server UGen.
+    #[serde(default)]
+    requires_plugin: Option<String>,
+    /// Rationale for entries kept as documentation/unavailable stubs.
+    #[serde(default)]
+    unavailable_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,6 +55,94 @@ struct UGenInput {
 // `builder` flags documentation-only fluent-API entries (e.g. `envelope`).
 const ALLOWED_RATES: &[&str] = &["ar", "kr", "ir", "demand", "builder"];
 const ALLOWED_INPUT_TYPES: &[&str] = &["signal", "float", "int", "method"];
+const CONFIRMED_PSEUDO_UGENS: &[&str] = &[
+    "AMClip",
+    "AbsDif",
+    "Atan2",
+    "BLowPass4",
+    "BHiPass4",
+    "Changed",
+    "Clip2",
+    "DifSqr",
+    "Excess",
+    "ExpExp",
+    "ExpLin",
+    "FFTCentroid",
+    "FirstArg",
+    "Fold2",
+    "Greyhole",
+    "Hypot",
+    "HypotApx",
+    "JPverb",
+    "LinLin",
+    "Mix",
+    "OnsetsDS",
+    "PMOsc",
+    "PV_DiffMags",
+    "PanX2D",
+    "PulseDPW",
+    "Ring1",
+    "Ring2",
+    "Ring3",
+    "Ring4",
+    "Rotate",
+    "ScaleNeg",
+    "SelectX",
+    "Silence",
+    "SoundIn",
+    "Splay",
+    "SplayAz",
+    "SqrDif",
+    "SqrSum",
+    "SumSqr",
+    "TWChoose",
+    "Thresh",
+    "Tilt",
+    "Tumble",
+    "Wrap2",
+];
+const STALE_NON_BINARY_UGENS: &[&str] = &[
+    "AtsFile",
+    "BigArity24",
+    "CQ_Diff",
+    "FFTSubbandFlux",
+    "FaustGreyholeRaw",
+    "HOAEncLebedev061",
+    "HOALibEnc3D1",
+    "HOALibEnc3D2",
+    "HOALibEnc3D3",
+    "HOALibEnc3D4",
+    "HOALibEnc3D5",
+    "HOAmbiPanner1",
+    "HOAmbiPanner2",
+    "HOAmbiPanner3",
+    "HOAmbiPanner4",
+    "HOAmbiPanner5",
+    "ITU5001",
+    "ITU5002",
+    "LinkJump",
+    "LinkPhase",
+    "LinkTempo",
+    "MIDelay",
+    "MiBraids",
+    "MiClouds",
+    "MiElements",
+    "MiGrids",
+    "MiMu",
+    "MiOmi",
+    "MiPlaits",
+    "MiRings",
+    "MiRipples",
+    "MiTides",
+    "MiVerb",
+    "MiWarps",
+    "RMAFoodChainL",
+    "RosslerResL",
+    "SimpleLoopBuf",
+    "VBAPSpeaker",
+    "VBAPSpeakerArray",
+    "envelope",
+];
 
 /// `^[A-Z][A-Za-z0-9_]*$` — PascalCase identifier, with optional underscores
 /// to accommodate SuperCollider's PV_* family (PV_HainsworthFoote, PV_MagAbove, …).
@@ -70,6 +168,20 @@ fn is_valid_input_name(name: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+fn has_codegen_lowering(ugen: &UGenManifest) -> bool {
+    if ugen.ugen_class.is_some() {
+        return true;
+    }
+
+    ugen.rates
+        .iter()
+        .filter(|rate| rate.as_str() != "builder")
+        .all(|rate| {
+            let func_name = format!("{}_{}", to_snake_case(&ugen.name), rate);
+            pseudo_lowering_expr(&func_name, rate).is_some()
+        })
+}
+
 fn validate(file: &Path, ugen: &UGenManifest) -> Result<(), String> {
     if ugen.rates.is_empty() {
         return Err(format!("UGen '{}' has empty rates list", ugen.name));
@@ -84,6 +196,58 @@ fn validate(file: &Path, ugen: &UGenManifest) -> Result<(), String> {
     }
 
     let is_builder_only = ugen.rates.iter().all(|r| r == "builder");
+    let has_unavailable_reason = ugen
+        .unavailable_reason
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|reason| !reason.is_empty());
+
+    if ugen
+        .requires_plugin
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(str::is_empty)
+    {
+        return Err(format!("UGen '{}' has empty requires_plugin", ugen.name));
+    }
+    if ugen.unavailable_reason.is_some() && !has_unavailable_reason {
+        return Err(format!("UGen '{}' has empty unavailable_reason", ugen.name));
+    }
+    if ugen.unavailable_reason.is_some() && !is_builder_only {
+        return Err(format!(
+            "UGen '{}' has unavailable_reason but is still codegenerated",
+            ugen.name
+        ));
+    }
+    if CONFIRMED_PSEUDO_UGENS.contains(&ugen.name.as_str()) {
+        if !ugen.pseudo {
+            return Err(format!(
+                "UGen '{}' is a confirmed pseudo-UGen and must be tagged pseudo",
+                ugen.name
+            ));
+        }
+        if !is_builder_only && !has_codegen_lowering(ugen) {
+            return Err(format!(
+                "UGen '{}' is pseudo but has no ugen_class/special_index or codegen lowering",
+                ugen.name
+            ));
+        }
+    }
+    if ugen.pseudo && !is_builder_only && !has_codegen_lowering(ugen) {
+        return Err(format!(
+            "UGen '{}' is tagged pseudo but has no codegen lowering",
+            ugen.name
+        ));
+    }
+    if STALE_NON_BINARY_UGENS.contains(&ugen.name.as_str())
+        && ugen.requires_plugin.is_none()
+        && !(is_builder_only && has_unavailable_reason)
+    {
+        return Err(format!(
+            "UGen '{}' is an audited non-binary name; mark it unavailable or require a plugin",
+            ugen.name
+        ));
+    }
 
     // UGen name must be PascalCase, except for builder-only entries (which are
     // documentation pseudo-entries — e.g. `envelope` — and follow function-name

@@ -127,7 +127,8 @@
     "category": "VBAP",
     "functions": [
       "vbap_speaker_array"
-    ]
+    ],
+    "unavailable_reason": "Client-side buffer-geometry helper; no scsynth UGen is emitted."
   },
   {
     "name": "VBAPSpeaker",
@@ -153,6 +154,7 @@
     "category": "VBAP",
     "functions": [
       "vbap_speaker"
-    ]
+    ],
+    "unavailable_reason": "Client-side data/helper class for VBAPSpeakerArray; no scsynth UGen is emitted."
   }
 ]

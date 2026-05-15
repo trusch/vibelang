@@ -2,265 +2,1045 @@
   {
     "name": "MiPlaits",
     "description": "Macro oscillator port of the Mutable Instruments Plaits eurorack module. Offers 24 synthesis engines covering virtual analog, FM, granular, additive, wavetable, physical modelling, percussion, speech, swarm, wave terrain and chiptune.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "pitch", "type": "float", "default": 60, "description": "Pitch as MIDI note number"},
-      {"name": "engine", "type": "int", "default": 0, "description": "Synthesis engine (0..23): virtual_analog, waveshaping, fm, grain, additive, wavetable, chord, speech, swarm, noise, particle, string, modal, bass_drum, snare_drum, hi_hat, virtual_analog_vcf, phase_distortion, 6op_bank1, 6op_bank2, 6op_bank3, wave_terrain, string_machine, chiptune"},
-      {"name": "harm", "type": "float", "default": 0.5, "description": "Harmonics parameter (0..1)"},
-      {"name": "timbre", "type": "float", "default": 0.5, "description": "Timbre parameter (0..1)"},
-      {"name": "morph", "type": "float", "default": 0.5, "description": "Morph parameter (0..1)"},
-      {"name": "trigger", "type": "signal", "default": 0, "description": "Non-zero value fires the internal envelope and excites physical/percussive models"},
-      {"name": "level", "type": "float", "default": 1, "description": "Opens the internal low-pass gate, controlling amplitude and brightness"},
-      {"name": "fm_mod", "type": "float", "default": 0, "description": "FM modulation amount when internal env is active (-1..1)"},
-      {"name": "timb_mod", "type": "float", "default": 0, "description": "Timbre modulation amount when internal env is active (-1..1)"},
-      {"name": "morph_mod", "type": "float", "default": 0, "description": "Morph modulation amount when internal env is active (-1..1)"},
-      {"name": "decay", "type": "float", "default": 0.5, "description": "Decay rate of internal lowpass gate (0..1)"},
-      {"name": "lpg_colour", "type": "float", "default": 0.5, "description": "Colour of internal lowpass gate (0..1)"},
-      {"name": "mul", "type": "float", "default": 1, "description": "Output gain"}
+      {
+        "name": "pitch",
+        "type": "float",
+        "default": 60,
+        "description": "Pitch as MIDI note number"
+      },
+      {
+        "name": "engine",
+        "type": "int",
+        "default": 0,
+        "description": "Synthesis engine (0..23): virtual_analog, waveshaping, fm, grain, additive, wavetable, chord, speech, swarm, noise, particle, string, modal, bass_drum, snare_drum, hi_hat, virtual_analog_vcf, phase_distortion, 6op_bank1, 6op_bank2, 6op_bank3, wave_terrain, string_machine, chiptune"
+      },
+      {
+        "name": "harm",
+        "type": "float",
+        "default": 0.5,
+        "description": "Harmonics parameter (0..1)"
+      },
+      {
+        "name": "timbre",
+        "type": "float",
+        "default": 0.5,
+        "description": "Timbre parameter (0..1)"
+      },
+      {
+        "name": "morph",
+        "type": "float",
+        "default": 0.5,
+        "description": "Morph parameter (0..1)"
+      },
+      {
+        "name": "trigger",
+        "type": "signal",
+        "default": 0,
+        "description": "Non-zero value fires the internal envelope and excites physical/percussive models"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Opens the internal low-pass gate, controlling amplitude and brightness"
+      },
+      {
+        "name": "fm_mod",
+        "type": "float",
+        "default": 0,
+        "description": "FM modulation amount when internal env is active (-1..1)"
+      },
+      {
+        "name": "timb_mod",
+        "type": "float",
+        "default": 0,
+        "description": "Timbre modulation amount when internal env is active (-1..1)"
+      },
+      {
+        "name": "morph_mod",
+        "type": "float",
+        "default": 0,
+        "description": "Morph modulation amount when internal env is active (-1..1)"
+      },
+      {
+        "name": "decay",
+        "type": "float",
+        "default": 0.5,
+        "description": "Decay rate of internal lowpass gate (0..1)"
+      },
+      {
+        "name": "lpg_colour",
+        "type": "float",
+        "default": 0.5,
+        "description": "Colour of internal lowpass gate (0..1)"
+      },
+      {
+        "name": "mul",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      }
     ],
     "outputs": 2,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_plaits_ar"]
+    "functions": [
+      "mi_plaits_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   },
   {
     "name": "MiBraids",
     "description": "Macro oscillator port of the Mutable Instruments Braids eurorack module. 48 synthesis models covering classic waveforms, FM, physical modelling, percussion, wavetables, vocal/formant, granular and noise.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "pitch", "type": "float", "default": 60, "description": "Pitch as MIDI note number"},
-      {"name": "timbre", "type": "float", "default": 0.5, "description": "Meta timbre parameter (0..1)"},
-      {"name": "color", "type": "float", "default": 0.5, "description": "Meta color parameter (0..1)"},
-      {"name": "model", "type": "int", "default": 0, "description": "Synthesis model (0..47): CSAW, MORPH, SAW_SQUARE, SINE_TRIANGLE, BUZZ, SQUARE_SUB, SAW_SUB, SQUARE_SYNC, SAW_SYNC, TRIPLE_SAW, TRIPLE_SQUARE, TRIPLE_TRIANGLE, TRIPLE_SINE, TRIPLE_RING_MOD, SAW_SWARM, SAW_COMB, TOY, DIGITAL_FILTER_LP/PK/BP/HP, VOSIM, VOWEL, VOWEL_FOF, HARMONICS, FM, FEEDBACK_FM, CHAOTIC_FEEDBACK_FM, PLUCKED, BOWED, BLOWN, FLUTED, STRUCK_BELL, STRUCK_DRUM, KICK, CYMBAL, SNARE, WAVETABLES, WAVE_MAP, WAVE_LINE, WAVE_PARAPHONIC, FILTERED_NOISE, TWIN_PEAKS_NOISE, CLOCKED_NOISE, GRANULAR_CLOUD, PARTICLE_NOISE, DIGITAL_MODULATION, QUESTION_MARK"},
-      {"name": "trig", "type": "signal", "default": 0, "description": "Trigger - non-positive to positive transition excites physical models or resets oscillator phase"},
-      {"name": "resamp", "type": "int", "default": 0, "description": "Resample mode set at instantiation (0..2): 0=no resample, 1=internal 96kHz with downsample, 2=sample-rate decimation and bit reduction"},
-      {"name": "decim", "type": "int", "default": 1, "description": "Sample-rate decimation factor (1..32). Only active when resamp=2"},
-      {"name": "bits", "type": "int", "default": 0, "description": "Bit reduction (0..6): 0=16bit, 1=12, 2=8, 3=5, 4=4, 5=3, 6=2bit. Only active when resamp=2"},
-      {"name": "ws", "type": "float", "default": 0, "description": "Waveshaping distortion amount (0..1). Only active when resamp=2"},
-      {"name": "mul", "type": "float", "default": 1, "description": "Output gain"}
+      {
+        "name": "pitch",
+        "type": "float",
+        "default": 60,
+        "description": "Pitch as MIDI note number"
+      },
+      {
+        "name": "timbre",
+        "type": "float",
+        "default": 0.5,
+        "description": "Meta timbre parameter (0..1)"
+      },
+      {
+        "name": "color",
+        "type": "float",
+        "default": 0.5,
+        "description": "Meta color parameter (0..1)"
+      },
+      {
+        "name": "model",
+        "type": "int",
+        "default": 0,
+        "description": "Synthesis model (0..47): CSAW, MORPH, SAW_SQUARE, SINE_TRIANGLE, BUZZ, SQUARE_SUB, SAW_SUB, SQUARE_SYNC, SAW_SYNC, TRIPLE_SAW, TRIPLE_SQUARE, TRIPLE_TRIANGLE, TRIPLE_SINE, TRIPLE_RING_MOD, SAW_SWARM, SAW_COMB, TOY, DIGITAL_FILTER_LP/PK/BP/HP, VOSIM, VOWEL, VOWEL_FOF, HARMONICS, FM, FEEDBACK_FM, CHAOTIC_FEEDBACK_FM, PLUCKED, BOWED, BLOWN, FLUTED, STRUCK_BELL, STRUCK_DRUM, KICK, CYMBAL, SNARE, WAVETABLES, WAVE_MAP, WAVE_LINE, WAVE_PARAPHONIC, FILTERED_NOISE, TWIN_PEAKS_NOISE, CLOCKED_NOISE, GRANULAR_CLOUD, PARTICLE_NOISE, DIGITAL_MODULATION, QUESTION_MARK"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger - non-positive to positive transition excites physical models or resets oscillator phase"
+      },
+      {
+        "name": "resamp",
+        "type": "int",
+        "default": 0,
+        "description": "Resample mode set at instantiation (0..2): 0=no resample, 1=internal 96kHz with downsample, 2=sample-rate decimation and bit reduction"
+      },
+      {
+        "name": "decim",
+        "type": "int",
+        "default": 1,
+        "description": "Sample-rate decimation factor (1..32). Only active when resamp=2"
+      },
+      {
+        "name": "bits",
+        "type": "int",
+        "default": 0,
+        "description": "Bit reduction (0..6): 0=16bit, 1=12, 2=8, 3=5, 4=4, 5=3, 6=2bit. Only active when resamp=2"
+      },
+      {
+        "name": "ws",
+        "type": "float",
+        "default": 0,
+        "description": "Waveshaping distortion amount (0..1). Only active when resamp=2"
+      },
+      {
+        "name": "mul",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      }
     ],
     "outputs": 1,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_braids_ar"]
+    "functions": [
+      "mi_braids_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   },
   {
     "name": "MiRings",
     "description": "Modal/sympathetic-string resonator port of the Mutable Instruments Rings eurorack module. Six resonator models including modal, sympathetic strings, inharmonic string, 2-op FM voice, quantized strings and string+reverb. Excite via audio input, trigger or non-stationary pitch.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Audio input used as excitation signal (0 to use the internal exciter)"},
-      {"name": "trig", "type": "signal", "default": 0, "description": "Trigger to start a new note (non-positive to positive transition)"},
-      {"name": "pit", "type": "float", "default": 60, "description": "Pitch as MIDI note number"},
-      {"name": "struct", "type": "float", "default": 0.25, "description": "Inharmonicity / interval structure (0..1) - depends on the model"},
-      {"name": "bright", "type": "float", "default": 0.5, "description": "Brightness and richness of the spectrum (0..1)"},
-      {"name": "damp", "type": "float", "default": 0.7, "description": "Damping rate from 100ms to 10s (0..1)"},
-      {"name": "pos", "type": "float", "default": 0.25, "description": "Position where the structure is excited (0..1)"},
-      {"name": "model", "type": "int", "default": 0, "description": "Resonator model (0..5): 0=MODAL, 1=SYMPATHETIC_STRING, 2=MODULATED/INHARMONIC_STRING, 3=2-OP_FM_VOICE, 4=SYMPATHETIC_STRING_QUANTIZED, 5=STRING_AND_REVERB"},
-      {"name": "poly", "type": "int", "default": 1, "description": "Polyphony, simultaneous voices (1..4). More voices = fewer partials per voice"},
-      {"name": "intern_exciter", "type": "int", "default": 0, "description": "Force the internal exciter on even when an audio-rate excitation signal is patched (0/1)"},
-      {"name": "easteregg", "type": "int", "default": 0, "description": "Toggle 'disastrous peace' easter-egg mode where 'model' selects an FX (0/1)"},
-      {"name": "bypass", "type": "int", "default": 0, "description": "Bypass the resonator and pass the excitation input directly to the outputs (0/1)"},
-      {"name": "mul", "type": "float", "default": 1, "description": "Output gain"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio input used as excitation signal (0 to use the internal exciter)"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger to start a new note (non-positive to positive transition)"
+      },
+      {
+        "name": "pit",
+        "type": "float",
+        "default": 60,
+        "description": "Pitch as MIDI note number"
+      },
+      {
+        "name": "struct",
+        "type": "float",
+        "default": 0.25,
+        "description": "Inharmonicity / interval structure (0..1) - depends on the model"
+      },
+      {
+        "name": "bright",
+        "type": "float",
+        "default": 0.5,
+        "description": "Brightness and richness of the spectrum (0..1)"
+      },
+      {
+        "name": "damp",
+        "type": "float",
+        "default": 0.7,
+        "description": "Damping rate from 100ms to 10s (0..1)"
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0.25,
+        "description": "Position where the structure is excited (0..1)"
+      },
+      {
+        "name": "model",
+        "type": "int",
+        "default": 0,
+        "description": "Resonator model (0..5): 0=MODAL, 1=SYMPATHETIC_STRING, 2=MODULATED/INHARMONIC_STRING, 3=2-OP_FM_VOICE, 4=SYMPATHETIC_STRING_QUANTIZED, 5=STRING_AND_REVERB"
+      },
+      {
+        "name": "poly",
+        "type": "int",
+        "default": 1,
+        "description": "Polyphony, simultaneous voices (1..4). More voices = fewer partials per voice"
+      },
+      {
+        "name": "intern_exciter",
+        "type": "int",
+        "default": 0,
+        "description": "Force the internal exciter on even when an audio-rate excitation signal is patched (0/1)"
+      },
+      {
+        "name": "easteregg",
+        "type": "int",
+        "default": 0,
+        "description": "Toggle 'disastrous peace' easter-egg mode where 'model' selects an FX (0/1)"
+      },
+      {
+        "name": "bypass",
+        "type": "int",
+        "default": 0,
+        "description": "Bypass the resonator and pass the excitation input directly to the outputs (0/1)"
+      },
+      {
+        "name": "mul",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      }
     ],
     "outputs": 2,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_rings_ar"]
+    "functions": [
+      "mi_rings_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   },
   {
     "name": "MiElements",
     "description": "Modal physical-modelling exciter/resonator port of the Mutable Instruments Elements eurorack module. Combines BOW, BLOW and STRIKE exciters with a tunable resonator (modal, string, strings).",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "blow_in", "type": "signal", "default": 0, "description": "External audio input diffused, amplified by the envelope and STRENGTH, sent to the resonator"},
-      {"name": "strike_in", "type": "signal", "default": 0, "description": "External audio input sent directly to the resonator (bypasses exciter)"},
-      {"name": "gate", "type": "signal", "default": 0, "description": "Gate triggering the exciter and its envelope. Open for positive values"},
-      {"name": "pit", "type": "float", "default": 60, "description": "Pitch as MIDI note number"},
-      {"name": "strength", "type": "float", "default": 0.5, "description": "Excitation amplitude (0..1)"},
-      {"name": "contour", "type": "float", "default": 0.5, "description": "Bow/Blow envelope contour, interpolating between AD, ADSR and AR shapes"},
-      {"name": "bow_level", "type": "float", "default": 0, "description": "Amplitude of bowing/scratching noise sent to the resonator (0..1)"},
-      {"name": "blow_level", "type": "float", "default": 0, "description": "Amount of granular blowing noise sent to the resonator (0..1)"},
-      {"name": "strike_level", "type": "float", "default": 0.5, "description": "Amount of percussive noise sent to the resonator (0..1)"},
-      {"name": "flow", "type": "float", "default": 0.5, "description": "Air flow of the BLOW generator - scans through colours of noise (0..1)"},
-      {"name": "mallet", "type": "float", "default": 0.5, "description": "Mallet type controlling percussive STRIKE generator timbre (0..1)"},
-      {"name": "bow_timb", "type": "float", "default": 0.5, "description": "Smoothness/granularity of the BOW material (0..1)"},
-      {"name": "blow_timb", "type": "float", "default": 0.5, "description": "Pitch/granulation rate of the BLOW noise generator (0..1)"},
-      {"name": "strike_timb", "type": "float", "default": 0.5, "description": "Brightness/speed of the percussive excitation (0..1)"},
-      {"name": "geom", "type": "float", "default": 0.5, "description": "Geometry/stiffness of the resonating structure: plates, strings, bars, bells (0..1)"},
-      {"name": "bright", "type": "float", "default": 0.5, "description": "Brightness of the resonator (0..1)"},
-      {"name": "damp", "type": "float", "default": 0.7, "description": "High frequency damping of the resonator (0..1)"},
-      {"name": "pos", "type": "float", "default": 0.25, "description": "Position where the structure is excited (0..1)"},
-      {"name": "space", "type": "float", "default": 0.3, "description": "Stereo width and amount of reverb (0..1)"},
-      {"name": "model", "type": "int", "default": 0, "description": "Resonator model: 0=Modal, 1=String, 2=Strings"}
+      {
+        "name": "blow_in",
+        "type": "signal",
+        "default": 0,
+        "description": "External audio input diffused, amplified by the envelope and STRENGTH, sent to the resonator"
+      },
+      {
+        "name": "strike_in",
+        "type": "signal",
+        "default": 0,
+        "description": "External audio input sent directly to the resonator (bypasses exciter)"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 0,
+        "description": "Gate triggering the exciter and its envelope. Open for positive values"
+      },
+      {
+        "name": "pit",
+        "type": "float",
+        "default": 60,
+        "description": "Pitch as MIDI note number"
+      },
+      {
+        "name": "strength",
+        "type": "float",
+        "default": 0.5,
+        "description": "Excitation amplitude (0..1)"
+      },
+      {
+        "name": "contour",
+        "type": "float",
+        "default": 0.5,
+        "description": "Bow/Blow envelope contour, interpolating between AD, ADSR and AR shapes"
+      },
+      {
+        "name": "bow_level",
+        "type": "float",
+        "default": 0,
+        "description": "Amplitude of bowing/scratching noise sent to the resonator (0..1)"
+      },
+      {
+        "name": "blow_level",
+        "type": "float",
+        "default": 0,
+        "description": "Amount of granular blowing noise sent to the resonator (0..1)"
+      },
+      {
+        "name": "strike_level",
+        "type": "float",
+        "default": 0.5,
+        "description": "Amount of percussive noise sent to the resonator (0..1)"
+      },
+      {
+        "name": "flow",
+        "type": "float",
+        "default": 0.5,
+        "description": "Air flow of the BLOW generator - scans through colours of noise (0..1)"
+      },
+      {
+        "name": "mallet",
+        "type": "float",
+        "default": 0.5,
+        "description": "Mallet type controlling percussive STRIKE generator timbre (0..1)"
+      },
+      {
+        "name": "bow_timb",
+        "type": "float",
+        "default": 0.5,
+        "description": "Smoothness/granularity of the BOW material (0..1)"
+      },
+      {
+        "name": "blow_timb",
+        "type": "float",
+        "default": 0.5,
+        "description": "Pitch/granulation rate of the BLOW noise generator (0..1)"
+      },
+      {
+        "name": "strike_timb",
+        "type": "float",
+        "default": 0.5,
+        "description": "Brightness/speed of the percussive excitation (0..1)"
+      },
+      {
+        "name": "geom",
+        "type": "float",
+        "default": 0.5,
+        "description": "Geometry/stiffness of the resonating structure: plates, strings, bars, bells (0..1)"
+      },
+      {
+        "name": "bright",
+        "type": "float",
+        "default": 0.5,
+        "description": "Brightness of the resonator (0..1)"
+      },
+      {
+        "name": "damp",
+        "type": "float",
+        "default": 0.7,
+        "description": "High frequency damping of the resonator (0..1)"
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0.25,
+        "description": "Position where the structure is excited (0..1)"
+      },
+      {
+        "name": "space",
+        "type": "float",
+        "default": 0.3,
+        "description": "Stereo width and amount of reverb (0..1)"
+      },
+      {
+        "name": "model",
+        "type": "int",
+        "default": 0,
+        "description": "Resonator model: 0=Modal, 1=String, 2=Strings"
+      }
     ],
     "outputs": 2,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_elements_ar"]
+    "functions": [
+      "mi_elements_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   },
   {
     "name": "MiClouds",
     "description": "Granular audio processor and texture synthesizer port of the Mutable Instruments Clouds eurorack module. Four playback modes: granular, stretch, looping delay and spectral.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Audio input. Mono is internally copied to the second channel"},
-      {"name": "pit", "type": "float", "default": 0, "description": "Playback pitch shift in semitones (-48..48)"},
-      {"name": "pos", "type": "float", "default": 0, "description": "Playback position in the internal buffer (0..1)"},
-      {"name": "size", "type": "float", "default": 0.5, "description": "Grain size (0..1)"},
-      {"name": "dens", "type": "float", "default": 0.5, "description": "Grain density (0..1). 0.5=no grains, 0..0.5=periodic, 0.5..1=random"},
-      {"name": "tex", "type": "float", "default": 0.5, "description": "Grain texture (0..1)"},
-      {"name": "drywet", "type": "float", "default": 0.5, "description": "Dry/wet crossfader (0..1)"},
-      {"name": "in_gain", "type": "float", "default": 1, "description": "Input gain (0.125..8)"},
-      {"name": "spread", "type": "float", "default": 0, "description": "Stereo spread (0..1)"},
-      {"name": "rvb", "type": "float", "default": 0, "description": "Reverb amount (0..1)"},
-      {"name": "fb", "type": "float", "default": 0, "description": "Feedback amount (0..1)"},
-      {"name": "freeze", "type": "int", "default": 0, "description": "Freeze the buffer; non-zero pauses recording and locks playback (0/1)"},
-      {"name": "mode", "type": "int", "default": 0, "description": "Playback mode: 0=GRANULAR, 1=STRETCH, 2=LOOPING_DELAY, 3=SPECTRAL"},
-      {"name": "lofi", "type": "int", "default": 0, "description": "Lofi mode (4-second buffer). Erases the buffer (0/1)"},
-      {"name": "trig", "type": "signal", "default": 0, "description": "Trigger input for single grains (non-positive to positive transition)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio input. Mono is internally copied to the second channel"
+      },
+      {
+        "name": "pit",
+        "type": "float",
+        "default": 0,
+        "description": "Playback pitch shift in semitones (-48..48)"
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0,
+        "description": "Playback position in the internal buffer (0..1)"
+      },
+      {
+        "name": "size",
+        "type": "float",
+        "default": 0.5,
+        "description": "Grain size (0..1)"
+      },
+      {
+        "name": "dens",
+        "type": "float",
+        "default": 0.5,
+        "description": "Grain density (0..1). 0.5=no grains, 0..0.5=periodic, 0.5..1=random"
+      },
+      {
+        "name": "tex",
+        "type": "float",
+        "default": 0.5,
+        "description": "Grain texture (0..1)"
+      },
+      {
+        "name": "drywet",
+        "type": "float",
+        "default": 0.5,
+        "description": "Dry/wet crossfader (0..1)"
+      },
+      {
+        "name": "in_gain",
+        "type": "float",
+        "default": 1,
+        "description": "Input gain (0.125..8)"
+      },
+      {
+        "name": "spread",
+        "type": "float",
+        "default": 0,
+        "description": "Stereo spread (0..1)"
+      },
+      {
+        "name": "rvb",
+        "type": "float",
+        "default": 0,
+        "description": "Reverb amount (0..1)"
+      },
+      {
+        "name": "fb",
+        "type": "float",
+        "default": 0,
+        "description": "Feedback amount (0..1)"
+      },
+      {
+        "name": "freeze",
+        "type": "int",
+        "default": 0,
+        "description": "Freeze the buffer; non-zero pauses recording and locks playback (0/1)"
+      },
+      {
+        "name": "mode",
+        "type": "int",
+        "default": 0,
+        "description": "Playback mode: 0=GRANULAR, 1=STRETCH, 2=LOOPING_DELAY, 3=SPECTRAL"
+      },
+      {
+        "name": "lofi",
+        "type": "int",
+        "default": 0,
+        "description": "Lofi mode (4-second buffer). Erases the buffer (0/1)"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger input for single grains (non-positive to positive transition)"
+      }
     ],
     "outputs": 2,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_clouds_ar"]
+    "functions": [
+      "mi_clouds_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   },
   {
     "name": "MiTides",
     "description": "Function generator and quad LFO port of the Mutable Instruments Tides eurorack module. Looping AD envelope with shape, slope and smoothness controls; outputs gates, amplitudes, phases or frequencies on four channels.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "freq", "type": "float", "default": 1, "description": "Frequency in Hz in looping mode, otherwise attack/release time"},
-      {"name": "shape", "type": "float", "default": 0.5, "description": "Waveform shape (0..1)"},
-      {"name": "slope", "type": "float", "default": 0.5, "description": "Waveform slope from falling ramp to rising ramp (0..1)"},
-      {"name": "smooth", "type": "float", "default": 0.5, "description": "Smoothness: 0..0.5 lowpass, 0.5..1 wavefolder (0..1)"},
-      {"name": "shift", "type": "float", "default": 0.5, "description": "Shift/level - amplitude/time/frequency shift (0..1)"},
-      {"name": "trig", "type": "signal", "default": 0, "description": "Trigger or gate input. Resets envelope or oscillator phase"},
-      {"name": "clock", "type": "signal", "default": 0, "description": "Clock input for tempo/frequency-locked operation"},
-      {"name": "output_mode", "type": "int", "default": 1, "description": "Output mode: 0=GATES, 1=AMPLITUDES, 2=PHASES, 3=FREQUENCIES"},
-      {"name": "ramp_mode", "type": "int", "default": 1, "description": "Ramp mode: 0=AD, 1=LOOPING, 2=AR"},
-      {"name": "ratio", "type": "int", "default": 9, "description": "Clock ratio index (0..18). 9=1:1; lower indices divide, higher multiply"},
-      {"name": "rate", "type": "int", "default": 0, "description": "Operating rate: 0=CONTROL (LFO), 1=AUDIO (anti-aliased)"},
-      {"name": "mul", "type": "float", "default": 1, "description": "Output gain"}
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 1,
+        "description": "Frequency in Hz in looping mode, otherwise attack/release time"
+      },
+      {
+        "name": "shape",
+        "type": "float",
+        "default": 0.5,
+        "description": "Waveform shape (0..1)"
+      },
+      {
+        "name": "slope",
+        "type": "float",
+        "default": 0.5,
+        "description": "Waveform slope from falling ramp to rising ramp (0..1)"
+      },
+      {
+        "name": "smooth",
+        "type": "float",
+        "default": 0.5,
+        "description": "Smoothness: 0..0.5 lowpass, 0.5..1 wavefolder (0..1)"
+      },
+      {
+        "name": "shift",
+        "type": "float",
+        "default": 0.5,
+        "description": "Shift/level - amplitude/time/frequency shift (0..1)"
+      },
+      {
+        "name": "trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger or gate input. Resets envelope or oscillator phase"
+      },
+      {
+        "name": "clock",
+        "type": "signal",
+        "default": 0,
+        "description": "Clock input for tempo/frequency-locked operation"
+      },
+      {
+        "name": "output_mode",
+        "type": "int",
+        "default": 1,
+        "description": "Output mode: 0=GATES, 1=AMPLITUDES, 2=PHASES, 3=FREQUENCIES"
+      },
+      {
+        "name": "ramp_mode",
+        "type": "int",
+        "default": 1,
+        "description": "Ramp mode: 0=AD, 1=LOOPING, 2=AR"
+      },
+      {
+        "name": "ratio",
+        "type": "int",
+        "default": 9,
+        "description": "Clock ratio index (0..18). 9=1:1; lower indices divide, higher multiply"
+      },
+      {
+        "name": "rate",
+        "type": "int",
+        "default": 0,
+        "description": "Operating rate: 0=CONTROL (LFO), 1=AUDIO (anti-aliased)"
+      },
+      {
+        "name": "mul",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      }
     ],
     "outputs": 4,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_tides_ar"]
+    "functions": [
+      "mi_tides_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   },
   {
     "name": "MiWarps",
     "description": "Meta-modulator port of the Mutable Instruments Warps eurorack module. Blends and combines two audio signals via cross-modulation, waveshaping or vocoding, with an internal oscillator and frequency-shifter easter-egg mode.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "carrier", "type": "signal", "default": 0, "description": "Carrier signal input (or 0 if unused)"},
-      {"name": "modulator", "type": "signal", "default": 0, "description": "Modulator signal input (or 0 if unused)"},
-      {"name": "lev1", "type": "float", "default": 0.5, "description": "Carrier level and saturation (0..1)"},
-      {"name": "lev2", "type": "float", "default": 0.5, "description": "Modulator level and saturation (0..1)"},
-      {"name": "algo", "type": "float", "default": 0, "description": "Algorithm blend (0..8): 0=XFADE, 1=XFOLD, 2=ANALOG_RM, 3=DIGITAL_RM, 4=XOR, 5=COMPARATOR, 6-8=VOCODER"},
-      {"name": "timb", "type": "float", "default": 0.5, "description": "Timbre - intensity of high harmonics from cross-modulation (0..1)"},
-      {"name": "osc", "type": "int", "default": 0, "description": "Internal oscillator: 0=external carrier, 1=SINE/SAW (vocoder), 2=TRI/PULSE (vocoder), 3=SAW/NOISE (vocoder)"},
-      {"name": "freq", "type": "float", "default": 110, "description": "Internal oscillator frequency in Hz"},
-      {"name": "vgain", "type": "float", "default": 1, "description": "Vocoder output gain before final limiter (1..10)"},
-      {"name": "easteregg", "type": "int", "default": 0, "description": "Toggle frequency-shifter easter-egg mode (0/1)"}
+      {
+        "name": "carrier",
+        "type": "signal",
+        "default": 0,
+        "description": "Carrier signal input (or 0 if unused)"
+      },
+      {
+        "name": "modulator",
+        "type": "signal",
+        "default": 0,
+        "description": "Modulator signal input (or 0 if unused)"
+      },
+      {
+        "name": "lev1",
+        "type": "float",
+        "default": 0.5,
+        "description": "Carrier level and saturation (0..1)"
+      },
+      {
+        "name": "lev2",
+        "type": "float",
+        "default": 0.5,
+        "description": "Modulator level and saturation (0..1)"
+      },
+      {
+        "name": "algo",
+        "type": "float",
+        "default": 0,
+        "description": "Algorithm blend (0..8): 0=XFADE, 1=XFOLD, 2=ANALOG_RM, 3=DIGITAL_RM, 4=XOR, 5=COMPARATOR, 6-8=VOCODER"
+      },
+      {
+        "name": "timb",
+        "type": "float",
+        "default": 0.5,
+        "description": "Timbre - intensity of high harmonics from cross-modulation (0..1)"
+      },
+      {
+        "name": "osc",
+        "type": "int",
+        "default": 0,
+        "description": "Internal oscillator: 0=external carrier, 1=SINE/SAW (vocoder), 2=TRI/PULSE (vocoder), 3=SAW/NOISE (vocoder)"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 110,
+        "description": "Internal oscillator frequency in Hz"
+      },
+      {
+        "name": "vgain",
+        "type": "float",
+        "default": 1,
+        "description": "Vocoder output gain before final limiter (1..10)"
+      },
+      {
+        "name": "easteregg",
+        "type": "int",
+        "default": 0,
+        "description": "Toggle frequency-shifter easter-egg mode (0/1)"
+      }
     ],
     "outputs": 2,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_warps_ar"]
+    "functions": [
+      "mi_warps_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   },
   {
     "name": "MiVerb",
     "description": "Stereo reverb derived from Mutable Instruments' Clouds module, based on Jon Dattorro's Griesinger-topology paper. Useful for plate-like ambient tails with adjustable diffusion and freeze.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Input signal (mono or stereo)"},
-      {"name": "time", "type": "float", "default": 0.5, "description": "Reverb time (0..1.25). Values >=1 cause the tail to grow into soft saturation"},
-      {"name": "drywet", "type": "float", "default": 0.5, "description": "Dry/wet balance (0..1)"},
-      {"name": "damp", "type": "float", "default": 0.5, "description": "High-frequency damping (0..1)"},
-      {"name": "hp", "type": "float", "default": 0, "description": "High-pass amount for DC removal (0..1)"},
-      {"name": "freeze", "type": "int", "default": 0, "description": "Freeze the reverb tail and close the input (0/1)"},
-      {"name": "diff", "type": "float", "default": 0.625, "description": "Reverb diffusion (0..1). Dattorro's original is 0.625"},
-      {"name": "mul", "type": "float", "default": 1, "description": "Output gain"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal (mono or stereo)"
+      },
+      {
+        "name": "time",
+        "type": "float",
+        "default": 0.5,
+        "description": "Reverb time (0..1.25). Values >=1 cause the tail to grow into soft saturation"
+      },
+      {
+        "name": "drywet",
+        "type": "float",
+        "default": 0.5,
+        "description": "Dry/wet balance (0..1)"
+      },
+      {
+        "name": "damp",
+        "type": "float",
+        "default": 0.5,
+        "description": "High-frequency damping (0..1)"
+      },
+      {
+        "name": "hp",
+        "type": "float",
+        "default": 0,
+        "description": "High-pass amount for DC removal (0..1)"
+      },
+      {
+        "name": "freeze",
+        "type": "int",
+        "default": 0,
+        "description": "Freeze the reverb tail and close the input (0/1)"
+      },
+      {
+        "name": "diff",
+        "type": "float",
+        "default": 0.625,
+        "description": "Reverb diffusion (0..1). Dattorro's original is 0.625"
+      },
+      {
+        "name": "mul",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      }
     ],
     "outputs": 2,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_verb_ar"]
+    "functions": [
+      "mi_verb_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   },
   {
     "name": "MiRipples",
     "description": "Classic resonant 4-pole low-pass filter port of the Mutable Instruments Ripples eurorack module. Virtual-analog model from Alright Devices' VCV Rack adaptation - big, fat sound with self-oscillation.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Audio input"},
-      {"name": "cf", "type": "float", "default": 0.5, "description": "Cutoff frequency (0..1)"},
-      {"name": "reson", "type": "float", "default": 0.3, "description": "Resonance (0..1)"},
-      {"name": "drive", "type": "float", "default": 1, "description": "Overdrive amount (1 = no distortion)"},
-      {"name": "mul", "type": "float", "default": 1, "description": "Output gain"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Audio input"
+      },
+      {
+        "name": "cf",
+        "type": "float",
+        "default": 0.5,
+        "description": "Cutoff frequency (0..1)"
+      },
+      {
+        "name": "reson",
+        "type": "float",
+        "default": 0.3,
+        "description": "Resonance (0..1)"
+      },
+      {
+        "name": "drive",
+        "type": "float",
+        "default": 1,
+        "description": "Overdrive amount (1 = no distortion)"
+      },
+      {
+        "name": "mul",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      }
     ],
     "outputs": 1,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_ripples_ar"]
+    "functions": [
+      "mi_ripples_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   },
   {
     "name": "MiGrids",
     "description": "Topographic drum sequencer port of the Mutable Instruments Grids eurorack module. Algorithmic three-channel rhythmic pattern generator using extracted drum-loop models, with drum-map and euclidean modes.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "on_off", "type": "int", "default": 1, "description": "Start/stop the sequencer (0/1)"},
-      {"name": "bpm", "type": "float", "default": 120, "description": "Internal clock tempo (20..511 bpm)"},
-      {"name": "map_x", "type": "float", "default": 0.5, "description": "X coordinate of drum map, or sequence length in euclidean mode (0..1)"},
-      {"name": "map_y", "type": "float", "default": 0.5, "description": "Y coordinate of drum map, or sequence length in euclidean mode (0..1)"},
-      {"name": "chaos", "type": "float", "default": 0, "description": "Chaos amount, swing amount when swing is on, or sequence length in euclidean mode (0..1)"},
-      {"name": "bd_dens", "type": "float", "default": 0.5, "description": "Channel 1 (bass drum) trigger density / euclidean fill rate (0..1)"},
-      {"name": "sd_dens", "type": "float", "default": 0.5, "description": "Channel 2 (snare drum) trigger density / euclidean fill rate (0..1)"},
-      {"name": "hh_dens", "type": "float", "default": 0.5, "description": "Channel 3 (hi-hat) trigger density / euclidean fill rate (0..1)"},
-      {"name": "clock_trig", "type": "signal", "default": 0, "description": "External clock trigger/gate input. Default expects 24 ppqn"},
-      {"name": "reset_trig", "type": "signal", "default": 0, "description": "Reset trigger or gate"},
-      {"name": "ext_clock", "type": "int", "default": 0, "description": "Clock source: 0=internal, 1=external"},
-      {"name": "mode", "type": "int", "default": 0, "description": "Operating mode: 0=drum, 1=euclidean"},
-      {"name": "swing", "type": "int", "default": 0, "description": "Swing on/off (0/1). Only effective in drum mode with internal clock"},
-      {"name": "config", "type": "int", "default": 0, "description": "Output config (0/1). 0=accents on outputs 4-6, 1=global accent + clock + reset on outputs 4-6"},
-      {"name": "reso", "type": "int", "default": 2, "description": "Clock resolution (set at instantiation). 0=4 ppqn, 1=8 ppqn, 2=24 ppqn"}
+      {
+        "name": "on_off",
+        "type": "int",
+        "default": 1,
+        "description": "Start/stop the sequencer (0/1)"
+      },
+      {
+        "name": "bpm",
+        "type": "float",
+        "default": 120,
+        "description": "Internal clock tempo (20..511 bpm)"
+      },
+      {
+        "name": "map_x",
+        "type": "float",
+        "default": 0.5,
+        "description": "X coordinate of drum map, or sequence length in euclidean mode (0..1)"
+      },
+      {
+        "name": "map_y",
+        "type": "float",
+        "default": 0.5,
+        "description": "Y coordinate of drum map, or sequence length in euclidean mode (0..1)"
+      },
+      {
+        "name": "chaos",
+        "type": "float",
+        "default": 0,
+        "description": "Chaos amount, swing amount when swing is on, or sequence length in euclidean mode (0..1)"
+      },
+      {
+        "name": "bd_dens",
+        "type": "float",
+        "default": 0.5,
+        "description": "Channel 1 (bass drum) trigger density / euclidean fill rate (0..1)"
+      },
+      {
+        "name": "sd_dens",
+        "type": "float",
+        "default": 0.5,
+        "description": "Channel 2 (snare drum) trigger density / euclidean fill rate (0..1)"
+      },
+      {
+        "name": "hh_dens",
+        "type": "float",
+        "default": 0.5,
+        "description": "Channel 3 (hi-hat) trigger density / euclidean fill rate (0..1)"
+      },
+      {
+        "name": "clock_trig",
+        "type": "signal",
+        "default": 0,
+        "description": "External clock trigger/gate input. Default expects 24 ppqn"
+      },
+      {
+        "name": "reset_trig",
+        "type": "signal",
+        "default": 0,
+        "description": "Reset trigger or gate"
+      },
+      {
+        "name": "ext_clock",
+        "type": "int",
+        "default": 0,
+        "description": "Clock source: 0=internal, 1=external"
+      },
+      {
+        "name": "mode",
+        "type": "int",
+        "default": 0,
+        "description": "Operating mode: 0=drum, 1=euclidean"
+      },
+      {
+        "name": "swing",
+        "type": "int",
+        "default": 0,
+        "description": "Swing on/off (0/1). Only effective in drum mode with internal clock"
+      },
+      {
+        "name": "config",
+        "type": "int",
+        "default": 0,
+        "description": "Output config (0/1). 0=accents on outputs 4-6, 1=global accent + clock + reset on outputs 4-6"
+      },
+      {
+        "name": "reso",
+        "type": "int",
+        "default": 2,
+        "description": "Clock resolution (set at instantiation). 0=4 ppqn, 1=8 ppqn, 2=24 ppqn"
+      }
     ],
     "outputs": 6,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_grids_ar"]
+    "functions": [
+      "mi_grids_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   },
   {
     "name": "MiMu",
     "description": "8-bit mu-law companding extracted from the Mutable Instruments Clouds module. Adds gentle cassette-like degradation; soft-clips amplitudes outside +/-1.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Input signal"},
-      {"name": "gain", "type": "float", "default": 1, "description": "Gain applied to the input. Values driving past +/-1 add soft-clip distortion"},
-      {"name": "bypass", "type": "int", "default": 0, "description": "Bypass the companding stage (0/1)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1,
+        "description": "Gain applied to the input. Values driving past +/-1 add soft-clip distortion"
+      },
+      {
+        "name": "bypass",
+        "type": "int",
+        "default": 0,
+        "description": "Bypass the companding stage (0/1)"
+      }
     ],
     "outputs": 1,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_mu_ar"]
+    "functions": [
+      "mi_mu_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   },
   {
     "name": "MiOmi",
     "description": "FM synth voice with multimode filter, based on the 'ominous' 2x2-op FM easter egg from Mutable Instruments Elements. Skips oversampling and reverb of the original and adds a few extensions.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "audio_in", "type": "signal", "default": 0, "description": "External modulation signal input"},
-      {"name": "gate", "type": "signal", "default": 0, "description": "Gate input. Non-positive to positive transition triggers amplitude and filter envelopes"},
-      {"name": "pit", "type": "float", "default": 60, "description": "Pitch as MIDI note number"},
-      {"name": "contour", "type": "float", "default": 0.5, "description": "Envelope contour from AD to ADSR (0..1)"},
-      {"name": "detune", "type": "float", "default": 0, "description": "Detuning of the second oscillator (0..1)"},
-      {"name": "level1", "type": "float", "default": 1, "description": "Level of first oscillator (0..1)"},
-      {"name": "level2", "type": "float", "default": 0.5, "description": "Level of second oscillator (0..1)"},
-      {"name": "ratio1", "type": "float", "default": 0.5, "description": "Carrier/modulator ratio of first oscillator (0..1)"},
-      {"name": "ratio2", "type": "float", "default": 0.5, "description": "Carrier/modulator ratio of second oscillator (0..1)"},
-      {"name": "fm1", "type": "float", "default": 0.5, "description": "Modulation amount of first oscillator (0..1)"},
-      {"name": "fm2", "type": "float", "default": 0.5, "description": "Modulation amount of second oscillator (0..1)"},
-      {"name": "fb", "type": "float", "default": 0, "description": "Feedback modulation amount of both oscillators (0..1)"},
-      {"name": "xfb", "type": "float", "default": 0, "description": "Cross feedback amount (0..1)"},
-      {"name": "filter_mode", "type": "float", "default": 0, "description": "Multimode filter morph LP -> HP -> BP (0..1)"},
-      {"name": "cutoff", "type": "float", "default": 0.8, "description": "Filter cutoff frequency (0..1)"},
-      {"name": "reson", "type": "float", "default": 0.3, "description": "Filter resonance (0..1)"},
-      {"name": "strength", "type": "float", "default": 0.5, "description": "Offset for amplitude and filter envelopes (0..1)"},
-      {"name": "env", "type": "float", "default": 0.5, "description": "Envelope amount applied to filter cutoff (0..1)"},
-      {"name": "rotate", "type": "float", "default": 0, "description": "Rotation speed of stereo image (0..1)"},
-      {"name": "space", "type": "float", "default": 0.3, "description": "Width of stereo image (0..1)"}
+      {
+        "name": "audio_in",
+        "type": "signal",
+        "default": 0,
+        "description": "External modulation signal input"
+      },
+      {
+        "name": "gate",
+        "type": "signal",
+        "default": 0,
+        "description": "Gate input. Non-positive to positive transition triggers amplitude and filter envelopes"
+      },
+      {
+        "name": "pit",
+        "type": "float",
+        "default": 60,
+        "description": "Pitch as MIDI note number"
+      },
+      {
+        "name": "contour",
+        "type": "float",
+        "default": 0.5,
+        "description": "Envelope contour from AD to ADSR (0..1)"
+      },
+      {
+        "name": "detune",
+        "type": "float",
+        "default": 0,
+        "description": "Detuning of the second oscillator (0..1)"
+      },
+      {
+        "name": "level1",
+        "type": "float",
+        "default": 1,
+        "description": "Level of first oscillator (0..1)"
+      },
+      {
+        "name": "level2",
+        "type": "float",
+        "default": 0.5,
+        "description": "Level of second oscillator (0..1)"
+      },
+      {
+        "name": "ratio1",
+        "type": "float",
+        "default": 0.5,
+        "description": "Carrier/modulator ratio of first oscillator (0..1)"
+      },
+      {
+        "name": "ratio2",
+        "type": "float",
+        "default": 0.5,
+        "description": "Carrier/modulator ratio of second oscillator (0..1)"
+      },
+      {
+        "name": "fm1",
+        "type": "float",
+        "default": 0.5,
+        "description": "Modulation amount of first oscillator (0..1)"
+      },
+      {
+        "name": "fm2",
+        "type": "float",
+        "default": 0.5,
+        "description": "Modulation amount of second oscillator (0..1)"
+      },
+      {
+        "name": "fb",
+        "type": "float",
+        "default": 0,
+        "description": "Feedback modulation amount of both oscillators (0..1)"
+      },
+      {
+        "name": "xfb",
+        "type": "float",
+        "default": 0,
+        "description": "Cross feedback amount (0..1)"
+      },
+      {
+        "name": "filter_mode",
+        "type": "float",
+        "default": 0,
+        "description": "Multimode filter morph LP -> HP -> BP (0..1)"
+      },
+      {
+        "name": "cutoff",
+        "type": "float",
+        "default": 0.8,
+        "description": "Filter cutoff frequency (0..1)"
+      },
+      {
+        "name": "reson",
+        "type": "float",
+        "default": 0.3,
+        "description": "Filter resonance (0..1)"
+      },
+      {
+        "name": "strength",
+        "type": "float",
+        "default": 0.5,
+        "description": "Offset for amplitude and filter envelopes (0..1)"
+      },
+      {
+        "name": "env",
+        "type": "float",
+        "default": 0.5,
+        "description": "Envelope amount applied to filter cutoff (0..1)"
+      },
+      {
+        "name": "rotate",
+        "type": "float",
+        "default": 0,
+        "description": "Rotation speed of stereo image (0..1)"
+      },
+      {
+        "name": "space",
+        "type": "float",
+        "default": 0.3,
+        "description": "Width of stereo image (0..1)"
+      }
     ],
     "outputs": 2,
     "category": "mi-UGens (Mutable Instruments)",
-    "functions": ["mi_omi_ar"]
+    "functions": [
+      "mi_omi_ar"
+    ],
+    "requires_plugin": "mi-UGens"
   }
 ]

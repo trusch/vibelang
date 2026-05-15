@@ -165,13 +165,21 @@
         "type": "signal",
         "default": 0,
         "description": "Second FFT chain (subtrahend)"
+      },
+      {
+        "name": "zerolimit",
+        "type": "float",
+        "default": 0,
+        "description": "If non-zero, clip negative magnitudes to zero"
       }
     ],
     "outputs": 1,
     "category": "MCLDUGens",
     "functions": [
       "pv_diff_mags_kr"
-    ]
+    ],
+    "pseudo": true,
+    "ugen_class": "PV_MagSubtract"
   },
   {
     "name": "PV_MagSubtract",
@@ -555,7 +563,7 @@
     "name": "FFTSubbandFlux",
     "description": "Spectral flux computed independently within N user-defined frequency subbands (sc3-plugins MCLDUGens). One output channel per subband (numbands+1 in SuperCollider). Vibelang exposes the first output channel.",
     "rates": [
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -581,7 +589,8 @@
     "category": "MCLDUGens",
     "functions": [
       "fft_subband_flux_kr"
-    ]
+    ],
+    "unavailable_reason": "No installed scsynth binary registers this UGen; quarantined until plugin/source verification."
   },
   {
     "name": "FFTPhaseDev",
@@ -691,7 +700,9 @@
     "category": "MCLDUGens",
     "functions": [
       "fft_centroid_kr"
-    ]
+    ],
+    "pseudo": true,
+    "ugen_class": "SpecCentroid"
   },
   {
     "name": "FFTSubbandFlatness",
@@ -895,7 +906,7 @@
     "name": "RosslerResL",
     "description": "Rössler attractor driven by an external excitation, with a stiff coupling (sc3-plugins MCLDUGens). Same equations as RosslerL but the input signal perturbs the trajectory. Three-channel output.",
     "rates": [
-      "ar"
+      "builder"
     ],
     "inputs": [
       {
@@ -907,7 +918,7 @@
       {
         "name": "stiff",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Stiffness — how strongly the input perturbs the system"
       },
       {
@@ -963,7 +974,8 @@
     "category": "MCLDUGens",
     "functions": [
       "rossler_res_l_ar"
-    ]
+    ],
+    "unavailable_reason": "No installed scsynth binary registers this UGen; quarantined until plugin/source verification."
   },
   {
     "name": "FincoSprottL",
@@ -1131,7 +1143,7 @@
     "name": "RMAFoodChainL",
     "description": "Rosenzweig-MacArthur three-species food chain attractor (sc3-plugins MCLDUGens). Continuous-time predator-prey chaos with 12 parameters. Three-channel x, y, z output.",
     "rates": [
-      "ar"
+      "builder"
     ],
     "inputs": [
       {
@@ -1143,13 +1155,13 @@
       {
         "name": "a1",
         "type": "float",
-        "default": 5.0,
+        "default": 5,
         "description": "Equation parameter a1"
       },
       {
         "name": "b1",
         "type": "float",
-        "default": 3.0,
+        "default": 3,
         "description": "Equation parameter b1"
       },
       {
@@ -1167,7 +1179,7 @@
       {
         "name": "b2",
         "type": "float",
-        "default": 2.0,
+        "default": 2,
         "description": "Equation parameter b2"
       },
       {
@@ -1217,7 +1229,8 @@
     "category": "MCLDUGens",
     "functions": [
       "rma_food_chain_l_ar"
-    ]
+    ],
+    "unavailable_reason": "No installed scsynth binary registers this UGen; quarantined until plugin/source verification."
   },
   {
     "name": "Perlin3",
@@ -1499,7 +1512,7 @@
     "name": "MIDelay",
     "description": "Mutual-information-based delay estimator between two signals (sc3-plugins MCLDUGens). Reports the lag at which mutual information between the two streams is maximised. Originally Dan Stowell — currently disabled in upstream sc3-plugins.",
     "rates": [
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -1537,7 +1550,8 @@
     "category": "MCLDUGens",
     "functions": [
       "mi_delay_kr"
-    ]
+    ],
+    "unavailable_reason": "No installed scsynth binary registers this UGen; quarantined until plugin/source verification."
   },
   {
     "name": "Friction",
@@ -1672,13 +1686,13 @@
       {
         "name": "freq",
         "type": "float",
-        "default": 440.0,
+        "default": 440,
         "description": "Oscillator frequency in Hz"
       },
       {
         "name": "iphase",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "description": "Initial phase in the range [-1, 1]"
       }
     ],
@@ -1693,14 +1707,13 @@
     "name": "PulseDPW",
     "description": "Pulse-wave oscillator built from two SawDPW oscillators (sc3-plugins MCLDUGens). Cheaper than a band-limited Pulse with similar audible quality. Width controls the duty cycle.",
     "rates": [
-      "ar",
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
         "name": "freq",
         "type": "float",
-        "default": 440.0,
+        "default": 440,
         "description": "Oscillator frequency in Hz"
       },
       {
@@ -1715,7 +1728,9 @@
     "functions": [
       "pulse_dpw_ar",
       "pulse_dpw_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "Getenv",
@@ -1930,7 +1945,7 @@
     "name": "OnsetsDS",
     "description": "Pseudo-UGen wrapping a complete onset-detection setup (sc3-plugins MCLDUGens): FFT, whitening, an onset-detection function, median filter, threshold and minimum-gap. DEPRECATED — Dan Stowell recommends Onsets.kr instead.",
     "rates": [
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -2004,7 +2019,9 @@
     "category": "MCLDUGens",
     "functions": [
       "onsets_ds_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "PlaneTree",
@@ -2336,7 +2353,7 @@
     "name": "CQ_Diff",
     "description": "Constant-Q magnitude-difference UGen, based on Qitch (sc3-plugins MCLDUGens). Compares two constant-Q analyses against a reference data buffer for pitch/spectrum matching.",
     "rates": [
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -2362,6 +2379,7 @@
     "category": "MCLDUGens",
     "functions": [
       "cq_diff_kr"
-    ]
+    ],
+    "unavailable_reason": "No installed scsynth binary registers this UGen; quarantined until plugin/source verification."
   }
 ]

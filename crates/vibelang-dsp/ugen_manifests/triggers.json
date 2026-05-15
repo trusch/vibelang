@@ -520,7 +520,8 @@
     "functions": [
       "changed_ar",
       "changed_kr"
-    ]
+    ],
+    "pseudo": true
   },
   {
     "name": "Done",

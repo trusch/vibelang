@@ -375,7 +375,8 @@
     "functions": [
       "splay_az_ar",
       "splay_az_kr"
-    ]
+    ],
+    "pseudo": true
   },
   {
     "name": "PanB",

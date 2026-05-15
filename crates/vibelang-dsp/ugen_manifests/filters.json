@@ -1051,8 +1051,7 @@
     "name": "BLowPass4",
     "description": "Fourth order Butterworth low pass filter. 24dB/octave rolloff for steep filtering.",
     "rates": [
-      "ar",
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -1079,14 +1078,15 @@
     "functions": [
       "b_low_pass4_ar",
       "b_low_pass4_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "BHiPass4",
     "description": "Fourth order Butterworth high pass filter. 24dB/octave rolloff for steep filtering.",
     "rates": [
-      "ar",
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -1113,7 +1113,9 @@
     "functions": [
       "b_hi_pass4_ar",
       "b_hi_pass4_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "BAllPass",

@@ -3,7 +3,7 @@
     "name": "LinkTempo",
     "description": "Get/set the tempo of the server's Ableton Link clock in cycles per second (cps). Returns -1.0 if Link session not started. Requires scsynth built with Link support.",
     "rates": [
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -23,13 +23,14 @@
     "category": "Link",
     "functions": [
       "link_tempo_kr"
-    ]
+    ],
+    "unavailable_reason": "Ableton Link UGen plugin/source not installed or verified on this host."
   },
   {
     "name": "LinkPhase",
     "description": "Access the phase of the server's Ableton Link clock. Phase runs from [0, quantum) with the current cps. Returns -1.0 if Link session not started. Requires scsynth built with Link support.",
     "rates": [
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -43,13 +44,14 @@
     "category": "Link",
     "functions": [
       "link_phase_kr"
-    ]
+    ],
+    "unavailable_reason": "Ableton Link UGen plugin/source not installed or verified on this host."
   },
   {
     "name": "LinkJump",
     "description": "Jump to a position within the quantum of the server's Ableton Link clock. Returns -1.0 if Link session not started, otherwise 0.0. Requires scsynth built with Link support.",
     "rates": [
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -81,6 +83,7 @@
     "category": "Link",
     "functions": [
       "link_jump_kr"
-    ]
+    ],
+    "unavailable_reason": "Ableton Link UGen plugin/source not installed or verified on this host."
   }
 ]

@@ -577,7 +577,7 @@
     "name": "SimpleLoopBuf",
     "description": "Simple looping buffer player. Plays back a buffer between loopStart and loopEnd frames, restarting on each positive-going trigger.",
     "rates": [
-      "ar"
+      "builder"
     ],
     "inputs": [
       {
@@ -615,6 +615,7 @@
     "category": "Buffers",
     "functions": [
       "simple_loop_buf_ar"
-    ]
+    ],
+    "unavailable_reason": "Removed/commented-out upstream UGen; no installed binary registers SimpleLoopBuf."
   }
 ]

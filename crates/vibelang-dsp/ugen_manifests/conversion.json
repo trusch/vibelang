@@ -111,8 +111,7 @@
     "name": "Silence",
     "description": "Silent audio bus. Outputs silence on a specified number of channels.",
     "rates": [
-      "ar",
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -127,6 +126,8 @@
     "functions": [
       "silence_ar",
       "silence_kr"
-    ]
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   }
 ]

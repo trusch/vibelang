@@ -2,989 +2,2785 @@
   {
     "name": "PV_BinBufRd",
     "description": "Read FFT data from a buffer, scrubbing through stored frames at a normalised position. Reads from a buffer prepared by PV_RecordBuf and writes the bins back into the active FFT chain. Supports per-bin selection (binStart/binSkip/numBins) for partial reading. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer (output of FFT)"},
-      {"name": "playbuf", "type": "float", "default": 0, "description": "Buffer holding recorded FFT frames (from PV_RecordBuf)"},
-      {"name": "point", "type": "float", "default": 1.0, "description": "Position to read from, 0.0 (start) to 1.0 (end)"},
-      {"name": "binStart", "type": "float", "default": 0, "description": "First bin to read (0-based)"},
-      {"name": "binSkip", "type": "float", "default": 1, "description": "Stride between read bins"},
-      {"name": "numBins", "type": "float", "default": 1, "description": "Number of bins to read"},
-      {"name": "clear", "type": "float", "default": 0, "description": "If non-zero, clear bins not selected by binStart/binSkip/numBins"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer (output of FFT)"
+      },
+      {
+        "name": "playbuf",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding recorded FFT frames (from PV_RecordBuf)"
+      },
+      {
+        "name": "point",
+        "type": "float",
+        "default": 1,
+        "description": "Position to read from, 0.0 (start) to 1.0 (end)"
+      },
+      {
+        "name": "binStart",
+        "type": "float",
+        "default": 0,
+        "description": "First bin to read (0-based)"
+      },
+      {
+        "name": "binSkip",
+        "type": "float",
+        "default": 1,
+        "description": "Stride between read bins"
+      },
+      {
+        "name": "numBins",
+        "type": "float",
+        "default": 1,
+        "description": "Number of bins to read"
+      },
+      {
+        "name": "clear",
+        "type": "float",
+        "default": 0,
+        "description": "If non-zero, clear bins not selected by binStart/binSkip/numBins"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_bin_buf_rd_kr"]
+    "functions": [
+      "pv_bin_buf_rd_kr"
+    ]
   },
   {
     "name": "PV_BinDelay",
     "description": "Per-bin spectral delay line. Each FFT bin is independently delayed up to maxdelay seconds with feedback, using companion delay/feedback buffers to store state across frames. Useful for spectral smearing and frequency-dependent echo effects. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "maxdelay", "type": "float", "default": 1.0, "description": "Maximum delay per bin in seconds"},
-      {"name": "delaybuf", "type": "float", "default": 0, "description": "Buffer holding per-bin delay times"},
-      {"name": "fbbuf", "type": "float", "default": 0, "description": "Buffer holding per-bin feedback values (-1..1)"},
-      {"name": "hop", "type": "float", "default": 0.5, "description": "FFT hop size as a fraction of the FFT size"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "maxdelay",
+        "type": "float",
+        "default": 1,
+        "description": "Maximum delay per bin in seconds"
+      },
+      {
+        "name": "delaybuf",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding per-bin delay times"
+      },
+      {
+        "name": "fbbuf",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding per-bin feedback values (-1..1)"
+      },
+      {
+        "name": "hop",
+        "type": "float",
+        "default": 0.5,
+        "description": "FFT hop size as a fraction of the FFT size"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_bin_delay_kr"]
+    "functions": [
+      "pv_bin_delay_kr"
+    ]
   },
   {
     "name": "PV_BinFilter",
     "description": "Pass only a contiguous range of FFT bins, zeroing the rest. Acts as a brick-wall spectral band-pass selecting bins from `start` (inclusive) up to `end` (inclusive). From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "start", "type": "float", "default": 0, "description": "First bin index to keep"},
-      {"name": "end", "type": "float", "default": 0, "description": "Last bin index to keep"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "start",
+        "type": "float",
+        "default": 0,
+        "description": "First bin index to keep"
+      },
+      {
+        "name": "end",
+        "type": "float",
+        "default": 0,
+        "description": "Last bin index to keep"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_bin_filter_kr"]
+    "functions": [
+      "pv_bin_filter_kr"
+    ]
   },
   {
     "name": "PV_BinPlayBuf",
     "description": "Play stored FFT frames at a variable rate, optionally selecting a subset of bins. Reads from a buffer recorded by PV_RecordBuf, advancing through frames at `rate` (negative = reverse, fractional = time-stretch) and copying the chosen bins into the active FFT chain. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "playbuf", "type": "float", "default": 0, "description": "Buffer of recorded FFT frames"},
-      {"name": "rate", "type": "float", "default": 1.0, "description": "Playback rate (1=normal, -1=reverse, 0.5=half speed)"},
-      {"name": "offset", "type": "float", "default": 0, "description": "Start offset into the recorded frames, 0..1"},
-      {"name": "loop", "type": "float", "default": 0, "description": "Loop playback if non-zero"},
-      {"name": "binStart", "type": "float", "default": 0, "description": "First bin to read"},
-      {"name": "binSkip", "type": "float", "default": 1, "description": "Stride between read bins"},
-      {"name": "numBins", "type": "float", "default": 1, "description": "Number of bins to read"},
-      {"name": "clear", "type": "float", "default": 0, "description": "If non-zero, clear bins outside the selected range"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "playbuf",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer of recorded FFT frames"
+      },
+      {
+        "name": "rate",
+        "type": "float",
+        "default": 1,
+        "description": "Playback rate (1=normal, -1=reverse, 0.5=half speed)"
+      },
+      {
+        "name": "offset",
+        "type": "float",
+        "default": 0,
+        "description": "Start offset into the recorded frames, 0..1"
+      },
+      {
+        "name": "loop",
+        "type": "float",
+        "default": 0,
+        "description": "Loop playback if non-zero"
+      },
+      {
+        "name": "binStart",
+        "type": "float",
+        "default": 0,
+        "description": "First bin to read"
+      },
+      {
+        "name": "binSkip",
+        "type": "float",
+        "default": 1,
+        "description": "Stride between read bins"
+      },
+      {
+        "name": "numBins",
+        "type": "float",
+        "default": 1,
+        "description": "Number of bins to read"
+      },
+      {
+        "name": "clear",
+        "type": "float",
+        "default": 0,
+        "description": "If non-zero, clear bins outside the selected range"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_bin_play_buf_kr"]
+    "functions": [
+      "pv_bin_play_buf_kr"
+    ]
   },
   {
     "name": "PV_BufRd",
     "description": "Scrub through FFT frames stored in a buffer. Reads the frame at the normalised position `point` and writes it into the active FFT chain. Same idea as PV_BinPlayBuf but reads all bins and is positioned by point rather than rate. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "playbuf", "type": "float", "default": 0, "description": "Buffer of recorded FFT frames"},
-      {"name": "point", "type": "float", "default": 1.0, "description": "Read position, 0.0 (start) to 1.0 (end)"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "playbuf",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer of recorded FFT frames"
+      },
+      {
+        "name": "point",
+        "type": "float",
+        "default": 1,
+        "description": "Read position, 0.0 (start) to 1.0 (end)"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_buf_rd_kr"]
+    "functions": [
+      "pv_buf_rd_kr"
+    ]
   },
   {
     "name": "PV_EvenBin",
     "description": "Pass only the even-numbered FFT bins, zeroing odd bins. Produces a comb-filtered spectrum. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_even_bin_kr"]
+    "functions": [
+      "pv_even_bin_kr"
+    ]
   },
   {
     "name": "PV_OddBin",
     "description": "Pass only the odd-numbered FFT bins, zeroing even bins. Produces a comb-filtered spectrum complementary to PV_EvenBin. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_odd_bin_kr"]
+    "functions": [
+      "pv_odd_bin_kr"
+    ]
   },
   {
     "name": "PV_Freeze",
     "description": "Freeze the current FFT frame when `freeze` is positive, holding the spectrum until released. Releases (passes input through) when freeze is non-positive. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "freeze", "type": "float", "default": 0.0, "description": "Freeze the current spectrum if > 0; otherwise pass input through"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "freeze",
+        "type": "float",
+        "default": 0,
+        "description": "Freeze the current spectrum if > 0; otherwise pass input through"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_freeze_kr"]
+    "functions": [
+      "pv_freeze_kr"
+    ]
   },
   {
     "name": "PV_FreqBuffer",
     "description": "Per-bin frequency offset using values from a control buffer. Each bin's frequency is offset by the corresponding sample in the data buffer, allowing arbitrary spectral re-tuning curves. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "databuffer", "type": "float", "default": 0, "description": "Buffer holding per-bin frequency offsets"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "databuffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding per-bin frequency offsets"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_freq_buffer_kr"]
+    "functions": [
+      "pv_freq_buffer_kr"
+    ]
   },
   {
     "name": "PV_Invert",
     "description": "Invert the FFT magnitudes — quiet bins become loud and loud bins become quiet — within the dynamic range of the current frame. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_invert_kr"]
+    "functions": [
+      "pv_invert_kr"
+    ]
   },
   {
     "name": "PV_MagBuffer",
     "description": "Per-bin magnitude scaling using values from a control buffer. Each bin's magnitude is multiplied by the corresponding sample in the data buffer, useful for arbitrary spectral envelopes. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "databuffer", "type": "float", "default": 0, "description": "Buffer holding per-bin magnitude multipliers"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "databuffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding per-bin magnitude multipliers"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_mag_buffer_kr"]
+    "functions": [
+      "pv_mag_buffer_kr"
+    ]
   },
   {
     "name": "PV_MagMap",
     "description": "Map the FFT magnitudes through a transfer function stored in a buffer (waveshaping in the magnitude domain). The current magnitude indexes the map buffer to produce the new magnitude. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "mapbuf", "type": "float", "default": 0, "description": "Buffer holding the magnitude transfer curve"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "mapbuf",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding the magnitude transfer curve"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_mag_map_kr"]
+    "functions": [
+      "pv_mag_map_kr"
+    ]
   },
   {
     "name": "PV_MaxMagN",
     "description": "Keep the N bins with the largest magnitudes, zero the rest. Produces a sparse spectrum containing only the loudest partials. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "numbins", "type": "float", "default": 8, "description": "Number of largest-magnitude bins to retain"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "numbins",
+        "type": "float",
+        "default": 8,
+        "description": "Number of largest-magnitude bins to retain"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_max_mag_n_kr"]
+    "functions": [
+      "pv_max_mag_n_kr"
+    ]
   },
   {
     "name": "PV_MinMagN",
     "description": "Keep the N bins with the smallest magnitudes, zero the rest. Inverse of PV_MaxMagN — produces a sparse residual spectrum. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "numbins", "type": "float", "default": 8, "description": "Number of smallest-magnitude bins to retain"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "numbins",
+        "type": "float",
+        "default": 8,
+        "description": "Number of smallest-magnitude bins to retain"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_min_mag_n_kr"]
+    "functions": [
+      "pv_min_mag_n_kr"
+    ]
   },
   {
     "name": "PV_NoiseSynthF",
     "description": "Spectral noise resynthesis (frame-stable variant). Replaces partials whose magnitudes fall below `threshold` with band-limited noise, preserving the noise-like residual after partial-tracking. The F variant uses a deterministic seed per frame. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "threshold", "type": "float", "default": 0.1, "description": "Magnitude threshold below which bins are treated as noise"},
-      {"name": "numFrames", "type": "float", "default": 2, "description": "Frames to accumulate before resynthesis starts"},
-      {"name": "initflag", "type": "float", "default": 0, "description": "Reset internal state when set"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 0.1,
+        "description": "Magnitude threshold below which bins are treated as noise"
+      },
+      {
+        "name": "numFrames",
+        "type": "float",
+        "default": 2,
+        "description": "Frames to accumulate before resynthesis starts"
+      },
+      {
+        "name": "initflag",
+        "type": "float",
+        "default": 0,
+        "description": "Reset internal state when set"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_noise_synth_f_kr"]
+    "functions": [
+      "pv_noise_synth_f_kr"
+    ]
   },
   {
     "name": "PV_NoiseSynthP",
     "description": "Spectral noise resynthesis (per-frame variant). Replaces partials whose magnitudes fall below `threshold` with band-limited noise. The P variant re-randomises noise phases each frame for a more stochastic texture. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "threshold", "type": "float", "default": 0.1, "description": "Magnitude threshold below which bins are treated as noise"},
-      {"name": "numFrames", "type": "float", "default": 2, "description": "Frames to accumulate before resynthesis starts"},
-      {"name": "initflag", "type": "float", "default": 0, "description": "Reset internal state when set"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 0.1,
+        "description": "Magnitude threshold below which bins are treated as noise"
+      },
+      {
+        "name": "numFrames",
+        "type": "float",
+        "default": 2,
+        "description": "Frames to accumulate before resynthesis starts"
+      },
+      {
+        "name": "initflag",
+        "type": "float",
+        "default": 0,
+        "description": "Reset internal state when set"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_noise_synth_p_kr"]
+    "functions": [
+      "pv_noise_synth_p_kr"
+    ]
   },
   {
     "name": "PV_PartialSynthF",
     "description": "Spectral partial resynthesis (frame-stable variant). Keeps only the partials whose magnitudes are above `threshold`, suppressing the noise residual. Companion to PV_NoiseSynthF. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "threshold", "type": "float", "default": 0.1, "description": "Magnitude threshold above which bins are kept as partials"},
-      {"name": "numFrames", "type": "float", "default": 2, "description": "Frames to accumulate before resynthesis starts"},
-      {"name": "initflag", "type": "float", "default": 0, "description": "Reset internal state when set"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 0.1,
+        "description": "Magnitude threshold above which bins are kept as partials"
+      },
+      {
+        "name": "numFrames",
+        "type": "float",
+        "default": 2,
+        "description": "Frames to accumulate before resynthesis starts"
+      },
+      {
+        "name": "initflag",
+        "type": "float",
+        "default": 0,
+        "description": "Reset internal state when set"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_partial_synth_f_kr"]
+    "functions": [
+      "pv_partial_synth_f_kr"
+    ]
   },
   {
     "name": "PV_PartialSynthP",
     "description": "Spectral partial resynthesis (per-frame variant). Keeps only the partials whose magnitudes are above `threshold`, suppressing the noise residual. The P variant re-randomises phases per frame. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "threshold", "type": "float", "default": 0.1, "description": "Magnitude threshold above which bins are kept as partials"},
-      {"name": "numFrames", "type": "float", "default": 2, "description": "Frames to accumulate before resynthesis starts"},
-      {"name": "initflag", "type": "float", "default": 0, "description": "Reset internal state when set"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "threshold",
+        "type": "float",
+        "default": 0.1,
+        "description": "Magnitude threshold above which bins are kept as partials"
+      },
+      {
+        "name": "numFrames",
+        "type": "float",
+        "default": 2,
+        "description": "Frames to accumulate before resynthesis starts"
+      },
+      {
+        "name": "initflag",
+        "type": "float",
+        "default": 0,
+        "description": "Reset internal state when set"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_partial_synth_p_kr"]
+    "functions": [
+      "pv_partial_synth_p_kr"
+    ]
   },
   {
     "name": "PV_PitchShift",
     "description": "Bin-shift pitch shifter operating in the spectral domain. Multiplies bin frequencies by `ratio` to transpose the spectrum without time-stretching. Note: the source comments call this implementation rough — use with caution. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "ratio", "type": "float", "default": 1.0, "description": "Pitch ratio (1=unison, 2=octave up, 0.5=octave down)"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "ratio",
+        "type": "float",
+        "default": 1,
+        "description": "Pitch ratio (1=unison, 2=octave up, 0.5=octave down)"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_pitch_shift_kr"]
+    "functions": [
+      "pv_pitch_shift_kr"
+    ]
   },
   {
     "name": "PV_PlayBuf",
     "description": "Play stored FFT frames at a variable rate. Reads frames recorded by PV_RecordBuf and writes them into the active FFT chain, advancing at `rate` (negative = reverse, fractional = time-stretch). From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "playbuf", "type": "float", "default": 0, "description": "Buffer of recorded FFT frames"},
-      {"name": "rate", "type": "float", "default": 1.0, "description": "Playback rate (1=normal, -1=reverse)"},
-      {"name": "offset", "type": "float", "default": 0, "description": "Start offset, 0..1"},
-      {"name": "loop", "type": "float", "default": 0, "description": "Loop playback if non-zero"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "playbuf",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer of recorded FFT frames"
+      },
+      {
+        "name": "rate",
+        "type": "float",
+        "default": 1,
+        "description": "Playback rate (1=normal, -1=reverse)"
+      },
+      {
+        "name": "offset",
+        "type": "float",
+        "default": 0,
+        "description": "Start offset, 0..1"
+      },
+      {
+        "name": "loop",
+        "type": "float",
+        "default": 0,
+        "description": "Loop playback if non-zero"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_play_buf_kr"]
+    "functions": [
+      "pv_play_buf_kr"
+    ]
   },
   {
     "name": "PV_RecordBuf",
     "description": "Record the active FFT chain into a buffer for later playback by PV_PlayBuf, PV_BinPlayBuf, PV_BufRd or PV_BinBufRd. Use SimpleNumber.calcPVRecSize on the client to compute the required buffer size. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "recbuf", "type": "float", "default": 0, "description": "Destination buffer for recorded frames"},
-      {"name": "offset", "type": "float", "default": 0.0, "description": "Start offset in destination buffer, 0..1"},
-      {"name": "run", "type": "float", "default": 0.0, "description": "Recording active when > 0"},
-      {"name": "loop", "type": "float", "default": 0.0, "description": "Wrap recording when reaching the end if non-zero"},
-      {"name": "hop", "type": "float", "default": 0.5, "description": "FFT hop size as a fraction of the FFT size"},
-      {"name": "wintype", "type": "float", "default": 0, "description": "Window type used by the FFT chain (0=Sine, 1=Hann, -1=Rect)"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "recbuf",
+        "type": "float",
+        "default": 0,
+        "description": "Destination buffer for recorded frames"
+      },
+      {
+        "name": "offset",
+        "type": "float",
+        "default": 0,
+        "description": "Start offset in destination buffer, 0..1"
+      },
+      {
+        "name": "run",
+        "type": "float",
+        "default": 0,
+        "description": "Recording active when > 0"
+      },
+      {
+        "name": "loop",
+        "type": "float",
+        "default": 0,
+        "description": "Wrap recording when reaching the end if non-zero"
+      },
+      {
+        "name": "hop",
+        "type": "float",
+        "default": 0.5,
+        "description": "FFT hop size as a fraction of the FFT size"
+      },
+      {
+        "name": "wintype",
+        "type": "float",
+        "default": 0,
+        "description": "Window type used by the FFT chain (0=Sine, 1=Hann, -1=Rect)"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_record_buf_kr"]
+    "functions": [
+      "pv_record_buf_kr"
+    ]
   },
   {
     "name": "PV_SpectralEnhance",
     "description": "Strengthen harmonic structure by emphasising bins at integer multiples of detected partials. Picks `numPartials` candidate fundamentals, raises bins at `ratio` multiples, and mixes the result back at `strength`. From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "numPartials", "type": "float", "default": 8, "description": "Number of candidate partials to emphasise"},
-      {"name": "ratio", "type": "float", "default": 2, "description": "Harmonic ratio used when emphasising (e.g. 2 = octaves)"},
-      {"name": "strength", "type": "float", "default": 0.1, "description": "Mix strength of the enhanced bins, 0..1"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "numPartials",
+        "type": "float",
+        "default": 8,
+        "description": "Number of candidate partials to emphasise"
+      },
+      {
+        "name": "ratio",
+        "type": "float",
+        "default": 2,
+        "description": "Harmonic ratio used when emphasising (e.g. 2 = octaves)"
+      },
+      {
+        "name": "strength",
+        "type": "float",
+        "default": 0.1,
+        "description": "Mix strength of the enhanced bins, 0..1"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_spectral_enhance_kr"]
+    "functions": [
+      "pv_spectral_enhance_kr"
+    ]
   },
   {
     "name": "PV_SpectralMap",
     "description": "Cross-synthesis-style spectral mapping. Combines the active FFT chain with an analysed spectrum stored in `specBuffer`, optionally normalising and freezing the source spectrum. `mode` selects the combination rule (multiply, add, subtract …). From sc3-plugins JoshUGens.",
-    "rates": ["kr"],
+    "rates": [
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "specBuffer", "type": "float", "default": 0, "description": "Buffer of the second analysed spectrum"},
-      {"name": "floor", "type": "float", "default": 0.0, "description": "Magnitude floor applied to the result"},
-      {"name": "freeze", "type": "float", "default": 0.0, "description": "Freeze the spec buffer when > 0"},
-      {"name": "mode", "type": "float", "default": 0.0, "description": "Combination mode selector (0=multiply, 1=add, 2=subtract, …)"},
-      {"name": "norm", "type": "float", "default": 0.0, "description": "Normalise magnitudes when > 0"},
-      {"name": "window", "type": "float", "default": 0.0, "description": "Apply a smoothing window to the source spectrum"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "specBuffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer of the second analysed spectrum"
+      },
+      {
+        "name": "floor",
+        "type": "float",
+        "default": 0,
+        "description": "Magnitude floor applied to the result"
+      },
+      {
+        "name": "freeze",
+        "type": "float",
+        "default": 0,
+        "description": "Freeze the spec buffer when > 0"
+      },
+      {
+        "name": "mode",
+        "type": "float",
+        "default": 0,
+        "description": "Combination mode selector (0=multiply, 1=add, 2=subtract, …)"
+      },
+      {
+        "name": "norm",
+        "type": "float",
+        "default": 0,
+        "description": "Normalise magnitudes when > 0"
+      },
+      {
+        "name": "window",
+        "type": "float",
+        "default": 0,
+        "description": "Apply a smoothing window to the source spectrum"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_spectral_map_kr"]
+    "functions": [
+      "pv_spectral_map_kr"
+    ]
   },
   {
     "name": "PVInfo",
     "description": "Read magnitude and frequency of a single bin from a PV-format buffer (offline FFT analysis stored in a buffer). Multi-output: [magnitude, frequency]. From sc3-plugins JoshUGens.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "pvbuffer", "type": "float", "default": 0, "description": "PV-format buffer containing offline FFT data"},
-      {"name": "binNum", "type": "float", "default": 0, "description": "Bin number to read"},
-      {"name": "filePointer", "type": "float", "default": 0, "description": "Pointer/offset within the PV buffer (frame index)"}
+      {
+        "name": "pvbuffer",
+        "type": "float",
+        "default": 0,
+        "description": "PV-format buffer containing offline FFT data"
+      },
+      {
+        "name": "binNum",
+        "type": "float",
+        "default": 0,
+        "description": "Bin number to read"
+      },
+      {
+        "name": "filePointer",
+        "type": "float",
+        "default": 0,
+        "description": "Pointer/offset within the PV buffer (frame index)"
+      }
     ],
     "outputs": 2,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_info_ar", "pv_info_kr"]
+    "functions": [
+      "pv_info_ar",
+      "pv_info_kr"
+    ]
   },
   {
     "name": "PVSynth",
     "description": "Resynthesise an offline PV-format buffer back to audio by selecting a subset of bins. Read all or a slice of bins (binStart/binSkip/numBins) from the recorded spectrum, allowing partial reconstruction and frequency scaling. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "pvbuffer", "type": "float", "default": 0, "description": "PV-format buffer containing offline FFT data"},
-      {"name": "numBins", "type": "float", "default": 0, "description": "Number of bins to read (0 = all)"},
-      {"name": "binStart", "type": "float", "default": 0, "description": "First bin to read"},
-      {"name": "binSkip", "type": "float", "default": 1, "description": "Stride between read bins"},
-      {"name": "filePointer", "type": "float", "default": 0, "description": "Pointer/offset within the PV buffer (frame index)"},
-      {"name": "freqMul", "type": "float", "default": 1.0, "description": "Multiply bin frequencies by this factor"},
-      {"name": "freqAdd", "type": "float", "default": 0.0, "description": "Add this value to bin frequencies"}
+      {
+        "name": "pvbuffer",
+        "type": "float",
+        "default": 0,
+        "description": "PV-format buffer containing offline FFT data"
+      },
+      {
+        "name": "numBins",
+        "type": "float",
+        "default": 0,
+        "description": "Number of bins to read (0 = all)"
+      },
+      {
+        "name": "binStart",
+        "type": "float",
+        "default": 0,
+        "description": "First bin to read"
+      },
+      {
+        "name": "binSkip",
+        "type": "float",
+        "default": 1,
+        "description": "Stride between read bins"
+      },
+      {
+        "name": "filePointer",
+        "type": "float",
+        "default": 0,
+        "description": "Pointer/offset within the PV buffer (frame index)"
+      },
+      {
+        "name": "freqMul",
+        "type": "float",
+        "default": 1,
+        "description": "Multiply bin frequencies by this factor"
+      },
+      {
+        "name": "freqAdd",
+        "type": "float",
+        "default": 0,
+        "description": "Add this value to bin frequencies"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pv_synth_ar"]
+    "functions": [
+      "pv_synth_ar"
+    ]
   },
   {
     "name": "BinData",
     "description": "Read frequency and magnitude of a single FFT bin from the active FFT chain. Multi-output: [magnitude, frequency]. The `overlaps` input must match the FFT hop fraction so internal scaling is correct. From sc3-plugins JoshUGens.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "signal", "default": 0, "description": "Active FFT chain buffer"},
-      {"name": "bin", "type": "float", "default": 0, "description": "Bin number to read"},
-      {"name": "overlaps", "type": "float", "default": 0.5, "description": "FFT overlap fraction (must match the FFT hop)"}
+      {
+        "name": "buffer",
+        "type": "signal",
+        "default": 0,
+        "description": "Active FFT chain buffer"
+      },
+      {
+        "name": "bin",
+        "type": "float",
+        "default": 0,
+        "description": "Bin number to read"
+      },
+      {
+        "name": "overlaps",
+        "type": "float",
+        "default": 0.5,
+        "description": "FFT overlap fraction (must match the FFT hop)"
+      }
     ],
     "outputs": 2,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["bin_data_ar", "bin_data_kr"]
+    "functions": [
+      "bin_data_ar",
+      "bin_data_kr"
+    ]
   },
   {
     "name": "AtsSynth",
     "description": "ATS (Analysis-Transformation-Synthesis) deterministic resynthesis. Reads partials from an ATS buffer and resynthesises them additively. ATS data is the deterministic + stochastic decomposition by Pampin/Di Liscia/Beyls; loaded from .ats files via the AtsFile class on the client. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "atsbuffer", "type": "float", "default": 0, "description": "Buffer holding ATS analysis data"},
-      {"name": "numPartials", "type": "float", "default": 0, "description": "Number of partials to synthesise (0 = all)"},
-      {"name": "partialStart", "type": "float", "default": 0, "description": "First partial index to read"},
-      {"name": "partialSkip", "type": "float", "default": 1, "description": "Stride between read partials"},
-      {"name": "filePointer", "type": "float", "default": 0, "description": "Frame index into the ATS buffer (0..numFrames-1)"},
-      {"name": "freqMul", "type": "float", "default": 1.0, "description": "Multiply partial frequencies by this factor"},
-      {"name": "freqAdd", "type": "float", "default": 0.0, "description": "Add this value to partial frequencies"}
+      {
+        "name": "atsbuffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding ATS analysis data"
+      },
+      {
+        "name": "numPartials",
+        "type": "float",
+        "default": 0,
+        "description": "Number of partials to synthesise (0 = all)"
+      },
+      {
+        "name": "partialStart",
+        "type": "float",
+        "default": 0,
+        "description": "First partial index to read"
+      },
+      {
+        "name": "partialSkip",
+        "type": "float",
+        "default": 1,
+        "description": "Stride between read partials"
+      },
+      {
+        "name": "filePointer",
+        "type": "float",
+        "default": 0,
+        "description": "Frame index into the ATS buffer (0..numFrames-1)"
+      },
+      {
+        "name": "freqMul",
+        "type": "float",
+        "default": 1,
+        "description": "Multiply partial frequencies by this factor"
+      },
+      {
+        "name": "freqAdd",
+        "type": "float",
+        "default": 0,
+        "description": "Add this value to partial frequencies"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["ats_synth_ar"]
+    "functions": [
+      "ats_synth_ar"
+    ]
   },
   {
     "name": "AtsNoiSynth",
     "description": "ATS resynthesis with both deterministic (sinusoidal) partials and stochastic (band-limited noise) bands. Mixes the two components by `sinePct` and `noisePct`. Requires an ATS file containing residual noise data (atsType >= 3). From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "atsbuffer", "type": "float", "default": 0, "description": "Buffer holding ATS analysis data"},
-      {"name": "numPartials", "type": "float", "default": 0, "description": "Number of partials to synthesise (0 = all)"},
-      {"name": "partialStart", "type": "float", "default": 0, "description": "First partial index to read"},
-      {"name": "partialSkip", "type": "float", "default": 1, "description": "Stride between read partials"},
-      {"name": "filePointer", "type": "float", "default": 0, "description": "Frame index into the ATS buffer"},
-      {"name": "sinePct", "type": "float", "default": 1.0, "description": "Sinusoidal component mix, 0..1"},
-      {"name": "noisePct", "type": "float", "default": 1.0, "description": "Noise component mix, 0..1"},
-      {"name": "freqMul", "type": "float", "default": 1.0, "description": "Multiply partial frequencies by this factor"},
-      {"name": "freqAdd", "type": "float", "default": 0.0, "description": "Add this value to partial frequencies"},
-      {"name": "numBands", "type": "float", "default": 25, "description": "Number of noise bands"},
-      {"name": "bandStart", "type": "float", "default": 0, "description": "First noise band to read"},
-      {"name": "bandSkip", "type": "float", "default": 1, "description": "Stride between read noise bands"}
+      {
+        "name": "atsbuffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding ATS analysis data"
+      },
+      {
+        "name": "numPartials",
+        "type": "float",
+        "default": 0,
+        "description": "Number of partials to synthesise (0 = all)"
+      },
+      {
+        "name": "partialStart",
+        "type": "float",
+        "default": 0,
+        "description": "First partial index to read"
+      },
+      {
+        "name": "partialSkip",
+        "type": "float",
+        "default": 1,
+        "description": "Stride between read partials"
+      },
+      {
+        "name": "filePointer",
+        "type": "float",
+        "default": 0,
+        "description": "Frame index into the ATS buffer"
+      },
+      {
+        "name": "sinePct",
+        "type": "float",
+        "default": 1,
+        "description": "Sinusoidal component mix, 0..1"
+      },
+      {
+        "name": "noisePct",
+        "type": "float",
+        "default": 1,
+        "description": "Noise component mix, 0..1"
+      },
+      {
+        "name": "freqMul",
+        "type": "float",
+        "default": 1,
+        "description": "Multiply partial frequencies by this factor"
+      },
+      {
+        "name": "freqAdd",
+        "type": "float",
+        "default": 0,
+        "description": "Add this value to partial frequencies"
+      },
+      {
+        "name": "numBands",
+        "type": "float",
+        "default": 25,
+        "description": "Number of noise bands"
+      },
+      {
+        "name": "bandStart",
+        "type": "float",
+        "default": 0,
+        "description": "First noise band to read"
+      },
+      {
+        "name": "bandSkip",
+        "type": "float",
+        "default": 1,
+        "description": "Stride between read noise bands"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["ats_noi_synth_ar"]
+    "functions": [
+      "ats_noi_synth_ar"
+    ]
   },
   {
     "name": "AtsPartial",
     "description": "Synthesise a single ATS partial. Useful for reconstructing one analysed partial in isolation, or driving multiple AtsPartial UGens with different transformations per partial. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "atsbuffer", "type": "float", "default": 0, "description": "Buffer holding ATS analysis data"},
-      {"name": "partial", "type": "float", "default": 0, "description": "Partial index to synthesise"},
-      {"name": "filePointer", "type": "float", "default": 0, "description": "Frame index into the ATS buffer"},
-      {"name": "freqMul", "type": "float", "default": 1.0, "description": "Multiply partial frequency by this factor"},
-      {"name": "freqAdd", "type": "float", "default": 0.0, "description": "Add this value to partial frequency"}
+      {
+        "name": "atsbuffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding ATS analysis data"
+      },
+      {
+        "name": "partial",
+        "type": "float",
+        "default": 0,
+        "description": "Partial index to synthesise"
+      },
+      {
+        "name": "filePointer",
+        "type": "float",
+        "default": 0,
+        "description": "Frame index into the ATS buffer"
+      },
+      {
+        "name": "freqMul",
+        "type": "float",
+        "default": 1,
+        "description": "Multiply partial frequency by this factor"
+      },
+      {
+        "name": "freqAdd",
+        "type": "float",
+        "default": 0,
+        "description": "Add this value to partial frequency"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["ats_partial_ar"]
+    "functions": [
+      "ats_partial_ar"
+    ]
   },
   {
     "name": "AtsBand",
     "description": "Synthesise a single ATS noise band as audio. Useful for granular access to the residual stochastic component. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "atsbuffer", "type": "float", "default": 0, "description": "Buffer holding ATS analysis data"},
-      {"name": "band", "type": "float", "default": 0, "description": "Noise band index to synthesise"},
-      {"name": "filePointer", "type": "float", "default": 0, "description": "Frame index into the ATS buffer"}
+      {
+        "name": "atsbuffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding ATS analysis data"
+      },
+      {
+        "name": "band",
+        "type": "float",
+        "default": 0,
+        "description": "Noise band index to synthesise"
+      },
+      {
+        "name": "filePointer",
+        "type": "float",
+        "default": 0,
+        "description": "Frame index into the ATS buffer"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["ats_band_ar"]
+    "functions": [
+      "ats_band_ar"
+    ]
   },
   {
     "name": "AtsFreq",
     "description": "Read the analysed frequency of a single ATS partial as a control signal. Useful for driving other UGens with the analysed frequency envelope. From sc3-plugins JoshUGens.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "atsbuffer", "type": "float", "default": 0, "description": "Buffer holding ATS analysis data"},
-      {"name": "partialNum", "type": "float", "default": 0, "description": "Partial index to read"},
-      {"name": "filePointer", "type": "float", "default": 0, "description": "Frame index into the ATS buffer"}
+      {
+        "name": "atsbuffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding ATS analysis data"
+      },
+      {
+        "name": "partialNum",
+        "type": "float",
+        "default": 0,
+        "description": "Partial index to read"
+      },
+      {
+        "name": "filePointer",
+        "type": "float",
+        "default": 0,
+        "description": "Frame index into the ATS buffer"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["ats_freq_ar", "ats_freq_kr"]
+    "functions": [
+      "ats_freq_ar",
+      "ats_freq_kr"
+    ]
   },
   {
     "name": "AtsAmp",
     "description": "Read the analysed amplitude of a single ATS partial as a control signal. Useful for driving other UGens with the analysed amplitude envelope. From sc3-plugins JoshUGens.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "atsbuffer", "type": "float", "default": 0, "description": "Buffer holding ATS analysis data"},
-      {"name": "partialNum", "type": "float", "default": 0, "description": "Partial index to read"},
-      {"name": "filePointer", "type": "float", "default": 0, "description": "Frame index into the ATS buffer"}
+      {
+        "name": "atsbuffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding ATS analysis data"
+      },
+      {
+        "name": "partialNum",
+        "type": "float",
+        "default": 0,
+        "description": "Partial index to read"
+      },
+      {
+        "name": "filePointer",
+        "type": "float",
+        "default": 0,
+        "description": "Frame index into the ATS buffer"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["ats_amp_ar", "ats_amp_kr"]
+    "functions": [
+      "ats_amp_ar",
+      "ats_amp_kr"
+    ]
   },
   {
     "name": "AtsNoise",
     "description": "Read the analysed amplitude of a single ATS noise band as a control signal. Useful for driving custom noise synthesis with the analysed envelope. From sc3-plugins JoshUGens.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "atsbuffer", "type": "float", "default": 0, "description": "Buffer holding ATS analysis data"},
-      {"name": "bandNum", "type": "float", "default": 0, "description": "Noise band index to read"},
-      {"name": "filePointer", "type": "float", "default": 0, "description": "Frame index into the ATS buffer"}
+      {
+        "name": "atsbuffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding ATS analysis data"
+      },
+      {
+        "name": "bandNum",
+        "type": "float",
+        "default": 0,
+        "description": "Noise band index to read"
+      },
+      {
+        "name": "filePointer",
+        "type": "float",
+        "default": 0,
+        "description": "Frame index into the ATS buffer"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["ats_noise_ar", "ats_noise_kr"]
+    "functions": [
+      "ats_noise_ar",
+      "ats_noise_kr"
+    ]
   },
   {
     "name": "AtsParInfo",
     "description": "Read amplitude and frequency of a single ATS partial as a multi-output control signal. Multi-output: [amplitude, frequency]. From sc3-plugins JoshUGens.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "atsbuffer", "type": "float", "default": 0, "description": "Buffer holding ATS analysis data"},
-      {"name": "partialNum", "type": "float", "default": 0, "description": "Partial index to read"},
-      {"name": "filePointer", "type": "float", "default": 0, "description": "Frame index into the ATS buffer"}
+      {
+        "name": "atsbuffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding ATS analysis data"
+      },
+      {
+        "name": "partialNum",
+        "type": "float",
+        "default": 0,
+        "description": "Partial index to read"
+      },
+      {
+        "name": "filePointer",
+        "type": "float",
+        "default": 0,
+        "description": "Frame index into the ATS buffer"
+      }
     ],
     "outputs": 2,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["ats_par_info_ar", "ats_par_info_kr"]
+    "functions": [
+      "ats_par_info_ar",
+      "ats_par_info_kr"
+    ]
   },
   {
     "name": "AtsFile",
     "description": "Client-side helper (not a server UGen) for loading ATS analysis files. Parses the .ats binary header (sample rate, frame size, partial count, atsType) and writes the data into a server buffer for use by AtsSynth/AtsNoiSynth/AtsPartial/AtsBand/AtsFreq/AtsAmp/AtsNoise/AtsParInfo. From sc3-plugins JoshUGens.",
-    "rates": ["builder"],
+    "rates": [
+      "builder"
+    ],
     "inputs": [
-      {"name": ".load(path)", "type": "method", "default": null, "description": "Read the .ats file at `path`, allocate a server buffer and load the data into it"},
-      {"name": ".load_to_buffer(buffer)", "type": "method", "default": null, "description": "Load into a pre-allocated buffer (alias for .load(buffer))"},
-      {"name": ".buffer", "type": "method", "default": null, "description": "Return the server bufnum to pass to ATS UGens"},
-      {"name": ".free_buffer", "type": "method", "default": null, "description": "Free the server buffer holding the analysis data"}
+      {
+        "name": ".load(path)",
+        "type": "method",
+        "default": null,
+        "description": "Read the .ats file at `path`, allocate a server buffer and load the data into it"
+      },
+      {
+        "name": ".load_to_buffer(buffer)",
+        "type": "method",
+        "default": null,
+        "description": "Load into a pre-allocated buffer (alias for .load(buffer))"
+      },
+      {
+        "name": ".buffer",
+        "type": "method",
+        "default": null,
+        "description": "Return the server bufnum to pass to ATS UGens"
+      },
+      {
+        "name": ".free_buffer",
+        "type": "method",
+        "default": null,
+        "description": "Free the server buffer holding the analysis data"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["ats_file"]
+    "functions": [
+      "ats_file"
+    ],
+    "unavailable_reason": "Client-side data/helper class; no scsynth UGen is emitted."
   },
   {
     "name": "LPCSynth",
     "description": "Linear Predictive Coding resynthesis. Excites an LPC filter (whose coefficients are stored in `buffer`) with `signal` and reads through the analysis frames at the normalised position `pointer`. Use as the resynthesis side of an LPC analysis/resynthesis pair (cross-synthesis vocoder). From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "float", "default": 0, "description": "Buffer holding LPC analysis frames (poles + residuals)"},
-      {"name": "signal", "type": "signal", "default": 0, "description": "Excitation signal to drive the LPC filter"},
-      {"name": "pointer", "type": "float", "default": 0, "description": "Position to read from analysis frames, 0.0..1.0"}
+      {
+        "name": "buffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding LPC analysis frames (poles + residuals)"
+      },
+      {
+        "name": "signal",
+        "type": "signal",
+        "default": 0,
+        "description": "Excitation signal to drive the LPC filter"
+      },
+      {
+        "name": "pointer",
+        "type": "float",
+        "default": 0,
+        "description": "Position to read from analysis frames, 0.0..1.0"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["lpc_synth_ar"]
+    "functions": [
+      "lpc_synth_ar"
+    ]
   },
   {
     "name": "LPCVals",
     "description": "Read residual amplitude, original RMS and pitch from an LPC analysis buffer at a given position. Multi-output: [residual_amp, orig_rms, pitch]. Use to drive a custom excitation in place of the standard LPCSynth excitation. From sc3-plugins JoshUGens.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "buffer", "type": "float", "default": 0, "description": "Buffer holding LPC analysis frames"},
-      {"name": "pointer", "type": "float", "default": 0, "description": "Position to read from analysis frames, 0.0..1.0"}
+      {
+        "name": "buffer",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer holding LPC analysis frames"
+      },
+      {
+        "name": "pointer",
+        "type": "float",
+        "default": 0,
+        "description": "Position to read from analysis frames, 0.0..1.0"
+      }
     ],
     "outputs": 3,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["lpc_vals_ar", "lpc_vals_kr"]
+    "functions": [
+      "lpc_vals_ar",
+      "lpc_vals_kr"
+    ]
   },
   {
     "name": "BFEncode1",
     "description": "First-order B-format encoder (Furse-Malham). Pans a mono input to four B-format channels [W, X, Y, Z] using azimuth, elevation and distance (rho). `wComp=1` enables the W-compensation that scales W with distance. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Mono input signal"},
-      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians, -pi..pi (0=front)"},
-      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians, -pi/2..pi/2"},
-      {"name": "rho", "type": "float", "default": 1, "description": "Distance scaling factor (1 = on the unit circle)"},
-      {"name": "gain", "type": "float", "default": 1, "description": "Output gain"},
-      {"name": "wComp", "type": "float", "default": 0, "description": "W-channel distance compensation (1=on, 0=off)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal"
+      },
+      {
+        "name": "azimuth",
+        "type": "float",
+        "default": 0,
+        "description": "Azimuth in radians, -pi..pi (0=front)"
+      },
+      {
+        "name": "elevation",
+        "type": "float",
+        "default": 0,
+        "description": "Elevation in radians, -pi/2..pi/2"
+      },
+      {
+        "name": "rho",
+        "type": "float",
+        "default": 1,
+        "description": "Distance scaling factor (1 = on the unit circle)"
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      },
+      {
+        "name": "wComp",
+        "type": "float",
+        "default": 0,
+        "description": "W-channel distance compensation (1=on, 0=off)"
+      }
     ],
     "outputs": 4,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["bf_encode_1_ar"]
+    "functions": [
+      "bf_encode_1_ar"
+    ]
   },
   {
     "name": "BFEncode2",
     "description": "First-order B-format encoder using Cartesian coordinates (point_x, point_y, elevation). Pans a mono input to four B-format channels [W, X, Y, Z]. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Mono input signal"},
-      {"name": "point_x", "type": "float", "default": 1, "description": "X coordinate of the source"},
-      {"name": "point_y", "type": "float", "default": 1, "description": "Y coordinate of the source"},
-      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians"},
-      {"name": "gain", "type": "float", "default": 1, "description": "Output gain"},
-      {"name": "wComp", "type": "float", "default": 0, "description": "W-channel distance compensation (1=on, 0=off)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal"
+      },
+      {
+        "name": "point_x",
+        "type": "float",
+        "default": 1,
+        "description": "X coordinate of the source"
+      },
+      {
+        "name": "point_y",
+        "type": "float",
+        "default": 1,
+        "description": "Y coordinate of the source"
+      },
+      {
+        "name": "elevation",
+        "type": "float",
+        "default": 0,
+        "description": "Elevation in radians"
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      },
+      {
+        "name": "wComp",
+        "type": "float",
+        "default": 0,
+        "description": "W-channel distance compensation (1=on, 0=off)"
+      }
     ],
     "outputs": 4,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["bf_encode_2_ar"]
+    "functions": [
+      "bf_encode_2_ar"
+    ]
   },
   {
     "name": "BFEncodeSter",
     "description": "First-order B-format encoder for a stereo source. Pans a stereo pair to four B-format channels [W, X, Y, Z] with a `width` controlling the angular separation between the two virtual sources. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "l", "type": "signal", "default": 0, "description": "Left input signal"},
-      {"name": "r", "type": "signal", "default": 0, "description": "Right input signal"},
-      {"name": "azimuth", "type": "float", "default": 0, "description": "Centre azimuth in radians, -pi..pi"},
-      {"name": "width", "type": "float", "default": 1.5707963, "description": "Angular separation in radians (default = pi/2)"},
-      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians"},
-      {"name": "rho", "type": "float", "default": 1, "description": "Distance scaling factor"},
-      {"name": "gain", "type": "float", "default": 1, "description": "Output gain"},
-      {"name": "wComp", "type": "float", "default": 0, "description": "W-channel distance compensation (1=on, 0=off)"}
+      {
+        "name": "l",
+        "type": "signal",
+        "default": 0,
+        "description": "Left input signal"
+      },
+      {
+        "name": "r",
+        "type": "signal",
+        "default": 0,
+        "description": "Right input signal"
+      },
+      {
+        "name": "azimuth",
+        "type": "float",
+        "default": 0,
+        "description": "Centre azimuth in radians, -pi..pi"
+      },
+      {
+        "name": "width",
+        "type": "float",
+        "default": 1.5707963,
+        "description": "Angular separation in radians (default = pi/2)"
+      },
+      {
+        "name": "elevation",
+        "type": "float",
+        "default": 0,
+        "description": "Elevation in radians"
+      },
+      {
+        "name": "rho",
+        "type": "float",
+        "default": 1,
+        "description": "Distance scaling factor"
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      },
+      {
+        "name": "wComp",
+        "type": "float",
+        "default": 0,
+        "description": "W-channel distance compensation (1=on, 0=off)"
+      }
     ],
     "outputs": 4,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["bf_encode_ster_ar"]
+    "functions": [
+      "bf_encode_ster_ar"
+    ]
   },
   {
     "name": "BFDecode1",
     "description": "First-order B-format decoder for a single virtual loudspeaker. Decodes a B-format signal [W, X, Y, Z] to one channel at the given azimuth/elevation. To produce a multi-speaker rig, instantiate one BFDecode1 per speaker. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
-      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
-      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
-      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
-      {"name": "azimuth", "type": "float", "default": 0, "description": "Speaker azimuth in radians, -pi..pi"},
-      {"name": "elevation", "type": "float", "default": 0, "description": "Speaker elevation in radians, -pi/2..pi/2"},
-      {"name": "wComp", "type": "float", "default": 0, "description": "W-channel distance compensation (1=on, 0=off)"}
+      {
+        "name": "w",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format W channel"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format X channel"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Y channel"
+      },
+      {
+        "name": "z",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Z channel"
+      },
+      {
+        "name": "azimuth",
+        "type": "float",
+        "default": 0,
+        "description": "Speaker azimuth in radians, -pi..pi"
+      },
+      {
+        "name": "elevation",
+        "type": "float",
+        "default": 0,
+        "description": "Speaker elevation in radians, -pi/2..pi/2"
+      },
+      {
+        "name": "wComp",
+        "type": "float",
+        "default": 0,
+        "description": "W-channel distance compensation (1=on, 0=off)"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["bf_decode_1_ar"]
+    "functions": [
+      "bf_decode_1_ar"
+    ]
   },
   {
     "name": "BFManipulate",
     "description": "Apply rotate / tilt / tumble transformations to a first-order B-format signal in one UGen. Outputs the transformed [W, X, Y, Z]. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
-      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
-      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
-      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
-      {"name": "rotate", "type": "float", "default": 0, "description": "Rotation around the Z axis in radians"},
-      {"name": "tilt", "type": "float", "default": 0, "description": "Tilt around the X axis in radians"},
-      {"name": "tumble", "type": "float", "default": 0, "description": "Tumble around the Y axis in radians"}
+      {
+        "name": "w",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format W channel"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format X channel"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Y channel"
+      },
+      {
+        "name": "z",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Z channel"
+      },
+      {
+        "name": "rotate",
+        "type": "float",
+        "default": 0,
+        "description": "Rotation around the Z axis in radians"
+      },
+      {
+        "name": "tilt",
+        "type": "float",
+        "default": 0,
+        "description": "Tilt around the X axis in radians"
+      },
+      {
+        "name": "tumble",
+        "type": "float",
+        "default": 0,
+        "description": "Tumble around the Y axis in radians"
+      }
     ],
     "outputs": 4,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["bf_manipulate_ar"]
+    "functions": [
+      "bf_manipulate_ar"
+    ]
   },
   {
     "name": "Rotate",
     "description": "Rotate a first-order B-format signal around the Z axis. Equivalent to applying Rotate2 to (X, Y) while leaving W and Z unchanged. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "builder"
+    ],
     "inputs": [
-      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
-      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
-      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
-      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
-      {"name": "rotate", "type": "float", "default": 0, "description": "Rotation angle in radians"}
+      {
+        "name": "w",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format W channel"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format X channel"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Y channel"
+      },
+      {
+        "name": "z",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Z channel"
+      },
+      {
+        "name": "rotate",
+        "type": "float",
+        "default": 0,
+        "description": "Rotation angle in radians"
+      }
     ],
     "outputs": 4,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["rotate_ar"]
+    "functions": [
+      "rotate_ar"
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "Tilt",
     "description": "Tilt a first-order B-format signal around the X axis. Rotates (X, Z) while leaving W and Y unchanged. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "builder"
+    ],
     "inputs": [
-      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
-      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
-      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
-      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
-      {"name": "tilt", "type": "float", "default": 0, "description": "Tilt angle in radians"}
+      {
+        "name": "w",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format W channel"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format X channel"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Y channel"
+      },
+      {
+        "name": "z",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Z channel"
+      },
+      {
+        "name": "tilt",
+        "type": "float",
+        "default": 0,
+        "description": "Tilt angle in radians"
+      }
     ],
     "outputs": 4,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["tilt_ar"]
+    "functions": [
+      "tilt_ar"
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "Tumble",
     "description": "Tumble a first-order B-format signal around the Y axis. Rotates (Y, Z) while leaving W and X unchanged. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "builder"
+    ],
     "inputs": [
-      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
-      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
-      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
-      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
-      {"name": "tumble", "type": "float", "default": 0, "description": "Tumble angle in radians"}
+      {
+        "name": "w",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format W channel"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format X channel"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Y channel"
+      },
+      {
+        "name": "z",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Z channel"
+      },
+      {
+        "name": "tumble",
+        "type": "float",
+        "default": 0,
+        "description": "Tumble angle in radians"
+      }
     ],
     "outputs": 4,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["tumble_ar"]
+    "functions": [
+      "tumble_ar"
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "FMHEncode0",
     "description": "Second-order Furse-Malham B-format encoder using azimuth/elevation. Pans a mono input to nine B-format channels [W, X, Y, Z, R, S, T, U, V] (first + second order). Variant 0: ignores `rho`/`wComp`. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Mono input signal"},
-      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians, -pi..pi"},
-      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians, -pi/2..pi/2"},
-      {"name": "gain", "type": "float", "default": 1, "description": "Output gain"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal"
+      },
+      {
+        "name": "azimuth",
+        "type": "float",
+        "default": 0,
+        "description": "Azimuth in radians, -pi..pi"
+      },
+      {
+        "name": "elevation",
+        "type": "float",
+        "default": 0,
+        "description": "Elevation in radians, -pi/2..pi/2"
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      }
     ],
     "outputs": 9,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["fmh_encode_0_ar"]
+    "functions": [
+      "fmh_encode_0_ar"
+    ]
   },
   {
     "name": "FMHEncode1",
     "description": "Second-order Furse-Malham B-format encoder using azimuth/elevation/distance. Pans a mono input to nine B-format channels [W, X, Y, Z, R, S, T, U, V]. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Mono input signal"},
-      {"name": "azimuth", "type": "float", "default": 0, "description": "Azimuth in radians, -pi..pi"},
-      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians, -pi/2..pi/2"},
-      {"name": "rho", "type": "float", "default": 1, "description": "Distance scaling factor"},
-      {"name": "gain", "type": "float", "default": 1, "description": "Output gain"},
-      {"name": "wComp", "type": "float", "default": 0, "description": "W-channel distance compensation (1=on, 0=off)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal"
+      },
+      {
+        "name": "azimuth",
+        "type": "float",
+        "default": 0,
+        "description": "Azimuth in radians, -pi..pi"
+      },
+      {
+        "name": "elevation",
+        "type": "float",
+        "default": 0,
+        "description": "Elevation in radians, -pi/2..pi/2"
+      },
+      {
+        "name": "rho",
+        "type": "float",
+        "default": 1,
+        "description": "Distance scaling factor"
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      },
+      {
+        "name": "wComp",
+        "type": "float",
+        "default": 0,
+        "description": "W-channel distance compensation (1=on, 0=off)"
+      }
     ],
     "outputs": 9,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["fmh_encode_1_ar"]
+    "functions": [
+      "fmh_encode_1_ar"
+    ]
   },
   {
     "name": "FMHEncode2",
     "description": "Second-order Furse-Malham B-format encoder using Cartesian coordinates. Pans a mono input to nine B-format channels [W, X, Y, Z, R, S, T, U, V]. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Mono input signal"},
-      {"name": "point_x", "type": "float", "default": 0, "description": "X coordinate of the source"},
-      {"name": "point_y", "type": "float", "default": 0, "description": "Y coordinate of the source"},
-      {"name": "elevation", "type": "float", "default": 0, "description": "Elevation in radians"},
-      {"name": "gain", "type": "float", "default": 1, "description": "Output gain"},
-      {"name": "wComp", "type": "float", "default": 0, "description": "W-channel distance compensation (1=on, 0=off)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Mono input signal"
+      },
+      {
+        "name": "point_x",
+        "type": "float",
+        "default": 0,
+        "description": "X coordinate of the source"
+      },
+      {
+        "name": "point_y",
+        "type": "float",
+        "default": 0,
+        "description": "Y coordinate of the source"
+      },
+      {
+        "name": "elevation",
+        "type": "float",
+        "default": 0,
+        "description": "Elevation in radians"
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1,
+        "description": "Output gain"
+      },
+      {
+        "name": "wComp",
+        "type": "float",
+        "default": 0,
+        "description": "W-channel distance compensation (1=on, 0=off)"
+      }
     ],
     "outputs": 9,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["fmh_encode_2_ar"]
+    "functions": [
+      "fmh_encode_2_ar"
+    ]
   },
   {
     "name": "FMHDecode1",
     "description": "Second-order Furse-Malham B-format decoder for a single virtual loudspeaker. Decodes nine B-format channels [W, X, Y, Z, R, S, T, U, V] to one speaker at the given azimuth/elevation. The .stereo / .square / .quad / .pentagon / .hexagon / .octagon1 / .octagon2 / .cube / .doubleHex / .dodecahedron class methods are convenience constructors that emit the right speaker rig. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
-      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
-      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
-      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"},
-      {"name": "r", "type": "signal", "default": 0, "description": "B-format R channel (second order)"},
-      {"name": "s", "type": "signal", "default": 0, "description": "B-format S channel (second order)"},
-      {"name": "t", "type": "signal", "default": 0, "description": "B-format T channel (second order)"},
-      {"name": "u", "type": "signal", "default": 0, "description": "B-format U channel (second order)"},
-      {"name": "v", "type": "signal", "default": 0, "description": "B-format V channel (second order)"},
-      {"name": "azimuth", "type": "float", "default": 0, "description": "Speaker azimuth in radians, -pi..pi"},
-      {"name": "elevation", "type": "float", "default": 0, "description": "Speaker elevation in radians, -pi/2..pi/2"}
+      {
+        "name": "w",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format W channel"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format X channel"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Y channel"
+      },
+      {
+        "name": "z",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Z channel"
+      },
+      {
+        "name": "r",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format R channel (second order)"
+      },
+      {
+        "name": "s",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format S channel (second order)"
+      },
+      {
+        "name": "t",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format T channel (second order)"
+      },
+      {
+        "name": "u",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format U channel (second order)"
+      },
+      {
+        "name": "v",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format V channel (second order)"
+      },
+      {
+        "name": "azimuth",
+        "type": "float",
+        "default": 0,
+        "description": "Speaker azimuth in radians, -pi..pi"
+      },
+      {
+        "name": "elevation",
+        "type": "float",
+        "default": 0,
+        "description": "Speaker elevation in radians, -pi/2..pi/2"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["fmh_decode_1_ar"]
+    "functions": [
+      "fmh_decode_1_ar"
+    ]
   },
   {
     "name": "A2B",
     "description": "Convert an A-format (tetrahedral) signal [a, b, c, d] to first-order B-format [W, X, Y, Z]. The standard tetrahedral microphone capsule layout: a=front-left-up, b=front-right-down, c=back-left-down, d=back-right-up. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "a", "type": "signal", "default": 0, "description": "A-format channel a (FLU)"},
-      {"name": "b", "type": "signal", "default": 0, "description": "A-format channel b (FRD)"},
-      {"name": "c", "type": "signal", "default": 0, "description": "A-format channel c (BLD)"},
-      {"name": "d", "type": "signal", "default": 0, "description": "A-format channel d (BRU)"}
+      {
+        "name": "a",
+        "type": "signal",
+        "default": 0,
+        "description": "A-format channel a (FLU)"
+      },
+      {
+        "name": "b",
+        "type": "signal",
+        "default": 0,
+        "description": "A-format channel b (FRD)"
+      },
+      {
+        "name": "c",
+        "type": "signal",
+        "default": 0,
+        "description": "A-format channel c (BLD)"
+      },
+      {
+        "name": "d",
+        "type": "signal",
+        "default": 0,
+        "description": "A-format channel d (BRU)"
+      }
     ],
     "outputs": 4,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["a2b_ar"]
+    "functions": [
+      "a2b_ar"
+    ]
   },
   {
     "name": "B2A",
     "description": "Convert a first-order B-format signal [W, X, Y, Z] to A-format [a, b, c, d] (tetrahedral capsule layout). Inverse of A2B. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
-      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
-      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"},
-      {"name": "z", "type": "signal", "default": 0, "description": "B-format Z channel"}
+      {
+        "name": "w",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format W channel"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format X channel"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Y channel"
+      },
+      {
+        "name": "z",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Z channel"
+      }
     ],
     "outputs": 4,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["b2a_ar"]
+    "functions": [
+      "b2a_ar"
+    ]
   },
   {
     "name": "B2Ster",
     "description": "Decode the horizontal portion (W, X, Y) of a first-order B-format signal to stereo. Convenience downmix for previewing B-format material on a stereo system. Outputs [left, right]. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
-      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
-      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"}
+      {
+        "name": "w",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format W channel"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format X channel"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Y channel"
+      }
     ],
     "outputs": 2,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["b2_ster_ar"]
+    "functions": [
+      "b2_ster_ar"
+    ]
   },
   {
     "name": "B2UHJ",
     "description": "Encode the horizontal portion (W, X, Y) of a first-order B-format signal to two-channel UHJ — a stereo-compatible matrix that retains directional cues. Outputs [left, right]. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "w", "type": "signal", "default": 0, "description": "B-format W channel"},
-      {"name": "x", "type": "signal", "default": 0, "description": "B-format X channel"},
-      {"name": "y", "type": "signal", "default": 0, "description": "B-format Y channel"}
+      {
+        "name": "w",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format W channel"
+      },
+      {
+        "name": "x",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format X channel"
+      },
+      {
+        "name": "y",
+        "type": "signal",
+        "default": 0,
+        "description": "B-format Y channel"
+      }
     ],
     "outputs": 2,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["b2_uhj_ar"]
+    "functions": [
+      "b2_uhj_ar"
+    ]
   },
   {
     "name": "UHJ2B",
     "description": "Decode a two-channel UHJ signal back to the horizontal B-format components [W, X, Y]. Inverse of B2UHJ. The Z channel is not recoverable from UHJ. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "ls", "type": "signal", "default": 0, "description": "UHJ left channel"},
-      {"name": "rs", "type": "signal", "default": 0, "description": "UHJ right channel"}
+      {
+        "name": "ls",
+        "type": "signal",
+        "default": 0,
+        "description": "UHJ left channel"
+      },
+      {
+        "name": "rs",
+        "type": "signal",
+        "default": 0,
+        "description": "UHJ right channel"
+      }
     ],
     "outputs": 3,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["uhj_2_b_ar"]
+    "functions": [
+      "uhj_2_b_ar"
+    ]
   },
   {
     "name": "Balance",
     "description": "Apply the RMS amplitude of `test` to `in`, like a sidechain gain follower. The high-pass corner `hp` removes DC bias before measuring the RMS. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Signal whose amplitude will be modulated"},
-      {"name": "test", "type": "signal", "default": 0, "description": "Signal whose RMS amplitude is measured and applied to `in`"},
-      {"name": "hp", "type": "float", "default": 10, "description": "High-pass cutoff (Hz) applied before measuring RMS"},
-      {"name": "stor", "type": "float", "default": 0, "description": "Storage flag for the internal RMS buffer"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal whose amplitude will be modulated"
+      },
+      {
+        "name": "test",
+        "type": "signal",
+        "default": 0,
+        "description": "Signal whose RMS amplitude is measured and applied to `in`"
+      },
+      {
+        "name": "hp",
+        "type": "float",
+        "default": 10,
+        "description": "High-pass cutoff (Hz) applied before measuring RMS"
+      },
+      {
+        "name": "stor",
+        "type": "float",
+        "default": 0,
+        "description": "Storage flag for the internal RMS buffer"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["balance_ar"]
+    "functions": [
+      "balance_ar"
+    ]
   },
   {
     "name": "Maxamp",
     "description": "Track the running maximum absolute amplitude of the input over the last `numSamps` samples. Useful for VU-style metering or normalisation analysis. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Input signal"},
-      {"name": "numSamps", "type": "float", "default": 1000, "description": "Window length in samples"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "numSamps",
+        "type": "float",
+        "default": 1000,
+        "description": "Window length in samples"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["maxamp_ar"]
+    "functions": [
+      "maxamp_ar"
+    ]
   },
   {
     "name": "Metro",
     "description": "Trigger source emitting impulses at `bpm` for `numBeats` beats then stopping. Single-shot metronome — to repeat, retrigger from outside. From sc3-plugins JoshUGens.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "bpm", "type": "float", "default": 120, "description": "Tempo in beats per minute"},
-      {"name": "numBeats", "type": "float", "default": 4, "description": "Number of beats to emit before stopping"}
+      {
+        "name": "bpm",
+        "type": "float",
+        "default": 120,
+        "description": "Tempo in beats per minute"
+      },
+      {
+        "name": "numBeats",
+        "type": "float",
+        "default": 4,
+        "description": "Number of beats to emit before stopping"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["metro_ar", "metro_kr"]
+    "functions": [
+      "metro_ar",
+      "metro_kr"
+    ]
   },
   {
     "name": "MoogVCF",
     "description": "Moog ladder VCF emulation. Four-pole low-pass filter with self-oscillating resonance modelled on the classic Moog voltage-controlled filter. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Input signal"},
-      {"name": "fco", "type": "float", "default": 440, "description": "Filter cutoff frequency in Hz"},
-      {"name": "res", "type": "float", "default": 0, "description": "Resonance, 0..1 (self-oscillates near 1)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "fco",
+        "type": "float",
+        "default": 440,
+        "description": "Filter cutoff frequency in Hz"
+      },
+      {
+        "name": "res",
+        "type": "float",
+        "default": 0,
+        "description": "Resonance, 0..1 (self-oscillates near 1)"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["moog_vcf_ar"]
+    "functions": [
+      "moog_vcf_ar"
+    ]
   },
   {
     "name": "PanX",
     "description": "Multichannel circular panner. Spreads a mono input across `numChans` equally-spaced output channels at angular position `pos` with `width` controlling the angular extent. Multi-output: numChans channels (default 4). From sc3-plugins JoshUGens.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "numChans", "type": "int", "default": 4, "description": "Number of output channels"},
-      {"name": "in", "type": "signal", "default": 0, "description": "Input signal"},
-      {"name": "pos", "type": "float", "default": 0.0, "description": "Angular position, 0..numChans (wraps)"},
-      {"name": "level", "type": "float", "default": 1.0, "description": "Output level"},
-      {"name": "width", "type": "float", "default": 2.0, "description": "Angular extent in adjacent-channel units"}
+      {
+        "name": "numChans",
+        "type": "int",
+        "default": 4,
+        "description": "Number of output channels"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "pos",
+        "type": "float",
+        "default": 0,
+        "description": "Angular position, 0..numChans (wraps)"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Output level"
+      },
+      {
+        "name": "width",
+        "type": "float",
+        "default": 2,
+        "description": "Angular extent in adjacent-channel units"
+      }
     ],
     "outputs": 4,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pan_x_ar", "pan_x_kr"]
+    "functions": [
+      "pan_x_ar",
+      "pan_x_kr"
+    ]
   },
   {
     "name": "PanX2D",
     "description": "Two-dimensional grid panner — composes PanX along X and Y to spread a mono input across a numChansX × numChansY speaker grid. Multi-output: numChansX × numChansY channels (default 4×4 = 16). From sc3-plugins JoshUGens.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "builder"
+    ],
     "inputs": [
-      {"name": "numChansX", "type": "int", "default": 4, "description": "Number of speakers along X"},
-      {"name": "numChansY", "type": "int", "default": 4, "description": "Number of speakers along Y"},
-      {"name": "in", "type": "signal", "default": 0, "description": "Input signal"},
-      {"name": "posX", "type": "float", "default": 0.0, "description": "X position, 0..numChansX (wraps)"},
-      {"name": "posY", "type": "float", "default": 0.0, "description": "Y position, 0..numChansY (wraps)"},
-      {"name": "level", "type": "float", "default": 1.0, "description": "Output level"},
-      {"name": "widthX", "type": "float", "default": 2.0, "description": "Angular extent along X"},
-      {"name": "widthY", "type": "float", "default": 2.0, "description": "Angular extent along Y"}
+      {
+        "name": "numChansX",
+        "type": "int",
+        "default": 4,
+        "description": "Number of speakers along X"
+      },
+      {
+        "name": "numChansY",
+        "type": "int",
+        "default": 4,
+        "description": "Number of speakers along Y"
+      },
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "posX",
+        "type": "float",
+        "default": 0,
+        "description": "X position, 0..numChansX (wraps)"
+      },
+      {
+        "name": "posY",
+        "type": "float",
+        "default": 0,
+        "description": "Y position, 0..numChansY (wraps)"
+      },
+      {
+        "name": "level",
+        "type": "float",
+        "default": 1,
+        "description": "Output level"
+      },
+      {
+        "name": "widthX",
+        "type": "float",
+        "default": 2,
+        "description": "Angular extent along X"
+      },
+      {
+        "name": "widthY",
+        "type": "float",
+        "default": 2,
+        "description": "Angular extent along Y"
+      }
     ],
     "outputs": 16,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pan_x_2_d_ar", "pan_x_2_d_kr"]
+    "functions": [
+      "pan_x_2_d_ar",
+      "pan_x_2_d_kr"
+    ],
+    "pseudo": true,
+    "unavailable_reason": "Confirmed sclang-side pseudo-UGen; unavailable until a VibeLang lowering is implemented."
   },
   {
     "name": "PermMod",
     "description": "Permutation-style frequency modulator. Modulates the input by a single carrier of frequency `freq` using a permutation algorithm that produces non-standard FM sidebands. Audio-rate only; the input must also be audio rate. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Input audio signal"},
-      {"name": "freq", "type": "float", "default": 100, "description": "Modulator frequency in Hz"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input audio signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 100,
+        "description": "Modulator frequency in Hz"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["perm_mod_ar"]
+    "functions": [
+      "perm_mod_ar"
+    ]
   },
   {
     "name": "PermModT",
     "description": "Tendency-style permutation modulator. Modulates the input with permutation FM whose effective frequency wanders between `outfreq` and `infreq`, producing a constantly-shifting timbre. Audio-rate only. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Input audio signal"},
-      {"name": "outfreq", "type": "float", "default": 440, "description": "Lower frequency bound for the modulator"},
-      {"name": "infreq", "type": "float", "default": 5000, "description": "Upper frequency bound for the modulator"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input audio signal"
+      },
+      {
+        "name": "outfreq",
+        "type": "float",
+        "default": 440,
+        "description": "Lower frequency bound for the modulator"
+      },
+      {
+        "name": "infreq",
+        "type": "float",
+        "default": 5000,
+        "description": "Upper frequency bound for the modulator"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["perm_mod_t_ar"]
+    "functions": [
+      "perm_mod_t_ar"
+    ]
   },
   {
     "name": "PermModArray",
     "description": "Array-driven permutation modulator. Like PermMod but takes an array of pattern values that are appended to the inputs at instantiation time, controlling which permutation samples are used. Audio-rate only. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Input audio signal"},
-      {"name": "freq", "type": "float", "default": 50, "description": "Modulator base frequency in Hz"},
-      {"name": "pattern", "type": "float", "default": 0, "description": "First entry of the permutation pattern (additional pattern entries are passed positionally)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input audio signal"
+      },
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 50,
+        "description": "Modulator base frequency in Hz"
+      },
+      {
+        "name": "pattern",
+        "type": "float",
+        "default": 0,
+        "description": "First entry of the permutation pattern (additional pattern entries are passed positionally)"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["perm_mod_array_ar"]
+    "functions": [
+      "perm_mod_array_ar"
+    ]
   },
   {
     "name": "AudioMSG",
     "description": "Audio waveshaper implementing Modified-Sine-Generation: returns sin((in*0.5pi) + sin(in*2pi*index)). Functions as a phase-distortion oscillator/waveshaper hybrid. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Input signal (drives both phase terms)"},
-      {"name": "index", "type": "float", "default": 0, "description": "Modulation index in radians (default 0; pi = strong)"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal (drives both phase terms)"
+      },
+      {
+        "name": "index",
+        "type": "float",
+        "default": 0,
+        "description": "Modulation index in radians (default 0; pi = strong)"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["audio_msg_ar"]
+    "functions": [
+      "audio_msg_ar"
+    ]
   },
   {
     "name": "CombLP",
     "description": "Comb filter with a one-pole low-pass in the feedback loop. Combines the periodic resonance of a comb with progressive high-frequency damping for a more natural decay. `gate` opens/closes excitation injection. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0.0, "description": "Input signal"},
-      {"name": "gate", "type": "float", "default": 1.0, "description": "Excitation gate (1=open, 0=closed)"},
-      {"name": "maxdelaytime", "type": "float", "default": 0.2, "description": "Maximum delay time in seconds (allocates the buffer)"},
-      {"name": "delaytime", "type": "float", "default": 0.2, "description": "Current delay time in seconds"},
-      {"name": "decaytime", "type": "float", "default": 1.0, "description": "60 dB decay time in seconds"},
-      {"name": "coef", "type": "float", "default": 0.5, "description": "Low-pass coefficient inside the feedback loop, 0..1"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "gate",
+        "type": "float",
+        "default": 1,
+        "description": "Excitation gate (1=open, 0=closed)"
+      },
+      {
+        "name": "maxdelaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Maximum delay time in seconds (allocates the buffer)"
+      },
+      {
+        "name": "delaytime",
+        "type": "float",
+        "default": 0.2,
+        "description": "Current delay time in seconds"
+      },
+      {
+        "name": "decaytime",
+        "type": "float",
+        "default": 1,
+        "description": "60 dB decay time in seconds"
+      },
+      {
+        "name": "coef",
+        "type": "float",
+        "default": 0.5,
+        "description": "Low-pass coefficient inside the feedback loop, 0..1"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["comb_lp_ar"]
+    "functions": [
+      "comb_lp_ar"
+    ]
   },
   {
     "name": "PosRatio",
     "description": "Returns the ratio of positive samples within a window of `1/period` seconds. Useful as a cheap DC/asymmetry detector. `thresh` sets the minimum amplitude to count. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "in", "type": "signal", "default": 0, "description": "Input signal"},
-      {"name": "period", "type": "float", "default": 100, "description": "Polling period in Hz (window is 1/period seconds)"},
-      {"name": "thresh", "type": "float", "default": 0.1, "description": "Minimum absolute amplitude to count a sample"}
+      {
+        "name": "in",
+        "type": "signal",
+        "default": 0,
+        "description": "Input signal"
+      },
+      {
+        "name": "period",
+        "type": "float",
+        "default": 100,
+        "description": "Polling period in Hz (window is 1/period seconds)"
+      },
+      {
+        "name": "thresh",
+        "type": "float",
+        "default": 0.1,
+        "description": "Minimum absolute amplitude to count a sample"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["pos_ratio_ar"]
+    "functions": [
+      "pos_ratio_ar"
+    ]
   },
   {
     "name": "SinTone",
     "description": "Sinusoidal oscillator computed by a real sin() call rather than a wavetable lookup. Higher CPU than SinOsc but no table-quantisation error. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "freq", "type": "float", "default": 440, "description": "Frequency in Hz"},
-      {"name": "phase", "type": "float", "default": 0, "description": "Phase offset in radians"}
+      {
+        "name": "freq",
+        "type": "float",
+        "default": 440,
+        "description": "Frequency in Hz"
+      },
+      {
+        "name": "phase",
+        "type": "float",
+        "default": 0,
+        "description": "Phase offset in radians"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["sin_tone_ar"]
+    "functions": [
+      "sin_tone_ar"
+    ]
   },
   {
     "name": "TTendency",
     "description": "Tendency-mask random source. On each trigger, draws a random value within a tendency mask defined by parX/parY/parA/parB using one of 16 distributions selected by `dist`. Distribution codes: 0=uniform, 1=lowpass, 2=highpass, 3=mean, 4=beta, 5=cauchy, 6=gauss, 7=poisson, 8=expRand, 9=exponential, 10=gamma, 11=laplace, 12=alaplace, 13=hcos, 14=logistic, 15=arcsin. From sc3-plugins JoshUGens.",
-    "rates": ["ar", "kr"],
+    "rates": [
+      "ar",
+      "kr"
+    ],
     "inputs": [
-      {"name": "trigger", "type": "signal", "default": 0, "description": "Trigger — draws a new value on positive transitions"},
-      {"name": "dist", "type": "float", "default": 0, "description": "Distribution selector (0..15, see description)"},
-      {"name": "parX", "type": "float", "default": 0, "description": "Lower bound or distribution parameter X"},
-      {"name": "parY", "type": "float", "default": 1, "description": "Upper bound or distribution parameter Y"},
-      {"name": "parA", "type": "float", "default": 0, "description": "Distribution-specific shape parameter A"},
-      {"name": "parB", "type": "float", "default": 0, "description": "Distribution-specific shape parameter B"}
+      {
+        "name": "trigger",
+        "type": "signal",
+        "default": 0,
+        "description": "Trigger — draws a new value on positive transitions"
+      },
+      {
+        "name": "dist",
+        "type": "float",
+        "default": 0,
+        "description": "Distribution selector (0..15, see description)"
+      },
+      {
+        "name": "parX",
+        "type": "float",
+        "default": 0,
+        "description": "Lower bound or distribution parameter X"
+      },
+      {
+        "name": "parY",
+        "type": "float",
+        "default": 1,
+        "description": "Upper bound or distribution parameter Y"
+      },
+      {
+        "name": "parA",
+        "type": "float",
+        "default": 0,
+        "description": "Distribution-specific shape parameter A"
+      },
+      {
+        "name": "parB",
+        "type": "float",
+        "default": 0,
+        "description": "Distribution-specific shape parameter B"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["t_tendency_ar", "t_tendency_kr"]
+    "functions": [
+      "t_tendency_ar",
+      "t_tendency_kr"
+    ]
   },
   {
     "name": "WarpZ",
     "description": "Granular time-stretch / pitch-shift with optional zero-crossing search. Reads a buffer at `pointer` (0..1), splitting playback into `overlaps` overlapping windows of `windowSize` seconds; `freqScale` transposes; `windowRandRatio` jitters window length. `zeroSearch`/`zeroStart` snap window boundaries to zero crossings to avoid clicks. Multi-output: numChannels channels. From sc3-plugins JoshUGens.",
-    "rates": ["ar"],
+    "rates": [
+      "ar"
+    ],
     "inputs": [
-      {"name": "numChannels", "type": "int", "default": 1, "description": "Number of output channels (must match buffer's channel count)"},
-      {"name": "bufnum", "type": "float", "default": 0, "description": "Buffer to play"},
-      {"name": "pointer", "type": "float", "default": 0, "description": "Playback position, 0..1"},
-      {"name": "freqScale", "type": "float", "default": 1, "description": "Pitch ratio (1=unison, 2=octave up)"},
-      {"name": "windowSize", "type": "float", "default": 0.2, "description": "Grain window length in seconds"},
-      {"name": "envbufnum", "type": "float", "default": -1, "description": "Window-envelope buffer (-1 = built-in Hann)"},
-      {"name": "overlaps", "type": "float", "default": 8, "description": "Number of overlapping windows"},
-      {"name": "windowRandRatio", "type": "float", "default": 0.0, "description": "Random window-length jitter, 0..1"},
-      {"name": "interp", "type": "float", "default": 1, "description": "Interpolation mode (1=none, 2=linear, 4=cubic)"},
-      {"name": "zeroSearch", "type": "float", "default": 0, "description": "Search ahead this many samples for a zero crossing at window end"},
-      {"name": "zeroStart", "type": "float", "default": 0, "description": "Search ahead this many samples for a zero crossing at window start"}
+      {
+        "name": "numChannels",
+        "type": "int",
+        "default": 1,
+        "description": "Number of output channels (must match buffer's channel count)"
+      },
+      {
+        "name": "bufnum",
+        "type": "float",
+        "default": 0,
+        "description": "Buffer to play"
+      },
+      {
+        "name": "pointer",
+        "type": "float",
+        "default": 0,
+        "description": "Playback position, 0..1"
+      },
+      {
+        "name": "freqScale",
+        "type": "float",
+        "default": 1,
+        "description": "Pitch ratio (1=unison, 2=octave up)"
+      },
+      {
+        "name": "windowSize",
+        "type": "float",
+        "default": 0.2,
+        "description": "Grain window length in seconds"
+      },
+      {
+        "name": "envbufnum",
+        "type": "float",
+        "default": -1,
+        "description": "Window-envelope buffer (-1 = built-in Hann)"
+      },
+      {
+        "name": "overlaps",
+        "type": "float",
+        "default": 8,
+        "description": "Number of overlapping windows"
+      },
+      {
+        "name": "windowRandRatio",
+        "type": "float",
+        "default": 0,
+        "description": "Random window-length jitter, 0..1"
+      },
+      {
+        "name": "interp",
+        "type": "float",
+        "default": 1,
+        "description": "Interpolation mode (1=none, 2=linear, 4=cubic)"
+      },
+      {
+        "name": "zeroSearch",
+        "type": "float",
+        "default": 0,
+        "description": "Search ahead this many samples for a zero crossing at window end"
+      },
+      {
+        "name": "zeroStart",
+        "type": "float",
+        "default": 0,
+        "description": "Search ahead this many samples for a zero crossing at window start"
+      }
     ],
     "outputs": 1,
     "category": "JoshUGens (PV/ATS/LPC/Ambisonic)",
-    "functions": ["warp_z_ar"]
+    "functions": [
+      "warp_z_ar"
+    ]
   }
 ]

@@ -26,7 +26,109 @@ struct UGenManifest {
     name: String,
     rates: Vec<String>,
     category: String,
+    #[serde(default)]
+    ugen_class: Option<String>,
+    #[serde(default)]
+    pseudo: bool,
+    #[serde(default)]
+    requires_plugin: Option<String>,
+    #[serde(default)]
+    unavailable_reason: Option<String>,
 }
+
+const CONFIRMED_PSEUDO_UGENS: &[&str] = &[
+    "AMClip",
+    "AbsDif",
+    "Atan2",
+    "BLowPass4",
+    "BHiPass4",
+    "Changed",
+    "Clip2",
+    "DifSqr",
+    "Excess",
+    "ExpExp",
+    "ExpLin",
+    "FFTCentroid",
+    "FirstArg",
+    "Fold2",
+    "Greyhole",
+    "Hypot",
+    "HypotApx",
+    "JPverb",
+    "LinLin",
+    "Mix",
+    "OnsetsDS",
+    "PMOsc",
+    "PV_DiffMags",
+    "PanX2D",
+    "PulseDPW",
+    "Ring1",
+    "Ring2",
+    "Ring3",
+    "Ring4",
+    "Rotate",
+    "ScaleNeg",
+    "SelectX",
+    "Silence",
+    "SoundIn",
+    "Splay",
+    "SplayAz",
+    "SqrDif",
+    "SqrSum",
+    "SumSqr",
+    "TWChoose",
+    "Thresh",
+    "Tilt",
+    "Tumble",
+    "Wrap2",
+];
+
+const STALE_NON_BINARY_UGENS: &[&str] = &[
+    "AtsFile",
+    "BigArity24",
+    "CQ_Diff",
+    "FFTSubbandFlux",
+    "FaustGreyholeRaw",
+    "HOAEncLebedev061",
+    "HOALibEnc3D1",
+    "HOALibEnc3D2",
+    "HOALibEnc3D3",
+    "HOALibEnc3D4",
+    "HOALibEnc3D5",
+    "HOAmbiPanner1",
+    "HOAmbiPanner2",
+    "HOAmbiPanner3",
+    "HOAmbiPanner4",
+    "HOAmbiPanner5",
+    "ITU5001",
+    "ITU5002",
+    "LinkJump",
+    "LinkPhase",
+    "LinkTempo",
+    "MIDelay",
+    "MiBraids",
+    "MiClouds",
+    "MiElements",
+    "MiGrids",
+    "MiMu",
+    "MiOmi",
+    "MiPlaits",
+    "MiRings",
+    "MiRipples",
+    "MiTides",
+    "MiVerb",
+    "MiWarps",
+    "RMAFoodChainL",
+    "RosslerResL",
+    "SimpleLoopBuf",
+    "VBAPSpeaker",
+    "VBAPSpeakerArray",
+    "envelope",
+];
+
+const MANUAL_PSEUDO_LOWERINGS: &[&str] = &[
+    "Changed", "Greyhole", "JPverb", "LinLin", "Mix", "Splay", "SplayAz",
+];
 
 fn load_manifests() -> Vec<UGenManifest> {
     let mut paths: Vec<PathBuf> = fs::read_dir(Path::new(MANIFESTS_DIR))
@@ -94,11 +196,8 @@ fn first_concrete_rate(ugen: &UGenManifest) -> Option<&str> {
         .find(|r| *r != "builder")
 }
 
-fn expects_literal_ugen_name(name: &str) -> bool {
-    !matches!(
-        name,
-        "Changed" | "Greyhole" | "JPverb" | "LinLin" | "Mix" | "Splay" | "SplayAz"
-    )
+fn expects_literal_ugen_name(ugen: &UGenManifest) -> bool {
+    !ugen.pseudo && ugen.ugen_class.is_none()
 }
 
 fn pseudo_name_can_appear_inside_raw_name(name: &str) -> bool {
@@ -187,14 +286,14 @@ fn ugen_manifest_round_trip_one_per_category() {
         // are intentionally lowered to supported graph fragments instead.
         let needle = ugen.name.as_bytes();
         let contains_name = bytes.windows(needle.len()).any(|w| w == needle);
-        if expects_literal_ugen_name(&ugen.name) && !contains_name {
+        if expects_literal_ugen_name(ugen) && !contains_name {
             failures.push(format!(
                 "{} (category={}): UGen name '{}' not found in encoded bytes",
                 func_name, ugen.category, ugen.name
             ));
             continue;
         }
-        if !expects_literal_ugen_name(&ugen.name)
+        if !expects_literal_ugen_name(ugen)
             && !pseudo_name_can_appear_inside_raw_name(&ugen.name)
             && contains_name
         {
@@ -215,6 +314,44 @@ fn ugen_manifest_round_trip_one_per_category() {
             failures.len(),
             tested + failures.len(),
             failures.join("\n  ")
+        );
+    }
+}
+
+#[test]
+fn audited_non_binary_manifest_entries_are_not_literal_callables() {
+    let manifests = load_manifests();
+    let by_name: BTreeMap<&str, &UGenManifest> = manifests
+        .iter()
+        .map(|manifest| (manifest.name.as_str(), manifest))
+        .collect();
+
+    for name in CONFIRMED_PSEUDO_UGENS {
+        let manifest = by_name
+            .get(name)
+            .unwrap_or_else(|| panic!("confirmed pseudo-UGen {name} missing from manifest"));
+        assert!(manifest.pseudo, "{name} must be tagged pseudo");
+        let is_builder_only = manifest.rates.iter().all(|rate| rate == "builder");
+        let has_lowering = manifest.ugen_class.is_some() || MANUAL_PSEUDO_LOWERINGS.contains(name);
+        assert!(
+            is_builder_only || has_lowering,
+            "{name} must be unavailable or have an explicit lowering"
+        );
+    }
+
+    for name in STALE_NON_BINARY_UGENS {
+        let Some(manifest) = by_name.get(name) else {
+            continue;
+        };
+        let is_builder_only = manifest.rates.iter().all(|rate| rate == "builder");
+        let has_rationale = manifest
+            .unavailable_reason
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|reason| !reason.is_empty());
+        assert!(
+            manifest.requires_plugin.is_some() || (is_builder_only && has_rationale),
+            "{name} must require a plugin or be builder-only with an unavailable rationale"
         );
     }
 }

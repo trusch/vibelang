@@ -15,19 +15,19 @@
       {
         "name": "t60",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Approximate reverberation time in seconds (0.1..60). Time for the reverb to decay 60dB when damp == 0; does not affect early reflections."
       },
       {
         "name": "damp",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "description": "High-frequency damping as the reverb decays (0..1). 0 = no damping, 1 = very strong."
       },
       {
         "name": "size",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Scales size of internal delay-lines (0.5..5). Values below 1 can sound metallic."
       },
       {
@@ -45,42 +45,43 @@
       {
         "name": "modFreq",
         "type": "float",
-        "default": 2.0,
+        "default": 2,
         "description": "Frequency of delay-line modulation in Hz (0..10). Combine with modDepth for chorusing."
       },
       {
         "name": "low",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Multiplier for the reverberation time within the low band (0..1)."
       },
       {
         "name": "mid",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Multiplier for the reverberation time within the mid band (0..1)."
       },
       {
         "name": "high",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Multiplier for the reverberation time within the high band (0..1)."
       },
       {
         "name": "lowcut",
         "type": "float",
-        "default": 500.0,
+        "default": 500,
         "description": "Crossover frequency between the low and mid bands in Hz (100..6000)."
       },
       {
         "name": "highcut",
         "type": "float",
-        "default": 2000.0,
+        "default": 2000,
         "description": "Crossover frequency between the mid and high bands in Hz (1000..10000)."
       }
     ],
     "outputs": 2,
-    "category": "DEIND"
+    "category": "DEIND",
+    "pseudo": true
   },
   {
     "name": "JPverbRaw",
@@ -105,7 +106,7 @@
       {
         "name": "damp",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "description": "High-frequency damping as the reverb decays (0..1)."
       },
       {
@@ -117,25 +118,25 @@
       {
         "name": "highband",
         "type": "float",
-        "default": 2000.0,
+        "default": 2000,
         "description": "Crossover frequency between mid and high bands in Hz (1000..10000)."
       },
       {
         "name": "highx",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Multiplier for the reverberation time within the high band (0..1)."
       },
       {
         "name": "lowband",
         "type": "float",
-        "default": 500.0,
+        "default": 500,
         "description": "Crossover frequency between low and mid bands in Hz (100..6000)."
       },
       {
         "name": "lowx",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Multiplier for the reverberation time within the low band (0..1)."
       },
       {
@@ -147,25 +148,25 @@
       {
         "name": "mfreq",
         "type": "float",
-        "default": 2.0,
+        "default": 2,
         "description": "Frequency of delay-line modulation in Hz (0..10)."
       },
       {
         "name": "midx",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Multiplier for the reverberation time within the mid band (0..1)."
       },
       {
         "name": "size",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Scales size of internal delay-lines (0.5..5)."
       },
       {
         "name": "t60",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Approximate reverberation time in seconds (0.1..60)."
       }
     ],
@@ -188,19 +189,19 @@
       {
         "name": "delayTime",
         "type": "float",
-        "default": 2.0,
+        "default": 2,
         "description": "Approximate delay time in seconds (0.1..60)."
       },
       {
         "name": "damp",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "description": "High-frequency damping as the delay decays (0..1)."
       },
       {
         "name": "size",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Scales size of internal delay-lines (0.5..5). Values below 1 can sound metallic."
       },
       {
@@ -224,12 +225,13 @@
       {
         "name": "modFreq",
         "type": "float",
-        "default": 2.0,
+        "default": 2,
         "description": "Frequency of delay-line modulation in Hz (0..10)."
       }
     ],
     "outputs": 2,
-    "category": "DEIND"
+    "category": "DEIND",
+    "pseudo": true
   },
   {
     "name": "GreyholeRaw",
@@ -253,13 +255,13 @@
       {
         "name": "damping",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "description": "High-frequency damping as the delay decays (0..1)."
       },
       {
         "name": "delaytime",
         "type": "float",
-        "default": 2.0,
+        "default": 2,
         "description": "Approximate delay time in seconds (0.1..60)."
       },
       {
@@ -283,13 +285,13 @@
       {
         "name": "modfreq",
         "type": "float",
-        "default": 2.0,
+        "default": 2,
         "description": "Frequency of delay-line modulation in Hz (0..10)."
       },
       {
         "name": "size",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Scales size of internal delay-lines (0.5..5)."
       }
     ],
@@ -300,8 +302,7 @@
     "name": "FaustGreyholeRaw",
     "description": "Faust-implemented variant of GreyholeRaw with the same parameter set. Always outputs stereo.",
     "rates": [
-      "ar",
-      "kr"
+      "builder"
     ],
     "inputs": [
       {
@@ -319,7 +320,7 @@
       {
         "name": "damping",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "description": "High-frequency damping as the delay decays (0..1)."
       },
       {
@@ -349,18 +350,19 @@
       {
         "name": "modfreq",
         "type": "float",
-        "default": 2.0,
+        "default": 2,
         "description": "Frequency of delay-line modulation in Hz (0..10)."
       },
       {
         "name": "size",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "description": "Scales size of internal delay-lines (0.5..5)."
       }
     ],
     "outputs": 2,
-    "category": "DEIND"
+    "category": "DEIND",
+    "unavailable_reason": "No installed scsynth binary registers this UGen; quarantined until plugin/source verification."
   },
   {
     "name": "ComplexRes",
@@ -378,7 +380,7 @@
       {
         "name": "freq",
         "type": "float",
-        "default": 100.0,
+        "default": 100,
         "description": "Resonating frequency in Hz; can be modulated at audio rate."
       },
       {
@@ -431,7 +433,7 @@
       {
         "name": "lpFreq",
         "type": "float",
-        "default": 10.0,
+        "default": 10,
         "description": "Low-pass filter frequency in Hz."
       }
     ],
