@@ -27,7 +27,7 @@ impl<B: Backend> GroupsHandler<B> {
     /// group's audio bus to its parent's bus (or bus 0 for the main output).
     pub async fn finalize(&self) -> Result<()> {
         // Collect groups that need link synths
-        let groups_to_link: Vec<(GroupId, NodeId, BusId, BusId, Option<u32>)> = {
+        let groups_to_link: Vec<(GroupId, NodeId, BusId, BusId, Option<u32>, f32)> = {
             let state = self.state.read().await;
 
             state
@@ -47,15 +47,23 @@ impl<B: Backend> GroupsHandler<B> {
                             .map(|pg| pg.audio_bus)
                             .unwrap_or(BusId::new(0))
                     };
+                    let amp = g.params.get("amp").copied().unwrap_or(1.0);
 
-                    (g.id, g.node_id, g.audio_bus, out_bus, g.output_channels)
+                    (
+                        g.id,
+                        g.node_id,
+                        g.audio_bus,
+                        out_bus,
+                        g.output_channels,
+                        amp,
+                    )
                 })
                 .collect()
         };
 
         // Create link synths for each group
         let num_groups = groups_to_link.len();
-        for (group_id, group_node_id, in_bus, out_bus, output_channels) in groups_to_link {
+        for (group_id, group_node_id, in_bus, out_bus, output_channels, amp) in groups_to_link {
             // Allocate node ID for link synth
             let link_node_id = {
                 let mut state = self.state.write().await;
@@ -68,7 +76,7 @@ impl<B: Backend> GroupsHandler<B> {
             let mut params = ParamMap::new();
             params.insert("inbus".to_string(), in_bus.0 as f32);
             params.insert("outbus".to_string(), out_bus.0 as f32);
-            params.insert("amp".to_string(), 1.0);
+            params.insert("amp".to_string(), amp);
 
             // Pick the link-synth variant based on the group's hardware
             // channel count: Some(1) → mono mixdown variant; Some(2) or
@@ -86,6 +94,11 @@ impl<B: Backend> GroupsHandler<B> {
                     AddAction::Tail, // Add at tail of the group
                     &params,
                 )
+                .await
+                .map_err(Error::backend)?;
+
+            self.backend
+                .set_param(link_node_id, "amp", amp)
                 .await
                 .map_err(Error::backend)?;
 
@@ -324,6 +337,7 @@ mod tests {
         params_set: AtomicU32,
         run_node_calls: AtomicU32,
         synth_names: Mutex<Vec<String>>,
+        synth_params: Mutex<Vec<ParamMap>>,
     }
 
     impl MockBackend {
@@ -335,6 +349,7 @@ mod tests {
                 params_set: AtomicU32::new(0),
                 run_node_calls: AtomicU32::new(0),
                 synth_names: Mutex::new(Vec::new()),
+                synth_params: Mutex::new(Vec::new()),
             }
         }
 
@@ -361,6 +376,10 @@ mod tests {
         fn synth_names(&self) -> Vec<String> {
             self.synth_names.lock().unwrap().clone()
         }
+
+        fn synth_params(&self) -> Vec<ParamMap> {
+            self.synth_params.lock().unwrap().clone()
+        }
     }
 
     #[async_trait::async_trait]
@@ -381,10 +400,11 @@ mod tests {
             _node: NodeId,
             _target: NodeId,
             _action: AddAction,
-            _params: &ParamMap,
+            params: &ParamMap,
         ) -> std::result::Result<(), Self::Error> {
             self.synths_created.fetch_add(1, Ordering::Relaxed);
             self.synth_names.lock().unwrap().push(def.to_string());
+            self.synth_params.lock().unwrap().push(params.clone());
             Ok(())
         }
 
@@ -756,6 +776,21 @@ mod tests {
             group.link_synth_node_id.is_some(),
             "Link synth node ID should be set"
         );
+    }
+
+    #[tokio::test]
+    async fn test_finalize_initializes_link_synth_amp_from_group_param() {
+        let (handler, backend, _state) = create_handler();
+
+        let group_id = GroupId::new(1);
+        handler.create(group_id, "TestGroup", None).await.unwrap();
+        handler.set_param(group_id, "amp", 0.25).await.unwrap();
+
+        handler.finalize().await.unwrap();
+
+        let params = backend.synth_params();
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].get("amp"), Some(&0.25));
     }
 
     #[tokio::test]

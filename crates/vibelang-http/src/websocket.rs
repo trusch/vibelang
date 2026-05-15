@@ -779,6 +779,7 @@ mod tests {
                 round_robin_position: 0,
                 pending_params: HashMap::new(),
                 output_buses: Vec::new(),
+                input_buses: Vec::new(),
             },
         );
 

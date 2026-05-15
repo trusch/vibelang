@@ -775,7 +775,11 @@ impl<B: Backend> Runtime<B> {
             for (voice_id, config) in &new_state.voices {
                 for input in state.synthdef_inputs(&config.synthdef) {
                     if input.rate == vibelang_dsp::PortRate::Ar && matches!(input.channels, 1 | 2) {
-                        let src = if input.name == "in" && input.channels == 2 {
+                        let has_explicit_route =
+                            new_state.input_routes.contains_key(&(*voice_id, input.name.clone()));
+                        let src = if has_explicit_route {
+                            continue;
+                        } else if input.name == "in" && input.channels == 2 {
                             InputRouteSrc::Group(config.group)
                         } else {
                             if input.name == "in" && input.channels == 1 {
@@ -2693,6 +2697,40 @@ mod tests {
                     && line.contains("leaving input silent")
             }),
             "expected mono autofeed warning, got {:?}",
+            captured.lines()
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn declared_mono_in_with_explicit_route_skips_autofeed_warning() {
+        let (captured, _guard) = install_tracing_capture();
+        let runtime = Runtime::new(MockBackend);
+        let target = VoiceId::new(1);
+        let source = VoiceId::new(2);
+        let group_id = GroupId::new(7);
+        let explicit_src = InputRouteSrc::Voice(source, "out".to_string());
+        add_group(&runtime, group_id).await;
+        register_input_synthdef(
+            &runtime,
+            "mono_fx",
+            vec![vibelang_dsp::InputPort::ar("in", 1)],
+        )
+        .await;
+        let mut script_state = script_state_with_voice(target, "mono_fx", group_id);
+        script_state.set_input_route(target, "in", explicit_src.clone());
+
+        let routes = runtime.effective_input_routes(&script_state).await;
+
+        assert_eq!(
+            routes.get(&(target, "in".to_string())),
+            Some(&vec![explicit_src])
+        );
+        assert!(
+            !captured
+                .lines()
+                .iter()
+                .any(|line| line.contains("Named input 'in'")),
+            "explicit mono input route should not log autofeed warning: {:?}",
             captured.lines()
         );
     }
