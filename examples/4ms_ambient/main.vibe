@@ -18,7 +18,6 @@ set_tempo(60);
 
 define_synthdef("fourms_pink_grains", |builder| {
     builder
-        .output("out", 2)
         .param("amp", 0.22)
         .param("dust_rate", 2.2)
         .param("tone", 1400.0)
@@ -31,7 +30,7 @@ define_synthdef("fourms_pink_grains", |builder| {
             let width = clip_kr(p.spread, 0.0, 1.0);
             let left = softclip((bed_l * 0.45 + grains * (1.0 - width * 0.35)) * p.amp);
             let right = softclip((bed_r * 0.45 + delay_c_ar(grains, 0.12, 0.047) * (0.65 + width * 0.35)) * p.amp);
-            [[left, right]]
+            [left, right]
         })
 });
 
@@ -58,7 +57,7 @@ define_synthdef("fourms_clock_rate_meter", |builder| {
         .body_map(|p| {
             let measured = latch_kr(timer_kr(p.ping), p.ping);
             let valid = in_range_kr(measured, 0.02, 120.0);
-            let period = measured * valid + p.fallback_hz.recip() * (1.0 - valid);
+            let period = measured * valid + (1.0 / p.fallback_hz) * (1.0 - valid);
             [clip_kr(1.0 / period.max(0.02), 0.05, 64.0)]
         })
 });
