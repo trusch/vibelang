@@ -35,6 +35,391 @@ pub fn dynamic_to_input(value: &Dynamic) -> Result<Input> {
     }
 }
 
+fn dynamic_to_signal_inputs(value: &Dynamic) -> Result<Vec<Input>> {
+    if let Some(array) = value.clone().try_cast::<Array>() {
+        if array.is_empty() {
+            return Err(SynthDefError::InvalidBodyReturn);
+        }
+        array.iter().map(dynamic_to_input).collect()
+    } else {
+        Ok(vec![dynamic_to_input(value)?])
+    }
+}
+
+fn dynamic_to_f64(value: &Dynamic) -> Result<f64> {
+    if let Some(f) = value.clone().try_cast::<f64>() {
+        Ok(f)
+    } else if let Some(i) = value.clone().try_cast::<i64>() {
+        Ok(i as f64)
+    } else if let Some(i) = value.clone().try_cast::<i32>() {
+        Ok(i as f64)
+    } else {
+        Err(SynthDefError::ValidationError(format!(
+            "Expected numeric value, got {}",
+            value.type_name()
+        )))
+    }
+}
+
+fn add_constant_input(builder: &mut GraphBuilderInner, value: f32) -> Input {
+    builder.add_constant(value);
+    Input::Constant(value)
+}
+
+fn add_unary_op(builder: &mut GraphBuilderInner, input: Input, special_index: i16) -> NodeRef {
+    let rate = builder.max_rate_from_inputs(std::slice::from_ref(&input));
+    builder.add_node(
+        "UnaryOpUGen".to_string(),
+        rate,
+        vec![input],
+        1,
+        special_index,
+    )
+}
+
+fn add_binary_op(
+    builder: &mut GraphBuilderInner,
+    left: Input,
+    right: Input,
+    special_index: i16,
+) -> NodeRef {
+    let inputs = vec![left, right];
+    let rate = builder.max_rate_from_inputs(&inputs);
+    builder.add_node("BinaryOpUGen".to_string(), rate, inputs, 1, special_index)
+}
+
+fn input_to_node(builder: &mut GraphBuilderInner, input: Input, target_rate: Rate) -> NodeRef {
+    match input {
+        Input::Constant(value) => {
+            let input = add_constant_input(builder, value);
+            builder.add_node("DC".to_string(), target_rate, vec![input], 1, 0)
+        }
+        Input::Node {
+            node_id,
+            output_index,
+        } => NodeRef::new_with_output(node_id, output_index),
+    }
+}
+
+fn coerce_node_to_rate(
+    builder: &mut GraphBuilderInner,
+    node: NodeRef,
+    target_rate: Rate,
+) -> NodeRef {
+    let source_rate = builder.get_node_rate(node.id());
+    match (source_rate, target_rate) {
+        (Rate::Control, Rate::Audio) | (Rate::Scalar, Rate::Audio) => {
+            builder.add_node("K2A".to_string(), Rate::Audio, vec![node.to_input()], 1, 0)
+        }
+        (Rate::Audio, Rate::Control) => builder.add_node(
+            "A2K".to_string(),
+            Rate::Control,
+            vec![node.to_input()],
+            1,
+            0,
+        ),
+        _ => node,
+    }
+}
+
+fn mix_inputs_as_node(
+    builder: &mut GraphBuilderInner,
+    inputs: Vec<Input>,
+    target_rate: Rate,
+) -> NodeRef {
+    let mut iter = inputs.into_iter();
+    let first = iter
+        .next()
+        .expect("mix_inputs_as_node requires at least one input");
+    let mut result = input_to_node(builder, first, target_rate);
+
+    for input in iter {
+        result = add_binary_op(builder, result.to_input(), input, 0);
+    }
+
+    coerce_node_to_rate(builder, result, target_rate)
+}
+
+fn first_last_inputs(value: &Dynamic) -> Result<(Input, Input)> {
+    let inputs = dynamic_to_signal_inputs(value)?;
+    let first = inputs.first().expect("non-empty signal input").clone();
+    let last = inputs.last().expect("non-empty signal input").clone();
+    Ok((first, last))
+}
+
+fn level_compensation(rate: Rate, channel_count: usize, level_comp: &Dynamic) -> f32 {
+    if let Some(enabled) = level_comp.clone().try_cast::<bool>() {
+        if !enabled {
+            return 1.0;
+        }
+        return match rate {
+            Rate::Audio => (channel_count as f32).powf(-0.5),
+            Rate::Control | Rate::Scalar => (channel_count as f32).powf(-1.0),
+        };
+    }
+
+    let exponent = dynamic_to_f64(level_comp)
+        .map(|v| v.clamp(0.0, 1.0))
+        .unwrap_or(1.0);
+    if exponent == 0.0 {
+        1.0
+    } else {
+        (channel_count as f32).powf(-(exponent as f32))
+    }
+}
+
+fn scaled_level_input(builder: &mut GraphBuilderInner, level: Input, compensation: f32) -> Input {
+    if (compensation - 1.0).abs() < f32::EPSILON {
+        level
+    } else {
+        let factor = add_constant_input(builder, compensation);
+        add_binary_op(builder, level, factor, 2).to_input()
+    }
+}
+
+/// Lower sclang's `Changed` pseudo-UGen (`Filter.sc`) to HPZ1 + abs + >.
+pub fn changed_pseudo(rate: Rate, input: &Dynamic, threshold: &Dynamic) -> Result<NodeRef> {
+    let input = dynamic_to_input(input)?;
+    let threshold = dynamic_to_input(threshold)?;
+
+    with_builder(|builder| {
+        let hpz1 = builder.add_node("HPZ1".to_string(), rate, vec![input], 1, 0);
+        let abs = add_unary_op(builder, hpz1.to_input(), 5);
+        add_binary_op(builder, abs.to_input(), threshold, 9)
+    })
+}
+
+/// Lower sclang's `LinLin` helper to the supported MulAdd arithmetic graph.
+pub fn lin_lin_pseudo(
+    rate: Rate,
+    input: &Dynamic,
+    srclo: &Dynamic,
+    srchi: &Dynamic,
+    dstlo: &Dynamic,
+    dsthi: &Dynamic,
+) -> Result<NodeRef> {
+    let input = dynamic_to_input(input)?;
+    let srclo = dynamic_to_input(srclo)?;
+    let srchi = dynamic_to_input(srchi)?;
+    let dstlo = dynamic_to_input(dstlo)?;
+    let dsthi = dynamic_to_input(dsthi)?;
+
+    with_builder(|builder| {
+        let dst_span = add_binary_op(builder, dsthi, dstlo.clone(), 1);
+        let src_span = add_binary_op(builder, srchi, srclo.clone(), 1);
+        let scale = add_binary_op(builder, dst_span.to_input(), src_span.to_input(), 4);
+        let scaled_srclo = add_binary_op(builder, scale.to_input(), srclo, 2);
+        let offset = add_binary_op(builder, dstlo, scaled_srclo.to_input(), 1);
+        builder.add_node(
+            "MulAdd".to_string(),
+            rate,
+            vec![input, scale.to_input(), offset.to_input()],
+            1,
+            0,
+        )
+    })
+}
+
+/// Lower sc3-plugins' `JPverb` wrapper to the installed raw binary UGen.
+pub fn jpverb_pseudo(
+    input: &Dynamic,
+    t60: &Dynamic,
+    damp: &Dynamic,
+    size: &Dynamic,
+    early_diff: &Dynamic,
+    mod_depth: &Dynamic,
+    mod_freq: &Dynamic,
+    low: &Dynamic,
+    mid: &Dynamic,
+    high: &Dynamic,
+    lowcut: &Dynamic,
+    highcut: &Dynamic,
+) -> Result<NodeRef> {
+    let (first, last) = first_last_inputs(input)?;
+    let inputs = vec![
+        first,
+        last,
+        dynamic_to_input(damp)?,
+        dynamic_to_input(early_diff)?,
+        dynamic_to_input(highcut)?,
+        dynamic_to_input(high)?,
+        dynamic_to_input(lowcut)?,
+        dynamic_to_input(low)?,
+        dynamic_to_input(mod_depth)?,
+        dynamic_to_input(mod_freq)?,
+        dynamic_to_input(mid)?,
+        dynamic_to_input(size)?,
+        dynamic_to_input(t60)?,
+    ];
+
+    with_builder(|builder| builder.add_node("JPverbRaw".to_string(), Rate::Audio, inputs, 2, 0))
+}
+
+/// Lower sc3-plugins' `Greyhole` wrapper to the installed raw binary UGen.
+pub fn greyhole_pseudo(
+    input: &Dynamic,
+    delay_time: &Dynamic,
+    damp: &Dynamic,
+    size: &Dynamic,
+    diff: &Dynamic,
+    feedback: &Dynamic,
+    mod_depth: &Dynamic,
+    mod_freq: &Dynamic,
+) -> Result<NodeRef> {
+    let (first, last) = first_last_inputs(input)?;
+    let inputs = vec![
+        first,
+        last,
+        dynamic_to_input(damp)?,
+        dynamic_to_input(delay_time)?,
+        dynamic_to_input(diff)?,
+        dynamic_to_input(feedback)?,
+        dynamic_to_input(mod_depth)?,
+        dynamic_to_input(mod_freq)?,
+        dynamic_to_input(size)?,
+    ];
+
+    with_builder(|builder| builder.add_node("GreyholeRaw".to_string(), Rate::Audio, inputs, 2, 0))
+}
+
+/// Lower `Mix.ar` / `Mix.kr` to a normal add tree and rate coercion.
+pub fn mix_pseudo(rate: Rate, array: &Dynamic) -> Result<Dynamic> {
+    let inputs = dynamic_to_signal_inputs(array)?;
+    let node = with_builder(|builder| mix_inputs_as_node(builder, inputs, rate))?;
+    Ok(Dynamic::from(node))
+}
+
+/// Lower `Splay` to Pan2 over each input, followed by per-channel Mix.
+pub fn splay_pseudo(
+    rate: Rate,
+    in_array: &Dynamic,
+    spread: &Dynamic,
+    level: &Dynamic,
+    center: &Dynamic,
+    level_comp: &Dynamic,
+) -> Result<Dynamic> {
+    let inputs = dynamic_to_signal_inputs(in_array)?;
+    let spread = dynamic_to_input(spread)?;
+    let level = dynamic_to_input(level)?;
+    let center = dynamic_to_input(center)?;
+    let pan_count = inputs.len();
+    let n = pan_count.max(2);
+    let compensation = level_compensation(rate, n, level_comp);
+
+    let channels = with_builder(|builder| {
+        let level = scaled_level_input(builder, level, compensation);
+        let mut left = Vec::with_capacity(pan_count);
+        let mut right = Vec::with_capacity(pan_count);
+        let denominator = (n - 1) as f32;
+
+        for (index, input) in inputs.into_iter().enumerate() {
+            let base_position = (index as f32 * (2.0 / denominator)) - 1.0;
+            let base_position = add_constant_input(builder, base_position);
+            let scaled_spread = add_binary_op(builder, base_position, spread.clone(), 2);
+            let position = add_binary_op(builder, scaled_spread.to_input(), center.clone(), 0);
+            let pan_level = add_constant_input(builder, 1.0);
+            let pan = builder.add_node(
+                "Pan2".to_string(),
+                rate,
+                vec![input, position.to_input(), pan_level],
+                2,
+                0,
+            );
+            left.push(NodeRef::new_with_output(pan.id(), 0).to_input());
+            right.push(NodeRef::new_with_output(pan.id(), 1).to_input());
+        }
+
+        let left = mix_inputs_as_node(builder, left, rate);
+        let right = mix_inputs_as_node(builder, right, rate);
+        let left = add_binary_op(builder, left.to_input(), level.clone(), 2);
+        let right = add_binary_op(builder, right.to_input(), level, 2);
+        let mut result = Array::new();
+        result.push(Dynamic::from(left));
+        result.push(Dynamic::from(right));
+        result
+    })?;
+
+    Ok(Dynamic::from(channels))
+}
+
+/// Lower `SplayAz` to PanAz over each input, followed by per-output Mix.
+pub fn splay_az_pseudo(
+    rate: Rate,
+    num_chans: &Dynamic,
+    in_array: &Dynamic,
+    spread: &Dynamic,
+    level: &Dynamic,
+    width: &Dynamic,
+    center: &Dynamic,
+    orientation: &Dynamic,
+    level_comp: &Dynamic,
+) -> Result<Dynamic> {
+    let output_count = dynamic_to_f64(num_chans)? as u32;
+    if output_count == 0 {
+        return Err(SynthDefError::ValidationError(
+            "splay_az numChans must be positive".to_string(),
+        ));
+    }
+
+    let inputs = dynamic_to_signal_inputs(in_array)?;
+    let spread = dynamic_to_input(spread)?;
+    let level = dynamic_to_input(level)?;
+    let width = dynamic_to_input(width)?;
+    let center = dynamic_to_input(center)?;
+    let orientation = dynamic_to_input(orientation)?;
+    let pan_count = inputs.len().max(1);
+    let compensation = level_compensation(rate, pan_count, level_comp);
+
+    let channels = with_builder(|builder| {
+        let level = scaled_level_input(builder, level, compensation);
+        let num_chans_input = add_constant_input(builder, output_count as f32);
+        let mut columns: Vec<Vec<Input>> = (0..output_count).map(|_| Vec::new()).collect();
+        let norm_spread = if pan_count == 1 {
+            0.0
+        } else {
+            ((pan_count - 1) as f32) / (pan_count as f32)
+        };
+
+        for (index, input) in inputs.into_iter().enumerate() {
+            let position = if pan_count == 1 {
+                input_to_node(builder, center.clone(), rate)
+            } else {
+                let t = index as f32 / ((pan_count - 1) as f32);
+                let coefficient = -norm_spread + (2.0 * norm_spread * t);
+                let coefficient = add_constant_input(builder, coefficient);
+                let scaled_spread = add_binary_op(builder, coefficient, spread.clone(), 2);
+                add_binary_op(builder, center.clone(), scaled_spread.to_input(), 0)
+            };
+            let pan = builder.add_node(
+                "PanAz".to_string(),
+                rate,
+                vec![
+                    num_chans_input.clone(),
+                    input,
+                    position.to_input(),
+                    level.clone(),
+                    width.clone(),
+                    orientation.clone(),
+                ],
+                output_count,
+                0,
+            );
+            for output in 0..output_count {
+                columns[output as usize]
+                    .push(NodeRef::new_with_output(pan.id(), output).to_input());
+            }
+        }
+
+        let mut result = Array::new();
+        for column in columns {
+            result.push(Dynamic::from(mix_inputs_as_node(builder, column, rate)));
+        }
+        result
+    })?;
+
+    Ok(Dynamic::from(channels))
+}
+
 /// Mix an array of NodeRefs into a single signal.
 pub fn mix(signals: Array) -> Result<NodeRef> {
     if signals.is_empty() {

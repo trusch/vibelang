@@ -94,6 +94,17 @@ fn first_concrete_rate(ugen: &UGenManifest) -> Option<&str> {
         .find(|r| *r != "builder")
 }
 
+fn expects_literal_ugen_name(name: &str) -> bool {
+    !matches!(
+        name,
+        "Changed" | "Greyhole" | "JPverb" | "LinLin" | "Mix" | "Splay" | "SplayAz"
+    )
+}
+
+fn pseudo_name_can_appear_inside_raw_name(name: &str) -> bool {
+    matches!(name, "Greyhole" | "JPverb")
+}
+
 /// Validate header magic and version. The full scsyndef format is large
 /// enough that re-implementing a parser here would be its own project; the
 /// goal is to exercise the encoder path and confirm the bytes are at least
@@ -172,12 +183,23 @@ fn ugen_manifest_round_trip_one_per_category() {
             continue;
         }
 
-        // The UGen class name must appear verbatim in the encoded bytes
-        // (length-prefixed pstring inside the UGen spec list).
+        // Real server UGens appear verbatim in the encoded bytes. Pseudo-UGens
+        // are intentionally lowered to supported graph fragments instead.
         let needle = ugen.name.as_bytes();
-        if !bytes.windows(needle.len()).any(|w| w == needle) {
+        let contains_name = bytes.windows(needle.len()).any(|w| w == needle);
+        if expects_literal_ugen_name(&ugen.name) && !contains_name {
             failures.push(format!(
                 "{} (category={}): UGen name '{}' not found in encoded bytes",
+                func_name, ugen.category, ugen.name
+            ));
+            continue;
+        }
+        if !expects_literal_ugen_name(&ugen.name)
+            && !pseudo_name_can_appear_inside_raw_name(&ugen.name)
+            && contains_name
+        {
+            failures.push(format!(
+                "{} (category={}): pseudo-UGen name '{}' should not appear in encoded bytes",
                 func_name, ugen.category, ugen.name
             ));
             continue;

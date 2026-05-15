@@ -281,17 +281,40 @@ fn main() {
             writeln!(f, "/// # Returns").unwrap();
             writeln!(f, "/// {} output channel(s)", outputs).unwrap();
 
+            let is_pseudo_lowering = pseudo_lowering_expr(&func_name, rate_str).is_some();
+
             // Generate function
             if !dyn_params.is_empty() {
                 writeln!(
                     f,
-                    "pub fn {}({}) -> Result<crate::NodeRef> {{",
+                    "pub fn {}({}) -> Result<{}> {{",
                     func_name,
-                    dyn_params.join(", ")
+                    dyn_params.join(", "),
+                    if is_pseudo_lowering {
+                        "Dynamic"
+                    } else {
+                        "crate::NodeRef"
+                    }
                 )
                 .unwrap();
             } else {
-                writeln!(f, "pub fn {}() -> Result<crate::NodeRef> {{", func_name).unwrap();
+                writeln!(
+                    f,
+                    "pub fn {}() -> Result<{}> {{",
+                    func_name,
+                    if is_pseudo_lowering {
+                        "Dynamic"
+                    } else {
+                        "crate::NodeRef"
+                    }
+                )
+                .unwrap();
+            }
+
+            if let Some(expr) = pseudo_lowering_expr(&func_name, rate_str) {
+                writeln!(f, "    {}", expr).unwrap();
+                writeln!(f, "}}\n").unwrap();
+                continue;
             }
 
             writeln!(f, "    let inputs = vec![").unwrap();
@@ -457,6 +480,57 @@ fn to_snake_case(s: &str) -> String {
         }
     }
     result
+}
+
+fn pseudo_lowering_expr(func_name: &str, rate_str: &str) -> Option<&'static str> {
+    let rate = match rate_str {
+        "ar" => "Rate::Audio",
+        "kr" => "Rate::Control",
+        "ir" => "Rate::Scalar",
+        _ => return None,
+    };
+
+    match func_name {
+        "changed_ar" | "changed_kr" => Some(match rate {
+            "Rate::Audio" => {
+                "helpers::changed_pseudo(Rate::Audio, r#in, threshold).map(Dynamic::from)"
+            }
+            "Rate::Control" => {
+                "helpers::changed_pseudo(Rate::Control, r#in, threshold).map(Dynamic::from)"
+            }
+            _ => return None,
+        }),
+        "j_pverb_ar" => Some(
+            "helpers::jpverb_pseudo(r#in, t60, damp, size, early_diff, mod_depth, mod_freq, low, mid, high, lowcut, highcut).map(Dynamic::from)",
+        ),
+        "greyhole_ar" => Some(
+            "helpers::greyhole_pseudo(r#in, delay_time, damp, size, diff, feedback, mod_depth, mod_freq).map(Dynamic::from)",
+        ),
+        "lin_lin_ar" => Some(
+            "helpers::lin_lin_pseudo(Rate::Audio, r#in, srclo, srchi, dstlo, dsthi).map(Dynamic::from)",
+        ),
+        "lin_lin_kr" => Some(
+            "helpers::lin_lin_pseudo(Rate::Control, r#in, srclo, srchi, dstlo, dsthi).map(Dynamic::from)",
+        ),
+        "lin_lin_ir" => Some(
+            "helpers::lin_lin_pseudo(Rate::Scalar, r#in, srclo, srchi, dstlo, dsthi).map(Dynamic::from)",
+        ),
+        "mix_ar" => Some("helpers::mix_pseudo(Rate::Audio, array)"),
+        "mix_kr" => Some("helpers::mix_pseudo(Rate::Control, array)"),
+        "splay_ar" => Some(
+            "helpers::splay_pseudo(Rate::Audio, in_array, spread, level, center, level_comp)",
+        ),
+        "splay_kr" => Some(
+            "helpers::splay_pseudo(Rate::Control, in_array, spread, level, center, level_comp)",
+        ),
+        "splay_az_ar" => Some(
+            "helpers::splay_az_pseudo(Rate::Audio, num_chans, in_array, spread, level, width, center, orientation, level_comp)",
+        ),
+        "splay_az_kr" => Some(
+            "helpers::splay_az_pseudo(Rate::Control, num_chans, in_array, spread, level, width, center, orientation, level_comp)",
+        ),
+        _ => None,
+    }
 }
 
 /// Convert a parameter name to snake_case and escape if necessary.
