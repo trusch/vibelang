@@ -11,8 +11,8 @@ import "stdlib/drums/cymbals/crash_bright.vibe";
 import "stdlib/bass/reese/reese_classic.vibe";
 import "stdlib/bass/sub/sub_deep.vibe";
 import "stdlib/pads/ambient/pad_space.vibe";
-import "stdlib/effects/reverb.vibe";
-import "stdlib/effects/distortion.vibe";
+import "stdlib/effects/reverbs/reverb.vibe";
+import "stdlib/effects/distortion/distortion.vibe";
 
 // === DRUMS ===
 let drums = define_group("Drums", ||{

@@ -4,7 +4,7 @@ set_tempo(85);
 import "stdlib/drums/hihats/hihat_dusty.vibe";
 import "stdlib/drums/kicks/kick_lofi.vibe";
 import "stdlib/drums/snares/snare_lofi.vibe";
-import "stdlib/effects/delay.vibe";
+import "stdlib/effects/delays/delay.vibe";
 import "stdlib/effects/reverbs/gverb.vibe";
 import "stdlib/modern/lofi.vibe";
 import "stdlib/synths/arp.vibe";
