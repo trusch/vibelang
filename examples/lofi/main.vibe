@@ -10,9 +10,9 @@ import "./instruments.vibe";
 
 
 let drums = define_group("Drums", || {
-    let kick = voice("kick").synth("kick_lofi").gain(db(-20));
-    let snare = voice("snare").synth("snare_lofi").gain(db(-15));
-    let hat = voice("hat").synth("hihat_dusty").gain(db(-15));
+    let kick = voice("kick").synth("kick_lofi").gain(db(-7));
+    let snare = voice("snare").synth("snare_lofi").gain(db(-7));
+    let hat = voice("hat").synth("hihat_dusty").gain(db(-8));
 
     pattern("kick")
         .on(kick)
@@ -51,7 +51,7 @@ let drums = define_group("Drums", || {
 });
 
 let keys = define_group("Keys", || {
-    let target_gain = db(-35);
+    let target_gain = db(-16);
     let rhodes = voice("rhodes").synth("lofi_keys").set_param("amp", target_gain);
 
     melody("chords_1").on(rhodes)
@@ -100,7 +100,7 @@ let keys = define_group("Keys", || {
 });
 
 let bass = define_group("Bass", || {
-    let default_gain = db(-25);
+    let default_gain = db(-8);
 
     let bass = voice("bass").synth("lofi_bass").set_param("amp", default_gain);
 
