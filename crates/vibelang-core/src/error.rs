@@ -5,8 +5,17 @@
 use crate::types::{
     EffectId, GroupId, MelodyId, PatternId, RecordingId, SampleId, SequenceId, SfzId, VoiceId,
 };
+use std::fmt::Write;
 use std::path::PathBuf;
 use thiserror::Error;
+
+/// A synthdef rejected by the backend during load/preflight.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SynthDefRejection {
+    pub name: String,
+    pub reason: String,
+    pub missing_ugen: Option<String>,
+}
 
 /// Unified error type for vibelang-core2 operations.
 #[derive(Error, Debug)]
@@ -28,6 +37,18 @@ pub enum Error {
     /// SynthDef not found.
     #[error("synthdef not found: {0}")]
     SynthDefNotFound(String),
+
+    /// Backend rejected a synthdef during load.
+    #[error("synthdef rejected: {name}: {reason}")]
+    SynthDefRejected {
+        name: String,
+        reason: String,
+        missing_ugen: Option<String>,
+    },
+
+    /// Backend rejected one or more synthdefs during startup preflight.
+    #[error("{}", format_synthdef_preflight_failed(rejected))]
+    SynthDefPreflightFailed { rejected: Vec<SynthDefRejection> },
 
     /// Sample not found.
     #[error("sample not found: {0}")]
@@ -160,6 +181,64 @@ impl Error {
             reason: reason.into(),
         }
     }
+
+    /// Create a synthdef-load error from a backend error while preserving
+    /// structured rejection details for native scsynth.
+    pub fn synthdef_load(name: &str, err: &(dyn std::error::Error + 'static)) -> Self {
+        #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+        {
+            if let Some(crate::backends::ScsynthError::SynthDefRejected {
+                name,
+                reason,
+                missing_ugen,
+            }) = err.downcast_ref::<crate::backends::ScsynthError>()
+            {
+                return Error::SynthDefRejected {
+                    name: name.clone(),
+                    reason: reason.clone(),
+                    missing_ugen: missing_ugen.clone(),
+                };
+            }
+        }
+
+        Error::Backend(format!("failed to load synthdef '{}': {}", name, err))
+    }
+
+    pub fn as_synthdef_rejection(&self) -> Option<SynthDefRejection> {
+        match self {
+            Error::SynthDefRejected {
+                name,
+                reason,
+                missing_ugen,
+            } => Some(SynthDefRejection {
+                name: name.clone(),
+                reason: reason.clone(),
+                missing_ugen: missing_ugen.clone(),
+            }),
+            _ => None,
+        }
+    }
+}
+
+fn format_synthdef_preflight_failed(rejected: &[SynthDefRejection]) -> String {
+    let mut out = format!(
+        "failed to load {} SynthDef{} into scsynth.\n\nThe SuperCollider server rejected these definitions:",
+        rejected.len(),
+        if rejected.len() == 1 { "" } else { "s" }
+    );
+
+    for rejection in rejected {
+        let _ = write!(out, "\n\n  - {}", rejection.name);
+        if let Some(missing_ugen) = &rejection.missing_ugen {
+            let _ = write!(out, "\n    missing UGen: {}", missing_ugen);
+        }
+        let _ = write!(out, "\n    scsynth: {}", rejection.reason);
+    }
+
+    out.push_str(
+        "\n\nInstall the missing SuperCollider UGen plugins or remove voices/effects that depend on these SynthDefs. Startup stopped before creating synths.",
+    );
+    out
 }
 
 #[cfg(test)]

@@ -43,6 +43,12 @@ pub enum ScsynthError {
     Timeout,
     /// A mutex lock was poisoned.
     LockPoisoned,
+    /// scsynth rejected a synthdef during /d_recv.
+    SynthDefRejected {
+        name: String,
+        reason: String,
+        missing_ugen: Option<String>,
+    },
 }
 
 impl std::fmt::Display for ScsynthError {
@@ -54,6 +60,9 @@ impl std::fmt::Display for ScsynthError {
             ScsynthError::ServerNotReady => write!(f, "Server not ready"),
             ScsynthError::Timeout => write!(f, "Timeout waiting for response"),
             ScsynthError::LockPoisoned => write!(f, "Internal mutex lock poisoned"),
+            ScsynthError::SynthDefRejected { name, reason, .. } => {
+                write!(f, "SynthDef '{}' rejected by scsynth: {}", name, reason)
+            }
         }
     }
 }
@@ -77,6 +86,18 @@ impl From<rosc::OscError> for ScsynthError {
     fn from(e: rosc::OscError) -> Self {
         ScsynthError::Osc(e)
     }
+}
+
+const SYNTHDEF_LOAD_TIMEOUT: Duration = Duration::from_secs(5);
+
+struct PendingSynthDefLoad {
+    name: String,
+    tx: oneshot::Sender<SynthDefLoadReply>,
+}
+
+enum SynthDefLoadReply {
+    Done,
+    Fail { reason: String },
 }
 
 /// OSC response message from scsynth.
@@ -160,6 +181,8 @@ pub struct ScsynthBackend {
     pending_sync: Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
     /// Pending control bus read requests (bus_index -> oneshot sender).
     pending_control_bus: Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
+    /// Pending /d_recv synthdef load request.
+    pending_synthdef_load: Arc<Mutex<Option<PendingSynthDefLoad>>>,
     /// Next sync ID for /sync messages.
     next_sync_id: Arc<std::sync::atomic::AtomicI32>,
     /// General response callbacks.
@@ -205,6 +228,7 @@ impl ScsynthBackend {
         let pending_buffer_info = Arc::new(Mutex::new(HashMap::new()));
         let pending_sync = Arc::new(Mutex::new(HashMap::new()));
         let pending_control_bus = Arc::new(Mutex::new(HashMap::new()));
+        let pending_synthdef_load = Arc::new(Mutex::new(None));
         let next_sync_id = Arc::new(std::sync::atomic::AtomicI32::new(1));
         let callbacks = Arc::new(Mutex::new(Vec::new()));
 
@@ -219,6 +243,7 @@ impl ScsynthBackend {
             pending_buffer_info: pending_buffer_info.clone(),
             pending_sync: pending_sync.clone(),
             pending_control_bus: pending_control_bus.clone(),
+            pending_synthdef_load: pending_synthdef_load.clone(),
             next_sync_id,
             callbacks: callbacks.clone(),
             server_ready: server_ready.clone(),
@@ -231,6 +256,7 @@ impl ScsynthBackend {
             pending_buffer_info.clone(),
             pending_sync.clone(),
             pending_control_bus.clone(),
+            pending_synthdef_load.clone(),
             callbacks.clone(),
             server_ready.clone(),
         );
@@ -292,6 +318,7 @@ impl ScsynthBackend {
         pending_buffer_info: Arc<Mutex<HashMap<u32, oneshot::Sender<BufferInfo>>>>,
         pending_sync: Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
         pending_control_bus: Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
+        pending_synthdef_load: Arc<Mutex<Option<PendingSynthDefLoad>>>,
         callbacks: Arc<Mutex<Vec<OscCallback>>>,
         server_ready: Arc<AtomicBool>,
     ) {
@@ -312,6 +339,7 @@ impl ScsynthBackend {
                                 &pending_buffer_info,
                                 &pending_sync,
                                 &pending_control_bus,
+                                &pending_synthdef_load,
                                 &callbacks,
                                 &server_ready,
                             );
@@ -341,6 +369,7 @@ impl ScsynthBackend {
         pending_buffer_info: &Arc<Mutex<HashMap<u32, oneshot::Sender<BufferInfo>>>>,
         pending_sync: &Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
         pending_control_bus: &Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
+        pending_synthdef_load: &Arc<Mutex<Option<PendingSynthDefLoad>>>,
         callbacks: &Arc<Mutex<Vec<OscCallback>>>,
         server_ready: &Arc<AtomicBool>,
     ) {
@@ -351,6 +380,7 @@ impl ScsynthBackend {
                     pending_buffer_info,
                     pending_sync,
                     pending_control_bus,
+                    pending_synthdef_load,
                     callbacks,
                     server_ready,
                 );
@@ -362,6 +392,7 @@ impl ScsynthBackend {
                         pending_buffer_info,
                         pending_sync,
                         pending_control_bus,
+                        pending_synthdef_load,
                         callbacks,
                         server_ready,
                     );
@@ -376,6 +407,7 @@ impl ScsynthBackend {
         pending_buffer_info: &Arc<Mutex<HashMap<u32, oneshot::Sender<BufferInfo>>>>,
         pending_sync: &Arc<Mutex<HashMap<i32, oneshot::Sender<()>>>>,
         pending_control_bus: &Arc<Mutex<HashMap<u32, oneshot::Sender<f32>>>>,
+        pending_synthdef_load: &Arc<Mutex<Option<PendingSynthDefLoad>>>,
         callbacks: &Arc<Mutex<Vec<OscCallback>>>,
         server_ready: &Arc<AtomicBool>,
     ) {
@@ -480,6 +512,14 @@ impl ScsynthBackend {
                 // Command completed
                 let command = Self::get_string(&msg.args, 0).unwrap_or_default();
                 tracing::debug!("Done: {}", command);
+                if command == "/d_recv" {
+                    if let Ok(mut pending) = pending_synthdef_load.lock() {
+                        if let Some(pending) = pending.take() {
+                            tracing::debug!("SynthDef '{}' accepted by scsynth", pending.name);
+                            let _ = pending.tx.send(SynthDefLoadReply::Done);
+                        }
+                    }
+                }
                 Some(OscResponse::Done { command })
             }
             "/fail" => {
@@ -500,6 +540,20 @@ impl ScsynthBackend {
                     );
                 } else {
                     tracing::warn!("Fail: {} - {}", command, reason);
+                }
+                if command == "/d_recv" {
+                    if let Ok(mut pending) = pending_synthdef_load.lock() {
+                        if let Some(pending) = pending.take() {
+                            tracing::warn!(
+                                "SynthDef '{}' rejected by scsynth: {}",
+                                pending.name,
+                                reason
+                            );
+                            let _ = pending.tx.send(SynthDefLoadReply::Fail {
+                                reason: reason.clone(),
+                            });
+                        }
+                    }
                 }
                 Some(OscResponse::Fail { command, reason })
             }
@@ -612,6 +666,24 @@ impl ScsynthBackend {
         })
     }
 
+    fn clear_pending_synthdef_load(&self, name: &str) {
+        if let Ok(mut pending) = self.pending_synthdef_load.lock() {
+            if pending
+                .as_ref()
+                .map(|pending| pending.name == name)
+                .unwrap_or(false)
+            {
+                *pending = None;
+            }
+        }
+    }
+
+    fn parse_missing_ugen(reason: &str) -> Option<String> {
+        let (_, rest) = reason.split_once("UGen '")?;
+        let (ugen, rest) = rest.split_once('\'')?;
+        rest.contains("not installed").then(|| ugen.to_string())
+    }
+
     /// Send an OSC message to scsynth.
     fn send_msg(&self, path: &str, args: Vec<OscType>) -> Result<(), ScsynthError> {
         let msg = OscMessage {
@@ -722,9 +794,50 @@ impl Drop for ScsynthBackend {
 impl Backend for ScsynthBackend {
     type Error = ScsynthError;
 
-    async fn load_synthdef(&self, _name: &str, data: &[u8]) -> Result<(), Self::Error> {
-        self.send_msg("/d_recv", vec![OscType::Blob(data.to_vec())])?;
-        Ok(())
+    async fn load_synthdef(&self, name: &str, data: &[u8]) -> Result<(), Self::Error> {
+        let (tx, rx) = oneshot::channel();
+
+        {
+            let mut pending = self
+                .pending_synthdef_load
+                .lock()
+                .map_err(|_| ScsynthError::LockPoisoned)?;
+            if pending.is_some() {
+                return Err(ScsynthError::ConnectionFailed(
+                    "concurrent /d_recv loads are not supported yet".to_string(),
+                ));
+            }
+            *pending = Some(PendingSynthDefLoad {
+                name: name.to_string(),
+                tx,
+            });
+        }
+
+        if let Err(err) = self.send_msg("/d_recv", vec![OscType::Blob(data.to_vec())]) {
+            self.clear_pending_synthdef_load(name);
+            return Err(err);
+        }
+
+        match tokio::time::timeout(SYNTHDEF_LOAD_TIMEOUT, rx).await {
+            Ok(Ok(SynthDefLoadReply::Done)) => Ok(()),
+            Ok(Ok(SynthDefLoadReply::Fail { reason })) => Err(ScsynthError::SynthDefRejected {
+                name: name.to_string(),
+                missing_ugen: Self::parse_missing_ugen(&reason),
+                reason,
+            }),
+            Ok(Err(_)) => Err(ScsynthError::ConnectionFailed(
+                "synthdef load response channel closed".to_string(),
+            )),
+            Err(_) => {
+                self.clear_pending_synthdef_load(name);
+                tracing::warn!(
+                    "SynthDef '{}' load timed out after {:?}",
+                    name,
+                    SYNTHDEF_LOAD_TIMEOUT
+                );
+                Err(ScsynthError::Timeout)
+            }
+        }
     }
 
     async fn create_synth(
@@ -1189,6 +1302,7 @@ pub fn setup_metering(backend: &ScsynthBackend, state: Arc<tokio::sync::RwLock<c
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_add_action_to_sc_int() {
@@ -1225,6 +1339,89 @@ mod tests {
         };
         let debug_str = format!("{:?}", response);
         assert!(debug_str.contains("Status"));
+    }
+
+    #[test]
+    fn parses_missing_ugen_from_graphdef_reason() {
+        assert_eq!(
+            ScsynthBackend::parse_missing_ugen(
+                "exception in GraphDef_Recv: UGen 'Changed' not installed."
+            ),
+            Some("Changed".to_string())
+        );
+        assert_eq!(ScsynthBackend::parse_missing_ugen("other failure"), None);
+    }
+
+    #[tokio::test]
+    async fn done_d_recv_completes_pending_synthdef_load() {
+        let pending_buffer_info = Arc::new(Mutex::new(HashMap::new()));
+        let pending_sync = Arc::new(Mutex::new(HashMap::new()));
+        let pending_control_bus = Arc::new(Mutex::new(HashMap::new()));
+        let pending_synthdef_load = Arc::new(Mutex::new(None));
+        let callbacks = Arc::new(Mutex::new(Vec::new()));
+        let server_ready = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = oneshot::channel();
+
+        *pending_synthdef_load.lock().unwrap() = Some(PendingSynthDefLoad {
+            name: "accepted".to_string(),
+            tx,
+        });
+
+        ScsynthBackend::handle_message(
+            OscMessage {
+                addr: "/done".to_string(),
+                args: vec![OscType::String("/d_recv".to_string())],
+            },
+            &pending_buffer_info,
+            &pending_sync,
+            &pending_control_bus,
+            &pending_synthdef_load,
+            &callbacks,
+            &server_ready,
+        );
+
+        assert!(matches!(rx.await.unwrap(), SynthDefLoadReply::Done));
+        assert!(pending_synthdef_load.lock().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn fail_d_recv_completes_pending_synthdef_load_with_reason() {
+        let pending_buffer_info = Arc::new(Mutex::new(HashMap::new()));
+        let pending_sync = Arc::new(Mutex::new(HashMap::new()));
+        let pending_control_bus = Arc::new(Mutex::new(HashMap::new()));
+        let pending_synthdef_load = Arc::new(Mutex::new(None));
+        let callbacks = Arc::new(Mutex::new(Vec::new()));
+        let server_ready = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = oneshot::channel();
+
+        *pending_synthdef_load.lock().unwrap() = Some(PendingSynthDefLoad {
+            name: "rejected".to_string(),
+            tx,
+        });
+
+        ScsynthBackend::handle_message(
+            OscMessage {
+                addr: "/fail".to_string(),
+                args: vec![
+                    OscType::String("/d_recv".to_string()),
+                    OscType::String(
+                        "exception in GraphDef_Recv: UGen 'Changed' not installed.".to_string(),
+                    ),
+                ],
+            },
+            &pending_buffer_info,
+            &pending_sync,
+            &pending_control_bus,
+            &pending_synthdef_load,
+            &callbacks,
+            &server_ready,
+        );
+
+        let SynthDefLoadReply::Fail { reason } = rx.await.unwrap() else {
+            panic!("expected fail reply");
+        };
+        assert!(reason.contains("Changed"));
+        assert!(pending_synthdef_load.lock().unwrap().is_none());
     }
 
     /// Regression test for the scsynth-zombie-on-reconnect bug.

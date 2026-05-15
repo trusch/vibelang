@@ -138,7 +138,7 @@ pub mod midi;
 // Re-exports for convenience
 pub use audio::{AudioConnector, AudioError, PortDirection, PortMatcher};
 pub use backend::{AddAction, Backend, BufferInfo};
-pub use error::{Error, Result};
+pub use error::{Error, Result, SynthDefRejection};
 
 pub use message::{
     EffectMessage, FadeMessage, GroupMessage, MelodyMessage, Message, PatternMessage,

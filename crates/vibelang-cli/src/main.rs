@@ -807,6 +807,14 @@ async fn run_tui_mode(
     log::info!("Loading built-in synthdefs...");
     if let Err(e) = runtime.load_builtins().await {
         log::error!("Failed to load built-in synthdefs: {}", e);
+        disable_raw_mode()?;
+        execute!(
+            terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        terminal.show_cursor()?;
+        return Err(anyhow::anyhow!("Failed to load built-in synthdefs: {}", e));
     }
 
     // Set up deploy callback for custom synthdefs
