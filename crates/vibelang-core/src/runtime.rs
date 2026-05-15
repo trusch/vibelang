@@ -1678,6 +1678,44 @@ impl<B: Backend> Runtime<B> {
         // *after* the route mixers in SC tree order. See Phase 4.8 below.
 
         // =========================================================================
+        // Phase 4.6: Finalize parameter routes (kr/tr/ar source → target param)
+        // =========================================================================
+        let set_param_diff =
+            RoutesHandler::<B>::diff_params(&self.current_param_routes_set, &new_state.param_routes_set);
+        let bend_param_diff = RoutesHandler::<B>::diff_params(
+            &self.current_param_routes_bend,
+            &new_state.param_routes_bend,
+        );
+        let trigger_param_diff = RoutesHandler::<B>::diff_params(
+            &self.current_param_routes_trigger,
+            &new_state.param_routes_trigger,
+        );
+        if !set_param_diff.is_empty()
+            || !bend_param_diff.is_empty()
+            || !trigger_param_diff.is_empty()
+        {
+            tracing::debug!(
+                "Reload: finalizing param routes (set +{}/-{}, bend +{}/-{}, trigger +{}/-{})",
+                set_param_diff.additions.len(),
+                set_param_diff.removals.len(),
+                bend_param_diff.additions.len(),
+                bend_param_diff.removals.len(),
+                trigger_param_diff.additions.len(),
+                trigger_param_diff.removals.len(),
+            );
+            if let Err(e) = self
+                .routes
+                .finalize_params(&set_param_diff, &bend_param_diff, &trigger_param_diff)
+                .await
+            {
+                tracing::error!("Reload: routes.finalize_params failed: {}", e);
+            }
+        }
+        self.current_param_routes_set = new_state.param_routes_set.clone();
+        self.current_param_routes_bend = new_state.param_routes_bend.clone();
+        self.current_param_routes_trigger = new_state.param_routes_trigger.clone();
+
+        // =========================================================================
         // Phase 4.7: Finalize routes (per-voice port → group mixer synths)
         // =========================================================================
         // Spawned between the voice creation/update phase and the group
@@ -2231,48 +2269,6 @@ impl<B: Backend> Runtime<B> {
                 }
             }
         }
-
-        // =========================================================================
-        // Phase 6.6: Finalize parameter routes (kr/tr/ar source → target param)
-        // =========================================================================
-        // Param routes map active target synth nodes, so they must run after
-        // `.run()` voices have been triggered and their node IDs exist.
-        let set_param_diff = RoutesHandler::<B>::diff_params(
-            &self.current_param_routes_set,
-            &new_state.param_routes_set,
-        );
-        let bend_param_diff = RoutesHandler::<B>::diff_params(
-            &self.current_param_routes_bend,
-            &new_state.param_routes_bend,
-        );
-        let trigger_param_diff = RoutesHandler::<B>::diff_params(
-            &self.current_param_routes_trigger,
-            &new_state.param_routes_trigger,
-        );
-        if !set_param_diff.is_empty()
-            || !bend_param_diff.is_empty()
-            || !trigger_param_diff.is_empty()
-        {
-            tracing::debug!(
-                "Reload: finalizing param routes (set +{}/-{}, bend +{}/-{}, trigger +{}/-{})",
-                set_param_diff.additions.len(),
-                set_param_diff.removals.len(),
-                bend_param_diff.additions.len(),
-                bend_param_diff.removals.len(),
-                trigger_param_diff.additions.len(),
-                trigger_param_diff.removals.len(),
-            );
-            if let Err(e) = self
-                .routes
-                .finalize_params(&set_param_diff, &bend_param_diff, &trigger_param_diff)
-                .await
-            {
-                tracing::error!("Reload: routes.finalize_params failed: {}", e);
-            }
-        }
-        self.current_param_routes_set = new_state.param_routes_set.clone();
-        self.current_param_routes_bend = new_state.param_routes_bend.clone();
-        self.current_param_routes_trigger = new_state.param_routes_trigger.clone();
 
         // =========================================================================
         // Phase 7: Apply MIDI routes from script state
