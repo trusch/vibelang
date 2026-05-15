@@ -103,7 +103,7 @@ stages.outputs([
 let osc = voice("verbos_harmonic_drone")
     .synth("verbos_harmonic_osc")
     .group("osc_mix")
-    .set_param("amp", 0.34)
+    .set_param("amp", 0.17)
     .set_param("gate", 1.0)
     .set_param("center", 4.4)
     .set_param("width", 0.68)
