@@ -147,7 +147,7 @@ let plonk_kick = voice("plonk_kick_drumhead")
     .synth("plonk")
     .group("plonk_raw")
     .set_param("pitch", 38.0)
-    .set_param("vel", 0.95)
+    .set_param("vel", 0.53)
     .set_param("x", 0.28)
     .set_param("y", 0.34)
     .set_param("exciter_mode", 1.0)
@@ -160,7 +160,7 @@ let plonk_snare = voice("plonk_snare_marimba")
     .synth("plonk")
     .group("plonk_raw")
     .set_param("pitch", 53.0)
-    .set_param("vel", 0.72)
+    .set_param("vel", 0.40)
     .set_param("x", 0.52)
     .set_param("y", 0.70)
     .set_param("exciter_mode", 2.0)
@@ -173,7 +173,7 @@ let plonk_hat = voice("plonk_hat_beam")
     .synth("plonk")
     .group("plonk_raw")
     .set_param("pitch", 82.0)
-    .set_param("vel", 0.44)
+    .set_param("vel", 0.25)
     .set_param("x", 0.78)
     .set_param("y", 0.88)
     .set_param("exciter_mode", 2.0)
@@ -187,7 +187,7 @@ let plonk_plate = voice("plonk_sync_plate")
     .synth("plonk")
     .group("plonk_raw")
     .set_param("pitch", 65.0)
-    .set_param("vel", 0.64)
+    .set_param("vel", 0.36)
     .set_param("x", 0.42)
     .set_param("y", 0.58)
     .set_param("exciter_mode", 0.0)
@@ -253,7 +253,7 @@ let mixup = voice("mixup_percussion_sum")
     .set_param("ch2_gain", 0.86)
     .set_param("ch3_gain", 0.58)
     .set_param("ch4_gain", 0.74)
-    .set_param("level", 0.90);
+    .set_param("level", 0.50);
 mixup.input("ch1").from(kick_stereo);
 mixup.input("ch2").from(snare_stereo);
 mixup.input("ch3").from(hat_stereo);
@@ -264,7 +264,7 @@ let fold_send = voice("mixup_to_ufold")
     .synth("intellijel_stereo_to_fold")
     .group("fold_bus")
     .set_param("balance", -0.08)
-    .set_param("level", 1.15);
+    .set_param("level", 0.64);
 fold_send.input("in").from(mixup);
 fold_send.output("out").mute();
 
@@ -274,7 +274,7 @@ let folder = voice("ufold_harmonic_enrichment")
     .set_param("folds", 0.42)
     .set_param("symmetry", -0.08)
     .set_param("stages", 4.0)
-    .set_param("level", 0.82);
+    .set_param("level", 0.46);
 folder.input("in").from(fold_send);
 folder.output("out").mute();
 
@@ -282,7 +282,7 @@ let folded_stereo = voice("ufold_to_rainmaker_stereo")
     .synth("intellijel_mono_to_stereo")
     .group("delay_bus")
     .set_param("pan", 0.0)
-    .set_param("level", 1.0);
+    .set_param("level", 0.56);
 folded_stereo.input("in").from(folder);
 folded_stereo.output("out").mute();
 
@@ -291,26 +291,26 @@ let rainmaker_dub = voice("rainmaker_16tap_dub")
     .group("delay_bus")
     .set_param("time", 375.0)
     .set_param("grid", 16.0)
-    .set_param("feedback", 0.46)
+    .set_param("feedback", 0.26)
     .set_param("feedback_pitch", -5.0)
     .set_param("feedback_tone", 0.42)
-    .set_param("wet_dry", 0.62)
-    .set_param("tap_level_1", 0.78)
-    .set_param("tap_level_2", 0.12)
-    .set_param("tap_level_3", 0.36)
-    .set_param("tap_level_4", 0.22)
-    .set_param("tap_level_5", 0.54)
-    .set_param("tap_level_6", 0.18)
-    .set_param("tap_level_7", 0.30)
-    .set_param("tap_level_8", 0.44)
-    .set_param("tap_level_9", 0.62)
-    .set_param("tap_level_10", 0.10)
-    .set_param("tap_level_11", 0.34)
-    .set_param("tap_level_12", 0.24)
-    .set_param("tap_level_13", 0.48)
-    .set_param("tap_level_14", 0.20)
-    .set_param("tap_level_15", 0.32)
-    .set_param("tap_level_16", 0.42)
+    .set_param("wet_dry", 0.35)
+    .set_param("tap_level_1", 0.44)
+    .set_param("tap_level_2", 0.07)
+    .set_param("tap_level_3", 0.20)
+    .set_param("tap_level_4", 0.12)
+    .set_param("tap_level_5", 0.30)
+    .set_param("tap_level_6", 0.10)
+    .set_param("tap_level_7", 0.17)
+    .set_param("tap_level_8", 0.25)
+    .set_param("tap_level_9", 0.35)
+    .set_param("tap_level_10", 0.06)
+    .set_param("tap_level_11", 0.19)
+    .set_param("tap_level_12", 0.13)
+    .set_param("tap_level_13", 0.27)
+    .set_param("tap_level_14", 0.11)
+    .set_param("tap_level_15", 0.18)
+    .set_param("tap_level_16", 0.24)
     .set_param("tap_pitch_5", 7.0)
     .set_param("tap_pitch_9", -12.0)
     .set_param("tap_pitch_13", 5.0)
@@ -319,11 +319,11 @@ let rainmaker_dub = voice("rainmaker_16tap_dub")
     .set_param("tap_filter_cutoff_9", 3600.0)
     .set_param("tap_filter_cutoff_13", 2500.0)
     .set_param("comb_size", 148.0)
-    .set_param("comb_feedback", 0.52)
+    .set_param("comb_feedback", 0.29)
     .set_param("comb_taps", 18.0)
     .set_param("comb_density", 0.64)
     .set_param("comb_nonlinear", 0.18)
-    .set_param("comb_mix", 0.28);
+    .set_param("comb_mix", 0.16);
 rainmaker_dub.input("in").from(folded_stereo);
 rainmaker_dub.output("out").mute();
 
@@ -333,7 +333,7 @@ let performance_filter = voice("tetrapad_filter_cutoff")
     .set_param("cutoff", 4200.0)
     .set_param("resonance", 0.36)
     .set_param("mix", 0.82)
-    .set_param("level", 0.96);
+    .set_param("level", 0.54);
 performance_filter.input("in").from(rainmaker_dub);
 performance_filter.output("out").to_current_group();
 
