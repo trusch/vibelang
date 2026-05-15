@@ -199,7 +199,7 @@ define_group("stab_delay", || { });
 define_group("main_out", || { });
 
 group("ctrl").gain(0.0);
-group("kick_bus").gain(db(-6));
+group("kick_bus").gain(0.0);
 group("snare_bus").gain(0.0);
 group("hat_ch_bus").gain(0.0);
 group("hat_oh_bus").gain(0.0);
@@ -269,7 +269,7 @@ trigger_matrix.output("accent").to_param(kick, "accent").scale(1.4).offset(0.0);
 trigger_matrix.output("accent").to_param(snare, "accent").scale(1.1).offset(0.0);
 trigger_matrix.output("accent").to_param(hats, "accent").scale(0.8).offset(0.0);
 
-kick.output("out").to_current_group();
+kick.output("out").mute();
 kick.output("noise").mute();
 snare.output("out").mute();
 hats.outputs(["out", "ch", "oh"]).mute();
