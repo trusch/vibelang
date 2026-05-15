@@ -289,6 +289,41 @@ fn local_out_ar_accepts_stereo_signal_array() {
 }
 
 #[test]
+fn local_in_ar_uses_num_channels_as_output_count() {
+    let mut engine = Engine::new();
+    register_dsp_api(&mut engine);
+
+    set_active_builder(GraphBuilderInner::new());
+    let script = "let fb = local_in_ar(2.0); local_out_ar([channel(fb, 0), channel(fb, 1)]);";
+    let _ = engine
+        .eval::<Dynamic>(script)
+        .unwrap_or_else(|e| panic!("{script} failed: {e}"));
+    let builder = clear_active_builder().expect("active builder vanished");
+    let node = builder
+        .nodes
+        .iter()
+        .find(|node| node.name == "LocalIn")
+        .expect("LocalIn node missing");
+
+    assert_eq!(node.num_outputs, 2, "LocalIn should expose both channels");
+    assert_eq!(
+        node.inputs.len(),
+        2,
+        "LocalIn should encode one default input per channel"
+    );
+    assert_eq!(node.special_index, 0, "LocalIn special index is not arity");
+    assert!(
+        node.inputs
+            .iter()
+            .all(|input| matches!(input, Input::Constant(0.0))),
+        "LocalIn default inputs should be zero-filled"
+    );
+
+    let ir = GraphIR::from_builder("local_in_stereo".to_string(), builder);
+    ir.validate().expect("stereo LocalIn graph should validate");
+}
+
+#[test]
 fn ugen_manifest_round_trip_one_per_category() {
     let manifests = load_manifests();
     assert!(!manifests.is_empty(), "no UGen manifests found");

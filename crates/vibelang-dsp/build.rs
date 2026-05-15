@@ -509,11 +509,18 @@ fn main() {
             }
             writeln!(f, "///").unwrap();
             writeln!(f, "/// # Returns").unwrap();
-            if let Some(channel_count_input) = channel_count_input {
+            let local_in_default_inputs = name == "LocalIn";
+            let output_shape_input = if local_in_default_inputs {
+                Some("numChannels")
+            } else {
+                channel_count_input
+            };
+
+            if let Some(output_shape_input) = output_shape_input {
                 writeln!(
                     f,
                     "/// output channel count from `{}` (default: {})",
-                    channel_count_input, outputs
+                    output_shape_input, outputs
                 )
                 .unwrap();
             } else {
@@ -556,7 +563,7 @@ fn main() {
                 continue;
             }
 
-            let shape_count_var = channel_count_input.map(|input_name| {
+            let shape_count_var = output_shape_input.map(|input_name| {
                 let escaped_name = param_to_snake_case(input_name);
                 let count_var = format!("{}_shape_count", escaped_name);
                 writeln!(
@@ -569,16 +576,33 @@ fn main() {
             });
 
             let local_out_channels_array = name == "LocalOut";
-            if local_out_channels_array {
+            if local_in_default_inputs || local_out_channels_array {
                 writeln!(f, "    let mut inputs = Vec::new();").unwrap();
             } else {
                 writeln!(f, "    let inputs = vec![").unwrap();
             }
             for (input, param_name) in inputs.iter().zip(param_names.iter()) {
-                if channel_count_input == Some(input.name.as_str()) {
+                if output_shape_input == Some(input.name.as_str()) {
                     continue;
                 }
-                if local_out_channels_array && input.name == "channelsArray" {
+                if local_in_default_inputs && input.name == "default" {
+                    let shape_count_var = shape_count_var
+                        .as_deref()
+                        .expect("LocalIn requires numChannels shape count");
+                    writeln!(
+                        f,
+                        "    let default_inputs = helpers::dynamic_to_signal_inputs({})?;",
+                        param_name
+                    )
+                    .unwrap();
+                    writeln!(f, "    for index in 0..{} as usize {{", shape_count_var).unwrap();
+                    writeln!(
+                        f,
+                        "        inputs.push(default_inputs[index % default_inputs.len()].clone());"
+                    )
+                    .unwrap();
+                    writeln!(f, "    }}").unwrap();
+                } else if local_out_channels_array && input.name == "channelsArray" {
                     writeln!(
                         f,
                         "    inputs.extend(helpers::dynamic_to_signal_inputs({})?);",
@@ -596,7 +620,7 @@ fn main() {
                     writeln!(f, "        helpers::dynamic_to_input({})?,", param_name).unwrap();
                 }
             }
-            if !local_out_channels_array {
+            if !local_in_default_inputs && !local_out_channels_array {
                 writeln!(f, "    ];").unwrap();
             }
             writeln!(f, "    with_builder(|builder| {{").unwrap();
@@ -605,10 +629,14 @@ fn main() {
                 .as_deref()
                 .map(str::to_string)
                 .unwrap_or_else(|| outputs.to_string());
-            let special_index_expr = shape_count_var
-                .as_deref()
-                .map(|var| format!("{} as i16", var))
-                .unwrap_or_else(|| ugen.special_index.unwrap_or(0).to_string());
+            let special_index_expr = if local_in_default_inputs {
+                ugen.special_index.unwrap_or(0).to_string()
+            } else {
+                shape_count_var
+                    .as_deref()
+                    .map(|var| format!("{} as i16", var))
+                    .unwrap_or_else(|| ugen.special_index.unwrap_or(0).to_string())
+            };
             writeln!(
                 f,
                 "        builder.add_node(\"{}\".to_string(), {}, inputs, {}, {})",
