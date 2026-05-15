@@ -5,7 +5,7 @@
 //   Bass Drum out, Snare out, Hi-Hats ch/oh -> Quad VCA2 in1..4; Quad VCA2 sum -> Black Output in1.
 //   Bassline main -> Polivoks VCF -> Black Hole DSP program 1 delay; folded wet return -> Black Output in2.
 //   Black VCO2 mix -> gated VCA -> Black BBD -> Black Output in3, with VC EG env routed to pan3_cv.
-//   Black Output out goes to_main as stereo; phones are muted.
+//   Black Output out_left/out_right go to_main as the stereo pair; phones are muted.
 
 import "stdlib/instruments/eurorack/erica_bass_drum.vibe";
 import "stdlib/instruments/eurorack/erica_snare_drum.vibe";
@@ -433,8 +433,8 @@ output.input("in1").from(group("drum_sum"));
 output.input("in2").from(group("acid_return"));
 output.input("in3").from(group("stab_delay"));
 output.param("pan3_cv").modulate_by(stab_pan_env, "env").scale(1.8).offset(-0.9);
-output.output("out").to_main();
-output.output("phones").mute();
+output.outputs(["out_left", "out_right"]).to_main();
+output.outputs(["phones_left", "phones_right"]).mute();
 
 master_clock.run();
 trigger_matrix.run();
