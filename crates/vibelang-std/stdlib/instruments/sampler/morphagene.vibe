@@ -82,11 +82,14 @@
 //
 // Synchronization (Story D):
 //   The `clk` param accepts a kr-rate clock signal (e.g. cv_clock output
-//   at 0.5 amplitude = +5 V scale). Schmidt(0.05, 0.25) cleans it; a
-//   delay1+diff yields a one-sample-wide rising-edge trigger. CLK-patched
-//   detection uses `amplitude_kr(clk, 0.001, 1.5)` thresholded at 0.02 —
-//   the 1.5 s release tolerates clocks down to ~0.7 Hz before deciding the
-//   patch is gone.
+//   at 0.5 amplitude = +5 V scale). Schmidt(0.05, 0.25) cleans it. The
+//   cleaned edge is shaped at audio rate with delay1+diff so GrainBuf sees
+//   a one-sample pulse, not a block-wide kr trigger. A timer gate rejects
+//   edges closer than the documented 18 Hz clock ceiling or faster than a
+//   32-active-grain budget for the current Gene-Size. CLK-patched detection
+//   uses `amplitude_kr(clk, 0.001, 1.5)` thresholded at 0.02 — the 1.5 s
+//   release tolerates clocks down to ~0.7 Hz before deciding the patch is
+//   gone.
 //
 //   Mode select (kr, gated by clk_patched ∧ gene_size_n > 0.02):
 //     - Morph ≥ 0.46  →  Time Stretch  (clock drives time; rate = pitch)
@@ -111,10 +114,10 @@
 //   by a 5 ms `trig1` gate, scaled to 10 V, and exposed as a named kr output
 //   port (`eosg`) for CV-style routing.
 //
-//   Clock-rate clamping (D4): not enforced in DSP. The plan calls for
-//   warn/clip at [1/3.5 s, 18 Hz] for Time Stretch; rate measurement via
-//   sweep_kr+latch was deferred — out-of-range clocks just produce coarser
-//   stutter (slow) or read overruns (fast). Document for future revision.
+//   Clock-rate clamping (D4): fast edges are debounced in DSP. Out-of-range
+//   clocks above ~18 Hz, or above the current Gene-Size's active-grain budget,
+//   are dropped rather than raising GrainBuf's maxGrains. Slow clocks still
+//   produce coarser stutter as on hardware.
 //
 // SOS recording (Story B, refactored for Story D):
 //   `rec_active` was dropped to free a synthdef slot for `clk` (Rhai 10-arg
@@ -304,7 +307,21 @@ define_synthdef("morphagene", |builder| {
             // +5 V; threshold 0.25 with 0.05 hysteresis catches it cleanly).
             let clk_clean = schmidt_kr(clk, 0.05, 0.25);
             let clk_prev = delay1_kr(clk_clean);
-            let clk_rising_kr = (clk_clean - clk_prev).max(0.0);
+            let clk_raw_rising_kr = (clk_clean - clk_prev).max(0.0);
+
+            // Reject clock storms before they reach GrainBuf. The fixed floor
+            // mirrors the documented 18 Hz Time-Stretch ceiling; the dynamic
+            // term keeps external-clock overlap under 32 active grains.
+            let clk_min_period = (gene_dur_sec / 32.0).max(1.0 / 18.0);
+            let clk_period = timer_kr(clk_raw_rising_kr);
+            let clk_rate_safe = in_range_kr(clk_period, clk_min_period, 9999.0);
+            let clk_rising_kr = clk_raw_rising_kr * clk_rate_safe;
+
+            // Shape the accepted edge at audio rate so GrainBuf cannot see a
+            // control-block-wide trigger after k2a promotion.
+            let clk_clean_ar = k2a_ar(clk_clean);
+            let clk_edge_ar = (clk_clean_ar - delay1_ar(clk_clean_ar)).max(0.0);
+            let clk_rising_ar = clk_edge_ar * k2a_ar(clk_rate_safe);
 
             // CLK-patched: amplitude follower with a 1.5 s release tolerates
             // clock periods up to ~1.4 s (≈ 0.7 Hz) before declaring "no
@@ -331,7 +348,6 @@ define_synthdef("morphagene", |builder| {
             // free (5 ms — same time-constant as the gene-size branch
             // crossfade and the spawn-rate "Dynamic Enveloping" lag).
             let auto_trig_ar = impulse_ar(smoothed_rate, 0.0);
-            let clk_rising_ar = k2a_ar(clk_rising_kr);
             let auto_mode_ar = lag_ar(auto_mode, 0.005);
             let clock_mode_ar = 1.0 - auto_mode_ar;
             let spawn_trig = auto_trig_ar * auto_mode_ar
