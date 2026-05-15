@@ -1,0 +1,64 @@
+// kind=processor | category=delays | flavor=erica_black_bbd | inputs=in:1 | outputs=out:1 | params=time,time_cv,time_cv_amt,feedback,feedback_cv,feedback_cv_amt,mix,mix_cv,mix_cv_amt,line_blend,color,lfo_rate,lfo_depth,clock_noise
+//
+// Erica Black BBD-inspired mono analog delay approximation.
+// Models the module's dual BBD architecture as parallel 1024-stage and
+// 4096-stage delay lines: the long line uses the panel time, the short line
+// runs at one quarter of it, and line_blend crossfades between them.
+// color and clock_noise are character controls: color darkens the BBD path,
+// while clock_noise adds a small filtered clock artifact into the wet signal.
+
+define_synthdef("erica_black_bbd")
+    .input("in", 1)
+    .output("out", 1)
+    .param("time", 200.0)
+    .param("time_cv", 0.0)
+    .param("time_cv_amt", 0.0)
+    .param("feedback", 0.4)
+    .param("feedback_cv", 0.0)
+    .param("feedback_cv_amt", 0.0)
+    .param("mix", 0.5)
+    .param("mix_cv", 0.0)
+    .param("mix_cv_amt", 0.0)
+    .param("line_blend", 0.5)
+    .param("color", 0.5)
+    .param("lfo_rate", 0.3)
+    .param("lfo_depth", 0.1)
+    .param("clock_noise", 0.05)
+    .body_map(|p| {
+        let dry = p.inputs["in"];
+        let time_cv = clip(p.time_cv, -1.0, 1.0) * clip(p.time_cv_amt, 0.0, 1.0);
+        let feedback_cv = clip(p.feedback_cv, -1.0, 1.0) * clip(p.feedback_cv_amt, 0.0, 1.0);
+        let mix_cv = clip(p.mix_cv, -1.0, 1.0) * clip(p.mix_cv_amt, 0.0, 1.0);
+
+        let time_ms = clip(p.time * pow(2.0, time_cv), 5.0, 1500.0);
+        let base_time = time_ms * 0.001;
+        let feedback = clip(p.feedback + feedback_cv * 0.35, 0.0, 0.95);
+        let mix = clip(p.mix + mix_cv, 0.0, 1.0);
+        let line_blend = clip(p.line_blend, 0.0, 1.0);
+        let color = clip(p.color, 0.0, 1.0);
+        let lfo_rate = clip(p.lfo_rate, 0.05, 10.0);
+        let lfo_depth = clip(p.lfo_depth, 0.0, 1.0);
+        let clock_noise = clip(p.clock_noise, 0.0, 1.0);
+
+        let cutoff = clip(2500.0 - color * 2000.0, 350.0, 2500.0);
+        let feedback_cutoff = clip(cutoff * 0.65, 220.0, 1800.0);
+        let lfo = sin_osc_kr(lfo_rate, 0.0) * lfo_depth;
+        let long_time = clip(base_time * (1.0 + lfo * 0.20), 0.005, 1.5);
+        let short_time = clip((base_time * 0.25) * (1.0 + lfo * 0.20), 0.002, 0.375);
+
+        let fb = local_in_ar(1.0);
+        let feedback_return = lpf_ar(fb, feedback_cutoff);
+        let delay_input = tanh_ar(dry + feedback_return);
+
+        let short_raw = delay_c_ar(delay_input, 0.4, short_time);
+        let long_raw = delay_c_ar(delay_input, 1.6, long_time);
+        let line_short = lpf_ar(tanh_ar(short_raw), cutoff);
+        let line_long = lpf_ar(tanh_ar(long_raw), cutoff);
+        let bbd = line_short * (1.0 - line_blend) + line_long * line_blend;
+
+        let clock_artifact = hpf_ar(white_noise_ar(), 6500.0) * clock_noise * (0.002 + color * 0.006);
+        let wet = leak_dc_ar(tanh_ar(bbd + clock_artifact), 0.995);
+        local_out_ar(leak_dc_ar(lpf_ar(wet, feedback_cutoff) * feedback, 0.995));
+
+        [softclip((1.0 - mix) * dry + mix * wet)]
+    });
