@@ -12,9 +12,9 @@ import "stdlib/drums/claps/clap_808.vibe";
 import "stdlib/drums/percussion/rim.vibe";
 import "stdlib/bass/pluck/pluck_bright.vibe";
 
-import "stdlib/effects/reverb.vibe";
-import "stdlib/effects/phaser.vibe";
-import "stdlib/effects/moog_filter.vibe";
+import "stdlib/effects/reverbs/reverb.vibe";
+import "stdlib/effects/modulation/phaser.vibe";
+import "stdlib/effects/filters/moog_filter.vibe";
 
 // =============================================================================
 // ARRANGEMENT STRUCTURE (96 bars total = ~3 minutes at 130 BPM)
@@ -52,13 +52,13 @@ define_synthdef("stab")
     let osc3 = saw_ar(freq * 2.0);
     let mix = (osc1 + osc2 * 0.5 + osc3 * 0.3) * 0.3;
 
-    let filt = rlpf_ar(mix, cutoff, 0.3);
+    let filt = leak_dc_ar(rlpf_ar(mix, cutoff, 0.3), 0.995);
     filt * env * amp
 });
 
 define_synthdef("pad")
     .param("freq", 220.0)
-    .param("amp", 0.15)
+    .param("amp", 2.25)
     .param("cutoff", 800.0)
     .param("gate", 1.0)
     .body(|freq, amp, cutoff, gate| {
@@ -74,8 +74,17 @@ define_synthdef("pad")
     let osc3 = saw_ar(freq * 0.998);
     let mix = (osc1 + osc2 + osc3) * 0.2;
 
-    let filt = rlpf_ar(mix, cutoff, 0.5);
+    let filt = leak_dc_ar(rlpf_ar(mix, cutoff, 0.5), 0.995);
     filt * env * amp
+});
+
+define_synthdef("intro_floor")
+    .param("freq", 82.41)
+    .param("amp", 0.12)
+    .body(|freq, amp| {
+    let root = sin_osc_ar(freq);
+    let fifth = sin_osc_ar(freq * 1.5) * 0.35;
+    leak_dc_ar((root + fifth) * amp, 0.995)
 });
 
 define_synthdef("riser")
@@ -96,11 +105,11 @@ define_synthdef("riser")
 
 // === DRUMS ===
 let drums = define_group("Drums", || {
-    let kick = voice("kick").synth("kick_909").gain(db(-17.90));
-    let hat_c = voice("hat_c").synth("hihat_808_closed").gain(db(-18));
-    let hat_o = voice("hat_o").synth("hihat_808_open").gain(db(-20));
-    let clap = voice("clap").synth("clap_808").gain(db(-14));
-    let rim = voice("rim").synth("rim").gain(db(-16));
+    let kick = voice("kick").synth("kick_909").gain(db(-4.0));
+    let hat_c = voice("hat_c").synth("hihat_808_closed").gain(db(16.5));
+    let hat_o = voice("hat_o").synth("hihat_808_open").gain(db(8.5));
+    let clap = voice("clap").synth("clap_808").gain(db(-3.0));
+    let rim = voice("rim").synth("rim").gain(db(-5.0));
 
     // Patterns
     let kick_main = pattern("kick_main").on(kick).step("x... x... x... x...").apply();
@@ -136,7 +145,7 @@ let drums = define_group("Drums", || {
     let fade_intro = fade("drums_intro")
         .on_group("Drums")
         .param("amp")
-        .from(db(-20.0))
+        .from(db(0.0))
         .to(db(0.0))
         .over_bars(8)
         .apply();
@@ -150,7 +159,8 @@ let drums = define_group("Drums", || {
 
     // Section sequences (8 bars each) - must .apply() to register for nesting
     let intro = sequence("drums_intro_seq").loop_bars(8)
-        .clip(0..bars(8), hat_off)
+        .clip(0..bars(8), hat_16th)
+        .clip(bars(4)..bars(8), hat_open)
         .clip(0..bars(8), fade_intro)
         .apply();
 
@@ -267,7 +277,7 @@ let drums = define_group("Drums", || {
 let bass = define_group("Bass", || {
     let sub = voice("sub")
         .synth("bass_pluck_bright")
-        .set_param("amp", db(-23.60))
+        .set_param("amp", db(-10.0))
         .poly(1);
 
     let bass_pulse = melody("bass_pulse")
@@ -355,7 +365,7 @@ let bass = define_group("Bass", || {
 
 // === SYNTH STAB ===
 let synth = define_group("Synth", || {
-    let stab = voice("stab").synth("stab").gain(db(-6)).poly(4);
+    let stab = voice("stab").synth("stab").gain(db(-3.0)).poly(4);
 
     // Chicago-inspired signature melody and variations
     let chicago = melody("chicago").on(stab)
@@ -539,10 +549,14 @@ let synth = define_group("Synth", || {
 
 // === ATMOSPHERIC PAD ===
 let atmosphere = define_group("Atmosphere", || {
-    let pad = voice("pad").synth("pad").gain(db(-18)).poly(4);
+    let pad = voice("pad").synth("pad").gain(db(0.0)).poly(4);
+    let floor = voice("intro_floor").synth("intro_floor")
+        .set_param("amp", 0.12)
+        .gain(db(0.0));
+    floor.run();
 
     let pad_drone = melody("pad_drone").on(pad)
-        .notes("E3 - - - - - - - | - - - - - - - - | B2 - - - - - - - | - - - - - - - -")
+        .notes("E3 E3 E3 E3 E3 E3 E3 E3 | E3 E3 E3 E3 E3 E3 E3 E3 | B2 B2 B2 B2 B2 B2 B2 B2 | B2 B2 B2 B2 B2 B2 B2 B2")
         .apply();
     let pad_move = melody("pad_move").on(pad)
         .notes("E3 - - - - - - - | - - - - - - - - | G3 - - - - - - - | - - - - - - - -")
@@ -554,8 +568,8 @@ let atmosphere = define_group("Atmosphere", || {
     let fade_intro = fade("atmos_intro")
         .on_group("Atmosphere")
         .param("amp")
-        .from(db(-25.0))
-        .to(db(0.0))
+        .from(db(-2.0))
+        .to(db(-2.0))
         .over_bars(8)
         .apply();
     let fade_outro = fade("atmos_outro")
@@ -614,7 +628,7 @@ let atmosphere = define_group("Atmosphere", || {
 
 // === RISERS ===
 let risers = define_group("Risers", || {
-    let riser = voice("riser").synth("riser").gain(db(-55)).poly(1);
+    let riser = voice("riser").synth("riser").gain(db(-45.0)).poly(1);
 
     // Note durations must match fade durations for the fades to sweep while note is playing
     let rise_tiny = melody("rise_tiny").on(riser).notes("C1 - - - - - - -").apply(); // 1 bar
@@ -712,7 +726,7 @@ let risers = define_group("Risers", || {
 // === VOCALS ===
 let vocals = define_group("Vocals", || {
     let louder = sample("louder", "./samples/louder.wav");
-    let louder_voice = voice("louder").on(louder).gain(db(-20));
+    let louder_voice = voice("louder").on(louder).gain(db(-14.0));
 
     // Pattern variations - different rhythmic feels with just "louder"
     let hit = pattern("louder_hit").on(louder_voice).step("x... .... .... ....").apply();
