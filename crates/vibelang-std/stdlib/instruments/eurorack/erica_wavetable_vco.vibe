@@ -72,12 +72,27 @@ fn _erica_wt_bank_cell(freq, bank, wave) {
     let bank14 = h1 * 0.28 + h3 * 0.26 + h4 * 0.18 + h7 * 0.34 * bright + h10 * 0.26 * bright + h12 * 0.24 * w;
     let bank15 = tanh_ar((saw_bank + square_bank * 0.55 + h9 * 0.25 * w + h12 * 0.25 * w) * (1.0 + w * 3.5));
 
-    select_ar(bank, [
-        sine_bank, saw_bank, square_bank, tri_bank,
-        bank4, bank5, bank6, bank7,
-        bank8, bank9, bank10, bank11,
-        bank12, bank13, bank14, bank15
-    ])
+    let m0 = (1.0 - abs(bank - 0.0)).max(0.0);
+    let m1 = (1.0 - abs(bank - 1.0)).max(0.0);
+    let m2 = (1.0 - abs(bank - 2.0)).max(0.0);
+    let m3 = (1.0 - abs(bank - 3.0)).max(0.0);
+    let m4 = (1.0 - abs(bank - 4.0)).max(0.0);
+    let m5 = (1.0 - abs(bank - 5.0)).max(0.0);
+    let m6 = (1.0 - abs(bank - 6.0)).max(0.0);
+    let m7 = (1.0 - abs(bank - 7.0)).max(0.0);
+    let m8 = (1.0 - abs(bank - 8.0)).max(0.0);
+    let m9 = (1.0 - abs(bank - 9.0)).max(0.0);
+    let m10 = (1.0 - abs(bank - 10.0)).max(0.0);
+    let m11 = (1.0 - abs(bank - 11.0)).max(0.0);
+    let m12 = (1.0 - abs(bank - 12.0)).max(0.0);
+    let m13 = (1.0 - abs(bank - 13.0)).max(0.0);
+    let m14 = (1.0 - abs(bank - 14.0)).max(0.0);
+    let m15 = (1.0 - abs(bank - 15.0)).max(0.0);
+
+    m0 * sine_bank + m1 * saw_bank + m2 * square_bank + m3 * tri_bank
+        + m4 * bank4 + m5 * bank5 + m6 * bank6 + m7 * bank7
+        + m8 * bank8 + m9 * bank9 + m10 * bank10 + m11 * bank11
+        + m12 * bank12 + m13 * bank13 + m14 * bank14 + m15 * bank15
 }
 
 define_synthdef("erica_wavetable_vco", |builder| {

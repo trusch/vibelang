@@ -8,7 +8,10 @@
 fn _erica_black_output_soft(sig, limit_on) {
     let limited = tanh_ar(sig * 1.25) / 1.25;
     let bypass = sig;
-    select_ar(round(clip(limit_on, 0.0, 1.0)), [bypass, limited])
+    let limit = round(clip(limit_on, 0.0, 1.0));
+    let m_bypass = (1.0 - abs(limit - 0.0)).max(0.0);
+    let m_limited = (1.0 - abs(limit - 1.0)).max(0.0);
+    m_bypass * bypass + m_limited * limited
 }
 
 define_synthdef("erica_black_output")

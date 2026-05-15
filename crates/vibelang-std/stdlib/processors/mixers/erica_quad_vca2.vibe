@@ -10,7 +10,9 @@ fn _erica_quad_vca2_gain(cv, bias, level, curve) {
     let linear = control;
     let log_curve = control * control;
     let shape = round(clip(curve, 0.0, 1.0));
-    select_ar(shape, [linear, log_curve]) * clip(level, 0.0, 1.0)
+    let m_linear = (1.0 - abs(shape - 0.0)).max(0.0);
+    let m_log = (1.0 - abs(shape - 1.0)).max(0.0);
+    (m_linear * linear + m_log * log_curve) * clip(level, 0.0, 1.0)
 }
 
 define_synthdef("erica_quad_vca2")

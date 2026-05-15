@@ -187,18 +187,31 @@ define_synthdef("erica_black_hole_dsp")
         let prog15_l = leak_dc_ar(wide_l * (0.75 + rate * 0.25), 0.995);
         let prog15_r = leak_dc_ar(wide_r * (0.75 + rate * 0.25), 0.995);
 
-        let wet_l = select_ar(program, [
-            prog0_l, prog1_l, prog2_l, prog3_l,
-            prog4_l, prog5_l, prog6_l, prog7_l,
-            prog8_l, prog9_l, prog10_l, prog11_l,
-            prog12_l, prog13_l, prog14_l, prog15_l
-        ]);
-        let wet_r = select_ar(program, [
-            prog0_r, prog1_r, prog2_r, prog3_r,
-            prog4_r, prog5_r, prog6_r, prog7_r,
-            prog8_r, prog9_r, prog10_r, prog11_r,
-            prog12_r, prog13_r, prog14_r, prog15_r
-        ]);
+        let m0 = (1.0 - abs(program - 0.0)).max(0.0);
+        let m1 = (1.0 - abs(program - 1.0)).max(0.0);
+        let m2 = (1.0 - abs(program - 2.0)).max(0.0);
+        let m3 = (1.0 - abs(program - 3.0)).max(0.0);
+        let m4 = (1.0 - abs(program - 4.0)).max(0.0);
+        let m5 = (1.0 - abs(program - 5.0)).max(0.0);
+        let m6 = (1.0 - abs(program - 6.0)).max(0.0);
+        let m7 = (1.0 - abs(program - 7.0)).max(0.0);
+        let m8 = (1.0 - abs(program - 8.0)).max(0.0);
+        let m9 = (1.0 - abs(program - 9.0)).max(0.0);
+        let m10 = (1.0 - abs(program - 10.0)).max(0.0);
+        let m11 = (1.0 - abs(program - 11.0)).max(0.0);
+        let m12 = (1.0 - abs(program - 12.0)).max(0.0);
+        let m13 = (1.0 - abs(program - 13.0)).max(0.0);
+        let m14 = (1.0 - abs(program - 14.0)).max(0.0);
+        let m15 = (1.0 - abs(program - 15.0)).max(0.0);
+
+        let wet_l = m0 * prog0_l + m1 * prog1_l + m2 * prog2_l + m3 * prog3_l
+                  + m4 * prog4_l + m5 * prog5_l + m6 * prog6_l + m7 * prog7_l
+                  + m8 * prog8_l + m9 * prog9_l + m10 * prog10_l + m11 * prog11_l
+                  + m12 * prog12_l + m13 * prog13_l + m14 * prog14_l + m15 * prog15_l;
+        let wet_r = m0 * prog0_r + m1 * prog1_r + m2 * prog2_r + m3 * prog3_r
+                  + m4 * prog4_r + m5 * prog5_r + m6 * prog6_r + m7 * prog7_r
+                  + m8 * prog8_r + m9 * prog9_r + m10 * prog10_r + m11 * prog11_r
+                  + m12 * prog12_r + m13 * prog13_r + m14 * prog14_r + m15 * prog15_r;
 
         [
             softclip((1.0 - mix) * dry_l + mix * wet_l),
