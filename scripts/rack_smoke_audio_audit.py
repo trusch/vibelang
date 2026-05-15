@@ -36,6 +36,7 @@ BAD_LOG_PATTERNS = re.compile(
     r"Too many grains",
     re.IGNORECASE,
 )
+USER_SUPERCOLLIDER_EXTENSIONS = pathlib.Path.home() / ".local/share/SuperCollider/Extensions"
 
 
 @dataclasses.dataclass
@@ -207,6 +208,17 @@ def start_runtime(
     )
 
 
+def prepare_xdg_data_home(
+    data_home: pathlib.Path,
+    user_extensions: pathlib.Path = USER_SUPERCOLLIDER_EXTENSIONS,
+) -> None:
+    sc_extensions = data_home / "SuperCollider" / "Extensions"
+    if sc_extensions.exists() or sc_extensions.is_symlink() or not user_extensions.is_dir():
+        return
+    sc_extensions.parent.mkdir(parents=True, exist_ok=True)
+    sc_extensions.symlink_to(user_extensions, target_is_directory=True)
+
+
 def stop_runtime(process: subprocess.Popen[str], grace_seconds: float = 5.0) -> int:
     if process.poll() is not None:
         return int(process.returncode)
@@ -246,6 +258,7 @@ def runtime_smoke(
     log_file = work_dir / f"{example.parent.name}.runtime.log"
     data_home = work_dir / f"{example.parent.name}.xdg"
     data_home.mkdir()
+    prepare_xdg_data_home(data_home)
     process = start_runtime(vibe_bin, example, project_root, log_file, data_home)
     timed_out = False
     try:
@@ -374,6 +387,7 @@ def runtime_with_audio(
     log_file = work_dir / f"{rack}.runtime.log"
     data_home = work_dir / f"{rack}.xdg"
     data_home.mkdir()
+    prepare_xdg_data_home(data_home)
     baseline_wav = work_dir / f"{rack}.baseline.wav"
     active_wav = work_dir / f"{rack}.active.wav"
 

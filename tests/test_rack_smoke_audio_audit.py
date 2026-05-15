@@ -101,6 +101,29 @@ test result: FAILED
     def test_runtime_rust_log_preserves_broad_debug_filter(self) -> None:
         self.assertEqual(audit.rust_log_with_info("debug"), "debug")
 
+    def test_prepare_xdg_data_home_links_user_supercollider_extensions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            data_home = root / "xdg"
+            user_extensions = root / "user-extensions"
+            data_home.mkdir()
+            user_extensions.mkdir()
+
+            audit.prepare_xdg_data_home(data_home, user_extensions)
+
+            link = data_home / "SuperCollider" / "Extensions"
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(link.resolve(), user_extensions)
+
+    def test_prepare_xdg_data_home_ignores_missing_user_extensions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            data_home = pathlib.Path(temp) / "xdg"
+            data_home.mkdir()
+
+            audit.prepare_xdg_data_home(data_home, pathlib.Path(temp) / "missing")
+
+            self.assertFalse((data_home / "SuperCollider" / "Extensions").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
