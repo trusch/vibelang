@@ -29,6 +29,12 @@ struct UGenManifest {
     /// BinaryOpUGen / UnaryOpUGen). Defaults to 0.
     #[serde(default)]
     special_index: Option<i16>,
+    /// Public argument whose value is UGen shape metadata rather than a
+    /// runtime server input. The generated wrapper keeps this argument in the
+    /// Rhai signature, removes it from the encoded input list, and uses it for
+    /// both `num_outputs` and `special_index`.
+    #[serde(default)]
+    channel_count_input: Option<String>,
     /// True when the manifest name is an sclang-side helper, alias, or wrapper
     /// that must not be emitted as a literal server UGen name.
     #[serde(default)]
@@ -219,6 +225,65 @@ fn validate(file: &Path, ugen: &UGenManifest) -> Result<(), String> {
             ugen.name
         ));
     }
+    if ugen.channel_count_input.is_some() && ugen.special_index.is_some() {
+        return Err(format!(
+            "UGen '{}' cannot set both channel_count_input and special_index",
+            ugen.name
+        ));
+    }
+    if let Some(channel_count_input) = &ugen.channel_count_input {
+        let Some(input) = ugen
+            .inputs
+            .iter()
+            .find(|input| input.name == *channel_count_input)
+        else {
+            return Err(format!(
+                "UGen '{}' channel_count_input '{}' is not an input",
+                ugen.name, channel_count_input
+            ));
+        };
+        if input.ty == "method" {
+            return Err(format!(
+                "UGen '{}' channel_count_input '{}' cannot be method-typed",
+                ugen.name, channel_count_input
+            ));
+        }
+        let Some(default) = input.default.as_ref().and_then(|value| {
+            if value.is_u64() {
+                value.as_u64()
+            } else if value.is_i64() {
+                value.as_i64().and_then(|value| value.try_into().ok())
+            } else if value.is_f64() {
+                let value = value.as_f64().unwrap();
+                if value.is_finite() && value.fract() == 0.0 && value >= 0.0 {
+                    Some(value as u64)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }) else {
+            return Err(format!(
+                "UGen '{}' channel_count_input '{}' must have an integer default",
+                ugen.name, channel_count_input
+            ));
+        };
+        if default == 0 || default > i16::MAX as u64 {
+            return Err(format!(
+                "UGen '{}' channel_count_input '{}' default must be in 1..={}",
+                ugen.name,
+                channel_count_input,
+                i16::MAX
+            ));
+        }
+        if ugen.outputs != default as u32 {
+            return Err(format!(
+                "UGen '{}' outputs ({}) must match channel_count_input '{}' default ({})",
+                ugen.name, ugen.outputs, channel_count_input, default
+            ));
+        }
+    }
     if CONFIRMED_PSEUDO_UGENS.contains(&ugen.name.as_str()) {
         if !ugen.pseudo {
             return Err(format!(
@@ -389,6 +454,7 @@ fn main() {
         let inputs = &ugen.inputs;
         let outputs = ugen.outputs as i64;
         let category = ugen.category.as_str();
+        let channel_count_input = ugen.channel_count_input.as_deref();
 
         let snake_name = to_snake_case(name);
 
@@ -443,7 +509,16 @@ fn main() {
             }
             writeln!(f, "///").unwrap();
             writeln!(f, "/// # Returns").unwrap();
-            writeln!(f, "/// {} output channel(s)", outputs).unwrap();
+            if let Some(channel_count_input) = channel_count_input {
+                writeln!(
+                    f,
+                    "/// output channel count from `{}` (default: {})",
+                    channel_count_input, outputs
+                )
+                .unwrap();
+            } else {
+                writeln!(f, "/// {} output channel(s)", outputs).unwrap();
+            }
 
             let is_pseudo_lowering = pseudo_lowering_expr(&func_name, rate_str).is_some();
 
@@ -481,18 +556,40 @@ fn main() {
                 continue;
             }
 
+            let shape_count_var = channel_count_input.map(|input_name| {
+                let escaped_name = param_to_snake_case(input_name);
+                let count_var = format!("{}_shape_count", escaped_name);
+                writeln!(
+                    f,
+                    "    let {} = helpers::dynamic_to_shape_count({})?;",
+                    count_var, escaped_name
+                )
+                .unwrap();
+                count_var
+            });
+
             writeln!(f, "    let inputs = vec![").unwrap();
-            for param_name in &param_names {
+            for (input, param_name) in inputs.iter().zip(param_names.iter()) {
+                if channel_count_input == Some(input.name.as_str()) {
+                    continue;
+                }
                 writeln!(f, "        helpers::dynamic_to_input({})?,", param_name).unwrap();
             }
             writeln!(f, "    ];").unwrap();
             writeln!(f, "    with_builder(|builder| {{").unwrap();
             let emitted_class = ugen.ugen_class.as_deref().unwrap_or(name);
-            let special_index = ugen.special_index.unwrap_or(0);
+            let outputs_expr = shape_count_var
+                .as_deref()
+                .map(str::to_string)
+                .unwrap_or_else(|| outputs.to_string());
+            let special_index_expr = shape_count_var
+                .as_deref()
+                .map(|var| format!("{} as i16", var))
+                .unwrap_or_else(|| ugen.special_index.unwrap_or(0).to_string());
             writeln!(
                 f,
                 "        builder.add_node(\"{}\".to_string(), {}, inputs, {}, {})",
-                emitted_class, rate_enum, outputs, special_index
+                emitted_class, rate_enum, outputs_expr, special_index_expr
             )
             .unwrap();
             writeln!(f, "    }})").unwrap();

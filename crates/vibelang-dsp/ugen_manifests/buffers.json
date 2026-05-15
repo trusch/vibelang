@@ -51,6 +51,7 @@
       }
     ],
     "outputs": 1,
+    "channel_count_input": "numChannels",
     "category": "Buffers",
     "functions": [
       "play_buf_ar",
@@ -97,6 +98,7 @@
       }
     ],
     "outputs": 1,
+    "channel_count_input": "numChannels",
     "category": "Buffers",
     "functions": [
       "buf_rd_ar",
@@ -402,6 +404,7 @@
       }
     ],
     "outputs": 1,
+    "channel_count_input": "numChannels",
     "category": "Buffers",
     "functions": [
       "warp1_ar"

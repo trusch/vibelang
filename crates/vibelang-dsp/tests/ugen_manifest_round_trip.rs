@@ -16,7 +16,7 @@ use rhai::{Dynamic, Engine};
 use serde::Deserialize;
 use vibelang_dsp::{
     clear_active_builder, encode_synthdef, register_dsp_api, set_active_builder, GraphBuilderInner,
-    GraphIR,
+    GraphIR, Input,
 };
 
 const MANIFESTS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/ugen_manifests");
@@ -220,6 +220,48 @@ fn parse_scsyndef_header(bytes: &[u8]) -> Result<(), String> {
         return Err(format!("unexpected version: {}", version));
     }
     Ok(())
+}
+
+#[test]
+fn channel_count_shape_args_are_metadata_not_server_inputs() {
+    let mut engine = Engine::new();
+    register_dsp_api(&mut engine);
+
+    let cases = [
+        ("play_buf_ar(2, 0, 1, 1, 0, 0, 0);", "PlayBuf", 6usize),
+        ("buf_rd_ar(2, 0, 0, 1, 4);", "BufRd", 4usize),
+        (
+            "grain_buf_ar(2, 1, 0.1, 0, 1, 0, 4, 0, -1, 64);",
+            "GrainBuf",
+            9usize,
+        ),
+        (
+            "t_grains_ar(2, 1, 0, 1, 0, 0.1, 0, 0.5, 4);",
+            "TGrains",
+            8usize,
+        ),
+    ];
+
+    for (script, ugen_name, expected_inputs) in cases {
+        set_active_builder(GraphBuilderInner::new());
+        let _ = engine
+            .eval::<Dynamic>(script)
+            .unwrap_or_else(|e| panic!("{script} failed: {e}"));
+        let builder = clear_active_builder().expect("active builder vanished");
+        let node = builder
+            .nodes
+            .iter()
+            .find(|node| node.name == ugen_name)
+            .unwrap_or_else(|| panic!("{ugen_name} node missing after {script}"));
+
+        assert_eq!(node.inputs.len(), expected_inputs, "{ugen_name} inputs");
+        assert_eq!(node.num_outputs, 2, "{ugen_name} output count");
+        assert_eq!(node.special_index, 2, "{ugen_name} special index");
+        assert!(
+            !matches!(node.inputs.first(), Some(Input::Constant(2.0))),
+            "{ugen_name} encoded numChannels as the first runtime input"
+        );
+    }
 }
 
 #[test]

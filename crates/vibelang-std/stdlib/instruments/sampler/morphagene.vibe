@@ -216,7 +216,7 @@ define_synthdef("morphagene", |builder| {
             let pending_idx = clip_kr(organize_idx, 0.0, max_idx);
 
             // --- Committed splice idx feedback (one-block latency) -------------
-            let committed_idx = buf_rd_kr(committed_buf, 0.0, 0.0, 1.0, 0.0);
+            let committed_idx = buf_rd_kr(1.0, committed_buf, 0.0, 1.0, 0.0);
 
             // Splice bounds: even spacing by default.
             let num_splices_safe = num_splices.max(1.0);
@@ -233,7 +233,8 @@ define_synthdef("morphagene", |builder| {
             let phase = phasor_ar(0.0, rate * buf_scale, 0.0, splice_len_frames, 0.0);
             let read_pos = splice_start_frame
                          + wrap_ar(phase + splice_offset, 0.0, splice_len_frames);
-            let raw = buf_rd_ar(bufnum, read_pos, 1.0, 4.0, 0.0);
+            let raw_read = channels(buf_rd_ar(2.0, bufnum, read_pos, 1.0, 4.0), 2);
+            let raw = raw_read[0];
 
             // --- EOS detection (kr) --------------------------------------------
             let phase_prev = delay1_ar(phase);
@@ -383,6 +384,7 @@ define_synthdef("morphagene", |builder| {
             // envbufnum = -1 → built-in Hann window; maxGrains = 64 caps CPU
             // under 4× overlap with high spawn rates.
             let grain = grain_buf_ar(
+                2.0,                  // numChannels
                 spawn_trig,           // trigger (ar)
                 gene_dur_sec,         // dur (seconds, per-grain)
                 bufnum,               // sndbuf
@@ -392,10 +394,10 @@ define_synthdef("morphagene", |builder| {
                 grain_pan,            // pan (per-grain via Latch)
                 -1.0,                 // envbufnum = default Hann
                 64.0,                 // maxGrains
-                0.0,
             );
-            let grain_l = grain;
-            let grain_r = grain;
+            let grain_channels = channels(grain, 2);
+            let grain_l = grain_channels[0];
+            let grain_r = grain_channels[1];
 
             // --- Branch crossfade (C6) -----------------------------------------
             // Gene-Size below 0.02 routes to the whole-splice path (cheaper and

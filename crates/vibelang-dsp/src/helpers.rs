@@ -61,6 +61,18 @@ fn dynamic_to_f64(value: &Dynamic) -> Result<f64> {
     }
 }
 
+pub fn dynamic_to_shape_count(value: &Dynamic) -> Result<u32> {
+    let count = dynamic_to_f64(value)?;
+    if !count.is_finite() || count.fract() != 0.0 || count < 1.0 || count > i16::MAX as f64 {
+        return Err(SynthDefError::ValidationError(format!(
+            "Expected channel count integer in 1..={}, got {}",
+            i16::MAX,
+            count
+        )));
+    }
+    Ok(count as u32)
+}
+
 fn add_constant_input(builder: &mut GraphBuilderInner, value: f32) -> Input {
     builder.add_constant(value);
     Input::Constant(value)

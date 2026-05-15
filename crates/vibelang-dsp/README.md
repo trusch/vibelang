@@ -174,6 +174,8 @@ ugen_manifests/
 
 The `build.rs` script generates `src/ugens/generated.rs` containing all UGen wrapper functions.
 
+Manifest entries may set `"channel_count_input": "numChannels"` for UGens whose public channel-count argument is compile-time shape metadata. Generated wrappers keep that argument in the documented call signature, omit it from the encoded server input list, and use it as both the UGen output count and special index.
+
 ## Adding New UGens
 
 1. Add to appropriate manifest in `ugen_manifests/`
