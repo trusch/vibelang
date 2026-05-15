@@ -92,7 +92,7 @@ group("source_monitor").gain(0.0);
 group("smr_odd").gain(0.0);
 group("smr_even").gain(0.0);
 group("smr_taps").gain(0.0);
-group("phaseur_tail").gain(db(-4));
+group("phaseur_tail").gain(db(16));
 
 let qcd = voice("qcd_master")
     .synth("qcd")
@@ -136,7 +136,7 @@ qcd.outputs(["ch3", "ch4"]).mute();
 
 let source = voice("pink_granular_source")
     .synth("fourms_pink_grains")
-    .group("source_monitor")
+    .group("phaseur_tail")
     .set_param("amp", 0.40)
     .set_param("dust_rate", 1.7)
     .set_param("tone", 1150.0)

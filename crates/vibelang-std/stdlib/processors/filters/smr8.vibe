@@ -169,10 +169,10 @@ define_synthdef("smr8", |builder| {
             let in_l = p.inputs["in"][0];
             let in_r = p.inputs["in"][1];
             let mono = (in_l + in_r) * 0.5;
-            let odd_in = mono + p.inputs.odd;
-            let even_in = mono + p.inputs.even;
+            let odd_in = mono + p.inputs["odd"];
+            let even_in = mono + p.inputs["even"];
 
-            let in_env = amplitude_kr(mono + p.inputs.odd + p.inputs.even, 0.01, 0.1);
+            let in_env = amplitude_kr(mono + p.inputs["odd"] + p.inputs["even"], 0.01, 0.1);
             let unpatched = in_range_kr(in_env, 0.0, 0.0001);
             let norm_noise = pink_noise_ar() * 0.18 * clip_kr(round(p.noise_norm), 0.0, 1.0) * unpatched;
             let odd_src = odd_in + norm_noise;
