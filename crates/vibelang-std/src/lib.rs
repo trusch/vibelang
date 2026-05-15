@@ -323,4 +323,28 @@ mod tests {
             );
         }
     }
+
+    /// Regression for the ReSynthesizer rack: the original dual Spectraphon
+    /// body instantiated a large per-partial FFT/BinData analyzer graph, and
+    /// live scsynth stopped answering `/sync` immediately after `/s_new`.
+    #[test]
+    fn spectraphon_dual_avoids_server_wedging_analyzer_path() {
+        let files = get_stdlib_files();
+        let body = files
+            .get("instruments/spectral/spectraphon_dual.vibe")
+            .expect("stdlib missing instruments/spectral/spectraphon_dual.vibe");
+
+        assert!(
+            !body.contains("bin_data_kr("),
+            "spectraphon_dual should not instantiate BinData.kr per partial"
+        );
+        assert!(
+            !body.contains("fft_kr("),
+            "spectraphon_dual should not instantiate FFT analyzer buffers"
+        );
+        assert!(
+            body.contains("let n = 16.0;"),
+            "spectraphon_dual should keep the reduced 16-partial bank"
+        );
+    }
 }
