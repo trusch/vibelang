@@ -126,7 +126,8 @@ define_synthdef("erica_techno_trigger_matrix", |builder| {
 define_synthdef("erica_techno_mono_to_stereo", |builder| {
     builder
         .input("in", 1)
-        .output("out", 2)
+        .output("out_left")
+        .output("out_right")
         .param("pan", 0.0)
         .param("level", 1.0)
         .body_map(|p| {
@@ -135,7 +136,7 @@ define_synthdef("erica_techno_mono_to_stereo", |builder| {
             let left = sig * (1.0 - pan) * 0.5;
             let right = sig * (1.0 + pan) * 0.5;
 
-            [[left, right]]
+            [left, right]
         })
 });
 
@@ -337,7 +338,7 @@ let acid_stereo = voice("erica_acid_to_black_hole_stereo")
     .set_param("pan", -0.08)
     .set_param("level", 0.86);
 acid_stereo.input("in").from(group("acid_filtered"));
-acid_stereo.output("out").to(group("acid_stereo"));
+acid_stereo.outputs(["out_left", "out_right"]).to(group("acid_stereo"));
 
 let black_hole = voice("erica_black_hole_dub_delay")
     .synth("erica_black_hole_dsp")
@@ -349,7 +350,7 @@ let black_hole = voice("erica_black_hole_dub_delay")
     .set_param("mix", 0.58)
     .set_param("cv_assign", 2.0)
     .set_param("cv_amt", 0.20);
-black_hole.input("in").from(acid_stereo);
+black_hole.input("in").from(group("acid_stereo"));
 acid_env.output("env").to_param(black_hole, "cv").scale(0.65).offset(0.0);
 acid_env.outputs(["eoa", "eod", "eor"]).mute();
 black_hole.outputs(["out_left", "out_right"]).to(group("acid_wet"));
