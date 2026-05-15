@@ -76,7 +76,7 @@ impl VibeLangServer {
             // Run validation engine if available
             let validation_diagnostics =
                 if let Some(engine) = self.validation_engine.read().unwrap().as_ref() {
-                    let result = engine.validate(&doc.text());
+                    let result = engine.validate_with_context(&doc.text(), file_path.clone());
                     result.all_diagnostics()
                 } else {
                     Vec::new()
@@ -288,7 +288,10 @@ impl VibeLangServer {
 
     /// Initialize the validation engine.
     fn init_validation_engine(&self) {
-        let engine = ValidationEngine::new();
+        let mut engine = ValidationEngine::new();
+        for path in self.import_paths.read().unwrap().iter() {
+            engine.add_import_path(path.clone());
+        }
         *self.validation_engine.write().unwrap() = Some(engine);
     }
 }

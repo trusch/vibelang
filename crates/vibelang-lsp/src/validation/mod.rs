@@ -174,12 +174,20 @@ impl ValidationEngine {
             engine.add_import_path(path.clone());
         }
 
-        // Add file's parent directory as import path
+        // Add file's parent directory as import path, and use it as the
+        // source-relative base for the rhai module resolver. Without
+        // setup_module_resolver, `import` statements fail with
+        // "Module not found" even when the path is reachable.
+        let base_path = file
+            .as_ref()
+            .and_then(|p| p.parent().map(PathBuf::from))
+            .unwrap_or_else(|| PathBuf::from("."));
         if let Some(ref file_path) = file {
             if let Some(parent) = file_path.parent() {
                 engine.add_import_path(parent.to_path_buf());
             }
         }
+        engine.setup_module_resolver(base_path);
 
         // First, try to compile
         match engine.compile(script) {
@@ -424,6 +432,30 @@ mod tests {
         let (line, col) = parse_position_from_error("Error at line 5, position 10");
         assert_eq!(line, 4); // 0-based
         assert_eq!(col, 9); // 0-based
+    }
+
+    #[test]
+    fn test_validate_with_context_resolves_stdlib_imports() {
+        // Regression: LSP validation engine must hook up the rhai module
+        // resolver, otherwise `import "stdlib/..."` fails with
+        // "Module not found" even when import paths are configured.
+        let mut engine = ValidationEngine::new();
+        let stdlib = PathBuf::from(vibelang_std::stdlib_path());
+        engine.add_import_path(stdlib.clone());
+        if let Some(parent) = stdlib.parent() {
+            engine.add_import_path(parent.to_path_buf());
+        }
+
+        let script = r#"import "stdlib/instruments/sampler/morphagene.vibe";"#;
+        let result = engine.validate_with_context(script, None);
+
+        for d in result.runtime_errors.iter().chain(result.syntax_errors.iter()) {
+            assert!(
+                !d.message.to_lowercase().contains("not found"),
+                "Should not see 'not found' for a resolvable import: {}",
+                d.message
+            );
+        }
     }
 
     #[test]

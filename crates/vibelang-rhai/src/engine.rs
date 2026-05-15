@@ -396,7 +396,7 @@ impl ScriptEngine {
 
     /// Set up module resolver for import statements (native only).
     #[cfg(not(target_arch = "wasm32"))]
-    fn setup_module_resolver(&mut self, base_path: PathBuf) {
+    pub fn setup_module_resolver(&mut self, base_path: PathBuf) {
         let mut collection = rhai::module_resolvers::ModuleResolversCollection::new();
 
         // 1. Source-relative resolver (highest priority)
