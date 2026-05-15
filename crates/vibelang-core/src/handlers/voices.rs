@@ -343,8 +343,7 @@ impl<B: Backend> VoicesHandler<B> {
                 params.insert(k.clone(), *v);
             }
 
-            // Set output bus to group's audio bus (for proper routing)
-            params.insert("out".to_string(), group.audio_bus.0 as f32);
+            apply_voice_output_bus_params(&state, voice, &mut params);
             apply_voice_input_bus_params(&state, voice, &mut params);
 
             // Convert sample offset/length from seconds to synth params
@@ -680,8 +679,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let mut merged_params = voice.config.params.clone();
             merged_params.extend(params.clone());
 
-            // Set output bus to group's audio bus (for proper routing)
-            merged_params.insert("out".to_string(), group.audio_bus.0 as f32);
+            apply_voice_output_bus_params(&state, voice, &mut merged_params);
             apply_voice_input_bus_params(&state, voice, &mut merged_params);
 
             // Convert sample offset/length from seconds to synth params
@@ -920,8 +918,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             params.insert("amp".to_string(), velocity);
             params.insert("gate".to_string(), 1.0);
 
-            // Set output bus to group's audio bus (for proper routing)
-            params.insert("out".to_string(), group.audio_bus.0 as f32);
+            apply_voice_output_bus_params(&state, voice, &mut params);
             apply_voice_input_bus_params(&state, voice, &mut params);
 
             // Convert sample offset/length from seconds to synth params
@@ -1497,6 +1494,30 @@ fn apply_voice_input_bus_params(state: &State, voice: &VoiceState, params: &mut 
     }
 }
 
+fn apply_voice_output_bus_params(state: &State, voice: &VoiceState, params: &mut ParamMap) {
+    if voice.output_buses.is_empty() {
+        return;
+    }
+
+    let ports = state.synthdef_outputs(&voice.config.synthdef);
+    if ports.len() == 1 {
+        let bus = voice.output_buses[0].1.raw() as f32;
+        params.insert("out".to_string(), bus);
+        params.insert("out0".to_string(), bus);
+        return;
+    }
+
+    for (index, port) in ports.iter().enumerate() {
+        if let Some((_, bus)) = voice
+            .output_buses
+            .iter()
+            .find(|(name, _)| name == &port.name)
+        {
+            params.insert(format!("out{}", index), bus.raw() as f32);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1505,6 +1526,7 @@ mod tests {
     use crate::state::GroupState;
     use crate::types::{BufferId, BusId, GroupId};
     use std::path::Path;
+    use std::sync::Mutex;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     // =========================================================================
@@ -1527,6 +1549,7 @@ mod tests {
         synths_created: AtomicU32,
         nodes_freed: AtomicU32,
         params_set: AtomicU32,
+        synth_params: Mutex<Vec<ParamMap>>,
     }
 
     impl MockBackend {
@@ -1535,6 +1558,7 @@ mod tests {
                 synths_created: AtomicU32::new(0),
                 nodes_freed: AtomicU32::new(0),
                 params_set: AtomicU32::new(0),
+                synth_params: Mutex::new(Vec::new()),
             }
         }
 
@@ -1548,6 +1572,10 @@ mod tests {
 
         fn params_set(&self) -> u32 {
             self.params_set.load(Ordering::Relaxed)
+        }
+
+        fn synth_params(&self) -> Vec<ParamMap> {
+            self.synth_params.lock().unwrap().clone()
         }
     }
 
@@ -1569,9 +1597,10 @@ mod tests {
             _node: NodeId,
             _target: NodeId,
             _action: AddAction,
-            _params: &ParamMap,
+            params: &ParamMap,
         ) -> std::result::Result<(), Self::Error> {
             self.synths_created.fetch_add(1, Ordering::Relaxed);
+            self.synth_params.lock().unwrap().push(params.clone());
             Ok(())
         }
 
@@ -3110,6 +3139,57 @@ mod tests {
         assert_eq!(bus_ids[1], a + 1, "b follows a");
         assert_eq!(bus_ids[2], a + 2, "c follows b");
         assert_eq!(bus_ids[3], a + 4, "d follows c+1 (stereo skip)");
+    }
+
+    #[tokio::test]
+    async fn test_trigger_sets_multiport_out_bus_params() {
+        let (handler, backend, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_multiport_synthdef(
+            &state,
+            "dual_synth",
+            vec![
+                OutputPort {
+                    name: "left".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "right".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+            ],
+        )
+        .await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "dual_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+        let expected_buses = {
+            let state_read = state.read().await;
+            state_read
+                .voices
+                .get(&voice_id)
+                .unwrap()
+                .output_buses
+                .clone()
+        };
+
+        handler.trigger(voice_id, &ParamMap::new()).await.unwrap();
+
+        let synth_params = backend.synth_params();
+        assert_eq!(synth_params.len(), 1);
+        assert_eq!(
+            synth_params[0].get("out0"),
+            Some(&(expected_buses[0].1.raw() as f32))
+        );
+        assert_eq!(
+            synth_params[0].get("out1"),
+            Some(&(expected_buses[1].1.raw() as f32))
+        );
+        assert_ne!(synth_params[0].get("out0"), Some(&0.0));
+        assert_ne!(synth_params[0].get("out1"), Some(&0.0));
     }
 
     #[tokio::test]
