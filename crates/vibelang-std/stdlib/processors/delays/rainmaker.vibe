@@ -42,7 +42,6 @@ fn _rainmaker_comb_weight(taps, threshold) {
 
 define_synthdef("rainmaker")
     .input("in", 2)
-    .output("out", 2)
     .param("time", 500.0)
     .param("grid", 16.0)
     .param("feedback", 0.4)
@@ -187,11 +186,11 @@ define_synthdef("rainmaker")
     .body_map(|p| {
         let dry_l = p.inputs["in"][0];
         let dry_r = p.inputs["in"][1];
-        let fb = local_in_ar(4.0);
-        let delay_fb_l = fb[0];
-        let delay_fb_r = fb[1];
-        let comb_fb_l = fb[2];
-        let comb_fb_r = fb[3];
+        let fb = local_in_ar(1.0);
+        let delay_fb_l = fb;
+        let delay_fb_r = fb;
+        let comb_fb_l = fb;
+        let comb_fb_r = fb;
 
         let base_time = clip(p.time, 1.0, 16000.0) * 0.001;
         let grid = clip(round(p.grid), 1.0, 32.0);
@@ -293,12 +292,7 @@ define_synthdef("rainmaker")
         let feedback_ratio = pow(2.0, clip(p.feedback_pitch, -24.0, 24.0) / 12.0);
         let feedback_l = pitch_shift_ar(lpf_ar(dry_l + wet_l, feedback_cutoff), 0.16, feedback_ratio, 0.0, 0.0) * feedback;
         let feedback_r = pitch_shift_ar(lpf_ar(dry_r + wet_r, feedback_cutoff), 0.16, feedback_ratio, 0.0, 0.0) * feedback;
-        local_out_ar([
-            leak_dc_ar(feedback_l, 0.995),
-            leak_dc_ar(feedback_r, 0.995),
-            leak_dc_ar(comb_wet_l, 0.995),
-            leak_dc_ar(comb_wet_r, 0.995)
-        ]);
+        local_out_ar(leak_dc_ar((feedback_l + feedback_r + comb_wet_l + comb_wet_r) * 0.25, 0.995));
 
         let wet_dry = clip(p.wet_dry, 0.0, 1.0);
         [

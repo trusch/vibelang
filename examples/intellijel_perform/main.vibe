@@ -5,7 +5,7 @@
 //   Quadrax envelopes fan out into Plonk pitch/X/Y/mod CV destinations.
 //   Plonk outs pass through a Mixup-style stereo stage, then mono fold into uFold.
 //   uFold returns to stereo for Rainmaker's 16-tap dub rhythm delay.
-//   Tetrapad pressure controls chorus rate, filter cutoff, Rainmaker feedback, and reverse.
+//   Tetrapad pressure controls filter cutoff, Rainmaker feedback, and reverse.
 
 import "stdlib/instruments/eurorack/plonk.vibe";
 import "stdlib/instruments/eurorack/quadrax.vibe";
@@ -22,7 +22,6 @@ set_tempo(120);
 define_synthdef("intellijel_mono_to_stereo", |builder| {
     builder
         .input("in", 1)
-        .output("out", 2)
         .param("pan", 0.0)
         .param("level", 1.0)
         .body_map(|p| {
@@ -31,7 +30,7 @@ define_synthdef("intellijel_mono_to_stereo", |builder| {
             let left = sig * (1.0 - pan) * 0.5;
             let right = sig * (1.0 + pan) * 0.5;
 
-            [[left, right]]
+            [left, right]
         })
 });
 
@@ -338,13 +337,11 @@ let performance_filter = voice("tetrapad_filter_cutoff")
 performance_filter.input("in").from(rainmaker_dub);
 performance_filter.output("out").to_current_group();
 
-let chorus_touch = fx("tetrapad_chorus").synth("chorus");
-touch.output("pad1_a").to_param(chorus_touch, "rate").scale(1.15).offset(1.35);
 touch.output("pad2_b").to_param(performance_filter, "cutoff").scale(2800.0).offset(4200.0);
 touch.output("pad3_a").to_param(rainmaker_dub, "feedback").scale(0.34).offset(0.36);
 touch.output("pad3_b").to_param(rainmaker_dub, "comb_feedback").scale(0.20).offset(0.48);
 touch.output("pad4_a").to_param(rainmaker_dub, "reverse").scale(2.0).offset(0.0);
-touch.outputs(["pad1_b", "pad2_a", "pad4_b"]).mute();
+touch.outputs(["pad1_a", "pad1_b", "pad2_a", "pad4_b"]).mute();
 
 plonk_kick.output("out").mute();
 plonk_snare.output("out").mute();

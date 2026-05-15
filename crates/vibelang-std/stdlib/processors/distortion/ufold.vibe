@@ -26,7 +26,7 @@ define_synthdef("ufold")
         let level = clip(p.level, 0.0, 2.0);
 
         let biased = p.inputs["in"] + symmetry + p.symmetry_cv * symmetry_cv_amt;
-        let fold_gain = max(0.0, 1.0 + fold_amt * 4.0 + p.folds_cv * folds_cv_amt * 4.0);
+        let fold_gain = max(1.0 + fold_amt * 4.0 + p.folds_cv * folds_cv_amt * 4.0, 0.0);
         let driven = biased * fold_gain;
 
         let folded_1 = _ufold_stage(driven);
@@ -38,7 +38,10 @@ define_synthdef("ufold")
 
         let stage_count = clip(round(p.stages), 2.0, 6.0);
         let idx = clip(round((stage_count - 2.0) * 0.5), 0.0, 2.0);
-        let selected = select_ar(idx, [folded_2, folded_4, folded_6]);
+        let stage_2 = clip(1.0 - abs(idx - 0.0), 0.0, 1.0);
+        let stage_4 = clip(1.0 - abs(idx - 1.0), 0.0, 1.0);
+        let stage_6 = clip(1.0 - abs(idx - 2.0), 0.0, 1.0);
+        let selected = folded_2 * stage_2 + folded_4 * stage_4 + folded_6 * stage_6;
 
         [selected * level]
     });
