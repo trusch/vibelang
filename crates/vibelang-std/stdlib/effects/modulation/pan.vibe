@@ -1,0 +1,41 @@
+// kind=fx | category=modulation | flavor=pan_static | stereo=true | params=pan,mix,level
+//
+// Static stereo pan. Mixes the stereo input to mono and pans it to the
+// position given by `pan` (-1.0 = full left, 0.0 = center, +1.0 = full
+// right). Pan2's equal-power (sqrt) law: at pan=±0.5 each side is at
+// ~84%/55% — for ~70:30 amplitude ratio swing, drive `pan` between
+// roughly ±0.6.
+//
+// Designed to be **modulated externally** — pair it with any cv_lfo_*
+// synthdef and wire the LFO's output to this fx's `pan` param via
+// `.to_param_audio(...)` (ar→param coercion) or `.modulate_by(...)`
+// for kr-output LFOs. Examples in `kb/voice-multioutput-howto.md`.
+//
+// Parameters:
+//   pan:   -1.0 (full L) to +1.0 (full R), default 0 (center)
+//   mix:   Dry/wet mix (0.0 = dry, 1.0 = wet), default 1.0
+//   level: Output trim applied after the dry/wet mix, default 1.0
+
+define_fx("pan", |builder| {
+    builder
+        .param("pan", 0.0)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .body(|input, pan, mix, level| {
+            // Mix to mono first so pan2 has a single source to position.
+            let mono = (input[0] + input[1]) * 0.5;
+
+            // Equal-power pan via Pan2.ar. amp=1.0 keeps the output level
+            // unchanged at center; the sqrt curve preserves perceived loudness
+            // across the panning sweep.
+            let stereo = channels(pan2_ar(mono, pan, 1.0), 2);
+
+            let wet_l = leak_dc_ar(stereo[0], 0.995);
+            let wet_r = leak_dc_ar(stereo[1], 0.995);
+
+            [
+                ((1.0 - mix) * input[0] + mix * wet_l) * level,
+                ((1.0 - mix) * input[1] + mix * wet_r) * level
+            ]
+        })
+});
