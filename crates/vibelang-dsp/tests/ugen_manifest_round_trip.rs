@@ -265,6 +265,30 @@ fn channel_count_shape_args_are_metadata_not_server_inputs() {
 }
 
 #[test]
+fn local_out_ar_accepts_stereo_signal_array() {
+    let mut engine = Engine::new();
+    register_dsp_api(&mut engine);
+
+    set_active_builder(GraphBuilderInner::new());
+    let script = "local_out_ar([sin_osc_ar(440), sin_osc_ar(442)]);";
+    let _ = engine
+        .eval::<Dynamic>(script)
+        .unwrap_or_else(|e| panic!("{script} failed: {e}"));
+    let builder = clear_active_builder().expect("active builder vanished");
+    let node = builder
+        .nodes
+        .iter()
+        .find(|node| node.name == "LocalOut")
+        .expect("LocalOut node missing");
+
+    assert_eq!(
+        node.inputs.len(),
+        2,
+        "LocalOut should receive both channels"
+    );
+}
+
+#[test]
 fn ugen_manifest_round_trip_one_per_category() {
     let manifests = load_manifests();
     assert!(!manifests.is_empty(), "no UGen manifests found");

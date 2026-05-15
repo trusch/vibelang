@@ -568,14 +568,37 @@ fn main() {
                 count_var
             });
 
-            writeln!(f, "    let inputs = vec![").unwrap();
+            let local_out_channels_array = name == "LocalOut";
+            if local_out_channels_array {
+                writeln!(f, "    let mut inputs = Vec::new();").unwrap();
+            } else {
+                writeln!(f, "    let inputs = vec![").unwrap();
+            }
             for (input, param_name) in inputs.iter().zip(param_names.iter()) {
                 if channel_count_input == Some(input.name.as_str()) {
                     continue;
                 }
-                writeln!(f, "        helpers::dynamic_to_input({})?,", param_name).unwrap();
+                if local_out_channels_array && input.name == "channelsArray" {
+                    writeln!(
+                        f,
+                        "    inputs.extend(helpers::dynamic_to_signal_inputs({})?);",
+                        param_name
+                    )
+                    .unwrap();
+                } else if local_out_channels_array {
+                    writeln!(
+                        f,
+                        "    inputs.push(helpers::dynamic_to_input({})?);",
+                        param_name
+                    )
+                    .unwrap();
+                } else {
+                    writeln!(f, "        helpers::dynamic_to_input({})?,", param_name).unwrap();
+                }
             }
-            writeln!(f, "    ];").unwrap();
+            if !local_out_channels_array {
+                writeln!(f, "    ];").unwrap();
+            }
             writeln!(f, "    with_builder(|builder| {{").unwrap();
             let emitted_class = ugen.ugen_class.as_deref().unwrap_or(name);
             let outputs_expr = shape_count_var

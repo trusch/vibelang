@@ -35,7 +35,7 @@ pub fn dynamic_to_input(value: &Dynamic) -> Result<Input> {
     }
 }
 
-fn dynamic_to_signal_inputs(value: &Dynamic) -> Result<Vec<Input>> {
+pub(crate) fn dynamic_to_signal_inputs(value: &Dynamic) -> Result<Vec<Input>> {
     if let Some(array) = value.clone().try_cast::<Array>() {
         if array.is_empty() {
             return Err(SynthDefError::InvalidBodyReturn);
