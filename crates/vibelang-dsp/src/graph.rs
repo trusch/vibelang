@@ -228,6 +228,43 @@ impl GraphBuilderInner {
 
         total_slots
     }
+
+    fn ensure_max_local_bufs(&mut self) {
+        let local_buf_count = self.nodes.iter().filter(|n| n.name == "LocalBuf").count();
+        if local_buf_count == 0 || self.nodes.iter().any(|n| n.name == "MaxLocalBufs") {
+            return;
+        }
+
+        let insert_at = if self.nodes.first().is_some_and(|n| n.name == "Control") {
+            1
+        } else {
+            0
+        };
+        self.add_constant(local_buf_count as f32);
+        self.shift_node_references_for_insert(insert_at);
+        self.nodes.insert(
+            insert_at,
+            UGenNode {
+                name: "MaxLocalBufs".to_string(),
+                rate: Rate::Scalar,
+                inputs: vec![Input::Constant(local_buf_count as f32)],
+                num_outputs: 1,
+                special_index: 0,
+            },
+        );
+    }
+
+    fn shift_node_references_for_insert(&mut self, insert_at: usize) {
+        for node in &mut self.nodes {
+            for input in &mut node.inputs {
+                if let Input::Node { node_id, .. } = input {
+                    if *node_id as usize >= insert_at {
+                        *node_id += 1;
+                    }
+                }
+            }
+        }
+    }
 }
 
 // Thread-local graph builder.
@@ -283,7 +320,8 @@ pub struct GraphIR {
 
 impl GraphIR {
     /// Create a GraphIR from a builder.
-    pub fn from_builder(name: String, builder: GraphBuilderInner) -> Self {
+    pub fn from_builder(name: String, mut builder: GraphBuilderInner) -> Self {
+        builder.ensure_max_local_bufs();
         Self {
             name,
             constants: builder.constants,
