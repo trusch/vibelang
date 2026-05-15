@@ -11,6 +11,7 @@ import "stdlib/instruments/eurorack/qcd.vibe";
 import "stdlib/instruments/eurorack/peg.vibe";
 import "stdlib/processors/filters/smr8.vibe";
 import "stdlib/processors/delays/dld.vibe";
+import "stdlib/effects/dynamics/limiter.vibe";
 import "stdlib/effects/modulation/phaser_8stage.vibe";
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
@@ -85,6 +86,14 @@ define_group("phaseur_tail", || {
         .param("mix", 0.42)
         .param("level", 1.02)
         .apply();
+
+    fx("final_peak_guard")
+        .synth("limiter")
+        .param("ceiling", 0.048)
+        .param("lookahead", 0.01)
+        .param("mix", 1.0)
+        .param("level", 1.0)
+        .apply();
 });
 
 group("ctrl").gain(0.0);
@@ -92,7 +101,7 @@ group("source_monitor").gain(0.0);
 group("smr_odd").gain(0.0);
 group("smr_even").gain(0.0);
 group("smr_taps").gain(0.0);
-group("phaseur_tail").gain(db(16));
+group("phaseur_tail").gain(db(23.1));
 
 let qcd = voice("qcd_master")
     .synth("qcd")
