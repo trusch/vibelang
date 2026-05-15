@@ -1,4 +1,4 @@
-// kind=processor | category=mixers | flavor=erica_black_output | inputs=in1:1,in2:1,in3:1 | outputs=out_left:1,out_right:1,phones_left:1,phones_right:1 | params=level1,level2,level3,pan1,pan2,pan3,pan3_cv_amt,pan3_cv,master,phones_level,limit
+// kind=processor | category=mixers | flavor=erica_black_output | inputs=in1:1,in2:1,in3:1 | outputs=out:2 | params=level1,level2,level3,pan1,pan2,pan3,pan3_cv_amt,pan3_cv,master,phones_level,limit
 //
 // Erica Synths Black Output-inspired final output mixer approximation.
 // Three mono buffered inputs are levelled, panned to a stereo bus, then sent
@@ -18,10 +18,6 @@ define_synthdef("erica_black_output")
     .input("in1", 1)
     .input("in2", 1)
     .input("in3", 1)
-    .output("out_left")
-    .output("out_right")
-    .output("phones_left")
-    .output("phones_right")
     .param("level1", 0.7)
     .param("level2", 0.7)
     .param("level3", 0.7)
@@ -49,12 +45,8 @@ define_synthdef("erica_black_output")
         let out_l = _erica_black_output_soft(main_l, p.limit);
         let out_r = _erica_black_output_soft(main_r, p.limit);
 
-        let phones_level = clip(p.phones_level, 0.0, 1.0);
-
         [
             out_l,
-            out_r,
-            out_l * phones_level,
-            out_r * phones_level
+            out_r
         ]
     });

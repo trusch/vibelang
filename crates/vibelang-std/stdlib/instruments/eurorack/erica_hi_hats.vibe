@@ -6,6 +6,7 @@
 
 define_synthdef("erica_hi_hats", |builder| {
     builder
+        .output("out", 1)
         .output("ch", 1)
         .output("oh", 1)
         .param("ch_trig", 0.0)
@@ -68,7 +69,8 @@ define_synthdef("erica_hi_hats", |builder| {
             let accent_gain = 1.0 + accent * 0.65;
             let ch = clip_ar(leak_dc_ar((hat_source * ch_env * 1.8 + tick) * accent_gain, 0.995), -1.0, 1.0);
             let oh = clip_ar(leak_dc_ar((hat_source * oh_env * 1.25 + tick * 0.7) * accent_gain, 0.995), -1.0, 1.0);
+            let out = softclip(ch * 0.58 + oh * 0.52);
 
-            [ch, oh]
+            [out, ch, oh]
         })
 });

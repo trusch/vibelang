@@ -6,6 +6,7 @@
 
 define_synthdef("erica_bassline", |builder| {
     builder
+        .output("out")
         .output("main")
         .output("tri")
         .output("square")
@@ -91,6 +92,7 @@ define_synthdef("erica_bassline", |builder| {
             );
 
             [
+                main,
                 main,
                 clip_ar(tri, -1.0, 1.0),
                 clip_ar(square, -1.0, 1.0),

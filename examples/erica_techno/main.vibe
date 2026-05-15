@@ -2,10 +2,10 @@
 //
 // Signal chain:
 //   VC Clock at 130 BPM feeds the local trigger matrix: clock -> kick, snare, hats, acid, and stab gates.
-//   Bass Drum out, Snare out, Hi-Hats ch/oh -> Quad VCA2 in1..4; Quad VCA2 sum -> Black Output in1.
+//   Bass Drum out, Snare out, Hi-Hats ch/oh -> Quad VCA2 in1..4; Quad VCA2 out -> Black Output in1.
 //   Bassline main -> Polivoks VCF -> Black Hole DSP program 1 delay; folded wet return -> Black Output in2.
 //   Black VCO2 mix -> gated VCA -> Black BBD -> Black Output in3, with VC EG env routed to pan3_cv.
-//   Black Output out_left/out_right go to_main as the stereo pair; phones are muted.
+//   Black Output out goes to_main as the stereo pair.
 
 import "stdlib/instruments/eurorack/erica_bass_drum.vibe";
 import "stdlib/instruments/eurorack/erica_snare_drum.vibe";
@@ -126,8 +126,6 @@ define_synthdef("erica_techno_trigger_matrix", |builder| {
 define_synthdef("erica_techno_mono_to_stereo", |builder| {
     builder
         .input("in", 1)
-        .output("out_left")
-        .output("out_right")
         .param("pan", 0.0)
         .param("level", 1.0)
         .body_map(|p| {
@@ -169,6 +167,18 @@ define_synthdef("erica_techno_gate_vca", |builder| {
             let env = decay2_ar(fire, clip(p.attack, 0.001, 0.08), clip(p.decay, 0.02, 1.2));
 
             [softclip(p.inputs["in"] * env * clip(p.level, 0.0, 1.5))]
+        })
+});
+
+define_synthdef("erica_techno_stereo_trim", |builder| {
+    builder
+        .input("in", 2)
+        .param("level", 1.0)
+        .body_map(|p| {
+            [
+                p.inputs["in"][0] * p.level,
+                p.inputs["in"][1] * p.level
+            ]
         })
 });
 
@@ -259,11 +269,10 @@ trigger_matrix.output("accent").to_param(kick, "accent").scale(1.4).offset(0.0);
 trigger_matrix.output("accent").to_param(snare, "accent").scale(1.1).offset(0.0);
 trigger_matrix.output("accent").to_param(hats, "accent").scale(0.8).offset(0.0);
 
-kick.output("out").to(group("kick_bus"));
+kick.output("out").mute();
 kick.output("noise").mute();
-snare.output("out").to(group("snare_bus"));
-hats.output("ch").to(group("hat_ch_bus"));
-hats.output("oh").to(group("hat_oh_bus"));
+snare.output("out").mute();
+hats.outputs(["out", "ch", "oh"]).mute();
 
 let drum_vca = voice("erica_quad_vca2_drum_cascade")
     .synth("erica_quad_vca2")
@@ -280,12 +289,12 @@ let drum_vca = voice("erica_quad_vca2_drum_cascade")
     .set_param("level_4", 0.34)
     .set_param("bias_4", 1.0)
     .set_param("curve_4", 1.0);
-drum_vca.input("in1").from(group("kick_bus"));
-drum_vca.input("in2").from(group("snare_bus"));
-drum_vca.input("in3").from(group("hat_ch_bus"));
-drum_vca.input("in4").from(group("hat_oh_bus"));
+drum_vca.input("in1").from(kick);
+drum_vca.input("in2").from(snare);
+drum_vca.input("in3").from(hats);
+drum_vca.input("in4").disconnect();
 drum_vca.outputs(["out1", "out2", "out3", "out4"]).mute();
-drum_vca.output("sum").to(group("drum_sum"));
+drum_vca.output("out").mute();
 
 let acid = voice("erica_bassline_acid_lane")
     .synth("erica_bassline")
@@ -304,8 +313,7 @@ let acid = voice("erica_bassline_acid_lane")
 trigger_matrix.output("acid_gate").to_param(acid, "gate");
 trigger_matrix.output("acid_voct").to_param(acid, "voct");
 trigger_matrix.output("accent").to_param(acid, "accent").scale(1.1).offset(0.0);
-acid.output("main").to(group("acid_raw"));
-acid.outputs(["tri", "square", "sub"]).mute();
+acid.outputs(["out", "main", "tri", "square", "sub"]).mute();
 
 let acid_env = voice("erica_vc_eg_acid_cutoff")
     .synth("erica_vc_eg")
@@ -328,17 +336,17 @@ let polivoks = voice("erica_polivoks_acid_sweep")
     .set_param("input_gain", 1.38)
     .set_param("drive", 0.42)
     .set_param("level", 0.82);
-polivoks.input("in").from(group("acid_raw"));
+polivoks.input("in").from(acid);
 polivoks.param("cutoff").modulate_by(acid_env, "env").scale(2100.0).offset(320.0);
-polivoks.output("out").to(group("acid_filtered"));
+polivoks.output("out").mute();
 
 let acid_stereo = voice("erica_acid_to_black_hole_stereo")
     .synth("erica_techno_mono_to_stereo")
     .group("acid_stereo")
     .set_param("pan", -0.08)
     .set_param("level", 0.86);
-acid_stereo.input("in").from(group("acid_filtered"));
-acid_stereo.outputs(["out_left", "out_right"]).to(group("acid_stereo"));
+acid_stereo.input("in").from(polivoks);
+acid_stereo.output("out").mute();
 
 let black_hole = voice("erica_black_hole_dub_delay")
     .synth("erica_black_hole_dsp")
@@ -350,18 +358,18 @@ let black_hole = voice("erica_black_hole_dub_delay")
     .set_param("mix", 0.58)
     .set_param("cv_assign", 2.0)
     .set_param("cv_amt", 0.20);
-black_hole.input("in").from(group("acid_stereo"));
+black_hole.input("in").from(acid_stereo);
 acid_env.output("env").to_param(black_hole, "cv").scale(0.65).offset(0.0);
 acid_env.outputs(["eoa", "eod", "eor"]).mute();
-black_hole.outputs(["out_left", "out_right"]).to(group("acid_wet"));
+black_hole.output("out").mute();
 
 let acid_return = voice("erica_acid_wet_return")
     .synth("erica_techno_stereo_to_mono")
     .group("acid_return")
     .set_param("balance", 0.0)
     .set_param("level", 0.82);
-acid_return.input("in").from(group("acid_wet"));
-acid_return.output("out").to(group("acid_return"));
+acid_return.input("in").from(black_hole);
+acid_return.output("out").mute();
 
 let stab_osc = voice("erica_black_vco2_sparse_stab")
     .synth("erica_black_vco2")
@@ -376,8 +384,7 @@ let stab_osc = voice("erica_black_vco2_sparse_stab")
     .set_param("mix_pulse", 0.36)
     .set_param("mix_sub", 0.18);
 trigger_matrix.output("stab_voct").to_param(stab_osc, "voct");
-stab_osc.outputs(["sine", "tri", "saw", "pulse", "sub"]).mute();
-stab_osc.output("mix").to(group("stab_raw"));
+stab_osc.outputs(["out", "sine", "tri", "saw", "pulse", "sub", "mix"]).mute();
 
 let stab_amp = voice("erica_stab_clocked_vca")
     .synth("erica_techno_gate_vca")
@@ -385,9 +392,9 @@ let stab_amp = voice("erica_stab_clocked_vca")
     .set_param("attack", 0.006)
     .set_param("decay", 0.22)
     .set_param("level", 0.74);
-stab_amp.input("in").from(group("stab_raw"));
+stab_amp.input("in").from(stab_osc);
 trigger_matrix.output("stab_gate").to_param(stab_amp, "gate");
-stab_amp.output("out").to(group("stab_gate"));
+stab_amp.output("out").mute();
 
 let stab_pan_env = voice("erica_vc_eg_stab_autopan")
     .synth("erica_vc_eg")
@@ -413,29 +420,35 @@ let bbd = voice("erica_black_bbd_stab_echo")
     .set_param("lfo_rate", 0.21)
     .set_param("lfo_depth", 0.18)
     .set_param("clock_noise", 0.08);
-bbd.input("in").from(group("stab_gate"));
+bbd.input("in").from(stab_amp);
 stab_pan_env.output("env").to_param(bbd, "mix_cv").scale(0.18).offset(0.0);
-bbd.output("out").to(group("stab_delay"));
+bbd.output("out").mute();
 
 let output = voice("erica_black_output_final")
     .synth("erica_black_output")
     .group("main_out")
-    .set_param("level1", 0.92)
-    .set_param("level2", 0.68)
-    .set_param("level3", 0.58)
+    .set_param("level1", 0.50)
+    .set_param("level2", 0.36)
+    .set_param("level3", 0.30)
     .set_param("pan1", 0.0)
     .set_param("pan2", -0.16)
     .set_param("pan3", 0.18)
     .set_param("pan3_cv_amt", 1.0)
-    .set_param("master", 0.84)
+    .set_param("master", 0.18)
     .set_param("phones_level", 0.55)
     .set_param("limit", 1.0);
-output.input("in1").from(group("drum_sum"));
-output.input("in2").from(group("acid_return"));
-output.input("in3").from(group("stab_delay"));
+output.input("in1").from(drum_vca);
+output.input("in2").from(acid_return);
+output.input("in3").from(bbd);
 output.param("pan3_cv").modulate_by(stab_pan_env, "env").scale(1.8).offset(-0.9);
-output.outputs(["out_left", "out_right"]).to_main();
-output.outputs(["phones_left", "phones_right"]).mute();
+output.output("out").mute();
+
+let output_trim = voice("erica_black_output_final_trim")
+    .synth("erica_techno_stereo_trim")
+    .group("main_out")
+    .set_param("level", 1.0);
+output_trim.input("in").from(output);
+output_trim.output("out").to_main();
 
 master_clock.run();
 trigger_matrix.run();
@@ -454,3 +467,4 @@ stab_amp.run();
 stab_pan_env.run();
 bbd.run();
 output.run();
+output_trim.run();

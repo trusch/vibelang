@@ -1,4 +1,4 @@
-// kind=processor | category=fx | flavor=erica_black_hole_dsp | inputs=in:2 | outputs=out_left:1,out_right:1 | params=program,param1,param2,rate,mix,cv_assign,cv,cv_amt
+// kind=processor | category=fx | flavor=erica_black_hole_dsp | inputs=in:2 | outputs=out:2 | params=program,param1,param2,rate,mix,cv_assign,cv,cv_amt
 //
 // Erica Black Hole DSP-inspired stereo multi-FX processor approximation.
 // The hardware is an FV-1 style 16-program effect module with four editable
@@ -24,8 +24,6 @@ fn _erica_bh_soft(sig, drive) {
 
 define_synthdef("erica_black_hole_dsp")
     .input("in", 2)
-    .output("out_left")
-    .output("out_right")
     .param("program", 0.0)
     .param("param1", 0.5)
     .param("param2", 0.5)

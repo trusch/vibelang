@@ -1,4 +1,4 @@
-// kind=processor | category=mixers | flavor=erica_quad_vca2 | inputs=in1:1,in2:1,in3:1,in4:1 | outputs=out1:1,out2:1,out3:1,out4:1,sum:1 | params=level_1,bias_1,cv_1,curve_1,level_2,bias_2,cv_2,curve_2,level_3,bias_3,cv_3,curve_3,level_4,bias_4,cv_4,curve_4
+// kind=processor | category=mixers | flavor=erica_quad_vca2 | inputs=in1:1,in2:1,in3:1,in4:1 | outputs=out:1,out1:1,out2:1,out3:1,out4:1 | params=level_1,bias_1,cv_1,curve_1,level_2,bias_2,cv_2,curve_2,level_3,bias_3,cv_3,curve_3,level_4,bias_4,cv_4,curve_4
 //
 // Erica Synths Black Quad VCA2-inspired four-channel mono VCA/mixer.
 // The CV controls are normalized params: with cv_N at its default 0.0,
@@ -20,11 +20,11 @@ define_synthdef("erica_quad_vca2")
     .input("in2", 1)
     .input("in3", 1)
     .input("in4", 1)
+    .output("out", 1)
     .output("out1", 1)
     .output("out2", 1)
     .output("out3", 1)
     .output("out4", 1)
-    .output("sum", 1)
     .param("level_1", 0.7)
     .param("bias_1", 0.0)
     .param("cv_1", 0.0)
@@ -53,10 +53,10 @@ define_synthdef("erica_quad_vca2")
         let out4 = p.inputs.in4 * gain_4 + out3;
 
         [
+            out4,
             out1,
             out2,
             out3,
-            out4,
             out4
         ]
     });

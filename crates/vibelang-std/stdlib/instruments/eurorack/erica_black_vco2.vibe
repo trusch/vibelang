@@ -10,6 +10,7 @@ fn _erica_black_vco2_fold(x) {
 
 define_synthdef("erica_black_vco2", |builder| {
     builder
+        .output("out", 1)
         .output("sine", 1)
         .output("tri", 1)
         .output("saw", 1)
@@ -102,6 +103,7 @@ define_synthdef("erica_black_vco2", |builder| {
                      + sub * mix_sub) / mix_norm;
 
             [
+                clip_ar(mix, -1.0, 1.0),
                 clip_ar(sine, -1.0, 1.0),
                 clip_ar(tri, -1.0, 1.0),
                 clip_ar(saw, -1.0, 1.0),
