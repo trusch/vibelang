@@ -61,10 +61,10 @@ define_synthdef("dld", |builder| {
         .param("reverse_b", 0.0)
         .param("clear_b", 0.0)
         .body_map(|p| {
-            let in_a = p.inputs["in_a"][0];
-            let in_b = p.inputs["in_b"][0];
-            let return_a = p.inputs["return_a"][0];
-            let return_b = p.inputs["return_b"][0];
+            let in_a = p.inputs.in_a;
+            let in_b = p.inputs.in_b;
+            let return_a = p.inputs.return_a;
+            let return_b = p.inputs.return_b;
 
             let ping_hz = clip_kr(p.ping_hz, 0.05, 64.0);
             let clock = impulse_kr(ping_hz);
