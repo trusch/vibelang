@@ -112,9 +112,6 @@ impl<B: Backend> SynthDefsHandler<B> {
         let input_route_nodes_to_free = {
             let mut state = self.state.write().await;
             state.synthdefs.insert(name.to_string());
-            if let Some(outputs) = outputs {
-                state.synthdef_outputs.insert(name.to_string(), outputs);
-            }
 
             let voice_ids: Vec<_> = state
                 .voices
@@ -123,6 +120,11 @@ impl<B: Backend> SynthDefsHandler<B> {
                     (voice.config.synthdef == name).then_some(*voice_id)
                 })
                 .collect();
+            if let Some(outputs) = outputs {
+                if voice_ids.is_empty() {
+                    state.synthdef_outputs.insert(name.to_string(), outputs);
+                }
+            }
             if voice_ids.is_empty() {
                 state.synthdef_inputs.insert(name.to_string(), inputs);
                 Vec::new()

@@ -1562,7 +1562,20 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         let stale_adapter_keys: Vec<(VoiceId, String)> = state
             .ar_to_kr_adapters
             .keys()
-            .filter(|k| !active_sources.contains(k))
+            .filter(|(sv, sp)| {
+                if !active_sources.contains(&(*sv, sp.clone())) {
+                    return true;
+                }
+                let Some(voice) = state.voices.get(sv) else {
+                    return true;
+                };
+                let port_rate = state
+                    .synthdef_outputs(&voice.config.synthdef)
+                    .into_iter()
+                    .find(|p| p.name == *sp)
+                    .map(|p| p.rate);
+                port_rate != Some(PortRate::Ar)
+            })
             .cloned()
             .collect();
         for k in stale_adapter_keys {
