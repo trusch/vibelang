@@ -1,10 +1,8 @@
-// Spectraphon analyzer - startup-safe harmonic envelope follower.
+// Spectraphon analyzer - real FFT + one BinData read per harmonic.
 //
 // This synthdef is intentionally only the SAM analyzer half of Spectraphon.
-// It writes the first 16 harmonic magnitudes into the 64-frame `mag_buf`;
-// the oscillator synthdef consumes that control buffer. The live SAM path uses
-// filter-bank envelope followers here because even a one-bin FFT analyzer can
-// exceed scsynth's startup sync budget when instantiated as a helper child.
+// It writes 64 harmonic magnitudes into `mag_buf`; the oscillator synthdef
+// consumes that control buffer.
 
 define_synthdef("spectraphon_analyzer", |builder| {
     builder
@@ -22,22 +20,25 @@ define_synthdef("spectraphon_analyzer", |builder| {
             let mag_buf = p.mag_buf;
             let active = clip(p.active, 0.0, 1.0) * clip(p.gate, 0.0, 1.0);
 
-            let rq = 0.03 + focus * 0.22;
-            let mag_scale = 8.0;
-            let attack = 0.01;
-            let release = 0.08;
+            let fft_buf = local_buf_ir(1.0, 2048.0);
+            let chain = fft_kr(fft_buf, analyze_in, 0.5, 1.0, 1.0, 0.0);
+            let bin_per_hz = 2048.0 / 44100.0;
+            let mag_scale = 0.001953125;
+            let bin_max = 1023.0;
+            let lag_t = 0.02;
+            let bin_width = 0.5 + focus * 3.5;
 
             let k = 1.0;
-            let centre_hz = clip(k * f0_analyze, 20.0, 18000.0);
-            let band = bpf_ar(analyze_in, centre_hz, rq);
-            let mag = clip(amplitude_kr(band, attack, release) * mag_scale, 0.0, 1.0) * active;
+            let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
+            let mag_centre = channels(bin_data_kr(chain, centre_bin, bin_width), 2)[0];
+            let mag = lag_kr(mag_centre * mag_scale, lag_t) * active;
             buf_wr_kr(mag, mag_buf, k - 1.0, 0);
 
-            for i in 2..17 {
+            for i in 2..65 {
                 let k = i.to_float();
-                let centre_hz = clip(k * f0_analyze, 20.0, 18000.0);
-                let band = bpf_ar(analyze_in, centre_hz, rq);
-                let mag = clip(amplitude_kr(band, attack, release) * mag_scale, 0.0, 1.0) * active;
+                let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
+                let mag_centre = channels(bin_data_kr(chain, centre_bin, bin_width), 2)[0];
+                let mag = lag_kr(mag_centre * mag_scale, lag_t) * active;
                 buf_wr_kr(mag, mag_buf, k - 1.0, 0);
             }
 

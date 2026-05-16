@@ -355,11 +355,8 @@ mod tests {
             "spectraphon_side should be a Rhai helper, not a monolithic synthdef"
         );
         assert!(
-            analyzer.contains("bpf_ar(")
-                && analyzer.contains("amplitude_kr(")
-                && !analyzer.contains("fft_kr(")
-                && !analyzer.contains("bin_data_kr("),
-            "spectraphon_analyzer should use the startup-safe harmonic envelope follower"
+            analyzer.contains("fft_kr(") && analyzer.contains("bin_data_kr("),
+            "spectraphon_analyzer should own the real FFT/BinData analyzer path"
         );
         assert!(
             side.contains("spectraphon_sam_oscillator")

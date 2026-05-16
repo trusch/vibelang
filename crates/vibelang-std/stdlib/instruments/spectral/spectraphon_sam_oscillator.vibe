@@ -1,4 +1,4 @@
-// Spectraphon SAM oscillator - live analyzer magnitude consumer.
+// Spectraphon SAM oscillator - live FFT magnitude consumer.
 //
 // Reads analyzer magnitudes from `mag_buf` and drives a 64-partial additive
 // oscillator split into the hardware-style sine/sub/odd/even ports. The
