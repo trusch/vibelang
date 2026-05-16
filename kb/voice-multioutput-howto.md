@@ -23,9 +23,10 @@
 > use case with shared FX state and fewer buses (see §3b).
 
 A vibelang voice can expose **N named output ports**. Each port is an
-independent signal that the script routes wherever it likes — to a group
-mix bus, straight to the main hardware output, or muted. One synthdef can
-fan out to several destinations without splitting it into sibling voices.
+independent signal that the script routes with the verbs for that port's
+rate: audio-rate ports can go to group/main mix buses, kr/tr ports can
+drive params/triggers, and any rate can be muted. One synthdef can fan out
+to several destinations without splitting it into sibling voices.
 
 The companion named-input surface lets synthdefs expose patchable audio
 input jacks. Declare inputs with `.input(...)`, read them in `body_map` as
@@ -92,25 +93,32 @@ Rules:
 
 ---
 
-## 2. Default routing rule (count-based)
+## 2. Default routing rule (audio-rate count)
 
 When the script declares **zero** routes for a voice, vibelang installs a
-count-based default so the synth still makes sound. The rule is purely a
-function of the declared port count:
+count-based default so audio synths still make sound. The count is computed
+over **audio-rate (`ar`) ports only**; kr/tr ports never receive implicit
+audio group routes and must be routed explicitly or muted.
 
-| Port count | Default behaviour |
+| Audio-rate port count | Default behaviour |
 |---|---|
-| 0 | No ports — voice produces no audio (degenerate). |
-| 1 | The single port routes to the voice's group bus. |
-| 2 | Both ports route to the voice's group bus (treated as L/R when summed). |
-| N > 2 | The **first two** ports route to the group bus; **all remaining ports are silent** until the script routes them. |
+| 0 | No default routes. Zero-output side-effect synthdefs, kr-only synthdefs, and tr-only synthdefs produce no default routes at all. |
+| 1 | The single ar port routes to the voice's group bus. |
+| 2 | Both ar ports route to the voice's group bus (treated as L/R when summed). |
+| N > 2 | The **first two ar ports** route to the group bus; **all remaining ar ports are silent** until the script routes them. |
 
 Why "first two then silent": the common pattern is that the first ports
-in declaration order are the canonical mix output (e.g. `sine` first),
-and any extras are CV-style or specialised sends that should not leak
-into the main mix without explicit user intent.
+in declaration order are the canonical mix output (e.g. `sine` first), and
+any extras are specialised sends that should not leak into the main mix
+without explicit user intent. For mixed-rate synthdefs, "first two" means
+the first two **ar** ports in declaration order, skipping any intervening
+kr/tr ports.
 
-> Source: `crates/vibelang-core/src/handlers/routes.rs::default_routes_for_voice`.
+> Source: `crates/vibelang-core/src/handlers/routes.rs::default_routes_for_voice`;
+> covered by `default_routes_kr_only_port_returns_empty`,
+> `default_routes_mixed_rate_defaults_only_audio_ports`,
+> `unrouted_kr_output_does_not_default_route_or_block_valid_audio_route`, and
+> `create_voice_zero_output_synthdef_has_no_default_routes_or_mixers`.
 
 Default routes can be **overridden** by an explicit `voice.output(...)`
 call — explicit routes always win over the default in the merge step
