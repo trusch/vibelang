@@ -3796,6 +3796,7 @@ dependencies = [
  "libc",
  "midir 0.9.1",
  "parking_lot",
+ "rhai",
  "rosc 0.10.1",
  "serde",
  "thiserror 1.0.69",
