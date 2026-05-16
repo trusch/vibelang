@@ -1334,6 +1334,31 @@ impl State {
         self.default_routes.retain(|(vid, _), _| *vid != voice_id);
     }
 
+    /// Return active param-route bindings that a newly-created node for
+    /// `voice_id` must inherit.
+    ///
+    /// Param summers and trigger links are voice-target scoped, not node
+    /// scoped. Route finalization maps every node that exists at that moment;
+    /// note/trigger paths use this helper to map nodes spawned later onto the
+    /// already-materialized intermediate buses.
+    pub fn active_param_bindings_for_voice(&self, voice_id: VoiceId) -> Vec<(String, BusId)> {
+        use crate::handlers::ParamRouteTarget;
+
+        let mut bindings = Vec::new();
+        for ((target, param), summer) in &self.param_summers {
+            if *target == ParamRouteTarget::Voice(voice_id) {
+                bindings.push((param.clone(), summer.bus));
+            }
+        }
+        for ((target, param), (_, bus)) in &self.param_triggers {
+            if *target == ParamRouteTarget::Voice(voice_id) {
+                bindings.push((param.clone(), *bus));
+            }
+        }
+        bindings.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.raw().cmp(&b.1.raw())));
+        bindings
+    }
+
     /// Drain every Param-route entry that mentions `voice_id` from
     /// [`State::param_routes_set`], [`State::param_routes_bend`], and
     /// [`State::param_routes_trigger`], on either the source side or the

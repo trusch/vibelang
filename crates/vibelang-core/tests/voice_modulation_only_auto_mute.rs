@@ -371,6 +371,19 @@ async fn suppress_merge_diff_finalize(
                     .map(|v| v.config.modulator_only)
                     .unwrap_or(false)
             },
+            |vid, port, dest| {
+                if !matches!(dest, RouteDest::Group(_) | RouteDest::Main) {
+                    return false;
+                }
+                let Some(voice) = s.voices.get(&vid) else {
+                    return false;
+                };
+                s.synthdef_outputs(&voice.config.synthdef)
+                    .into_iter()
+                    .any(|output| {
+                        output.name == port && matches!(output.rate, vibelang_dsp::PortRate::Ar)
+                    })
+            },
         );
         merge_default_routes(user_routes, &filtered)
     };

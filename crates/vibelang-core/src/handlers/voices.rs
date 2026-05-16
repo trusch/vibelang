@@ -257,6 +257,20 @@ impl<B: Backend> VoicesHandler<B> {
             .await
     }
 
+    async fn map_active_param_bindings(
+        &self,
+        node_id: NodeId,
+        bindings: &[(String, BusId)],
+    ) -> Result<()> {
+        for (param, bus) in bindings {
+            self.backend
+                .map_param_to_bus(node_id, param, bus.raw())
+                .await
+                .map_err(Error::backend)?;
+        }
+        Ok(())
+    }
+
     /// Send a note-on with per-note voice parameters (immediate).
     ///
     /// Like `note_on`, but also merges `extra_params` into the synth creation
@@ -321,7 +335,7 @@ impl<B: Backend> VoicesHandler<B> {
         }
 
         // Gather info and allocate node while holding lock
-        let (node_id, group_node_id, synthdef, params, old_node) = {
+        let (node_id, group_node_id, synthdef, params, old_node, param_bindings) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -399,8 +413,16 @@ impl<B: Backend> VoicesHandler<B> {
             let voice = state.voices.get_mut(&id).ok_or(Error::VoiceNotFound(id))?;
             let old_node = voice.note_nodes.remove(&note);
             voice.note_nodes.insert(note, node_id);
+            let param_bindings = state.active_param_bindings_for_voice(id);
 
-            (node_id, group_node_id, synthdef, params, old_node)
+            (
+                node_id,
+                group_node_id,
+                synthdef,
+                params,
+                old_node,
+                param_bindings,
+            )
         };
 
         // Free old node if any (lock released)
@@ -413,6 +435,8 @@ impl<B: Backend> VoicesHandler<B> {
             .create_synth(&synthdef, node_id, group_node_id, AddAction::Head, &params)
             .await
             .map_err(Error::backend)?;
+        self.map_active_param_bindings(node_id, &param_bindings)
+            .await?;
 
         Ok(())
     }
@@ -669,7 +693,15 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
     async fn trigger(&self, id: VoiceId, params: &ParamMap) -> Result<()> {
         // Gather info and allocate node while holding lock
-        let (node_id, group_node_id, synthdef, merged_params, old_nodes, choke_nodes) = {
+        let (
+            node_id,
+            group_node_id,
+            synthdef,
+            merged_params,
+            old_nodes,
+            choke_nodes,
+            param_bindings,
+        ) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -791,6 +823,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                     old_nodes.push(old_node);
                 }
             }
+            let param_bindings = state.active_param_bindings_for_voice(id);
 
             (
                 node_id,
@@ -799,6 +832,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 merged_params,
                 old_nodes,
                 choke_nodes,
+                param_bindings,
             )
         };
 
@@ -819,6 +853,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             )
             .await
             .map_err(Error::backend)?;
+        self.map_active_param_bindings(node_id, &param_bindings)
+            .await?;
 
         // Free old nodes (polyphony limit)
         for old_node in old_nodes {
@@ -905,7 +941,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         }
 
         // Gather info and allocate node while holding lock
-        let (node_id, group_node_id, synthdef, params, old_node) = {
+        let (node_id, group_node_id, synthdef, params, old_node, param_bindings) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -994,8 +1030,16 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
             // Track note -> node mapping
             voice.note_nodes.insert(note, node_id);
+            let param_bindings = state.active_param_bindings_for_voice(id);
 
-            (node_id, group_node_id, synthdef, params, old_node)
+            (
+                node_id,
+                group_node_id,
+                synthdef,
+                params,
+                old_node,
+                param_bindings,
+            )
         };
 
         // Free old node if any (lock released)
@@ -1009,6 +1053,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             .create_synth(&synthdef, node_id, group_node_id, AddAction::Head, &params)
             .await
             .map_err(Error::backend)?;
+        self.map_active_param_bindings(node_id, &param_bindings)
+            .await?;
 
         Ok(())
     }

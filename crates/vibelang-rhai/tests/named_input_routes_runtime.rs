@@ -339,6 +339,98 @@ async fn script_source_first_cv_to_param_materializes_live_map_and_summer() {
 }
 
 #[tokio::test]
+async fn script_source_first_cv_to_param_maps_target_nodes_spawned_after_reload() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+    load_cv_param_fixture(
+        &mut runtime,
+        "cv_param_late_spawn_source",
+        "cv_param_late_spawn_target",
+    )
+    .await;
+
+    let script = r#"
+        let lfo = voice("cv_param_late_spawn_lfo")
+            .synth("cv_param_late_spawn_source")
+            .group("cv_param_late_spawn")
+            .run();
+        let target = voice("cv_param_late_spawn_sine")
+            .synth("cv_param_late_spawn_target")
+            .group("cv_param_late_spawn")
+            .param("freq", 220.0)
+            .param("amp", 0.2);
+        lfo.output("out").to_param(target, "freq").scale(700.0).offset(110.0);
+    "#;
+    apply_script(&mut runtime, script).await;
+
+    let target = VoiceId::new(fnv1a_id("cv_param_late_spawn_sine"));
+    let (summer_bus, initial_summer_count) = {
+        let state = runtime.state().read().await;
+        assert!(
+            state
+                .voices
+                .get(&target)
+                .expect("target voice exists")
+                .active_nodes
+                .is_empty(),
+            "target starts untriggered so only the later node can receive this map"
+        );
+        let summer = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+            .expect("source-first SET route should materialize a reusable summer");
+        assert_eq!(summer.sources[0].scale, 700.0);
+        assert_eq!(summer.sources[0].offset, 110.0);
+        (
+            summer.bus.raw(),
+            runtime
+                .backend()
+                .synth_creates()
+                .iter()
+                .filter(|create| create.def == "param_kr_modulate_1")
+                .count(),
+        )
+    };
+
+    runtime
+        .send(
+            VoiceMessage::Trigger {
+                id: target,
+                params: ParamMap::new(),
+            }
+            .into(),
+        )
+        .await
+        .unwrap();
+    runtime.tick().await;
+
+    let new_node = {
+        let state = runtime.state().read().await;
+        *state
+            .voices
+            .get(&target)
+            .expect("target voice exists")
+            .active_nodes
+            .last()
+            .expect("trigger should spawn a node")
+    };
+    assert_eq!(
+        runtime
+            .backend()
+            .synth_creates()
+            .iter()
+            .filter(|create| create.def == "param_kr_modulate_1")
+            .count(),
+        initial_summer_count,
+        "late trigger should reuse the existing voice-target-scoped summer"
+    );
+    assert!(runtime.backend().param_maps().contains(&ParamMapCall {
+        node: new_node,
+        param: "freq".to_string(),
+        bus: summer_bus,
+    }));
+}
+
+#[tokio::test]
 async fn script_target_first_cv_to_param_materializes_map_and_conflicts_with_set() {
     let mut runtime = Runtime::new(RecordingBackend::default());
     load_cv_param_fixture(

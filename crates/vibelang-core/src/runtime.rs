@@ -4108,6 +4108,338 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn note_on_after_set_route_materialization_inherits_existing_param_summer() {
+        use crate::handlers::ParamRouteTarget;
+        use crate::message::VoiceMessage;
+        use crate::reload::{GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, VoiceId};
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        register_voice_synthdef(
+            &runtime,
+            "late_set_source",
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 1,
+                rate: PortRate::Kr,
+            }],
+        )
+        .await;
+        register_voice_synthdef(
+            &runtime,
+            "late_set_target",
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+
+        let group = GroupId::new(1);
+        let src = VoiceId::new(10);
+        let target = VoiceId::new(20);
+
+        let mut routed = ScriptState::new();
+        routed.add_group(group, GroupConfig::default());
+        routed.add_voice(src, VoiceConfig::new("src", "late_set_source", group));
+        routed.add_voice(target, VoiceConfig::new("target", "late_set_target", group));
+        routed.running_voices.insert(src);
+        routed.running_voices.insert(target);
+        routed
+            .add_param_route_set(src, "out", ParamRouteTarget::Voice(target), "freq")
+            .unwrap();
+        routed.set_param_route_set_scale(src, "out", ParamRouteTarget::Voice(target), "freq", 2.0);
+        routed.set_param_route_set_offset(src, "out", ParamRouteTarget::Voice(target), "freq", 3.0);
+
+        runtime.apply_reload(routed).await.unwrap();
+
+        let (summer_bus, summer_node, initial_summer_count) = {
+            let state = runtime.state.read().await;
+            let summer = state
+                .param_summers
+                .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+                .expect("SET route should materialize one summer");
+            assert_eq!(summer.sources[0].scale, 2.0);
+            assert_eq!(summer.sources[0].offset, 3.0);
+            (
+                summer.bus.raw(),
+                summer.node,
+                runtime
+                    .backend
+                    .synths()
+                    .iter()
+                    .filter(|s| s.def == "param_kr_modulate_1")
+                    .count(),
+            )
+        };
+
+        runtime
+            .send(
+                VoiceMessage::NoteOn {
+                    voice: target,
+                    note: 60,
+                    velocity: 0.8,
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let new_node = {
+            let state = runtime.state.read().await;
+            let summer = state
+                .param_summers
+                .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+                .expect("late note_on must reuse the existing summer");
+            assert_eq!(summer.node, summer_node);
+            state.voices.get(&target).unwrap().note_nodes[&60]
+        };
+        assert_eq!(
+            runtime
+                .backend
+                .synths()
+                .iter()
+                .filter(|s| s.def == "param_kr_modulate_1")
+                .count(),
+            initial_summer_count,
+            "late note_on must not respawn the voice-target-scoped summer"
+        );
+        assert!(runtime.backend.maps().contains(&RecordedMap {
+            node: new_node,
+            param: "freq".to_string(),
+            bus: summer_bus,
+        }));
+    }
+
+    #[tokio::test]
+    async fn trigger_after_bend_route_materialization_inherits_existing_param_summer() {
+        use crate::handlers::ParamRouteTarget;
+        use crate::message::VoiceMessage;
+        use crate::reload::{GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, VoiceId};
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        register_voice_synthdef(
+            &runtime,
+            "late_bend_source",
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 1,
+                rate: PortRate::Kr,
+            }],
+        )
+        .await;
+        register_voice_synthdef(
+            &runtime,
+            "late_bend_target",
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+
+        let group = GroupId::new(1);
+        let src = VoiceId::new(30);
+        let target = VoiceId::new(40);
+
+        let mut routed = ScriptState::new();
+        routed.add_group(group, GroupConfig::default());
+        routed.add_voice(src, VoiceConfig::new("src", "late_bend_source", group));
+        let mut target_config = VoiceConfig::new("target", "late_bend_target", group);
+        target_config.params.insert("freq".to_string(), 220.0);
+        routed.add_voice(target, target_config);
+        routed.running_voices.insert(src);
+        routed.running_voices.insert(target);
+        routed
+            .add_param_route_bend(src, "out", ParamRouteTarget::Voice(target), "freq")
+            .unwrap();
+        routed.set_param_route_bend_scale(src, "out", ParamRouteTarget::Voice(target), "freq", 4.0);
+        routed.set_param_route_bend_offset(
+            src,
+            "out",
+            ParamRouteTarget::Voice(target),
+            "freq",
+            5.0,
+        );
+
+        runtime.apply_reload(routed).await.unwrap();
+
+        let (summer_bus, initial_summer_count) = {
+            let state = runtime.state.read().await;
+            let summer = state
+                .param_summers
+                .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+                .expect("BEND route should materialize one summer");
+            assert_eq!(summer.sources[0].scale, 4.0);
+            assert_eq!(summer.sources[0].offset, 5.0);
+            (
+                summer.bus.raw(),
+                runtime
+                    .backend
+                    .synths()
+                    .iter()
+                    .filter(|s| s.def == "param_kr_modulate_1")
+                    .count(),
+            )
+        };
+
+        runtime
+            .send(
+                VoiceMessage::Trigger {
+                    id: target,
+                    params: ParamMap::new(),
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let new_node = {
+            let state = runtime.state.read().await;
+            *state
+                .voices
+                .get(&target)
+                .unwrap()
+                .active_nodes
+                .last()
+                .unwrap()
+        };
+        assert_eq!(
+            runtime
+                .backend
+                .synths()
+                .iter()
+                .filter(|s| s.def == "param_kr_modulate_1")
+                .count(),
+            initial_summer_count,
+            "late trigger must not respawn the voice-target-scoped summer"
+        );
+        assert!(runtime.backend.maps().contains(&RecordedMap {
+            node: new_node,
+            param: "freq".to_string(),
+            bus: summer_bus,
+        }));
+    }
+
+    #[tokio::test]
+    async fn note_on_after_trigger_route_materialization_inherits_existing_trigger_link() {
+        use crate::handlers::ParamRouteTarget;
+        use crate::message::VoiceMessage;
+        use crate::reload::{GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, VoiceId};
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        register_voice_synthdef(
+            &runtime,
+            "late_trigger_source",
+            vec![OutputPort {
+                name: "trig".to_string(),
+                channels: 1,
+                rate: PortRate::Tr,
+            }],
+        )
+        .await;
+        register_voice_synthdef(
+            &runtime,
+            "late_trigger_target",
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+
+        let group = GroupId::new(1);
+        let src = VoiceId::new(50);
+        let target = VoiceId::new(60);
+
+        let mut routed = ScriptState::new();
+        routed.add_group(group, GroupConfig::default());
+        routed.add_voice(src, VoiceConfig::new("src", "late_trigger_source", group));
+        routed.add_voice(
+            target,
+            VoiceConfig::new("target", "late_trigger_target", group),
+        );
+        routed.running_voices.insert(src);
+        routed.running_voices.insert(target);
+        routed
+            .add_param_route_trigger(src, "trig", ParamRouteTarget::Voice(target), "gate")
+            .unwrap();
+
+        runtime.apply_reload(routed).await.unwrap();
+
+        let (link_bus, link_node, initial_link_count) = {
+            let state = runtime.state.read().await;
+            let (link_node, link_bus) = state
+                .param_triggers
+                .get(&(ParamRouteTarget::Voice(target), "gate".to_string()))
+                .copied()
+                .expect("TRIGGER route should materialize one link");
+            (
+                link_bus.raw(),
+                link_node,
+                runtime
+                    .backend
+                    .synths()
+                    .iter()
+                    .filter(|s| s.def == "port_tr_to_param_link_1")
+                    .count(),
+            )
+        };
+
+        runtime
+            .send(
+                VoiceMessage::NoteOn {
+                    voice: target,
+                    note: 67,
+                    velocity: 0.7,
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+        runtime.tick().await;
+
+        let new_node = {
+            let state = runtime.state.read().await;
+            let (current_link, _) = state
+                .param_triggers
+                .get(&(ParamRouteTarget::Voice(target), "gate".to_string()))
+                .copied()
+                .expect("late note_on must reuse the existing trigger link");
+            assert_eq!(current_link, link_node);
+            state.voices.get(&target).unwrap().note_nodes[&67]
+        };
+        assert_eq!(
+            runtime
+                .backend
+                .synths()
+                .iter()
+                .filter(|s| s.def == "port_tr_to_param_link_1")
+                .count(),
+            initial_link_count,
+            "late note_on must not respawn the voice-target-scoped trigger link"
+        );
+        assert!(runtime.backend.maps().contains(&RecordedMap {
+            node: new_node,
+            param: "gate".to_string(),
+            bus: link_bus,
+        }));
+    }
+
+    #[tokio::test]
     async fn apply_reload_threads_param_route_shaping_and_route_only_updates() {
         use crate::handlers::ParamRouteTarget;
         use crate::reload::{GroupConfig, ScriptState};
