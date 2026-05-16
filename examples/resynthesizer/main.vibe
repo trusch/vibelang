@@ -41,6 +41,33 @@ define_synthdef("resynth_bus_tap_mono", |builder| {
         })
 });
 
+// Simple pitched lead so Rene's quantized CV is unambiguously audible.
+// Stays inside the rack but bypasses the spectraphon partial-bank smear.
+// Rene-style sequenced lead. Each melody note triggers an ASR envelope
+// via `gate`, so the rack hears discrete pitched note-ons instead of a
+// drone. We avoid the kr-to-param /n_map path here because it does not
+// land in this build (verified in isolation); driving via the melody()
+// API installs each note as a fresh /s_new with the correct freq.
+define_synthdef("resynth_lead_voice", |builder| {
+    builder
+        .param("freq", 220.0)
+        .param("amp", 0.32)
+        .param("gate", 1.0)
+        .body_map(|p| {
+            let env = envelope()
+                .asr(0.008, 0.42, 0.22)
+                .gate(p.gate)
+                .cleanup_on_finish()
+                .build();
+            let f = clip(p.freq, 40.0, 2000.0);
+            let core = saw_ar(f) * 0.45 + pulse_ar(f * 2.0, 0.34) * 0.25;
+            let sub = sin_osc_ar(f * 0.5) * 0.20;
+            let mix = lpf_ar(core + sub, 1400.0 + env * 4200.0);
+            let body = clip(mix * env * p.amp, -0.95, 0.95);
+            [body, body]
+        })
+});
+
 define_synthdef("resynth_reel_source", |builder| {
     builder
         .output("left")
@@ -198,8 +225,8 @@ let morph = voice("morphagene_reel")
     .set_param("slide", 0.10)
     .set_param("gene_size", 0.24)
     .set_param("morph", 0.50)
-    .set_param("amp", 0.22)
-    .gain(db(0));
+    .set_param("amp", 0.12)
+    .gain(db(-6));
 morph.outputs(["left", "right"]).to(group("raw_morphagene"));
 
 // Real-FFT Spectraphon dual via the pure-vibe helper.
@@ -210,7 +237,7 @@ spec = spectraphon::spectraphon_group(spec, "raw_spectral_odd");
 spec = spectraphon::spectraphon_gain(spec, db(-8));
 spec = spectraphon::spectraphon_set_param(spec, "freq_a", 146.8);
 spec = spectraphon::spectraphon_set_param(spec, "freq_b", 220.0);
-spec = spectraphon::spectraphon_set_param(spec, "amp", 0.22);
+spec = spectraphon::spectraphon_set_param(spec, "amp", 0.12);
 spec = spectraphon::spectraphon_set_param(spec, "routing_mode", 2.0);
 spec = spectraphon::spectraphon_set_param(spec, "partials_a", 0.72);
 spec = spectraphon::spectraphon_set_param(spec, "partials_b", 0.58);
@@ -268,6 +295,23 @@ morph_tap.input("in").from(group("raw_morphagene"));
 
 spectraphon::spectraphon_input(spec, "analyze_a").from(morph_tap);
 spectraphon::spectraphon_input(spec, "analyze_b").from(morph_tap);
+
+let lead = voice("rene_lead")
+    .synth("resynth_lead_voice")
+    .group("rack")
+    .set_param("amp", 0.7)
+    .gain(db(4));
+
+// Rene-cartesian 16-note sequence in C minor pentatonic, mirroring the
+// 4×4 grid Rene is configured with: x sweeps within a row, y advances
+// across rows. Each "."  is a rest; we space at sixteenth notes (16 per
+// bar at 96 BPM → 4.8 Hz step, matches the Rene clock_x rate).
+melody("rene_cartesian_lead")
+    .on(lead)
+    .notes(
+        "C4 Eb4 F4 G4 | F4 G4 Bb4 C5 | C4 F4 C5 F5 | G4 Bb4 C5 Bb5"
+    )
+    .start();
 
 let xpan = voice("xpan_motion")
     .synth("x_pan")
@@ -353,6 +397,9 @@ spec = spectraphon::spectraphon_run(spec);
 odd_tap.run();
 even_tap.run();
 morph_tap.run();
+// `lead` is not .run()-ed: the melody() above spawns voice instances
+// per note via /s_new. A standalone run() would create a permanent
+// instance with gate=1 that competes with the per-note triggers.
 xpan.run();
 qpas.run();
 dxg.run();
