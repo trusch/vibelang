@@ -39,6 +39,7 @@ define_synthdef("erica_techno_trigger_matrix", |builder| {
         .output_kr("accent")
         .output_kr("quarter")
         .output_kr("whole")
+        .param("__vibelang_owned_output_buses", 1.0)
         .param("bpm", 130.0)
         .param("run", 1.0)
         .param("reset", 0.0)
@@ -126,6 +127,7 @@ define_synthdef("erica_techno_trigger_matrix", |builder| {
 define_synthdef("erica_techno_mono_to_stereo", |builder| {
     builder
         .input("in", 1)
+        .param("__vibelang_owned_output_buses", 1.0)
         .param("pan", 0.0)
         .param("level", 1.0)
         .body_map(|p| {
@@ -142,6 +144,7 @@ define_synthdef("erica_techno_stereo_to_mono", |builder| {
     builder
         .input("in", 2)
         .output("out")
+        .param("__vibelang_owned_output_buses", 1.0)
         .param("balance", 0.0)
         .param("level", 1.0)
         .body_map(|p| {
@@ -158,6 +161,7 @@ define_synthdef("erica_techno_gate_vca", |builder| {
     builder
         .input("in", 1)
         .output("out")
+        .param("__vibelang_owned_output_buses", 1.0)
         .param("gate", 0.0)
         .param("attack", 0.004)
         .param("decay", 0.18)
@@ -173,6 +177,7 @@ define_synthdef("erica_techno_gate_vca", |builder| {
 define_synthdef("erica_techno_stereo_trim", |builder| {
     builder
         .input("in", 2)
+        .param("__vibelang_owned_output_buses", 1.0)
         .param("level", 1.0)
         .body_map(|p| {
             [
@@ -196,7 +201,7 @@ define_group("acid_return", || { });
 define_group("stab_raw", || { });
 define_group("stab_gate", || { });
 define_group("stab_delay", || { });
-define_group("main_out", || { });
+define_group("zzzz_output_30", || { });
 
 group("ctrl").gain(0.0);
 group("kick_bus").gain(0.0);
@@ -212,7 +217,7 @@ group("acid_return").gain(0.0);
 group("stab_raw").gain(0.0);
 group("stab_gate").gain(0.0);
 group("stab_delay").gain(0.0);
-group("main_out").gain(db(-7));
+group("zzzz_output_30").gain(db(-14));
 
 let master_clock = voice("erica_vc_clock_130")
     .synth("erica_vc_clock")
@@ -269,7 +274,7 @@ trigger_matrix.output("accent").to_param(kick, "accent").scale(1.4).offset(0.0);
 trigger_matrix.output("accent").to_param(snare, "accent").scale(1.1).offset(0.0);
 trigger_matrix.output("accent").to_param(hats, "accent").scale(0.8).offset(0.0);
 
-kick.output("out").mute();
+kick.output("out").to(group("zzzz_output_30"));
 kick.output("noise").mute();
 snare.output("out").mute();
 hats.outputs(["out", "ch", "oh"]).mute();
@@ -313,7 +318,8 @@ let acid = voice("erica_bassline_acid_lane")
 trigger_matrix.output("acid_gate").to_param(acid, "gate");
 trigger_matrix.output("acid_voct").to_param(acid, "voct");
 trigger_matrix.output("accent").to_param(acid, "accent").scale(1.1).offset(0.0);
-acid.outputs(["out", "main", "tri", "square", "sub"]).mute();
+acid.output("sub").to(group("zzzz_output_30"));
+acid.outputs(["out", "main", "tri", "square"]).mute();
 
 let acid_env = voice("erica_vc_eg_acid_cutoff")
     .synth("erica_vc_eg")
@@ -384,7 +390,8 @@ let stab_osc = voice("erica_black_vco2_sparse_stab")
     .set_param("mix_pulse", 0.36)
     .set_param("mix_sub", 0.18);
 trigger_matrix.output("stab_voct").to_param(stab_osc, "voct");
-stab_osc.outputs(["out", "sine", "tri", "saw", "pulse", "sub", "mix"]).mute();
+stab_osc.output("mix").to(group("zzzz_output_30"));
+stab_osc.outputs(["out", "sine", "tri", "saw", "pulse", "sub"]).mute();
 
 let stab_amp = voice("erica_stab_clocked_vca")
     .synth("erica_techno_gate_vca")
@@ -426,7 +433,7 @@ bbd.output("out").mute();
 
 let output = voice("erica_black_output_final")
     .synth("erica_black_output")
-    .group("main_out")
+    .group("zzzz_output_30")
     .set_param("level1", 0.50)
     .set_param("level2", 0.36)
     .set_param("level3", 0.30)
@@ -445,7 +452,7 @@ output.output("out").mute();
 
 let output_trim = voice("erica_black_output_final_trim")
     .synth("erica_techno_stereo_trim")
-    .group("main_out")
+    .group("zzzz_output_30")
     .set_param("level", 1.0);
 output_trim.input("in").from(output);
 output_trim.output("out").to_main();
