@@ -35,6 +35,7 @@ define_synthdef("erica_vc_eg", |builder| {
         .output_kr("eoa")
         .output_kr("eod")
         .output_kr("eor")
+        .param("__vibelang_owned_output_buses", 1.0)
         .param("gate", 0.0)
         .param("trigger", 0.0)
         .param("attack", 0.05)

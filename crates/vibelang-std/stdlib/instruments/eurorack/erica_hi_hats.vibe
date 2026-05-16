@@ -9,6 +9,7 @@ define_synthdef("erica_hi_hats", |builder| {
         .output("out", 1)
         .output("ch", 1)
         .output("oh", 1)
+        .param("__vibelang_owned_output_buses", 1.0)
         .param("ch_trig", 0.0)
         .param("oh_trig", 0.0)
         .param("accent", 0.0)

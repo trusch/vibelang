@@ -8,6 +8,7 @@ define_synthdef("erica_bass_drum", |builder| {
     builder
         .output("out")
         .output("noise")
+        .param("__vibelang_owned_output_buses", 1.0)
         .param("trig", 0.0)
         .param("gate", 0.0)
         .param("accent", 0.0)

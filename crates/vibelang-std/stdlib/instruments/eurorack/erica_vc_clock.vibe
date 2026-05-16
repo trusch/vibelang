@@ -11,6 +11,7 @@ define_synthdef("erica_vc_clock", |builder| {
         .output_kr("shuffle")
         .output_kr("random")
         .output_kr("reset")
+        .param("__vibelang_owned_output_buses", 1.0)
         .param("bpm", 120.0)
         .param("run", 1.0)
         .param("division", 1.0)

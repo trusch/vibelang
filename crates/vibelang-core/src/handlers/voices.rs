@@ -14,6 +14,8 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+const OWNED_OUTPUT_BUSES_PARAM: &str = "__vibelang_owned_output_buses";
+
 #[cfg(feature = "midi")]
 use crate::midi::{
     pack_note_off, pack_note_on, send_cc_for_param, QueuedMidiEvent, ScheduledMidiEvent,
@@ -345,6 +347,7 @@ impl<B: Backend> VoicesHandler<B> {
 
             // Set output bus to group's audio bus (for proper routing)
             params.insert("out".to_string(), group.audio_bus.0 as f32);
+            apply_owned_output_bus_params_if_opted_in(voice, &mut params);
             apply_voice_input_bus_params(&state, voice, &mut params);
 
             // Convert sample offset/length from seconds to synth params
@@ -682,6 +685,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
             // Set output bus to group's audio bus (for proper routing)
             merged_params.insert("out".to_string(), group.audio_bus.0 as f32);
+            apply_owned_output_bus_params_if_opted_in(voice, &mut merged_params);
             apply_voice_input_bus_params(&state, voice, &mut merged_params);
 
             // Convert sample offset/length from seconds to synth params
@@ -922,6 +926,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
 
             // Set output bus to group's audio bus (for proper routing)
             params.insert("out".to_string(), group.audio_bus.0 as f32);
+            apply_owned_output_bus_params_if_opted_in(voice, &mut params);
             apply_voice_input_bus_params(&state, voice, &mut params);
 
             // Convert sample offset/length from seconds to synth params
@@ -1475,6 +1480,28 @@ fn free_voice_input_buses(state: &mut State, voice: &VoiceState) {
     }
 }
 
+fn apply_owned_output_bus_params_if_opted_in(voice: &VoiceState, params: &mut ParamMap) {
+    let synthdef_params = vibelang_dsp::get_synthdef_param_defaults(&voice.config.synthdef);
+    if synthdef_params
+        .get(OWNED_OUTPUT_BUSES_PARAM)
+        .copied()
+        .unwrap_or(0.0)
+        <= 0.0
+    {
+        return;
+    }
+
+    if synthdef_params.contains_key("out0") {
+        for (index, (_, bus)) in voice.output_buses.iter().enumerate() {
+            params.insert(format!("out{}", index), bus.raw() as f32);
+        }
+    } else if synthdef_params.contains_key("out") {
+        if let Some((_, bus)) = voice.output_buses.first() {
+            params.insert("out".to_string(), bus.raw() as f32);
+        }
+    }
+}
+
 fn apply_voice_input_bus_params(state: &State, voice: &VoiceState, params: &mut ParamMap) {
     if voice.input_buses.is_empty() {
         return;
@@ -1506,6 +1533,7 @@ mod tests {
     use crate::types::{BufferId, BusId, GroupId};
     use std::path::Path;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Mutex;
 
     // =========================================================================
     // Mock Backend for Testing
@@ -1527,6 +1555,7 @@ mod tests {
         synths_created: AtomicU32,
         nodes_freed: AtomicU32,
         params_set: AtomicU32,
+        synth_create_params: Mutex<Vec<ParamMap>>,
     }
 
     impl MockBackend {
@@ -1535,6 +1564,7 @@ mod tests {
                 synths_created: AtomicU32::new(0),
                 nodes_freed: AtomicU32::new(0),
                 params_set: AtomicU32::new(0),
+                synth_create_params: Mutex::new(Vec::new()),
             }
         }
 
@@ -1548,6 +1578,10 @@ mod tests {
 
         fn params_set(&self) -> u32 {
             self.params_set.load(Ordering::Relaxed)
+        }
+
+        fn synth_create_params(&self) -> Vec<ParamMap> {
+            self.synth_create_params.lock().unwrap().clone()
         }
     }
 
@@ -1569,9 +1603,13 @@ mod tests {
             _node: NodeId,
             _target: NodeId,
             _action: AddAction,
-            _params: &ParamMap,
+            params: &ParamMap,
         ) -> std::result::Result<(), Self::Error> {
             self.synths_created.fetch_add(1, Ordering::Relaxed);
+            self.synth_create_params
+                .lock()
+                .unwrap()
+                .push(params.clone());
             Ok(())
         }
 
@@ -3024,6 +3062,26 @@ mod tests {
         state_write.synthdef_outputs.insert(name.to_string(), ports);
     }
 
+    fn register_synthdef_param_defaults(name: &str, params: &[(&str, f32)]) {
+        let ir = vibelang_dsp::GraphIR {
+            name: name.to_string(),
+            constants: Vec::new(),
+            params: params
+                .iter()
+                .enumerate()
+                .map(|(index, (name, value))| vibelang_dsp::ParamSpec {
+                    name: (*name).to_string(),
+                    default: vec![*value],
+                    index,
+                    lag_ms: None,
+                })
+                .collect(),
+            nodes: Vec::new(),
+            out_bus: 0,
+        };
+        vibelang_dsp::register_synthdef_ir(name.to_string(), ir);
+    }
+
     #[tokio::test]
     async fn test_legacy_voice_owns_one_stereo_bus_pair() {
         // Synthdef with no explicit port set falls back to the legacy
@@ -3110,6 +3168,114 @@ mod tests {
         assert_eq!(bus_ids[1], a + 1, "b follows a");
         assert_eq!(bus_ids[2], a + 2, "c follows b");
         assert_eq!(bus_ids[3], a + 4, "d follows c+1 (stereo skip)");
+    }
+
+    #[tokio::test]
+    async fn test_owned_output_opt_in_routes_explicit_ports_to_owned_buses() {
+        let (handler, backend, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_multiport_synthdef(
+            &state,
+            "owned_explicit_synth",
+            vec![
+                OutputPort {
+                    name: "left".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "right".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+            ],
+        )
+        .await;
+        register_synthdef_param_defaults(
+            "owned_explicit_synth",
+            &[
+                (OWNED_OUTPUT_BUSES_PARAM, 1.0),
+                ("out0", 0.0),
+                ("out1", 0.0),
+            ],
+        );
+
+        let voice_id = VoiceId::new(1);
+        handler
+            .create(
+                voice_id,
+                VoiceConfig::new("owned_explicit", "owned_explicit_synth", GroupId::new(1)),
+            )
+            .await
+            .unwrap();
+
+        let output_buses = {
+            let state_read = state.read().await;
+            state_read
+                .voices
+                .get(&voice_id)
+                .unwrap()
+                .output_buses
+                .iter()
+                .map(|(_, bus)| bus.raw())
+                .collect::<Vec<_>>()
+        };
+
+        handler.trigger(voice_id, &ParamMap::new()).await.unwrap();
+
+        let creates = backend.synth_create_params();
+        assert_eq!(creates.len(), 1);
+        assert_eq!(creates[0].get("out0"), Some(&(output_buses[0] as f32)));
+        assert_eq!(creates[0].get("out1"), Some(&(output_buses[1] as f32)));
+        assert_eq!(creates[0].get("out"), Some(&16.0));
+    }
+
+    #[tokio::test]
+    async fn test_unmarked_explicit_ports_keep_legacy_group_out_only() {
+        let (handler, backend, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+        register_multiport_synthdef(
+            &state,
+            "unmarked_explicit_synth",
+            vec![
+                OutputPort {
+                    name: "left".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+                OutputPort {
+                    name: "right".into(),
+                    channels: 1,
+                    rate: vibelang_dsp::PortRate::Ar,
+                },
+            ],
+        )
+        .await;
+        register_synthdef_param_defaults(
+            "unmarked_explicit_synth",
+            &[("out0", 0.0), ("out1", 0.0)],
+        );
+
+        let voice_id = VoiceId::new(1);
+        handler
+            .create(
+                voice_id,
+                VoiceConfig::new(
+                    "unmarked_explicit",
+                    "unmarked_explicit_synth",
+                    GroupId::new(1),
+                ),
+            )
+            .await
+            .unwrap();
+
+        handler.trigger(voice_id, &ParamMap::new()).await.unwrap();
+
+        let creates = backend.synth_create_params();
+        assert_eq!(creates.len(), 1);
+        assert_eq!(creates[0].get("out"), Some(&16.0));
+        assert!(!creates[0].contains_key("out0"));
+        assert!(!creates[0].contains_key("out1"));
     }
 
     #[tokio::test]

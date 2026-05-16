@@ -10,6 +10,7 @@
 define_synthdef("erica_black_bbd")
     .input("in", 1)
     .output("out", 1)
+    .param("__vibelang_owned_output_buses", 1.0)
     .param("time", 200.0)
     .param("time_cv", 0.0)
     .param("time_cv_amt", 0.0)

@@ -11,6 +11,7 @@ define_synthdef("erica_bassline", |builder| {
         .output("tri")
         .output("square")
         .output("sub")
+        .param("__vibelang_owned_output_buses", 1.0)
         .param("gate", 0.0)
         .param("accent", 0.0)
         .param("voct", 36.0)
