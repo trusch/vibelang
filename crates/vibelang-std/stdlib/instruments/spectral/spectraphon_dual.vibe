@@ -25,6 +25,8 @@ fn spectraphon_dual(name, mode_a, mode_b) {
         oscillator_b: side_b.oscillator,
         mag_buf_a: side_a.mag_buf,
         mag_buf_b: side_b.mag_buf,
+        fft_buf_a: side_a.fft_buf,
+        fft_buf_b: side_b.fft_buf,
         array_buf_a: side_a.array_buf,
         array_buf_b: side_b.array_buf,
         freq_a: 220.0,

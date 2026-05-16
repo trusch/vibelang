@@ -283,9 +283,9 @@ monolithic `spectraphon_side`/`spectraphon_dual` synthdefs:
 
 | File | Role |
 |---|---|
-| `spectraphon_analyzer.vibe` | Real SAM analyzer: one `fft_kr` chain, 64 `bin_data_kr` harmonic reads, and 64 `buf_wr_kr` writes to a shared magnitude buffer. |
+| `spectraphon_analyzer.vibe` | Real SAM analyzer: one `fft_kr` chain using a helper-allocated 2,048-frame FFT buffer, 64 `bin_data_kr` harmonic reads, and 64 `buf_wr_kr` writes to a shared magnitude buffer. |
 | `spectraphon_sam_oscillator.vibe`, `spectraphon_sao_oscillator.vibe` | Dedicated additive oscillator banks: SAM reads live magnitudes with `buf_rd_kr` plus capture writes, while SAO reads Arrays with bilinear buffer lookup; both output `sine`, `sub`, `odd`, `even`. |
-| `spectraphon_side.vibe` | Pure-Rhai helper: allocates buffers, creates `<name>__analyzer` and `<name>__oscillator`, and proxies common methods. |
+| `spectraphon_side.vibe` | Pure-Rhai helper: allocates magnitude, FFT-chain, and Array buffers, creates `<name>__analyzer` and `<name>__oscillator`, and proxies common methods. |
 | `spectraphon_dual.vibe` | Pure-Rhai helper: creates two split sides, maps `analyze_a`/`analyze_b` and `odd_a`/`even_a`/`odd_b`/`even_b`, and implements follow ratios by retuning side B. |
 
 Rack authors call `spectraphon_side("name")` or `spectraphon_dual("name")` and

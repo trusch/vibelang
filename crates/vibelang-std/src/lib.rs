@@ -359,6 +359,17 @@ mod tests {
             "spectraphon_analyzer should own the real FFT/BinData analyzer path"
         );
         assert!(
+            analyzer.contains(".param(\"fft_buf\", 0.0)")
+                && analyzer.contains("let chain = fft_kr(fft_buf")
+                && !analyzer.contains("local_buf_ir(1.0, 2048.0)"),
+            "spectraphon_analyzer should use a script-allocated FFT chain buffer"
+        );
+        assert!(
+            side.contains("allocate_buffer(name + \"__fft\", 2048, 1)")
+                && side.contains(".set_param(\"fft_buf\", fft.bufnum)"),
+            "spectraphon_side should allocate and pass the analyzer FFT chain buffer"
+        );
+        assert!(
             side.contains("spectraphon_sam_oscillator")
                 && side.contains("spectraphon_sao_oscillator"),
             "spectraphon_side should pick a dedicated SAM or SAO oscillator"

@@ -15,7 +15,7 @@ server graph:
 
 | Layer | File | Role |
 |---|---|---|
-| Analyzer | `spectraphon_analyzer.vibe` | Reads the SAM input with `fft_kr` and one `bin_data_kr` per harmonic, then writes 64 magnitudes to a control buffer. |
+| Analyzer | `spectraphon_analyzer.vibe` | Reads the SAM input with `fft_kr` from a helper-allocated FFT chain buffer and one `bin_data_kr` per harmonic, then writes 64 magnitudes to a control buffer. |
 | SAM oscillator | `spectraphon_sam_oscillator.vibe` | Reads the live magnitude buffer, optionally captures it into the Array buffer, and renders sine/sub/odd/even. |
 | SAO oscillator | `spectraphon_sao_oscillator.vibe` | Reads the SAO Array buffer with slide/focus interpolation and renders sine/sub/odd/even. |
 | Helper | `spectraphon_side.vibe`, `spectraphon_dual.vibe` | Allocates buffers, creates child voices, and proxies common methods in pure Rhai. |
@@ -36,6 +36,7 @@ swap rather than one synthdef crossfade.
 | `analyzer` | The concrete `VoiceHandle` named `<name>__analyzer`. |
 | `oscillator` | The concrete `VoiceHandle` named `<name>__oscillator`. |
 | `mag_buf` | 64-frame live SAM magnitude buffer. |
+| `fft_buf` | 2,048-frame SAM FFT chain buffer allocated before the analyzer node starts. |
 | `array_buf` | 65,536-frame SAO Array buffer. |
 
 Use the prefixed helper functions for ordinary rack code. They are deliberately
@@ -98,6 +99,12 @@ let arr = allocate_buffer("spec_arrays", 65536, 1);
 spec = spectraphon::spectraphon_set_param(spec, "bufnum", arr.bufnum);
 ```
 
+SAM helpers also allocate a dedicated 2,048-frame FFT chain buffer and pass it
+to `spectraphon_analyzer` as `fft_buf`. Keeping that chain buffer in script
+buffer allocation, rather than `LocalBuf` inside the analyzer graph, preserves
+the real FFT/BinData analyzer while avoiding FFT-chain memory initialization
+during the analyzer `/s_new`.
+
 ## Dual Helper
 
 `spectraphon_dual(name)` creates two side helpers and returns a map with
@@ -128,7 +135,8 @@ follow-up because the current split side oscillator has no audio-rate FM input.
 ## Approximation Caveats
 
 * SAM analysis is real FFT/BinData per harmonic, not a BPF or envelope-only
-  approximation.
+  approximation. It currently uses a 2,048-point FFT chain for the same bin
+  spacing as the original real-FFT implementation.
 * The oscillator generates new additive-bank audio; the analyzed input is not
   passed through.
 * `spectraphon_set_param(...)` can fan out immediate parameter calls, but

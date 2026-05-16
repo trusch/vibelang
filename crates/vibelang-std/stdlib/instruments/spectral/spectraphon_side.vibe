@@ -109,10 +109,12 @@ fn _spectraphon_set_mode(spec, mode) {
 
 fn spectraphon_side(name, mode) {
     let mag = allocate_buffer(name + "__mag", 64, 1);
+    let fft = allocate_buffer(name + "__fft", 2048, 1);
     let arrays = allocate_buffer(name + "__arrays", 65536, 1);
 
     let analyzer = voice(name + "__analyzer")
         .synth("spectraphon_analyzer")
+        .set_param("fft_buf", fft.bufnum)
         .set_param("mag_buf", mag.bufnum)
         .set_param("f0_analyze", _spectraphon_f0_from_slide(0.5));
     // The analyzer's only declared output is the kr 'noop' dummy that exists
@@ -126,8 +128,10 @@ fn spectraphon_side(name, mode) {
         analyzer: analyzer,
         oscillator: voice(name + "__oscillator"),
         mag_buf: mag,
+        fft_buf: fft,
         array_buf: arrays,
         mag_bufnum: mag.bufnum,
+        fft_bufnum: fft.bufnum,
         array_bufnum: arrays.bufnum,
         mode: mode,
         freq: 220.0,
@@ -222,6 +226,9 @@ fn spectraphon_set_param(spec, param, value) {
         spec.mag_bufnum = value;
         spec.oscillator = spec.oscillator.set_param("mag_buf", value);
         spec.analyzer = spec.analyzer.set_param("mag_buf", value);
+    } else if param == "fft_buf" {
+        spec.fft_bufnum = value;
+        spec.analyzer = spec.analyzer.set_param("fft_buf", value);
     } else if param == "f0_analyze" || param == "active" {
         spec.analyzer = spec.analyzer.set_param(param, value);
     } else {

@@ -2,7 +2,9 @@
 //
 // This synthdef is intentionally only the SAM analyzer half of Spectraphon.
 // It writes 64 harmonic magnitudes into `mag_buf`; the oscillator synthdef
-// consumes that control buffer.
+// consumes that control buffer. `fft_buf` is a script-allocated 2048-frame
+// chain buffer so scsynth does not have to allocate LocalBuf FFT memory while
+// creating the analyzer node.
 
 define_synthdef("spectraphon_analyzer", |builder| {
     builder
@@ -10,6 +12,7 @@ define_synthdef("spectraphon_analyzer", |builder| {
         .output_kr("noop")
         .param("f0_analyze", 200.0)
         .param("focus", 0.5)
+        .param("fft_buf", 0.0)
         .param("mag_buf", 0.0)
         .param("active", 1.0)
         .param("gate", 1.0)
@@ -17,10 +20,10 @@ define_synthdef("spectraphon_analyzer", |builder| {
             let analyze_in = p.inputs["analyze"];
             let f0_analyze = p.f0_analyze;
             let focus = clip(p.focus, 0.0, 1.0);
+            let fft_buf = p.fft_buf;
             let mag_buf = p.mag_buf;
             let active = clip(p.active, 0.0, 1.0) * clip(p.gate, 0.0, 1.0);
 
-            let fft_buf = local_buf_ir(1.0, 2048.0);
             let chain = fft_kr(fft_buf, analyze_in, 0.5, 1.0, 1.0, 0.0);
             let bin_per_hz = 2048.0 / 44100.0;
             let mag_scale = 0.001953125;
