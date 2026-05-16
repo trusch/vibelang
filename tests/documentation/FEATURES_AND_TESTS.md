@@ -569,6 +569,18 @@ default non-silence thresholds are explicit in the command output:
 `min_peak_ratio=1.5`. A rack with captured audio must clear the absolute active
 RMS/peak thresholds and the active-vs-baseline ratios; silence does not pass.
 
+Rack audit coverage is confirmed for the close-out sweep: parse/runtime/audio
+smoke coverage is provided by `scripts/rack_smoke_audio_audit.py`, with final
+close-out captures under `target/rack-audit/phase-b-isolated-plugins-20260516-005937`.
+The final in-band racks are `4ms_ambient`, `dnb`, `intellijel_perform`, `lofi`,
+`minimal_techno`, `resynthesizer`, and `verbos_westcoast`; `mutable_rack` and
+`erica_techno` are tracked as known limitations outside the close-out band.
+
+The harness isolates each rack's `XDG_DATA_HOME` under its audit work directory
+and automatically symlinks an existing user SuperCollider Extensions directory
+into that isolated home. This keeps Mi UGens available for racks that depend on
+them while preserving per-run audit isolation.
+
 ### Writing Integration Tests
 
 ```rhai
