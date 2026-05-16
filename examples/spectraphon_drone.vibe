@@ -2,18 +2,21 @@
 // Uses the built-in SAO fallback spectrum so the patch makes sound without
 // hardware input, then routes the odd/even banks through a long jpverb tail.
 
-import "stdlib/instruments/spectral/spectraphon_side.vibe";
+import "stdlib/instruments/spectral/spectraphon_side.vibe" as spectraphon;
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
 
-let pad = voice("pad")
-    .synth("spectraphon_side")
-    .set_param("freq", 110.0)
-    .set_param("partials", 0.7)
-    .set_param("sam_capture", 0.0)
-    .set_param("amp", 0.4);
+define_group("pad_wash", || {
+    fx("pad_verb")
+        .synth("reverb_jpverb")
+        .param("time", 4.0)
+        .param("mix", 0.5);
+});
 
-pad.outputs(["odd", "even"]).to_current_group();
-pad.outputs(["sine", "sub"]).mute();
+let pad = spectraphon::spectraphon_side("pad", "sao");
+pad = spectraphon::spectraphon_set_param(pad, "freq", 110.0);
+pad = spectraphon::spectraphon_set_param(pad, "partials", 0.7);
+pad = spectraphon::spectraphon_set_param(pad, "amp", 0.4);
+pad = spectraphon::spectraphon_run(pad);
 
-voice("pad").fx("reverb_jpverb", #{ time: 4.0, mix: 0.5 });
-pad.start();
+spectraphon::spectraphon_outputs_to(pad, ["odd", "even"], group("pad_wash"));
+spectraphon::spectraphon_outputs_mute(pad, ["sine", "sub"]);

@@ -1,0 +1,160 @@
+// Spectraphon SAM oscillator - live FFT magnitude consumer.
+//
+// Reads analyzer magnitudes from `mag_buf` and drives a 64-partial additive
+// oscillator split into the hardware-style sine/sub/odd/even ports. The
+// optional capture path writes the same magnitudes into the SAO Array buffer.
+
+define_synthdef("spectraphon_sam_live_oscillator", |builder| {
+    builder
+        .output("sine")
+        .output("sub")
+        .output("odd")
+        .output("even")
+        .param("freq", 220.0)
+        .param("partials", 1.0)
+        .param("slide", 0.5)
+        .param("focus", 0.5)
+        .param("amp", 0.3)
+        .param("gate", 1.0)
+        .param("array_idx", 0.0)
+        .param("mag_buf", 0.0)
+        .param("array_buf", 0.0)
+        .body_map(|p| {
+            let freq = p.freq;
+            let partials = p.partials;
+            let amp = p.amp;
+            let gate = p.gate;
+            let mag_buf = p.mag_buf;
+
+            let env = envelope()
+                .asr(0.01, 1.0, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
+                .build();
+
+            let n = 64.0;
+            let scale = partials * n;
+
+            let k = 1.0;
+            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+            let odd_bank = sin_osc_ar(freq * k) * mag_k
+                * clip(scale - (k - 1.0), 0.0, 1.0);
+            for i in 1..32 {
+                let k = (2 * i + 1).to_float();
+                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+                odd_bank = odd_bank + sin_osc_ar(freq * k) * mag_k
+                    * clip(scale - (k - 1.0), 0.0, 1.0);
+            }
+
+            let k = 2.0;
+            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+            let even_bank = sin_osc_ar(freq * k) * mag_k
+                * clip(scale - (k - 1.0), 0.0, 1.0);
+            for i in 1..32 {
+                let k = (2 * (i + 1)).to_float();
+                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+                even_bank = even_bank + sin_osc_ar(freq * k) * mag_k
+                    * clip(scale - (k - 1.0), 0.0, 1.0);
+            }
+
+            let sine_signal = sin_osc_ar(freq);
+            let odd_raw = odd_bank * partials;
+            let even_raw = even_bank * partials;
+
+            let sine_out = leak_dc_ar(sine_signal, 0.995) * env * amp;
+            let sub_out = dc_ar(0.0);
+            let odd_out = leak_dc_ar(odd_raw, 0.995) * env * amp;
+            let even_out = leak_dc_ar(even_raw, 0.995) * env * amp;
+
+            [sine_out, sub_out, odd_out, even_out]
+        })
+});
+
+define_synthdef("spectraphon_sam_oscillator", |builder| {
+    builder
+        .output("sine")
+        .output("sub")
+        .output("odd")
+        .output("even")
+        .param("freq", 220.0)
+        .param("partials", 1.0)
+        .param("slide", 0.5)
+        .param("focus", 0.5)
+        .param("amp", 0.3)
+        .param("gate", 1.0)
+        .param("capture", 0.0)
+        .param("array_idx", 0.0)
+        .param("mag_buf", 0.0)
+        .param("array_buf", 0.0)
+        .body_map(|p| {
+            let freq = p.freq;
+            let partials = p.partials;
+            let slide = p.slide;
+            let focus = p.focus;
+            let amp = p.amp;
+            let gate = p.gate;
+            let capture = clip(p.capture, 0.0, 1.0);
+            let array_idx = p.array_idx;
+            let mag_buf = p.mag_buf;
+            let array_buf = p.array_buf;
+
+            let env = envelope()
+                .asr(0.01, 1.0, 0.3)
+                .gate(gate)
+                .cleanup_on_finish()
+                .build();
+
+            let n = 64.0;
+            let scale = partials * n;
+
+            let has_array = clip((array_buf - 1.0) * 1000.0, 0.0, 1.0);
+            let fallback_array_buf = local_buf_ir(1.0, 1.0);
+            let array_mem = array_buf * has_array
+                          + fallback_array_buf * (1.0 - has_array);
+
+            let slide_pos = clip(slide, 0.0, 0.99999) * 8.0;
+            let focus_pos = clip(focus, 0.0, 0.99999) * 8.0;
+            let slide_cell = slide_pos - wrap_kr(slide_pos, 0.0, 1.0);
+            let focus_cell = focus_pos - wrap_kr(focus_pos, 0.0, 1.0);
+            let arr_base = clip(array_idx, 0.0, 15.0) * 4096.0;
+            let cap_base = arr_base + slide_cell * 512.0 + focus_cell * 64.0;
+            let cap_offset = (1.0 - capture * has_array) * 1.0e9;
+
+            let k = 1.0;
+            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+            buf_wr_kr(mag_k, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
+            let odd_bank = sin_osc_ar(freq * k) * mag_k
+                * clip(scale - (k - 1.0), 0.0, 1.0);
+            for i in 1..32 {
+                let k = (2 * i + 1).to_float();
+                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+                buf_wr_kr(mag_k, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
+                odd_bank = odd_bank + sin_osc_ar(freq * k) * mag_k
+                    * clip(scale - (k - 1.0), 0.0, 1.0);
+            }
+
+            let k = 2.0;
+            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+            buf_wr_kr(mag_k, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
+            let even_bank = sin_osc_ar(freq * k) * mag_k
+                * clip(scale - (k - 1.0), 0.0, 1.0);
+            for i in 1..32 {
+                let k = (2 * (i + 1)).to_float();
+                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+                buf_wr_kr(mag_k, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
+                even_bank = even_bank + sin_osc_ar(freq * k) * mag_k
+                    * clip(scale - (k - 1.0), 0.0, 1.0);
+            }
+
+            let sine_signal = sin_osc_ar(freq);
+            let odd_raw = odd_bank * partials;
+            let even_raw = even_bank * partials;
+
+            let sine_out = leak_dc_ar(sine_signal, 0.995) * env * amp;
+            let sub_out = dc_ar(0.0);
+            let odd_out = leak_dc_ar(odd_raw, 0.995) * env * amp;
+            let even_out = leak_dc_ar(even_raw, 0.995) * env * amp;
+
+            [sine_out, sub_out, odd_out, even_out]
+        })
+});

@@ -17,21 +17,10 @@
 //
 // See also: kb/spectraphon-howto.md §6, §7, §8c.
 
-import "stdlib/instruments/spectral/spectraphon_dual.vibe";
+import "stdlib/instruments/spectral/spectraphon_dual.vibe" as spectraphon;
 import "stdlib/effects/reverbs/reverb_jpverb.vibe";
-import "stdlib/modulators/lfo/lfo_sine.vibe";
 
 set_tempo(72);
-
-// Slow LFO on the FM bus depth — sweeps from clean unison-of-fifths
-// into noticeable cross-FM and back. Mid-band depth is the most
-// musically useful range; the cubic shape near zero (in the lfo_sine)
-// keeps subtle settings audible.
-let fm_lfo = voice("fm_lfo")
-    .synth("lfo_sine")
-    .set_param("rate", 0.08)
-    .set_param("lo", 0.02)
-    .set_param("hi", 0.22);
 
 // Side A drives the chord root. Side B follows A at +7 semitones
 // (`routing_mode = 2.0`); freq_b is unused while Follow is engaged.
@@ -39,26 +28,20 @@ let fm_lfo = voice("fm_lfo")
 // `focus = 0.7` then multiplies the reveal scale by 1.55× (denser
 // timbre) per the dual synthdef's focus_scale mapping.
 let chord = define_group("SpectraChord", || {
-    let v = voice("dual")
-        .synth("spectraphon_dual")
-        .set_param("freq_a", 110.0)        // A2
-        .set_param("partials_a", 0.85)
-        .set_param("partials_b", 0.85)
-        .set_param("slide_a", 0.6)          // tilt toward odd partials
-        .set_param("slide_b", 0.6)
-        .set_param("focus_a", 0.7)          // moderately dense
-        .set_param("focus_b", 0.7)
-        .set_param("routing_mode", 2.0)     // B = A · 1.4983 (perfect fifth)
-        .set_param("a_fm_index", 0.05)      // light B-side modulation by A
-        .set_param("amp", 0.22)
-        .gain(db(-9));
+    let v = spectraphon::spectraphon_dual("dual", "sao", "sao");
+    v = spectraphon::spectraphon_set_param(v, "freq_a", 110.0);        // A2
+    v = spectraphon::spectraphon_set_param(v, "partials_a", 0.85);
+    v = spectraphon::spectraphon_set_param(v, "partials_b", 0.85);
+    v = spectraphon::spectraphon_set_param(v, "slide_a", 0.6);         // tilt toward odd partials
+    v = spectraphon::spectraphon_set_param(v, "slide_b", 0.6);
+    v = spectraphon::spectraphon_set_param(v, "focus_a", 0.7);         // moderately dense
+    v = spectraphon::spectraphon_set_param(v, "focus_b", 0.7);
+    v = spectraphon::spectraphon_set_param(v, "routing_mode", 2.0);    // B = A · 1.4983 (perfect fifth)
+    v = spectraphon::spectraphon_set_param(v, "amp", 0.22);
+    v = spectraphon::spectraphon_gain(v, db(-9));
+    v = spectraphon::spectraphon_run(v);
 
-    // Breathing FM into A from B — target-first kr routing.
-    v.param("b_fm_index").modulate_by(fm_lfo, "out");
-    v.outputs(["odd_a", "even_a", "odd_b", "even_b"]).to_current_group();
-
-    // Hold the chord — the synthdef's envelope sustains while gate=1.
-    melody("chord_hold").on(v).notes("A2").apply();
+    spectraphon::spectraphon_outputs_to_current_group(v, ["odd_a", "even_a", "odd_b", "even_b"]);
 
     fx("chord_verb")
         .synth("reverb_jpverb")
@@ -70,5 +53,4 @@ let chord = define_group("SpectraChord", || {
 
 sequence("chord_main")
     .loop_bars(16)
-    .clip(bars(0)..bars(16), melody("chord_hold"))
     .start();

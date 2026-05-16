@@ -19,6 +19,7 @@ import "stdlib/processors/mixers/x_pan.vibe";
 import "stdlib/processors/filters/qpas.vibe";
 import "stdlib/processors/dynamics/dxg.vibe";
 import "stdlib/processors/delays/mimeophon.vibe";
+import "stdlib/instruments/spectral/spectraphon_dual.vibe" as spectraphon;
 
 set_tempo(84);
 
@@ -72,67 +73,6 @@ define_synthdef("resynth_reel_source", |builder| {
             let tone_l = lpf_ar(core_l + air, 900.0 + scan * 3600.0);
             let tone_r = lpf_ar(core_r + air * 0.85, 1100.0 + slide * 3300.0);
             [softclip(tone_l * amp), softclip(tone_r * amp)]
-        })
-});
-
-define_synthdef("resynth_spectral_bank", |builder| {
-    builder
-        .input("analyze_a", 1)
-        .input("analyze_b", 1)
-        .output("odd_a")
-        .output("even_a")
-        .output("odd_b")
-        .output("even_b")
-        .param("freq_a", 220.0)
-        .param("freq_b", 220.0)
-        .param("amp", 0.3)
-        .param("routing_mode", 0.0)
-        .param("mode_a", 0.0)
-        .param("mode_b", 0.0)
-        .param("partials_a", 1.0)
-        .param("partials_b", 1.0)
-        .param("slide_a", 0.5)
-        .param("slide_b", 0.5)
-        .param("focus_a", 0.5)
-        .param("focus_b", 0.5)
-        .param("a_fm_index", 0.0)
-        .param("b_fm_index", 0.0)
-        .body_map(|p| {
-            let amp = clip(p.amp, 0.0, 2.0);
-            let partials_a = clip(p.partials_a, 0.0, 1.0);
-            let partials_b = clip(p.partials_b, 0.0, 1.0);
-            let slide_a = clip(p.slide_a, 0.0, 1.0);
-            let slide_b = clip(p.slide_b, 0.0, 1.0);
-            let focus_a = clip(p.focus_a, 0.0, 1.0);
-            let focus_b = clip(p.focus_b, 0.0, 1.0);
-            let follow = clip((p.routing_mode - 1.0) * 0.5, 0.0, 1.0);
-            let freq_a = p.freq_a.max(20.0);
-            let freq_b = (p.freq_b * (1.0 - follow) + p.freq_a * 1.4983 * follow).max(20.0);
-            let analyze_a = 0.35 + clip(amplitude_kr(p.inputs["analyze_a"], 0.01, 0.20) * 8.0, 0.0, 0.65);
-            let analyze_b = 0.35 + clip(amplitude_kr(p.inputs["analyze_b"], 0.01, 0.20) * 8.0, 0.0, 0.65);
-
-            let fm_a = sin_osc_ar(freq_b) * p.b_fm_index * freq_a;
-            let fm_b = sin_osc_ar(freq_a) * p.a_fm_index * freq_b;
-            let fa = (freq_a + fm_a).max(20.0);
-            let fb = (freq_b + fm_b).max(20.0);
-
-            let odd_a = sin_osc_ar(fa) * 0.78
-                      + sin_osc_ar(fa * 3.0) * partials_a * 0.32
-                      + sin_osc_ar(fa * 5.0) * slide_a * 0.18;
-            let even_a = sin_osc_ar(fa * 2.0) * partials_a * 0.42
-                       + sin_osc_ar(fa * 4.0) * focus_a * 0.22;
-            let odd_b = sin_osc_ar(fb) * 0.70
-                      + sin_osc_ar(fb * 3.0) * partials_b * 0.30
-                      + sin_osc_ar(fb * 5.0) * slide_b * 0.16;
-            let even_b = sin_osc_ar(fb * 2.0) * partials_b * 0.38
-                       + sin_osc_ar(fb * 4.0) * focus_b * 0.20;
-
-            [
-                softclip(odd_a * analyze_a * amp),
-                softclip(even_a * analyze_a * amp),
-                softclip(odd_b * analyze_b * amp),
-                softclip(even_b * analyze_b * amp),
-            ]
         })
 });
 
@@ -258,38 +198,41 @@ let morph = voice("morphagene_reel")
     .gain(db(0));
 morph.outputs(["left", "right"]).to(group("raw_morphagene"));
 
-let spec = voice("spectraphon_resynth")
-    .synth("resynth_spectral_bank")
-    .group("raw_spectral_odd")
-    .set_param("freq_a", 146.8)
-    .set_param("freq_b", 220.0)
-    .set_param("amp", 0.17)
-    .set_param("routing_mode", 2.0)
-    .set_param("mode_a", 1.0)
-    .set_param("mode_b", 1.0)
-    .set_param("partials_a", 0.72)
-    .set_param("partials_b", 0.58)
-    .set_param("slide_a", 0.44)
-    .set_param("slide_b", 0.63)
-    .set_param("focus_a", 0.52)
-    .set_param("focus_b", 0.38)
-    .set_param("a_fm_index", 0.04)
-    .set_param("b_fm_index", 0.02)
-    .gain(db(-5));
+// Real-FFT Spectraphon dual via the pure-vibe helper.
+// Each side runs a private analyzer (FFT + 64 BinData) writing a 64-frame
+// magnitude buffer that drives the side's 64-partial additive oscillator.
+let spec = spectraphon::spectraphon_dual("spectraphon_resynth", "sam", "sam");
+spec = spectraphon::spectraphon_group(spec, "raw_spectral_odd");
+spec = spectraphon::spectraphon_gain(spec, db(-5));
+spec = spectraphon::spectraphon_set_param(spec, "freq_a", 146.8);
+spec = spectraphon::spectraphon_set_param(spec, "freq_b", 220.0);
+spec = spectraphon::spectraphon_set_param(spec, "amp", 0.17);
+spec = spectraphon::spectraphon_set_param(spec, "routing_mode", 2.0);
+spec = spectraphon::spectraphon_set_param(spec, "partials_a", 0.72);
+spec = spectraphon::spectraphon_set_param(spec, "partials_b", 0.58);
+spec = spectraphon::spectraphon_set_param(spec, "slide_a", 0.44);
+spec = spectraphon::spectraphon_set_param(spec, "slide_b", 0.63);
+spec = spectraphon::spectraphon_set_param(spec, "focus_a", 0.52);
+spec = spectraphon::spectraphon_set_param(spec, "focus_b", 0.38);
 
-spec.output("odd_a").to(group("raw_spectral_odd"));
-spec.output("odd_b").to(group("raw_spectral_odd"));
-spec.output("even_a").to(group("raw_spectral_even"));
-spec.output("even_b").to(group("raw_spectral_even"));
+spectraphon::spectraphon_output(spec, "odd_a").to(group("raw_spectral_odd"));
+spectraphon::spectraphon_output(spec, "odd_b").to(group("raw_spectral_odd"));
+spectraphon::spectraphon_output(spec, "even_a").to(group("raw_spectral_even"));
+spectraphon::spectraphon_output(spec, "even_b").to(group("raw_spectral_even"));
+spec.oscillator_a.output("sine").mute();
+spec.oscillator_a.output("sub").mute();
+spec.oscillator_b.output("sine").mute();
+spec.oscillator_b.output("sub").mute();
 
-rene.output("cv").to_param(spec, "freq_a").scale(170.0).offset(130.0);
-cvbus.output("bus4").to_param(spec, "freq_b").scale(120.0).offset(180.0);
-woggle.output("stepped").to_param(spec, "partials_a").scale(0.30).offset(0.48);
-woggle.output("woggle").to_param(spec, "partials_b").scale(0.28).offset(0.42);
-cvbus.output("bus1").to_param(spec, "slide_a").scale(0.38).offset(0.38);
-cvbus.output("bus2").to_param(spec, "focus_b").scale(0.42).offset(0.30);
-maths.output("ch4").to_param(spec, "a_fm_index").scale(0.08).offset(0.02);
-woggle.output("smooth").to_param(spec, "b_fm_index").scale(0.05).offset(0.01);
+// CV routes hit the underlying per-side oscillator voices directly (Rhai
+// object_map field access yields the live voice handle; the param-route
+// registry resolves by VoiceId so passing through the map field is safe).
+rene.output("cv").to_param(spec.oscillator_a, "freq").scale(170.0).offset(130.0);
+cvbus.output("bus4").to_param(spec.oscillator_b, "freq").scale(120.0).offset(180.0);
+woggle.output("stepped").to_param(spec.oscillator_a, "partials").scale(0.30).offset(0.48);
+woggle.output("woggle").to_param(spec.oscillator_b, "partials").scale(0.28).offset(0.42);
+cvbus.output("bus1").to_param(spec.oscillator_a, "slide").scale(0.38).offset(0.38);
+cvbus.output("bus2").to_param(spec.oscillator_b, "focus").scale(0.42).offset(0.30);
 
 tempi.output("ch5").to_param(morph, "clk");
 rene.output("cv").to_param(morph, "organize").scale(0.42).offset(0.42);
@@ -318,8 +261,8 @@ let morph_tap = voice("tap_morphagene")
     .set_param("level", 0.75);
 morph_tap.input("in").from(group("raw_morphagene"));
 
-spec.input("analyze_a").from(morph_tap);
-spec.input("analyze_b").from(morph_tap);
+spectraphon::spectraphon_input(spec, "analyze_a").from(morph_tap);
+spectraphon::spectraphon_input(spec, "analyze_b").from(morph_tap);
 
 let xpan = voice("xpan_motion")
     .synth("x_pan")
@@ -401,7 +344,7 @@ maths.run();
 press.run();
 cvbus.run();
 morph.run();
-spec.run();
+spec = spectraphon::spectraphon_run(spec);
 odd_tap.run();
 even_tap.run();
 morph_tap.run();

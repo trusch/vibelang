@@ -1,0 +1,47 @@
+// Spectraphon analyzer - real FFT + one BinData read per harmonic.
+//
+// This synthdef is intentionally only the SAM analyzer half of Spectraphon.
+// It writes 64 harmonic magnitudes into `mag_buf`; the oscillator synthdef
+// consumes that control buffer.
+
+define_synthdef("spectraphon_analyzer", |builder| {
+    builder
+        .input("analyze", 1)
+        .output_kr("noop")
+        .param("f0_analyze", 200.0)
+        .param("focus", 0.5)
+        .param("mag_buf", 0.0)
+        .param("active", 1.0)
+        .param("gate", 1.0)
+        .body_map(|p| {
+            let analyze_in = p.inputs["analyze"];
+            let f0_analyze = p.f0_analyze;
+            let focus = clip(p.focus, 0.0, 1.0);
+            let mag_buf = p.mag_buf;
+            let active = clip(p.active, 0.0, 1.0) * clip(p.gate, 0.0, 1.0);
+
+            let fft_buf = local_buf_ir(1.0, 2048.0);
+            let chain = fft_kr(fft_buf, analyze_in, 0.5, 1.0, 1.0, 0.0);
+            let bin_per_hz = 2048.0 / 44100.0;
+            let mag_scale = 0.001953125;
+            let bin_max = 1023.0;
+            let lag_t = 0.02;
+            let bin_width = 0.5 + focus * 3.5;
+
+            let k = 1.0;
+            let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
+            let mag_centre = channels(bin_data_kr(chain, centre_bin, bin_width), 2)[0];
+            let mag = lag_kr(mag_centre * mag_scale, lag_t) * active;
+            buf_wr_kr(mag, mag_buf, k - 1.0, 0);
+
+            for i in 2..65 {
+                let k = i.to_float();
+                let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
+                let mag_centre = channels(bin_data_kr(chain, centre_bin, bin_width), 2)[0];
+                let mag = lag_kr(mag_centre * mag_scale, lag_t) * active;
+                buf_wr_kr(mag, mag_buf, k - 1.0, 0);
+            }
+
+            [dc_kr(0.0)]
+        })
+});

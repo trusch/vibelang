@@ -1,371 +1,372 @@
-// Spectraphon Side - Stories A + B + C + E (multi-output revision)
-//   (single-side SAO + SAM analyzer + Array memory + Spectranoise Chaos/Noise)
+// Spectraphon side public helper.
 //
-// Single-side spectral oscillator with 64 harmonic partials split across an
-// Odd bank (k = 1, 3, ..., 63) and an Even bank (k = 2, 4, ..., 64). Each
-// bank is unrolled as 32 parallel sin_osc_ar voices summed together —
-// klang_ar would require a 32+32-element signal array which exceeds Rhai's
-// 16-arity limit, so the additive bank is unrolled per the plan §7 fallback.
-//
-// Story B — SAM analyzer:
-//   When `sam_capture` selects a SAM mode, the per-partial magnitudes
-//   come from a real-time FFT of the `analyze` named input. The 2048-frame
-//   FFT (Hann window, 50% hop) is read with `bin_data_kr` per partial,
-//   one bin per harmonic centred on `k · f0_analyze · binsPerHz`.
-//   Slide drives `f0_analyze` log-mapped to [50, 800] Hz (independent of
-//   the oscillator pitch — see kb/spectraphon-synthdef-plan.md §3.d).
-//   Each magnitude is smoothed with a 20 ms `lag_kr` (≈ 50 Hz one-pole)
-//   to avoid zipper noise on bin updates.
-//
-//   DEVIATION from the kb plan §3.a `bandwidth_bins ∈ [1, 16]` design:
-//   Focus does not modulate per-partial bandwidth in the analyser. Story
-//   C's bilinear lookup already consumes 256 buf_rd UGens per side; a
-//   bandwidth-3 kernel would push the SC synthdef definition message
-//   past the 64 KB UDP limit (`Message too long`, errno 90, observed
-//   while implementing Story B). Focus instead exclusively addresses
-//   the Story C Array Y-axis. A wider bucket-sum is possible once the
-//   synthdef framework moves to /d_recv + TCP or buffer-driven analysis.
-//
-//   In SAM modes, the Sub port carries an envelope follower
-//   (`amplitude_ar`) on the analyser input per the plan §3.c.
-//
-// Story C — Array memory:
-//   16 stored Arrays per side, each addressed by a 2-D Slide × Focus grid
-//   of N_GRID × N_GRID cells holding 64 partial magnitudes. Total buffer is
-//   N_ARRAYS × N_GRID × N_GRID × N_PARTIALS = 16 × 8 × 8 × 64 = 65536 floats.
-//
-//   SAM mode (sam_capture ≥ 1): partial magnitudes come from `mag_sam`.
-//     When `sam_capture == 4` (capture active), mag_sam is written into
-//     the cell `[array_idx, floor(slide·N_GRID), floor(focus·N_GRID), k-1]`
-//     via a phase-offset gating trick on buf_wr_kr.
-//
-//   SAO mode (sam_capture == 0): partial magnitudes are read back from
-//     the buffer using bilinear interpolation across the 4 cells around
-//     the current (slide, focus). 4 buf_rd_kr per partial × 64 partials =
-//     256 lookups per side at kr rate.
-//     If `bufnum` is left at its default 0, SAO reads a one-frame local
-//     fallback buffer and mixes in a built-in 1/k saw spectrum. Capture is
-//     disabled until a script-allocated Array buffer is wired in.
-//
-//   The Array buffer is a script-allocated, hot-reload-safe buffer wired
-//   in via the `bufnum` synthdef param. The script side calls
-//   `let arr = allocate_buffer("spec_arrays", 65536, 1);
-//    voice.set_param("bufnum", arr.bufnum);` — see
-//   `examples/spectraphon_multiout.vibe`. The reload diff treats an
-//   unchanged `allocate_buffer` call as a no-op, so the SC buffer is not
-//   re-allocated and any captured magnitudes survive synthdef recompiles.
-//   Default-preset baking (Array 0 = saw, 1 = square, 2 = noise) is
-//   deferred to a follow-up ticket since `set_buf_ir` cannot fan out to
-//   65,536 cells in one call.
-//
-// Story E — Spectranoise modes (Chaos + Noise) per kb plan §6.E and §4:
-//
-//   Chaos (mode=2): paired sines per side. Carrier_a = sin_osc_ar(freq);
-//     carrier_b = sin_osc_ar(freq * chaos_ratio) where chaos_ratio is
-//     focus-mapped to [1, 4]. `slide` drives chaos feedback through
-//     fb_sine_l_ar (linear-interpolating chaotic sine, im + fb scale with
-//     slide). `partials` becomes audio-rate AM depth — at partials=0 the
-//     pair is clean; at partials=1 each carrier is fully AM-modulated by
-//     the chaos voice. carrier_a lands on the Odd port, carrier_b on the
-//     Even port — users can route them to separate destinations.
-//
-//   Noise (mode=3): pink_noise_ar → lpf_ar(slide_cut) → hpf_ar(focus_cut)
-//     → AM with sine carriers. slide_cut log-mapped 100..16000 Hz, focus_cut
-//     log-mapped 20..2000 Hz. Odd port gets bp * sin(f0); Even port gets
-//     bp * sin(2*f0). `partials` is unused in Noise (the AM is intrinsic
-//     to the mode).
-//
-// `sam_capture` decode (extended for Story E — see kb plan §6.E3):
-//   0 → SAO playback        (bank, sao_mix=1, no capture)
-//   1 → SAM, no capture     (bank, sam_mix=1, no capture)
-//   2 → Chaos               (paired sines + chaos feedback, partials = AM depth)
-//   3 → Noise               (filtered pink-noise sidebands AM-modulating sines)
-//   4 → SAM with capture    (bank, sam_mix=1, capture writes Story C array cell)
-//
-// Output ports (one signal per port — wire each to its own destination via
-// the Rhai `voice.output("name").to(group)` API, see Story 8):
-//
-//   sine — clean `sin_osc_ar(freq)` at k=1. Always present; not mode-gated.
-//          Useful as an FM source, oscilloscope reference, or LFO substitute.
-//   sub  — Sub-CV (DC-coupled). SAO: `saw_ar(freq * 0.5) * 0.5`.
-//          SAM: `amplitude_ar(analyse_in)` envelope follower. Silent in
-//          Chaos / Noise modes (mode-mix coefficients = 0).
-//   odd  — Odd-bank summed (k = 1, 3, ..., 63) in SAO/SAM, gated by the
-//          global *partials VCA. In Chaos: `chaos_a` carrier with chaos AM.
-//          In Noise: `noise_bp * sin(f0)`.
-//   even — Even-bank summed (k = 2, 4, ..., 64) in SAO/SAM, gated by the
-//          global *partials VCA. In Chaos: `chaos_b` carrier (at
-//          `freq * chaos_ratio`) with chaos AM. In Noise: `noise_bp * sin(2*f0)`.
-//
-//   Hardware-Spectraphon mapping: route `odd` to the Odd jack and `even`
-//   to the Even jack to mirror the module's panel. A simple stereo mix is
-//   `voice.output("odd").to(left_group); voice.output("even").to(right_group);`
-//   or sum both into a mono group for a hardware "Even-into-Odd merged"
-//   feel (the old `merge_even=1` default).
-//
-// Stories not yet integrated here: FM bus (Story D — see spectraphon_dual.vibe).
-// See kb/spectraphon-synthdef-plan.md §3 (DSP arch), §4 (UGen mapping),
-// §6.A (Story A), §6.B (Story B), §6.C (Story C), §6.E (Story E),
-// §7 (storage format / risks).
+// Importing this file registers the split synthdefs and provides a pure-Rhai
+// helper that hides the analyzer/oscillator buffer wiring without adding any
+// Rust surface area.
 
-define_synthdef("spectraphon_side", |builder| {
-    builder
-        .input("analyze", 1)        // 1ch — SAM analyzer source (silent if unpatched)
-        .output("sine")             // 1ch — clean fundamental
-        .output("sub")              // 1ch — sub / CV (DC-coupled)
-        .output("odd")              // 1ch — odd-bank summed
-        .output("even")             // 1ch — even-bank summed
-        .param("freq", 220.0)
-        .param("partials", 1.0)
-        .param("slide", 0.5)        // SAM: f0_analyze (log 50..800 Hz). SAO: Array X.
-        .param("focus", 0.5)        // SAM: bucket-sum bandwidth weight. SAO: Array Y.
-        .param("amp", 0.3)
-        .param("gate", 1.0)
-        .param("sam_capture", 1.0)  // mode: 0=SAO | 1=SAM | 2=Chaos | 3=Noise | 4=SAM+cap
-        .param("array_idx", 0.0)    // 0..15 — which of the 16 stored Arrays to address
-        .param("bufnum", 0.0)       // SC bufnum of the script-allocated Array buffer
-                                    // (65,536 frames × 1 channel — see
-                                    // `examples/spectraphon_multiout.vibe`).
-                                    // Default 0 is invalid; the script MUST wire
-                                    // `allocate_buffer("spec_arrays", 65536, 1).bufnum`.
-        .body_map(|p| {
+import "stdlib/instruments/spectral/spectraphon_analyzer.vibe";
+import "stdlib/instruments/spectral/spectraphon_sam_oscillator.vibe";
+import "stdlib/instruments/spectral/spectraphon_sao_oscillator.vibe";
 
-            // Unpack params from the body_map into local bindings so the
-            // rest of the body reads exactly like a positional `body(...)`.
-            let freq = p.freq;
-            let partials = p.partials;
-            let slide = p.slide;
-            let focus = p.focus;
-            let amp = p.amp;
-            let gate = p.gate;
-            let sam_capture = p.sam_capture;
-            let array_idx = p.array_idx;
-            let array_buf = p.bufnum;
+fn _spectraphon_f0_from_slide(slide) {
+    return 50.0 * 16.0.pow(slide.max(0.0).min(1.0));
+}
 
-            let env = envelope()
-                .asr(0.01, 1.0, 0.3)
-                .gate(gate)
-                .cleanup_on_finish()
-                .build();
+fn _spectraphon_follow_freq(freq_a, freq_b, routing_mode) {
+    let mode = (routing_mode.max(0.0).min(4.0) + 0.5).floor();
+    if mode == 1.0 {
+        return freq_a;
+    } else if mode == 2.0 {
+        return freq_a * 1.4983;
+    } else if mode == 3.0 {
+        return freq_a * 2.0;
+    } else if mode == 4.0 {
+        return freq_a * 2.9966;
+    }
+    return freq_b;
+}
 
-            // The per-partial gate g[k] = clamp(partials*N - (k-1), 0, 1)
-            // reveals harmonics low-to-high as `partials` sweeps CCW → CW;
-            // CCW (partials=0) → silent, CW (partials=1) → full spectrum.
-            let n = 64.0;
-            let scale = partials * n;
+fn _spectraphon_dual_apply_freq_b(spec) {
+    let freq_b_eff = _spectraphon_follow_freq(spec.freq_a, spec.freq_b, spec.routing_mode);
+    spec.side_b.freq = freq_b_eff;
+    spec.side_b.oscillator = spec.side_b.oscillator.set_param("freq", freq_b_eff);
+    spec.oscillator_b = spec.side_b.oscillator;
+    return spec;
+}
 
-            // === Story B: SAM analyzer (FFT chain shared by all partials) ===
-            let analyze_in = p.inputs["analyze"];
-            // 2048-frame FFT, 50% hop, Hann window. Bin spacing at 44.1 kHz
-            // is 21.5 Hz; the FFT writes magnitudes/phases into fft_buf and
-            // bin_data_kr reads (mag, freq) per bin out of the active chain.
-            let fft_buf = local_buf_ir(1.0, 2048.0);
-            let chain = fft_kr(fft_buf, analyze_in, 0.5, 1.0, 1.0, 0.0);
+fn _spectraphon_dual_refresh_a(spec, side_value) {
+    spec.side_a = side_value;
+    spec.analyzer_a = side_value.analyzer;
+    spec.oscillator_a = side_value.oscillator;
+    return spec;
+}
 
-            // Slide → analyser fundamental. Log-mapped 50..800 Hz so each
-            // half-turn doubles the harmonic grid spacing (kb plan §3.d).
-            let f0_analyze = 50.0 * pow(16.0, clip(slide, 0.0, 1.0));
-            // Bin index per Hz at the assumed 44.1 kHz server rate.
-            let bin_per_hz = 2048.0 / 44100.0;
-            // Hann-windowed FFT magnitude scaling: a unit sine on a bin
-            // produces ~N/4 ≈ 512, so 1/512 brings peaks back to ~1.0.
-            let mag_scale = 0.001953125;
-            // 60 dB lag time of 20 ms ≈ one-pole at ~55 Hz cutoff.
-            let lag_t = 0.02;
-            // Reusable Nyquist-safe bin clip range. Bin 0 is DC, bin 1024
-            // is Nyquist for FFT size 2048; clamp reads to [1, 1023].
-            let bin_max = 1023.0;
+fn _spectraphon_dual_refresh_b(spec, side_value) {
+    spec.side_b = side_value;
+    spec.analyzer_b = side_value.analyzer;
+    spec.oscillator_b = side_value.oscillator;
+    return spec;
+}
 
-            // sam_capture decode (see file header for the truth table).
-            // Monotonic one-hot via cumulative-clip differences:
-            //   m_le_n = 1 when sam_capture ≤ n, else 0 (for integer values).
-            // Each mode's mix coefficient is then the difference between
-            // adjacent thresholds, yielding exactly one active coefficient
-            // per integer mode value. cap_active is high only at mode=4.
-            let m_le_0 = clip(1.0 - sam_capture, 0.0, 1.0);     // 1 at mode≤0
-            let m_le_1 = clip(2.0 - sam_capture, 0.0, 1.0);     // 1 at mode≤1
-            let m_le_2 = clip(3.0 - sam_capture, 0.0, 1.0);     // 1 at mode≤2
-            let m_le_3 = clip(4.0 - sam_capture, 0.0, 1.0);     // 1 at mode≤3
-            let sao_mix    = m_le_0;                             // mode=0
-            let sam_only   = m_le_1 - m_le_0;                    // mode=1
-            let chaos_mix  = m_le_2 - m_le_1;                    // mode=2
-            let noise_mix  = m_le_3 - m_le_2;                    // mode=3
-            let sam_cap    = 1.0 - m_le_3;                       // mode≥4
-            let sam_mix    = sam_only + sam_cap;                 // SAM is mode 1 OR 4
-            let cap_active = sam_cap;                            // capture only at mode=4
-            let has_array  = clip((array_buf - 1.0) * 1000.0, 0.0, 1.0);
-            let fallback_array_buf = local_buf_ir(1.0, 1.0);
-            let array_mem = array_buf * has_array
-                          + fallback_array_buf * (1.0 - has_array);
+fn _spectraphon_mode_from_capture(value) {
+    if value >= 3.5 {
+        return "sam_capture";
+    } else if value >= 0.5 {
+        return "sam";
+    }
+    return "sao";
+}
 
-            // === Story C: shared 16-Array buffer + bilinear lookup ===
-            //
-            // Layout (flat 1D, row-major):
-            //   idx = array_idx * (N_GRID * N_GRID * N_PARTIALS)
-            //       + slide_cell * (N_GRID * N_PARTIALS)
-            //       + focus_cell * N_PARTIALS
-            //       + (k - 1)
-            // Strides for N_GRID=8, N_PARTIALS=64:
-            //   array_stride = 4096, row_stride = 512, cell_stride = 64.
-            //
-            // The buffer is script-allocated via `allocate_buffer(...)` and
-            // wired in via the `bufnum` synthdef param (unpacked above as
-            // `array_buf`). This keeps the 16-Array memory alive across
-            // synthdef recompiles — captured magnitudes survive hot-reload.
+fn _spectraphon_synth_for_mode(mode) {
+    if mode == "sao" || mode == "chaos" || mode == "noise" {
+        return "spectraphon_sao_oscillator";
+    } else if mode == "sam" {
+        return "spectraphon_sam_live_oscillator";
+    }
+    return "spectraphon_sam_oscillator";
+}
 
-            // Quantise slide/focus to grid cells. floor(x) = x - wrap(x,0,1)
-            // since vibelang has no Floor UGen.
-            let slide_pos = clip(slide, 0.0, 0.99999) * 8.0;
-            let focus_pos = clip(focus, 0.0, 0.99999) * 8.0;
-            let slide_lo = slide_pos - wrap_kr(slide_pos, 0.0, 1.0);
-            let focus_lo = focus_pos - wrap_kr(focus_pos, 0.0, 1.0);
-            let slide_hi = clip(slide_lo + 1.0, 0.0, 7.0);
-            let focus_hi = clip(focus_lo + 1.0, 0.0, 7.0);
-            let s_frac = slide_pos - slide_lo;
-            let f_frac = focus_pos - focus_lo;
+fn _spectraphon_capture_for_mode(mode) {
+    if mode == "sam_capture" || mode == "capture" {
+        return 1.0;
+    }
+    return 0.0;
+}
 
-            // Bilinear weights — constant across all 64 partials in this kr cycle.
-            let w00 = (1.0 - s_frac) * (1.0 - f_frac);
-            let w01 = (1.0 - s_frac) * f_frac;
-            let w10 = s_frac * (1.0 - f_frac);
-            let w11 = s_frac * f_frac;
+fn _spectraphon_build_oscillator(spec, mode) {
+    let synth = _spectraphon_synth_for_mode(mode);
+    let osc = voice(spec.name + "__oscillator")
+        .synth(synth)
+        .set_param("freq", spec.freq)
+        .set_param("partials", spec.partials)
+        .set_param("slide", spec.slide)
+        .set_param("focus", spec.focus)
+        .set_param("amp", spec.amp)
+        .set_param("gate", spec.gate)
+        .set_param("array_idx", spec.array_idx)
+        .set_param("array_buf", spec.array_bufnum);
 
-            let arr_base = clip(array_idx, 0.0, 15.0) * 4096.0;
-            let base00 = arr_base + slide_lo * 512.0 + focus_lo * 64.0;
-            let base01 = arr_base + slide_lo * 512.0 + focus_hi * 64.0;
-            let base10 = arr_base + slide_hi * 512.0 + focus_lo * 64.0;
-            let base11 = arr_base + slide_hi * 512.0 + focus_hi * 64.0;
+    if synth == "spectraphon_sam_live_oscillator" {
+        osc = osc.set_param("mag_buf", spec.mag_bufnum);
+    } else if synth == "spectraphon_sam_oscillator" {
+        osc = osc
+            .set_param("mag_buf", spec.mag_bufnum)
+            .set_param("capture", _spectraphon_capture_for_mode(mode));
+    }
 
-            // Capture target = nearest (slide_lo, focus_lo) cell.
-            // When capture is inactive we offset the write phase by 1e9 — far
-            // past the 65536-frame buffer with loop=0, BufWr drops the write.
-            let cap_base = arr_base + slide_lo * 512.0 + focus_lo * 64.0;
-            let cap_offset = (1.0 - cap_active * has_array) * 1.0e9;
+    if spec.group_name != "" {
+        osc = osc.group(spec.group_name);
+    }
+    osc = osc.gain(spec.gain_value);
+    return osc;
+}
 
-            // --- Odd bank: k = 1, 3, 5, ..., 63 ---------------------------
-            let k = 1.0;
-            let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
-                            + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
-                            + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
-                            + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
-            let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
-            let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
-            let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
-            let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
-            buf_wr_kr(mag_sam, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
-            let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
-            let odd_bank = sin_osc_ar(freq * k) * mag_k
-                * clip(scale - (k - 1.0), 0.0, 1.0);
-            for i in 1..32 {
-                let k = (2 * i + 1).to_float();
-                let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
-                                + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
-                                + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
-                                + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
-                let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
-                let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
-                let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
-                let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
-                buf_wr_kr(mag_sam, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
-                let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
-                odd_bank = odd_bank + sin_osc_ar(freq * k) * mag_k
-                    * clip(scale - (k - 1.0), 0.0, 1.0);
+fn _spectraphon_set_mode(spec, mode) {
+    spec.mode = mode;
+    spec.oscillator = _spectraphon_build_oscillator(spec, mode);
+    return spec;
+}
+
+fn spectraphon_side(name, mode) {
+    let mag = allocate_buffer(name + "__mag", 64, 1);
+    let arrays = allocate_buffer(name + "__arrays", 65536, 1);
+
+    let analyzer = voice(name + "__analyzer")
+        .synth("spectraphon_analyzer")
+        .set_param("mag_buf", mag.bufnum)
+        .set_param("f0_analyze", _spectraphon_f0_from_slide(0.5));
+    // The analyzer's only declared output is the kr 'noop' dummy that exists
+    // solely to satisfy "synthdef must declare ≥1 output". Mute it so default
+    // routing doesn't try to push a kr signal into an audio group.
+    analyzer.output("noop").mute();
+
+    let spec = #{
+        kind: "spectraphon_side",
+        name: name,
+        analyzer: analyzer,
+        oscillator: voice(name + "__oscillator"),
+        mag_buf: mag,
+        array_buf: arrays,
+        mag_bufnum: mag.bufnum,
+        array_bufnum: arrays.bufnum,
+        mode: mode,
+        freq: 220.0,
+        partials: 1.0,
+        slide: 0.5,
+        focus: 0.5,
+        amp: 0.3,
+        gate: 1.0,
+        array_idx: 0.0,
+        group_name: "",
+        gain_value: 1.0,
+    };
+    return _spectraphon_set_mode(spec, mode);
+}
+
+fn spectraphon_set_param(spec, param, value) {
+    if spec.kind == "spectraphon_dual" {
+        if param == "freq_a" {
+            spec.freq_a = value;
+            spec = _spectraphon_dual_refresh_a(spec, spectraphon_set_param(spec.side_a, "freq", value));
+            return _spectraphon_dual_apply_freq_b(spec);
+        } else if param == "freq_b" {
+            spec.freq_b = value;
+            return _spectraphon_dual_apply_freq_b(spec);
+        } else if param == "routing_mode" {
+            spec.routing_mode = value;
+            return _spectraphon_dual_apply_freq_b(spec);
+        } else if param == "partials_a" {
+            spec = _spectraphon_dual_refresh_a(spec, spectraphon_set_param(spec.side_a, "partials", value));
+        } else if param == "partials_b" {
+            spec = _spectraphon_dual_refresh_b(spec, spectraphon_set_param(spec.side_b, "partials", value));
+        } else if param == "slide_a" {
+            spec = _spectraphon_dual_refresh_a(spec, spectraphon_set_param(spec.side_a, "slide", value));
+        } else if param == "slide_b" {
+            spec = _spectraphon_dual_refresh_b(spec, spectraphon_set_param(spec.side_b, "slide", value));
+        } else if param == "focus_a" {
+            spec = _spectraphon_dual_refresh_a(spec, spectraphon_set_param(spec.side_a, "focus", value));
+        } else if param == "focus_b" {
+            spec = _spectraphon_dual_refresh_b(spec, spectraphon_set_param(spec.side_b, "focus", value));
+        } else if param == "mode_a" || param == "sam_capture_a" {
+            spec = _spectraphon_dual_refresh_a(spec, spectraphon_set_param(spec.side_a, "sam_capture", value));
+        } else if param == "mode_b" || param == "sam_capture_b" {
+            spec = _spectraphon_dual_refresh_b(spec, spectraphon_set_param(spec.side_b, "sam_capture", value));
+        } else if param == "array_idx_a" {
+            spec = _spectraphon_dual_refresh_a(spec, spectraphon_set_param(spec.side_a, "array_idx", value));
+        } else if param == "array_idx_b" {
+            spec = _spectraphon_dual_refresh_b(spec, spectraphon_set_param(spec.side_b, "array_idx", value));
+        } else if param == "amp" || param == "gate" {
+            spec = _spectraphon_dual_refresh_a(spec, spectraphon_set_param(spec.side_a, param, value));
+            spec = _spectraphon_dual_refresh_b(spec, spectraphon_set_param(spec.side_b, param, value));
+        } else if param == "bufnum" || param == "array_buf" {
+            spec = _spectraphon_dual_refresh_a(spec, spectraphon_set_param(spec.side_a, "array_buf", value));
+            spec = _spectraphon_dual_refresh_b(spec, spectraphon_set_param(spec.side_b, "array_buf", value));
+        } else {
+            spec[param] = value;
+        }
+        return spec;
+    }
+
+    if param == "mode" {
+        spec = _spectraphon_set_mode(spec, value);
+    } else if param == "sam_capture" {
+        spec = _spectraphon_set_mode(spec, _spectraphon_mode_from_capture(value));
+    } else if param == "freq" {
+        spec.freq = value;
+        spec.oscillator = spec.oscillator.set_param(param, value);
+    } else if param == "partials" {
+        spec.partials = value;
+        spec.oscillator = spec.oscillator.set_param(param, value);
+    } else if param == "amp" {
+        spec.amp = value;
+        spec.oscillator = spec.oscillator.set_param(param, value);
+    } else if param == "gate" {
+        spec.gate = value;
+        spec.analyzer = spec.analyzer.set_param(param, value);
+        spec.oscillator = spec.oscillator.set_param(param, value);
+    } else if param == "array_idx" {
+        spec.array_idx = value;
+        spec.oscillator = spec.oscillator.set_param(param, value);
+    } else if param == "slide" {
+        spec.slide = value;
+        spec.oscillator = spec.oscillator.set_param("slide", value);
+        spec.analyzer = spec.analyzer.set_param("f0_analyze", _spectraphon_f0_from_slide(value));
+    } else if param == "focus" {
+        spec.focus = value;
+        spec.oscillator = spec.oscillator.set_param("focus", value);
+        spec.analyzer = spec.analyzer.set_param("focus", value);
+    } else if param == "bufnum" || param == "array_buf" {
+        spec.array_bufnum = value;
+        spec.oscillator = spec.oscillator.set_param("array_buf", value);
+    } else if param == "mag_buf" {
+        spec.mag_bufnum = value;
+        spec.oscillator = spec.oscillator.set_param("mag_buf", value);
+        spec.analyzer = spec.analyzer.set_param("mag_buf", value);
+    } else if param == "f0_analyze" || param == "active" {
+        spec.analyzer = spec.analyzer.set_param(param, value);
+    } else {
+        spec.oscillator = spec.oscillator.set_param(param, value);
+    }
+    return spec;
+}
+
+fn spectraphon_input(spec, name) {
+    if spec.kind == "spectraphon_dual" {
+        if name == "analyze_b" {
+            return spec.analyzer_b.input("analyze");
+        }
+        return spec.analyzer_a.input("analyze");
+    }
+    return spec.analyzer.input(name);
+}
+
+fn spectraphon_output(spec, name) {
+    if spec.kind == "spectraphon_dual" {
+        if name == "odd_b" {
+            return spec.oscillator_b.output("odd");
+        } else if name == "even_b" {
+            return spec.oscillator_b.output("even");
+        } else if name == "even_a" {
+            return spec.oscillator_a.output("even");
+        }
+        return spec.oscillator_a.output("odd");
+    }
+    return spec.oscillator.output(name);
+}
+
+fn spectraphon_outputs_to_current_group(spec, names) {
+    for name in names {
+        spectraphon_output(spec, name).to_current_group();
+    }
+    return spec;
+}
+
+fn spectraphon_outputs_to_main(spec, names) {
+    for name in names {
+        spectraphon_output(spec, name).to_main();
+    }
+    return spec;
+}
+
+fn spectraphon_outputs_to(spec, names, dest) {
+    for name in names {
+        spectraphon_output(spec, name).to(dest);
+    }
+    return spec;
+}
+
+fn spectraphon_outputs_mute(spec, names) {
+    for name in names {
+        spectraphon_output(spec, name).mute();
+    }
+    return spec;
+}
+
+fn spectraphon_gain(spec, value) {
+    if spec.kind == "spectraphon_dual" {
+        spec.oscillator_a = spec.oscillator_a.gain(value);
+        spec.oscillator_b = spec.oscillator_b.gain(value);
+        spec.side_a.gain_value = value;
+        spec.side_b.gain_value = value;
+    } else {
+        spec.gain_value = value;
+        spec.oscillator = spec.oscillator.gain(value);
+    }
+    return spec;
+}
+
+fn spectraphon_group(spec, name) {
+    if spec.kind == "spectraphon_dual" {
+        spec.oscillator_a = spec.oscillator_a.group(name);
+        spec.oscillator_b = spec.oscillator_b.group(name);
+        spec.side_a.group_name = name;
+        spec.side_b.group_name = name;
+    } else {
+        spec.group_name = name;
+        spec.oscillator = spec.oscillator.group(name);
+    }
+    return spec;
+}
+
+fn spectraphon_run(spec) {
+    if spec.kind == "spectraphon_dual" {
+        spec.analyzer_a = spec.analyzer_a.run();
+        spec.analyzer_b = spec.analyzer_b.run();
+        spec.oscillator_a = spec.oscillator_a.run();
+        spec.oscillator_b = spec.oscillator_b.run();
+    } else {
+        spec.analyzer = spec.analyzer.run();
+        spec.oscillator = spec.oscillator.run();
+    }
+    return spec;
+}
+
+fn spectraphon_start(spec) {
+    return spectraphon_run(spec);
+}
+
+fn spectraphon_param(spec, name) {
+    if spec.kind == "spectraphon_dual" {
+        if name == "freq_b" {
+            return spec.oscillator_b.param("freq");
+        } else if name == "partials_b" {
+            return spec.oscillator_b.param("partials");
+        } else if name == "slide_b" {
+            return spec.oscillator_b.param("slide");
+        } else if name == "focus_b" {
+            return spec.oscillator_b.param("focus");
+        } else if name == "sam_capture_b" || name == "mode_b" {
+            if spec.side_b.mode == "sao" || spec.side_b.mode == "chaos" || spec.side_b.mode == "noise" {
+                return spec.oscillator_b.param("array_idx");
             }
-
-            // --- Even bank: k = 2, 4, 6, ..., 64 --------------------------
-            let k = 2.0;
-            let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
-                            + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
-                            + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
-                            + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
-            let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
-            let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
-            let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
-            let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
-            buf_wr_kr(mag_sam, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
-            let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
-            let even_bank = sin_osc_ar(freq * k) * mag_k
-                * clip(scale - (k - 1.0), 0.0, 1.0);
-            for i in 1..32 {
-                let k = (2 * (i + 1)).to_float();
-                let mag_sao_buf = w00 * buf_rd_kr(1, array_mem, base00 + (k - 1.0), 0, 1)
-                                + w01 * buf_rd_kr(1, array_mem, base01 + (k - 1.0), 0, 1)
-                                + w10 * buf_rd_kr(1, array_mem, base10 + (k - 1.0), 0, 1)
-                                + w11 * buf_rd_kr(1, array_mem, base11 + (k - 1.0), 0, 1);
-                let mag_sao = mag_sao_buf * has_array + (1.0 / k) * (1.0 - has_array);
-                let centre_bin = clip(k * f0_analyze * bin_per_hz, 1.0, bin_max);
-                let mag_centre = channels(bin_data_kr(chain, centre_bin, 0.5), 2)[0];
-                let mag_sam = lag_kr(mag_centre * mag_scale, lag_t);
-                buf_wr_kr(mag_sam, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
-                let mag_k = mag_sao * sao_mix + mag_sam * sam_mix;
-                even_bank = even_bank + sin_osc_ar(freq * k) * mag_k
-                    * clip(scale - (k - 1.0), 0.0, 1.0);
+            return spec.oscillator_b.param("capture");
+        } else if name == "array_idx_b" {
+            return spec.oscillator_b.param("array_idx");
+        } else if name == "freq_a" {
+            return spec.oscillator_a.param("freq");
+        } else if name == "partials_a" {
+            return spec.oscillator_a.param("partials");
+        } else if name == "slide_a" {
+            return spec.oscillator_a.param("slide");
+        } else if name == "focus_a" {
+            return spec.oscillator_a.param("focus");
+        } else if name == "sam_capture_a" || name == "mode_a" {
+            if spec.side_a.mode == "sao" || spec.side_a.mode == "chaos" || spec.side_a.mode == "noise" {
+                return spec.oscillator_a.param("array_idx");
             }
-
-            // === Per-port building blocks ================================
-            //
-            // Sine port: clean fundamental, mode-independent.
-            let sine_signal = sin_osc_ar(freq);
-
-            // Sub port: SAO = sub-octave saw, SAM = analyser amplitude.
-            // Silent in Chaos/Noise modes (sao_mix and sam_mix both 0 there).
-            let sub_sao = saw_ar(freq * 0.5) * 0.5;
-            let sub_sam = amplitude_ar(analyze_in, 0.01, 0.1);
-            let sub_signal = sub_sao * sao_mix + sub_sam * sam_mix;
-
-            // === Story E: Chaos mode (paired sines + chaos feedback) =====
-            // chaos_ratio: focus → [1, 4], second-sine pitch ratio.
-            // chaos_im / chaos_fb: slide drives index multiplier and feedback
-            // amount of fb_sine_l_ar (linear-interpolating chaotic sine).
-            // Defaults a=1.1, c=0.5, xi=yi=0.1 mirror the manifest defaults.
-            let slide_c = clip(slide, 0.0, 1.0);
-            let focus_c = clip(focus, 0.0, 1.0);
-            let chaos_ratio = 1.0 + focus_c * 3.0;
-            let chaos_im    = 0.5 + slide_c * 3.5;
-            let chaos_fb    = slide_c * 0.5;
-            let chaos_voice = fb_sine_l_ar(freq, chaos_im, chaos_fb,
-                                            1.1, 0.5, 0.1, 0.1);
-            let chaos_a = sine_signal;                  // reuse sin(freq)
-            let chaos_b = sin_osc_ar(freq * chaos_ratio);
-            // Audio-rate AM: at partials=0 the carriers are clean; at
-            // partials=1 they are fully ring-modulated by the chaos voice.
-            let chaos_am = 1.0 + chaos_voice * partials;
-            let chaos_odd_raw  = chaos_a * chaos_am * 0.5;
-            let chaos_even_raw = chaos_b * chaos_am * 0.5;
-
-            // === Story E: Noise mode (filtered pink-noise sidebands) =====
-            // slide → LP cutoff (100..16000 Hz log); focus → HP cutoff
-            // (20..2000 Hz log). bp = LPF then HPF — broad bandpass with
-            // independent LP/HP corners. Carriers AM-modulate the noise.
-            let slide_cut = lin_exp_kr(slide_c, 0.0, 1.0,    100.0, 16000.0);
-            let focus_cut = lin_exp_kr(focus_c, 0.0, 1.0,     20.0,  2000.0);
-            let noise_src = pink_noise_ar();
-            let noise_lp  = lpf_ar(noise_src, slide_cut);
-            let noise_bp  = hpf_ar(noise_lp,  focus_cut);
-            let noise_car_odd  = sine_signal;             // sin(f0)   — odd
-            let noise_car_even = sin_osc_ar(freq * 2.0);  // sin(2*f0) — even
-            let noise_odd_raw  = noise_bp * noise_car_odd  * 0.5;
-            let noise_even_raw = noise_bp * noise_car_even * 0.5;
-
-            // === Mode-mixed Odd / Even ===================================
-            // SAO/SAM modes carry the existing global *partials VCA on the
-            // bank ports (matches the old hardware-L gate). Chaos folds
-            // partials in via AM depth, so no global partials gate. Noise
-            // has no partials role at all.
-            let bank_active = sao_mix + sam_mix;
-            let odd_raw  = odd_bank  * bank_active * partials
-                         + chaos_odd_raw  * chaos_mix
-                         + noise_odd_raw  * noise_mix;
-            let even_raw = even_bank * bank_active * partials
-                         + chaos_even_raw * chaos_mix
-                         + noise_even_raw * noise_mix;
-
-            // === Per-port DC block + envelope + amp ======================
-            let sine_out = leak_dc_ar(sine_signal, 0.995) * env * amp;
-            let sub_out  = leak_dc_ar(sub_signal,  0.995) * env * amp;
-            let odd_out  = leak_dc_ar(odd_raw,     0.995) * env * amp;
-            let even_out = leak_dc_ar(even_raw,    0.995) * env * amp;
-
-            [sine_out, sub_out, odd_out, even_out]
-        })
-});
+            return spec.oscillator_a.param("capture");
+        } else if name == "array_idx_a" {
+            return spec.oscillator_a.param("array_idx");
+        }
+        return spec.oscillator_a.param(name);
+    }
+    if name == "f0_analyze" || name == "active" {
+        return spec.analyzer.param(name);
+    } else if name == "sam_capture" || name == "mode" {
+        if spec.mode == "sao" || spec.mode == "chaos" || spec.mode == "noise" {
+            return spec.oscillator.param("array_idx");
+        }
+        return spec.oscillator.param("capture");
+    }
+    return spec.oscillator.param(name);
+}

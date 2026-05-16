@@ -330,21 +330,51 @@ mod tests {
     #[test]
     fn spectraphon_dual_avoids_server_wedging_analyzer_path() {
         let files = get_stdlib_files();
-        let body = files
+        let dual = files
             .get("instruments/spectral/spectraphon_dual.vibe")
             .expect("stdlib missing instruments/spectral/spectraphon_dual.vibe");
+        let side = files
+            .get("instruments/spectral/spectraphon_side.vibe")
+            .expect("stdlib missing instruments/spectral/spectraphon_side.vibe");
+        let analyzer = files
+            .get("instruments/spectral/spectraphon_analyzer.vibe")
+            .expect("stdlib missing instruments/spectral/spectraphon_analyzer.vibe");
+        let sam_oscillator = files
+            .get("instruments/spectral/spectraphon_sam_oscillator.vibe")
+            .expect("stdlib missing instruments/spectral/spectraphon_sam_oscillator.vibe");
+        let sao_oscillator = files
+            .get("instruments/spectral/spectraphon_sao_oscillator.vibe")
+            .expect("stdlib missing instruments/spectral/spectraphon_sao_oscillator.vibe");
 
         assert!(
-            !body.contains("bin_data_kr("),
-            "spectraphon_dual should not instantiate BinData.kr per partial"
+            !dual.contains("define_synthdef(\"spectraphon_dual\""),
+            "spectraphon_dual should be a Rhai helper, not a monolithic synthdef"
         );
         assert!(
-            !body.contains("fft_kr("),
-            "spectraphon_dual should not instantiate FFT analyzer buffers"
+            !side.contains("define_synthdef(\"spectraphon_side\""),
+            "spectraphon_side should be a Rhai helper, not a monolithic synthdef"
         );
         assert!(
-            body.contains("let n = 16.0;"),
-            "spectraphon_dual should keep the reduced 16-partial bank"
+            analyzer.contains("fft_kr(") && analyzer.contains("bin_data_kr("),
+            "spectraphon_analyzer should own the real FFT/BinData analyzer path"
+        );
+        assert!(
+            side.contains("spectraphon_sam_oscillator")
+                && side.contains("spectraphon_sao_oscillator"),
+            "spectraphon_side should pick a dedicated SAM or SAO oscillator"
+        );
+        assert!(
+            sam_oscillator.contains("buf_rd_kr(1, mag_buf")
+                && sam_oscillator.contains("buf_wr_kr(")
+                && !sam_oscillator.contains("base00"),
+            "spectraphon_sam_oscillator should consume live magnitudes without SAO interpolation"
+        );
+        assert!(
+            sao_oscillator.contains("base00")
+                && sao_oscillator.contains("buf_rd_kr(1, array_mem")
+                && !sao_oscillator.contains("buf_rd_kr(1, mag_buf")
+                && !sao_oscillator.contains("buf_wr_kr("),
+            "spectraphon_sao_oscillator should read SAO arrays without SAM read/write cost"
         );
     }
 }

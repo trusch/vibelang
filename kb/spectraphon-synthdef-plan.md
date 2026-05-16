@@ -276,6 +276,39 @@ Vibelang's UGen toolbox provides three plausible implementation paths. We propos
 
 ---
 
+## 5a. Current split implementation
+
+The implemented stdlib surface uses a split graph rather than the original
+monolithic `spectraphon_side`/`spectraphon_dual` synthdefs:
+
+| File | Role |
+|---|---|
+| `spectraphon_analyzer.vibe` | Real SAM analyzer: one `fft_kr` chain, 64 `bin_data_kr` harmonic reads, and 64 `buf_wr_kr` writes to a shared magnitude buffer. |
+| `spectraphon_sam_oscillator.vibe`, `spectraphon_sao_oscillator.vibe` | Dedicated additive oscillator banks: SAM reads live magnitudes with `buf_rd_kr` plus capture writes, while SAO reads Arrays with bilinear buffer lookup; both output `sine`, `sub`, `odd`, `even`. |
+| `spectraphon_side.vibe` | Pure-Rhai helper: allocates buffers, creates `<name>__analyzer` and `<name>__oscillator`, and proxies common methods. |
+| `spectraphon_dual.vibe` | Pure-Rhai helper: creates two split sides, maps `analyze_a`/`analyze_b` and `odd_a`/`even_a`/`odd_b`/`even_b`, and implements follow ratios by retuning side B. |
+
+Rack authors call `spectraphon_side("name")` or `spectraphon_dual("name")` and
+then configure/route them with prefixed helpers such as
+`spectraphon::spectraphon_set_param(...)`,
+`spectraphon::spectraphon_input(...)`, and
+`spectraphon::spectraphon_output(...)` from an aliased import.
+The old `voice("name").synth("spectraphon_side")` shape is intentionally not
+used, because that would require registering another monolithic synthdef under
+the legacy name. The helpers return Rhai object maps with concrete child voice
+handles exposed for APIs that cannot target a composite map, such as scheduled
+fades and CV-to-param routing.
+
+Known runtime gaps surfaced by the pure-Rhai approach:
+
+| Gap | Current handling |
+|---|---|
+| Composite target for `to_param` / scheduled fades | Use `helper.oscillator`, `helper.analyzer`, or the deterministic child voice names. |
+| Dual audio-rate cross-FM | Accepted params are stored for source compatibility, but true FM needs a scoped oscillator input or runtime helper. |
+| Dual hard sync | Deferred; current helper does not alter oscillator phase. |
+
+---
+
 ## 6. Implementation plan (epic breakdown)
 
 Proposed epic: **`epic-spectraphon-synthdef`** (~30 SP across six stories).
