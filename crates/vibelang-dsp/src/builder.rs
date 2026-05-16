@@ -229,6 +229,36 @@ impl SynthDef {
         Ok(self)
     }
 
+    /// Replace the implicit legacy output set with an explicit output list.
+    ///
+    /// An empty list is valid and declares a side-effect-only synthdef: the
+    /// body must return no signals, and codegen emits no `Out` UGens.
+    pub(crate) fn set_outputs(&mut self, outputs: Vec<OutputPort>) -> Result<&mut Self> {
+        let mut names = std::collections::HashSet::new();
+        for port in &outputs {
+            if port.name.is_empty() {
+                return Err(SynthDefError::ValidationError(
+                    "Output port name cannot be empty".to_string(),
+                ));
+            }
+            if port.channels == 0 {
+                return Err(SynthDefError::ValidationError(
+                    "Output port channels must be at least 1".to_string(),
+                ));
+            }
+            if !names.insert(port.name.clone()) {
+                return Err(SynthDefError::ValidationError(format!(
+                    "Duplicate output port name: {}",
+                    port.name
+                )));
+            }
+        }
+
+        self.outputs = outputs;
+        self.outputs_explicit = true;
+        Ok(self)
+    }
+
     /// Add a float parameter.
     pub fn arg_f(&mut self, name: String, default: f64) -> &mut Self {
         self.params.push((name, default as f32, None));
@@ -861,7 +891,10 @@ impl SynthDef {
             MultiChannel(Vec<NodeRef>),
         }
 
-        let body_result = if let Some(node) = result.clone().try_cast::<NodeRef>() {
+        let zero_output_body = self.outputs_explicit && self.outputs.is_empty();
+        let body_result = if result.is_unit() && zero_output_body {
+            BodyResult::MultiChannel(Vec::new())
+        } else if let Some(node) = result.clone().try_cast::<NodeRef>() {
             // Single NodeRef - mono signal
             BodyResult::Mono(node)
         } else if let Some(arr) = result.clone().try_cast::<rhai::Array>() {
@@ -879,7 +912,7 @@ impl SynthDef {
                     )));
                 }
             }
-            if channels.is_empty() {
+            if channels.is_empty() && !zero_output_body {
                 clear_active_builder();
                 return Err(SynthDefError::ValidationError(
                     "Body returned empty array".to_string(),
@@ -1478,6 +1511,48 @@ mod body_map_tests {
             }
             other => panic!("expected ValidationError, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn output_empty_list_declares_zero_outputs() {
+        let mut sd = SynthDef::new("side_effect".to_string());
+        sd.set_outputs(Vec::new()).expect("zero outputs");
+        assert!(sd.outputs.is_empty());
+    }
+
+    #[test]
+    fn zero_output_body_empty_array_emits_no_out_ugens() {
+        let mut sd = SynthDef::new("zero_array".to_string());
+        sd.set_outputs(Vec::new()).expect("zero outputs");
+        let closure: FnPtr = parser_engine()
+            .eval("|| []")
+            .expect("parse zero-output body");
+
+        let ir = sd
+            .build_body_closure_with_options(closure, true)
+            .expect("build zero-output synthdef");
+
+        assert!(ir.params.is_empty(), "no out params: {:?}", ir.params);
+        assert!(
+            ir.nodes.iter().all(|n| n.name != "Out"),
+            "zero-output synthdef must not emit Out UGens: {:?}",
+            ir.nodes
+        );
+        encode_synthdef(&ir).expect("zero-output synthdef encodes");
+    }
+
+    #[test]
+    fn zero_output_body_unit_is_accepted() {
+        let mut sd = SynthDef::new("zero_unit".to_string());
+        sd.set_outputs(Vec::new()).expect("zero outputs");
+        let closure: FnPtr = parser_engine().eval("|| ()").expect("parse unit body");
+
+        let ir = sd
+            .build_body_closure_with_options(closure, true)
+            .expect("build zero-output unit body");
+
+        assert!(ir.params.is_empty());
+        assert!(ir.nodes.iter().all(|n| n.name != "Out"));
     }
 
     #[test]

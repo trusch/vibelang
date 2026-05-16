@@ -287,6 +287,36 @@ async fn port_in_bus(state: &Arc<RwLock<State>>, voice: VoiceId, port_name: &str
         .expect("port bus allocated")
 }
 
+#[tokio::test]
+async fn create_voice_zero_output_synthdef_has_no_default_routes_or_mixers() {
+    let h = setup(&[]).await;
+
+    let voice = VoiceId::new(100);
+    h.voices
+        .create(voice, VoiceConfig::new("analyzer", SYNTH, h.voice_group))
+        .await
+        .unwrap();
+
+    {
+        let s = h.state.read().await;
+        let voice_state = s.voices.get(&voice).expect("voice exists");
+        assert!(
+            voice_state.output_buses.is_empty(),
+            "zero-output voice must allocate no output buses"
+        );
+        assert!(
+            s.default_routes.is_empty(),
+            "zero-output voice must not install default audio routes"
+        );
+    }
+
+    let merged = merge_diff_finalize(&h, &RouteMap::new()).await;
+
+    assert!(merged.is_empty());
+    assert_eq!(h.backend.creates(), 0, "no mixer synths spawned");
+    assert!(h.state.read().await.route_synths.is_empty());
+}
+
 // =========================================================================
 // (1) 1 mono port → pan-mono into the voice's group (port_to_group_link_1).
 // =========================================================================

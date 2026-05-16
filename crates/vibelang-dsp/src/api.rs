@@ -374,6 +374,24 @@ impl SynthDefBuilderHandle {
         Ok(self)
     }
 
+    /// Declare an explicit output-port list.
+    ///
+    /// Currently this is intentionally narrow: `outputs([])` is the spelling
+    /// for side-effect-only synthdefs with no output ports. Named output ports
+    /// still use repeated `.output(...)`, `.output_kr(...)`, or `.output_tr(...)`
+    /// calls so rate/channel metadata stays explicit.
+    pub fn outputs(mut self, outputs: rhai::Array) -> Result<Self, Box<EvalAltResult>> {
+        if !outputs.is_empty() {
+            return Err(synthdef_error_to_eval(SynthDefError::ValidationError(
+                "outputs(...) currently only accepts an empty list: use outputs([]) for zero-output synthdefs, or repeated .output/.output_kr/.output_tr calls for named ports".to_string(),
+            )));
+        }
+        self.synthdef
+            .set_outputs(Vec::new())
+            .map_err(synthdef_error_to_eval)?;
+        Ok(self)
+    }
+
     fn build(self, closure: rhai::FnPtr) -> crate::errors::Result<GraphIR> {
         self.synthdef.build_body_closure_with_options(closure, true)
     }
@@ -733,6 +751,7 @@ pub fn register_synthdef_api(engine: &mut Engine) {
         .register_fn("output_kr", SynthDefBuilderHandle::output_kr_with_channels)
         .register_fn("output_tr", SynthDefBuilderHandle::output_tr)
         .register_fn("output_tr", SynthDefBuilderHandle::output_tr_with_channels)
+        .register_fn("outputs", SynthDefBuilderHandle::outputs)
         .register_fn("body", SynthDefBuilderHandle::body)
         .register_fn("body_map", SynthDefBuilderHandle::body_map);
 
@@ -843,6 +862,25 @@ mod tests {
             .get(name)
             .cloned()
             .expect("registered synthdef")
+    }
+
+    #[test]
+    fn rhai_synthdef_outputs_empty_registers_zero_output_manifest() {
+        reset_registries();
+        let _ = test_engine()
+            .eval::<Dynamic>(
+                r#"
+                define_synthdef("rhai_zero_output")
+                    .outputs([])
+                    .body(|| []);
+                "#,
+            )
+            .expect("define zero-output synthdef");
+
+        assert_eq!(get_synthdef_outputs("rhai_zero_output"), Some(Vec::new()));
+        let ir = registered_ir("rhai_zero_output");
+        assert!(ir.params.is_empty(), "no out params: {:?}", ir.params);
+        assert!(ir.nodes.iter().all(|n| n.name != "Out"));
     }
 
     #[test]

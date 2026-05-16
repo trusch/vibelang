@@ -775,8 +775,9 @@ impl<B: Backend> Runtime<B> {
             for (voice_id, config) in &new_state.voices {
                 for input in state.synthdef_inputs(&config.synthdef) {
                     if input.rate == vibelang_dsp::PortRate::Ar && matches!(input.channels, 1 | 2) {
-                        let has_explicit_route =
-                            new_state.input_routes.contains_key(&(*voice_id, input.name.clone()));
+                        let has_explicit_route = new_state
+                            .input_routes
+                            .contains_key(&(*voice_id, input.name.clone()));
                         let src = if has_explicit_route {
                             continue;
                         } else if input.name == "in" && input.channels == 2 {
@@ -1719,7 +1720,11 @@ impl<B: Backend> Runtime<B> {
                 route_diff.removals.len(),
             );
             if let Err(e) = self.routes.finalize(&route_diff).await {
-                tracing::error!("Reload: routes.finalize failed: {}", e);
+                tracing::error!(
+                    "Reload: routes.finalize failed; aborting reload without advancing route snapshot: {}",
+                    e
+                );
+                return Err(e);
             }
         }
         self.current_routes = merged_routes;
@@ -1733,7 +1738,11 @@ impl<B: Backend> Runtime<B> {
         // against the last materialized `State::input_routes` snapshot.
         if !input_routes.is_empty() || !self.state.read().await.input_routes.is_empty() {
             if let Err(e) = self.routes.finalize_input_routes(&input_routes).await {
-                tracing::error!("Reload: routes.finalize_input_routes failed: {}", e);
+                tracing::error!(
+                    "Reload: routes.finalize_input_routes failed; aborting reload: {}",
+                    e
+                );
+                return Err(e);
             }
         }
 
@@ -2365,6 +2374,7 @@ impl RuntimeHandle {
 mod tests {
     use super::*;
     use crate::backend::{AddAction, BufferInfo};
+    use crate::handlers::RouteDest;
     use crate::state::GroupState;
     use crate::types::{BufferId, BusId, GroupId, NodeId, ParamMap, VoiceId};
     use std::collections::HashMap;
@@ -2732,6 +2742,59 @@ mod tests {
                 .any(|line| line.contains("Named input 'in'")),
             "explicit mono input route should not log autofeed warning: {:?}",
             captured.lines()
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn apply_reload_route_finalize_error_aborts_without_clean_complete_log() {
+        let (captured, _guard) = install_tracing_capture();
+        let mut runtime = Runtime::new(MockBackend);
+        let voice_id = VoiceId::new(1);
+        let group_id = GroupId::new(7);
+
+        {
+            let mut state = runtime.state.write().await;
+            state.synthdefs.insert("kr_src".to_string());
+            state.synthdef_outputs.insert(
+                "kr_src".to_string(),
+                vec![vibelang_dsp::OutputPort::kr("env", 1)],
+            );
+        }
+
+        let mut script_state = reload::ScriptState::new();
+        script_state.add_group(
+            group_id,
+            reload::GroupConfig {
+                name: "mods".to_string(),
+                ..Default::default()
+            },
+        );
+        script_state.add_voice(
+            voice_id,
+            crate::traits::VoiceConfig::new("bad_mod", "kr_src", group_id),
+        );
+        script_state.set_route(voice_id, "env", RouteDest::Group(group_id));
+
+        let err = runtime
+            .apply_reload(script_state)
+            .await
+            .expect_err("kr-to-group route must abort reload");
+
+        assert!(err.to_string().contains("kr-rate"), "err = {err}");
+        assert!(
+            runtime.current_routes.is_empty(),
+            "failed route reload must not advance current_routes"
+        );
+        let lines = captured.lines();
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("routes.finalize failed") && line.contains("aborting")),
+            "expected abort log, got {lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|line| line.contains("Reload: complete")),
+            "failed route reload must not log clean completion: {lines:?}"
         );
     }
 
