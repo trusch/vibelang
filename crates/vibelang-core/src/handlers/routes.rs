@@ -197,8 +197,17 @@ pub fn suppress_modulation_only_defaults(
     trigger: &ParamRouteMap,
     voice_name_fn: impl Fn(VoiceId) -> Option<String>,
     is_modulator_only_fn: impl Fn(VoiceId) -> bool,
+    is_audible_ar_route_fn: impl Fn(VoiceId, &str, &RouteDest) -> bool,
 ) -> RouteMap {
-    let voices_with_user_route: HashSet<VoiceId> = user_routes.keys().map(|(v, _)| *v).collect();
+    let voices_with_audible_user_route: HashSet<VoiceId> = user_routes
+        .iter()
+        .filter_map(|((voice, port), dests)| {
+            dests
+                .iter()
+                .any(|dest| is_audible_ar_route_fn(*voice, port, dest))
+                .then_some(*voice)
+        })
+        .collect();
 
     let mut param_route_counts: HashMap<VoiceId, usize> = HashMap::new();
     for map in [set, bend, trigger] {
@@ -213,9 +222,9 @@ pub fn suppress_modulation_only_defaults(
     for (key, dests) in defaults {
         let (vid, _) = key;
         let has_param = param_route_counts.contains_key(vid);
-        let has_user = voices_with_user_route.contains(vid);
+        let has_user_audio = voices_with_audible_user_route.contains(vid);
         let explicit_flag = is_modulator_only_fn(*vid);
-        if explicit_flag || (has_param && !has_user) {
+        if explicit_flag || (has_param && !has_user_audio) {
             suppressed.insert(*vid);
             if explicit_flag {
                 suppressed_via_flag.insert(*vid);
@@ -300,11 +309,12 @@ pub struct ParamRoute {
 pub struct ParamRouteDiff {
     pub additions: Vec<ParamRoute>,
     pub removals: Vec<ParamRoute>,
+    pub updates: Vec<ParamRoute>,
 }
 
 impl ParamRouteDiff {
     pub fn is_empty(&self) -> bool {
-        self.additions.is_empty() && self.removals.is_empty()
+        self.additions.is_empty() && self.removals.is_empty() && self.updates.is_empty()
     }
 }
 
@@ -624,6 +634,62 @@ fn collect_source_buses(
     }
     source_buses.sort_by_key(|b| b.raw());
     source_buses
+}
+
+fn collect_source_inputs(
+    state: &State,
+    map: &ParamRouteMap,
+    shaping: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+    tgt: &(ParamRouteTarget, String),
+) -> Vec<ParamSummerSource> {
+    let mut sources: Vec<ParamSummerSource> = Vec::new();
+    for ((sv, sp), targets) in map.iter() {
+        if !targets.iter().any(|t| t == tgt) {
+            continue;
+        }
+        let key = (*sv, sp.clone());
+        let bus = if let Some((_, bus)) = state.ar_to_kr_adapters.get(&key) {
+            Some(BusId::new(bus.raw()))
+        } else {
+            state.voices.get(sv).and_then(|v| {
+                v.output_buses
+                    .iter()
+                    .find(|(n, _)| n == sp)
+                    .map(|(_, b)| *b)
+            })
+        };
+        if let Some(bus) = bus {
+            let (scale, offset) = shaping
+                .get(&(*sv, sp.clone(), tgt.0, tgt.1.clone()))
+                .copied()
+                .unwrap_or((1.0, 0.0));
+            sources.push(ParamSummerSource { bus, scale, offset });
+        }
+    }
+    sources.sort_by_key(|source| source.bus.raw());
+    sources
+}
+
+fn active_param_route_shaping(
+    routes: &ParamRouteMap,
+    desired: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+) -> HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)> {
+    let mut active = HashMap::new();
+    for ((source_voice, source_port), targets) in routes {
+        for (target, target_param) in targets {
+            let key = (
+                *source_voice,
+                source_port.clone(),
+                *target,
+                target_param.clone(),
+            );
+            active.insert(
+                key.clone(),
+                desired.get(&key).copied().unwrap_or((1.0, 0.0)),
+            );
+        }
+    }
+    active
 }
 
 /// Look up the user-set baseline for `(target, target_param)` — the last
@@ -1220,6 +1286,47 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         diff
     }
 
+    /// Compute param-route changes, including per-source scale/offset edits
+    /// for routes whose source/target edge did not otherwise change.
+    pub fn diff_params_with_shaping(
+        old: &ParamRouteMap,
+        new: &ParamRouteMap,
+        old_shaping: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+        new_shaping: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+    ) -> ParamRouteDiff {
+        let mut diff = Self::diff_params(old, new);
+
+        for ((src_voice, src_port), new_targets) in new {
+            let old_targets = old.get(&(*src_voice, src_port.clone()));
+            for (target, target_param) in new_targets {
+                let in_old = old_targets
+                    .map(|targets| {
+                        targets.iter().any(|(old_target, old_param)| {
+                            *old_target == *target && *old_param == *target_param
+                        })
+                    })
+                    .unwrap_or(false);
+                if !in_old {
+                    continue;
+                }
+
+                let key = (*src_voice, src_port.clone(), *target, target_param.clone());
+                let old_shape = old_shaping.get(&key).copied().unwrap_or((1.0, 0.0));
+                let new_shape = new_shaping.get(&key).copied().unwrap_or((1.0, 0.0));
+                if old_shape != new_shape {
+                    diff.updates.push(ParamRoute {
+                        source_voice: *src_voice,
+                        source_port: src_port.clone(),
+                        target: *target,
+                        target_param: target_param.clone(),
+                    });
+                }
+            }
+        }
+
+        diff
+    }
+
     /// Apply SET + BEND Param-route diffs in one pass.
     ///
     /// Multi-output v3 unified routing: both `.to_param` (SET) and
@@ -1256,6 +1363,24 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         bend_diff: &ParamRouteDiff,
         trigger_diff: &ParamRouteDiff,
     ) -> Result<()> {
+        self.finalize_params_with_shaping(
+            set_diff,
+            bend_diff,
+            trigger_diff,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .await
+    }
+
+    pub async fn finalize_params_with_shaping(
+        &self,
+        set_diff: &ParamRouteDiff,
+        bend_diff: &ParamRouteDiff,
+        trigger_diff: &ParamRouteDiff,
+        set_shaping: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+        bend_shaping: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+    ) -> Result<()> {
         if set_diff.is_empty() && bend_diff.is_empty() && trigger_diff.is_empty() {
             return Ok(());
         }
@@ -1271,7 +1396,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         }
 
         let (planned, summers_to_free, adapters_to_spawn, adapters_to_free, triggers_to_free) =
-            self.plan_param_actions(set_diff, bend_diff, trigger_diff)
+            self.plan_param_actions(set_diff, bend_diff, trigger_diff, set_shaping, bend_shaping)
                 .await;
 
         for &(node, _) in &summers_to_free {
@@ -1364,6 +1489,8 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         set_diff: &ParamRouteDiff,
         bend_diff: &ParamRouteDiff,
         trigger_diff: &ParamRouteDiff,
+        set_shaping: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
+        bend_shaping: &HashMap<(VoiceId, String, ParamRouteTarget, String), (f32, f32)>,
     ) -> (
         Vec<PlannedParamAction>,
         Vec<(NodeId, ControlBusId)>,
@@ -1376,6 +1503,10 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         apply_param_diff_to_map(&mut state, set_diff, ParamMapKind::Set);
         apply_param_diff_to_map(&mut state, bend_diff, ParamMapKind::Bend);
         apply_param_diff_to_map(&mut state, trigger_diff, ParamMapKind::Trigger);
+        state.param_route_set_shaping =
+            active_param_route_shaping(&state.param_routes_set, set_shaping);
+        state.param_route_bend_shaping =
+            active_param_route_shaping(&state.param_routes_bend, bend_shaping);
 
         // Reconcile ar→kr adapters with the post-diff source set. We do
         // this *before* gathering source buses for summers so
@@ -1453,6 +1584,8 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
             .chain(set_diff.additions.iter())
             .chain(bend_diff.additions.iter())
             .chain(trigger_diff.additions.iter())
+            .chain(set_diff.updates.iter())
+            .chain(bend_diff.updates.iter())
         {
             let key = (r.target, r.target_param.clone());
             if seen.insert(key.clone()) {
@@ -1503,11 +1636,21 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
 
             // Gather SET / BEND / TRIGGER sources targeting this `(target,
             // param)`.
-            let set_buses = collect_source_buses(&state, &state.param_routes_set, &tgt);
-            let bend_buses = collect_source_buses(&state, &state.param_routes_bend, &tgt);
+            let set_inputs = collect_source_inputs(
+                &state,
+                &state.param_routes_set,
+                &state.param_route_set_shaping,
+                &tgt,
+            );
+            let bend_inputs = collect_source_inputs(
+                &state,
+                &state.param_routes_bend,
+                &state.param_route_bend_shaping,
+                &tgt,
+            );
             let trigger_buses = collect_source_buses(&state, &state.param_routes_trigger, &tgt);
 
-            let summer_active = !set_buses.is_empty() || !bend_buses.is_empty();
+            let summer_active = !set_inputs.is_empty() || !bend_inputs.is_empty();
             let trigger_active = !trigger_buses.is_empty();
 
             let plan = if summer_active && trigger_active {
@@ -1534,7 +1677,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                     );
                 }
                 self.plan_trigger_link(&mut state, &tgt, trigger_buses[0])
-            } else if !set_buses.is_empty() && !bend_buses.is_empty() {
+            } else if !set_inputs.is_empty() && !bend_inputs.is_empty() {
                 tracing::warn!(
                     "RoutesHandler::finalize_params: target {:?} param {:?} has both \
                      SET and BEND sources — treating as empty (cross-verb conflict \
@@ -1544,38 +1687,38 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                 );
                 let restore_value = baseline_for_target(&state, &tgt);
                 ParamPlan::Unmap { restore_value }
-            } else if !set_buses.is_empty() {
+            } else if !set_inputs.is_empty() {
                 // SET path through the unified summer: pin baseline=0 so
                 // the source signal flows through unchanged at the default
                 // scale=1/offset=0 shaping (the SET "replace" semantic).
-                if set_buses.len() > 1 {
+                if set_inputs.len() > 1 {
                     tracing::warn!(
                         "RoutesHandler::finalize_params: target {:?} param {:?} has \
                          {} SET sources — multi-source SET is disallowed; using only \
                          the first (script-time validation should have rejected this)",
                         tgt.0,
                         tgt.1,
-                        set_buses.len(),
+                        set_inputs.len(),
                     );
                 }
-                let used = vec![set_buses[0]];
+                let used = vec![set_inputs[0].clone()];
                 self.plan_summer(&mut state, &tgt, &used, /*baseline=*/ 0.0)
-            } else if !bend_buses.is_empty() {
+            } else if !bend_inputs.is_empty() {
                 // BEND path: baseline rides the user's set_param value so
                 // modulators add on top.
                 let max_n = vibelang_dsp::system_synthdefs::PARAM_KR_MODULATE_MAX;
-                let used: Vec<BusId> = if bend_buses.len() > max_n {
+                let used: Vec<ParamSummerSource> = if bend_inputs.len() > max_n {
                     tracing::warn!(
                         "RoutesHandler::finalize_params: {} bend sources point at \
                          target {:?} param {:?}, exceeds max {}; truncating",
-                        bend_buses.len(),
+                        bend_inputs.len(),
                         tgt.0,
                         tgt.1,
                         max_n,
                     );
-                    bend_buses.into_iter().take(max_n).collect()
+                    bend_inputs.into_iter().take(max_n).collect()
                 } else {
-                    bend_buses
+                    bend_inputs
                 };
                 let baseline = baseline_for_target(&state, &tgt).unwrap_or(0.0);
                 self.plan_summer(&mut state, &tgt, &used, baseline)
@@ -1612,21 +1755,14 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
         &self,
         state: &mut State,
         tgt: &(ParamRouteTarget, String),
-        used: &[BusId],
+        used: &[ParamSummerSource],
         baseline: f32,
     ) -> ParamPlan {
         let arity = used.len();
         let intermediate = state.alloc_control_bus();
         let intermediate_bus = BusId::new(intermediate.raw());
         let summer_node = state.alloc_node_id();
-        let sources: Vec<ParamSummerSource> = used
-            .iter()
-            .map(|b| ParamSummerSource {
-                bus: *b,
-                scale: 1.0,
-                offset: 0.0,
-            })
-            .collect();
+        let sources: Vec<ParamSummerSource> = used.to_vec();
         state.param_summers.insert(
             tgt.clone(),
             ParamSummerState {

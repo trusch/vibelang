@@ -806,6 +806,43 @@ impl<B: Backend> Runtime<B> {
         self.state.read().await.input_routes != *desired
     }
 
+    async fn effective_output_routes(&self, new_state: &reload::ScriptState) -> RouteMap {
+        let state = self.state.read().await;
+        let filtered_defaults = suppress_modulation_only_defaults(
+            &state.default_routes,
+            &new_state.routes,
+            &new_state.param_routes_set,
+            &new_state.param_routes_bend,
+            &new_state.param_routes_trigger,
+            |vid| state.voices.get(&vid).map(|v| v.config.name.clone()),
+            |vid| {
+                state
+                    .voices
+                    .get(&vid)
+                    .map(|v| v.config.modulator_only)
+                    .unwrap_or(false)
+            },
+            |vid, port, dest| {
+                if !matches!(
+                    dest,
+                    crate::handlers::RouteDest::Group(_) | crate::handlers::RouteDest::Main
+                ) {
+                    return false;
+                }
+                let Some(voice) = state.voices.get(&vid) else {
+                    return false;
+                };
+                state
+                    .synthdef_outputs(&voice.config.synthdef)
+                    .into_iter()
+                    .any(|output| {
+                        output.name == port && matches!(output.rate, vibelang_dsp::PortRate::Ar)
+                    })
+            },
+        );
+        merge_default_routes(&new_state.routes, &filtered_defaults)
+    }
+
     /// Apply a live reload from a new script state.
     ///
     /// This calculates the minimal diff between current and new state,
@@ -824,10 +861,37 @@ impl<B: Backend> Runtime<B> {
             reload::calculate_diff(&current, &new_state)
         };
         let input_routes = self.effective_input_routes(&new_state).await;
+        let early_merged_routes = self.effective_output_routes(&new_state).await;
+        let (param_set_diff, param_bend_diff, param_trigger_diff) = {
+            let state = self.state.read().await;
+            (
+                RoutesHandler::<B>::diff_params_with_shaping(
+                    &state.param_routes_set,
+                    &new_state.param_routes_set,
+                    &state.param_route_set_shaping,
+                    &new_state.param_route_set_shaping,
+                ),
+                RoutesHandler::<B>::diff_params_with_shaping(
+                    &state.param_routes_bend,
+                    &new_state.param_routes_bend,
+                    &state.param_route_bend_shaping,
+                    &new_state.param_route_bend_shaping,
+                ),
+                RoutesHandler::<B>::diff_params(
+                    &state.param_routes_trigger,
+                    &new_state.param_routes_trigger,
+                ),
+            )
+        };
+        let param_routes_changed = !param_set_diff.is_empty()
+            || !param_bend_diff.is_empty()
+            || !param_trigger_diff.is_empty();
+        let output_routes_changed =
+            !RoutesHandler::<B>::diff(&self.current_routes, &early_merged_routes).is_empty();
 
         // If no changes, return early - patterns continue playing seamlessly
         // (Phase 6 only starts patterns that aren't already playing)
-        if !diff.has_changes() {
+        if !diff.has_changes() && !param_routes_changed && !output_routes_changed {
             if self.input_routes_need_finalize(&input_routes).await {
                 if let Err(e) = self.routes.finalize_input_routes(&input_routes).await {
                     tracing::error!("Reload: routes.finalize_input_routes failed: {}", e);
@@ -1686,29 +1750,7 @@ impl<B: Backend> Runtime<B> {
         // user entries winning on conflicts. We diff against — and persist —
         // this merged map so a later reload sees defaults as already-applied
         // and a removal of a user route correctly falls back to the default.
-        let merged_routes = {
-            let state = self.state.read().await;
-            // Heuristic auto-mute: drop count-based default group mixes for
-            // voices that are used purely as modulation sources (no explicit
-            // user route + at least one outgoing param route). Otherwise an
-            // LFO voice's raw waveform leaks into its surrounding group bus.
-            let filtered_defaults = suppress_modulation_only_defaults(
-                &state.default_routes,
-                &new_state.routes,
-                &new_state.param_routes_set,
-                &new_state.param_routes_bend,
-                &new_state.param_routes_trigger,
-                |vid| state.voices.get(&vid).map(|v| v.config.name.clone()),
-                |vid| {
-                    state
-                        .voices
-                        .get(&vid)
-                        .map(|v| v.config.modulator_only)
-                        .unwrap_or(false)
-                },
-            );
-            merge_default_routes(&new_state.routes, &filtered_defaults)
-        };
+        let merged_routes = self.effective_output_routes(&new_state).await;
         for voice_id in &structurally_recreated_voices {
             self.current_routes.retain(|(id, _), _| id != voice_id);
         }
@@ -2232,6 +2274,45 @@ impl<B: Backend> Runtime<B> {
                         e
                     );
                 }
+            }
+        }
+
+        // =========================================================================
+        // Phase 6.6: Finalize param routes (kr/tr/ar source ports → target params)
+        // =========================================================================
+        // Param routes are not part of the entity diff, so they need an
+        // explicit reload-time diff against State's active route registries.
+        // Run this after running voices are triggered so `.run()` targets have
+        // active nodes for `/n_map`, and after effect creation so fx targets
+        // have node ids. The handler creates its dedicated summer group at the
+        // root head, so summer/link synths still execute before target
+        // voices/effects read their mapped params.
+        if param_routes_changed {
+            tracing::debug!(
+                "Reload: finalizing param routes (set +{} -{}, bend +{} -{}, trigger +{} -{})",
+                param_set_diff.additions.len(),
+                param_set_diff.removals.len(),
+                param_bend_diff.additions.len(),
+                param_bend_diff.removals.len(),
+                param_trigger_diff.additions.len(),
+                param_trigger_diff.removals.len(),
+            );
+            if let Err(e) = self
+                .routes
+                .finalize_params_with_shaping(
+                    &param_set_diff,
+                    &param_bend_diff,
+                    &param_trigger_diff,
+                    &new_state.param_route_set_shaping,
+                    &new_state.param_route_bend_shaping,
+                )
+                .await
+            {
+                tracing::error!(
+                    "Reload: routes.finalize_params failed; aborting reload: {}",
+                    e
+                );
+                return Err(e);
             }
         }
 
@@ -3554,6 +3635,7 @@ mod tests {
         create_synth_log: std::sync::Mutex<Vec<RecordedSynth>>,
         create_group_log: std::sync::Mutex<Vec<NodeId>>,
         free_node_log: std::sync::Mutex<Vec<NodeId>>,
+        map_param_log: std::sync::Mutex<Vec<RecordedMap>>,
         /// Unified create/free event stream — preserves ordering across both
         /// op kinds so reload-reconciler tests can resolve "what is alive at
         /// node N after free+respawn" even when the ID pool recycles a freed
@@ -3587,6 +3669,14 @@ mod tests {
         fx_bus_out: Option<f32>,
         /// `outbus` param from `system_link_audio*` synths (no underscore).
         link_outbus: Option<f32>,
+        params: ParamMap,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct RecordedMap {
+        node: NodeId,
+        param: String,
+        bus: u32,
     }
 
     impl RecordingBackend {
@@ -3595,12 +3685,17 @@ mod tests {
                 create_synth_log: std::sync::Mutex::new(Vec::new()),
                 create_group_log: std::sync::Mutex::new(Vec::new()),
                 free_node_log: std::sync::Mutex::new(Vec::new()),
+                map_param_log: std::sync::Mutex::new(Vec::new()),
                 events: std::sync::Mutex::new(Vec::new()),
             }
         }
 
         fn synths(&self) -> Vec<RecordedSynth> {
             self.create_synth_log.lock().unwrap().clone()
+        }
+
+        fn maps(&self) -> Vec<RecordedMap> {
+            self.map_param_log.lock().unwrap().clone()
         }
 
         fn created_groups(&self) -> Vec<NodeId> {
@@ -3693,6 +3788,7 @@ mod tests {
                 fx_bus_in: params.get("__fx_bus_in").copied(),
                 fx_bus_out: params.get("__fx_bus_out").copied(),
                 link_outbus,
+                params: params.clone(),
             });
             self.events.lock().unwrap().push(BackendEvent::Create {
                 def: def.to_string(),
@@ -3740,10 +3836,15 @@ mod tests {
 
         async fn map_param_to_bus(
             &self,
-            _node: NodeId,
-            _param: &str,
-            _bus: u32,
+            node: NodeId,
+            param: &str,
+            bus: u32,
         ) -> std::result::Result<(), Self::Error> {
+            self.map_param_log.lock().unwrap().push(RecordedMap {
+                node,
+                param: param.to_string(),
+                bus,
+            });
             Ok(())
         }
 
@@ -3809,6 +3910,525 @@ mod tests {
             .await
             .synthdefs
             .insert(name.to_string());
+    }
+
+    #[tokio::test]
+    async fn apply_reload_source_first_set_param_routes_emit_live_n_map() {
+        use crate::handlers::{ParamRouteTarget, RouteDest};
+        use crate::reload::{GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, VoiceId};
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        let source_synth = "mixed_audio_cv_source";
+        let target_synth = "param_target";
+        register_voice_synthdef(
+            &runtime,
+            source_synth,
+            vec![
+                OutputPort {
+                    name: "audio".to_string(),
+                    channels: 2,
+                    rate: PortRate::Ar,
+                },
+                OutputPort {
+                    name: "env".to_string(),
+                    channels: 1,
+                    rate: PortRate::Kr,
+                },
+                OutputPort {
+                    name: "dummy".to_string(),
+                    channels: 1,
+                    rate: PortRate::Kr,
+                },
+            ],
+        )
+        .await;
+        register_voice_synthdef(
+            &runtime,
+            target_synth,
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+
+        let group = GroupId::new(1);
+        let src = VoiceId::new(10);
+        let target_a = VoiceId::new(20);
+        let target_b = VoiceId::new(21);
+
+        let mut base = ScriptState::new();
+        base.add_group(group, GroupConfig::default());
+        base.add_voice(src, VoiceConfig::new("src", source_synth, group));
+        base.add_voice(target_a, VoiceConfig::new("target_a", target_synth, group));
+        base.add_voice(target_b, VoiceConfig::new("target_b", target_synth, group));
+        base.set_route(src, "audio", RouteDest::Group(group));
+        base.set_route(src, "dummy", RouteDest::Muted);
+
+        runtime.apply_reload(base.clone()).await.unwrap();
+
+        let mut routed = base;
+        routed
+            .add_param_route_set(src, "env", ParamRouteTarget::Voice(target_a), "cutoff")
+            .unwrap();
+        routed
+            .add_param_route_set(src, "env", ParamRouteTarget::Voice(target_b), "pitch")
+            .unwrap();
+        routed.running_voices.insert(target_a);
+        routed.running_voices.insert(target_b);
+
+        runtime.apply_reload(routed).await.unwrap();
+
+        let state = runtime.state.read().await;
+        let target_a_node = state.voices.get(&target_a).unwrap().active_nodes[0];
+        let target_b_node = state.voices.get(&target_b).unwrap().active_nodes[0];
+        let bus_a = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target_a), "cutoff".to_string()))
+            .expect("source-first SET route should create target_a summer")
+            .bus
+            .raw();
+        let bus_b = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target_b), "pitch".to_string()))
+            .expect("source-first SET fan-out should create target_b summer")
+            .bus
+            .raw();
+        drop(state);
+
+        let maps = runtime.backend.maps();
+        assert!(maps.contains(&RecordedMap {
+            node: target_a_node,
+            param: "cutoff".to_string(),
+            bus: bus_a,
+        }));
+        assert!(maps.contains(&RecordedMap {
+            node: target_b_node,
+            param: "pitch".to_string(),
+            bus: bus_b,
+        }));
+
+        let summer_count = runtime
+            .backend
+            .synths()
+            .iter()
+            .filter(|s| s.def == "param_kr_modulate_1")
+            .count();
+        assert_eq!(
+            summer_count, 2,
+            "fan-out should spawn one SET summer per target param"
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_reload_target_first_bend_routes_emit_live_n_map_with_fan_in() {
+        use crate::handlers::ParamRouteTarget;
+        use crate::reload::{GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, VoiceId};
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        let source_synth = "kr_source";
+        let target_synth = "bend_target";
+        register_voice_synthdef(
+            &runtime,
+            source_synth,
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 1,
+                rate: PortRate::Kr,
+            }],
+        )
+        .await;
+        register_voice_synthdef(
+            &runtime,
+            target_synth,
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+
+        let group = GroupId::new(1);
+        let src_a = VoiceId::new(30);
+        let src_b = VoiceId::new(31);
+        let target = VoiceId::new(40);
+
+        let mut base = ScriptState::new();
+        base.add_group(group, GroupConfig::default());
+        base.add_voice(src_a, VoiceConfig::new("src_a", source_synth, group));
+        base.add_voice(src_b, VoiceConfig::new("src_b", source_synth, group));
+        base.add_voice(target, VoiceConfig::new("target", target_synth, group));
+
+        runtime.apply_reload(base.clone()).await.unwrap();
+
+        let mut routed = base;
+        routed
+            .add_param_route_bend(src_a, "out", ParamRouteTarget::Voice(target), "cutoff")
+            .unwrap();
+        routed
+            .add_param_route_bend(src_b, "out", ParamRouteTarget::Voice(target), "cutoff")
+            .unwrap();
+        routed.running_voices.insert(target);
+
+        runtime.apply_reload(routed).await.unwrap();
+
+        let state = runtime.state.read().await;
+        let target_node = state.voices.get(&target).unwrap().active_nodes[0];
+        let summer_bus = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target), "cutoff".to_string()))
+            .expect("target-first BEND fan-in should create one summer")
+            .bus
+            .raw();
+        drop(state);
+
+        assert!(runtime.backend.maps().contains(&RecordedMap {
+            node: target_node,
+            param: "cutoff".to_string(),
+            bus: summer_bus,
+        }));
+        assert_eq!(
+            runtime
+                .backend
+                .synths()
+                .iter()
+                .filter(|s| s.def == "param_kr_modulate_2")
+                .count(),
+            1,
+            "two target-first BEND sources should fan into one modulate_2 summer"
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_reload_threads_param_route_shaping_and_route_only_updates() {
+        use crate::handlers::ParamRouteTarget;
+        use crate::reload::{GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, VoiceId};
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        register_voice_synthdef(
+            &runtime,
+            "shape_source",
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 1,
+                rate: PortRate::Kr,
+            }],
+        )
+        .await;
+        register_voice_synthdef(
+            &runtime,
+            "shape_target",
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+
+        let group = GroupId::new(1);
+        let src = VoiceId::new(10);
+        let target = VoiceId::new(20);
+
+        let mut base = ScriptState::new();
+        base.add_group(group, GroupConfig::default());
+        base.add_voice(src, VoiceConfig::new("src", "shape_source", group));
+        let mut target_config = VoiceConfig::new("target", "shape_target", group);
+        target_config.params.insert("freq".to_string(), 220.0);
+        base.add_voice(target, target_config);
+        base.running_voices.insert(target);
+        runtime.apply_reload(base.clone()).await.unwrap();
+
+        let mut routed = base.clone();
+        routed
+            .add_param_route_set(src, "out", ParamRouteTarget::Voice(target), "freq")
+            .unwrap();
+        routed.set_param_route_set_scale(
+            src,
+            "out",
+            ParamRouteTarget::Voice(target),
+            "freq",
+            700.0,
+        );
+        routed.set_param_route_set_offset(
+            src,
+            "out",
+            ParamRouteTarget::Voice(target),
+            "freq",
+            110.0,
+        );
+        runtime.apply_reload(routed.clone()).await.unwrap();
+
+        let first_summer = {
+            let state = runtime.state.read().await;
+            let summer = state
+                .param_summers
+                .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+                .expect("SET route should create a shaped summer");
+            assert_eq!(summer.sources[0].scale, 700.0);
+            assert_eq!(summer.sources[0].offset, 110.0);
+            summer.node
+        };
+        let first_create = runtime
+            .backend
+            .synths()
+            .into_iter()
+            .rev()
+            .find(|s| s.def == "param_kr_modulate_1")
+            .expect("SET should spawn modulate_1");
+        assert_eq!(first_create.params.get("scale_a"), Some(&700.0));
+        assert_eq!(first_create.params.get("offset_a"), Some(&110.0));
+
+        routed.set_param_route_set_scale(
+            src,
+            "out",
+            ParamRouteTarget::Voice(target),
+            "freq",
+            500.0,
+        );
+        runtime.apply_reload(routed).await.unwrap();
+
+        let updated_create = runtime
+            .backend
+            .synths()
+            .into_iter()
+            .rev()
+            .find(|s| s.def == "param_kr_modulate_1")
+            .expect("shaping-only reload should respawn modulate_1");
+        assert_eq!(updated_create.params.get("scale_a"), Some(&500.0));
+        assert_eq!(updated_create.params.get("offset_a"), Some(&110.0));
+        assert!(
+            runtime
+                .backend
+                .free_node_log
+                .lock()
+                .unwrap()
+                .contains(&first_summer),
+            "shaping-only reload should free the stale summer"
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_reload_bend_fan_in_preserves_per_source_shaping_and_shrinks() {
+        use crate::handlers::ParamRouteTarget;
+        use crate::reload::{GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, VoiceId};
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        register_voice_synthdef(
+            &runtime,
+            "bend_shape_source",
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 1,
+                rate: PortRate::Kr,
+            }],
+        )
+        .await;
+        register_voice_synthdef(
+            &runtime,
+            "bend_shape_target",
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+
+        let group = GroupId::new(1);
+        let src_a = VoiceId::new(10);
+        let src_b = VoiceId::new(11);
+        let target = VoiceId::new(20);
+
+        let mut base = ScriptState::new();
+        base.add_group(group, GroupConfig::default());
+        base.add_voice(src_a, VoiceConfig::new("src_a", "bend_shape_source", group));
+        base.add_voice(src_b, VoiceConfig::new("src_b", "bend_shape_source", group));
+        let mut target_config = VoiceConfig::new("target", "bend_shape_target", group);
+        target_config.params.insert("freq".to_string(), 220.0);
+        base.add_voice(target, target_config);
+        base.running_voices.insert(target);
+        runtime.apply_reload(base.clone()).await.unwrap();
+
+        let mut two = base.clone();
+        two.add_param_route_bend(src_a, "out", ParamRouteTarget::Voice(target), "freq")
+            .unwrap();
+        two.set_param_route_bend_scale(src_a, "out", ParamRouteTarget::Voice(target), "freq", 30.0);
+        two.set_param_route_bend_offset(src_a, "out", ParamRouteTarget::Voice(target), "freq", 3.0);
+        two.add_param_route_bend(src_b, "out", ParamRouteTarget::Voice(target), "freq")
+            .unwrap();
+        two.set_param_route_bend_scale(src_b, "out", ParamRouteTarget::Voice(target), "freq", 40.0);
+        two.set_param_route_bend_offset(src_b, "out", ParamRouteTarget::Voice(target), "freq", 4.0);
+        runtime.apply_reload(two).await.unwrap();
+
+        let two_summer = {
+            let state = runtime.state.read().await;
+            let summer = state
+                .param_summers
+                .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+                .expect("two BEND sources should create a summer");
+            assert_eq!(summer.sources.len(), 2);
+            assert_eq!(
+                summer
+                    .sources
+                    .iter()
+                    .map(|source| (source.scale, source.offset))
+                    .collect::<Vec<_>>(),
+                vec![(30.0, 3.0), (40.0, 4.0)]
+            );
+            summer.node
+        };
+        let fan_in_create = runtime
+            .backend
+            .synths()
+            .into_iter()
+            .rev()
+            .find(|s| s.def == "param_kr_modulate_2")
+            .expect("BEND fan-in should spawn modulate_2");
+        assert_eq!(fan_in_create.params.get("scale_a"), Some(&30.0));
+        assert_eq!(fan_in_create.params.get("offset_a"), Some(&3.0));
+        assert_eq!(fan_in_create.params.get("scale_b"), Some(&40.0));
+        assert_eq!(fan_in_create.params.get("offset_b"), Some(&4.0));
+
+        let mut one = base.clone();
+        one.add_param_route_bend(src_a, "out", ParamRouteTarget::Voice(target), "freq")
+            .unwrap();
+        one.set_param_route_bend_scale(src_a, "out", ParamRouteTarget::Voice(target), "freq", 30.0);
+        one.set_param_route_bend_offset(src_a, "out", ParamRouteTarget::Voice(target), "freq", 3.0);
+        runtime.apply_reload(one).await.unwrap();
+        assert!(
+            runtime
+                .backend
+                .free_node_log
+                .lock()
+                .unwrap()
+                .contains(&two_summer),
+            "N=2 to N=1 should free the old BEND summer"
+        );
+        let one_summer = {
+            let state = runtime.state.read().await;
+            state
+                .param_summers
+                .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+                .expect("N=1 BEND route should keep one summer")
+                .node
+        };
+
+        runtime.apply_reload(base).await.unwrap();
+        let state = runtime.state.read().await;
+        assert!(
+            !state
+                .param_summers
+                .contains_key(&(ParamRouteTarget::Voice(target), "freq".to_string())),
+            "N=1 to N=0 should remove the BEND summer"
+        );
+        drop(state);
+        assert!(
+            runtime
+                .backend
+                .free_node_log
+                .lock()
+                .unwrap()
+                .contains(&one_summer),
+            "N=1 to N=0 should free the stale BEND summer"
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_reload_trigger_route_removal_unmaps_and_frees_link() {
+        use crate::handlers::ParamRouteTarget;
+        use crate::reload::{GroupConfig, ScriptState};
+        use crate::traits::VoiceConfig;
+        use crate::types::{GroupId, VoiceId};
+        use vibelang_dsp::{OutputPort, PortRate};
+
+        let mut runtime = Runtime::new(RecordingBackend::new());
+        register_voice_synthdef(
+            &runtime,
+            "trigger_source",
+            vec![OutputPort {
+                name: "trig".to_string(),
+                channels: 1,
+                rate: PortRate::Tr,
+            }],
+        )
+        .await;
+        register_voice_synthdef(
+            &runtime,
+            "trigger_target",
+            vec![OutputPort {
+                name: "out".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            }],
+        )
+        .await;
+
+        let group = GroupId::new(1);
+        let src = VoiceId::new(10);
+        let target = VoiceId::new(20);
+
+        let mut base = ScriptState::new();
+        base.add_group(group, GroupConfig::default());
+        base.add_voice(src, VoiceConfig::new("src", "trigger_source", group));
+        base.add_voice(target, VoiceConfig::new("target", "trigger_target", group));
+        base.running_voices.insert(target);
+        runtime.apply_reload(base.clone()).await.unwrap();
+
+        let mut routed = base.clone();
+        routed
+            .add_param_route_trigger(src, "trig", ParamRouteTarget::Voice(target), "trig")
+            .unwrap();
+        runtime.apply_reload(routed).await.unwrap();
+
+        let (target_node, link_node) = {
+            let state = runtime.state.read().await;
+            let target_node = state.voices.get(&target).unwrap().active_nodes[0];
+            let (link_node, _) = state
+                .param_triggers
+                .get(&(ParamRouteTarget::Voice(target), "trig".to_string()))
+                .copied()
+                .expect("TRIGGER route should create a link");
+            (target_node, link_node)
+        };
+        assert!(runtime
+            .backend
+            .synths()
+            .iter()
+            .any(|s| s.def == "port_tr_to_param_link_1"));
+
+        runtime.apply_reload(base).await.unwrap();
+        assert!(
+            runtime.backend.maps().contains(&RecordedMap {
+                node: target_node,
+                param: "trig".to_string(),
+                bus: u32::MAX,
+            }),
+            "TRIGGER route removal should unmap the target param"
+        );
+        assert!(
+            runtime
+                .backend
+                .free_node_log
+                .lock()
+                .unwrap()
+                .contains(&link_node),
+            "TRIGGER route removal should free the link synth"
+        );
     }
 
     fn add_body_contribution(

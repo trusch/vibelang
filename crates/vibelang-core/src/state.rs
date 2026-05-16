@@ -1006,6 +1006,18 @@ pub struct State {
     /// [`Self::param_routes_set`] and [`Self::param_routes_bend`].
     pub param_routes_trigger: crate::handlers::ParamRouteMap,
 
+    /// Applied per-source scale/offset shaping for active SET routes.
+    ///
+    /// Keyed by `(source_voice, source_port, target, target_param)`, matching
+    /// `ScriptState::param_route_set_shaping`. Kept in runtime state so
+    /// shaping-only reloads can diff and respawn the relevant summer.
+    pub param_route_set_shaping:
+        HashMap<(VoiceId, String, crate::handlers::ParamRouteTarget, String), (f32, f32)>,
+
+    /// Applied per-source scale/offset shaping for active BEND routes.
+    pub param_route_bend_shaping:
+        HashMap<(VoiceId, String, crate::handlers::ParamRouteTarget, String), (f32, f32)>,
+
     /// Active param-summer synths, keyed by the target side
     /// `(target, target_param_name)`.
     ///
@@ -1154,6 +1166,8 @@ impl Default for State {
             param_routes_set: HashMap::new(),
             param_routes_bend: HashMap::new(),
             param_routes_trigger: HashMap::new(),
+            param_route_set_shaping: HashMap::new(),
+            param_route_bend_shaping: HashMap::new(),
             param_summers: HashMap::new(),
             ar_to_kr_adapters: HashMap::new(),
             param_triggers: HashMap::new(),
@@ -1364,6 +1378,14 @@ impl State {
                 !targets.is_empty()
             });
         }
+        self.param_route_set_shaping
+            .retain(|(source_voice, _, target, _), _| {
+                *source_voice != voice_id && *target != ParamRouteTarget::Voice(voice_id)
+            });
+        self.param_route_bend_shaping
+            .retain(|(source_voice, _, target, _), _| {
+                *source_voice != voice_id && *target != ParamRouteTarget::Voice(voice_id)
+            });
         drained
     }
 
@@ -1388,6 +1410,10 @@ impl State {
                 !targets.is_empty()
             });
         }
+        self.param_route_set_shaping
+            .retain(|(_, _, target, _), _| *target != ParamRouteTarget::Effect(effect_id));
+        self.param_route_bend_shaping
+            .retain(|(_, _, target, _), _| *target != ParamRouteTarget::Effect(effect_id));
     }
 
     /// Resolve the output-port set for a synthdef name.

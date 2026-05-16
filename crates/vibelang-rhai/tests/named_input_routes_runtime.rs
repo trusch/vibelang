@@ -11,10 +11,10 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use vibelang_core::compat::Instant;
-use vibelang_core::handlers::InputRouteSrc;
+use vibelang_core::handlers::{InputRouteSrc, ParamRouteTarget};
 use vibelang_core::message::{ReloadMessage, SynthDefMessage, VoiceMessage};
 use vibelang_core::{AddAction, Backend, BufferId, BufferInfo, NodeId, ParamMap, Runtime, VoiceId};
-use vibelang_dsp::{InputPort, OutputPort, PortRate};
+use vibelang_dsp::{GraphIR, InputPort, OutputPort, ParamSpec, PortRate};
 use vibelang_rhai::ScriptEngine;
 
 #[derive(Debug)]
@@ -34,10 +34,18 @@ struct SynthCreate {
     params: ParamMap,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ParamMapCall {
+    node: NodeId,
+    param: String,
+    bus: u32,
+}
+
 #[derive(Debug, Default)]
 struct RecordingBackend {
     creates: Mutex<Vec<SynthCreate>>,
     frees: Mutex<Vec<NodeId>>,
+    maps: Mutex<Vec<ParamMapCall>>,
     fail_next_input_link_create: AtomicBool,
 }
 
@@ -48,6 +56,10 @@ impl RecordingBackend {
 
     fn freed_nodes(&self) -> Vec<NodeId> {
         self.frees.lock().unwrap().clone()
+    }
+
+    fn param_maps(&self) -> Vec<ParamMapCall> {
+        self.maps.lock().unwrap().clone()
     }
 
     fn fail_next_input_link_create(&self) {
@@ -110,10 +122,15 @@ impl Backend for RecordingBackend {
 
     async fn map_param_to_bus(
         &self,
-        _node: NodeId,
-        _param: &str,
-        _bus: u32,
+        node: NodeId,
+        param: &str,
+        bus: u32,
     ) -> Result<(), Self::Error> {
+        self.maps.lock().unwrap().push(ParamMapCall {
+            node,
+            param: param.to_string(),
+            bus,
+        });
         Ok(())
     }
 
@@ -187,6 +204,29 @@ async fn load_registered_synthdef(
     runtime.tick().await;
 }
 
+fn register_synthdef_params(name: &str, params: &[(&str, f32)]) {
+    let param_specs: Vec<ParamSpec> = params
+        .iter()
+        .enumerate()
+        .map(|(index, (param, default))| ParamSpec {
+            name: (*param).to_string(),
+            default: vec![*default],
+            index,
+            lag_ms: None,
+        })
+        .collect();
+    vibelang_dsp::register_synthdef_ir(
+        name.to_string(),
+        GraphIR {
+            name: name.to_string(),
+            constants: Vec::new(),
+            params: param_specs,
+            nodes: Vec::new(),
+            out_bus: 0,
+        },
+    );
+}
+
 async fn apply_script(runtime: &mut Runtime<RecordingBackend>, script: &str) {
     let mut engine = ScriptEngine::new();
     let state = engine.execute(script).expect("script must execute");
@@ -211,6 +251,637 @@ fn stereo_out() -> Vec<OutputPort> {
         channels: 2,
         rate: PortRate::Ar,
     }]
+}
+
+fn kr_out(name: &str) -> Vec<OutputPort> {
+    vec![OutputPort {
+        name: name.to_string(),
+        channels: 1,
+        rate: PortRate::Kr,
+    }]
+}
+
+async fn load_cv_param_fixture(
+    runtime: &mut Runtime<RecordingBackend>,
+    source_synth: &str,
+    target_synth: &str,
+) {
+    load_registered_synthdef(runtime, source_synth, kr_out("out"), Vec::new()).await;
+    register_synthdef_params(target_synth, &[("freq", 220.0), ("amp", 0.2)]);
+    load_registered_synthdef(runtime, target_synth, stereo_out(), Vec::new()).await;
+}
+
+fn active_voice_node(runtime_state: &vibelang_core::State, voice_name: &str) -> NodeId {
+    let voice_id = VoiceId::new(fnv1a_id(voice_name));
+    runtime_state
+        .voices
+        .get(&voice_id)
+        .unwrap_or_else(|| panic!("voice {voice_name} should exist"))
+        .active_nodes[0]
+}
+
+#[tokio::test]
+async fn script_source_first_cv_to_param_materializes_live_map_and_summer() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+    load_cv_param_fixture(
+        &mut runtime,
+        "cv_param_src_first_source",
+        "cv_param_src_first_target",
+    )
+    .await;
+
+    let script = r#"
+        let lfo = voice("cv_param_src_first_lfo")
+            .synth("cv_param_src_first_source")
+            .group("cv_param_src_first")
+            .run();
+        let target = voice("cv_param_src_first_sine")
+            .synth("cv_param_src_first_target")
+            .group("cv_param_src_first")
+            .param("freq", 220.0)
+            .param("amp", 0.2)
+            .run();
+        lfo.output("out").to_param(target, "freq").scale(700.0).offset(110.0);
+    "#;
+    apply_script(&mut runtime, script).await;
+
+    let (target_node, summer_bus) = {
+        let state = runtime.state().read().await;
+        let target = VoiceId::new(fnv1a_id("cv_param_src_first_sine"));
+        let target_node = active_voice_node(&state, "cv_param_src_first_sine");
+        let summer = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+            .expect("source-first SET should create a live param summer");
+        assert_eq!(summer.sources.len(), 1);
+        (target_node, summer.bus.raw())
+    };
+
+    assert!(
+        runtime.backend().param_maps().contains(&ParamMapCall {
+            node: target_node,
+            param: "freq".to_string(),
+            bus: summer_bus,
+        }),
+        "source-first SET route must emit a backend /n_map-equivalent call"
+    );
+
+    let summers: Vec<_> = runtime
+        .backend()
+        .synth_creates()
+        .into_iter()
+        .filter(|create| create.def == "param_kr_modulate_1")
+        .collect();
+    assert_eq!(summers.len(), 1);
+    assert_eq!(summers[0].params.get("baseline"), Some(&0.0));
+    assert_eq!(summers[0].params.get("scale_a"), Some(&700.0));
+    assert_eq!(summers[0].params.get("offset_a"), Some(&110.0));
+}
+
+#[tokio::test]
+async fn script_target_first_cv_to_param_materializes_map_and_conflicts_with_set() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+    load_cv_param_fixture(
+        &mut runtime,
+        "cv_param_tgt_first_source",
+        "cv_param_tgt_first_target",
+    )
+    .await;
+
+    let script = r#"
+        let lfo = voice("cv_param_tgt_first_lfo")
+            .synth("cv_param_tgt_first_source")
+            .group("cv_param_tgt_first")
+            .run();
+        let target = voice("cv_param_tgt_first_sine")
+            .synth("cv_param_tgt_first_target")
+            .group("cv_param_tgt_first")
+            .param("freq", 330.0)
+            .param("amp", 0.2)
+            .run();
+        target.param("freq").modulate_by(lfo, "out").scale(50.0).offset(5.0);
+    "#;
+    apply_script(&mut runtime, script).await;
+
+    let (target_node, summer_bus) = {
+        let state = runtime.state().read().await;
+        let target = VoiceId::new(fnv1a_id("cv_param_tgt_first_sine"));
+        let target_node = active_voice_node(&state, "cv_param_tgt_first_sine");
+        let summer = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+            .expect("target-first BEND should create a live param summer");
+        assert_eq!(summer.sources.len(), 1);
+        (target_node, summer.bus.raw())
+    };
+    assert!(runtime.backend().param_maps().contains(&ParamMapCall {
+        node: target_node,
+        param: "freq".to_string(),
+        bus: summer_bus,
+    }));
+
+    let summers: Vec<_> = runtime
+        .backend()
+        .synth_creates()
+        .into_iter()
+        .filter(|create| create.def == "param_kr_modulate_1")
+        .collect();
+    assert_eq!(summers.len(), 1);
+    assert_eq!(
+        summers[0].params.get("baseline"),
+        Some(&330.0),
+        "BEND summer should add to the target param baseline"
+    );
+    assert_eq!(summers[0].params.get("scale_a"), Some(&50.0));
+    assert_eq!(summers[0].params.get("offset_a"), Some(&5.0));
+
+    let conflict = r#"
+        let lfo = voice("cv_param_tgt_first_lfo_conflict")
+            .synth("cv_param_tgt_first_source");
+        let target = voice("cv_param_tgt_first_sine_conflict")
+            .synth("cv_param_tgt_first_target");
+        lfo.output("out").to_param(target, "freq");
+        target.param("freq").modulate_by(lfo, "out");
+    "#;
+    let err = ScriptEngine::new()
+        .execute(conflict)
+        .expect_err("SET and BEND on the same target param must conflict");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("to_param") && msg.contains("modulate_by"),
+        "cross-verb conflict should name both authoring forms, got: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn script_source_first_fan_out_materializes_two_summers_and_maps() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+    load_cv_param_fixture(
+        &mut runtime,
+        "cv_param_fanout_source",
+        "cv_param_fanout_target",
+    )
+    .await;
+
+    let script = r#"
+        let lfo = voice("cv_param_fanout_lfo")
+            .synth("cv_param_fanout_source")
+            .group("cv_param_fanout")
+            .run();
+        let left = voice("cv_param_fanout_left")
+            .synth("cv_param_fanout_target")
+            .group("cv_param_fanout")
+            .param("freq", 180.0)
+            .run();
+        let right = voice("cv_param_fanout_right")
+            .synth("cv_param_fanout_target")
+            .group("cv_param_fanout")
+            .param("freq", 360.0)
+            .run();
+        lfo.output("out").to_param(left, "freq").scale(300.0).offset(100.0);
+        lfo.output("out").to_param(right, "freq").scale(450.0).offset(120.0);
+    "#;
+    apply_script(&mut runtime, script).await;
+
+    let expected_maps = {
+        let state = runtime.state().read().await;
+        let left = VoiceId::new(fnv1a_id("cv_param_fanout_left"));
+        let right = VoiceId::new(fnv1a_id("cv_param_fanout_right"));
+        let left_bus = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(left), "freq".to_string()))
+            .expect("left fan-out target should have a summer")
+            .bus
+            .raw();
+        let right_bus = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(right), "freq".to_string()))
+            .expect("right fan-out target should have a summer")
+            .bus
+            .raw();
+        vec![
+            ParamMapCall {
+                node: active_voice_node(&state, "cv_param_fanout_left"),
+                param: "freq".to_string(),
+                bus: left_bus,
+            },
+            ParamMapCall {
+                node: active_voice_node(&state, "cv_param_fanout_right"),
+                param: "freq".to_string(),
+                bus: right_bus,
+            },
+        ]
+    };
+
+    let maps = runtime.backend().param_maps();
+    for expected in expected_maps {
+        assert!(
+            maps.contains(&expected),
+            "fan-out should map each target param independently; missing {expected:?}"
+        );
+    }
+    assert_eq!(
+        runtime
+            .backend()
+            .synth_creates()
+            .iter()
+            .filter(|create| create.def == "param_kr_modulate_1")
+            .count(),
+        2,
+        "one source fanning out to two target params should spawn two summers"
+    );
+}
+
+#[tokio::test]
+async fn script_target_first_fan_in_shrinks_without_entity_changes() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+    load_registered_synthdef(
+        &mut runtime,
+        "cv_param_fanin_source",
+        kr_out("out"),
+        Vec::new(),
+    )
+    .await;
+    register_synthdef_params("cv_param_fanin_target", &[("freq", 220.0)]);
+    load_registered_synthdef(
+        &mut runtime,
+        "cv_param_fanin_target",
+        stereo_out(),
+        Vec::new(),
+    )
+    .await;
+
+    let two_sources = r#"
+        let a = voice("cv_param_fanin_a")
+            .synth("cv_param_fanin_source")
+            .group("cv_param_fanin")
+            .run();
+        let b = voice("cv_param_fanin_b")
+            .synth("cv_param_fanin_source")
+            .group("cv_param_fanin")
+            .run();
+        let target = voice("cv_param_fanin_sine")
+            .synth("cv_param_fanin_target")
+            .group("cv_param_fanin")
+            .param("freq", 220.0)
+            .run();
+        target.param("freq")
+            .modulate_by(a, "out").scale(30.0).offset(0.0)
+            .modulate_by(b, "out").scale(40.0).offset(0.0);
+    "#;
+    apply_script(&mut runtime, two_sources).await;
+
+    let first_summer = {
+        let state = runtime.state().read().await;
+        let target = VoiceId::new(fnv1a_id("cv_param_fanin_sine"));
+        let summer = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+            .expect("two BEND sources should create a summer");
+        assert_eq!(summer.sources.len(), 2);
+        summer.node
+    };
+    assert_eq!(
+        runtime
+            .backend()
+            .synth_creates()
+            .iter()
+            .filter(|create| create.def == "param_kr_modulate_2")
+            .count(),
+        1
+    );
+    let fan_in_create = runtime
+        .backend()
+        .synth_creates()
+        .into_iter()
+        .rev()
+        .find(|create| create.def == "param_kr_modulate_2")
+        .expect("fan-in should create a modulate_2 summer");
+    assert_eq!(fan_in_create.params.get("scale_a"), Some(&30.0));
+    assert_eq!(fan_in_create.params.get("scale_b"), Some(&40.0));
+
+    let one_source = r#"
+        let a = voice("cv_param_fanin_a")
+            .synth("cv_param_fanin_source")
+            .group("cv_param_fanin")
+            .run();
+        let _b = voice("cv_param_fanin_b")
+            .synth("cv_param_fanin_source")
+            .group("cv_param_fanin")
+            .run();
+        let target = voice("cv_param_fanin_sine")
+            .synth("cv_param_fanin_target")
+            .group("cv_param_fanin")
+            .param("freq", 220.0)
+            .run();
+        target.param("freq").modulate_by(a, "out").scale(30.0).offset(0.0);
+    "#;
+    apply_script(&mut runtime, one_source).await;
+
+    {
+        let state = runtime.state().read().await;
+        let target = VoiceId::new(fnv1a_id("cv_param_fanin_sine"));
+        let summer = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+            .expect("shrunk BEND route should still have one summer");
+        assert_eq!(summer.sources.len(), 1);
+        assert_ne!(
+            summer.node, first_summer,
+            "route-only shrink should respawn arity-1 summer"
+        );
+    }
+    assert!(
+        runtime.backend().freed_nodes().contains(&first_summer),
+        "shrinking N=2 to N=1 should free the stale N=2 summer"
+    );
+    assert_eq!(
+        runtime
+            .backend()
+            .synth_creates()
+            .iter()
+            .filter(|create| create.def == "param_kr_modulate_1")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn script_route_only_to_param_change_bypasses_no_change_fast_path() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+    load_cv_param_fixture(
+        &mut runtime,
+        "cv_param_route_only_source",
+        "cv_param_route_only_target",
+    )
+    .await;
+
+    let freq_route = r#"
+        let lfo = voice("cv_param_route_only_lfo")
+            .synth("cv_param_route_only_source")
+            .group("cv_param_route_only")
+            .run();
+        let target = voice("cv_param_route_only_sine")
+            .synth("cv_param_route_only_target")
+            .group("cv_param_route_only")
+            .param("freq", 220.0)
+            .param("amp", 0.2)
+            .run();
+        lfo.output("out").to_param(target, "freq").scale(500.0).offset(100.0);
+    "#;
+    apply_script(&mut runtime, freq_route).await;
+
+    let freq_summer = {
+        let state = runtime.state().read().await;
+        let target = VoiceId::new(fnv1a_id("cv_param_route_only_sine"));
+        state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+            .expect("initial freq route should have a summer")
+            .node
+    };
+
+    let amp_route = r#"
+        let lfo = voice("cv_param_route_only_lfo")
+            .synth("cv_param_route_only_source")
+            .group("cv_param_route_only")
+            .run();
+        let target = voice("cv_param_route_only_sine")
+            .synth("cv_param_route_only_target")
+            .group("cv_param_route_only")
+            .param("freq", 220.0)
+            .param("amp", 0.2)
+            .run();
+        lfo.output("out").to_param(target, "amp").scale(0.4).offset(0.1);
+    "#;
+    apply_script(&mut runtime, amp_route).await;
+
+    let (target_node, amp_bus) = {
+        let state = runtime.state().read().await;
+        let target = VoiceId::new(fnv1a_id("cv_param_route_only_sine"));
+        assert!(
+            !state
+                .param_summers
+                .contains_key(&(ParamRouteTarget::Voice(target), "freq".to_string())),
+            "route-only reload should remove the stale freq route"
+        );
+        let amp_bus = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target), "amp".to_string()))
+            .expect("route-only reload should add the new amp route")
+            .bus
+            .raw();
+        (
+            active_voice_node(&state, "cv_param_route_only_sine"),
+            amp_bus,
+        )
+    };
+
+    let maps = runtime.backend().param_maps();
+    assert!(
+        maps.contains(&ParamMapCall {
+            node: target_node,
+            param: "freq".to_string(),
+            bus: u32::MAX,
+        }),
+        "route-only reload should unmap the removed freq target"
+    );
+    assert!(
+        maps.contains(&ParamMapCall {
+            node: target_node,
+            param: "amp".to_string(),
+            bus: amp_bus,
+        }),
+        "route-only reload should map the newly-added amp target"
+    );
+    assert!(
+        runtime.backend().freed_nodes().contains(&freq_summer),
+        "route-only reload should free the removed route's stale summer"
+    );
+}
+
+#[tokio::test]
+async fn script_route_only_param_shaping_change_respawns_summer() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+    load_cv_param_fixture(
+        &mut runtime,
+        "cv_param_shape_reload_source",
+        "cv_param_shape_reload_target",
+    )
+    .await;
+
+    let scale_700 = r#"
+        let lfo = voice("cv_param_shape_reload_lfo")
+            .synth("cv_param_shape_reload_source")
+            .group("cv_param_shape_reload")
+            .run();
+        let target = voice("cv_param_shape_reload_sine")
+            .synth("cv_param_shape_reload_target")
+            .group("cv_param_shape_reload")
+            .param("freq", 220.0)
+            .run();
+        lfo.output("out").to_param(target, "freq").scale(700.0).offset(110.0);
+    "#;
+    apply_script(&mut runtime, scale_700).await;
+
+    let first_summer = {
+        let state = runtime.state().read().await;
+        let target = VoiceId::new(fnv1a_id("cv_param_shape_reload_sine"));
+        state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+            .expect("initial shaped route should have a summer")
+            .node
+    };
+
+    let scale_500 = r#"
+        let lfo = voice("cv_param_shape_reload_lfo")
+            .synth("cv_param_shape_reload_source")
+            .group("cv_param_shape_reload")
+            .run();
+        let target = voice("cv_param_shape_reload_sine")
+            .synth("cv_param_shape_reload_target")
+            .group("cv_param_shape_reload")
+            .param("freq", 220.0)
+            .run();
+        lfo.output("out").to_param(target, "freq").scale(500.0).offset(110.0);
+    "#;
+    apply_script(&mut runtime, scale_500).await;
+
+    assert!(
+        runtime.backend().freed_nodes().contains(&first_summer),
+        "route-only shaping reload should free the stale summer"
+    );
+    let latest = runtime
+        .backend()
+        .synth_creates()
+        .into_iter()
+        .rev()
+        .find(|create| create.def == "param_kr_modulate_1")
+        .expect("shaping reload should create a replacement summer");
+    assert_eq!(latest.params.get("scale_a"), Some(&500.0));
+    assert_eq!(latest.params.get("offset_a"), Some(&110.0));
+}
+
+#[tokio::test]
+async fn script_output_route_only_reload_materializes_backend_change() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+    load_registered_synthdef(
+        &mut runtime,
+        "output_route_only_synth",
+        stereo_out(),
+        Vec::new(),
+    )
+    .await;
+
+    let to_group = r#"
+        let g = group("output_route_only_bus");
+        let v = voice("output_route_only_voice")
+            .synth("output_route_only_synth")
+            .group("output_route_only_bus")
+            .run();
+        v.output("out").to(g);
+    "#;
+    apply_script(&mut runtime, to_group).await;
+    let first_route_count = runtime
+        .backend()
+        .synth_creates()
+        .iter()
+        .filter(|create| create.def == "port_to_group_link_2")
+        .count();
+    assert_eq!(first_route_count, 1);
+
+    let to_main = r#"
+        let _g = group("output_route_only_bus");
+        let v = voice("output_route_only_voice")
+            .synth("output_route_only_synth")
+            .group("output_route_only_bus")
+            .run();
+        v.output("out").to_main();
+    "#;
+    apply_script(&mut runtime, to_main).await;
+
+    let creates = runtime.backend().synth_creates();
+    let route_creates: Vec<_> = creates
+        .iter()
+        .filter(|create| create.def == "port_to_group_link_2")
+        .collect();
+    assert_eq!(
+        route_creates.len(),
+        2,
+        "output-route-only reload should spawn the replacement route mixer"
+    );
+    assert_eq!(
+        route_creates.last().unwrap().params.get("out_bus"),
+        Some(&0.0)
+    );
+}
+
+#[tokio::test]
+async fn script_muted_kr_route_does_not_unsuppress_modulation_only_audio_default() {
+    let mut runtime = Runtime::new(RecordingBackend::default());
+    load_registered_synthdef(
+        &mut runtime,
+        "mod_only_mixed_source",
+        vec![
+            OutputPort {
+                name: "audio".to_string(),
+                channels: 2,
+                rate: PortRate::Ar,
+            },
+            OutputPort {
+                name: "env".to_string(),
+                channels: 1,
+                rate: PortRate::Kr,
+            },
+            OutputPort {
+                name: "dummy".to_string(),
+                channels: 1,
+                rate: PortRate::Kr,
+            },
+        ],
+        Vec::new(),
+    )
+    .await;
+    register_synthdef_params("mod_only_target", &[("freq", 220.0)]);
+    load_registered_synthdef(&mut runtime, "mod_only_target", stereo_out(), Vec::new()).await;
+
+    let script = r#"
+        let src = voice("mod_only_mixed_src")
+            .synth("mod_only_mixed_source")
+            .group("mod_only")
+            .run();
+        let target = voice("mod_only_target_voice")
+            .synth("mod_only_target")
+            .group("mod_only")
+            .param("freq", 220.0)
+            .run();
+        src.output("env").to_param(target, "freq").scale(700.0);
+        src.output("dummy").mute();
+    "#;
+    apply_script(&mut runtime, script).await;
+
+    let source_audio_bus = {
+        let state = runtime.state().read().await;
+        let src = VoiceId::new(fnv1a_id("mod_only_mixed_src"));
+        state
+            .voices
+            .get(&src)
+            .expect("source voice should exist")
+            .output_buses
+            .iter()
+            .find(|(name, _)| name == "audio")
+            .map(|(_, bus)| bus.raw() as f32)
+            .expect("source audio bus should exist")
+    };
+    let leaked_default = runtime.backend().synth_creates().iter().any(|create| {
+        create.def == "port_to_group_link_2"
+            && create.params.get("in_bus") == Some(&source_audio_bus)
+    });
+    assert!(
+        !leaked_default,
+        "muting a kr dummy port must not make the implicit ar default audible"
+    );
 }
 
 #[tokio::test]
