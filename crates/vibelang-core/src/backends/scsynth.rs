@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, oneshot};
 
 /// Error type for scsynth backend operations.
@@ -427,6 +427,11 @@ impl ScsynthBackend {
         callbacks: &Arc<Mutex<Vec<OscCallback>>>,
         server_ready: &Arc<AtomicBool>,
     ) {
+        Self::osc_diag_log(format!(
+            "osc_recv path={} args=[{}]",
+            msg.addr,
+            Self::summarize_osc_args(&msg.args)
+        ));
         let response = match msg.addr.as_str() {
             "/status.reply" => {
                 // Parse status response
@@ -719,6 +724,73 @@ impl ScsynthBackend {
         command == "/d_recv" || command == "/d_load"
     }
 
+    fn osc_diag_enabled() -> bool {
+        std::env::var("VIBELANG_LOG_OSC")
+            .map(|value| {
+                let value = value.trim();
+                value == "1"
+                    || value.eq_ignore_ascii_case("true")
+                    || value.eq_ignore_ascii_case("yes")
+                    || value.eq_ignore_ascii_case("on")
+            })
+            .unwrap_or(false)
+    }
+
+    fn osc_diag_timestamp_ms() -> u128 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0)
+    }
+
+    fn osc_diag_log(message: impl AsRef<str>) {
+        if Self::osc_diag_enabled() {
+            eprintln!(
+                "[vibelang-osc-diag t_ms={}] {}",
+                Self::osc_diag_timestamp_ms(),
+                message.as_ref()
+            );
+        }
+    }
+
+    fn summarize_osc_arg(arg: &OscType) -> String {
+        match arg {
+            OscType::Int(value) => value.to_string(),
+            OscType::Float(value) => format!("{value:.6}"),
+            OscType::String(value) => {
+                if value.len() > 80 {
+                    format!("{:?}...", &value[..80])
+                } else {
+                    format!("{value:?}")
+                }
+            }
+            OscType::Blob(value) => format!("blob({} bytes)", value.len()),
+            OscType::Time(_) => "time".to_string(),
+            OscType::Long(value) => value.to_string(),
+            OscType::Double(value) => format!("{value:.6}"),
+            OscType::Char(value) => value.to_string(),
+            OscType::Color(_) => "color".to_string(),
+            OscType::Midi(_) => "midi".to_string(),
+            OscType::Bool(value) => value.to_string(),
+            OscType::Array(value) => format!("array({} items)", value.content.len()),
+            OscType::Nil => "nil".to_string(),
+            OscType::Inf => "inf".to_string(),
+        }
+    }
+
+    fn summarize_osc_args(args: &[OscType]) -> String {
+        const MAX_ARGS: usize = 12;
+        let mut parts: Vec<String> = args
+            .iter()
+            .take(MAX_ARGS)
+            .map(Self::summarize_osc_arg)
+            .collect();
+        if args.len() > MAX_ARGS {
+            parts.push(format!("... {} more", args.len() - MAX_ARGS));
+        }
+        parts.join(", ")
+    }
+
     fn temp_synthdef_path(name: &str) -> PathBuf {
         let mut safe_name = String::with_capacity(name.len());
         for ch in name.chars() {
@@ -770,6 +842,11 @@ impl ScsynthBackend {
 
     /// Send an OSC message to scsynth.
     fn send_msg(&self, path: &str, args: Vec<OscType>) -> Result<(), ScsynthError> {
+        Self::osc_diag_log(format!(
+            "osc_send path={} args=[{}]",
+            path,
+            Self::summarize_osc_args(&args)
+        ));
         let msg = OscMessage {
             addr: path.to_string(),
             args,
@@ -874,6 +951,7 @@ impl ScsynthBackend {
     pub async fn sync(&self) -> Result<(), ScsynthError> {
         // Get a unique sync ID
         let sync_id = self.next_sync_id.fetch_add(1, Ordering::SeqCst);
+        let started = Instant::now();
 
         // Create oneshot channel for response
         let (tx, rx) = oneshot::channel();
@@ -889,12 +967,18 @@ impl ScsynthBackend {
 
         // Send sync command
         self.send_msg("/sync", vec![OscType::Int(sync_id)])?;
+        Self::osc_diag_log(format!("sync_wait_start id={sync_id}"));
 
         // Wait for response with reasonable timeout.
         // Since MIDI clock is now handled in a dedicated thread, we don't need
         // aggressive timeouts here anymore.
         match tokio::time::timeout(Duration::from_secs(5), rx).await {
             Ok(Ok(())) => {
+                Self::osc_diag_log(format!(
+                    "sync_wait_done id={} elapsed_ms={:.3}",
+                    sync_id,
+                    started.elapsed().as_secs_f64() * 1000.0
+                ));
                 tracing::trace!("Sync {} completed", sync_id);
                 Ok(())
             }
@@ -902,6 +986,11 @@ impl ScsynthBackend {
                 "Sync response channel closed".to_string(),
             )),
             Err(_) => {
+                Self::osc_diag_log(format!(
+                    "sync_wait_timeout id={} elapsed_ms={:.3}",
+                    sync_id,
+                    started.elapsed().as_secs_f64() * 1000.0
+                ));
                 tracing::warn!("Sync {} timed out after 5 seconds", sync_id);
                 Err(ScsynthError::Timeout)
             }
@@ -923,6 +1012,14 @@ impl Backend for ScsynthBackend {
     async fn load_synthdef(&self, name: &str, data: &[u8]) -> Result<(), Self::Error> {
         let use_disk_load = data.len() > D_RECV_MAX_BYTES;
         let command = if use_disk_load { "/d_load" } else { "/d_recv" };
+        ScsynthBackend::osc_diag_log(format!(
+            "synthdef_load name={} bytes={} command={} over_32k={} over_64k={}",
+            name,
+            data.len(),
+            command,
+            data.len() > 32 * 1024,
+            data.len() >= 64 * 1024
+        ));
         let (tx, rx) = oneshot::channel();
 
         {
@@ -1487,6 +1584,20 @@ mod tests {
             Some("Changed".to_string())
         );
         assert_eq!(ScsynthBackend::parse_missing_ugen("other failure"), None);
+    }
+
+    #[test]
+    fn osc_diag_summarizes_large_payloads_without_dumping_contents() {
+        let args = vec![
+            OscType::String("spectraphon_sam_oscillator".to_string()),
+            OscType::Blob(vec![0; 65_536]),
+            OscType::Int(42),
+        ];
+
+        assert_eq!(
+            ScsynthBackend::summarize_osc_args(&args),
+            "\"spectraphon_sam_oscillator\", blob(65536 bytes), 42"
+        );
     }
 
     #[tokio::test]
