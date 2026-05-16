@@ -21,8 +21,8 @@ fn _rainmaker_filter(sig, cutoff, q, filter_type) {
 fn _rainmaker_tap(src, base_time, grid, tap_index, level, pan, cutoff, q, filter_type, pitch, detune, mute, reverse) {
     let reverse = clip(round(reverse), 0.0, 1.0);
     let step = tap_index * (1.0 - reverse) + (17.0 - tap_index) * reverse;
-    let tap_time = clip(base_time * step / grid, 0.001, 16.0);
-    let raw = delay_c_ar(src, 16.0, tap_time);
+    let tap_time = clip(base_time * step / grid, 0.001, 4.0);
+    let raw = delay_l_ar(src, 4.0, tap_time);
     let filtered = _rainmaker_filter(raw, cutoff, q, filter_type);
     let ratio = pow(2.0, (clip(pitch, -24.0, 24.0) + clip(detune, -1.0, 1.0)) / 12.0);
     let shifted = pitch_shift_ar(filtered, 0.12, ratio, 0.0, 0.0);
@@ -260,24 +260,24 @@ define_synthdef("rainmaker")
         let c8_t = clip(comb_time * (1.0 + pow(7.0 / 7.0, slope) * 4.0), 0.00025, 0.25);
 
         let comb_l = (
-            delay_c_ar(comb_in_l, 0.25, c1_t) * c1_w +
-            delay_c_ar(comb_in_l, 0.25, c2_t) * c2_w +
-            delay_c_ar(comb_in_l, 0.25, c3_t) * c3_w +
-            delay_c_ar(comb_in_l, 0.25, c4_t) * c4_w +
-            delay_c_ar(comb_in_l, 0.25, c5_t) * c5_w +
-            delay_c_ar(comb_in_l, 0.25, c6_t) * c6_w +
-            delay_c_ar(comb_in_l, 0.25, c7_t) * c7_w +
-            delay_c_ar(comb_in_l, 0.25, c8_t) * c8_w
+            delay_l_ar(comb_in_l, 0.25, c1_t) * c1_w +
+            delay_l_ar(comb_in_l, 0.25, c2_t) * c2_w +
+            delay_l_ar(comb_in_l, 0.25, c3_t) * c3_w +
+            delay_l_ar(comb_in_l, 0.25, c4_t) * c4_w +
+            delay_l_ar(comb_in_l, 0.25, c5_t) * c5_w +
+            delay_l_ar(comb_in_l, 0.25, c6_t) * c6_w +
+            delay_l_ar(comb_in_l, 0.25, c7_t) * c7_w +
+            delay_l_ar(comb_in_l, 0.25, c8_t) * c8_w
         ) * comb_norm;
         let comb_r = (
-            delay_c_ar(comb_in_r, 0.25, c1_t) * c1_w +
-            delay_c_ar(comb_in_r, 0.25, c2_t) * c2_w +
-            delay_c_ar(comb_in_r, 0.25, c3_t) * c3_w +
-            delay_c_ar(comb_in_r, 0.25, c4_t) * c4_w +
-            delay_c_ar(comb_in_r, 0.25, c5_t) * c5_w +
-            delay_c_ar(comb_in_r, 0.25, c6_t) * c6_w +
-            delay_c_ar(comb_in_r, 0.25, c7_t) * c7_w +
-            delay_c_ar(comb_in_r, 0.25, c8_t) * c8_w
+            delay_l_ar(comb_in_r, 0.25, c1_t) * c1_w +
+            delay_l_ar(comb_in_r, 0.25, c2_t) * c2_w +
+            delay_l_ar(comb_in_r, 0.25, c3_t) * c3_w +
+            delay_l_ar(comb_in_r, 0.25, c4_t) * c4_w +
+            delay_l_ar(comb_in_r, 0.25, c5_t) * c5_w +
+            delay_l_ar(comb_in_r, 0.25, c6_t) * c6_w +
+            delay_l_ar(comb_in_r, 0.25, c7_t) * c7_w +
+            delay_l_ar(comb_in_r, 0.25, c8_t) * c8_w
         ) * comb_norm;
 
         let comb_tone = clip(comb_freq * 12.0, 200.0, 16000.0);
