@@ -584,6 +584,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             free_voice_input_buses(&mut state, &voice);
             let mut route_nodes = state.take_voice_route_nodes(id);
             route_nodes.extend(state.take_voice_input_route_nodes(id));
+            state.take_voice_param_routes(id);
             // Story 5: drop the voice's default routes so the next reload's
             // merge step doesn't carry them forward against a deleted voice.
             state.take_voice_default_routes(id);
@@ -602,6 +603,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             free_voice_input_buses(&mut state, &voice);
             let mut route_nodes = state.take_voice_route_nodes(id);
             route_nodes.extend(state.take_voice_input_route_nodes(id));
+            state.take_voice_param_routes(id);
             state.take_voice_default_routes(id);
             let mut voice_nodes = voice.active_nodes;
             voice_nodes.extend(voice.note_nodes.into_values());
@@ -639,6 +641,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             free_voice_input_buses(&mut state, &voice);
             let mut route_nodes = state.take_voice_route_nodes(id);
             route_nodes.extend(state.take_voice_input_route_nodes(id));
+            state.take_voice_param_routes(id);
             state.take_voice_default_routes(id);
             let midi_channel = voice.config.midi_channel;
             let pool_events = midi_pool_clear(&mut state, id, midi_channel);
@@ -655,6 +658,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             free_voice_input_buses(&mut state, &voice);
             let mut route_nodes = state.take_voice_route_nodes(id);
             route_nodes.extend(state.take_voice_input_route_nodes(id));
+            state.take_voice_param_routes(id);
             state.take_voice_default_routes(id);
             let mut voice_nodes = voice.active_nodes;
             voice_nodes.extend(voice.note_nodes.into_values());
