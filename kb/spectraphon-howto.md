@@ -15,7 +15,7 @@ server graph:
 
 | Layer | File | Role |
 |---|---|---|
-| Analyzer | `spectraphon_analyzer.vibe` | Reads the SAM input with `fft_kr` and one `bin_data_kr` per harmonic, then writes 64 magnitudes to a control buffer. |
+| Analyzer | `spectraphon_analyzer.vibe` | Reads the SAM input with a startup-safe 16-band harmonic envelope follower, then writes those magnitudes to the first 16 slots of a 64-frame control buffer. |
 | SAM oscillator | `spectraphon_sam_oscillator.vibe` | Reads the live magnitude buffer, optionally captures it into the Array buffer, and renders sine/sub/odd/even. |
 | SAO oscillator | `spectraphon_sao_oscillator.vibe` | Reads the SAO Array buffer with slide/focus interpolation and renders sine/sub/odd/even. |
 | Helper | `spectraphon_side.vibe`, `spectraphon_dual.vibe` | Allocates buffers, creates child voices, and proxies common methods in pure Rhai. |
@@ -35,7 +35,7 @@ swap rather than one synthdef crossfade.
 |---|---|
 | `analyzer` | The concrete `VoiceHandle` named `<name>__analyzer`. |
 | `oscillator` | The concrete `VoiceHandle` named `<name>__oscillator`. |
-| `mag_buf` | 64-frame live SAM magnitude buffer. |
+| `mag_buf` | 64-frame live SAM magnitude buffer. The live analyzer currently fills the first 16 harmonic slots; upper slots stay available for oscillator and Array compatibility. |
 | `array_buf` | 65,536-frame SAO Array buffer. |
 
 Use the prefixed helper functions for ordinary rack code. They are deliberately
@@ -127,8 +127,11 @@ follow-up because the current split side oscillator has no audio-rate FM input.
 
 ## Approximation Caveats
 
-* SAM analysis is real FFT/BinData per harmonic, not a BPF or envelope-only
-  approximation.
+* SAM analysis is a 16-band harmonic filter-bank envelope follower. Earlier
+  FFT/BinData versions were more spectrally literal, but even a one-bin
+  `fft_kr` analyzer could exceed scsynth's `/s_new` startup sync budget in the
+  split helper path. The tradeoff is lower high-partial detail and broader
+  bands in exchange for reliable startup.
 * The oscillator generates new additive-bank audio; the analyzed input is not
   passed through.
 * `spectraphon_set_param(...)` can fan out immediate parameter calls, but

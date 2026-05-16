@@ -198,9 +198,9 @@ let morph = voice("morphagene_reel")
     .gain(db(0));
 morph.outputs(["left", "right"]).to(group("raw_morphagene"));
 
-// Real-FFT Spectraphon dual via the pure-vibe helper.
-// Each side runs a private analyzer (FFT + 64 BinData) writing a 64-frame
-// magnitude buffer that drives the side's 64-partial additive oscillator.
+// Spectraphon dual via the pure-vibe helper. Each side runs a private
+// startup-safe analyzer writing the first 16 harmonic magnitudes into a
+// 64-frame buffer that drives the side's 64-partial additive oscillator.
 let spec = spectraphon::spectraphon_dual("spectraphon_resynth", "sam", "sam");
 spec = spectraphon::spectraphon_group(spec, "raw_spectral_odd");
 spec = spectraphon::spectraphon_gain(spec, db(-5));
