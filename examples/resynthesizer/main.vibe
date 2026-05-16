@@ -106,22 +106,24 @@ let rene = voice("rene_cartesian")
     .synth("rene")
     .group("ctrl")
     .modulator_only()
-    .set_param("note00", 48.0)
-    .set_param("note01", 50.0)
-    .set_param("note02", 55.0)
-    .set_param("note03", 57.0)
-    .set_param("note10", 52.0)
-    .set_param("note11", 55.0)
-    .set_param("note12", 59.0)
-    .set_param("note13", 62.0)
-    .set_param("note20", 43.0)
-    .set_param("note21", 48.0)
-    .set_param("note22", 55.0)
-    .set_param("note23", 60.0)
-    .set_param("note30", 50.0)
-    .set_param("note31", 53.0)
-    .set_param("note32", 57.0)
-    .set_param("note33", 65.0);
+    .set_param("quantize", 1.0)
+    .set_param("scale_mask", 1453.0)
+    .set_param("note00", 65.0)
+    .set_param("note01", 67.0)
+    .set_param("note02", 72.0)
+    .set_param("note03", 74.0)
+    .set_param("note10", 69.0)
+    .set_param("note11", 72.0)
+    .set_param("note12", 76.0)
+    .set_param("note13", 79.0)
+    .set_param("note20", 60.0)
+    .set_param("note21", 65.0)
+    .set_param("note22", 72.0)
+    .set_param("note23", 77.0)
+    .set_param("note30", 67.0)
+    .set_param("note31", 70.0)
+    .set_param("note32", 74.0)
+    .set_param("note33", 82.0);
 
 let woggle = voice("woggle_motion")
     .synth("wogglebug")
@@ -176,7 +178,7 @@ let cvbus = voice("cv_bus_mix")
     .set_param("norm23", 0.25)
     .set_param("norm34", 0.15);
 
-tempi.output("ch1").to_param(rene, "clock_x");
+tempi.output("ch4").to_param(rene, "clock_x");
 tempi.output("ch2").to_param(rene, "clock_y");
 maths.param("trig1").modulate_by(tempi, "ch3");
 tempi.output("ch4").to_param(maths, "trig4");
@@ -227,8 +229,8 @@ spec.oscillator_b.output("sub").mute();
 // CV routes hit the underlying per-side oscillator voices directly (Rhai
 // object_map field access yields the live voice handle; the param-route
 // registry resolves by VoiceId so passing through the map field is safe).
-rene.output("cv").to_param(spec.oscillator_a, "freq").scale(190.0).offset(120.0);
-cvbus.output("bus4").to_param(spec.oscillator_b, "freq").scale(145.0).offset(165.0);
+rene.output("cv").to_param(spec.oscillator_a, "freq").scale(255.0).offset(90.0);
+rene.output("cv").to_param(spec.oscillator_b, "freq").scale(210.0).offset(180.0);
 woggle.output("stepped").to_param(spec.oscillator_a, "partials").scale(0.36).offset(0.46);
 woggle.output("woggle").to_param(spec.oscillator_b, "partials").scale(0.34).offset(0.40);
 cvbus.output("bus1").to_param(spec.oscillator_a, "slide").scale(0.48).offset(0.34);
@@ -294,10 +296,10 @@ qpas.output("out").mute();
 let dxg = voice("dxg_gate")
     .synth("dxg")
     .group("rack")
-    .set_param("ctrl1", 0.48)
-    .set_param("ctrl2", 0.30)
+    .set_param("ctrl1", 0.10)
+    .set_param("ctrl2", 0.08)
     .set_param("strike_level", 0.65)
-    .set_param("strike_decay", 0.46)
+    .set_param("strike_decay", 0.24)
     .set_param("ch1_gain", 0.84)
     .set_param("ch2_gain", 0.32)
     .set_param("aux_gain", 0.10)
@@ -326,13 +328,13 @@ woggle.output("smooth").to_param(xpan, "ch2_pan").scale(0.92).offset(0.06);
 press.output("pressure2").to_param(xpan, "aux_gain").scale(0.42).offset(0.24);
 
 cvbus.output("sum").to_param(qpas, "cutoff").scale(5600.0).offset(420.0);
-woggle.output("woggle").to_param(qpas, "radiate").scale(0.56).offset(0.16);
+rene.output("x_gate").to_param(qpas, "radiate").scale(0.55).offset(0.18);
 maths.output("eor4").to_param(qpas, "q").scale(0.65).offset(0.18);
 
-maths.output("or").to_param(dxg, "ctrl1").scale(0.66).offset(0.18);
-press.output("pressure4").to_param(dxg, "ctrl2").scale(0.60).offset(0.16);
+rene.output("gate").to_param(dxg, "ctrl1").scale(0.86).offset(0.05);
+rene.output("y_gate").to_param(dxg, "ctrl2").scale(0.62).offset(0.04);
 
-woggle.output("smooth").to_param(echo, "skew").scale(0.72).offset(0.0);
+rene.output("y_gate").to_param(echo, "skew").scale(0.48).offset(0.08);
 cvbus.output("bus2").to_param(echo, "zone").scale(2.6).offset(0.25);
 press.output("pressure3").to_param(echo, "mix").scale(0.24).offset(0.18);
 tempi.output("ch6").to_param(echo, "repeats").scale(0.16).offset(0.36);
