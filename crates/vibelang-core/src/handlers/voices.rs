@@ -14,8 +14,6 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-const OWNED_OUTPUT_BUSES_PARAM: &str = "__vibelang_owned_output_buses";
-
 #[cfg(feature = "midi")]
 use crate::midi::{
     pack_note_off, pack_note_on, send_cc_for_param, QueuedMidiEvent, ScheduledMidiEvent,
@@ -335,7 +333,7 @@ impl<B: Backend> VoicesHandler<B> {
         }
 
         // Gather info and allocate node while holding lock
-        let (node_id, group_node_id, synthdef, params, old_node, param_bindings) = {
+        let (node_id, add_target, add_action, synthdef, params, old_node, param_bindings) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -348,8 +346,13 @@ impl<B: Backend> VoicesHandler<B> {
             let synthdef = voice.config.synthdef.clone();
             let group_node_id = group.node_id;
 
-            // Build params with note info
-            let mut params = voice.config.params.clone();
+            // Build routing params first so script/user params can override them.
+            let mut params = ParamMap::new();
+            params.insert("out".to_string(), group.audio_bus.0 as f32);
+            apply_owned_output_bus_params(voice, &mut params);
+            apply_voice_input_bus_params(&state, voice, &mut params);
+
+            params.extend(voice.config.params.clone());
             params.insert("freq".to_string(), midi_to_freq(note));
             params.insert("amp".to_string(), velocity);
             params.insert("gate".to_string(), 1.0);
@@ -358,11 +361,6 @@ impl<B: Backend> VoicesHandler<B> {
             for (k, v) in extra_params {
                 params.insert(k.clone(), *v);
             }
-
-            // Set output bus to group's audio bus (for proper routing)
-            params.insert("out".to_string(), group.audio_bus.0 as f32);
-            apply_owned_output_bus_params_if_opted_in(voice, &mut params);
-            apply_voice_input_bus_params(&state, voice, &mut params);
 
             // Convert sample offset/length from seconds to synth params
             if let Some(sample_id) = voice.config.sample_id {
@@ -414,10 +412,12 @@ impl<B: Backend> VoicesHandler<B> {
             let old_node = voice.note_nodes.remove(&note);
             voice.note_nodes.insert(note, node_id);
             let param_bindings = state.active_param_bindings_for_voice(id);
+            let (add_target, add_action) = voice_add_target(&state, id, group_node_id);
 
             (
                 node_id,
-                group_node_id,
+                add_target,
+                add_action,
                 synthdef,
                 params,
                 old_node,
@@ -432,7 +432,7 @@ impl<B: Backend> VoicesHandler<B> {
 
         // Create synth
         self.backend
-            .create_synth(&synthdef, node_id, group_node_id, AddAction::Head, &params)
+            .create_synth(&synthdef, node_id, add_target, add_action, &params)
             .await
             .map_err(Error::backend)?;
         self.map_active_param_bindings(node_id, &param_bindings)
@@ -699,7 +699,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         // Gather info and allocate node while holding lock
         let (
             node_id,
-            group_node_id,
+            add_target,
+            add_action,
             synthdef,
             merged_params,
             old_nodes,
@@ -715,14 +716,15 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 .get(&voice.config.group)
                 .ok_or(Error::GroupNotFound(voice.config.group))?;
 
-            // Merge default params with trigger params
-            let mut merged_params = voice.config.params.clone();
-            merged_params.extend(params.clone());
-
-            // Set output bus to group's audio bus (for proper routing)
+            // Build routing params first so script/user params can override them.
+            let mut merged_params = ParamMap::new();
             merged_params.insert("out".to_string(), group.audio_bus.0 as f32);
-            apply_owned_output_bus_params_if_opted_in(voice, &mut merged_params);
+            apply_owned_output_bus_params(voice, &mut merged_params);
             apply_voice_input_bus_params(&state, voice, &mut merged_params);
+
+            // Merge default params with trigger params
+            merged_params.extend(voice.config.params.clone());
+            merged_params.extend(params.clone());
 
             // Convert sample offset/length from seconds to synth params
             if let Some(sample_id) = voice.config.sample_id {
@@ -828,10 +830,12 @@ impl<B: Backend> Voices for VoicesHandler<B> {
                 }
             }
             let param_bindings = state.active_param_bindings_for_voice(id);
+            let (add_target, add_action) = voice_add_target(&state, id, group_node_id);
 
             (
                 node_id,
-                group_node_id,
+                add_target,
+                add_action,
                 synthdef,
                 merged_params,
                 old_nodes,
@@ -846,15 +850,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         }
 
         // Create synth in backend
-        // Use Head so voices execute before effects/link synths (which are at tail)
         self.backend
-            .create_synth(
-                &synthdef,
-                node_id,
-                group_node_id,
-                AddAction::Head,
-                &merged_params,
-            )
+            .create_synth(&synthdef, node_id, add_target, add_action, &merged_params)
             .await
             .map_err(Error::backend)?;
         self.map_active_param_bindings(node_id, &param_bindings)
@@ -945,7 +942,7 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         }
 
         // Gather info and allocate node while holding lock
-        let (node_id, group_node_id, synthdef, params, old_node, param_bindings) = {
+        let (node_id, add_target, add_action, synthdef, params, old_node, param_bindings) = {
             let mut state = self.state.write().await;
 
             let voice = state.voices.get(&id).ok_or(Error::VoiceNotFound(id))?;
@@ -958,16 +955,16 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             let synthdef = voice.config.synthdef.clone();
             let group_node_id = group.node_id;
 
-            // Build params with note info
-            let mut params = voice.config.params.clone();
+            // Build routing params first so script/user params can override them.
+            let mut params = ParamMap::new();
+            params.insert("out".to_string(), group.audio_bus.0 as f32);
+            apply_owned_output_bus_params(voice, &mut params);
+            apply_voice_input_bus_params(&state, voice, &mut params);
+
+            params.extend(voice.config.params.clone());
             params.insert("freq".to_string(), midi_to_freq(note));
             params.insert("amp".to_string(), velocity);
             params.insert("gate".to_string(), 1.0);
-
-            // Set output bus to group's audio bus (for proper routing)
-            params.insert("out".to_string(), group.audio_bus.0 as f32);
-            apply_owned_output_bus_params_if_opted_in(voice, &mut params);
-            apply_voice_input_bus_params(&state, voice, &mut params);
 
             // Convert sample offset/length from seconds to synth params
             if let Some(sample_id) = voice.config.sample_id {
@@ -1035,10 +1032,12 @@ impl<B: Backend> Voices for VoicesHandler<B> {
             // Track note -> node mapping
             voice.note_nodes.insert(note, node_id);
             let param_bindings = state.active_param_bindings_for_voice(id);
+            let (add_target, add_action) = voice_add_target(&state, id, group_node_id);
 
             (
                 node_id,
-                group_node_id,
+                add_target,
+                add_action,
                 synthdef,
                 params,
                 old_node,
@@ -1052,9 +1051,8 @@ impl<B: Backend> Voices for VoicesHandler<B> {
         }
 
         // Create synth
-        // Use Head so voices execute before effects/link synths (which are at tail)
         self.backend
-            .create_synth(&synthdef, node_id, group_node_id, AddAction::Head, &params)
+            .create_synth(&synthdef, node_id, add_target, add_action, &params)
             .await
             .map_err(Error::backend)?;
         self.map_active_param_bindings(node_id, &param_bindings)
@@ -1530,26 +1528,38 @@ fn free_voice_input_buses(state: &mut State, voice: &VoiceState) {
     }
 }
 
-fn apply_owned_output_bus_params_if_opted_in(voice: &VoiceState, params: &mut ParamMap) {
+fn apply_owned_output_bus_params(voice: &VoiceState, params: &mut ParamMap) {
     let synthdef_params = vibelang_dsp::get_synthdef_param_defaults(&voice.config.synthdef);
-    if synthdef_params
-        .get(OWNED_OUTPUT_BUSES_PARAM)
-        .copied()
-        .unwrap_or(0.0)
-        <= 0.0
-    {
-        return;
-    }
-
     if synthdef_params.contains_key("out0") {
         for (index, (_, bus)) in voice.output_buses.iter().enumerate() {
             params.insert(format!("out{}", index), bus.raw() as f32);
         }
-    } else if synthdef_params.contains_key("out") {
+    } else if synthdef_params.contains_key("out")
+        && voice
+            .output_buses
+            .first()
+            .is_some_and(|(name, _)| name != "out")
+    {
         if let Some((_, bus)) = voice.output_buses.first() {
             params.insert("out".to_string(), bus.raw() as f32);
         }
     }
+}
+
+fn voice_add_target(
+    state: &State,
+    voice_id: VoiceId,
+    group_node_id: NodeId,
+) -> (NodeId, AddAction) {
+    state
+        .input_route_synths
+        .iter()
+        .filter_map(|((target_voice_id, _, _), node_id)| {
+            (*target_voice_id == voice_id).then_some(*node_id)
+        })
+        .min_by_key(|node_id| node_id.raw())
+        .map(|node_id| (node_id, AddAction::After))
+        .unwrap_or((group_node_id, AddAction::Head))
 }
 
 fn apply_voice_input_bus_params(state: &State, voice: &VoiceState, params: &mut ParamMap) {
@@ -1601,11 +1611,22 @@ mod tests {
     impl std::error::Error for MockError {}
 
     /// Mock backend that tracks synth creations and node operations.
+    #[derive(Clone, Debug)]
+    struct CreateSynthCall {
+        #[allow(dead_code)]
+        node: NodeId,
+        target: NodeId,
+        action: AddAction,
+        #[allow(dead_code)]
+        params: ParamMap,
+    }
+
     struct MockBackend {
         synths_created: AtomicU32,
         nodes_freed: AtomicU32,
         params_set: AtomicU32,
         synth_create_params: Mutex<Vec<ParamMap>>,
+        synth_create_calls: Mutex<Vec<CreateSynthCall>>,
     }
 
     impl MockBackend {
@@ -1615,6 +1636,7 @@ mod tests {
                 nodes_freed: AtomicU32::new(0),
                 params_set: AtomicU32::new(0),
                 synth_create_params: Mutex::new(Vec::new()),
+                synth_create_calls: Mutex::new(Vec::new()),
             }
         }
 
@@ -1633,6 +1655,10 @@ mod tests {
         fn synth_create_params(&self) -> Vec<ParamMap> {
             self.synth_create_params.lock().unwrap().clone()
         }
+
+        fn synth_create_calls(&self) -> Vec<CreateSynthCall> {
+            self.synth_create_calls.lock().unwrap().clone()
+        }
     }
 
     #[async_trait::async_trait]
@@ -1650,9 +1676,9 @@ mod tests {
         async fn create_synth(
             &self,
             _def: &str,
-            _node: NodeId,
-            _target: NodeId,
-            _action: AddAction,
+            node: NodeId,
+            target: NodeId,
+            action: AddAction,
             params: &ParamMap,
         ) -> std::result::Result<(), Self::Error> {
             self.synths_created.fetch_add(1, Ordering::Relaxed);
@@ -1660,6 +1686,15 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(params.clone());
+            self.synth_create_calls
+                .lock()
+                .unwrap()
+                .push(CreateSynthCall {
+                    node,
+                    target,
+                    action,
+                    params: params.clone(),
+                });
             Ok(())
         }
 
@@ -2196,6 +2231,33 @@ mod tests {
         assert!(result.is_ok(), "Trigger should succeed");
 
         assert_eq!(backend.synths_created(), 1, "One synth should be created");
+    }
+
+    #[tokio::test]
+    async fn trigger_voice_with_input_route_adds_after_input_link() {
+        let (handler, backend, state) = create_handler_with_group();
+        setup_state_with_group(&state).await;
+
+        let voice_id = VoiceId::new(1);
+        let config = VoiceConfig::new("test_voice", "test_synth", GroupId::new(1));
+        handler.create(voice_id, config).await.unwrap();
+
+        let input_link_node = NodeId::new(1234);
+        state.write().await.input_route_synths.insert(
+            (
+                voice_id,
+                "carrier".to_string(),
+                crate::handlers::InputRouteSrc::Silent,
+            ),
+            input_link_node,
+        );
+
+        handler.trigger(voice_id, &ParamMap::new()).await.unwrap();
+
+        let creates = backend.synth_create_calls();
+        assert_eq!(creates.len(), 1);
+        assert_eq!(creates[0].target, input_link_node);
+        assert_eq!(creates[0].action, AddAction::After);
     }
 
     #[tokio::test]
@@ -3221,7 +3283,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_owned_output_opt_in_routes_explicit_ports_to_owned_buses() {
+    async fn test_explicit_ports_route_to_owned_buses() {
         let (handler, backend, state) = create_handler_with_group();
         setup_state_with_group(&state).await;
         register_multiport_synthdef(
@@ -3241,14 +3303,7 @@ mod tests {
             ],
         )
         .await;
-        register_synthdef_param_defaults(
-            "owned_explicit_synth",
-            &[
-                (OWNED_OUTPUT_BUSES_PARAM, 1.0),
-                ("out0", 0.0),
-                ("out1", 0.0),
-            ],
-        );
+        register_synthdef_param_defaults("owned_explicit_synth", &[("out0", 0.0), ("out1", 0.0)]);
 
         let voice_id = VoiceId::new(1);
         handler
@@ -3281,51 +3336,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_unmarked_explicit_ports_keep_legacy_group_out_only() {
+    async fn test_user_out_param_wins_over_owned_bus_allocation() {
         let (handler, backend, state) = create_handler_with_group();
         setup_state_with_group(&state).await;
         register_multiport_synthdef(
             &state,
-            "unmarked_explicit_synth",
-            vec![
-                OutputPort {
-                    name: "left".into(),
-                    channels: 1,
-                    rate: vibelang_dsp::PortRate::Ar,
-                },
-                OutputPort {
-                    name: "right".into(),
-                    channels: 1,
-                    rate: vibelang_dsp::PortRate::Ar,
-                },
-            ],
+            "single_owned_out_synth",
+            vec![OutputPort {
+                name: "signal".into(),
+                channels: 1,
+                rate: vibelang_dsp::PortRate::Ar,
+            }],
         )
         .await;
-        register_synthdef_param_defaults(
-            "unmarked_explicit_synth",
-            &[("out0", 0.0), ("out1", 0.0)],
-        );
+        register_synthdef_param_defaults("single_owned_out_synth", &[("out", 0.0)]);
 
         let voice_id = VoiceId::new(1);
-        handler
-            .create(
-                voice_id,
-                VoiceConfig::new(
-                    "unmarked_explicit",
-                    "unmarked_explicit_synth",
-                    GroupId::new(1),
-                ),
-            )
-            .await
-            .unwrap();
+        let mut config = VoiceConfig::new(
+            "single_owned_out",
+            "single_owned_out_synth",
+            GroupId::new(1),
+        );
+        config.params.insert("out".to_string(), 99.0);
+        handler.create(voice_id, config).await.unwrap();
 
         handler.trigger(voice_id, &ParamMap::new()).await.unwrap();
 
         let creates = backend.synth_create_params();
         assert_eq!(creates.len(), 1);
-        assert_eq!(creates[0].get("out"), Some(&16.0));
-        assert!(!creates[0].contains_key("out0"));
-        assert!(!creates[0].contains_key("out1"));
+        assert_eq!(creates[0].get("out"), Some(&99.0));
     }
 
     #[tokio::test]

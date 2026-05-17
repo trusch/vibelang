@@ -984,7 +984,7 @@ or `target.param(\"param\").modulate_by(source, \"port\")`.",
                     spawn.synthdef,
                     spawn.node,
                     spawn.target_group,
-                    AddAction::Tail,
+                    AddAction::Head,
                     &params,
                 )
                 .await
@@ -2560,6 +2560,7 @@ mod tests {
         node: NodeId,
         #[allow(dead_code)]
         target: NodeId,
+        action: AddAction,
         in_bus: f32,
         out_bus: f32,
         params: ParamMap,
@@ -2639,7 +2640,7 @@ mod tests {
             def: &str,
             node: NodeId,
             target: NodeId,
-            _action: AddAction,
+            action: AddAction,
             params: &ParamMap,
         ) -> std::result::Result<(), Self::Error> {
             if self.fail_next_create.swap(false, Ordering::Relaxed) {
@@ -2650,6 +2651,7 @@ mod tests {
                 def: def.to_string(),
                 node,
                 target,
+                action,
                 in_bus: *params.get("in_bus").unwrap_or(&-1.0),
                 out_bus: *params.get("out_bus").unwrap_or(&-1.0),
                 params: params.clone(),
@@ -3324,6 +3326,7 @@ mod tests {
         let creates = backend.creates();
         assert_eq!(creates.len(), 1);
         assert_eq!(creates[0].def, "input_link_1");
+        assert_eq!(creates[0].action, AddAction::Head);
 
         let s = state.read().await;
         let target_bus = s.voices.get(&target_id).unwrap().input_buses[0].1;
