@@ -563,6 +563,42 @@ fn main() {
                 continue;
             }
 
+            if name == "BufWr" {
+                let input_array = &param_names[0];
+                let bufnum = &param_names[1];
+                let phase = &param_names[2];
+                let loop_ = &param_names[3];
+                writeln!(
+                    f,
+                    "    let mut inputs = vec![helpers::dynamic_to_input({})?, helpers::dynamic_to_input({})?, helpers::dynamic_to_input({})?];",
+                    bufnum, phase, loop_
+                )
+                .unwrap();
+                writeln!(
+                    f,
+                    "    inputs.extend(helpers::dynamic_to_signal_inputs({})?);",
+                    input_array
+                )
+                .unwrap();
+                writeln!(f, "    with_builder(|builder| {{").unwrap();
+                writeln!(
+                    f,
+                    "        builder.add_node(\"BufWr\".to_string(), {}, inputs, 0, 0);",
+                    rate_enum
+                )
+                .unwrap();
+                writeln!(f, "        builder.add_constant(0.0);").unwrap();
+                writeln!(
+                    f,
+                    "        builder.add_node(\"DC\".to_string(), {}, vec![Input::Constant(0.0)], 1, 0)",
+                    rate_enum
+                )
+                .unwrap();
+                writeln!(f, "    }})").unwrap();
+                writeln!(f, "}}\n").unwrap();
+                continue;
+            }
+
             let shape_count_var = output_shape_input.map(|input_name| {
                 let escaped_name = param_to_snake_case(input_name);
                 let count_var = format!("{}_shape_count", escaped_name);
