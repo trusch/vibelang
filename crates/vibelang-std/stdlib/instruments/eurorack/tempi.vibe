@@ -2,8 +2,9 @@
 //
 // `scene` selects a six-channel multiplier table. Scene 0 preserves the old
 // default ratios and lets `multN` trim each channel around that table. `shiftN`
-// offsets a channel by eighth-period steps. Outputs are +5 V-style gates scaled
-// to the library's ±1 CV range.
+// offsets a channel by eighth-period steps. `width` is the fixed gate pulse
+// duration in seconds. Outputs are +5 V-style gates scaled to the library's
+// ±1 CV range.
 
 define_synthdef("tempi", |builder| {
     builder
@@ -20,7 +21,7 @@ define_synthdef("tempi", |builder| {
         .param("mod", 1.0)
         .param("scene", 0.0)
         .param("variation", 0.0)
-        .param("width", 0.005)
+        .param("width", 0.02)
         .param("mult1", 1.0)
         .param("mult2", 2.0)
         .param("mult3", 0.5)
@@ -42,7 +43,7 @@ define_synthdef("tempi", |builder| {
         .body_map(|p| {
             let run = clip_kr(p.run, 0.0, 1.0);
             let base = (p.bpm.max(1.0) / 60.0) * p.mod.max(0.0) * run;
-            let width = p.width.max(0.001);
+            let width = clip_kr(p.width, 0.001, 1.0);
 
             let scene = floor(clip_kr(p.scene + 0.5, 0.0, 3.0));
             let s0 = (1.0 - abs(scene - 0.0)).max(0.0);
@@ -83,12 +84,12 @@ define_synthdef("tempi", |builder| {
             let p5 = wrap_kr(phase * m5 + sh5, 0.0, 1.0);
             let p6 = wrap_kr(phase * m6 + sh6, 0.0, 1.0);
 
-            let w1 = clip_kr(width * base * m1.max(0.0), 0.001, 0.95);
-            let w2 = clip_kr(width * base * m2.max(0.0), 0.001, 0.95);
-            let w3 = clip_kr(width * base * m3.max(0.0), 0.001, 0.95);
-            let w4 = clip_kr(width * base * m4.max(0.0), 0.001, 0.95);
-            let w5 = clip_kr(width * base * m5.max(0.0), 0.001, 0.95);
-            let w6 = clip_kr(width * base * m6.max(0.0), 0.001, 0.95);
+            let e1 = in_range_kr(delay1_kr(p1) - p1, 0.001, 2.0);
+            let e2 = in_range_kr(delay1_kr(p2) - p2, 0.001, 2.0);
+            let e3 = in_range_kr(delay1_kr(p3) - p3, 0.001, 2.0);
+            let e4 = in_range_kr(delay1_kr(p4) - p4, 0.001, 2.0);
+            let e5 = in_range_kr(delay1_kr(p5) - p5, 0.001, 2.0);
+            let e6 = in_range_kr(delay1_kr(p6) - p6, 0.001, 2.0);
 
             let a1 = clip_kr(m1 * 1000.0, 0.0, 1.0);
             let a2 = clip_kr(m2 * 1000.0, 0.0, 1.0);
@@ -97,12 +98,12 @@ define_synthdef("tempi", |builder| {
             let a5 = clip_kr(m5 * 1000.0, 0.0, 1.0);
             let a6 = clip_kr(m6 * 1000.0, 0.0, 1.0);
 
-            let g1 = in_range_kr(p1, 0.0, w1) * 0.5 * a1 * (1.0 - clip_kr(p.mute1, 0.0, 1.0));
-            let g2 = in_range_kr(p2, 0.0, w2) * 0.5 * a2 * (1.0 - clip_kr(p.mute2, 0.0, 1.0));
-            let g3 = in_range_kr(p3, 0.0, w3) * 0.5 * a3 * (1.0 - clip_kr(p.mute3, 0.0, 1.0));
-            let g4 = in_range_kr(p4, 0.0, w4) * 0.5 * a4 * (1.0 - clip_kr(p.mute4, 0.0, 1.0));
-            let g5 = in_range_kr(p5, 0.0, w5) * 0.5 * a5 * (1.0 - clip_kr(p.mute5, 0.0, 1.0));
-            let g6 = in_range_kr(p6, 0.0, w6) * 0.5 * a6 * (1.0 - clip_kr(p.mute6, 0.0, 1.0));
+            let g1 = trig1_kr(e1, width) * 0.5 * a1 * (1.0 - clip_kr(p.mute1, 0.0, 1.0));
+            let g2 = trig1_kr(e2, width) * 0.5 * a2 * (1.0 - clip_kr(p.mute2, 0.0, 1.0));
+            let g3 = trig1_kr(e3, width) * 0.5 * a3 * (1.0 - clip_kr(p.mute3, 0.0, 1.0));
+            let g4 = trig1_kr(e4, width) * 0.5 * a4 * (1.0 - clip_kr(p.mute4, 0.0, 1.0));
+            let g5 = trig1_kr(e5, width) * 0.5 * a5 * (1.0 - clip_kr(p.mute5, 0.0, 1.0));
+            let g6 = trig1_kr(e6, width) * 0.5 * a6 * (1.0 - clip_kr(p.mute6, 0.0, 1.0));
 
             [g1, g2, g3, g4, g5, g6]
         })
