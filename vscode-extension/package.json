@@ -22,16 +22,7 @@
     "live coding",
     "supercollider"
   ],
-  "icon": "images/icon.png",
   "main": "./out/extension.js",
-  "files": [
-    "out/**/*",
-    "ugen_manifests/**/*",
-    "src/data/**/*",
-    "syntaxes/**/*",
-    "language-configuration.json",
-    "images/**/*"
-  ],
   "contributes": {
     "languages": [
       {
@@ -516,8 +507,8 @@
         },
         "vibelang.runtime.binaryPath": {
           "type": "string",
-          "default": "vibe2",
-          "markdownDescription": "Path to the VibeLang binary (`vibe2` command). Can be an absolute path or a command name in PATH. Use `vibe` for the legacy runtime.",
+          "default": "vibe",
+          "markdownDescription": "Path to the VibeLang binary (`vibe` command). Can be an absolute path or a command name in PATH.",
           "order": 20
         },
         "vibelang.runtime.host": {
