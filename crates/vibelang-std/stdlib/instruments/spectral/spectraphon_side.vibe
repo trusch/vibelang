@@ -304,12 +304,15 @@ fn spectraphon_gain(spec, value) {
 
 fn spectraphon_group(spec, name) {
     if spec.kind == "spectraphon_dual" {
-        spec.oscillator_a = spec.oscillator_a.group(name);
-        spec.oscillator_b = spec.oscillator_b.group(name);
-        spec.side_a.group_name = name;
-        spec.side_b.group_name = name;
+        spec.side_a = spectraphon_group(spec.side_a, name);
+        spec.side_b = spectraphon_group(spec.side_b, name);
+        spec.analyzer_a = spec.side_a.analyzer;
+        spec.analyzer_b = spec.side_b.analyzer;
+        spec.oscillator_a = spec.side_a.oscillator;
+        spec.oscillator_b = spec.side_b.oscillator;
     } else {
         spec.group_name = name;
+        spec.analyzer = spec.analyzer.group(name);
         spec.oscillator = spec.oscillator.group(name);
     }
     return spec;

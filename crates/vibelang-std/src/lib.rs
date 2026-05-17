@@ -157,7 +157,7 @@ pub const CATEGORIES: &[&str] = &[
     "processors",
     "fx",
     "theory",
-    "modulators",
+    "cv",
 ];
 
 /// Get the embedded stdlib directory for direct access.
@@ -282,9 +282,9 @@ mod tests {
         );
     }
 
-    /// kr-output LFO siblings (Task D of Modulator-class voices epic):
+    /// kr-output LFO siblings:
     /// each `cv_lfo_*_kr.vibe` declares `.output_kr("out")` (the kr
-    /// modulator port), uses `a2k_kr` to decimate the internal ar
+    /// CV-source port), uses `a2k_kr` to decimate the internal ar
     /// computation back to kr at the output, and does NOT carry a
     /// bare ar `.output(...)` declaration that would shadow the kr port.
     #[test]
@@ -305,7 +305,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("stdlib missing {}", path));
             assert!(
                 body.contains(".output_kr(\"out\")"),
-                "{} should declare `.output_kr(\"out\")` (kr modulator port)",
+                "{} should declare `.output_kr(\"out\")` (kr CV-source port)",
                 path,
             );
             assert!(
@@ -386,6 +386,35 @@ mod tests {
                 && !sao_oscillator.contains("buf_rd_kr(1, mag_buf")
                 && !sao_oscillator.contains("buf_wr_kr("),
             "spectraphon_sao_oscillator should read SAO arrays without SAM read/write cost"
+        );
+    }
+
+    #[test]
+    fn spectraphon_sam_normalizes_analyzer_magnitude_bank() {
+        let files = get_stdlib_files();
+        let analyzer = files
+            .get("instruments/spectral/spectraphon_analyzer.vibe")
+            .expect("stdlib missing instruments/spectral/spectraphon_analyzer.vibe");
+        let sam_oscillator = files
+            .get("instruments/spectral/spectraphon_sam_oscillator.vibe")
+            .expect("stdlib missing instruments/spectral/spectraphon_sam_oscillator.vibe");
+
+        assert!(
+            analyzer.contains("let mag_scale = 0.001953125"),
+            "spectraphon_analyzer should retain FFT-size magnitude scaling before writing mag_buf"
+        );
+        assert!(
+            sam_oscillator.contains("fn _spectraphon_sam_mag_norm(mag_buf)")
+                && sam_oscillator.contains("return 3.5 / max(mag_sum, 1.0);"),
+            "SAM oscillator should derive a bounded unit-spectrum normalizer from mag_buf"
+        );
+
+        let normalized_reads = sam_oscillator
+            .matches("buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm")
+            .count();
+        assert!(
+            normalized_reads >= 8,
+            "all SAM live/capture partial-bank reads should apply mag_norm; found {normalized_reads}"
         );
     }
 }

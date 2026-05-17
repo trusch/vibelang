@@ -4,6 +4,16 @@
 // oscillator split into the hardware-style sine/sub/odd/even ports. The
 // optional capture path writes the same magnitudes into the SAO Array buffer.
 
+fn _spectraphon_sam_mag_norm(mag_buf) {
+    let k = 1.0;
+    let mag_sum = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+    for i in 2..65 {
+        let k = i.to_float();
+        mag_sum = mag_sum + buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+    }
+    return 3.5 / max(mag_sum, 1.0);
+}
+
 define_synthdef("spectraphon_sam_live_oscillator", |builder| {
     builder
         .output("sine")
@@ -34,25 +44,26 @@ define_synthdef("spectraphon_sam_live_oscillator", |builder| {
 
             let n = 64.0;
             let scale = partials * n;
+            let mag_norm = _spectraphon_sam_mag_norm(mag_buf);
 
             let k = 1.0;
-            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
             let odd_bank = sin_osc_ar(freq * k) * mag_k
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * i + 1).to_float();
-                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
                 odd_bank = odd_bank + sin_osc_ar(freq * k) * mag_k
                     * clip(scale - (k - 1.0), 0.0, 1.0);
             }
 
             let k = 2.0;
-            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
             let even_bank = sin_osc_ar(freq * k) * mag_k
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * (i + 1)).to_float();
-                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
                 even_bank = even_bank + sin_osc_ar(freq * k) * mag_k
                     * clip(scale - (k - 1.0), 0.0, 1.0);
             }
@@ -106,6 +117,7 @@ define_synthdef("spectraphon_sam_oscillator", |builder| {
 
             let n = 64.0;
             let scale = partials * n;
+            let mag_norm = _spectraphon_sam_mag_norm(mag_buf);
 
             let has_array = clip((array_buf - 1.0) * 1000.0, 0.0, 1.0);
             let fallback_array_buf = local_buf_ir(1.0, 1.0);
@@ -121,26 +133,26 @@ define_synthdef("spectraphon_sam_oscillator", |builder| {
             let cap_offset = (1.0 - capture * has_array) * 1.0e9;
 
             let k = 1.0;
-            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
             buf_wr_kr(mag_k, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
             let odd_bank = sin_osc_ar(freq * k) * mag_k
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * i + 1).to_float();
-                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
                 buf_wr_kr(mag_k, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
                 odd_bank = odd_bank + sin_osc_ar(freq * k) * mag_k
                     * clip(scale - (k - 1.0), 0.0, 1.0);
             }
 
             let k = 2.0;
-            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+            let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
             buf_wr_kr(mag_k, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
             let even_bank = sin_osc_ar(freq * k) * mag_k
                 * clip(scale - (k - 1.0), 0.0, 1.0);
             for i in 1..32 {
                 let k = (2 * (i + 1)).to_float();
-                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1);
+                let mag_k = buf_rd_kr(1, mag_buf, k - 1.0, 0, 1) * mag_norm;
                 buf_wr_kr(mag_k, array_mem, cap_base + (k - 1.0) + cap_offset, 0);
                 even_bank = even_bank + sin_osc_ar(freq * k) * mag_k
                     * clip(scale - (k - 1.0), 0.0, 1.0);
