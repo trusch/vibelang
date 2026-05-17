@@ -536,11 +536,11 @@ let my_fade = fade("later").on_group("synths").param("cutoff").to(8000.0).over_b
 sequence("song").clip(bars(2)..bars(6), my_fade).start();`
     }
   ],
-  'Modulator': [
+  'CV Source': [
     {
       name: 'voice (kr source)',
       signature: 'voice(name).synth(kr_synthdef) -> Voice',
-      description: 'A "modulator" is just a regular voice whose synthdef declares a control-rate output port via .output_kr("out"). Create the voice the same way as any other voice; the kr port is what makes it usable as a modulation source.',
+      description: 'A CV source is a regular voice whose synthdef declares a control-rate output port via .output_kr("out"). Create the voice the same way as any other voice; the kr port is what makes it usable as a parameter automation source.',
       params: [
         { name: 'name', type: 'String', description: 'Unique identifier for this voice' },
         { name: 'kr_synthdef', type: 'String', description: 'Synthdef name with a kr output port (e.g. lfo_sine, lfo_tri, lfo_saw, lfo_square, lfo_random, envelope_follower)' }
@@ -595,7 +595,7 @@ env.output("ch1").to_param(bass, "cutoff");`
     {
       name: 'define_synthdef + .output_kr',
       signature: 'define_synthdef(name).output_kr(port).body(...) ',
-      description: 'Define a custom kr-rate ("modulator") synthdef. Declare a control-rate output port via .output_kr; the body returns a kr signal. The synthdef is then usable as a source voice for .modulate_by / .to_param.',
+      description: 'Define a custom kr-rate CV-source synthdef. Declare a control-rate output port via .output_kr; the body returns a kr signal. The synthdef is then usable as a source voice for .modulate_by / .to_param.',
       params: [{ name: 'name', type: 'String', description: 'Unique synthdef name' }],
       example: `// Custom triangle LFO synthdef with a kr output port.
 define_synthdef("my_lfo")
@@ -1176,7 +1176,7 @@ const categoryDescriptions = {
 
   'Fade': `Fades provide smooth parameter automation over time. Use them to create filter sweeps, volume swells, effect wet/dry transitions, or any gradual change. Fades can target voices, groups, or effects, and can be started immediately or placed in sequences for precise timing. The builder API lets you specify start value, end value, and duration in beats or bars.`,
 
-  'Modulator': `Modulators provide real-time continuous parameter control using LFOs, envelope followers, and other control-rate signals. A modulator is just a regular voice whose synthdef declares a kr output port (.output_kr("out")); wire it into a target voice's parameter using .param(name).modulate_by(source, port) (target-first) or source.output(port).to_param(target, name) (source-first). Multiple sources can be summed into a single param via chained .modulate_by calls. The standard library includes sine, triangle, saw, square, and random LFOs, plus an envelope follower for dynamics-based modulation.`,
+  'CV Source': `CV sources provide real-time continuous parameter control using LFOs, envelope followers, and other control-rate signals. A CV source is a regular voice whose synthdef declares a kr output port (.output_kr("out")); wire it into a target voice's parameter using .param(name).modulate_by(source, port) (target-first) or source.output(port).to_param(target, name) (source-first). Multiple sources can be summed into a single param via chained .modulate_by calls. The standard library includes sine, triangle, saw, square, and random LFOs, plus an envelope follower for dynamics-based modulation.`,
 
   'SynthDef': `SynthDefs let you create custom synthesizers and effects at the DSP level. Using VibeLang's UGen library (oscillators, filters, envelopes, and more), you can build anything from simple sine waves to complex FM synthesizers. Synthdefs can declare named input ports that voices patch from scripts, while effects process input signals and can be added to groups. The standard library includes many ready-to-use synthdefs, but defining your own unlocks unlimited sonic possibilities.`,
 

@@ -14,7 +14,7 @@ use vibelang_core::compat::Instant;
 use vibelang_core::handlers::{InputRouteSrc, ParamRouteTarget};
 use vibelang_core::message::{ReloadMessage, SynthDefMessage, VoiceMessage};
 use vibelang_core::{AddAction, Backend, BufferId, BufferInfo, NodeId, ParamMap, Runtime, VoiceId};
-use vibelang_dsp::{GraphIR, InputPort, OutputPort, ParamSpec, PortRate};
+use vibelang_dsp::{get_synthdef_outputs, GraphIR, InputPort, OutputPort, ParamSpec, PortRate};
 use vibelang_rhai::ScriptEngine;
 
 #[derive(Debug)]
@@ -278,6 +278,78 @@ fn active_voice_node(runtime_state: &vibelang_core::State, voice_name: &str) -> 
         .get(&voice_id)
         .unwrap_or_else(|| panic!("voice {voice_name} should exist"))
         .active_nodes[0]
+}
+
+#[tokio::test]
+async fn migrated_stdlib_lfo_synthdef_routes_to_target_param() {
+    let lfo_source = include_str!("../../vibelang-std/stdlib/cv/lfo/lfo_sine.vibe");
+    vibelang_dsp::set_deploy_callback(|_| Ok(()));
+    ScriptEngine::new()
+        .execute(lfo_source)
+        .expect("migrated stdlib lfo_sine synthdef should register");
+    let source_outputs =
+        get_synthdef_outputs("lfo_sine").expect("lfo_sine should declare output metadata");
+    assert!(
+        source_outputs
+            .iter()
+            .any(|port| port.name == "out" && port.rate == PortRate::Kr),
+        "migrated lfo_sine must expose a kr `out` port: {source_outputs:?}",
+    );
+
+    let mut runtime = Runtime::new(RecordingBackend::default());
+    load_registered_synthdef(&mut runtime, "lfo_sine", source_outputs, Vec::new()).await;
+    register_synthdef_params("migrated_cv_target", &[("freq", 220.0), ("amp", 0.2)]);
+    load_registered_synthdef(&mut runtime, "migrated_cv_target", stereo_out(), Vec::new()).await;
+
+    let script = r#"
+        let lfo = voice("migrated_cv_lfo")
+            .synth("lfo_sine")
+            .group("migrated_cv")
+            .set_param("rate", 0.5)
+            .set_param("lo", -0.25)
+            .set_param("hi", 0.25)
+            .run();
+        let target = voice("migrated_cv_target_voice")
+            .synth("migrated_cv_target")
+            .group("migrated_cv")
+            .param("freq", 220.0)
+            .param("amp", 0.2)
+            .run();
+        lfo.output("out").to_param(target, "freq").scale(80.0).offset(440.0);
+    "#;
+    apply_script(&mut runtime, script).await;
+
+    let (target_node, summer_bus) = {
+        let state = runtime.state().read().await;
+        let target = VoiceId::new(fnv1a_id("migrated_cv_target_voice"));
+        let target_node = active_voice_node(&state, "migrated_cv_target_voice");
+        let summer = state
+            .param_summers
+            .get(&(ParamRouteTarget::Voice(target), "freq".to_string()))
+            .expect("migrated CV source should create a live param summer");
+        assert_eq!(summer.sources.len(), 1);
+        (target_node, summer.bus.raw())
+    };
+
+    assert!(
+        runtime.backend().param_maps().contains(&ParamMapCall {
+            node: target_node,
+            param: "freq".to_string(),
+            bus: summer_bus,
+        }),
+        "migrated stdlib CV source route must emit a backend /n_map-equivalent call",
+    );
+
+    let summers: Vec<_> = runtime
+        .backend()
+        .synth_creates()
+        .into_iter()
+        .filter(|create| create.def == "param_kr_modulate_1")
+        .collect();
+    assert_eq!(summers.len(), 1);
+    assert_eq!(summers[0].params.get("baseline"), Some(&0.0));
+    assert_eq!(summers[0].params.get("scale_a"), Some(&80.0));
+    assert_eq!(summers[0].params.get("offset_a"), Some(&440.0));
 }
 
 #[tokio::test]

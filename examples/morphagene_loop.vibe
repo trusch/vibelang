@@ -8,7 +8,7 @@
 
 import "stdlib/instruments/sampler/morphagene.vibe";
 import "stdlib/effects/reverbs/hall_reverb.vibe";
-import "stdlib/modulators/lfo/lfo_sine.vibe";
+import "stdlib/cv/lfo/lfo_sine.vibe";
 
 set_tempo(90);
 

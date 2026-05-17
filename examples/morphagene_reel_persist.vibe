@@ -29,7 +29,7 @@
 
 import "stdlib/instruments/sampler/morphagene.vibe";
 import "stdlib/effects/reverbs/plate_reverb.vibe";
-import "stdlib/modulators/lfo/lfo_saw.vibe";
+import "stdlib/cv/lfo/lfo_saw.vibe";
 
 set_tempo(110);
 

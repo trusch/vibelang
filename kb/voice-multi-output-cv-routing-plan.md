@@ -129,13 +129,13 @@ as routing endpoints. Internally same as Option A, but the API is name-based, no
 
 ### Option C — Dedicated "modulator voice" class for CV-only synthdefs
 
-Keep audio voices stereo-only. Add a separate `Modulator` (or "CV voice") concept whose
-output is *always* control-rate, producing one or more control buses. Re-uses the existing
-modulator/control-bus path — basically promotes the modulator to a first-class voice that
-can be sequenced with notes / patterns.
+Keep audio voices stereo-only. Add a separate CV-only voice concept whose
+output is *always* control-rate, producing one or more control buses. This
+option was not chosen; current CV sources are ordinary voices with kr output
+ports that can be sequenced with notes / patterns.
 
-- **Pros:** Solves (b) without touching audio path. Tiny diff. Composes with the existing
-  `voice.modulate` (param, modulator) API. *(Historical: this surface has since been removed; modern equivalent is `target.param(name).modulate_by(source, port)`.)*
+- **Pros:** Solves (b) without touching audio path. Tiny diff. The modern
+  equivalent is `target.param(name).modulate_by(source, port)`.
 - **Cons:** Solves only **half** the ticket. Still no multi-channel audio. Forces the
   Spectraphon model to split into "audio synthdef + sibling CV synthdef," which fights the
   hardware module's natural shape.

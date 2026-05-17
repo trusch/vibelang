@@ -9,8 +9,7 @@
 > **Status snapshot:** v1 (audio-only) + v2 (kr-rate ports, CV-to-param
 > routing) + v3 (per-source attenuverter shaping, ar→param coercion,
 > sample-accurate trigger ports, multi-target audio fan-out) all
-> shipped. The legacy `modulator` builder + `voice.modulate` surface
-> has been removed — the canonical kr-routing surfaces are `.to_param`
+> shipped. The canonical kr-routing surfaces are `.to_param`
 > (source-first SET) and `.param(...).modulate_by(...)` (target-first
 > BEND), see §3c, both with chainable `.scale(s)` / `.offset(o)`
 > per-source shaping (§3d). Audio-rate sources reach kr params via
@@ -912,9 +911,8 @@ SET/BEND split and the cross-verb conflict guards.
 
 ## 8. Limitations
 
-The v1 + v2 + v3 surfaces are all shipped end-to-end. The legacy
-`modulator` builder and `voice.modulate` surface have been removed —
-wire kr sources into params directly via the SET / BEND verbs (§3c)
+The v1 + v2 + v3 surfaces are all shipped end-to-end. Wire kr sources
+into params directly via the SET / BEND verbs (§3c)
 with optional `.scale` / `.offset` shaping (§3d). Crossed-out items
 below were v2 limitations that v3 has now resolved; the remaining
 non-crossed bullets are deferred non-features.

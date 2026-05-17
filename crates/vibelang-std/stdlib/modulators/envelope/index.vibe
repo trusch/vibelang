@@ -1,5 +1,0 @@
-// Envelope Modulators
-//
-// Modulators that track or generate envelopes from audio signals.
-
-import "stdlib/modulators/envelope/envelope_follower.vibe";

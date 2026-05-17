@@ -6,7 +6,7 @@
 //! Note: This module uses a callback function to deploy synthdefs to scsynth.
 //! The callback must be set by the host application (CLI) before using these functions.
 
-use crate::builder::{InputPort, OutputPort, PortRate, SynthDef};
+use crate::builder::{InputPort, OutputPort, SynthDef};
 use crate::encoder::encode_synthdef;
 use crate::errors::SynthDefError;
 use crate::graph::GraphIR;
@@ -21,8 +21,6 @@ type DeployCallback = Arc<dyn Fn(Vec<u8>) -> Result<(), String> + Send + Sync>;
 static SYNTHDEF_REGISTRY: OnceLock<Mutex<HashMap<String, GraphIR>>> = OnceLock::new();
 // Global registry of effects (separate from regular synthdefs)
 static EFFECT_REGISTRY: OnceLock<Mutex<HashMap<String, GraphIR>>> = OnceLock::new();
-// Global registry of modulators (control-rate synthdefs)
-static MODULATOR_REGISTRY: OnceLock<Mutex<HashMap<String, GraphIR>>> = OnceLock::new();
 // Per-synthdef declared output port set (script-side; populated alongside the IR
 // at deploy time so the Rhai surface can resolve `voice.output(name|idx)`).
 static SYNTHDEF_OUTPUTS_REGISTRY: OnceLock<Mutex<HashMap<String, Vec<OutputPort>>>> =
@@ -40,10 +38,6 @@ fn get_synthdef_registry() -> &'static Mutex<HashMap<String, GraphIR>> {
 
 fn get_effect_registry() -> &'static Mutex<HashMap<String, GraphIR>> {
     EFFECT_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn get_modulator_registry() -> &'static Mutex<HashMap<String, GraphIR>> {
-    MODULATOR_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn get_synthdef_outputs_registry() -> &'static Mutex<HashMap<String, Vec<OutputPort>>> {
@@ -190,45 +184,6 @@ fn deploy_fx_ir(name: &str, ir: GraphIR) -> crate::errors::Result<()> {
     let bytes = encode_synthdef(&ir)?;
     deploy_bytes(bytes)?;
     log::debug!("[FX] ✓ Effect '{}' loaded successfully", name);
-
-    // Skip sleep in WASM - it's not supported and not needed
-    #[cfg(not(feature = "wasm"))]
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    Ok(())
-}
-
-fn deploy_modulator_ir(name: &str, ir: GraphIR) -> crate::errors::Result<()> {
-    {
-        let mut registry = get_modulator_registry().lock().unwrap();
-        registry.insert(name.to_string(), ir.clone());
-    }
-
-    log::debug!(
-        "[MODULATOR] Building modulator '{}' with {} nodes",
-        name,
-        ir.nodes.len()
-    );
-    log::debug!(
-        "[MODULATOR] Parameters: {:?}",
-        ir.params.iter().map(|p| &p.name).collect::<Vec<_>>()
-    );
-
-    let bytes = encode_synthdef(&ir)?;
-    log::debug!(
-        "[MODULATOR] Encoded modulator '{}' ({} bytes)",
-        name,
-        bytes.len()
-    );
-
-    // Write to /tmp for debugging
-    #[cfg(not(feature = "wasm"))]
-    {
-        let filename = format!("/tmp/{}.scsyndef", name);
-        std::fs::write(&filename, &bytes).ok();
-    }
-
-    deploy_bytes(bytes)?;
-    log::info!("[MODULATOR] ✓ Modulator '{}' loaded successfully", name);
 
     // Skip sleep in WASM - it's not supported and not needed
     #[cfg(not(feature = "wasm"))]
@@ -481,96 +436,6 @@ impl FxBuilderHandle {
     }
 }
 
-/// Builder handle for Modulator creation via method chaining.
-///
-/// Modulators are control-rate synthdefs that output to control buses.
-/// They are used for LFOs, envelopes, envelope followers, etc.
-#[derive(Clone, Debug)]
-pub struct ModulatorBuilderHandle {
-    synthdef: SynthDef,
-    output_ports: Vec<OutputPort>,
-}
-
-impl ModulatorBuilderHandle {
-    pub fn new(name: String) -> Self {
-        Self {
-            synthdef: SynthDef::new(name),
-            output_ports: Vec::new(),
-        }
-    }
-
-    pub fn param(mut self, name: ImmutableString, default: f64) -> Self {
-        self.synthdef.arg_f(name.into_owned(), default);
-        self
-    }
-
-    pub fn glide_ms(mut self, name: ImmutableString, ms: f64) -> Self {
-        self.synthdef.glide_ms(name.into_owned(), ms);
-        self
-    }
-
-    /// Declare a named control-rate output port (1 channel by default).
-    ///
-    /// Modulator synthdefs always emit a single kr signal; declaring it
-    /// explicitly lets `register_synthdef_outputs` record the port shape at
-    /// synthdef-definition time rather than relying on the script-side
-    /// `modulator(...).apply()` sugar to populate the outputs registry.
-    /// When the modulator builder is removed, the explicit declaration is
-    /// what keeps the kr port discoverable for `.to_param(...)` routing.
-    pub fn output_kr(mut self, name: ImmutableString) -> Self {
-        self.output_ports.push(OutputPort {
-            name: name.into_owned(),
-            channels: 1,
-            rate: PortRate::Kr,
-        });
-        self
-    }
-
-    pub fn output_kr_with_channels(mut self, name: ImmutableString, channels: i64) -> Self {
-        let chans = channels.clamp(1, 255) as u8;
-        self.output_ports.push(OutputPort {
-            name: name.into_owned(),
-            channels: chans,
-            rate: PortRate::Kr,
-        });
-        self
-    }
-
-    fn declared_or_default_outputs(&self) -> Vec<OutputPort> {
-        if self.output_ports.is_empty() {
-            vec![OutputPort {
-                name: "out".to_string(),
-                channels: 1,
-                rate: PortRate::Kr,
-            }]
-        } else {
-            self.output_ports.clone()
-        }
-    }
-
-    pub fn body(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
-        let name = self.synthdef.name.clone();
-        let outputs = self.declared_or_default_outputs();
-        let ir = self
-            .synthdef
-            .build_modulator_closure(closure)
-            .map_err(synthdef_error_to_eval)?;
-        register_synthdef_outputs(name.clone(), outputs);
-        deploy_modulator_ir(&name, ir).map_err(synthdef_error_to_eval)
-    }
-
-    pub fn body_map(self, closure: rhai::FnPtr) -> Result<(), Box<EvalAltResult>> {
-        let name = self.synthdef.name.clone();
-        let outputs = self.declared_or_default_outputs();
-        let ir = self
-            .synthdef
-            .build_modulator_map_closure(closure)
-            .map_err(synthdef_error_to_eval)?;
-        register_synthdef_outputs(name.clone(), outputs);
-        deploy_modulator_ir(&name, ir).map_err(synthdef_error_to_eval)
-    }
-}
-
 /// Check if a SynthDef exists in the registry.
 pub fn synthdef_exists(name: &str) -> bool {
     get_synthdef_registry().lock().unwrap().contains_key(name)
@@ -595,14 +460,9 @@ pub fn get_all_effect_names() -> Vec<String> {
         .collect()
 }
 
-/// Check if a Modulator exists in the registry.
-pub fn modulator_synthdef_exists(name: &str) -> bool {
-    get_modulator_registry().lock().unwrap().contains_key(name)
-}
-
-/// Check if a name exists as either a synthdef, effect, or modulator.
+/// Check if a name exists as either a synthdef or effect.
 pub fn synthdef_or_effect_exists(name: &str) -> bool {
-    synthdef_exists(name) || effect_exists(name) || modulator_synthdef_exists(name)
+    synthdef_exists(name) || effect_exists(name)
 }
 
 /// Register a SynthDef IR in the registry (for auto-generated synthdefs).
@@ -681,20 +541,6 @@ pub fn get_all_effects_encoded() -> Vec<(String, Vec<u8>)> {
     result
 }
 
-/// Get all registered modulators as encoded bytes.
-///
-/// Returns a vector of (name, encoded_bytes) pairs.
-pub fn get_all_modulators_encoded() -> Vec<(String, Vec<u8>)> {
-    let registry = get_modulator_registry().lock().unwrap();
-    let mut result = Vec::new();
-    for (name, ir) in registry.iter() {
-        if let Ok(bytes) = encode_synthdef(ir) {
-            result.push((name.clone(), bytes));
-        }
-    }
-    result
-}
-
 /// Clear all registered synthdefs from the registry.
 ///
 /// Useful for testing or when reloading scripts.
@@ -709,30 +555,6 @@ pub fn clear_synthdef_registry() {
 pub fn clear_effect_registry() {
     let mut registry = get_effect_registry().lock().unwrap();
     registry.clear();
-}
-
-/// Clear all registered modulators from the registry.
-///
-/// Useful for testing or when reloading scripts.
-pub fn clear_modulator_registry() {
-    let mut registry = get_modulator_registry().lock().unwrap();
-    registry.clear();
-}
-
-/// Get default parameter values for a modulator synthdef.
-pub fn get_modulator_param_defaults(name: &str) -> HashMap<String, f32> {
-    let registry = get_modulator_registry().lock().unwrap();
-    if let Some(ir) = registry.get(name) {
-        let mut defaults = HashMap::new();
-        for param in &ir.params {
-            if param.default.len() == 1 {
-                defaults.insert(param.name.clone(), param.default[0]);
-            }
-        }
-        defaults
-    } else {
-        HashMap::new()
-    }
 }
 
 /// Register the SynthDef and FX builder types and functions with a Rhai engine.
@@ -763,15 +585,6 @@ pub fn register_synthdef_api(engine: &mut Engine) {
         .register_fn("body", FxBuilderHandle::body)
         .register_fn("body_map", FxBuilderHandle::body_map);
 
-    engine
-        .register_type::<ModulatorBuilderHandle>()
-        .register_fn("param", ModulatorBuilderHandle::param)
-        .register_fn("glide_ms", ModulatorBuilderHandle::glide_ms)
-        .register_fn("output_kr", ModulatorBuilderHandle::output_kr)
-        .register_fn("output_kr", ModulatorBuilderHandle::output_kr_with_channels)
-        .register_fn("body", ModulatorBuilderHandle::body)
-        .register_fn("body_map", ModulatorBuilderHandle::body_map);
-
     // Register entry point functions
     engine.register_fn("define_synthdef", |name: String| -> SynthDefBuilderHandle {
         SynthDefBuilderHandle::new(name)
@@ -780,11 +593,6 @@ pub fn register_synthdef_api(engine: &mut Engine) {
     engine.register_fn("define_fx", |name: String| -> FxBuilderHandle {
         FxBuilderHandle::new(name)
     });
-
-    engine.register_fn(
-        "define_modulator",
-        |name: String| -> ModulatorBuilderHandle { ModulatorBuilderHandle::new(name) },
-    );
 
     // Backward-compatible overload that accepts a closure receiving the builder
     engine.register_fn(
@@ -812,25 +620,12 @@ pub fn register_synthdef_api(engine: &mut Engine) {
                 .map(|_| ())
         },
     );
-
-    engine.register_fn(
-        "define_modulator",
-        |ctx: NativeCallContext,
-         name: String,
-         closure: rhai::FnPtr|
-         -> Result<(), Box<EvalAltResult>> {
-            let builder = ModulatorBuilderHandle::new(name);
-            closure
-                .call_within_context::<Dynamic>(&ctx, (builder,))
-                .map(|_| ())
-        },
-    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{register_dsp_api, Input, Rate};
+    use crate::{register_dsp_api, Input, PortRate, Rate};
 
     const INPUT_CHANNEL_ERROR: &str = "Input port channels must be 1 (mono) or 2 (stereo)";
 

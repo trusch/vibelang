@@ -1,0 +1,39 @@
+// Envelope Follower Synthdefs
+// These synthdefs track the amplitude of an audio signal and output
+// a control signal that follows the amplitude envelope.
+
+// Basic envelope follower
+// Tracks the amplitude of an audio input with configurable attack/release
+define_synthdef("envelope_follower", |builder| {
+    builder
+        .output_kr("out")        // 1ch — kr CV (envelope follower)
+        .param("attack", 0.01)   // Attack time in seconds
+        .param("release", 0.1)   // Release time in seconds
+        .param("lo", 0.0)        // Output minimum
+        .param("hi", 1.0)        // Output maximum
+        .param("input_bus", 0.0) // Audio bus to follow
+        .body_map(|p| {
+            // Read from the specified audio bus
+            let input = in_ar(p.input_bus);
+            // Track amplitude with specified attack/release
+            let amp = amplitude_kr(input, p.attack, p.release);
+            // Scale output to specified range
+            [lin_lin_kr(amp, 0.0, 1.0, p.lo, p.hi)]
+        })
+});
+
+// Peak follower - fast attack, slow decay
+// Good for transient detection
+define_synthdef("peak_follower", |builder| {
+    builder
+        .output_kr("out")        // 1ch — kr CV (peak follower)
+        .param("decay", 0.999)   // Decay coefficient (0-1, higher = slower decay)
+        .param("lo", 0.0)
+        .param("hi", 1.0)
+        .param("input_bus", 0.0)
+        .body_map(|p| {
+            let input = in_ar(p.input_bus);
+            let peak = peak_follower_kr(input, p.decay);
+            [lin_lin_kr(peak, 0.0, 1.0, p.lo, p.hi)]
+        })
+});

@@ -1,0 +1,10 @@
+// LFO (Low Frequency Oscillator) CV Sources
+//
+// Standard waveform LFOs for parameter automation.
+// All LFOs output control-rate signals with configurable range.
+
+import "stdlib/cv/lfo/lfo_sine.vibe";
+import "stdlib/cv/lfo/lfo_saw.vibe";
+import "stdlib/cv/lfo/lfo_tri.vibe";
+import "stdlib/cv/lfo/lfo_square.vibe";
+import "stdlib/cv/lfo/lfo_random.vibe";

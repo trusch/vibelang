@@ -1,19 +1,22 @@
 ---
-title: Modulator
-id: modulator
+title: CV Source
+id: cv-source
 status: open
 tags:
 - concept
 labels:
   area: core
-  topic: modulator
+  topic: cv-source
 created: 2026-03-11T08:35:45.373894201+01:00
 updated: 2026-03-11T08:35:45.373894201+01:00
 ---
 
-# Modulator
+# CV Source
 
-A **modulator** generates cyclic control signals (LFOs) that continuously change parameters. Unlike fades (one-shot ramp), modulators repeat.
+A **CV source** is a regular voice whose synthdef declares a control-rate
+output port with `.output_kr(...)`. Route that kr output into another voice's
+parameter with `.modulate_by(...)` or `.to_param(...)` for continuously changing
+values. Unlike fades (one-shot ramps), LFO-style CV sources repeat.
 
 ## Typical Uses
 
@@ -32,9 +35,9 @@ let cutoff = 800.0 + (lfo * 600.0);          // cutoff: 200–1400 Hz
 let filtered = rlpf_ar(osc, cutoff, 0.3);
 ```
 
-## Fade vs Modulator
+## Fade vs CV Source
 
-| | Fade | Modulator |
+| | Fade | CV Source |
 |---|---|---|
 | Shape | One-shot ramp (A→B) | Cyclic (LFO) |
 | Use | Build-ups, transitions | Vibrato, wobble, tremolo |

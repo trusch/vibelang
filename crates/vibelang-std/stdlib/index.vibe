@@ -57,5 +57,5 @@ import "stdlib/modular/index.vibe";
 // Music theory and patterns
 import "stdlib/theory/index.vibe";
 
-// Control-rate modulators (LFOs, envelope followers)
-import "stdlib/modulators/index.vibe";
+// Control-rate CV sources (LFOs, envelope followers)
+import "stdlib/cv/index.vibe";

@@ -1,24 +1,24 @@
-// Tutorial: Modulators (LFOs and Envelope Followers)
+// Tutorial: CV Sources (LFOs and Envelope Followers)
 // Difficulty: intermediate | Duration: 5 min
 // Description: Add dynamic movement with control-rate modulation.
 
-// Modulators are control-rate signal generators that dynamically
-// change voice parameters over time. Think LFOs, envelope followers,
-// and other modulation sources - the secret to "alive" sounding music!
+// CV sources are voices whose synthdefs declare control-rate outputs.
+// Route those kr ports into target voice parameters for LFO sweeps,
+// envelope-following movement, and other animated controls.
 
 set_tempo(120);
 
 // ============================================================
-// MODULATOR API (target-first kr routing)
+// CV ROUTING API (target-first kr routing)
 // ============================================================
 //
-// A modulator is just a voice whose synthdef declares an .output_kr
-// port. Wire its output into a target voice's param via
+// A CV source is just a voice whose synthdef declares an .output_kr
+// port. Wire that port into a target voice's param via
 // voice.param(name).modulate_by(source, port).
 //
 // // Define the kr source — a voice running an LFO synthdef.
 // let my_lfo = voice("my_lfo")
-//   .synth("lfo_sine")          // Choose the modulator type
+//   .synth("lfo_sine")          // Choose the CV-source synthdef
 //   .set_param("rate", 2.0)     // Speed in Hz
 //   .set_param("lo", 200.0)     // Minimum output value
 //   .set_param("hi", 2000.0);   // Maximum output value
@@ -34,8 +34,6 @@ set_tempo(120);
 // Classic sweeping filter cutoff for that synth movement
 
 // First, define a triangle LFO synthdef with a kr output port.
-// (A "modulator" is just a regular synthdef whose declared port is
-// control-rate via .output_kr — there's no separate builder anymore.)
 // Note: We use basic math instead of lin_lin_kr for portability
 define_synthdef("lfo_tri")
     .output_kr("out")     // 1ch — kr CV (triangle LFO)
@@ -89,9 +87,9 @@ melody("bass_line")
     .start();
 
 // ============================================================
-// AVAILABLE MODULATOR TYPES:
+// AVAILABLE CV-SOURCE SHAPES:
 //
-// You can define your own modulator synthdefs with define_synthdef
+// You can define your own CV-source synthdefs with define_synthdef
 // + .output_kr("out") and a body using control-rate UGens like:
 //   sin_osc_kr   - Sine wave
 //   lf_tri_kr    - Triangle wave

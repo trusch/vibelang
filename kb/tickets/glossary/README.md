@@ -29,7 +29,7 @@ Canonical terms used across this knowledge base. All tickets use this vocabulary
 | **group** | Submix bus bundling voices and effects |
 | **effect (fx)** | Audio processor on a group bus |
 | **fade** | One-shot parameter ramp (automation) |
-| **modulator** | Cyclic control signal (LFO) |
+| **CV source** | Voice with a kr output port used to drive another voice's parameter |
 
 ## Audio Terms
 

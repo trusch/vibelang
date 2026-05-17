@@ -1,0 +1,34 @@
+// Sawtooth wave LFO synthdef
+// Outputs: Rising ramp from lo to hi, then jumps back to lo
+// Use for: Filter sweeps, arpeggiator-like effects
+define_synthdef("lfo_saw", |builder| {
+    builder
+        .output_kr("out")     // 1ch — kr CV (rising sawtooth LFO)
+        .param("rate", 1.0)   // LFO rate in Hz
+        .param("lo", 0.0)     // Minimum output value
+        .param("hi", 1.0)     // Maximum output value
+        .param("phase", 0.0)  // Initial phase offset (0-2)
+        .body_map(|p| {
+            // Generate sawtooth wave at control rate (-1 to 1)
+            let osc = lf_saw_kr(p.rate, p.phase);
+            // Map from bipolar (-1 to 1) to user-specified range using basic math
+            let normalized = osc * 0.5 + 0.5;  // Map to 0-1
+            [normalized * (p.hi - p.lo) + p.lo] // Map to lo-hi range
+        })
+});
+
+// Inverted sawtooth LFO (falling ramp)
+define_synthdef("lfo_saw_down", |builder| {
+    builder
+        .output_kr("out")     // 1ch — kr CV (falling sawtooth LFO)
+        .param("rate", 1.0)
+        .param("lo", 0.0)
+        .param("hi", 1.0)
+        .param("phase", 0.0)
+        .body_map(|p| {
+            let osc = lf_saw_kr(p.rate, p.phase);
+            // Invert: map from (-1,1) to (hi,lo) using basic math
+            let normalized = osc * 0.5 + 0.5;  // Map to 0-1
+            [normalized * (p.lo - p.hi) + p.hi] // Map inverted to hi-lo range
+        })
+});

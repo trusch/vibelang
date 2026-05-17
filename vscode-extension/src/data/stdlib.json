@@ -1,5 +1,5 @@
 {
-  "version": "2025-12-19T14:04:30.252Z",
+  "version": "2026-05-17T10:38:55.408Z",
   "synthdefs": [
     {
       "name": "acid_303_classic",
@@ -1705,6 +1705,369 @@
       ]
     },
     {
+      "name": "cv_env_complex",
+      "type": "instrument",
+      "description": "kind=cv | category=envelope | flavor=complex_breakpoint | range=0..+10V | params=gate,time_scale,level_scale",
+      "category": "cv",
+      "subcategory": "envelopes",
+      "importPath": "stdlib/cv/envelopes/cv_env_complex.vibe",
+      "sourcePath": "cv/envelopes/cv_env_complex.vibe",
+      "params": [
+        {
+          "name": "gate",
+          "default": 0
+        },
+        {
+          "name": "time_scale",
+          "default": 1
+        },
+        {
+          "name": "level_scale",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "envelope_follower",
+      "type": "instrument",
+      "description": "Envelope Follower Synthdefs",
+      "category": "cv",
+      "subcategory": "envelopes",
+      "importPath": "stdlib/cv/envelopes/envelope_follower.vibe",
+      "sourcePath": "cv/envelopes/envelope_follower.vibe",
+      "params": [
+        {
+          "name": "attack",
+          "default": 0.01
+        },
+        {
+          "name": "release",
+          "default": 0.1
+        },
+        {
+          "name": "lo",
+          "default": 0
+        },
+        {
+          "name": "hi",
+          "default": 1
+        },
+        {
+          "name": "input_bus",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "peak_follower",
+      "type": "instrument",
+      "description": "Envelope Follower Synthdefs",
+      "category": "cv",
+      "subcategory": "envelopes",
+      "importPath": "stdlib/cv/envelopes/envelope_follower.vibe",
+      "sourcePath": "cv/envelopes/envelope_follower.vibe",
+      "params": [
+        {
+          "name": "decay",
+          "default": 0.999
+        },
+        {
+          "name": "lo",
+          "default": 0
+        },
+        {
+          "name": "hi",
+          "default": 1
+        },
+        {
+          "name": "input_bus",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "lfo_random",
+      "type": "instrument",
+      "description": "Random step LFO synthdef (sample and hold)",
+      "category": "cv",
+      "subcategory": "lfo",
+      "importPath": "stdlib/cv/lfo/lfo_random.vibe",
+      "sourcePath": "cv/lfo/lfo_random.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 1
+        },
+        {
+          "name": "lo",
+          "default": 0
+        },
+        {
+          "name": "hi",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "lfo_random_exp",
+      "type": "instrument",
+      "description": "Random step LFO synthdef (sample and hold)",
+      "category": "cv",
+      "subcategory": "lfo",
+      "importPath": "stdlib/cv/lfo/lfo_random.vibe",
+      "sourcePath": "cv/lfo/lfo_random.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 1
+        },
+        {
+          "name": "lo",
+          "default": 0
+        },
+        {
+          "name": "hi",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "lfo_random_smooth",
+      "type": "instrument",
+      "description": "Random step LFO synthdef (sample and hold)",
+      "category": "cv",
+      "subcategory": "lfo",
+      "importPath": "stdlib/cv/lfo/lfo_random.vibe",
+      "sourcePath": "cv/lfo/lfo_random.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 1
+        },
+        {
+          "name": "lo",
+          "default": 0
+        },
+        {
+          "name": "hi",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "lfo_saw",
+      "type": "instrument",
+      "description": "Sawtooth wave LFO synthdef",
+      "category": "cv",
+      "subcategory": "lfo",
+      "importPath": "stdlib/cv/lfo/lfo_saw.vibe",
+      "sourcePath": "cv/lfo/lfo_saw.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 1
+        },
+        {
+          "name": "lo",
+          "default": 0
+        },
+        {
+          "name": "hi",
+          "default": 1
+        },
+        {
+          "name": "phase",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "lfo_saw_down",
+      "type": "instrument",
+      "description": "Sawtooth wave LFO synthdef",
+      "category": "cv",
+      "subcategory": "lfo",
+      "importPath": "stdlib/cv/lfo/lfo_saw.vibe",
+      "sourcePath": "cv/lfo/lfo_saw.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 1
+        },
+        {
+          "name": "lo",
+          "default": 0
+        },
+        {
+          "name": "hi",
+          "default": 1
+        },
+        {
+          "name": "phase",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "lfo_sine",
+      "type": "instrument",
+      "description": "Sine wave LFO synthdef",
+      "category": "cv",
+      "subcategory": "lfo",
+      "importPath": "stdlib/cv/lfo/lfo_sine.vibe",
+      "sourcePath": "cv/lfo/lfo_sine.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 1
+        },
+        {
+          "name": "lo",
+          "default": 0
+        },
+        {
+          "name": "hi",
+          "default": 1
+        },
+        {
+          "name": "phase",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "lfo_square",
+      "type": "instrument",
+      "description": "Square wave LFO synthdef",
+      "category": "cv",
+      "subcategory": "lfo",
+      "importPath": "stdlib/cv/lfo/lfo_square.vibe",
+      "sourcePath": "cv/lfo/lfo_square.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 1
+        },
+        {
+          "name": "lo",
+          "default": 0
+        },
+        {
+          "name": "hi",
+          "default": 1
+        },
+        {
+          "name": "width",
+          "default": 0.5
+        },
+        {
+          "name": "phase",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "lfo_tri",
+      "type": "instrument",
+      "description": "Triangle wave LFO synthdef",
+      "category": "cv",
+      "subcategory": "lfo",
+      "importPath": "stdlib/cv/lfo/lfo_tri.vibe",
+      "sourcePath": "cv/lfo/lfo_tri.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 1
+        },
+        {
+          "name": "lo",
+          "default": 0
+        },
+        {
+          "name": "hi",
+          "default": 1
+        },
+        {
+          "name": "phase",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "cv_quantizer",
+      "type": "instrument",
+      "description": "kind=cv | category=pitch | flavor=v_oct_quantizer | range=±10V | params=cv_in,scale,root",
+      "category": "cv",
+      "subcategory": "pitch",
+      "importPath": "stdlib/cv/pitch/cv_quantizer.vibe",
+      "sourcePath": "cv/pitch/cv_quantizer.vibe",
+      "params": [
+        {
+          "name": "cv_in",
+          "default": 0
+        },
+        {
+          "name": "scale",
+          "default": 0
+        },
+        {
+          "name": "root",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "cv_voct_seq",
+      "type": "instrument",
+      "description": "kind=cv | category=pitch | flavor=v_oct_seq | range=±10V | params=clock,length,note0..note7",
+      "category": "cv",
+      "subcategory": "pitch",
+      "importPath": "stdlib/cv/pitch/cv_voct_seq.vibe",
+      "sourcePath": "cv/pitch/cv_voct_seq.vibe",
+      "params": [
+        {
+          "name": "clock",
+          "default": 0
+        },
+        {
+          "name": "length",
+          "default": 8
+        },
+        {
+          "name": "note0",
+          "default": 60
+        },
+        {
+          "name": "note1",
+          "default": 62
+        },
+        {
+          "name": "note2",
+          "default": 64
+        },
+        {
+          "name": "note3",
+          "default": 67
+        },
+        {
+          "name": "note4",
+          "default": 60
+        },
+        {
+          "name": "note5",
+          "default": 62
+        },
+        {
+          "name": "note6",
+          "default": 64
+        },
+        {
+          "name": "note7",
+          "default": 67
+        }
+      ]
+    },
+    {
       "name": "clap_808",
       "type": "instrument",
       "description": "Genre: Hip-hop, Trap | Character: Classic 808 clap, short and snappy",
@@ -2644,9 +3007,392 @@
       ]
     },
     {
+      "name": "bitcrush_pro",
+      "type": "effect",
+      "description": "kind=fx | category=character | flavor=bitcrush_pro | stereo=true | params=sample_rate,bits,dither_amount,mix,level",
+      "category": "effects",
+      "subcategory": "character",
+      "importPath": "stdlib/effects/character/bitcrush_pro.vibe",
+      "sourcePath": "effects/character/bitcrush_pro.vibe",
+      "params": [
+        {
+          "name": "sample_rate",
+          "default": 8000
+        },
+        {
+          "name": "bits",
+          "default": 8
+        },
+        {
+          "name": "dither_amount",
+          "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "broken_radio",
+      "type": "effect",
+      "description": "kind=fx | category=character | flavor=broken_radio | stereo=true | params=tune_drift,dropout_rate,am_amount,noise_amount,mix,level",
+      "category": "effects",
+      "subcategory": "character",
+      "importPath": "stdlib/effects/character/broken_radio.vibe",
+      "sourcePath": "effects/character/broken_radio.vibe",
+      "params": [
+        {
+          "name": "tune_drift",
+          "default": 0.5
+        },
+        {
+          "name": "dropout_rate",
+          "default": 0.3
+        },
+        {
+          "name": "am_amount",
+          "default": 0.4
+        },
+        {
+          "name": "noise_amount",
+          "default": 0.3
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "cassette",
+      "type": "effect",
+      "description": "kind=fx | category=character | flavor=cassette | stereo=true | params=wow_amount,flutter_amount,hiss_amount,sat_amount,mix,level",
+      "category": "effects",
+      "subcategory": "character",
+      "importPath": "stdlib/effects/character/cassette.vibe",
+      "sourcePath": "effects/character/cassette.vibe",
+      "params": [
+        {
+          "name": "wow_amount",
+          "default": 0.5
+        },
+        {
+          "name": "flutter_amount",
+          "default": 0.4
+        },
+        {
+          "name": "hiss_amount",
+          "default": 0.5
+        },
+        {
+          "name": "sat_amount",
+          "default": 0.4
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "chiptune",
+      "type": "effect",
+      "description": "kind=fx | category=character | flavor=chiptune | stereo=true | params=pulse_width,decimation,mix,level",
+      "category": "effects",
+      "subcategory": "character",
+      "importPath": "stdlib/effects/character/chiptune.vibe",
+      "sourcePath": "effects/character/chiptune.vibe",
+      "params": [
+        {
+          "name": "pulse_width",
+          "default": 0.5
+        },
+        {
+          "name": "decimation",
+          "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "console_summing",
+      "type": "effect",
+      "description": "kind=fx | category=character | flavor=console_summing | stereo=true | params=drive,hf_cut,mix,level",
+      "category": "effects",
+      "subcategory": "character",
+      "importPath": "stdlib/effects/character/console_summing.vibe",
+      "sourcePath": "effects/character/console_summing.vibe",
+      "params": [
+        {
+          "name": "drive",
+          "default": 1.4
+        },
+        {
+          "name": "hf_cut",
+          "default": 1.5
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "tape_loop_lofi",
+      "type": "effect",
+      "description": "kind=fx | category=character | flavor=tape_loop_lofi | stereo=true | params=loop_length,sat_amount,dropout_chance,lp_freq,mix,level",
+      "category": "effects",
+      "subcategory": "character",
+      "importPath": "stdlib/effects/character/tape_loop_lofi.vibe",
+      "sourcePath": "effects/character/tape_loop_lofi.vibe",
+      "params": [
+        {
+          "name": "loop_length",
+          "default": 2
+        },
+        {
+          "name": "sat_amount",
+          "default": 0.5
+        },
+        {
+          "name": "dropout_chance",
+          "default": 0.2
+        },
+        {
+          "name": "lp_freq",
+          "default": 6000
+        },
+        {
+          "name": "mix",
+          "default": 0.7
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "telephone",
+      "type": "effect",
+      "description": "kind=fx | category=character | flavor=telephone | stereo=true | params=muffled_amount,sat_amount,mix,level",
+      "category": "effects",
+      "subcategory": "character",
+      "importPath": "stdlib/effects/character/telephone.vibe",
+      "sourcePath": "effects/character/telephone.vibe",
+      "params": [
+        {
+          "name": "muffled_amount",
+          "default": 0.5
+        },
+        {
+          "name": "sat_amount",
+          "default": 0.4
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "vinyl_dust",
+      "type": "effect",
+      "description": "kind=fx | category=character | flavor=vinyl_dust | stereo=true | params=dust_density,hum_amount,hf_loss,mix,level",
+      "category": "effects",
+      "subcategory": "character",
+      "importPath": "stdlib/effects/character/vinyl_dust.vibe",
+      "sourcePath": "effects/character/vinyl_dust.vibe",
+      "params": [
+        {
+          "name": "dust_density",
+          "default": 30
+        },
+        {
+          "name": "hum_amount",
+          "default": 0.04
+        },
+        {
+          "name": "hf_loss",
+          "default": 8000
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "cab_simulator",
+      "type": "effect",
+      "description": "kind=fx | category=convolution | flavor=cab_simulator | stereo=true | params=ir_buffer,presence,mix,level",
+      "category": "effects",
+      "subcategory": "convolution",
+      "importPath": "stdlib/effects/convolution/cab_simulator.vibe",
+      "sourcePath": "effects/convolution/cab_simulator.vibe",
+      "params": [
+        {
+          "name": "ir_buffer",
+          "default": 0
+        },
+        {
+          "name": "presence",
+          "default": 0
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "early_reflections_ir",
+      "type": "effect",
+      "description": "kind=fx | category=convolution | flavor=early_reflections_ir | stereo=true | params=ir_buffer,mix,level",
+      "category": "effects",
+      "subcategory": "convolution",
+      "importPath": "stdlib/effects/convolution/early_reflections_ir.vibe",
+      "sourcePath": "effects/convolution/early_reflections_ir.vibe",
+      "params": [
+        {
+          "name": "ir_buffer",
+          "default": 0
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "hybrid_reverb",
+      "type": "effect",
+      "description": "kind=fx | category=convolution | flavor=hybrid_reverb | stereo=true | params=er_ir,jpverb_time,blend,mix,level",
+      "category": "effects",
+      "subcategory": "convolution",
+      "importPath": "stdlib/effects/convolution/hybrid_reverb.vibe",
+      "sourcePath": "effects/convolution/hybrid_reverb.vibe",
+      "params": [
+        {
+          "name": "er_ir",
+          "default": 0
+        },
+        {
+          "name": "jpverb_time",
+          "default": 3
+        },
+        {
+          "name": "blend",
+          "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "reverb_ir",
+      "type": "effect",
+      "description": "kind=fx | category=convolution | flavor=ir | stereo=true | params=ir_buffer,framesize,mix,level",
+      "category": "effects",
+      "subcategory": "convolution",
+      "importPath": "stdlib/effects/convolution/reverb_ir.vibe",
+      "sourcePath": "effects/convolution/reverb_ir.vibe",
+      "params": [
+        {
+          "name": "ir_buffer",
+          "default": 0
+        },
+        {
+          "name": "framesize",
+          "default": 2048
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "reverb_partconv",
+      "type": "effect",
+      "description": "kind=fx | category=convolution | flavor=partconv | stereo=true | params=ir_buffer,framesize,mix,level",
+      "category": "effects",
+      "subcategory": "convolution",
+      "importPath": "stdlib/effects/convolution/reverb_partconv.vibe",
+      "sourcePath": "effects/convolution/reverb_partconv.vibe",
+      "params": [
+        {
+          "name": "ir_buffer",
+          "default": 0
+        },
+        {
+          "name": "framesize",
+          "default": 2048
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
       "name": "analog_delay",
       "type": "effect",
-      "description": "Analog Delay Effect",
+      "description": "kind=fx | category=delay | flavor=analog | stereo=true | params=time,feedback,tone,mod_depth,mix,level",
       "category": "effects",
       "subcategory": "delays",
       "importPath": "stdlib/effects/delays/analog_delay.vibe",
@@ -2671,13 +3417,17 @@
         {
           "name": "mix",
           "default": 0.4
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "delay",
       "type": "effect",
-      "description": "Stereo Delay Effect",
+      "description": "kind=fx | category=delay | flavor=basic | stereo=true | params=time,feedback,mix,level",
       "category": "effects",
       "subcategory": "delays",
       "importPath": "stdlib/effects/delays/delay.vibe",
@@ -2694,13 +3444,130 @@
         {
           "name": "mix",
           "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "delay_bbd_analog",
+      "type": "effect",
+      "description": "kind=fx | category=delay | flavor=bbd_analog | stereo=true | params=time,feedback,chorus_depth,lp_freq,mix,level",
+      "category": "effects",
+      "subcategory": "delays",
+      "importPath": "stdlib/effects/delays/delay_bbd_analog.vibe",
+      "sourcePath": "effects/delays/delay_bbd_analog.vibe",
+      "params": [
+        {
+          "name": "time",
+          "default": 0.35
+        },
+        {
+          "name": "feedback",
+          "default": 0.45
+        },
+        {
+          "name": "chorus_depth",
+          "default": 0.5
+        },
+        {
+          "name": "lp_freq",
+          "default": 3500
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "delay_modulated_tape",
+      "type": "effect",
+      "description": "kind=fx | category=delay | flavor=modulated_tape | stereo=true | params=time,feedback,modulation,sat,hiss_amount,mix,level",
+      "category": "effects",
+      "subcategory": "delays",
+      "importPath": "stdlib/effects/delays/delay_modulated_tape.vibe",
+      "sourcePath": "effects/delays/delay_modulated_tape.vibe",
+      "params": [
+        {
+          "name": "time",
+          "default": 0.45
+        },
+        {
+          "name": "feedback",
+          "default": 0.55
+        },
+        {
+          "name": "modulation",
+          "default": 0.6
+        },
+        {
+          "name": "sat",
+          "default": 0.5
+        },
+        {
+          "name": "hiss_amount",
+          "default": 0.15
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "delay_tape_wow",
+      "type": "effect",
+      "description": "kind=fx | category=delay | flavor=tape_wow | stereo=true | params=time,feedback,wow_amount,flutter_amount,sat_amount,mix,level",
+      "category": "effects",
+      "subcategory": "delays",
+      "importPath": "stdlib/effects/delays/delay_tape_wow.vibe",
+      "sourcePath": "effects/delays/delay_tape_wow.vibe",
+      "params": [
+        {
+          "name": "time",
+          "default": 0.4
+        },
+        {
+          "name": "feedback",
+          "default": 0.5
+        },
+        {
+          "name": "wow_amount",
+          "default": 0.5
+        },
+        {
+          "name": "flutter_amount",
+          "default": 0.4
+        },
+        {
+          "name": "sat_amount",
+          "default": 0.4
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "dub_delay",
       "type": "effect",
-      "description": "Dub Delay Effect",
+      "description": "kind=fx | category=delay | flavor=dub | stereo=true | params=time,feedback,cutoff,mix,level",
       "category": "effects",
       "subcategory": "delays",
       "importPath": "stdlib/effects/delays/dub_delay.vibe",
@@ -2721,13 +3588,17 @@
         {
           "name": "mix",
           "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "ducking_delay",
       "type": "effect",
-      "description": "Ducking Delay Effect",
+      "description": "kind=fx | category=delay | flavor=ducking | stereo=true | params=time,feedback,duck_amount,duck_speed,mix,level",
       "category": "effects",
       "subcategory": "delays",
       "importPath": "stdlib/effects/delays/ducking_delay.vibe",
@@ -2752,13 +3623,17 @@
         {
           "name": "mix",
           "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "granular_delay",
       "type": "effect",
-      "description": "Granular Delay Effect",
+      "description": "kind=fx | category=delay | flavor=granular | stereo=true | params=time,pitch,density,feedback,mix,level",
       "category": "effects",
       "subcategory": "delays",
       "importPath": "stdlib/effects/delays/granular_delay.vibe",
@@ -2783,13 +3658,17 @@
         {
           "name": "mix",
           "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "multi_tap_delay",
       "type": "effect",
-      "description": "Multi-Tap Delay Effect",
+      "description": "kind=fx | category=delay | flavor=multi_tap | stereo=true | params=time,feedback,spread,filter,mix,level",
       "category": "effects",
       "subcategory": "delays",
       "importPath": "stdlib/effects/delays/multi_tap_delay.vibe",
@@ -2814,13 +3693,17 @@
         {
           "name": "mix",
           "default": 0.4
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "ping_pong_delay",
       "type": "effect",
-      "description": "Ping Pong Delay Effect",
+      "description": "kind=fx | category=delay | flavor=ping_pong | stereo=true | params=time,feedback,mix,level",
       "category": "effects",
       "subcategory": "delays",
       "importPath": "stdlib/effects/delays/ping_pong_delay.vibe",
@@ -2837,13 +3720,17 @@
         {
           "name": "mix",
           "default": 0.4
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "reverse_delay",
       "type": "effect",
-      "description": "Reverse Delay Effect",
+      "description": "kind=fx | category=delay | flavor=reverse | stereo=true | params=time,feedback,mix,level",
       "category": "effects",
       "subcategory": "delays",
       "importPath": "stdlib/effects/delays/reverse_delay.vibe",
@@ -2860,13 +3747,17 @@
         {
           "name": "mix",
           "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "shimmer_delay",
       "type": "effect",
-      "description": "Shimmer Delay Effect",
+      "description": "kind=fx | category=delay | flavor=shimmer | stereo=true | params=time,feedback,mix,level",
       "category": "effects",
       "subcategory": "delays",
       "importPath": "stdlib/effects/delays/shimmer_delay.vibe",
@@ -2883,13 +3774,17 @@
         {
           "name": "mix",
           "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "slapback",
       "type": "effect",
-      "description": "Slapback Delay Effect",
+      "description": "kind=fx | category=delay | flavor=slapback | stereo=true | params=time,mix,level",
       "category": "effects",
       "subcategory": "delays",
       "importPath": "stdlib/effects/delays/slapback.vibe",
@@ -2900,15 +3795,19 @@
           "default": 0.12
         },
         {
+          "name": "mix",
+          "default": 0.4
+        },
+        {
           "name": "level",
-          "default": 0.6
+          "default": 1
         }
       ]
     },
     {
       "name": "tape_delay",
       "type": "effect",
-      "description": "Tape Delay Effect",
+      "description": "kind=fx | category=delay | flavor=tape | stereo=true | params=time,feedback,wow,flutter,mix,level",
       "category": "effects",
       "subcategory": "delays",
       "importPath": "stdlib/effects/delays/tape_delay.vibe",
@@ -2933,13 +3832,17 @@
         {
           "name": "mix",
           "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "bitcrush",
       "type": "effect",
-      "description": "Bitcrusher Effect",
+      "description": "kind=fx | category=distortion | flavor=bitcrush | stereo=true | params=bits,sample_rate,mix,level",
       "category": "effects",
       "subcategory": "distortion",
       "importPath": "stdlib/effects/distortion/bitcrush.vibe",
@@ -2955,14 +3858,18 @@
         },
         {
           "name": "mix",
-          "default": 0.5
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "distortion",
       "type": "effect",
-      "description": "Distortion Effect",
+      "description": "kind=fx | category=distortion | flavor=hard_clip | stereo=true | params=drive,tone,mix,level",
       "category": "effects",
       "subcategory": "distortion",
       "importPath": "stdlib/effects/distortion/distortion.vibe",
@@ -2978,14 +3885,80 @@
         },
         {
           "name": "mix",
-          "default": 0.5
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "drive_transistor",
+      "type": "effect",
+      "description": "kind=fx | category=distortion | flavor=transistor | stereo=true | params=drive,asymmetry,lp_freq,mix,level",
+      "category": "effects",
+      "subcategory": "distortion",
+      "importPath": "stdlib/effects/distortion/drive_transistor.vibe",
+      "sourcePath": "effects/distortion/drive_transistor.vibe",
+      "params": [
+        {
+          "name": "drive",
+          "default": 6
+        },
+        {
+          "name": "asymmetry",
+          "default": 0.3
+        },
+        {
+          "name": "lp_freq",
+          "default": 8000
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "drive_tube",
+      "type": "effect",
+      "description": "kind=fx | category=distortion | flavor=tube | stereo=true | params=drive,bias,bright,mix,level",
+      "category": "effects",
+      "subcategory": "distortion",
+      "importPath": "stdlib/effects/distortion/drive_tube.vibe",
+      "sourcePath": "effects/distortion/drive_tube.vibe",
+      "params": [
+        {
+          "name": "drive",
+          "default": 4
+        },
+        {
+          "name": "bias",
+          "default": 0.2
+        },
+        {
+          "name": "bright",
+          "default": 0
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "exciter",
       "type": "effect",
-      "description": "Exciter/Enhancer Effect",
+      "description": "kind=fx | category=distortion | flavor=exciter | stereo=true | params=drive,freq,blend,mix,level",
       "category": "effects",
       "subcategory": "distortion",
       "importPath": "stdlib/effects/distortion/exciter.vibe",
@@ -3006,13 +3979,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "fuzz",
       "type": "effect",
-      "description": "Fuzz Effect",
+      "description": "kind=fx | category=distortion | flavor=fuzz | stereo=true | params=gain,tone,mix,level",
       "category": "effects",
       "subcategory": "distortion",
       "importPath": "stdlib/effects/distortion/fuzz.vibe",
@@ -3029,13 +4006,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "lo_fi",
       "type": "effect",
-      "description": "Lo-Fi Effect",
+      "description": "kind=fx | category=distortion | flavor=lo_fi | stereo=true | params=bit_depth,sample_rate,noise,filter_freq,mix,level",
       "category": "effects",
       "subcategory": "distortion",
       "importPath": "stdlib/effects/distortion/lo_fi.vibe",
@@ -3059,14 +4040,18 @@
         },
         {
           "name": "mix",
-          "default": 0.7
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "overdrive",
       "type": "effect",
-      "description": "Overdrive Effect",
+      "description": "kind=fx | category=distortion | flavor=overdrive | stereo=true | params=drive,tone,mix,level",
       "category": "effects",
       "subcategory": "distortion",
       "importPath": "stdlib/effects/distortion/overdrive.vibe",
@@ -3082,14 +4067,18 @@
         },
         {
           "name": "mix",
-          "default": 0.5
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "saturator",
       "type": "effect",
-      "description": "Saturator Effect",
+      "description": "kind=fx | category=distortion | flavor=saturator | stereo=true | params=drive,warmth,mix,level",
       "category": "effects",
       "subcategory": "distortion",
       "importPath": "stdlib/effects/distortion/saturator.vibe",
@@ -3105,14 +4094,18 @@
         },
         {
           "name": "mix",
-          "default": 0.5
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "tape_saturation",
       "type": "effect",
-      "description": "Tape Saturation Effect",
+      "description": "kind=fx | category=distortion | flavor=tape_saturation | stereo=true | params=drive,bias,speed,mix,level",
       "category": "effects",
       "subcategory": "distortion",
       "importPath": "stdlib/effects/distortion/tape_saturation.vibe",
@@ -3132,14 +4125,18 @@
         },
         {
           "name": "mix",
-          "default": 0.5
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "vinyl",
       "type": "effect",
-      "description": "Vinyl Record Effect",
+      "description": "kind=fx | category=distortion | flavor=vinyl | stereo=true | params=crackle,dust,wow,flutter,wear,mix,level",
       "category": "effects",
       "subcategory": "distortion",
       "importPath": "stdlib/effects/distortion/vinyl.vibe",
@@ -3167,14 +4164,18 @@
         },
         {
           "name": "mix",
-          "default": 0.8
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "waveshaper",
       "type": "effect",
-      "description": "Waveshaper Effect",
+      "description": "kind=fx | category=distortion | flavor=waveshaper | stereo=true | params=amount,curve,mix,level",
       "category": "effects",
       "subcategory": "distortion",
       "importPath": "stdlib/effects/distortion/waveshaper.vibe",
@@ -3190,14 +4191,18 @@
         },
         {
           "name": "mix",
-          "default": 0.5
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "amp_follower",
       "type": "effect",
-      "description": "Amplitude Follower Effect",
+      "description": "kind=fx | category=dynamics | flavor=amp_follower | stereo=true | params=attack,release,scale,mix,level",
       "category": "effects",
       "subcategory": "dynamics",
       "importPath": "stdlib/effects/dynamics/amp_follower.vibe",
@@ -3214,13 +4219,165 @@
         {
           "name": "scale",
           "default": 2
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "comp_fet",
+      "type": "effect",
+      "description": "kind=fx | category=dynamics | flavor=fet | stereo=true | params=threshold,ratio,attack,release,mix,level",
+      "category": "effects",
+      "subcategory": "dynamics",
+      "importPath": "stdlib/effects/dynamics/comp_fet.vibe",
+      "sourcePath": "effects/dynamics/comp_fet.vibe",
+      "params": [
+        {
+          "name": "threshold",
+          "default": 0.2
+        },
+        {
+          "name": "ratio",
+          "default": 8
+        },
+        {
+          "name": "attack",
+          "default": 0.00005
+        },
+        {
+          "name": "release",
+          "default": 0.05
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "comp_opto",
+      "type": "effect",
+      "description": "kind=fx | category=dynamics | flavor=opto | stereo=true | params=threshold,ratio,attack,release,mix,level",
+      "category": "effects",
+      "subcategory": "dynamics",
+      "importPath": "stdlib/effects/dynamics/comp_opto.vibe",
+      "sourcePath": "effects/dynamics/comp_opto.vibe",
+      "params": [
+        {
+          "name": "threshold",
+          "default": 0.3
+        },
+        {
+          "name": "ratio",
+          "default": 4
+        },
+        {
+          "name": "attack",
+          "default": 0.01
+        },
+        {
+          "name": "release",
+          "default": 0.4
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "comp_vari_mu",
+      "type": "effect",
+      "description": "kind=fx | category=dynamics | flavor=vari_mu | stereo=true | params=threshold,ratio,attack,release,drive,mix,level",
+      "category": "effects",
+      "subcategory": "dynamics",
+      "importPath": "stdlib/effects/dynamics/comp_vari_mu.vibe",
+      "sourcePath": "effects/dynamics/comp_vari_mu.vibe",
+      "params": [
+        {
+          "name": "threshold",
+          "default": 0.25
+        },
+        {
+          "name": "ratio",
+          "default": 3
+        },
+        {
+          "name": "attack",
+          "default": 0.05
+        },
+        {
+          "name": "release",
+          "default": 0.6
+        },
+        {
+          "name": "drive",
+          "default": 1
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "comp_vca",
+      "type": "effect",
+      "description": "kind=fx | category=dynamics | flavor=vca | stereo=true | params=threshold,ratio,attack,release,mix,level",
+      "category": "effects",
+      "subcategory": "dynamics",
+      "importPath": "stdlib/effects/dynamics/comp_vca.vibe",
+      "sourcePath": "effects/dynamics/comp_vca.vibe",
+      "params": [
+        {
+          "name": "threshold",
+          "default": 0.3
+        },
+        {
+          "name": "ratio",
+          "default": 4
+        },
+        {
+          "name": "attack",
+          "default": 0.005
+        },
+        {
+          "name": "release",
+          "default": 0.15
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "compressor",
       "type": "effect",
-      "description": "Dynamics Compressor Effect",
+      "description": "kind=fx | category=dynamics | flavor=basic | stereo=true | params=threshold,ratio,attack,release,mix,level",
       "category": "effects",
       "subcategory": "dynamics",
       "importPath": "stdlib/effects/dynamics/compressor.vibe",
@@ -3241,13 +4398,21 @@
         {
           "name": "release",
           "default": 0.1
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "de_esser",
       "type": "effect",
-      "description": "De-Esser Effect",
+      "description": "kind=fx | category=dynamics | flavor=deess | stereo=true | params=freq,threshold,reduction,width,mix,level",
       "category": "effects",
       "subcategory": "dynamics",
       "importPath": "stdlib/effects/dynamics/de_esser.vibe",
@@ -3268,13 +4433,21 @@
         {
           "name": "width",
           "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "ducking",
       "type": "effect",
-      "description": "Ducking / Sidechain Effect",
+      "description": "kind=fx | category=dynamics | flavor=ducking | stereo=true | params=threshold,ratio,attack,release,mix,level",
       "category": "effects",
       "subcategory": "dynamics",
       "importPath": "stdlib/effects/dynamics/ducking.vibe",
@@ -3295,13 +4468,21 @@
         {
           "name": "release",
           "default": 0.1
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "gate",
       "type": "effect",
-      "description": "Noise Gate Effect",
+      "description": "kind=fx | category=dynamics | flavor=gate | stereo=true | params=threshold,attack,release,mix,level",
       "category": "effects",
       "subcategory": "dynamics",
       "importPath": "stdlib/effects/dynamics/gate.vibe",
@@ -3318,32 +4499,48 @@
         {
           "name": "release",
           "default": 0.1
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "limiter",
       "type": "effect",
-      "description": "Limiter Effect",
+      "description": "kind=fx | category=dynamics | flavor=peak | stereo=true | params=ceiling,lookahead,mix,level",
       "category": "effects",
       "subcategory": "dynamics",
       "importPath": "stdlib/effects/dynamics/limiter.vibe",
       "sourcePath": "effects/dynamics/limiter.vibe",
       "params": [
         {
-          "name": "level",
+          "name": "ceiling",
           "default": 0.9
         },
         {
           "name": "lookahead",
           "default": 0.01
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "multiband_comp",
       "type": "effect",
-      "description": "Multi-band Compressor Effect",
+      "description": "kind=fx | category=dynamics | flavor=multiband | stereo=true | params=low_freq,high_freq,low_thresh,mid_thresh,high_thresh,ratio,attack,release,mix,level",
       "category": "effects",
       "subcategory": "dynamics",
       "importPath": "stdlib/effects/dynamics/multiband_comp.vibe",
@@ -3384,13 +4581,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "parallel_comp",
       "type": "effect",
-      "description": "Parallel Compression Effect",
+      "description": "kind=fx | category=dynamics | flavor=parallel | stereo=true | params=ratio,attack,release,makeup,blend,mix,level",
       "category": "effects",
       "subcategory": "dynamics",
       "importPath": "stdlib/effects/dynamics/parallel_comp.vibe",
@@ -3415,13 +4616,21 @@
         {
           "name": "blend",
           "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "sidechain",
       "type": "effect",
-      "description": "Sidechain Compressor Effect",
+      "description": "kind=fx | category=dynamics | flavor=sidechain | stereo=true | params=threshold,ratio,attack,release,amount,mix,level",
       "category": "effects",
       "subcategory": "dynamics",
       "importPath": "stdlib/effects/dynamics/sidechain.vibe",
@@ -3446,13 +4655,21 @@
         {
           "name": "amount",
           "default": 0.7
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "transient_shaper",
       "type": "effect",
-      "description": "Transient Shaper Effect",
+      "description": "kind=fx | category=dynamics | flavor=transient | stereo=true | params=attack,sustain,output,mix,level",
       "category": "effects",
       "subcategory": "dynamics",
       "importPath": "stdlib/effects/dynamics/transient_shaper.vibe",
@@ -3469,13 +4686,21 @@
         {
           "name": "output",
           "default": 1
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "bandpass",
       "type": "effect",
-      "description": "Band Pass Filter Effect",
+      "description": "kind=fx | category=filter | flavor=bandpass | stereo=true | params=freq,bandwidth,mix,level",
       "category": "effects",
       "subcategory": "filters",
       "importPath": "stdlib/effects/filters/bandpass.vibe",
@@ -3492,13 +4717,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "comb_filter",
       "type": "effect",
-      "description": "Comb Filter Effect",
+      "description": "kind=fx | category=filter | flavor=comb | stereo=true | params=freq,decay,mix,level",
       "category": "effects",
       "subcategory": "filters",
       "importPath": "stdlib/effects/filters/comb_filter.vibe",
@@ -3514,14 +4743,96 @@
         },
         {
           "name": "mix",
-          "default": 0.5
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "eq_neve_1073",
+      "type": "effect",
+      "description": "kind=fx | category=filter | flavor=neve_1073 | stereo=true | params=low_freq,low_gain,mid_freq,mid_gain,mid_q,high_freq,high_gain,mix,level",
+      "category": "effects",
+      "subcategory": "filters",
+      "importPath": "stdlib/effects/filters/eq_neve_1073.vibe",
+      "sourcePath": "effects/filters/eq_neve_1073.vibe",
+      "params": [
+        {
+          "name": "low_freq",
+          "default": 110
+        },
+        {
+          "name": "low_gain",
+          "default": 0
+        },
+        {
+          "name": "mid_freq",
+          "default": 1600
+        },
+        {
+          "name": "mid_gain",
+          "default": 0
+        },
+        {
+          "name": "mid_q",
+          "default": 0.7
+        },
+        {
+          "name": "high_freq",
+          "default": 12000
+        },
+        {
+          "name": "high_gain",
+          "default": 0
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "eq_pultec_low",
+      "type": "effect",
+      "description": "kind=fx | category=filter | flavor=pultec_low | stereo=true | params=freq,boost,cut,mix,level",
+      "category": "effects",
+      "subcategory": "filters",
+      "importPath": "stdlib/effects/filters/eq_pultec_low.vibe",
+      "sourcePath": "effects/filters/eq_pultec_low.vibe",
+      "params": [
+        {
+          "name": "freq",
+          "default": 100
+        },
+        {
+          "name": "boost",
+          "default": 4
+        },
+        {
+          "name": "cut",
+          "default": 3
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "eq_three_band",
       "type": "effect",
-      "description": "Three Band Equalizer",
+      "description": "kind=fx | category=filter | flavor=eq_three_band | stereo=true | params=low_gain,mid_gain,high_gain,low_freq,high_freq,mix,level",
       "category": "effects",
       "subcategory": "filters",
       "importPath": "stdlib/effects/filters/eq_three_band.vibe",
@@ -3546,13 +4857,21 @@
         {
           "name": "high_freq",
           "default": 4000
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "formant_filter",
       "type": "effect",
-      "description": "Formant Filter Effect",
+      "description": "kind=fx | category=filter | flavor=formant | stereo=true | params=freq,attack,decay,mix,level",
       "category": "effects",
       "subcategory": "filters",
       "importPath": "stdlib/effects/filters/formant_filter.vibe",
@@ -3572,14 +4891,18 @@
         },
         {
           "name": "mix",
-          "default": 0.7
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "highpass",
       "type": "effect",
-      "description": "High Pass Filter Effect",
+      "description": "kind=fx | category=filter | flavor=highpass | stereo=true | params=cutoff,resonance,mix,level",
       "category": "effects",
       "subcategory": "filters",
       "importPath": "stdlib/effects/filters/highpass.vibe",
@@ -3596,13 +4919,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "ladder_filter",
       "type": "effect",
-      "description": "Ladder Filter Effect",
+      "description": "kind=fx | category=filter | flavor=ladder | stereo=true | params=cutoff,res,mix,level",
       "category": "effects",
       "subcategory": "filters",
       "importPath": "stdlib/effects/filters/ladder_filter.vibe",
@@ -3619,13 +4946,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "lowpass",
       "type": "effect",
-      "description": "Low Pass Filter Effect",
+      "description": "kind=fx | category=filter | flavor=lowpass | stereo=true | params=cutoff,resonance,mix,level",
       "category": "effects",
       "subcategory": "filters",
       "importPath": "stdlib/effects/filters/lowpass.vibe",
@@ -3642,13 +4973,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "moog_filter",
       "type": "effect",
-      "description": "Moog Ladder Filter Effect",
+      "description": "kind=fx | category=filter | flavor=moog | stereo=true | params=cutoff,resonance,mix,level",
       "category": "effects",
       "subcategory": "filters",
       "importPath": "stdlib/effects/filters/moog_filter.vibe",
@@ -3665,13 +5000,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "resonator",
       "type": "effect",
-      "description": "Resonator Effect",
+      "description": "kind=fx | category=filter | flavor=resonator | stereo=true | params=freq,decay,mix,level",
       "category": "effects",
       "subcategory": "filters",
       "importPath": "stdlib/effects/filters/resonator.vibe",
@@ -3687,14 +5026,461 @@
         },
         {
           "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "beat_repeater",
+      "type": "effect",
+      "description": "kind=fx | category=glitch | flavor=beat_repeater | stereo=true | params=capture_seconds,retrigger_rate,decay,mix,level",
+      "category": "effects",
+      "subcategory": "glitch",
+      "importPath": "stdlib/effects/glitch/beat_repeater.vibe",
+      "sourcePath": "effects/glitch/beat_repeater.vibe",
+      "params": [
+        {
+          "name": "capture_seconds",
           "default": 0.5
+        },
+        {
+          "name": "retrigger_rate",
+          "default": 4
+        },
+        {
+          "name": "decay",
+          "default": 0.25
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "frame_freezer",
+      "type": "effect",
+      "description": "kind=fx | category=glitch | flavor=frame_freezer | stereo=true | params=freeze_chance,freeze_duration,mix,level",
+      "category": "effects",
+      "subcategory": "glitch",
+      "importPath": "stdlib/effects/glitch/frame_freezer.vibe",
+      "sourcePath": "effects/glitch/frame_freezer.vibe",
+      "params": [
+        {
+          "name": "freeze_chance",
+          "default": 0.4
+        },
+        {
+          "name": "freeze_duration",
+          "default": 0.05
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "reverse_buffer",
+      "type": "effect",
+      "description": "kind=fx | category=glitch | flavor=reverse_buffer | stereo=true | params=window_seconds,trigger_rate,mix,level",
+      "category": "effects",
+      "subcategory": "glitch",
+      "importPath": "stdlib/effects/glitch/reverse_buffer.vibe",
+      "sourcePath": "effects/glitch/reverse_buffer.vibe",
+      "params": [
+        {
+          "name": "window_seconds",
+          "default": 0.5
+        },
+        {
+          "name": "trigger_rate",
+          "default": 2
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "stutter_repeat",
+      "type": "effect",
+      "description": "kind=fx | category=glitch | flavor=stutter_repeat | stereo=true | params=subdivision,gate_pattern,mix,level",
+      "category": "effects",
+      "subcategory": "glitch",
+      "importPath": "stdlib/effects/glitch/stutter_repeat.vibe",
+      "sourcePath": "effects/glitch/stutter_repeat.vibe",
+      "params": [
+        {
+          "name": "subdivision",
+          "default": 0.125
+        },
+        {
+          "name": "gate_pattern",
+          "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "transient_glitch",
+      "type": "effect",
+      "description": "kind=fx | category=glitch | flavor=transient_glitch | stereo=true | params=threshold,glitch_chance,glitch_amount,mix,level",
+      "category": "effects",
+      "subcategory": "glitch",
+      "importPath": "stdlib/effects/glitch/transient_glitch.vibe",
+      "sourcePath": "effects/glitch/transient_glitch.vibe",
+      "params": [
+        {
+          "name": "threshold",
+          "default": 0.2
+        },
+        {
+          "name": "glitch_chance",
+          "default": 0.5
+        },
+        {
+          "name": "glitch_amount",
+          "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "clouds_processor",
+      "type": "effect",
+      "description": "kind=fx | category=granular | flavor=clouds | stereo=true | params=mode,freeze,position,size,pitch,density,texture,dry_wet,spread,feedback,reverb,trigger,quality,blend,mix,level",
+      "category": "effects",
+      "subcategory": "granular",
+      "importPath": "stdlib/effects/granular/clouds_processor.vibe",
+      "sourcePath": "effects/granular/clouds_processor.vibe",
+      "params": [
+        {
+          "name": "mode",
+          "default": 0
+        },
+        {
+          "name": "freeze",
+          "default": 0
+        },
+        {
+          "name": "position",
+          "default": 0.5
+        },
+        {
+          "name": "size",
+          "default": 0.5
+        },
+        {
+          "name": "pitch",
+          "default": 0
+        },
+        {
+          "name": "density",
+          "default": 0.5
+        },
+        {
+          "name": "texture",
+          "default": 0.5
+        },
+        {
+          "name": "dry_wet",
+          "default": 0.5
+        },
+        {
+          "name": "spread",
+          "default": 0.3
+        },
+        {
+          "name": "feedback",
+          "default": 0
+        },
+        {
+          "name": "reverb",
+          "default": 0
+        },
+        {
+          "name": "trigger",
+          "default": 0
+        },
+        {
+          "name": "quality",
+          "default": 0
+        },
+        {
+          "name": "blend",
+          "default": 1
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "density_grain",
+      "type": "effect",
+      "description": "kind=fx | category=granular | flavor=density_grain | stereo=true | params=density_min,density_max,mod_freq,grain_size,mix,level",
+      "category": "effects",
+      "subcategory": "granular",
+      "importPath": "stdlib/effects/granular/density_grain.vibe",
+      "sourcePath": "effects/granular/density_grain.vibe",
+      "params": [
+        {
+          "name": "density_min",
+          "default": 5
+        },
+        {
+          "name": "density_max",
+          "default": 60
+        },
+        {
+          "name": "mod_freq",
+          "default": 0.25
+        },
+        {
+          "name": "grain_size",
+          "default": 0.1
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "granular_freeze",
+      "type": "effect",
+      "description": "kind=fx | category=granular | flavor=freeze | stereo=true | params=freeze,density,grain_size,pitch,pos_jitter,mix,level",
+      "category": "effects",
+      "subcategory": "granular",
+      "importPath": "stdlib/effects/granular/granular_freeze.vibe",
+      "sourcePath": "effects/granular/granular_freeze.vibe",
+      "params": [
+        {
+          "name": "freeze",
+          "default": 0
+        },
+        {
+          "name": "density",
+          "default": 30
+        },
+        {
+          "name": "grain_size",
+          "default": 0.15
+        },
+        {
+          "name": "pitch",
+          "default": 1
+        },
+        {
+          "name": "pos_jitter",
+          "default": 0.4
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "granular_pitch_shift",
+      "type": "effect",
+      "description": "kind=fx | category=granular | flavor=pitch_shift | stereo=true | params=pitch,grain_size,mix,level",
+      "category": "effects",
+      "subcategory": "granular",
+      "importPath": "stdlib/effects/granular/granular_pitch_shift.vibe",
+      "sourcePath": "effects/granular/granular_pitch_shift.vibe",
+      "params": [
+        {
+          "name": "pitch",
+          "default": 1
+        },
+        {
+          "name": "grain_size",
+          "default": 0.1
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "granular_processor",
+      "type": "effect",
+      "description": "kind=fx | category=granular | flavor=processor | stereo=true | params=density,grain_size,pitch,pos_jitter,mix,level",
+      "category": "effects",
+      "subcategory": "granular",
+      "importPath": "stdlib/effects/granular/granular_processor.vibe",
+      "sourcePath": "effects/granular/granular_processor.vibe",
+      "params": [
+        {
+          "name": "density",
+          "default": 30
+        },
+        {
+          "name": "grain_size",
+          "default": 0.1
+        },
+        {
+          "name": "pitch",
+          "default": 1
+        },
+        {
+          "name": "pos_jitter",
+          "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "granular_time_stretch",
+      "type": "effect",
+      "description": "kind=fx | category=granular | flavor=time_stretch | stereo=true | params=rate,grain_size,mix,level",
+      "category": "effects",
+      "subcategory": "granular",
+      "importPath": "stdlib/effects/granular/granular_time_stretch.vibe",
+      "sourcePath": "effects/granular/granular_time_stretch.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 1
+        },
+        {
+          "name": "grain_size",
+          "default": 0.15
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "scatter",
+      "type": "effect",
+      "description": "kind=fx | category=granular | flavor=scatter | stereo=true | params=jitter_amount,density,grain_size,mix,level",
+      "category": "effects",
+      "subcategory": "granular",
+      "importPath": "stdlib/effects/granular/scatter.vibe",
+      "sourcePath": "effects/granular/scatter.vibe",
+      "params": [
+        {
+          "name": "jitter_amount",
+          "default": 0.5
+        },
+        {
+          "name": "density",
+          "default": 30
+        },
+        {
+          "name": "grain_size",
+          "default": 0.1
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "warp1_processor",
+      "type": "effect",
+      "description": "kind=fx | category=granular | flavor=warp1 | stereo=true | params=rate,freq_scale,window_size,mix,level",
+      "category": "effects",
+      "subcategory": "granular",
+      "importPath": "stdlib/effects/granular/warp1_processor.vibe",
+      "sourcePath": "effects/granular/warp1_processor.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 1
+        },
+        {
+          "name": "freq_scale",
+          "default": 1
+        },
+        {
+          "name": "window_size",
+          "default": 0.2
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "auto_pan",
       "type": "effect",
-      "description": "Auto Pan Effect",
+      "description": "kind=fx | category=modulation | flavor=auto_pan | stereo=true | params=rate,depth,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/auto_pan.vibe",
@@ -3711,13 +5497,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "auto_wah",
       "type": "effect",
-      "description": "Auto-Wah Effect",
+      "description": "kind=fx | category=modulation | flavor=auto_wah | stereo=true | params=sensitivity,depth,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/auto_wah.vibe",
@@ -3734,13 +5524,83 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "auto_wah_pro",
+      "type": "effect",
+      "description": "kind=fx | category=modulation | flavor=auto_wah_pro | stereo=true | params=sensitivity,q,range_min,range_max,mix,level",
+      "category": "effects",
+      "subcategory": "modulation",
+      "importPath": "stdlib/effects/modulation/auto_wah_pro.vibe",
+      "sourcePath": "effects/modulation/auto_wah_pro.vibe",
+      "params": [
+        {
+          "name": "sensitivity",
+          "default": 1
+        },
+        {
+          "name": "q",
+          "default": 2
+        },
+        {
+          "name": "range_min",
+          "default": 250
+        },
+        {
+          "name": "range_max",
+          "default": 3000
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "barber_phaser",
+      "type": "effect",
+      "description": "kind=fx | category=modulation | flavor=barber_phaser | stereo=true | params=rate,depth,num_voices,mix,level",
+      "category": "effects",
+      "subcategory": "modulation",
+      "importPath": "stdlib/effects/modulation/barber_phaser.vibe",
+      "sourcePath": "effects/modulation/barber_phaser.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 0.2
+        },
+        {
+          "name": "depth",
+          "default": 1
+        },
+        {
+          "name": "num_voices",
+          "default": 1
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "chorus",
       "type": "effect",
-      "description": "Chorus Effect",
+      "description": "kind=fx | category=modulation | flavor=chorus | stereo=true | params=rate,depth,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/chorus.vibe",
@@ -3756,14 +5616,49 @@
         },
         {
           "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "chorus_dimension_3d",
+      "type": "effect",
+      "description": "kind=fx | category=modulation | flavor=chorus_dimension_3d | stereo=true | params=rate,depth,spread,mix,level",
+      "category": "effects",
+      "subcategory": "modulation",
+      "importPath": "stdlib/effects/modulation/chorus_dimension_3d.vibe",
+      "sourcePath": "effects/modulation/chorus_dimension_3d.vibe",
+      "params": [
+        {
+          "name": "rate",
           "default": 0.5
+        },
+        {
+          "name": "depth",
+          "default": 0.004
+        },
+        {
+          "name": "spread",
+          "default": 1
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "dimension_chorus",
       "type": "effect",
-      "description": "Dimension Chorus Effect",
+      "description": "kind=fx | category=modulation | flavor=dimension_chorus | stereo=true | params=mode,rate,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/dimension_chorus.vibe",
@@ -3779,14 +5674,72 @@
         },
         {
           "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "dimension_d",
+      "type": "effect",
+      "description": "kind=fx | category=modulation | flavor=dimension_d | stereo=true | params=mode,mix,level",
+      "category": "effects",
+      "subcategory": "modulation",
+      "importPath": "stdlib/effects/modulation/dimension_d.vibe",
+      "sourcePath": "effects/modulation/dimension_d.vibe",
+      "params": [
+        {
+          "name": "mode",
           "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "ensemble_chorus",
+      "type": "effect",
+      "description": "kind=fx | category=modulation | flavor=ensemble_chorus | stereo=true | params=rate,depth,voices,mix,level",
+      "category": "effects",
+      "subcategory": "modulation",
+      "importPath": "stdlib/effects/modulation/ensemble_chorus.vibe",
+      "sourcePath": "effects/modulation/ensemble_chorus.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 0.6
+        },
+        {
+          "name": "depth",
+          "default": 0.004
+        },
+        {
+          "name": "voices",
+          "default": 1
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "flanger",
       "type": "effect",
-      "description": "Flanger Effect",
+      "description": "kind=fx | category=modulation | flavor=flanger | stereo=true | params=rate,depth,feedback,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/flanger.vibe",
@@ -3806,14 +5759,18 @@
         },
         {
           "name": "mix",
-          "default": 0.5
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "freq_shift",
       "type": "effect",
-      "description": "Frequency Shifter Effect",
+      "description": "kind=fx | category=modulation | flavor=freq_shift | stereo=true | params=shift,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/freq_shift.vibe",
@@ -3825,14 +5782,99 @@
         },
         {
           "name": "mix",
-          "default": 0.5
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "harmonic_tremolo",
+      "type": "effect",
+      "description": "kind=fx | category=modulation | flavor=harmonic_tremolo | stereo=true | params=rate,depth,mix,level",
+      "category": "effects",
+      "subcategory": "modulation",
+      "importPath": "stdlib/effects/modulation/harmonic_tremolo.vibe",
+      "sourcePath": "effects/modulation/harmonic_tremolo.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 5
+        },
+        {
+          "name": "depth",
+          "default": 0.7
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "leslie_pro",
+      "type": "effect",
+      "description": "kind=fx | category=modulation | flavor=leslie_pro | stereo=true | params=speed,depth,brake,mix,level",
+      "category": "effects",
+      "subcategory": "modulation",
+      "importPath": "stdlib/effects/modulation/leslie_pro.vibe",
+      "sourcePath": "effects/modulation/leslie_pro.vibe",
+      "params": [
+        {
+          "name": "speed",
+          "default": 1
+        },
+        {
+          "name": "depth",
+          "default": 1
+        },
+        {
+          "name": "brake",
+          "default": 0
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "pan",
+      "type": "effect",
+      "description": "kind=fx | category=modulation | flavor=pan_static | stereo=true | params=pan,mix,level",
+      "category": "effects",
+      "subcategory": "modulation",
+      "importPath": "stdlib/effects/modulation/pan.vibe",
+      "sourcePath": "effects/modulation/pan.vibe",
+      "params": [
+        {
+          "name": "pan",
+          "default": 0
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "phaser",
       "type": "effect",
-      "description": "Phaser Effect",
+      "description": "kind=fx | category=modulation | flavor=phaser | stereo=true | params=rate,depth,freq,feedback,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/phaser.vibe",
@@ -3856,14 +5898,49 @@
         },
         {
           "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "phaser_8stage",
+      "type": "effect",
+      "description": "kind=fx | category=modulation | flavor=phaser_8stage | stereo=true | params=rate,depth,feedback,mix,level",
+      "category": "effects",
+      "subcategory": "modulation",
+      "importPath": "stdlib/effects/modulation/phaser_8stage.vibe",
+      "sourcePath": "effects/modulation/phaser_8stage.vibe",
+      "params": [
+        {
+          "name": "rate",
           "default": 0.5
+        },
+        {
+          "name": "depth",
+          "default": 0.0008
+        },
+        {
+          "name": "feedback",
+          "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "pitch_shift",
       "type": "effect",
-      "description": "Pitch Shift Effect",
+      "description": "kind=fx | category=modulation | flavor=pitch_shift | stereo=true | params=ratio,window,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/pitch_shift.vibe",
@@ -3879,14 +5956,18 @@
         },
         {
           "name": "mix",
-          "default": 0.5
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "ring_mod",
       "type": "effect",
-      "description": "Ring Modulator Effect",
+      "description": "kind=fx | category=modulation | flavor=ring_mod | stereo=true | params=freq,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/ring_mod.vibe",
@@ -3898,14 +5979,49 @@
         },
         {
           "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "ring_mod_modulated",
+      "type": "effect",
+      "description": "kind=fx | category=modulation | flavor=ring_mod_modulated | stereo=true | params=carrier_min,carrier_max,sweep_rate,mix,level",
+      "category": "effects",
+      "subcategory": "modulation",
+      "importPath": "stdlib/effects/modulation/ring_mod_modulated.vibe",
+      "sourcePath": "effects/modulation/ring_mod_modulated.vibe",
+      "params": [
+        {
+          "name": "carrier_min",
+          "default": 50
+        },
+        {
+          "name": "carrier_max",
+          "default": 800
+        },
+        {
+          "name": "sweep_rate",
+          "default": 0.3
+        },
+        {
+          "name": "mix",
           "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "rotary",
       "type": "effect",
-      "description": "Rotary Speaker Effect",
+      "description": "kind=fx | category=modulation | flavor=rotary | stereo=true | params=rate,depth,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/rotary.vibe",
@@ -3922,13 +6038,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "tremolo",
       "type": "effect",
-      "description": "Tremolo Effect",
+      "description": "kind=fx | category=modulation | flavor=tremolo | stereo=true | params=rate,depth,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/tremolo.vibe",
@@ -3945,13 +6065,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "vibrato",
       "type": "effect",
-      "description": "Vibrato Effect",
+      "description": "kind=fx | category=modulation | flavor=vibrato | stereo=true | params=rate,depth,mix,level",
       "category": "effects",
       "subcategory": "modulation",
       "importPath": "stdlib/effects/modulation/vibrato.vibe",
@@ -3968,13 +6092,272 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "vibrato_drift",
+      "type": "effect",
+      "description": "kind=fx | category=modulation | flavor=vibrato_drift | stereo=true | params=rate,depth,drift_amount,mix,level",
+      "category": "effects",
+      "subcategory": "modulation",
+      "importPath": "stdlib/effects/modulation/vibrato_drift.vibe",
+      "sourcePath": "effects/modulation/vibrato_drift.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 5
+        },
+        {
+          "name": "depth",
+          "default": 0.002
+        },
+        {
+          "name": "drift_amount",
+          "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "auto_tune_vibe",
+      "type": "effect",
+      "description": "kind=fx | category=pitch | flavor=auto_tune_vibe | stereo=true | params=scale_root,scale_mode,snap_strength,mix,level",
+      "category": "effects",
+      "subcategory": "pitch",
+      "importPath": "stdlib/effects/pitch/auto_tune_vibe.vibe",
+      "sourcePath": "effects/pitch/auto_tune_vibe.vibe",
+      "params": [
+        {
+          "name": "scale_root",
+          "default": 0
+        },
+        {
+          "name": "scale_mode",
+          "default": 1
+        },
+        {
+          "name": "snap_strength",
+          "default": 1
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "formant_shifter",
+      "type": "effect",
+      "description": "kind=fx | category=pitch | flavor=formant_shifter | stereo=true | params=pitch_semitones,formant_shift,mix,level",
+      "category": "effects",
+      "subcategory": "pitch",
+      "importPath": "stdlib/effects/pitch/formant_shifter.vibe",
+      "sourcePath": "effects/pitch/formant_shifter.vibe",
+      "params": [
+        {
+          "name": "pitch_semitones",
+          "default": 0
+        },
+        {
+          "name": "formant_shift",
+          "default": 1
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "freq_shifter_ssb",
+      "type": "effect",
+      "description": "kind=fx | category=pitch | flavor=freq_shifter_ssb | stereo=true | params=shift_hz,mix,level",
+      "category": "effects",
+      "subcategory": "pitch",
+      "importPath": "stdlib/effects/pitch/freq_shifter_ssb.vibe",
+      "sourcePath": "effects/pitch/freq_shifter_ssb.vibe",
+      "params": [
+        {
+          "name": "shift_hz",
+          "default": 50
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "harmonizer_2voice",
+      "type": "effect",
+      "description": "kind=fx | category=pitch | flavor=harmonizer_2voice | stereo=true | params=voice1_semitones,voice2_semitones,mix,level",
+      "category": "effects",
+      "subcategory": "pitch",
+      "importPath": "stdlib/effects/pitch/harmonizer_2voice.vibe",
+      "sourcePath": "effects/pitch/harmonizer_2voice.vibe",
+      "params": [
+        {
+          "name": "voice1_semitones",
+          "default": 3
+        },
+        {
+          "name": "voice2_semitones",
+          "default": 5
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "harmonizer_4voice",
+      "type": "effect",
+      "description": "kind=fx | category=pitch | flavor=harmonizer_4voice | stereo=true | params=voice1_semitones,voice2_semitones,voice3_semitones,voice4_semitones,mix,level",
+      "category": "effects",
+      "subcategory": "pitch",
+      "importPath": "stdlib/effects/pitch/harmonizer_4voice.vibe",
+      "sourcePath": "effects/pitch/harmonizer_4voice.vibe",
+      "params": [
+        {
+          "name": "voice1_semitones",
+          "default": 3
+        },
+        {
+          "name": "voice2_semitones",
+          "default": 5
+        },
+        {
+          "name": "voice3_semitones",
+          "default": 7
+        },
+        {
+          "name": "voice4_semitones",
+          "default": 12
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "octaver_down",
+      "type": "effect",
+      "description": "kind=fx | category=pitch | flavor=octaver_down | stereo=true | params=amount,lp_freq,mix,level",
+      "category": "effects",
+      "subcategory": "pitch",
+      "importPath": "stdlib/effects/pitch/octaver_down.vibe",
+      "sourcePath": "effects/pitch/octaver_down.vibe",
+      "params": [
+        {
+          "name": "amount",
+          "default": 0.8
+        },
+        {
+          "name": "lp_freq",
+          "default": 800
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "octaver_up",
+      "type": "effect",
+      "description": "kind=fx | category=pitch | flavor=octaver_up | stereo=true | params=amount,lp_freq,mix,level",
+      "category": "effects",
+      "subcategory": "pitch",
+      "importPath": "stdlib/effects/pitch/octaver_up.vibe",
+      "sourcePath": "effects/pitch/octaver_up.vibe",
+      "params": [
+        {
+          "name": "amount",
+          "default": 0.8
+        },
+        {
+          "name": "lp_freq",
+          "default": 4000
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "shepherd_tone_fx",
+      "type": "effect",
+      "description": "kind=fx | category=pitch | flavor=shepherd_tone_fx | stereo=true | params=rate,num_voices,mix,level",
+      "category": "effects",
+      "subcategory": "pitch",
+      "importPath": "stdlib/effects/pitch/shepherd_tone_fx.vibe",
+      "sourcePath": "effects/pitch/shepherd_tone_fx.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 0.25
+        },
+        {
+          "name": "num_voices",
+          "default": 4
+        },
+        {
+          "name": "mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "gverb",
       "type": "effect",
-      "description": "GVerb Reverb Effect",
+      "description": "kind=fx | category=reverb | flavor=gverb | stereo=true | params=roomsize,revtime,damping,spread,drylevel,earlylevel,taillevel,mix,level",
       "category": "effects",
       "subcategory": "reverbs",
       "importPath": "stdlib/effects/reverbs/gverb.vibe",
@@ -4010,14 +6393,18 @@
         },
         {
           "name": "mix",
-          "default": 0.35
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "hall_reverb",
       "type": "effect",
-      "description": "Hall Reverb Effect",
+      "description": "kind=fx | category=reverb | flavor=hall | stereo=true | params=size,decay,damping,predelay,mix,level",
       "category": "effects",
       "subcategory": "reverbs",
       "importPath": "stdlib/effects/reverbs/hall_reverb.vibe",
@@ -4042,13 +6429,17 @@
         {
           "name": "mix",
           "default": 0.35
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "plate_reverb",
       "type": "effect",
-      "description": "Plate Reverb Effect",
+      "description": "kind=fx | category=reverb | flavor=plate | stereo=true | params=time,damp,mix,level",
       "category": "effects",
       "subcategory": "reverbs",
       "importPath": "stdlib/effects/reverbs/plate_reverb.vibe",
@@ -4059,19 +6450,23 @@
           "default": 2
         },
         {
-          "name": "damping",
+          "name": "damp",
           "default": 0.4
         },
         {
           "name": "mix",
           "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "reverb",
       "type": "effect",
-      "description": "Intentionally simple (“dumb”) reverb made from delays and filters so it is easy to debug.",
+      "description": "kind=fx | category=reverb | flavor=freeverb | stereo=true | params=room,damp,mix,level",
       "category": "effects",
       "subcategory": "reverbs",
       "importPath": "stdlib/effects/reverbs/reverb.vibe",
@@ -4088,13 +6483,215 @@
         {
           "name": "mix",
           "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "reverb_ducked",
+      "type": "effect",
+      "description": "kind=fx | category=reverb | flavor=ducked | stereo=true | params=time,ducking,threshold,mix,level",
+      "category": "effects",
+      "subcategory": "reverbs",
+      "importPath": "stdlib/effects/reverbs/reverb_ducked.vibe",
+      "sourcePath": "effects/reverbs/reverb_ducked.vibe",
+      "params": [
+        {
+          "name": "time",
+          "default": 2.5
+        },
+        {
+          "name": "ducking",
+          "default": 0.7
+        },
+        {
+          "name": "threshold",
+          "default": 0.1
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "reverb_fdn8",
+      "type": "effect",
+      "description": "kind=fx | category=reverb | flavor=fdn8 | stereo=true | params=time,damp,modulation_amount,mix,level",
+      "category": "effects",
+      "subcategory": "reverbs",
+      "importPath": "stdlib/effects/reverbs/reverb_fdn8.vibe",
+      "sourcePath": "effects/reverbs/reverb_fdn8.vibe",
+      "params": [
+        {
+          "name": "time",
+          "default": 2.5
+        },
+        {
+          "name": "damp",
+          "default": 0.4
+        },
+        {
+          "name": "modulation_amount",
+          "default": 0.3
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "reverb_gated",
+      "type": "effect",
+      "description": "kind=fx | category=reverb | flavor=gated | stereo=true | params=time,gate_time,threshold,mix,level",
+      "category": "effects",
+      "subcategory": "reverbs",
+      "importPath": "stdlib/effects/reverbs/reverb_gated.vibe",
+      "sourcePath": "effects/reverbs/reverb_gated.vibe",
+      "params": [
+        {
+          "name": "time",
+          "default": 1.5
+        },
+        {
+          "name": "gate_time",
+          "default": 0.25
+        },
+        {
+          "name": "threshold",
+          "default": 0.05
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "reverb_greyhole",
+      "type": "effect",
+      "description": "kind=fx | category=reverb | flavor=greyhole | stereo=true | params=delay_time,damp,size,diff,feedback,mod_depth,mod_freq,mix,level",
+      "category": "effects",
+      "subcategory": "reverbs",
+      "importPath": "stdlib/effects/reverbs/reverb_greyhole.vibe",
+      "sourcePath": "effects/reverbs/reverb_greyhole.vibe",
+      "params": [
+        {
+          "name": "delay_time",
+          "default": 0.5
+        },
+        {
+          "name": "damp",
+          "default": 0.5
+        },
+        {
+          "name": "size",
+          "default": 1
+        },
+        {
+          "name": "diff",
+          "default": 0.7
+        },
+        {
+          "name": "feedback",
+          "default": 0.7
+        },
+        {
+          "name": "mod_depth",
+          "default": 0.1
+        },
+        {
+          "name": "mod_freq",
+          "default": 2
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "reverb_infinite",
+      "type": "effect",
+      "description": "kind=fx | category=reverb | flavor=infinite | stereo=true | params=freeze,time,mix,level",
+      "category": "effects",
+      "subcategory": "reverbs",
+      "importPath": "stdlib/effects/reverbs/reverb_infinite.vibe",
+      "sourcePath": "effects/reverbs/reverb_infinite.vibe",
+      "params": [
+        {
+          "name": "freeze",
+          "default": 0
+        },
+        {
+          "name": "time",
+          "default": 4
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "reverb_jpverb",
+      "type": "effect",
+      "description": "kind=fx | category=reverb | flavor=jpverb | stereo=true | params=time,damp,size,mix,level",
+      "category": "effects",
+      "subcategory": "reverbs",
+      "importPath": "stdlib/effects/reverbs/reverb_jpverb.vibe",
+      "sourcePath": "effects/reverbs/reverb_jpverb.vibe",
+      "params": [
+        {
+          "name": "time",
+          "default": 2
+        },
+        {
+          "name": "damp",
+          "default": 0.3
+        },
+        {
+          "name": "size",
+          "default": 1
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "reverb_minimal",
       "type": "effect",
-      "description": "Minimal Reverb Effect (debug helper)",
+      "description": "kind=fx | category=reverb | flavor=minimal | stereo=true | params=room,damp,mix,level",
       "category": "effects",
       "subcategory": "reverbs",
       "importPath": "stdlib/effects/reverbs/reverb_minimal.vibe",
@@ -4107,13 +6704,75 @@
         {
           "name": "damp",
           "default": 0.4
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "reverb_reverse",
+      "type": "effect",
+      "description": "kind=fx | category=reverb | flavor=reverse | stereo=true | params=time,reverse_window,mix,level",
+      "category": "effects",
+      "subcategory": "reverbs",
+      "importPath": "stdlib/effects/reverbs/reverb_reverse.vibe",
+      "sourcePath": "effects/reverbs/reverb_reverse.vibe",
+      "params": [
+        {
+          "name": "time",
+          "default": 2
+        },
+        {
+          "name": "reverse_window",
+          "default": 1
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "reverb_shimmer_pro",
+      "type": "effect",
+      "description": "kind=fx | category=reverb | flavor=shimmer_pro | stereo=true | params=time,shimmer_amount,mix,level",
+      "category": "effects",
+      "subcategory": "reverbs",
+      "importPath": "stdlib/effects/reverbs/reverb_shimmer_pro.vibe",
+      "sourcePath": "effects/reverbs/reverb_shimmer_pro.vibe",
+      "params": [
+        {
+          "name": "time",
+          "default": 3
+        },
+        {
+          "name": "shimmer_amount",
+          "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "room_reverb",
       "type": "effect",
-      "description": "Room Reverb Effect",
+      "description": "kind=fx | category=reverb | flavor=room | stereo=true | params=size,brightness,mix,level",
       "category": "effects",
       "subcategory": "reverbs",
       "importPath": "stdlib/effects/reverbs/room_reverb.vibe",
@@ -4130,13 +6789,17 @@
         {
           "name": "mix",
           "default": 0.25
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "shimmer_reverb",
       "type": "effect",
-      "description": "Shimmer Reverb Effect",
+      "description": "kind=fx | category=reverb | flavor=shimmer | stereo=true | params=size,shimmer,pitch,decay,mix,level",
       "category": "effects",
       "subcategory": "reverbs",
       "importPath": "stdlib/effects/reverbs/shimmer_reverb.vibe",
@@ -4161,13 +6824,17 @@
         {
           "name": "mix",
           "default": 0.4
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "spring_reverb",
       "type": "effect",
-      "description": "Spring Reverb Effect",
+      "description": "kind=fx | category=reverb | flavor=spring | stereo=true | params=tension,diffusion,mix,level",
       "category": "effects",
       "subcategory": "reverbs",
       "importPath": "stdlib/effects/reverbs/spring_reverb.vibe",
@@ -4184,13 +6851,17 @@
         {
           "name": "mix",
           "default": 0.35
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "haas",
       "type": "effect",
-      "description": "Haas Effect (Stereo Widener)",
+      "description": "kind=fx | category=spatial | flavor=haas | stereo=true | params=delay_time,mix,level",
       "category": "effects",
       "subcategory": "spatial",
       "importPath": "stdlib/effects/spatial/haas.vibe",
@@ -4203,13 +6874,17 @@
         {
           "name": "mix",
           "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "stereo_enhancer",
       "type": "effect",
-      "description": "Stereo Enhancer Effect",
+      "description": "kind=fx | category=spatial | flavor=stereo_enhancer | stereo=true | params=width,center,bass_mono,mix,level",
       "category": "effects",
       "subcategory": "spatial",
       "importPath": "stdlib/effects/spatial/stereo_enhancer.vibe",
@@ -4230,13 +6905,17 @@
         {
           "name": "mix",
           "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "stereo_width",
       "type": "effect",
-      "description": "Stereo Width Effect",
+      "description": "kind=fx | category=spatial | flavor=stereo_width | stereo=true | params=width,mix,level",
       "category": "effects",
       "subcategory": "spatial",
       "importPath": "stdlib/effects/spatial/stereo_width.vibe",
@@ -4245,13 +6924,282 @@
         {
           "name": "width",
           "default": 1.5
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "spectral_blur",
+      "type": "effect",
+      "description": "kind=fx | category=spectral | flavor=blur | stereo=true | params=bins,mix,level",
+      "category": "effects",
+      "subcategory": "spectral",
+      "importPath": "stdlib/effects/spectral/spectral_blur.vibe",
+      "sourcePath": "effects/spectral/spectral_blur.vibe",
+      "params": [
+        {
+          "name": "bins",
+          "default": 10
+        },
+        {
+          "name": "mix",
+          "default": 0.7
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "spectral_brickwall",
+      "type": "effect",
+      "description": "kind=fx | category=spectral | flavor=brickwall | stereo=true | params=width,mix,level",
+      "category": "effects",
+      "subcategory": "spectral",
+      "importPath": "stdlib/effects/spectral/spectral_brickwall.vibe",
+      "sourcePath": "effects/spectral/spectral_brickwall.vibe",
+      "params": [
+        {
+          "name": "width",
+          "default": 0
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "spectral_compressor",
+      "type": "effect",
+      "description": "kind=fx | category=spectral | flavor=compressor | stereo=true | params=threshold,ratio,mix,level",
+      "category": "effects",
+      "subcategory": "spectral",
+      "importPath": "stdlib/effects/spectral/spectral_compressor.vibe",
+      "sourcePath": "effects/spectral/spectral_compressor.vibe",
+      "params": [
+        {
+          "name": "threshold",
+          "default": 5
+        },
+        {
+          "name": "ratio",
+          "default": 4
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "spectral_denoise",
+      "type": "effect",
+      "description": "kind=fx | category=spectral | flavor=denoise | stereo=true | params=threshold,mix,level",
+      "category": "effects",
+      "subcategory": "spectral",
+      "importPath": "stdlib/effects/spectral/spectral_denoise.vibe",
+      "sourcePath": "effects/spectral/spectral_denoise.vibe",
+      "params": [
+        {
+          "name": "threshold",
+          "default": 2
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "spectral_diffuser",
+      "type": "effect",
+      "description": "kind=fx | category=spectral | flavor=diffuser | stereo=true | params=trig,mix,level",
+      "category": "effects",
+      "subcategory": "spectral",
+      "importPath": "stdlib/effects/spectral/spectral_diffuser.vibe",
+      "sourcePath": "effects/spectral/spectral_diffuser.vibe",
+      "params": [
+        {
+          "name": "trig",
+          "default": 0
+        },
+        {
+          "name": "mix",
+          "default": 0.6
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "spectral_freeze",
+      "type": "effect",
+      "description": "kind=fx | category=spectral | flavor=freeze | stereo=true | params=freeze,mix,level",
+      "category": "effects",
+      "subcategory": "spectral",
+      "importPath": "stdlib/effects/spectral/spectral_freeze.vibe",
+      "sourcePath": "effects/spectral/spectral_freeze.vibe",
+      "params": [
+        {
+          "name": "freeze",
+          "default": 0
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "spectral_gate",
+      "type": "effect",
+      "description": "kind=fx | category=spectral | flavor=gate | stereo=true | params=threshold,mix,level",
+      "category": "effects",
+      "subcategory": "spectral",
+      "importPath": "stdlib/effects/spectral/spectral_gate.vibe",
+      "sourcePath": "effects/spectral/spectral_gate.vibe",
+      "params": [
+        {
+          "name": "threshold",
+          "default": 5
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "spectral_morph",
+      "type": "effect",
+      "description": "kind=fx | category=spectral | flavor=morph | stereo=true | params=morph_amount,mix,level",
+      "category": "effects",
+      "subcategory": "spectral",
+      "importPath": "stdlib/effects/spectral/spectral_morph.vibe",
+      "sourcePath": "effects/spectral/spectral_morph.vibe",
+      "params": [
+        {
+          "name": "morph_amount",
+          "default": 0.5
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "spectral_phase_shift",
+      "type": "effect",
+      "description": "kind=fx | category=spectral | flavor=phase_shift | stereo=true | params=shift_radians,mix,level",
+      "category": "effects",
+      "subcategory": "spectral",
+      "importPath": "stdlib/effects/spectral/spectral_phase_shift.vibe",
+      "sourcePath": "effects/spectral/spectral_phase_shift.vibe",
+      "params": [
+        {
+          "name": "shift_radians",
+          "default": 0
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "spectral_scrambler",
+      "type": "effect",
+      "description": "kind=fx | category=spectral | flavor=scrambler | stereo=true | params=amount,trig,mix,level",
+      "category": "effects",
+      "subcategory": "spectral",
+      "importPath": "stdlib/effects/spectral/spectral_scrambler.vibe",
+      "sourcePath": "effects/spectral/spectral_scrambler.vibe",
+      "params": [
+        {
+          "name": "amount",
+          "default": 0.7
+        },
+        {
+          "name": "trig",
+          "default": 0
+        },
+        {
+          "name": "mix",
+          "default": 0.6
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "vocoder_pv",
+      "type": "effect",
+      "description": "kind=fx | category=spectral | flavor=vocoder_pv | stereo=true | params=bands_count,mix,level",
+      "category": "effects",
+      "subcategory": "spectral",
+      "importPath": "stdlib/effects/spectral/vocoder_pv.vibe",
+      "sourcePath": "effects/spectral/vocoder_pv.vibe",
+      "params": [
+        {
+          "name": "bands_count",
+          "default": 32
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "dc_blocker",
       "type": "effect",
-      "description": "DC Blocker Effect",
+      "description": "kind=fx | category=utility | flavor=dc_blocker | stereo=true | params=coef,mix,level",
       "category": "effects",
       "subcategory": "utility",
       "importPath": "stdlib/effects/utility/dc_blocker.vibe",
@@ -4260,13 +7208,21 @@
         {
           "name": "coef",
           "default": 0.995
+        },
+        {
+          "name": "mix",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "stutter",
       "type": "effect",
-      "description": "Stutter Effect",
+      "description": "kind=fx | category=utility | flavor=stutter | stereo=true | params=rate,mix,level",
       "category": "effects",
       "subcategory": "utility",
       "importPath": "stdlib/effects/utility/stutter.vibe",
@@ -4279,13 +7235,17 @@
         {
           "name": "mix",
           "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
     {
       "name": "vocoder",
       "type": "effect",
-      "description": "Vocoder Effect",
+      "description": "kind=fx | category=utility | flavor=vocoder | stereo=true | params=bands,mix,level",
       "category": "effects",
       "subcategory": "utility",
       "importPath": "stdlib/effects/utility/vocoder.vibe",
@@ -4298,6 +7258,10 @@
         {
           "name": "mix",
           "default": 0.8
+        },
+        {
+          "name": "level",
+          "default": 1
         }
       ]
     },
@@ -5274,6 +8238,3148 @@
         {
           "name": "duration",
           "default": 1.5
+        }
+      ]
+    },
+    {
+      "name": "beads",
+      "type": "instrument",
+      "description": "kind=processor | category=eurorack | flavor=mutable-beads | inputs=in:2 | outputs=left:1,right:1 | params=time,pitch,size,shape,density,seed_mode,seed,quality,freeze,feedback,dry_wet,space,spread_time,spread_pitch,spread_size",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/beads.vibe",
+      "sourcePath": "instruments/eurorack/beads.vibe",
+      "params": [
+        {
+          "name": "time",
+          "default": 0.5
+        },
+        {
+          "name": "pitch",
+          "default": 0
+        },
+        {
+          "name": "size",
+          "default": 0.5
+        },
+        {
+          "name": "shape",
+          "default": 0.5
+        },
+        {
+          "name": "density",
+          "default": 0.5
+        },
+        {
+          "name": "seed_mode",
+          "default": 0
+        },
+        {
+          "name": "seed",
+          "default": 0
+        },
+        {
+          "name": "quality",
+          "default": 0
+        },
+        {
+          "name": "freeze",
+          "default": 0
+        },
+        {
+          "name": "feedback",
+          "default": 0
+        },
+        {
+          "name": "dry_wet",
+          "default": 0.5
+        },
+        {
+          "name": "space",
+          "default": 0.2
+        },
+        {
+          "name": "spread_time",
+          "default": 0.1
+        },
+        {
+          "name": "spread_pitch",
+          "default": 0
+        },
+        {
+          "name": "spread_size",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "cv_bus",
+      "type": "instrument",
+      "description": "Make Noise CV Bus — passive-style kr router / normaliser.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/cv_bus.vibe",
+      "sourcePath": "instruments/eurorack/cv_bus.vibe",
+      "params": [
+        {
+          "name": "in1",
+          "default": 0
+        },
+        {
+          "name": "in2",
+          "default": 0
+        },
+        {
+          "name": "in3",
+          "default": 0
+        },
+        {
+          "name": "in4",
+          "default": 0
+        },
+        {
+          "name": "atten1",
+          "default": 1
+        },
+        {
+          "name": "atten2",
+          "default": 1
+        },
+        {
+          "name": "atten3",
+          "default": 1
+        },
+        {
+          "name": "atten4",
+          "default": 1
+        },
+        {
+          "name": "offset1",
+          "default": 0
+        },
+        {
+          "name": "offset2",
+          "default": 0
+        },
+        {
+          "name": "offset3",
+          "default": 0
+        },
+        {
+          "name": "offset4",
+          "default": 0
+        },
+        {
+          "name": "norm12",
+          "default": 1
+        },
+        {
+          "name": "norm23",
+          "default": 1
+        },
+        {
+          "name": "norm34",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "erica_bass_drum",
+      "type": "instrument",
+      "description": "Erica Synths Black Bass Drum - patchable 909-style Eurorack kick voice.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/erica_bass_drum.vibe",
+      "sourcePath": "instruments/eurorack/erica_bass_drum.vibe",
+      "params": [
+        {
+          "name": "trig",
+          "default": 0
+        },
+        {
+          "name": "gate",
+          "default": 0
+        },
+        {
+          "name": "accent",
+          "default": 0
+        },
+        {
+          "name": "pitch",
+          "default": 55
+        },
+        {
+          "name": "pitch_cv",
+          "default": 0
+        },
+        {
+          "name": "pitch_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "tune_depth",
+          "default": 12
+        },
+        {
+          "name": "tune_decay",
+          "default": 0.05
+        },
+        {
+          "name": "attack",
+          "default": 0.55
+        },
+        {
+          "name": "decay",
+          "default": 0.5
+        },
+        {
+          "name": "decay_cv",
+          "default": 0
+        },
+        {
+          "name": "decay_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "drive",
+          "default": 0.25
+        },
+        {
+          "name": "drive_cv",
+          "default": 0
+        },
+        {
+          "name": "drive_cv_amt",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "erica_bassline",
+      "type": "instrument",
+      "description": "Erica Synths Bassline - multi-output acid Eurorack voice.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/erica_bassline.vibe",
+      "sourcePath": "instruments/eurorack/erica_bassline.vibe",
+      "params": [
+        {
+          "name": "gate",
+          "default": 0
+        },
+        {
+          "name": "accent",
+          "default": 0
+        },
+        {
+          "name": "voct",
+          "default": 36
+        },
+        {
+          "name": "freq",
+          "default": 0
+        },
+        {
+          "name": "wave",
+          "default": 1
+        },
+        {
+          "name": "sub_level",
+          "default": 0.3
+        },
+        {
+          "name": "detune",
+          "default": 0.1
+        },
+        {
+          "name": "cutoff",
+          "default": 400
+        },
+        {
+          "name": "cutoff_cv",
+          "default": 0
+        },
+        {
+          "name": "resonance",
+          "default": 0.6
+        },
+        {
+          "name": "filter_mode",
+          "default": 0
+        },
+        {
+          "name": "vcf_decay",
+          "default": 0.3
+        },
+        {
+          "name": "vcf_env_amt",
+          "default": 0.7
+        },
+        {
+          "name": "vca_decay",
+          "default": 0.4
+        },
+        {
+          "name": "level",
+          "default": 0.8
+        },
+        {
+          "name": "fm",
+          "default": 0
+        },
+        {
+          "name": "fm_cv",
+          "default": 0
+        },
+        {
+          "name": "cutoff_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "beef",
+          "default": 0.3
+        }
+      ]
+    },
+    {
+      "name": "erica_black_vco2",
+      "type": "instrument",
+      "description": "Erica Synths Black VCO2 - analog-style multi-output Eurorack oscillator.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/erica_black_vco2.vibe",
+      "sourcePath": "instruments/eurorack/erica_black_vco2.vibe",
+      "params": [
+        {
+          "name": "freq",
+          "default": 110
+        },
+        {
+          "name": "voct",
+          "default": 0
+        },
+        {
+          "name": "octave",
+          "default": 0
+        },
+        {
+          "name": "pw",
+          "default": 0.5
+        },
+        {
+          "name": "saw_shape",
+          "default": 0
+        },
+        {
+          "name": "fm",
+          "default": 0
+        },
+        {
+          "name": "fm_mode",
+          "default": 1
+        },
+        {
+          "name": "fm_in",
+          "default": 0
+        },
+        {
+          "name": "reset_mode",
+          "default": 0
+        },
+        {
+          "name": "reset_trig",
+          "default": 0
+        },
+        {
+          "name": "lfo1_rate",
+          "default": 4
+        },
+        {
+          "name": "lfo1_depth",
+          "default": 0
+        },
+        {
+          "name": "lfo2_rate",
+          "default": 0.5
+        },
+        {
+          "name": "lfo2_depth",
+          "default": 0
+        },
+        {
+          "name": "pw_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "pw_cv",
+          "default": 0
+        },
+        {
+          "name": "mix_sine",
+          "default": 0.5
+        },
+        {
+          "name": "mix_tri",
+          "default": 0.5
+        },
+        {
+          "name": "mix_saw",
+          "default": 0.5
+        },
+        {
+          "name": "mix_pulse",
+          "default": 0.5
+        },
+        {
+          "name": "mix_sub",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "name": "erica_hi_hats",
+      "type": "instrument",
+      "description": "Erica Synths Black Hi-Hats A - patchable closed/open Eurorack hat voice.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/erica_hi_hats.vibe",
+      "sourcePath": "instruments/eurorack/erica_hi_hats.vibe",
+      "params": [
+        {
+          "name": "ch_trig",
+          "default": 0
+        },
+        {
+          "name": "oh_trig",
+          "default": 0
+        },
+        {
+          "name": "accent",
+          "default": 0
+        },
+        {
+          "name": "tone",
+          "default": 0.5
+        },
+        {
+          "name": "tone_cv",
+          "default": 0
+        },
+        {
+          "name": "tone_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "ch_decay",
+          "default": 0.05
+        },
+        {
+          "name": "ch_decay_cv",
+          "default": 0
+        },
+        {
+          "name": "ch_decay_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "oh_decay",
+          "default": 0.4
+        },
+        {
+          "name": "oh_decay_cv",
+          "default": 0
+        },
+        {
+          "name": "oh_decay_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "exclusive",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "erica_snare_drum",
+      "type": "instrument",
+      "description": "Erica Synths Black Snare Drum - patchable 909-style Eurorack snare voice.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/erica_snare_drum.vibe",
+      "sourcePath": "instruments/eurorack/erica_snare_drum.vibe",
+      "params": [
+        {
+          "name": "trig",
+          "default": 0
+        },
+        {
+          "name": "gate",
+          "default": 0
+        },
+        {
+          "name": "accent",
+          "default": 0
+        },
+        {
+          "name": "tune",
+          "default": 180
+        },
+        {
+          "name": "tune_cv",
+          "default": 0
+        },
+        {
+          "name": "noise_tone",
+          "default": 0.5
+        },
+        {
+          "name": "snappy",
+          "default": 0.6
+        },
+        {
+          "name": "decay",
+          "default": 0.3
+        },
+        {
+          "name": "decay_cv",
+          "default": 0
+        },
+        {
+          "name": "tune_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "decay_cv_amt",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "erica_vc_clock",
+      "type": "instrument",
+      "description": "Erica Synths Black VC Clock - Eurorack master clock utility.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/erica_vc_clock.vibe",
+      "sourcePath": "instruments/eurorack/erica_vc_clock.vibe",
+      "params": [
+        {
+          "name": "bpm",
+          "default": 120
+        },
+        {
+          "name": "run",
+          "default": 1
+        },
+        {
+          "name": "division",
+          "default": 1
+        },
+        {
+          "name": "shuffle",
+          "default": 0
+        },
+        {
+          "name": "duty",
+          "default": 0.5
+        },
+        {
+          "name": "random_rate",
+          "default": 1
+        },
+        {
+          "name": "reset_in",
+          "default": 0
+        },
+        {
+          "name": "reset_mode",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "erica_vc_eg",
+      "type": "instrument",
+      "description": "Erica Synths Black VC EG - voltage-controlled ADSR envelope generator.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/erica_vc_eg.vibe",
+      "sourcePath": "instruments/eurorack/erica_vc_eg.vibe",
+      "params": [
+        {
+          "name": "gate",
+          "default": 0
+        },
+        {
+          "name": "trigger",
+          "default": 0
+        },
+        {
+          "name": "attack",
+          "default": 0.05
+        },
+        {
+          "name": "decay",
+          "default": 0.3
+        },
+        {
+          "name": "sustain",
+          "default": 0.5
+        },
+        {
+          "name": "release",
+          "default": 0.3
+        },
+        {
+          "name": "level",
+          "default": 1
+        },
+        {
+          "name": "attack_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "decay_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "sustain_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "release_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "attack_cv",
+          "default": 0
+        },
+        {
+          "name": "decay_cv",
+          "default": 0
+        },
+        {
+          "name": "sustain_cv",
+          "default": 0
+        },
+        {
+          "name": "release_cv",
+          "default": 0
+        },
+        {
+          "name": "loop_gate",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "erica_wavetable_vco",
+      "type": "instrument",
+      "description": "Erica Synths Black Wavetable VCO - procedural wavetable oscillator.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/erica_wavetable_vco.vibe",
+      "sourcePath": "instruments/eurorack/erica_wavetable_vco.vibe",
+      "params": [
+        {
+          "name": "freq",
+          "default": 110
+        },
+        {
+          "name": "voct",
+          "default": 0
+        },
+        {
+          "name": "bank",
+          "default": 0
+        },
+        {
+          "name": "wave",
+          "default": 0
+        },
+        {
+          "name": "morph",
+          "default": 0
+        },
+        {
+          "name": "bitcrush",
+          "default": 0
+        },
+        {
+          "name": "vca",
+          "default": 1
+        },
+        {
+          "name": "sub_shape",
+          "default": 0
+        },
+        {
+          "name": "sub1_level",
+          "default": 0.3
+        },
+        {
+          "name": "sub2_level",
+          "default": 0.2
+        },
+        {
+          "name": "bank_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "bank_cv",
+          "default": 0
+        },
+        {
+          "name": "wave_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "wave_cv",
+          "default": 0
+        },
+        {
+          "name": "bitcrush_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "bitcrush_cv",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "frames",
+      "type": "instrument",
+      "description": "kind=cv | category=eurorack | flavor=mutable-frames | inputs=in1:1,in2:1,in3:1,in4:1 | outputs=out1:kr,out2:kr,out3:kr,out4:kr,mix:kr | params=frame,frame_cv,frame_cv_amt,level_1..level_4,easing_1..easing_4,kf_1_1..kf_4_8",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/frames.vibe",
+      "sourcePath": "instruments/eurorack/frames.vibe",
+      "params": [
+        {
+          "name": "frame",
+          "default": 0
+        },
+        {
+          "name": "frame_cv",
+          "default": 0
+        },
+        {
+          "name": "frame_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "level_1",
+          "default": 0.5
+        },
+        {
+          "name": "easing_1",
+          "default": 1
+        },
+        {
+          "name": "kf_1_1",
+          "default": 0.1
+        },
+        {
+          "name": "kf_1_2",
+          "default": 0.2
+        },
+        {
+          "name": "kf_1_3",
+          "default": 0.3
+        },
+        {
+          "name": "kf_1_4",
+          "default": 0.4
+        },
+        {
+          "name": "kf_1_5",
+          "default": 0.5
+        },
+        {
+          "name": "kf_1_6",
+          "default": 0.6
+        },
+        {
+          "name": "kf_1_7",
+          "default": 0.7
+        },
+        {
+          "name": "kf_1_8",
+          "default": 0.8
+        },
+        {
+          "name": "level_2",
+          "default": 0.5
+        },
+        {
+          "name": "easing_2",
+          "default": 1
+        },
+        {
+          "name": "kf_2_1",
+          "default": 0.1
+        },
+        {
+          "name": "kf_2_2",
+          "default": 0.2
+        },
+        {
+          "name": "kf_2_3",
+          "default": 0.3
+        },
+        {
+          "name": "kf_2_4",
+          "default": 0.4
+        },
+        {
+          "name": "kf_2_5",
+          "default": 0.5
+        },
+        {
+          "name": "kf_2_6",
+          "default": 0.6
+        },
+        {
+          "name": "kf_2_7",
+          "default": 0.7
+        },
+        {
+          "name": "kf_2_8",
+          "default": 0.8
+        },
+        {
+          "name": "level_3",
+          "default": 0.5
+        },
+        {
+          "name": "easing_3",
+          "default": 1
+        },
+        {
+          "name": "kf_3_1",
+          "default": 0.1
+        },
+        {
+          "name": "kf_3_2",
+          "default": 0.2
+        },
+        {
+          "name": "kf_3_3",
+          "default": 0.3
+        },
+        {
+          "name": "kf_3_4",
+          "default": 0.4
+        },
+        {
+          "name": "kf_3_5",
+          "default": 0.5
+        },
+        {
+          "name": "kf_3_6",
+          "default": 0.6
+        },
+        {
+          "name": "kf_3_7",
+          "default": 0.7
+        },
+        {
+          "name": "kf_3_8",
+          "default": 0.8
+        },
+        {
+          "name": "level_4",
+          "default": 0.5
+        },
+        {
+          "name": "easing_4",
+          "default": 1
+        },
+        {
+          "name": "kf_4_1",
+          "default": 0.1
+        },
+        {
+          "name": "kf_4_2",
+          "default": 0.2
+        },
+        {
+          "name": "kf_4_3",
+          "default": 0.3
+        },
+        {
+          "name": "kf_4_4",
+          "default": 0.4
+        },
+        {
+          "name": "kf_4_5",
+          "default": 0.5
+        },
+        {
+          "name": "kf_4_6",
+          "default": 0.6
+        },
+        {
+          "name": "kf_4_7",
+          "default": 0.7
+        },
+        {
+          "name": "kf_4_8",
+          "default": 0.8
+        }
+      ]
+    },
+    {
+      "name": "marbles",
+      "type": "instrument",
+      "description": "Mutable Instruments Marbles - multi-output random sampler approximation.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/marbles.vibe",
+      "sourcePath": "instruments/eurorack/marbles.vibe",
+      "params": [
+        {
+          "name": "clock",
+          "default": 0.25
+        },
+        {
+          "name": "bias_t",
+          "default": 0.5
+        },
+        {
+          "name": "spread_t",
+          "default": 0.3
+        },
+        {
+          "name": "bias_x",
+          "default": 0.5
+        },
+        {
+          "name": "spread_x",
+          "default": 0.5
+        },
+        {
+          "name": "length",
+          "default": 4
+        },
+        {
+          "name": "quant_steps",
+          "default": 12
+        },
+        {
+          "name": "t_model",
+          "default": 0
+        },
+        {
+          "name": "t_rate",
+          "default": 0.5
+        },
+        {
+          "name": "t_bias",
+          "default": 0.5
+        },
+        {
+          "name": "t_jitter",
+          "default": 0.1
+        },
+        {
+          "name": "deja_vu_t",
+          "default": 0
+        },
+        {
+          "name": "length_t",
+          "default": 8
+        },
+        {
+          "name": "x_mode",
+          "default": 1
+        },
+        {
+          "name": "x_scale",
+          "default": 0
+        },
+        {
+          "name": "x_spread",
+          "default": 0.5
+        },
+        {
+          "name": "x_bias",
+          "default": 0.5
+        },
+        {
+          "name": "x_steps",
+          "default": 0
+        },
+        {
+          "name": "deja_vu_x",
+          "default": 0
+        },
+        {
+          "name": "length_x",
+          "default": 8
+        }
+      ]
+    },
+    {
+      "name": "maths",
+      "type": "instrument",
+      "description": "Make Noise Maths — practical multi-output control recreation.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/maths.vibe",
+      "sourcePath": "instruments/eurorack/maths.vibe",
+      "params": [
+        {
+          "name": "rise1",
+          "default": 0.05
+        },
+        {
+          "name": "rise1_cv",
+          "default": 0
+        },
+        {
+          "name": "rise1_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "fall1",
+          "default": 0.5
+        },
+        {
+          "name": "fall1_cv",
+          "default": 0
+        },
+        {
+          "name": "fall1_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "shape1",
+          "default": 0.5
+        },
+        {
+          "name": "cycle1",
+          "default": 0
+        },
+        {
+          "name": "trig1",
+          "default": 0
+        },
+        {
+          "name": "rise4",
+          "default": 0.05
+        },
+        {
+          "name": "rise4_cv",
+          "default": 0
+        },
+        {
+          "name": "rise4_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "fall4",
+          "default": 0.5
+        },
+        {
+          "name": "fall4_cv",
+          "default": 0
+        },
+        {
+          "name": "fall4_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "shape4",
+          "default": 0.5
+        },
+        {
+          "name": "cycle4",
+          "default": 0
+        },
+        {
+          "name": "trig4",
+          "default": 0
+        },
+        {
+          "name": "ch2",
+          "default": 0
+        },
+        {
+          "name": "ch2_scale",
+          "default": 0.5
+        },
+        {
+          "name": "ch2_offset",
+          "default": 0
+        },
+        {
+          "name": "ch3",
+          "default": 0
+        },
+        {
+          "name": "ch3_scale",
+          "default": 0.5
+        },
+        {
+          "name": "ch3_offset",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "peg",
+      "type": "instrument",
+      "description": "4ms PEG - Pingable Envelope Generator.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/peg.vibe",
+      "sourcePath": "instruments/eurorack/peg.vibe",
+      "params": [
+        {
+          "name": "ping_a",
+          "default": 0
+        },
+        {
+          "name": "ping_b",
+          "default": 0
+        },
+        {
+          "name": "div_mult_a",
+          "default": 0
+        },
+        {
+          "name": "div_mult_b",
+          "default": 0
+        },
+        {
+          "name": "skew_a",
+          "default": 0.5
+        },
+        {
+          "name": "skew_b",
+          "default": 0.5
+        },
+        {
+          "name": "curve_a",
+          "default": 0
+        },
+        {
+          "name": "curve_b",
+          "default": 0
+        },
+        {
+          "name": "scale_a",
+          "default": 1
+        },
+        {
+          "name": "scale_b",
+          "default": 1
+        },
+        {
+          "name": "bipolar_a",
+          "default": 0
+        },
+        {
+          "name": "bipolar_b",
+          "default": 0
+        },
+        {
+          "name": "cycle_a",
+          "default": 0
+        },
+        {
+          "name": "cycle_b",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "plaits",
+      "type": "instrument",
+      "description": "kind=instrument | category=eurorack | flavor=mutable-plaits | params=pitch,engine,harmonics,timbre,morph,trigger,level,fm_mod,timbre_mod,morph_mod,decay,lpg_colour",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/plaits.vibe",
+      "sourcePath": "instruments/eurorack/plaits.vibe",
+      "params": [
+        {
+          "name": "pitch",
+          "default": 60
+        },
+        {
+          "name": "engine",
+          "default": 0
+        },
+        {
+          "name": "harmonics",
+          "default": 0.5
+        },
+        {
+          "name": "timbre",
+          "default": 0.5
+        },
+        {
+          "name": "morph",
+          "default": 0.5
+        },
+        {
+          "name": "trigger",
+          "default": 0
+        },
+        {
+          "name": "level",
+          "default": 0.7
+        },
+        {
+          "name": "fm_mod",
+          "default": 0
+        },
+        {
+          "name": "timbre_mod",
+          "default": 0
+        },
+        {
+          "name": "morph_mod",
+          "default": 0
+        },
+        {
+          "name": "decay",
+          "default": 0.5
+        },
+        {
+          "name": "lpg_colour",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "name": "plonk",
+      "type": "instrument",
+      "description": "kind=instrument | category=eurorack | flavor=intellijel-plonk | outputs=out:1 | params=trig,vel,pitch,freq,x,y,exciter_mode,exciter_decay,object_mode,saturation,bitcrush,pitch_cv,x_cv,y_cv,mod_cv,pitch_cv_amt,x_cv_amt,y_cv_amt,mod_cv_amt",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/plonk.vibe",
+      "sourcePath": "instruments/eurorack/plonk.vibe",
+      "params": [
+        {
+          "name": "trig",
+          "default": 0
+        },
+        {
+          "name": "vel",
+          "default": 0.8
+        },
+        {
+          "name": "pitch",
+          "default": 60
+        },
+        {
+          "name": "freq",
+          "default": 0
+        },
+        {
+          "name": "x",
+          "default": 0.5
+        },
+        {
+          "name": "y",
+          "default": 0.5
+        },
+        {
+          "name": "exciter_mode",
+          "default": 0
+        },
+        {
+          "name": "exciter_decay",
+          "default": 0.015
+        },
+        {
+          "name": "object_mode",
+          "default": 3
+        },
+        {
+          "name": "saturation",
+          "default": 0.1
+        },
+        {
+          "name": "bitcrush",
+          "default": 0
+        },
+        {
+          "name": "pitch_cv",
+          "default": 0
+        },
+        {
+          "name": "x_cv",
+          "default": 0
+        },
+        {
+          "name": "y_cv",
+          "default": 0
+        },
+        {
+          "name": "mod_cv",
+          "default": 0
+        },
+        {
+          "name": "pitch_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "x_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "y_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "mod_cv_amt",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "prss_pnt",
+      "type": "instrument",
+      "description": "Make Noise PrssPnt — four pressable touch CV pads.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/prss_pnt.vibe",
+      "sourcePath": "instruments/eurorack/prss_pnt.vibe",
+      "params": [
+        {
+          "name": "press1",
+          "default": 0
+        },
+        {
+          "name": "press2",
+          "default": 0
+        },
+        {
+          "name": "press3",
+          "default": 0
+        },
+        {
+          "name": "press4",
+          "default": 0
+        },
+        {
+          "name": "threshold",
+          "default": 0.05
+        },
+        {
+          "name": "slew",
+          "default": 0.01
+        }
+      ]
+    },
+    {
+      "name": "qcd",
+      "type": "instrument",
+      "description": "4ms QCD - Quad Clock Distributor.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/qcd.vibe",
+      "sourcePath": "instruments/eurorack/qcd.vibe",
+      "params": [
+        {
+          "name": "bpm",
+          "default": 120
+        },
+        {
+          "name": "div_mult_1",
+          "default": 1
+        },
+        {
+          "name": "div_mult_2",
+          "default": 1
+        },
+        {
+          "name": "div_mult_3",
+          "default": 1
+        },
+        {
+          "name": "div_mult_4",
+          "default": 1
+        },
+        {
+          "name": "reset",
+          "default": 0
+        },
+        {
+          "name": "run",
+          "default": 1
+        },
+        {
+          "name": "pulse_width",
+          "default": 0.5
+        },
+        {
+          "name": "trigger_delay_ch_1",
+          "default": 0
+        },
+        {
+          "name": "trigger_delay_ch_2",
+          "default": 0
+        },
+        {
+          "name": "trigger_delay_ch_3",
+          "default": 0
+        },
+        {
+          "name": "trigger_delay_ch_4",
+          "default": 0
+        },
+        {
+          "name": "mute_1",
+          "default": 0
+        },
+        {
+          "name": "mute_2",
+          "default": 0
+        },
+        {
+          "name": "mute_3",
+          "default": 0
+        },
+        {
+          "name": "mute_4",
+          "default": 0
+        },
+        {
+          "name": "tap",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "quadrax",
+      "type": "instrument",
+      "description": "Intellijel Quadrax-inspired quad function generator.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/quadrax.vibe",
+      "sourcePath": "instruments/eurorack/quadrax.vibe",
+      "params": [
+        {
+          "name": "trig_1",
+          "default": 0
+        },
+        {
+          "name": "rise_1",
+          "default": 0.1
+        },
+        {
+          "name": "fall_1",
+          "default": 0.3
+        },
+        {
+          "name": "shape_1",
+          "default": 0
+        },
+        {
+          "name": "mode_1",
+          "default": 0
+        },
+        {
+          "name": "level_1",
+          "default": 1
+        },
+        {
+          "name": "link_1",
+          "default": 0
+        },
+        {
+          "name": "trig_2",
+          "default": 0
+        },
+        {
+          "name": "rise_2",
+          "default": 0.1
+        },
+        {
+          "name": "fall_2",
+          "default": 0.3
+        },
+        {
+          "name": "shape_2",
+          "default": 0
+        },
+        {
+          "name": "mode_2",
+          "default": 0
+        },
+        {
+          "name": "level_2",
+          "default": 1
+        },
+        {
+          "name": "link_2",
+          "default": 0
+        },
+        {
+          "name": "trig_3",
+          "default": 0
+        },
+        {
+          "name": "rise_3",
+          "default": 0.1
+        },
+        {
+          "name": "fall_3",
+          "default": 0.3
+        },
+        {
+          "name": "shape_3",
+          "default": 0
+        },
+        {
+          "name": "mode_3",
+          "default": 0
+        },
+        {
+          "name": "level_3",
+          "default": 1
+        },
+        {
+          "name": "link_3",
+          "default": 0
+        },
+        {
+          "name": "trig_4",
+          "default": 0
+        },
+        {
+          "name": "rise_4",
+          "default": 0.1
+        },
+        {
+          "name": "fall_4",
+          "default": 0.3
+        },
+        {
+          "name": "shape_4",
+          "default": 0
+        },
+        {
+          "name": "mode_4",
+          "default": 0
+        },
+        {
+          "name": "level_4",
+          "default": 1
+        },
+        {
+          "name": "link_4",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "rene",
+      "type": "instrument",
+      "description": "Make Noise Rene — practical 4x4 cartesian kr sequencer with path memory.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/rene.vibe",
+      "sourcePath": "instruments/eurorack/rene.vibe",
+      "params": [
+        {
+          "name": "clock_x",
+          "default": 0
+        },
+        {
+          "name": "clock_y",
+          "default": 0
+        },
+        {
+          "name": "reset",
+          "default": 0
+        },
+        {
+          "name": "x_cv",
+          "default": 0
+        },
+        {
+          "name": "y_cv",
+          "default": 0
+        },
+        {
+          "name": "cv_addr",
+          "default": 0
+        },
+        {
+          "name": "mode",
+          "default": 0
+        },
+        {
+          "name": "quantize",
+          "default": 0
+        },
+        {
+          "name": "scale_mask",
+          "default": 2741
+        },
+        {
+          "name": "access_x",
+          "default": 15
+        },
+        {
+          "name": "access_y",
+          "default": 15
+        },
+        {
+          "name": "memory",
+          "default": 0
+        },
+        {
+          "name": "random_seed",
+          "default": 0
+        },
+        {
+          "name": "note00",
+          "default": 60
+        },
+        {
+          "name": "note01",
+          "default": 62
+        },
+        {
+          "name": "note02",
+          "default": 64
+        },
+        {
+          "name": "note03",
+          "default": 67
+        },
+        {
+          "name": "note10",
+          "default": 62
+        },
+        {
+          "name": "note11",
+          "default": 64
+        },
+        {
+          "name": "note12",
+          "default": 67
+        },
+        {
+          "name": "note13",
+          "default": 69
+        },
+        {
+          "name": "note20",
+          "default": 64
+        },
+        {
+          "name": "note21",
+          "default": 67
+        },
+        {
+          "name": "note22",
+          "default": 69
+        },
+        {
+          "name": "note23",
+          "default": 71
+        },
+        {
+          "name": "note30",
+          "default": 67
+        },
+        {
+          "name": "note31",
+          "default": 69
+        },
+        {
+          "name": "note32",
+          "default": 71
+        },
+        {
+          "name": "note33",
+          "default": 72
+        }
+      ]
+    },
+    {
+      "name": "rings",
+      "type": "instrument",
+      "description": "kind=processor | category=eurorack | flavor=mutable-rings | inputs=in:1 | outputs=odd:1,even:1,sum:1 | params=pit,structure,brightness,damping,position,model,polyphony,internal_exciter,bypass,gain,trigger",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/rings.vibe",
+      "sourcePath": "instruments/eurorack/rings.vibe",
+      "params": [
+        {
+          "name": "pit",
+          "default": 60
+        },
+        {
+          "name": "structure",
+          "default": 0.5
+        },
+        {
+          "name": "brightness",
+          "default": 0.5
+        },
+        {
+          "name": "damping",
+          "default": 0.5
+        },
+        {
+          "name": "position",
+          "default": 0.5
+        },
+        {
+          "name": "model",
+          "default": 0
+        },
+        {
+          "name": "polyphony",
+          "default": 1
+        },
+        {
+          "name": "internal_exciter",
+          "default": 0
+        },
+        {
+          "name": "bypass",
+          "default": 0
+        },
+        {
+          "name": "gain",
+          "default": 1
+        },
+        {
+          "name": "trigger",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "stages",
+      "type": "instrument",
+      "description": "kind=cv | category=eurorack | flavor=mutable-stages | outputs=seg1:kr,seg2:kr,seg3:kr,seg4:kr,seg5:kr,seg6:kr,group1:kr,group2:kr,group3:kr,eor:kr,eoc:kr | params=clock,reset,scale,seg_1_type..seg_6_group_with_prev",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/stages.vibe",
+      "sourcePath": "instruments/eurorack/stages.vibe",
+      "params": [
+        {
+          "name": "clock",
+          "default": 0
+        },
+        {
+          "name": "reset",
+          "default": 0
+        },
+        {
+          "name": "scale",
+          "default": 1
+        },
+        {
+          "name": "seg_1_type",
+          "default": 0
+        },
+        {
+          "name": "seg_1_loop",
+          "default": 0
+        },
+        {
+          "name": "seg_1_primary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_1_secondary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_1_gate",
+          "default": 0
+        },
+        {
+          "name": "seg_1_trigger",
+          "default": 0
+        },
+        {
+          "name": "seg_1_group_with_prev",
+          "default": 0
+        },
+        {
+          "name": "seg_2_type",
+          "default": 0
+        },
+        {
+          "name": "seg_2_loop",
+          "default": 0
+        },
+        {
+          "name": "seg_2_primary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_2_secondary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_2_gate",
+          "default": 0
+        },
+        {
+          "name": "seg_2_trigger",
+          "default": 0
+        },
+        {
+          "name": "seg_2_group_with_prev",
+          "default": 1
+        },
+        {
+          "name": "seg_3_type",
+          "default": 0
+        },
+        {
+          "name": "seg_3_loop",
+          "default": 0
+        },
+        {
+          "name": "seg_3_primary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_3_secondary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_3_gate",
+          "default": 0
+        },
+        {
+          "name": "seg_3_trigger",
+          "default": 0
+        },
+        {
+          "name": "seg_3_group_with_prev",
+          "default": 1
+        },
+        {
+          "name": "seg_4_type",
+          "default": 0
+        },
+        {
+          "name": "seg_4_loop",
+          "default": 0
+        },
+        {
+          "name": "seg_4_primary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_4_secondary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_4_gate",
+          "default": 0
+        },
+        {
+          "name": "seg_4_trigger",
+          "default": 0
+        },
+        {
+          "name": "seg_4_group_with_prev",
+          "default": 1
+        },
+        {
+          "name": "seg_5_type",
+          "default": 0
+        },
+        {
+          "name": "seg_5_loop",
+          "default": 0
+        },
+        {
+          "name": "seg_5_primary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_5_secondary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_5_gate",
+          "default": 0
+        },
+        {
+          "name": "seg_5_trigger",
+          "default": 0
+        },
+        {
+          "name": "seg_5_group_with_prev",
+          "default": 1
+        },
+        {
+          "name": "seg_6_type",
+          "default": 0
+        },
+        {
+          "name": "seg_6_loop",
+          "default": 0
+        },
+        {
+          "name": "seg_6_primary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_6_secondary",
+          "default": 0.5
+        },
+        {
+          "name": "seg_6_gate",
+          "default": 0
+        },
+        {
+          "name": "seg_6_trigger",
+          "default": 0
+        },
+        {
+          "name": "seg_6_group_with_prev",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "steppy",
+      "type": "instrument",
+      "description": "Intellijel Steppy - four-track kr gate sequencer.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/steppy.vibe",
+      "sourcePath": "instruments/eurorack/steppy.vibe",
+      "params": [
+        {
+          "name": "bpm",
+          "default": 120
+        },
+        {
+          "name": "reset",
+          "default": 0
+        },
+        {
+          "name": "run",
+          "default": 1
+        },
+        {
+          "name": "track_a_steps",
+          "default": 16
+        },
+        {
+          "name": "track_a_pattern",
+          "default": 4369
+        },
+        {
+          "name": "track_a_clock_div",
+          "default": 1
+        },
+        {
+          "name": "track_a_gate_len",
+          "default": 0.5
+        },
+        {
+          "name": "track_a_swing",
+          "default": 0
+        },
+        {
+          "name": "track_a_probability",
+          "default": 1
+        },
+        {
+          "name": "track_a_mute",
+          "default": 0
+        },
+        {
+          "name": "track_a_rotate",
+          "default": 0
+        },
+        {
+          "name": "track_b_steps",
+          "default": 16
+        },
+        {
+          "name": "track_b_pattern",
+          "default": 0
+        },
+        {
+          "name": "track_b_clock_div",
+          "default": 1
+        },
+        {
+          "name": "track_b_gate_len",
+          "default": 0.5
+        },
+        {
+          "name": "track_b_swing",
+          "default": 0
+        },
+        {
+          "name": "track_b_probability",
+          "default": 1
+        },
+        {
+          "name": "track_b_mute",
+          "default": 0
+        },
+        {
+          "name": "track_b_rotate",
+          "default": 0
+        },
+        {
+          "name": "track_c_steps",
+          "default": 16
+        },
+        {
+          "name": "track_c_pattern",
+          "default": 0
+        },
+        {
+          "name": "track_c_clock_div",
+          "default": 1
+        },
+        {
+          "name": "track_c_gate_len",
+          "default": 0.5
+        },
+        {
+          "name": "track_c_swing",
+          "default": 0
+        },
+        {
+          "name": "track_c_probability",
+          "default": 1
+        },
+        {
+          "name": "track_c_mute",
+          "default": 0
+        },
+        {
+          "name": "track_c_rotate",
+          "default": 0
+        },
+        {
+          "name": "track_d_steps",
+          "default": 16
+        },
+        {
+          "name": "track_d_pattern",
+          "default": 0
+        },
+        {
+          "name": "track_d_clock_div",
+          "default": 1
+        },
+        {
+          "name": "track_d_gate_len",
+          "default": 0.5
+        },
+        {
+          "name": "track_d_swing",
+          "default": 0
+        },
+        {
+          "name": "track_d_probability",
+          "default": 1
+        },
+        {
+          "name": "track_d_mute",
+          "default": 0
+        },
+        {
+          "name": "track_d_rotate",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "tempi",
+      "type": "instrument",
+      "description": "Make Noise Tempi — six phase-locked kr clock outputs.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/tempi.vibe",
+      "sourcePath": "instruments/eurorack/tempi.vibe",
+      "params": [
+        {
+          "name": "bpm",
+          "default": 120
+        },
+        {
+          "name": "run",
+          "default": 1
+        },
+        {
+          "name": "reset",
+          "default": 0
+        },
+        {
+          "name": "reset_on_scene",
+          "default": 1
+        },
+        {
+          "name": "mod",
+          "default": 1
+        },
+        {
+          "name": "scene",
+          "default": 0
+        },
+        {
+          "name": "variation",
+          "default": 0
+        },
+        {
+          "name": "width",
+          "default": 0.02
+        },
+        {
+          "name": "mult1",
+          "default": 1
+        },
+        {
+          "name": "mult2",
+          "default": 2
+        },
+        {
+          "name": "mult3",
+          "default": 0.5
+        },
+        {
+          "name": "mult4",
+          "default": 4
+        },
+        {
+          "name": "mult5",
+          "default": 0.25
+        },
+        {
+          "name": "mult6",
+          "default": 3
+        },
+        {
+          "name": "shift1",
+          "default": 0
+        },
+        {
+          "name": "shift2",
+          "default": 0
+        },
+        {
+          "name": "shift3",
+          "default": 0
+        },
+        {
+          "name": "shift4",
+          "default": 0
+        },
+        {
+          "name": "shift5",
+          "default": 0
+        },
+        {
+          "name": "shift6",
+          "default": 0
+        },
+        {
+          "name": "mute1",
+          "default": 0
+        },
+        {
+          "name": "mute2",
+          "default": 0
+        },
+        {
+          "name": "mute3",
+          "default": 0
+        },
+        {
+          "name": "mute4",
+          "default": 0
+        },
+        {
+          "name": "mute5",
+          "default": 0
+        },
+        {
+          "name": "mute6",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "tetrapad",
+      "type": "instrument",
+      "description": "kind=cv | category=eurorack | flavor=intellijel-tetrapad | outputs=pad1_a:kr,pad1_b:kr,pad2_a:kr,pad2_b:kr,pad3_a:kr,pad3_b:kr,pad4_a:kr,pad4_b:kr | params=pressure_1..pressure_4,position_1..position_4,encoder_1..encoder_4,mode_1..mode_4,slew_1..slew_4,voltage_1..voltage_4,chord_mode,keyboard_scale,threshold",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/tetrapad.vibe",
+      "sourcePath": "instruments/eurorack/tetrapad.vibe",
+      "params": [
+        {
+          "name": "pressure_1",
+          "default": 0
+        },
+        {
+          "name": "position_1",
+          "default": 0.5
+        },
+        {
+          "name": "encoder_1",
+          "default": 0.5
+        },
+        {
+          "name": "mode_1",
+          "default": 0
+        },
+        {
+          "name": "slew_1",
+          "default": 0.1
+        },
+        {
+          "name": "voltage_1",
+          "default": 0
+        },
+        {
+          "name": "pressure_2",
+          "default": 0
+        },
+        {
+          "name": "position_2",
+          "default": 0.5
+        },
+        {
+          "name": "encoder_2",
+          "default": 0.5
+        },
+        {
+          "name": "mode_2",
+          "default": 0
+        },
+        {
+          "name": "slew_2",
+          "default": 0.1
+        },
+        {
+          "name": "voltage_2",
+          "default": 0
+        },
+        {
+          "name": "pressure_3",
+          "default": 0
+        },
+        {
+          "name": "position_3",
+          "default": 0.5
+        },
+        {
+          "name": "encoder_3",
+          "default": 0.5
+        },
+        {
+          "name": "mode_3",
+          "default": 0
+        },
+        {
+          "name": "slew_3",
+          "default": 0.1
+        },
+        {
+          "name": "voltage_3",
+          "default": 0
+        },
+        {
+          "name": "pressure_4",
+          "default": 0
+        },
+        {
+          "name": "position_4",
+          "default": 0.5
+        },
+        {
+          "name": "encoder_4",
+          "default": 0.5
+        },
+        {
+          "name": "mode_4",
+          "default": 0
+        },
+        {
+          "name": "slew_4",
+          "default": 0.1
+        },
+        {
+          "name": "voltage_4",
+          "default": 0
+        },
+        {
+          "name": "chord_mode",
+          "default": 0
+        },
+        {
+          "name": "keyboard_scale",
+          "default": 0
+        },
+        {
+          "name": "threshold",
+          "default": 0.05
+        }
+      ]
+    },
+    {
+      "name": "tides2",
+      "type": "instrument",
+      "description": "kind=instrument | category=eurorack | flavor=mutable-tides2 | outputs=low:1,slope:1,shape:1,high:1 | params=freq,shape,slope,smoothness,shift,ramp_mode,output_mode,range,trigger,clock,ratio",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/tides2.vibe",
+      "sourcePath": "instruments/eurorack/tides2.vibe",
+      "params": [
+        {
+          "name": "freq",
+          "default": 1
+        },
+        {
+          "name": "shape",
+          "default": 0.5
+        },
+        {
+          "name": "slope",
+          "default": 0.5
+        },
+        {
+          "name": "smoothness",
+          "default": 0.5
+        },
+        {
+          "name": "shift",
+          "default": 0.5
+        },
+        {
+          "name": "ramp_mode",
+          "default": 2
+        },
+        {
+          "name": "output_mode",
+          "default": 1
+        },
+        {
+          "name": "range",
+          "default": 1
+        },
+        {
+          "name": "trigger",
+          "default": 0
+        },
+        {
+          "name": "clock",
+          "default": 0
+        },
+        {
+          "name": "ratio",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "verbos_harmonic_osc",
+      "type": "instrument",
+      "description": "Verbos Harmonic Oscillator - 8-partial additive VCO with named audio taps.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/verbos_harmonic_osc.vibe",
+      "sourcePath": "instruments/eurorack/verbos_harmonic_osc.vibe",
+      "params": [
+        {
+          "name": "freq",
+          "default": 110
+        },
+        {
+          "name": "amp",
+          "default": 0.5
+        },
+        {
+          "name": "gate",
+          "default": 1
+        },
+        {
+          "name": "fm_lin",
+          "default": 0
+        },
+        {
+          "name": "fm_lin_scale",
+          "default": 1
+        },
+        {
+          "name": "fm_exp",
+          "default": 0
+        },
+        {
+          "name": "fm_exp_scale",
+          "default": 1
+        },
+        {
+          "name": "harm1",
+          "default": 1
+        },
+        {
+          "name": "harm2",
+          "default": 0
+        },
+        {
+          "name": "harm3",
+          "default": 0
+        },
+        {
+          "name": "harm4",
+          "default": 0
+        },
+        {
+          "name": "harm5",
+          "default": 0
+        },
+        {
+          "name": "harm6",
+          "default": 0
+        },
+        {
+          "name": "harm7",
+          "default": 0
+        },
+        {
+          "name": "harm8",
+          "default": 0
+        },
+        {
+          "name": "harm1_cv",
+          "default": 0
+        },
+        {
+          "name": "harm2_cv",
+          "default": 0
+        },
+        {
+          "name": "harm3_cv",
+          "default": 0
+        },
+        {
+          "name": "harm4_cv",
+          "default": 0
+        },
+        {
+          "name": "harm5_cv",
+          "default": 0
+        },
+        {
+          "name": "harm6_cv",
+          "default": 0
+        },
+        {
+          "name": "harm7_cv",
+          "default": 0
+        },
+        {
+          "name": "harm8_cv",
+          "default": 0
+        },
+        {
+          "name": "harm1_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "harm2_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "harm3_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "harm4_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "harm5_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "harm6_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "harm7_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "harm8_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "center",
+          "default": 4.5
+        },
+        {
+          "name": "center_cv",
+          "default": 0
+        },
+        {
+          "name": "center_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "width",
+          "default": 1
+        },
+        {
+          "name": "width_cv",
+          "default": 0
+        },
+        {
+          "name": "width_cv_scale",
+          "default": 1
+        },
+        {
+          "name": "tilt",
+          "default": 0
+        },
+        {
+          "name": "tilt_cv",
+          "default": 0
+        },
+        {
+          "name": "tilt_cv_scale",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "verbos_multistage",
+      "type": "instrument",
+      "description": "Verbos Voltage Multistage - 8-stage dual-row CV sequencer/function generator.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/verbos_multistage.vibe",
+      "sourcePath": "instruments/eurorack/verbos_multistage.vibe",
+      "params": [
+        {
+          "name": "advance",
+          "default": 0
+        },
+        {
+          "name": "strobe",
+          "default": 0
+        },
+        {
+          "name": "analog",
+          "default": 0
+        },
+        {
+          "name": "enable",
+          "default": 1
+        },
+        {
+          "name": "sustain",
+          "default": 0
+        },
+        {
+          "name": "time_cv",
+          "default": 0
+        },
+        {
+          "name": "clock_rate",
+          "default": 4
+        },
+        {
+          "name": "time_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "start",
+          "default": 1
+        },
+        {
+          "name": "stop",
+          "default": 8
+        },
+        {
+          "name": "stage_a1",
+          "default": 0
+        },
+        {
+          "name": "stage_a2",
+          "default": 0.1666667
+        },
+        {
+          "name": "stage_a3",
+          "default": 0.3333333
+        },
+        {
+          "name": "stage_a4",
+          "default": 0.4166667
+        },
+        {
+          "name": "stage_a5",
+          "default": 0.5833333
+        },
+        {
+          "name": "stage_a6",
+          "default": 0.75
+        },
+        {
+          "name": "stage_a7",
+          "default": 0.9166667
+        },
+        {
+          "name": "stage_a8",
+          "default": 1
+        },
+        {
+          "name": "stage_b1",
+          "default": 0
+        },
+        {
+          "name": "stage_b2",
+          "default": 0.1666667
+        },
+        {
+          "name": "stage_b3",
+          "default": 0.3333333
+        },
+        {
+          "name": "stage_b4",
+          "default": 0.4166667
+        },
+        {
+          "name": "stage_b5",
+          "default": 0.5833333
+        },
+        {
+          "name": "stage_b6",
+          "default": 0.75
+        },
+        {
+          "name": "stage_b7",
+          "default": 0.9166667
+        },
+        {
+          "name": "stage_b8",
+          "default": 1
+        },
+        {
+          "name": "mode1",
+          "default": 0
+        },
+        {
+          "name": "mode2",
+          "default": 0
+        },
+        {
+          "name": "mode3",
+          "default": 0
+        },
+        {
+          "name": "mode4",
+          "default": 0
+        },
+        {
+          "name": "mode5",
+          "default": 0
+        },
+        {
+          "name": "mode6",
+          "default": 0
+        },
+        {
+          "name": "mode7",
+          "default": 0
+        },
+        {
+          "name": "mode8",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "verbos_random_sampling",
+      "type": "instrument",
+      "description": "Verbos Random Sampling - Buchla 266-style uncertainty source.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/verbos_random_sampling.vibe",
+      "sourcePath": "instruments/eurorack/verbos_random_sampling.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 4
+        },
+        {
+          "name": "rate_cv",
+          "default": 0
+        },
+        {
+          "name": "rate_cv_amt",
+          "default": 0
+        },
+        {
+          "name": "bits",
+          "default": 4
+        },
+        {
+          "name": "distribution",
+          "default": 0
+        },
+        {
+          "name": "clock_in",
+          "default": 0
+        },
+        {
+          "name": "clock_trig",
+          "default": 0
+        },
+        {
+          "name": "sample_in",
+          "default": 0
+        },
+        {
+          "name": "depth_v",
+          "default": 5
+        },
+        {
+          "name": "bipolar",
+          "default": 1
+        },
+        {
+          "name": "noise_level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "verbos_touchplate",
+      "type": "instrument",
+      "description": "Verbos Touchplate Keyboard - pressure keyboard and tunable CV row.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/verbos_touchplate.vibe",
+      "sourcePath": "instruments/eurorack/verbos_touchplate.vibe",
+      "params": [
+        {
+          "name": "key",
+          "default": 0
+        },
+        {
+          "name": "octave",
+          "default": 1
+        },
+        {
+          "name": "pressure",
+          "default": 0
+        },
+        {
+          "name": "bend",
+          "default": 0
+        },
+        {
+          "name": "tune_key",
+          "default": 0
+        },
+        {
+          "name": "tune_pressure",
+          "default": 0
+        },
+        {
+          "name": "tune1",
+          "default": 0
+        },
+        {
+          "name": "tune2",
+          "default": 0.1666667
+        },
+        {
+          "name": "tune3",
+          "default": 0.3333333
+        },
+        {
+          "name": "tune4",
+          "default": 0.4166667
+        },
+        {
+          "name": "tune5",
+          "default": 0.5833333
+        },
+        {
+          "name": "tune6",
+          "default": 0.75
+        },
+        {
+          "name": "tune7",
+          "default": 0.9166667
+        },
+        {
+          "name": "tune8",
+          "default": 1
+        },
+        {
+          "name": "threshold",
+          "default": 0.05
+        },
+        {
+          "name": "slew",
+          "default": 0.1
+        }
+      ]
+    },
+    {
+      "name": "wogglebug",
+      "type": "instrument",
+      "description": "Make Noise Wogglebug — simultaneous kr fanout.",
+      "category": "instruments",
+      "subcategory": "eurorack",
+      "importPath": "stdlib/instruments/eurorack/wogglebug.vibe",
+      "sourcePath": "instruments/eurorack/wogglebug.vibe",
+      "params": [
+        {
+          "name": "rate",
+          "default": 4
+        },
+        {
+          "name": "depth_v",
+          "default": 5
+        },
+        {
+          "name": "bipolar",
+          "default": 1
+        },
+        {
+          "name": "chaos",
+          "default": 0.5
+        },
+        {
+          "name": "heart",
+          "default": 0.75
+        },
+        {
+          "name": "vc_rate",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "otey_piano",
+      "type": "instrument",
+      "description": "OteyPiano — Clayton Otey's digital-waveguide piano physical model",
+      "category": "instruments",
+      "subcategory": "keyboard",
+      "importPath": "stdlib/instruments/keyboard/otey_piano.vibe",
+      "sourcePath": "instruments/keyboard/otey_piano.vibe",
+      "params": [
+        {
+          "name": "freq",
+          "default": 220
+        },
+        {
+          "name": "amp",
+          "default": 0.6
+        },
+        {
+          "name": "gate",
+          "default": 1
+        },
+        {
+          "name": "vel",
+          "default": 0.7
+        },
+        {
+          "name": "rho",
+          "default": 1
+        },
+        {
+          "name": "loss",
+          "default": 1
+        },
+        {
+          "name": "detune",
+          "default": 0.0003
+        }
+      ]
+    },
+    {
+      "name": "morphagene",
+      "type": "instrument",
+      "description": "Morphagene Story A + B + C + D + E — Reel + Splice metadata + Granular",
+      "category": "instruments",
+      "subcategory": "sampler",
+      "importPath": "stdlib/instruments/sampler/morphagene.vibe",
+      "sourcePath": "instruments/sampler/morphagene.vibe",
+      "params": [
+        {
+          "name": "bufnum",
+          "default": 0
+        },
+        {
+          "name": "num_splices",
+          "default": 1
+        },
+        {
+          "name": "splices_buf",
+          "default": 0
+        },
+        {
+          "name": "organize",
+          "default": 0
+        },
+        {
+          "name": "sos",
+          "default": 0
+        },
+        {
+          "name": "clk",
+          "default": 0
+        },
+        {
+          "name": "vari_speed",
+          "default": 0
+        },
+        {
+          "name": "slide",
+          "default": 0
+        },
+        {
+          "name": "gene_size",
+          "default": 0
+        },
+        {
+          "name": "morph",
+          "default": 0
+        },
+        {
+          "name": "amp",
+          "default": 0.5
+        },
+        {
+          "name": "auto_level",
+          "default": 0
+        },
+        {
+          "name": "play_gate",
+          "default": 1
+        },
+        {
+          "name": "gate",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "morphagene_reel_fill",
+      "type": "instrument",
+      "description": "Morphagene Story A + B + C + D + E — Reel + Splice metadata + Granular",
+      "category": "instruments",
+      "subcategory": "sampler",
+      "importPath": "stdlib/instruments/sampler/morphagene.vibe",
+      "sourcePath": "instruments/sampler/morphagene.vibe",
+      "params": [
+        {
+          "name": "bufnum",
+          "default": 0
+        },
+        {
+          "name": "preset",
+          "default": 0
+        },
+        {
+          "name": "freq",
+          "default": 110
+        },
+        {
+          "name": "amp",
+          "default": 0.6
+        }
+      ]
+    },
+    {
+      "name": "spectraphon_analyzer",
+      "type": "instrument",
+      "description": "Spectraphon analyzer - real FFT + one BinData read per harmonic.",
+      "category": "instruments",
+      "subcategory": "spectral",
+      "importPath": "stdlib/instruments/spectral/spectraphon_analyzer.vibe",
+      "sourcePath": "instruments/spectral/spectraphon_analyzer.vibe",
+      "params": [
+        {
+          "name": "f0_analyze",
+          "default": 200
+        },
+        {
+          "name": "focus",
+          "default": 0.5
+        },
+        {
+          "name": "fft_buf",
+          "default": 0
+        },
+        {
+          "name": "mag_buf",
+          "default": 0
+        },
+        {
+          "name": "active",
+          "default": 1
+        },
+        {
+          "name": "gate",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "spectraphon_sam_live_oscillator",
+      "type": "instrument",
+      "description": "Spectraphon SAM oscillator - live FFT magnitude consumer.",
+      "category": "instruments",
+      "subcategory": "spectral",
+      "importPath": "stdlib/instruments/spectral/spectraphon_sam_oscillator.vibe",
+      "sourcePath": "instruments/spectral/spectraphon_sam_oscillator.vibe",
+      "params": [
+        {
+          "name": "freq",
+          "default": 220
+        },
+        {
+          "name": "partials",
+          "default": 1
+        },
+        {
+          "name": "slide",
+          "default": 0.5
+        },
+        {
+          "name": "focus",
+          "default": 0.5
+        },
+        {
+          "name": "amp",
+          "default": 0.3
+        },
+        {
+          "name": "gate",
+          "default": 1
+        },
+        {
+          "name": "array_idx",
+          "default": 0
+        },
+        {
+          "name": "mag_buf",
+          "default": 0
+        },
+        {
+          "name": "array_buf",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "spectraphon_sam_oscillator",
+      "type": "instrument",
+      "description": "Spectraphon SAM oscillator - live FFT magnitude consumer.",
+      "category": "instruments",
+      "subcategory": "spectral",
+      "importPath": "stdlib/instruments/spectral/spectraphon_sam_oscillator.vibe",
+      "sourcePath": "instruments/spectral/spectraphon_sam_oscillator.vibe",
+      "params": [
+        {
+          "name": "freq",
+          "default": 220
+        },
+        {
+          "name": "partials",
+          "default": 1
+        },
+        {
+          "name": "slide",
+          "default": 0.5
+        },
+        {
+          "name": "focus",
+          "default": 0.5
+        },
+        {
+          "name": "amp",
+          "default": 0.3
+        },
+        {
+          "name": "gate",
+          "default": 1
+        },
+        {
+          "name": "capture",
+          "default": 0
+        },
+        {
+          "name": "array_idx",
+          "default": 0
+        },
+        {
+          "name": "mag_buf",
+          "default": 0
+        },
+        {
+          "name": "array_buf",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "spectraphon_sao_oscillator",
+      "type": "instrument",
+      "description": "Spectraphon SAO oscillator - Array playback additive bank.",
+      "category": "instruments",
+      "subcategory": "spectral",
+      "importPath": "stdlib/instruments/spectral/spectraphon_sao_oscillator.vibe",
+      "sourcePath": "instruments/spectral/spectraphon_sao_oscillator.vibe",
+      "params": [
+        {
+          "name": "freq",
+          "default": 220
+        },
+        {
+          "name": "partials",
+          "default": 1
+        },
+        {
+          "name": "slide",
+          "default": 0.5
+        },
+        {
+          "name": "focus",
+          "default": 0.5
+        },
+        {
+          "name": "amp",
+          "default": 0.3
+        },
+        {
+          "name": "gate",
+          "default": 1
+        },
+        {
+          "name": "array_idx",
+          "default": 0
+        },
+        {
+          "name": "array_buf",
+          "default": 0
         }
       ]
     },
@@ -7562,6 +13668,490 @@
         {
           "name": "gate",
           "default": 1
+        }
+      ]
+    },
+    {
+      "name": "dld",
+      "type": "instrument",
+      "description": "kind=processor | category=delays | flavor=dld | inputs=in_a:1,in_b:1,return_a:1,return_b:1 | outputs=out_a:1,out_b:1,send_a:1,send_b:1,clock:kr,loop_a:kr,loop_b:kr | params=ping_hz,ping_lock,cft_ms,time_a,feedback_a,delay_feed_a,mix_a,hold_a,reverse_a,clear_a,time_b,feedback_b,delay_feed_b,mix_b,hold_b,reverse_b,clear_b",
+      "category": "processors",
+      "subcategory": "delays",
+      "importPath": "stdlib/processors/delays/dld.vibe",
+      "sourcePath": "processors/delays/dld.vibe",
+      "params": [
+        {
+          "name": "ping_hz",
+          "default": 2
+        },
+        {
+          "name": "ping_lock",
+          "default": 1
+        },
+        {
+          "name": "cft_ms",
+          "default": 100
+        },
+        {
+          "name": "time_a",
+          "default": 2
+        },
+        {
+          "name": "feedback_a",
+          "default": 0.5
+        },
+        {
+          "name": "delay_feed_a",
+          "default": 0
+        },
+        {
+          "name": "mix_a",
+          "default": 0.5
+        },
+        {
+          "name": "hold_a",
+          "default": 0
+        },
+        {
+          "name": "reverse_a",
+          "default": 0
+        },
+        {
+          "name": "clear_a",
+          "default": 0
+        },
+        {
+          "name": "time_b",
+          "default": 2
+        },
+        {
+          "name": "feedback_b",
+          "default": 0.5
+        },
+        {
+          "name": "delay_feed_b",
+          "default": 0
+        },
+        {
+          "name": "mix_b",
+          "default": 0.5
+        },
+        {
+          "name": "hold_b",
+          "default": 0
+        },
+        {
+          "name": "reverse_b",
+          "default": 0
+        },
+        {
+          "name": "clear_b",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "verbos_mdp",
+      "type": "instrument",
+      "description": "kind=processor | category=delays | flavor=verbos_mdp | inputs=in1:1,in2:1,in3:1 | outputs=mix:1,tap1..tap8:1,odd:1,even:1,rise:1,fall:1,env_in:kr,env1..env8:kr | params=delay_time,delay_cv,time_cv_amount,input1_gain,input2_gain,input3_gain,tap1_mix..tap8_mix,feedback,reverb_feedback,pitch_feedback,manual_mix,level,env_decay",
+      "category": "processors",
+      "subcategory": "delays",
+      "importPath": "stdlib/processors/delays/verbos_mdp.vibe",
+      "sourcePath": "processors/delays/verbos_mdp.vibe",
+      "params": [
+        {
+          "name": "delay_time",
+          "default": 80
+        },
+        {
+          "name": "delay_cv",
+          "default": 0
+        },
+        {
+          "name": "time_cv_amount",
+          "default": 0
+        },
+        {
+          "name": "input1_gain",
+          "default": 1
+        },
+        {
+          "name": "input2_gain",
+          "default": 0.5
+        },
+        {
+          "name": "input3_gain",
+          "default": 0.5
+        },
+        {
+          "name": "tap1_mix",
+          "default": 1
+        },
+        {
+          "name": "tap2_mix",
+          "default": 0.9
+        },
+        {
+          "name": "tap3_mix",
+          "default": 0.8
+        },
+        {
+          "name": "tap4_mix",
+          "default": 0.7
+        },
+        {
+          "name": "tap5_mix",
+          "default": 0.6
+        },
+        {
+          "name": "tap6_mix",
+          "default": 0.5
+        },
+        {
+          "name": "tap7_mix",
+          "default": 0.4
+        },
+        {
+          "name": "tap8_mix",
+          "default": 0.3
+        },
+        {
+          "name": "feedback",
+          "default": 0.3
+        },
+        {
+          "name": "reverb_feedback",
+          "default": 0
+        },
+        {
+          "name": "pitch_feedback",
+          "default": 12
+        },
+        {
+          "name": "manual_mix",
+          "default": 0.5
+        },
+        {
+          "name": "level",
+          "default": 1
+        },
+        {
+          "name": "env_decay",
+          "default": 0.05
+        }
+      ]
+    },
+    {
+      "name": "bark_filter",
+      "type": "instrument",
+      "description": "Verbos Bark Filter Processor - fixed Bark-scale 12-band filter bank.",
+      "category": "processors",
+      "subcategory": "filters",
+      "importPath": "stdlib/processors/filters/bark_filter.vibe",
+      "sourcePath": "processors/filters/bark_filter.vibe",
+      "params": [
+        {
+          "name": "band1",
+          "default": 1
+        },
+        {
+          "name": "band2",
+          "default": 1
+        },
+        {
+          "name": "band3",
+          "default": 1
+        },
+        {
+          "name": "band4",
+          "default": 1
+        },
+        {
+          "name": "band5",
+          "default": 1
+        },
+        {
+          "name": "band6",
+          "default": 1
+        },
+        {
+          "name": "band7",
+          "default": 1
+        },
+        {
+          "name": "band8",
+          "default": 1
+        },
+        {
+          "name": "band9",
+          "default": 1
+        },
+        {
+          "name": "band10",
+          "default": 1
+        },
+        {
+          "name": "band11",
+          "default": 1
+        },
+        {
+          "name": "band12",
+          "default": 1
+        },
+        {
+          "name": "band1_cv",
+          "default": 0
+        },
+        {
+          "name": "band2_cv",
+          "default": 0
+        },
+        {
+          "name": "band3_cv",
+          "default": 0
+        },
+        {
+          "name": "band4_cv",
+          "default": 0
+        },
+        {
+          "name": "band5_cv",
+          "default": 0
+        },
+        {
+          "name": "band6_cv",
+          "default": 0
+        },
+        {
+          "name": "band7_cv",
+          "default": 0
+        },
+        {
+          "name": "band8_cv",
+          "default": 0
+        },
+        {
+          "name": "band9_cv",
+          "default": 0
+        },
+        {
+          "name": "band10_cv",
+          "default": 0
+        },
+        {
+          "name": "band11_cv",
+          "default": 0
+        },
+        {
+          "name": "band12_cv",
+          "default": 0
+        },
+        {
+          "name": "decay",
+          "default": 0.05
+        },
+        {
+          "name": "center",
+          "default": 6
+        },
+        {
+          "name": "width",
+          "default": 0.5
+        },
+        {
+          "name": "tilt",
+          "default": 0
+        },
+        {
+          "name": "odd_gain",
+          "default": 1
+        },
+        {
+          "name": "even_gain",
+          "default": 1
+        },
+        {
+          "name": "level",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "name": "smr8",
+      "type": "instrument",
+      "description": "4ms SMR8 - Spectral Multiband Resonator, 8-band VibeLang flavor.",
+      "category": "processors",
+      "subcategory": "filters",
+      "importPath": "stdlib/processors/filters/smr8.vibe",
+      "sourcePath": "processors/filters/smr8.vibe",
+      "params": [
+        {
+          "name": "freq_root",
+          "default": 110
+        },
+        {
+          "name": "scale",
+          "default": 1
+        },
+        {
+          "name": "rotate",
+          "default": 0
+        },
+        {
+          "name": "spread",
+          "default": 2
+        },
+        {
+          "name": "morph",
+          "default": 0.3
+        },
+        {
+          "name": "q",
+          "default": 0.7
+        },
+        {
+          "name": "two_pass",
+          "default": 0
+        },
+        {
+          "name": "slew",
+          "default": 0.2
+        },
+        {
+          "name": "noise_norm",
+          "default": 0
+        },
+        {
+          "name": "amp",
+          "default": 1
+        },
+        {
+          "name": "level1",
+          "default": 1
+        },
+        {
+          "name": "level2",
+          "default": 1
+        },
+        {
+          "name": "level3",
+          "default": 1
+        },
+        {
+          "name": "level4",
+          "default": 1
+        },
+        {
+          "name": "level5",
+          "default": 1
+        },
+        {
+          "name": "level6",
+          "default": 1
+        },
+        {
+          "name": "level7",
+          "default": 1
+        },
+        {
+          "name": "level8",
+          "default": 1
+        },
+        {
+          "name": "lock1",
+          "default": 0
+        },
+        {
+          "name": "lock2",
+          "default": 0
+        },
+        {
+          "name": "lock3",
+          "default": 0
+        },
+        {
+          "name": "lock4",
+          "default": 0
+        },
+        {
+          "name": "lock5",
+          "default": 0
+        },
+        {
+          "name": "lock6",
+          "default": 0
+        },
+        {
+          "name": "lock7",
+          "default": 0
+        },
+        {
+          "name": "lock8",
+          "default": 0
+        },
+        {
+          "name": "fine1",
+          "default": 0
+        },
+        {
+          "name": "fine2",
+          "default": 0
+        },
+        {
+          "name": "fine3",
+          "default": 0
+        },
+        {
+          "name": "fine4",
+          "default": 0
+        },
+        {
+          "name": "fine5",
+          "default": 0
+        },
+        {
+          "name": "fine6",
+          "default": 0
+        },
+        {
+          "name": "fine7",
+          "default": 0
+        },
+        {
+          "name": "fine8",
+          "default": 0
+        },
+        {
+          "name": "transpose1",
+          "default": 0
+        },
+        {
+          "name": "transpose2",
+          "default": 0
+        },
+        {
+          "name": "transpose3",
+          "default": 0
+        },
+        {
+          "name": "transpose4",
+          "default": 0
+        },
+        {
+          "name": "transpose5",
+          "default": 0
+        },
+        {
+          "name": "transpose6",
+          "default": 0
+        },
+        {
+          "name": "transpose7",
+          "default": 0
+        },
+        {
+          "name": "transpose8",
+          "default": 0
         }
       ]
     },
@@ -11201,13 +17791,16 @@
     "bass",
     "bells",
     "brass",
+    "cv",
     "drums",
     "effects",
     "fx",
+    "instruments",
     "keys",
     "leads",
     "modern",
     "pads",
+    "processors",
     "strings",
     "synths",
     "textures",

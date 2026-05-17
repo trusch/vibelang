@@ -46,7 +46,7 @@ define_fx("reverb_fdn8", |builder| {
             let dt6 = 0.0593;
             let dt7 = 0.0613;
 
-            // Per-line slow modulators at incommensurate rates so the
+            // Per-line slow modulation sources at incommensurate rates so the
             // lines don't beat against each other.
             let mod_scale = modulation_amount * 0.0008;
             let m0 = sin_osc_kr(0.13) * mod_scale;

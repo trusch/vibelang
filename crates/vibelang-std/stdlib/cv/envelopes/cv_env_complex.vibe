@@ -3,7 +3,7 @@
 // Multi-segment breakpoint envelope. Four exponential stages cycling through
 // the level breakpoints `[0 V → +8 V → +4 V → +6 V → 0 V]` with stage times
 // `[50 ms, 200 ms, 1000 ms, 300 ms]`. The default shape rises hard, decays to
-// a low plateau, swells back up, then falls — a useful "complex modulator"
+// a low plateau, swells back up, then falls — a useful complex CV source
 // curve when sequencing CV destinations like filter cutoff or wavetable
 // position.
 //

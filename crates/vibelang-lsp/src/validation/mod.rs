@@ -449,7 +449,11 @@ mod tests {
         let script = r#"import "stdlib/instruments/sampler/morphagene.vibe";"#;
         let result = engine.validate_with_context(script, None);
 
-        for d in result.runtime_errors.iter().chain(result.syntax_errors.iter()) {
+        for d in result
+            .runtime_errors
+            .iter()
+            .chain(result.syntax_errors.iter())
+        {
             assert!(
                 !d.message.to_lowercase().contains("not found"),
                 "Should not see 'not found' for a resolvable import: {}",

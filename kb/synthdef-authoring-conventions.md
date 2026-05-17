@@ -1,7 +1,7 @@
 # Synthdef Authoring Conventions
 
 How to choose between positional `.body(...)` and the map-style
-`.body_map(...)` when writing synthdefs, FX, and modulators in the
+`.body_map(...)` when writing synthdefs, FX, and kr-output CV sources in the
 stdlib (or in user `.vibe` files).
 
 ## TL;DR
@@ -65,8 +65,8 @@ and read params as `p.<name>` (e.g. `p.freq`, `p.cutoff`).
 ```
 
 The same error fires in matching shape for FX (`.body_map(|p|`,
-input is `p.input`) and modulator (`.body_map(|p|`) bodies. There is
-no override — every authoring path with 11+ user params must use
+input is `p.input`) and other synthdefs that declare kr outputs. There is
+no override — every synthdef authoring path with 11+ user params must use
 `body_map`.
 
 ### Migrating positional → map
@@ -89,7 +89,7 @@ Mechanical translation:
 
 3. For FX bodies, `input` lives at `p.input` (same shape as before:
    array of NodeRefs, length matches the FX's channel count).
-4. For modulator bodies, the same unpack pattern applies.
+4. For kr-output CV-source bodies, the same unpack pattern applies.
 
 Reference migration:
 [`instruments/spectral/spectraphon_dual.vibe`](../crates/vibelang-std/stdlib/instruments/spectral/spectraphon_dual.vibe)
@@ -119,14 +119,14 @@ no lint enforcing the unpack pattern.
 
 - **Hard error (>10 positional):** `crates/vibelang-dsp/src/builder.rs`
   in `build_body_closure_with_options_inner`,
-  `build_effect_closure_inner`, and `build_modulator_closure_inner`.
-  All three return a `SynthDefError::RhaiError` naming the synthdef
+  `build_effect_closure_inner`, and related synthdef closure paths.
+  They return a `SynthDefError::RhaiError` naming the synthdef
   and pointing at `body_map`.
 - **No automated lint for the 6 / 7–10 thresholds.** This document is
   the source of truth; review enforces it.
 - **`body_map` API:** `SynthDefBuilder::body_map`,
-  `EffectBuilder::body_map`, `ModulatorBuilder::body_map` — all
-  shipped at commit 1990ca8 alongside the existing positional
+  `EffectBuilder::body_map`, and kr-output synthdef bodies — all
+  shipped alongside the existing positional
   `body(...)`.
 
 ## Related

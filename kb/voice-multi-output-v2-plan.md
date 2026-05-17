@@ -55,9 +55,12 @@ port_bus → fx[0]_bus → fx[1]_bus → ... → port_to_group_link → group_bu
 
 Bus alloc: reuse the port's source bus as `fx[0]`'s input; allocate one fresh intermediate per subsequent FX. v1 group-level FX continues working unchanged for any port not using per-port FX.
 
-### 3.5 Modulator-as-sugar
+### 3.5 Historical CV-Source Sugar
 
-Existing `modulator` builder usage keeps working. Internally: builder generates a synthdef with a single kr port `"out"` and the equivalent UGen graph; voice creation goes through the standard voice path. The `voice.modulate` call becomes sugar for `m.output("out").to_param(voice, name)`. No user-visible API change; one fewer core type internally.
+This intermediate migration step has been superseded. Current scripts define
+ordinary synthdefs with single or multi-channel kr ports and route them through
+`.output(port).to_param(target, name)` or
+`target.param(name).modulate_by(source, port)`.
 
 ## 4. Story breakdown
 

@@ -1,0 +1,26 @@
+// Vibelang CV Source Standard Library
+//
+// Control-rate synthdefs for dynamic parameter routing.
+// Use `.output("out").to_param(target, "param")` or
+// `target.param("param").modulate_by(source, "out")` to wire a kr output
+// port into another voice's parameter.
+//
+// Example usage:
+//   import "stdlib/cv/index.vibe";
+//
+//   let cutoff_lfo = voice("cutoff_lfo")
+//       .synth("lfo_sine")
+//       .set_param("rate", 4.0)
+//       .set_param("lo", 200.0)
+//       .set_param("hi", 2000.0);
+//
+//   let bass = voice("bass")
+//       .synth("moog_bass");
+//
+//   bass.param("cutoff").modulate_by(cutoff_lfo, "out");
+
+// LFO CV sources (sine, saw, tri, square, random)
+import "stdlib/cv/lfo/index.vibe";
+
+// Envelope followers
+import "stdlib/cv/envelopes/index.vibe";

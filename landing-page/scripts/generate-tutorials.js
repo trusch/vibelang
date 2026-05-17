@@ -55,7 +55,7 @@ const ID_MAP = {
   '13_fades': 'fades',
   '14_custom_synths': 'custom-synths',
   '15_custom_effects': 'custom-effects',
-  '16_modulators': 'modulators',
+  '16_cv_sources': 'cv-sources',
 };
 
 /**

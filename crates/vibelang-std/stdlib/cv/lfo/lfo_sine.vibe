@@ -1,0 +1,19 @@
+// Sine wave LFO synthdef
+// Outputs: Smooth, continuous sinusoidal modulation
+// Use for: Vibrato, subtle filter modulation, tremolo
+define_synthdef("lfo_sine", |builder| {
+    builder
+        .output_kr("out")     // 1ch — kr CV (sine LFO)
+        .param("rate", 1.0)   // LFO rate in Hz
+        .param("lo", 0.0)     // Minimum output value
+        .param("hi", 1.0)     // Maximum output value
+        .param("phase", 0.0)  // Initial phase (0-2pi)
+        .body_map(|p| {
+            // sin_osc_kr stuck-output bug — compute at ar internally.
+            let osc = sin_osc_ar(p.rate, p.phase);
+            // Map from bipolar (-1 to 1) to user-specified range using basic math
+            let normalized = osc * 0.5 + 0.5;  // Map to 0-1
+            let out = normalized * (p.hi - p.lo) + p.lo; // Map to lo-hi range
+            [a2k_kr(out)]
+        })
+});

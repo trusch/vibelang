@@ -1,0 +1,5 @@
+// Envelope CV Sources
+//
+// Control-rate synthdefs that track or generate envelopes from audio signals.
+
+import "stdlib/cv/envelopes/envelope_follower.vibe";

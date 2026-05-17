@@ -928,8 +928,8 @@ define_group("Drums", || {
 | `rlpf_ar(input, freq, res)` | Resonant low-pass |
 | `rhpf_ar(input, freq, res)` | Resonant high-pass |
 
-| Modulators (Control Rate) | Description |
-|---------------------------|-------------|
+| Control-Rate UGens | Description |
+|--------------------|-------------|
 | `sin_osc_kr(freq)` | LFO sine wave |
 
 ### Envelope Types
