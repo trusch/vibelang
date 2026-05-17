@@ -17,7 +17,6 @@ define_synthdef("erica_black_vco2", |builder| {
         .output("pulse", 1)
         .output("sub", 1)
         .output("mix", 1)
-        .param("__vibelang_owned_output_buses", 1.0)
         .param("freq", 110.0)
         .param("voct", 0.0)
         .param("octave", 0.0)

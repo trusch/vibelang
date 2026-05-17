@@ -39,7 +39,6 @@ define_synthdef("erica_techno_trigger_matrix", |builder| {
         .output_kr("accent")
         .output_kr("quarter")
         .output_kr("whole")
-        .param("__vibelang_owned_output_buses", 1.0)
         .param("bpm", 130.0)
         .param("run", 1.0)
         .param("reset", 0.0)
@@ -127,7 +126,6 @@ define_synthdef("erica_techno_trigger_matrix", |builder| {
 define_synthdef("erica_techno_mono_to_stereo", |builder| {
     builder
         .input("in", 1)
-        .param("__vibelang_owned_output_buses", 1.0)
         .param("pan", 0.0)
         .param("level", 1.0)
         .body_map(|p| {
@@ -144,7 +142,6 @@ define_synthdef("erica_techno_stereo_to_mono", |builder| {
     builder
         .input("in", 2)
         .output("out")
-        .param("__vibelang_owned_output_buses", 1.0)
         .param("balance", 0.0)
         .param("level", 1.0)
         .body_map(|p| {
@@ -161,7 +158,6 @@ define_synthdef("erica_techno_gate_vca", |builder| {
     builder
         .input("in", 1)
         .output("out")
-        .param("__vibelang_owned_output_buses", 1.0)
         .param("gate", 0.0)
         .param("attack", 0.004)
         .param("decay", 0.18)
@@ -177,7 +173,6 @@ define_synthdef("erica_techno_gate_vca", |builder| {
 define_synthdef("erica_techno_stereo_trim", |builder| {
     builder
         .input("in", 2)
-        .param("__vibelang_owned_output_buses", 1.0)
         .param("level", 1.0)
         .body_map(|p| {
             [

@@ -24,7 +24,6 @@ fn _erica_bh_soft(sig, drive) {
 
 define_synthdef("erica_black_hole_dsp")
     .input("in", 2)
-    .param("__vibelang_owned_output_buses", 1.0)
     .param("program", 0.0)
     .param("param1", 0.5)
     .param("param2", 0.5)

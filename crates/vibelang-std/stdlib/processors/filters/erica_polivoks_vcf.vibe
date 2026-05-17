@@ -9,7 +9,6 @@
 define_synthdef("erica_polivoks_vcf")
     .input("in", 1)
     .output("out", 1)
-    .param("__vibelang_owned_output_buses", 1.0)
     .param("cutoff", 1000.0)
     .param("resonance", 0.5)
     .param("mode", 0.0)
