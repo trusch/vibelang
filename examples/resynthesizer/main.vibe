@@ -55,7 +55,7 @@ define_synthdef("resynth_lead_voice", |builder| {
         .param("gate", 1.0)
         .body_map(|p| {
             let env = envelope()
-                .asr(0.008, 0.42, 0.22)
+                .adsr(0.006, 0.16, 0.0, 0.08)
                 .gate(p.gate)
                 .cleanup_on_finish()
                 .build();
@@ -64,7 +64,42 @@ define_synthdef("resynth_lead_voice", |builder| {
             let sub = sin_osc_ar(f * 0.5) * 0.20;
             let mix = lpf_ar(core + sub, 1400.0 + env * 4200.0);
             let body = clip(mix * env * p.amp, -0.95, 0.95);
-            [body, body]
+            let pan = clip((f - 360.0) / 720.0, -0.55, 0.55);
+            let right_body = delay_c_ar(body, 0.035, 0.010 + (1.0 + pan) * 0.004);
+            [
+                softclip(body * (0.82 - pan * 0.20)),
+                softclip(right_body * (0.82 + pan * 0.20))
+            ]
+        })
+});
+
+define_synthdef("resynth_stereo_articulator", |builder| {
+    builder
+        .input("in", 2)
+        .param("bpm", 96.0)
+        .param("width", 0.42)
+        .param("pulse_depth", 0.60)
+        .param("level", 0.72)
+        .body_map(|p| {
+            let in_l = p.inputs["in"][0];
+            let in_r = p.inputs["in"][1];
+            let mid = (in_l + in_r) * 0.5;
+            let natural_side = (in_l - in_r) * 0.5;
+            let beat_hz = clip(p.bpm / 60.0, 0.25, 4.0);
+            let phrase_trig = impulse_ar(beat_hz * 0.5, 0.0);
+            let pluck = clip(decay2_ar(phrase_trig, 0.010, 0.24), 0.0, 1.0);
+            let breath = 0.5 + sin_osc_ar(beat_hz * 0.125, 0.0) * 0.5;
+            let width = clip(p.width, 0.0, 1.0);
+            let pulse_depth = clip(p.pulse_depth, 0.0, 0.92);
+            let gate = 1.0 - pulse_depth + pulse_depth * (0.08 + pluck * 0.92);
+            let haas_l = delay_c_ar(mid, 0.045, 0.006 + breath * 0.005);
+            let haas_r = delay_c_ar(mid, 0.045, 0.018 + breath * 0.007);
+            let created_side = (haas_l - haas_r) * width;
+            let side = natural_side + created_side;
+            [
+                softclip((mid + side) * gate * p.level),
+                softclip((mid - side) * gate * p.level)
+            ]
         })
 });
 
@@ -112,11 +147,11 @@ define_group("taps", || { });
 define_group("rack", || { });
 
 group("ctrl").gain(0.0);
-group("raw_morphagene").gain(0.0);
-group("raw_spectral_odd").gain(0.0);
-group("raw_spectral_even").gain(0.0);
-group("melody").gain(db(-4));
-group("taps").gain(0.0);
+group("raw_morphagene").gain(db(-30));
+group("raw_spectral_odd").gain(db(-32));
+group("raw_spectral_even").gain(db(-32));
+group("melody").gain(db(-20));
+group("taps").gain(db(-32));
 group("rack").gain(db(0));
 
 let tempi = voice("tempi_master")
@@ -275,31 +310,38 @@ woggle.output("stepped").to_param(morph, "slide").scale(0.42).offset(0.16);
 let odd_tap = voice("tap_spectral_odd")
     .synth("resynth_bus_tap_mono")
     .group("taps")
-    .set_param("balance", -0.2)
+    .set_param("balance", -0.75)
     .set_param("level", 0.9);
 odd_tap.input("in").from(group("raw_spectral_odd"));
 
 let even_tap = voice("tap_spectral_even")
     .synth("resynth_bus_tap_mono")
     .group("taps")
-    .set_param("balance", 0.2)
+    .set_param("balance", 0.75)
     .set_param("level", 0.9);
 even_tap.input("in").from(group("raw_spectral_even"));
 
-let morph_tap = voice("tap_morphagene")
+let morph_tap_l = voice("tap_morphagene_left")
     .synth("resynth_bus_tap_mono")
     .group("taps")
-    .set_param("balance", 0.0)
+    .set_param("balance", -1.0)
     .set_param("level", 0.75);
-morph_tap.input("in").from(group("raw_morphagene"));
+morph_tap_l.input("in").from(group("raw_morphagene"));
 
-spectraphon::spectraphon_input(spec, "analyze_a").from(morph_tap);
-spectraphon::spectraphon_input(spec, "analyze_b").from(morph_tap);
+let morph_tap_r = voice("tap_morphagene_right")
+    .synth("resynth_bus_tap_mono")
+    .group("taps")
+    .set_param("balance", 1.0)
+    .set_param("level", 0.75);
+morph_tap_r.input("in").from(group("raw_morphagene"));
+
+spectraphon::spectraphon_input(spec, "analyze_a").from(morph_tap_l);
+spectraphon::spectraphon_input(spec, "analyze_b").from(morph_tap_r);
 
 let lead = voice("rene_lead")
     .synth("resynth_lead_voice")
     .group("rack")
-    .set_param("amp", 0.7)
+    .set_param("amp", 1.05)
     .gain(db(4));
 
 // Rene-cartesian 16-note sequence in C minor pentatonic, mirroring the
@@ -309,7 +351,7 @@ let lead = voice("rene_lead")
 melody("rene_cartesian_lead")
     .on(lead)
     .notes(
-        "C4 Eb4 F4 G4 | F4 G4 Bb4 C5 | C4 F4 C5 F5 | G4 Bb4 C5 Bb5"
+        "C4 . . G4 | . F4 . . | C4 . C5 . | . Bb4 C5 ."
     )
     .start();
 
@@ -322,7 +364,7 @@ let xpan = voice("xpan_motion")
     .set_param("level", 0.72);
 xpan.input("ch1_a").from(odd_tap);
 xpan.input("ch1_b").from(even_tap);
-xpan.input("ch2_a").from(morph_tap);
+xpan.input("ch2_a").from(morph_tap_l);
 xpan.input("ch2_b").from(odd_tap);
 xpan.input("aux").from(group("melody"));
 xpan.output("out").mute();
@@ -368,6 +410,17 @@ let echo = voice("mimeophon_space")
     .set_param("level", 0.55)
     .gain(db(-8));
 echo.input("in").from(dxg);
+echo.output("out").mute();
+
+let output_stage = voice("resynth_output_stage")
+    .synth("resynth_stereo_articulator")
+    .group("rack")
+    .set_param("bpm", get_tempo())
+    .set_param("width", 0.58)
+    .set_param("pulse_depth", 0.88)
+    .set_param("level", 0.82)
+    .gain(db(-5));
+output_stage.input("in").from(echo);
 
 cvbus.output("bus3").to_param(xpan, "ch1_fade").scale(0.62).offset(0.48);
 maths.output("inv").to_param(xpan, "ch1_pan").scale(0.82).offset(-0.10);
@@ -396,7 +449,8 @@ morph.run();
 spec = spectraphon::spectraphon_run(spec);
 odd_tap.run();
 even_tap.run();
-morph_tap.run();
+morph_tap_l.run();
+morph_tap_r.run();
 // `lead` is not .run()-ed: the melody() above spawns voice instances
 // per note via /s_new. A standalone run() would create a permanent
 // instance with gate=1 that competes with the per-note triggers.
@@ -404,3 +458,4 @@ xpan.run();
 qpas.run();
 dxg.run();
 echo.run();
+output_stage.run();
